@@ -6,7 +6,11 @@ import type { AuditService } from "../../src/modules/audit/contracts/index.js";
 import { createAuditService, InMemoryAuditEventRepository } from "../support/fakes.js";
 import type { ConversationRepositoryPort } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
-import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
+import { AppError } from "../../src/shared/domain/errors.js";
+import { ProviderConfigurationError } from "../../src/shared/infra/llm/providerTypes.js";
+import { normalizeProviderCredentialError } from "../../src/shared/infra/llm/providerErrors.js";
+import type { ErrorReporter } from "../../src/shared/errors/errorReporter.js";
+import { ChatTurnDisconnectAbortError, ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import {
   buildTurnTraceForPresentation,
   ChatTurnLifecycle,
@@ -36,10 +40,16 @@ interface RecordedAudit {
   metadata: Record<string, unknown>;
 }
 
-const harness = (metrics?: { incrementCounter: MetricsRegistry["incrementCounter"] }) => {
+const harness = (
+  metrics?: { incrementCounter: MetricsRegistry["incrementCounter"] },
+  errorReporter?: Pick<ErrorReporter, "report">,
+) => {
   const records: RecordedAudit[] = [];
   const auditService = {
     record: vi.fn(async (event: RecordedAudit) => {
+      records.push(event);
+    }),
+    recordForLiveConversation: vi.fn(async (event: RecordedAudit) => {
       records.push(event);
     }),
     logRecorded: vi.fn(),
@@ -67,6 +77,9 @@ const harness = (metrics?: { incrementCounter: MetricsRegistry["incrementCounter
     undefined,
     undefined,
     metrics,
+    undefined,
+    undefined,
+    errorReporter,
   );
   return { lifecycle, records, auditService, messageRepository, conversationRepository };
 };
@@ -519,6 +532,89 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records[0].metadata.turnTrace).toEqual(extracted.turnTrace);
     expect(records[0].metadata.activityTrace).toEqual(extracted.activityTrace);
     vi.useRealTimers();
+  });
+
+  it("hangs the retrieval trace on the dispatch of the skill that answered, after a bound skill fell back", () => {
+    const failedThenFallback: ConversationTrace = {
+      ...engineTrace(),
+      stages: [
+        { id: "gather", kind: "gather", status: "applied" },
+        {
+          id: "dispatch:order_lookup",
+          kind: "skill_dispatch",
+          status: "fallback",
+          outputs: { skillName: "order_lookup", outcomeStatus: "failed", failureReason: "suppressed_for_safe_test" },
+        },
+        {
+          id: "dispatch:retrieval.answer",
+          kind: "skill_dispatch",
+          status: "applied",
+          outputs: { skillName: "retrieval.answer", outcomeStatus: "completed", fallbackFor: "order_lookup" },
+        },
+        { id: "compose", kind: "compose", status: "applied" },
+      ],
+    };
+
+    const { turnTrace } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      requestReceivedAt: Date.now(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: failedThenFallback,
+    });
+
+    const stages = (turnTrace as { spine: ConversationTrace }).spine.stages;
+    expect(stages.find((stage) => stage.id === "dispatch:order_lookup")?.subTrace).toBeUndefined();
+    expect(stages.find((stage) => stage.id === "dispatch:retrieval.answer")?.subTrace?.namespace).toBe("retrieval");
+  });
+
+  // Quality counts `skill_status = 'failed'`: a bound skill the fallback covered must still read as failed.
+  it("records the bound skill's failure on the reply a fallback skill wrote in its place", () => {
+    const { assistantMessage, successInput } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: {
+        ...presentation(),
+        fallbackFor: { skillName: "order_lookup", outcomeStatus: "failed", failureReason: "mcp_timeout" },
+      },
+      requestReceivedAt: Date.now(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(assistantMessage).toMatchObject({
+      content: "Grounded answer.",
+      skillName: "order_lookup",
+      skillOutcome: "failed",
+      skillStatus: "failed",
+      metadata: {
+        skillTurn: {
+          skillName: "order_lookup",
+          outcome: "failed",
+          status: "failed",
+          fallback: { skillName: "retrieval.answer", failureReason: "mcp_timeout" },
+        },
+      },
+    });
+    expect(successInput.skillTurnOutcome).toEqual(assistantMessage.metadata?.skillTurn);
+  });
+
+  it("records the answering skill when no fallback was needed", () => {
+    const { assistantMessage } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      requestReceivedAt: Date.now(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(assistantMessage).toMatchObject({ skillName: "retrieval.answer", skillOutcome: "grounded", skillStatus: "completed" });
+    expect(assistantMessage.metadata?.skillTurn).not.toHaveProperty("fallback");
   });
 
   it("appends a conversation_summary activity-trace stage when the session carries a rolling summary", () => {
@@ -2416,6 +2512,229 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       );
 
       expect(chatAnswerEvents(auditRepository)).toHaveLength(0);
+    });
+  });
+
+  describe("recordFailure — error reporting", () => {
+    it("reports an unexpected (non-AppError) turn failure once, with its classification", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      const error = Object.assign(new Error("Azure OpenAI chat failed"), { status: 404, code: "DeploymentNotFound" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+        undefined,
+        { kind: "model_unavailable", status: 404, code: "DeploymentNotFound" },
+      );
+
+      expect(report).toHaveBeenCalledOnce();
+      expect(report).toHaveBeenCalledWith(expect.objectContaining({
+        errorType: "chat.turn_failed",
+        error,
+        // Bounded, never the raw provider message — providerErrors.ts documents that a
+        // provider's own error text can echo the customer's rejected prompt.
+        message: "LLM provider call failed: model_unavailable",
+        metadata: expect.objectContaining({
+          workspaceId: "workspace_1",
+          conversationId: "conv_1",
+          failureKind: "model_unavailable",
+          providerStatus: 404,
+          providerCode: "DeploymentNotFound",
+        }),
+      }));
+    });
+
+    it("passes no explicit message override when there is no provider classification (the raw error's own message stands)", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      const error = new Error("some other unexpected failure");
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+      );
+
+      expect(report.mock.calls[0]?.[0].message).toBeUndefined();
+    });
+
+    it("never reports a client-facing AppError under 500 — an already-handled, expected outcome", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new AppError(429, "usage_limit_exceeded", "Monthly message limit reached"),
+      );
+
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it("never reports a superseded turn (409, a client-facing outcome)", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new ChatTurnSupersededError("conv_1", "rendering"),
+      );
+
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it("never reports a disconnect-abort turn despite its 500 status — an expected client-driven outcome", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new ChatTurnDisconnectAbortError("conv_1", "rendering"),
+      );
+
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it("reports a platform misconfiguration (ProviderConfigurationError, AppError 503) — a platform fault, not a client outcome", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      const error = new ProviderConfigurationError('No API key configured for provider "openai".', { kind: "missing_api_key" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+      );
+
+      expect(report).toHaveBeenCalledOnce();
+      expect(report).toHaveBeenCalledWith(expect.objectContaining({ errorType: "chat.turn_failed", error }));
+    });
+
+    it("reports a normalized provider-credential rejection (AppError 503) — the same incident class as an undeployed model", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      const normalized = normalizeProviderCredentialError({ status: 401, code: "invalid_api_key" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        normalized,
+      );
+
+      expect(report).toHaveBeenCalledOnce();
+    });
+
+    it("skips reporting for safe_test/review turns the same way it skips analytics", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false, executionMode: "safe_test" },
+        null,
+        undefined,
+        new Error("boom"),
+      );
+
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it("never fails turn-failure recording when the error reporter itself rejects", async () => {
+      const report = vi.fn().mockRejectedValue(new Error("sink down"));
+      const { lifecycle } = harness(undefined, { report });
+
+      await expect(lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new Error("boom"),
+      )).resolves.toBeUndefined();
+    });
+
+    it("resolves without waiting for the error reporter — fire-and-forget, like every other caller", async () => {
+      // A sink such as PostHog has no fetch timeout; awaiting report() here would hold
+      // the turn's rethrow, the SSE response end, and the next turn's
+      // waitForPredecessor lease hostage to a stalled network call.
+      const report = vi.fn(() => new Promise<void>(() => {})); // never settles
+      const { lifecycle } = harness(undefined, { report });
+
+      await expect(lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new Error("boom"),
+      )).resolves.toBeUndefined();
+
+      expect(report).toHaveBeenCalledOnce();
+    });
+
+    it("marks the error as reported before the reporter's own sink settles, so the HTTP layer's dedup holds without awaiting it", async () => {
+      const sink = { name: "slow-sink", record: vi.fn(() => new Promise<void>(() => {})) }; // never settles
+      const realErrorReportingService = new (await import("../../src/shared/errors/errorReportingService.js")).ErrorReportingService({
+        enabled: true,
+        environment: "test",
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as any,
+        service: "radioso-api",
+        sinks: [sink],
+      });
+      const { lifecycle } = harness(undefined, realErrorReportingService);
+      const error = new Error("boom");
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+      );
+
+      expect(realErrorReportingService.wasReported(error)).toBe(true);
+    });
+
+    it("carries the classified failure kind on chat.failed analytics", async () => {
+      const auditService = {
+        record: vi.fn(async () => {}),
+        recordForLiveConversation: vi.fn(async () => {}),
+      } as unknown as AuditService;
+      const conversationRepository = { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort;
+      const messageRepository = {} as unknown as MessageRepositoryPort;
+      const track = vi.fn(async () => null);
+      const lifecycle = new ChatTurnLifecycle(
+        conversationRepository,
+        messageRepository,
+        auditService,
+        { track },
+      );
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        { status: 429, code: "rate_limit_exceeded" },
+        undefined,
+        { kind: "rate_limited", status: 429, code: "rate_limit_exceeded" },
+      );
+
+      expect(track).toHaveBeenCalledWith(expect.objectContaining({
+        eventName: "chat.failed",
+        properties: expect.objectContaining({
+          failureKind: "rate_limited",
+          providerStatus: 429,
+          providerCode: "rate_limit_exceeded",
+          // Bounded, not the raw { status, code } object's own message (it has none here,
+          // but a real provider error's text can echo the customer's rejected prompt).
+          errorMessage: "LLM provider call failed: rate_limited",
+        }),
+      }));
     });
   });
 });

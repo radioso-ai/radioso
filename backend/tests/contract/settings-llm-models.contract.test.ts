@@ -204,6 +204,69 @@ describe("settings llm-models contract", () => {
     });
   });
 
+  describe("on a deployment whose platform openai key is an Azure key", () => {
+    // testApp's environment defaults are gpt-5-mini (chat, rewrite, rerank) and
+    // text-embedding-3-small, so those are the Azure deployments the platform key serves.
+    const azureApp = () =>
+      createTestApp({ envOverrides: { AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com/openai/v1" } });
+
+    it("lists the models this workspace can run beside the full catalog", async () => {
+      const { app } = azureApp();
+      const session = await issueTestSession(app, "llm-models-azure-runnable@example.com");
+
+      const response = await request(app)
+        .get("/api/v1/settings/llm-models")
+        .set(adminSessionHeaders(session));
+
+      expect(response.status).toBe(200);
+      expect(response.body.knownModelsByProvider.openai).toEqual(expect.arrayContaining(["gpt-5.4-nano", "gpt-5-mini"]));
+      expect(response.body.runnableModelsByProvider).toMatchObject({
+        openai: ["gpt-5-mini"],
+        "openai-compatible": [],
+        claude: expect.arrayContaining(["claude-sonnet-5"]),
+      });
+    });
+
+    it("rejects an openai model Azure has no deployment for, naming the runnable models", async () => {
+      const { app } = azureApp();
+      const session = await issueTestSession(app, "llm-models-azure-reject@example.com");
+
+      const response = await request(app)
+        .put("/api/v1/settings/llm-models")
+        .set(adminSessionHeaders(session))
+        .send({ chat: { provider: "openai", model: "gpt-5.4-nano" } });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain("gpt-5-mini");
+      // The same list the GET reports: chat-capable catalog models, never the embedding deployment.
+      expect(response.body.error.message).not.toContain("text-embedding-3-small");
+      expect(response.body.error.details).toEqual({
+        provider: "openai",
+        model: "gpt-5.4-nano",
+        runnableModels: ["gpt-5-mini"],
+      });
+    });
+
+    it("accepts any catalog openai model once the workspace holds its own openai key", async () => {
+      const { app } = azureApp();
+      const session = await issueTestSession(app, "llm-models-azure-byok@example.com");
+      const credential = await request(app)
+        .put("/api/v1/settings/credentials/openai")
+        .set(adminSessionHeaders(session))
+        .send({ apiKey: "sk-test" });
+      expect(credential.status).toBeLessThan(300);
+
+      const response = await request(app)
+        .put("/api/v1/settings/llm-models")
+        .set(adminSessionHeaders(session))
+        .send({ chat: { provider: "openai", model: "gpt-5.4-nano" } });
+
+      expect(response.status).toBe(200);
+      expect(response.body.chat).toEqual({ provider: "openai", model: "gpt-5.4-nano" });
+      expect(response.body.runnableModelsByProvider.openai).toEqual(response.body.knownModelsByProvider.openai);
+    });
+  });
+
   it("requires authentication", async () => {
     const { app } = createTestApp();
     const response = await request(app).get("/api/v1/settings/llm-models");

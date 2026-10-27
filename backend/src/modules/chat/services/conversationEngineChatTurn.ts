@@ -15,12 +15,14 @@ import type {
   ConversationRoutineStore,
   ConversationRetrievalWorkPort,
   ConversationRoutineTurnClaim,
+  ConversationSkillDispatcher,
   AttemptRoutineInput,
   ConversationTrace,
   ConversationTurnInterpreter,
   ProcessTurnResult,
   RenderableTurn,
   RoutineTerminalKind,
+  SelectedSkill,
   RoutineTurnEffects,
 } from "@radioso/conversation-contract";
 
@@ -46,6 +48,8 @@ import type { ChatStatusStage } from "../contracts/streamEvents.js";
 import { presentRoutineRenderableAnswer } from "./routines/routineGroundedAnswerRenderer.js";
 import { withPlannerReplySource } from "./turnPlanQuickReply.js";
 import { directiveAdherenceMetadataOf } from "../../../shared/domain/directiveAdherence.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
+import { turnSkillUnavailableRule } from "./turnSkillFallbackSteering.js";
 
 interface RunPreparedChatTurnWithConversationEngineInput {
   engine: ConversationEngine;
@@ -80,6 +84,8 @@ interface RunPreparedChatTurnWithConversationEngineInput {
   routineRunner?: ConversationRoutineRunner;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
+  /** One info line per fallback dispatch: identifiers and reason codes, never content. */
+  logger?: Pick<AppLogger, "info">;
 }
 
 interface RunPreparedChatTurnWithConversationEngineResult {
@@ -157,6 +163,64 @@ const wasYieldedBySkill = (presentation: ChatPresentedAnswer | null): boolean =>
   presentation?.yielded === true;
 
 /**
+ * Before the default skill answers in place of a bound skill that did not, the answer is
+ * told that skill was not consulted. The note goes on the session's directive steering
+ * because that is what the answer renderers read; a session without directive steering
+ * has no answer steering to carry it.
+ */
+const noteTurnSkillFallback = (
+  session: PreparedSession,
+  fallbackSkillName: string,
+  fallback: NonNullable<SelectedSkill["fallbackFor"]>,
+  logger: RunPreparedChatTurnWithConversationEngineInput["logger"],
+): void => {
+  if (session.directiveSteering) {
+    session.directiveSteering.rules = [...session.directiveSteering.rules, turnSkillUnavailableRule(fallback.skillName)];
+  }
+  logger?.info({
+    event: "chat_turn_skill_fallback",
+    workspaceId: session.agent.workspaceId,
+    agentId: session.agent.id,
+    conversationId: session.conversation.id,
+    skillName: fallback.skillName,
+    fallbackSkillName,
+    ...(fallback.failureReason ? { failureReason: fallback.failureReason } : {}),
+  }, "Chat turn answered by the fallback skill");
+};
+
+interface TurnSkillDispatch {
+  dispatcher: ConversationSkillDispatcher;
+  /** Marks a rendered answer as written in place of the bound skill a fallback replaced, if one did. */
+  withFallbackFor(presentation: ChatPresentedAnswer): ChatPresentedAnswer;
+}
+
+/** Dispatches the registered turn skill the engine selected, on both the streamed and whole paths. */
+const turnSkillDispatch = (
+  input: Pick<RunPreparedChatTurnWithConversationEngineInput, "turnSkills" | "logger">,
+  readSession: () => PreparedSession,
+): TurnSkillDispatch => {
+  const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
+  let fallbackFor: SelectedSkill["fallbackFor"];
+  return {
+    dispatcher: {
+      async dispatch({ skill, selected }) {
+        const turnSkill = skillsByName.get(skill.name);
+        if (!turnSkill) {
+          throw new Error(`conversation_engine_no_turn_skill_for_${skill.name}`);
+        }
+        const session = readSession();
+        if (selected.fallbackFor) {
+          fallbackFor = selected.fallbackFor;
+          noteTurnSkillFallback(session, skill.name, selected.fallbackFor, input.logger);
+        }
+        return turnSkill.dispatch(session);
+      },
+    },
+    withFallbackFor: (presentation) => (fallbackFor ? { ...presentation, fallbackFor } : presentation),
+  };
+};
+
+/**
  * Once `processTurn` has answered, the engine has recorded the routine's yield and the
  * answer has led back to its step, so the session drops it. A failed turn keeps it, so a
  * retry of the same turn hands it back rather than asking the routine again.
@@ -183,8 +247,8 @@ export const runPreparedChatTurnWithConversationEngine = async (
 ): Promise<RunPreparedChatTurnWithConversationEngineResult> => {
   let rendered: ChatPresentedAnswer | null = null;
   const readSession = input.getSession ?? (() => input.session);
-  const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
   const renderers = buildTurnRendererRegistry(input.turnSkills);
+  const dispatch = turnSkillDispatch(input, readSession);
   const processTurnInput = createChatProcessTurnInput({
     session: input.session,
     getSession: readSession,
@@ -206,15 +270,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
         return decision;
       },
     },
-    dispatcher: {
-      async dispatch({ skill }) {
-        const turnSkill = skillsByName.get(skill.name);
-        if (!turnSkill) {
-          throw new Error(`conversation_engine_no_turn_skill_for_${skill.name}`);
-        }
-        return turnSkill.dispatch(readSession());
-      },
-    },
+    dispatcher: dispatch.dispatcher,
     composer: {
       async compose({ outcomes, coverageVerdict }) {
         const outcome = outcomes[0];
@@ -222,7 +278,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
           throw new Error("conversation_engine_dispatched_no_outcome");
         }
         await input.beforeRender?.();
-        rendered = await renderers.resolve(outcome).render(outcome, {
+        rendered = dispatch.withFallbackFor(await renderers.resolve(outcome).render(outcome, {
           session: readSession(),
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
@@ -231,7 +287,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
           coverageVerdict: input.coverageVerdictWrapper && coverageVerdict
             ? input.coverageVerdictWrapper(coverageVerdict)
             : coverageVerdict,
-        });
+        }));
         return toRenderableTurn(rendered);
       },
     },
@@ -261,8 +317,8 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
   input: RunPreparedChatTurnWithConversationEngineInput,
 ): AsyncIterable<RunPreparedChatTurnStreamWithConversationEngineEvent> {
   const readSession = input.getSession ?? (() => input.session);
-  const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
   const renderers = buildTurnRendererRegistry(input.turnSkills);
+  const dispatch = turnSkillDispatch(input, readSession);
   const streamState: { result?: TurnStreamResult } = {};
   const queued: QueuedEngineEvent[] = [];
   let wake: (() => void) | undefined;
@@ -312,15 +368,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         return decision;
       },
     },
-    dispatcher: {
-      async dispatch({ skill }) {
-        const turnSkill = skillsByName.get(skill.name);
-        if (!turnSkill) {
-          throw new Error(`conversation_engine_no_turn_skill_for_${skill.name}`);
-        }
-        return turnSkill.dispatch(readSession());
-      },
-    },
+    dispatcher: dispatch.dispatcher,
     composer: {
       async compose() {
         throw new Error("conversation_engine_stream_used_non_streaming_compose");
@@ -354,7 +402,10 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
           };
           streamStep = await answerStream.next();
         }
-        streamState.result = streamStep.value;
+        streamState.result = {
+          ...streamStep.value,
+          finalPresentation: dispatch.withFallbackFor(streamStep.value.finalPresentation),
+        };
         const remainingAnswer = getUnstreamedFinalAnswerRemainder(streamState.result);
         if (remainingAnswer) {
           yield {

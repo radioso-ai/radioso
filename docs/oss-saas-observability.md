@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-10-26
+last_updated: 2026-10-27
 ---
 
 # OSS And SaaS Observability
@@ -261,12 +261,49 @@ This keeps external crash tooling optional without weakening the product's defau
 ### Current implementation
 
 Errors reach the shared error service (and therefore every configured sink,
-including the optional PostHog/Sentry exporters) from four places, so capture is
+including the optional PostHog/Sentry exporters) from five places, so capture is
 not limited to the HTTP request path:
 
 - **Unhandled HTTP request failures** — the error handler middleware in
   [`backend/src/app/http/middleware/errorHandler.ts`](../backend/src/app/http/middleware/errorHandler.ts)
-  (`errorType: http.request.unhandled`).
+  (`errorType: http.request.unhandled`). Every request that ends in a server
+  error is reported once with its status: an `AppError` of 500 or higher (a
+  `503 service_unavailable` for a missing configuration, a `502` from an
+  upstream service) while the client still gets that error's own code and
+  message, an Enterprise error shaped the same way, or an unexpected exception
+  answered with a generic `500`. The same `isReportableFault` rule as chat turns
+  (next bullet) decides what counts: anything under 500 stays a client outcome.
+  A request whose response already started (an SSE chat turn failing
+  mid-stream, or any other response that started writing its body) also gets
+  exactly one report there. Each failure is reported once, even when a caller
+  upstream (such as a chat turn) already reported that exact error. If that response
+  never finished on its own, the middleware closes the connection rather than
+  ending it gracefully, so a client sees a dropped connection instead of reading
+  a truncated body as a complete one; an SSE turn already ends its own stream
+  before an error reaches this far, so this never fires for one.
+- **Chat turn failures** — `ChatTurnLifecycle.recordFailure` in
+  [`backend/src/modules/chat/services/chatTurnLifecycle.ts`](../backend/src/modules/chat/services/chatTurnLifecycle.ts)
+  (`errorType: chat.turn_failed`), for a turn that ends on anything other than an
+  already-handled, client-facing outcome — a usage limit, a validation error, a
+  cancelled or superseded turn, or a disconnected client. `isReportableFault`
+  (`backend/src/shared/domain/errors.ts`) is the rule: a client-facing error under
+  HTTP 500 is expected and never reported, whether it is a real `AppError` or an
+  Enterprise module's plain `Error` shaped the same way (`statusCode`, `code`,
+  `message` — EE deliberately avoids importing the OSS `AppError` class); a `500`
+  or higher is reported even when it is an `AppError`, such as a misconfigured
+  provider or a rejected platform credential, unless its own `isExpectedOutcome`
+  marker says the client caused it (a dropped connection). Reporting never waits
+  on the sink: it is fire-and-forget, so a slow exporter cannot hold up the
+  turn's response. The report carries a bounded failure kind
+  (`model_unavailable`, `auth_rejected`, `rate_limited`, `provider_unavailable`,
+  or `provider_rejected`) plus the provider's HTTP status and machine code, only
+  once the failure is confirmed to be an actual LLM provider call — the OpenAI
+  SDK's own error types, this backend's `ProviderHttpError` for the Gemini/Claude
+  adapters, or one wrapped a hop or two down a routine activation failure's
+  `.cause` chain — never a database or connector error that merely looks the
+  same shape. Both the report's message and the matching `chat.failed` product
+  analytics event carry a fixed string naming the failure kind in place of the
+  provider's own error text, which can echo back the customer's rejected prompt.
 - **Browser errors** — posted to `/api/v1/observability/frontend-errors`
   (`frontend.*.unhandled`).
 - **Process-level crashes** — every entrypoint installs

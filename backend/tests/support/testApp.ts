@@ -294,6 +294,7 @@ import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../s
 import { NoopDocumentCapacityReadPort, NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { NoopManagedModelPolicy, type ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
 import { WorkspaceLlmCapabilityResolver } from "../../src/app/composition/workspaceLlmCapabilityResolver.js";
+import { PlatformAwareWorkspaceModelAvailability } from "../../src/app/composition/workspaceModelAvailability.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
 import { resolveWorkspaceManagedLlmModels } from "../../src/shared/infra/llm/workspaceManagedModels.js";
 import { NoopUsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
@@ -1759,16 +1760,24 @@ export const createTestDependencies = (overrides: {
     repository: emailSkillDefinitionRepository,
     connections: customerEmailConnectionRepository,
   });
+  const llmDefaults = resolveLlmConfig(env);
+  const workspaceModelAvailability = new PlatformAwareWorkspaceModelAvailability({
+    defaults: llmDefaults,
+    credentials: workspaceProviderCredentialsService,
+  });
   const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
     retrievalSettingsRepository,
     auditService,
+    undefined,
+    workspaceModelAvailability,
   );
   const llmSelectionResolver = new WorkspaceLlmCapabilityResolver({
-    defaults: resolveLlmConfig(env),
+    defaults: llmDefaults,
     settings: workspaceLlmCapabilitySettingsService,
     credentials: workspaceProviderCredentialsService,
     envKeys: { resolveEnvApiKey: () => undefined },
     managedModelPolicy: overrides.managedModelPolicy ?? new NoopManagedModelPolicy(),
+    modelAvailability: workspaceModelAvailability,
   });
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.setEncryptionKey(connectorEncryptionKeys(env)!);
@@ -1952,6 +1961,10 @@ export const createTestDependencies = (overrides: {
     documentSourceRepository,
     overrides.embedConfigCacheInvalidator,
     accessGrantService,
+    undefined,
+    undefined,
+    undefined,
+    workspaceModelAvailability,
   );
   refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
   const publishedAgentRevisions = new PublishedTestAgentRevisionReader(contextVariableRepository);
@@ -2837,6 +2850,7 @@ export const createTestDependencies = (overrides: {
     agentRepository,
     mcpConnectionRepository,
     externalSkillDefinitionRepository,
+    modelAvailability: workspaceModelAvailability,
   });
   // By default the same live definitions the test routine provider activates from, so
   // the catalog a calling agent reads matches what a tool call can admit; a test may

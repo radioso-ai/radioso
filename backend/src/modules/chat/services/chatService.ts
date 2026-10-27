@@ -1,4 +1,6 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
+import { classifyLlmProviderFailure } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
+import { routineActivationFailureFields } from "./turnFailureReporting.js";
 import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import {
   createModelCallTraceCollector,
@@ -22,6 +24,7 @@ import type {
 } from "@radioso/conversation-contract";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { AuditService } from "../../audit/contracts/index.js";
+import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
@@ -254,7 +257,9 @@ export interface ChatServiceOptions {
   cutReplyStore?: CutReplyStore;
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
-  logger?: Pick<AppLogger, "warn">;
+  logger?: Pick<AppLogger, "warn" | "info">;
+  /** Optional: when wired, an unexpected (non-`AppError`) turn failure is reported once. */
+  errorReporter?: Pick<ErrorReporter, "report">;
   /** Optional: when wired, an eligible visitor message enqueues a facet extraction job (spec 956). */
   facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">;
   conversationOwnershipRepository?: ConversationOwnershipRepository;
@@ -415,19 +420,6 @@ const chatReviewResultFor = (outcome: ChatTurnOutcome): ChatReviewResult => {
   });
 };
 
-const routineActivationFailureFields = (error: unknown): Record<string, string> | undefined => {
-  if (!(error instanceof Error) || error.name !== "RoutineActivationFailure") {
-    return undefined;
-  }
-  const phase = "phase" in error && typeof error.phase === "string" ? error.phase : "unknown";
-  const cause = error.cause;
-  return {
-    event: "routine_activation_failed",
-    phase,
-    causeType: cause instanceof Error ? cause.name : typeof cause,
-  };
-};
-
 export class ChatService {
   private readonly conversationRepository: ConversationRepositoryPort;
   private readonly messageRepository: MessageRepositoryPort;
@@ -439,7 +431,7 @@ export class ChatService {
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly approvalResumeTurn: ApprovalResumeTurn;
   private readonly turnSkills: TurnSkill[];
-  private readonly logger?: Pick<AppLogger, "warn">;
+  private readonly logger?: Pick<AppLogger, "warn" | "info">;
   private readonly answerSupport = new ChatAnswerSupport();
   private readonly routineStore?: ConversationRoutineStore;
   private readonly suspendedRoutineReader?: SuspendedRoutineReader;
@@ -489,6 +481,7 @@ export class ChatService {
       actionCapabilities,
       capabilityPolicy,
       logger,
+      errorReporter,
       facetExtractionJobs,
       conversationOwnershipRepository,
       routineStore,
@@ -556,6 +549,7 @@ export class ChatService {
       turnRuntime.metrics,
       workspaceInvalidationPublisher,
       cutReplyStore,
+      errorReporter,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -1055,6 +1049,31 @@ export class ChatService {
     return result.kind === "draft" ? { ...result, draft: withReplyLanguageTag(result.draft, await turnLanguage.tag) } : result;
   }
 
+  /**
+   * The shared tail of every turn-ending catch block that is not a cancellation.
+   * `answer()` and `streamAnswer()` both reach here with the identical sequence;
+   * this is the one place it is written. Classifies `preferredError` (not the
+   * normalized one, which carries no `.cause` back to the original — see
+   * classifyLlmProviderFailure's own doc) before normalizing and rethrowing it.
+   */
+  private async failTurn(
+    preferredError: unknown,
+    input: Parameters<ChatTurnLifecycle["recordFailure"]>[0],
+    session: PreparedSession | null,
+    assistantMessageId: string | undefined,
+    workflowPolicy: ReturnType<typeof assertInteractiveAssistantWorkflow>,
+  ): Promise<never> {
+    const normalizedError = normalizeProviderCredentialError(preferredError);
+    const providerFailure = classifyLlmProviderFailure(preferredError);
+    const activationFailure = routineActivationFailureFields(preferredError);
+    if (activationFailure) {
+      const conversationId = session?.conversation.id ?? input.conversationId;
+      this.logger?.warn({ ...activationFailure, workspaceId: input.workspaceId, conversationId }, "Routine activation failed");
+    }
+    await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy, providerFailure);
+    throw normalizedError;
+  }
+
   private async runTurn(input: ChatTurnInput, entry: ChatTurnEntry): Promise<ChatTurnOutcome> {
     const requestReceivedAt = Date.now();
     const coordination: TurnCoordinationState = {
@@ -1408,17 +1427,7 @@ export class ChatService {
         await this.chatTurnLifecycle.recordSupersession(input, session, assistantMessageId, preferredError, workflowPolicy);
         throw preferredError;
       }
-      const normalizedError = normalizeProviderCredentialError(preferredError);
-      const activationFailure = routineActivationFailureFields(preferredError);
-      if (activationFailure) {
-        this.logger?.warn({
-          ...activationFailure,
-          workspaceId: input.workspaceId,
-          conversationId: session?.conversation.id ?? input.conversationId,
-        }, "Routine activation failed");
-      }
-      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
-      throw normalizedError;
+      return this.failTurn(preferredError, input, session, assistantMessageId, workflowPolicy);
     }
   }
 
@@ -2160,17 +2169,7 @@ export class ChatService {
         };
         return;
       }
-      const normalizedError = normalizeProviderCredentialError(preferredError);
-      const activationFailure = routineActivationFailureFields(preferredError);
-      if (activationFailure) {
-        this.logger?.warn({
-          ...activationFailure,
-          workspaceId: input.workspaceId,
-          conversationId: session?.conversation.id ?? input.conversationId,
-        }, "Routine activation failed");
-      }
-      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
-      throw normalizedError;
+      await this.failTurn(preferredError, input, session, assistantMessageId, workflowPolicy);
     } finally {
       await releaseUsageReservation();
     }

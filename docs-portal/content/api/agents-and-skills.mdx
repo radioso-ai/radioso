@@ -192,9 +192,13 @@ it.
 
 When a directive with an external MCP binding matches a non-routine turn, the
 turn selector routes to the bound skill if that skill is available as a runtime
-turn skill. When a directive with a retrieval binding matches, the answer loop
-receives a lookup tool for that skill. The directive action still steers the
-answer. A non-matching directive has no selection effect.
+turn skill. If the bound skill then fails, times out, returns no answer text, or
+is kept off by a private test, the agent answers through normal selection
+without claiming the tool's results, and the turn trace records the failure
+reason on the bound skill's dispatch. When a directive with a retrieval binding
+matches, the answer loop receives a lookup tool for that skill. The directive
+action still steers the answer. A non-matching directive has no selection
+effect.
 
 When multiple matched directives bind skills, one binding wins:
 
@@ -543,6 +547,7 @@ Each `kind` names one thing to go fix, and where:
 - `mcp_connection_unbound`: an external MCP connection, or a skill built on one. Reconnect the server under External skills, re-entering its credential.
 - `asset_not_portable`: the agent's logo lives in object storage, not in the bundle. Re-upload it.
 - `contact_delivery_unbound`: contact requests are on, but the recipient list and webhook stayed in the source workspace — an imported agent must never deliver to another workspace's people. Set a destination under the agent's contact settings.
+- `chat_model_unavailable`: the source agent ran on a chat model this workspace can't pick — on a deployment whose shared OpenAI key is an Azure OpenAI key, a model with no deployment there. The agent imports without its chat model override and answers on the workspace's chat model. Pick a chat model on the agent from the ones listed under Settings → Providers, or add the workspace's own key for that provider first.
 - `directive_binding_unbound`: the directive is bound to a skill that did not come across, so it imports switched off rather than being dropped. Rebind it to a skill here, then enable it.
 - `skill_config_not_portable`: the source agent set skill settings whose values stay in their own workspace — a delivery webhook URL, a recipient list, a document-source scope. The `detail` names the exact settings; re-enter them on the imported skill. Where those settings are all a skill has, the skill itself is reported rather than created, and the `detail` says so — create it here and fill in its settings.
 

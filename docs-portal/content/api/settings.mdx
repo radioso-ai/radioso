@@ -328,7 +328,9 @@ On Radioso Cloud, a managed plan (Comet, Satellite, or Planet with Radioso's mod
 
 Here the workspace has asked for `claude-sonnet-4-5` for chat, but its managed plan runs `gpt-5.4-mini` because the workspace has no Claude key. The dashboard shows the same picture: the picker is read-only with the managed model and a line explaining why. Adding a Claude workspace key lifts the managed default for chat and applies the stored preference; removing the key restores the managed default. The same override rule applies to every managed plan, including Planet with Radioso's models.
 
-`PUT /api/v1/settings/llm-models` is a merge-update. Send only the jobs you want to change. Pass `null` to clear one and use the policy's default provider and model: the managed default on a managed plan, or the environment default otherwise. The response is the same shape as `GET`: the full stored preferences plus the plan's `managed` view and `knownModelsByProvider`, refreshed for the change just applied.
+The response also carries two model lists per provider. `knownModelsByProvider` is every model Radioso supports. `runnableModelsByProvider` is the subset this workspace can run, and it is what the dashboard pickers offer. The two match unless the deployment's shared OpenAI key is an Azure OpenAI key: then `runnableModelsByProvider.openai` holds only the models deployed for it (see [Data residency](/operators/data-residency)), until the workspace adds its own OpenAI key.
+
+`PUT /api/v1/settings/llm-models` is a merge-update. Send only the jobs you want to change. Pass `null` to clear one and use the policy's default provider and model: the managed default on a managed plan, or the environment default otherwise. The response is the same shape as `GET`: the full stored preferences plus the plan's `managed` view and both model lists, refreshed for the change just applied. A model outside `runnableModelsByProvider` is refused with `400`, and the error message lists the models the workspace can run; re-sending the model a job already stores is accepted.
 
 ```json
 {
@@ -339,7 +341,7 @@ Here the workspace has asked for `claude-sonnet-4-5` for chat, but its managed p
 
 The `openai-compatible` provider also requires `OPENAI_COMPATIBLE_BASE_URL` to be configured on the backend. Selecting it for a workspace without a base URL fails at resolve time with a clear error instead of silently calling the default OpenAI endpoint.
 
-For per-agent chat model overrides, set `chatModelOverride` on the agent through `PUT /api/v1/agents/<agentId>`. `null` clears the override; `{ "provider": "...", "model": "..." }` sets it. The override covers every model call the agent makes on its own turn — planning the turn, assessing how well the retrieved sources cover the question, and composing the answer — so switching an agent to a smaller model cuts the whole turn's latency, not just the answer's. Recovery and refusal calls keep their own tiers: the staged router and interpreter that take over when a plan fails to parse run on the deployment's rewrite default (`LLM_REWRITE_PROVIDER` / `LLM_REWRITE_MODEL`, with this workspace's credentials), and the staged directive matcher and the no-context decline stay on the workspace `chat` model. Pick a model that can return the plan's JSON schema: on the `openai-compatible` provider Radioso does not send that schema to the endpoint, and a model too small to follow it from the prompt alone fails the same way, so every turn pays the planner attempt and then the slower staged path.
+For per-agent chat model overrides, set `chatModelOverride` on the agent through `PUT /api/v1/agents/<agentId>`. `null` clears the override; `{ "provider": "...", "model": "..." }` sets it, and takes a model from `runnableModelsByProvider` under the same rule as a workspace preference. The override covers every model call the agent makes on its own turn — planning the turn, assessing how well the retrieved sources cover the question, and composing the answer — so switching an agent to a smaller model cuts the whole turn's latency, not just the answer's. Recovery and refusal calls keep their own tiers: the staged router and interpreter that take over when a plan fails to parse run on the deployment's rewrite default (`LLM_REWRITE_PROVIDER` / `LLM_REWRITE_MODEL`, with this workspace's credentials), and the staged directive matcher and the no-context decline stay on the workspace `chat` model. Pick a model that can return the plan's JSON schema: on the `openai-compatible` provider Radioso does not send that schema to the endpoint, and a model too small to follow it from the prompt alone fails the same way, so every turn pays the planner attempt and then the slower staged path.
 
 ## Endpoint reference
 
@@ -371,7 +373,7 @@ PUT /api/v1/settings/llm-models
 
 ## Common failure modes
 
-- `400` usually means the payload is invalid for that settings group.
+- `400` usually means the payload is invalid for that settings group. On `PUT /api/v1/settings/llm-models` it can also mean the model is supported but this workspace cannot run it; pick one from `runnableModelsByProvider` or add the workspace's own key for that provider.
 - `401` means the dashboard session is missing or invalid, or an API credential was supplied to a session-only settings route.
 - `404` on general settings usually means the workspace context is not available.
 - `409` on the document type catalog means someone saved while you were editing. The error names the current revision; re-read the catalog, reapply your change on top of it, and send it again.

@@ -7,9 +7,9 @@
  * about to create this" has to be answerable without a round trip.
  */
 
-export const AGENT_BUNDLE_SCHEMA_VERSION = 1
+const AGENT_BUNDLE_SCHEMA_VERSION = 1
 
-export type AgentBundleUnresolvedKind =
+type AgentBundleUnresolvedKind =
   | 'context_variable_missing'
   | 'resolver_skill_missing'
   | 'skill_target_unbound'
@@ -22,6 +22,7 @@ export type AgentBundleUnresolvedKind =
   | 'skill_config_not_portable'
   | 'directive_binding_unbound'
   | 'contact_delivery_unbound'
+  | 'chat_model_unavailable'
 
 export interface AgentBundleUnresolvedReference {
   kind: AgentBundleUnresolvedKind
@@ -58,7 +59,7 @@ export interface AgentBundleSummary {
   contextVariableCount: number
 }
 
-export type AgentBundleReadResult =
+type AgentBundleReadResult =
   | { ok: true; bundle: AgentBundle; summary: AgentBundleSummary }
   | { ok: false; reason: string }
 

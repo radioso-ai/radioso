@@ -162,7 +162,9 @@ Most directives do not need a skill. The instruction is the rule. If a matching
 reply needs an MCP tool or an extra pass over your knowledge, type `#` in the
 **Instruction** field and select an enabled, agent-selectable skill. A directive
 can have one such binding: it makes the skill available for the reply when the
-directive matches.
+directive matches. If the skill can't run or fails on a turn, the agent answers
+from its other sources without claiming the tool's results, and the turn's trace
+shows why.
 
 ### Why can't I bind a Slack, email, webhook, or notify skill?
 

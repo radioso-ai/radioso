@@ -1451,6 +1451,12 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       );
 
       expect(presentation).toMatchObject({ answer: "Grounded answer under 2 rules.", skillName: RETRIEVAL_TURN_SKILL });
+      // The host persists the bound skill's failure from this, so Quality still sees it.
+      expect(presentation.fallbackFor).toEqual({
+        skillName: boundSkillName,
+        outcomeStatus: "failed",
+        failureReason: "suppressed_for_safe_test",
+      });
       const notes = unavailableNotes(prepared);
       expect(notes).toEqual([expect.objectContaining({ source: "skill", lifespan: "response" })]);
       expect(notes[0]?.action).toContain(boundSkillName);
@@ -1486,7 +1492,11 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       if (!final || final.type !== "final") {
         throw new Error("expected final event");
       }
-      expect(final.presentation).toMatchObject({ answer: "Grounded answer under 2 rules.", skillName: RETRIEVAL_TURN_SKILL });
+      expect(final.presentation).toMatchObject({
+        answer: "Grounded answer under 2 rules.",
+        skillName: RETRIEVAL_TURN_SKILL,
+        fallbackFor: { skillName: boundSkillName, outcomeStatus: "failed" },
+      });
       expect(unavailableNotes(prepared)).toHaveLength(1);
     });
 
@@ -1499,6 +1509,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       );
 
       expect(presentation).toMatchObject({ answer: "Order 123 is in transit.", skillName: boundSkillName });
+      expect(presentation).not.toHaveProperty("fallbackFor");
       expect(unavailableNotes(prepared)).toEqual([]);
       expect(logger.info).not.toHaveBeenCalled();
     });

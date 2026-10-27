@@ -557,6 +557,53 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(stages.find((stage) => stage.id === "dispatch:retrieval.answer")?.subTrace?.namespace).toBe("retrieval");
   });
 
+  // Quality counts `skill_status = 'failed'`: a bound skill the fallback covered must still read as failed.
+  it("records the bound skill's failure on the reply a fallback skill wrote in its place", () => {
+    const { assistantMessage, successInput } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: {
+        ...presentation(),
+        fallbackFor: { skillName: "order_lookup", outcomeStatus: "failed", failureReason: "mcp_timeout" },
+      },
+      requestReceivedAt: Date.now(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(assistantMessage).toMatchObject({
+      content: "Grounded answer.",
+      skillName: "order_lookup",
+      skillOutcome: "failed",
+      skillStatus: "failed",
+      metadata: {
+        skillTurn: {
+          skillName: "order_lookup",
+          outcome: "failed",
+          status: "failed",
+          fallback: { skillName: "retrieval.answer", failureReason: "mcp_timeout" },
+        },
+      },
+    });
+    expect(successInput.skillTurnOutcome).toEqual(assistantMessage.metadata?.skillTurn);
+  });
+
+  it("records the answering skill when no fallback was needed", () => {
+    const { assistantMessage } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      requestReceivedAt: Date.now(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(assistantMessage).toMatchObject({ skillName: "retrieval.answer", skillOutcome: "grounded", skillStatus: "completed" });
+    expect(assistantMessage.metadata?.skillTurn).not.toHaveProperty("fallback");
+  });
+
   it("appends a conversation_summary activity-trace stage when the session carries a rolling summary", () => {
     const prepared = {
       ...session(),

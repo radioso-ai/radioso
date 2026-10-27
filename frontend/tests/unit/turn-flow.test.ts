@@ -488,6 +488,8 @@ describe('envelopeToFlowGraph', () => {
       sublabel: 'not called (skills are off in this test)',
     })
     expect(node(graph, 'skill:1')).toMatchObject({ label: 'Retrieval', note: 'in place of order_lookup' })
+    // The Act phase is named for the skill that answered, not the one that failed.
+    expect(graph.phases.find((phase) => phase.id === 'act')?.label).toBe('Retrieval')
   })
 
   it('draws a routine turn as the routine that ran, steered by its directives', () => {

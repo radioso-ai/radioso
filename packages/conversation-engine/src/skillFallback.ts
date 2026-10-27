@@ -3,11 +3,12 @@ import type { SelectedSkill, SkillDefinition, TurnOutcome } from "@radioso/conve
 import { findSkill } from "./traceSummaries.js";
 
 /**
- * The selection the engine dispatches in place of a skill that settled without
- * completing, or null when the selection names no eligible fallback. A fallback must
- * be registered, differ from the skill it replaces, and declare no input fields: it
- * runs without the resolution pass, so there is nothing to supply them from. The
- * returned selection names no fallback of its own, so a fallback never chains.
+ * The selection the engine dispatches in place of a skill that settled `failed`, or null
+ * when the selection names no eligible fallback. An in-progress status (awaiting a
+ * confirmation or a tool, paused, active) is not a failure and keeps its outcome. A
+ * fallback must be registered, differ from the skill it replaces, and declare no input
+ * fields: it runs without the resolution pass, so there is nothing to supply them from.
+ * The returned selection names no fallback of its own, so a fallback never chains.
  */
 export const fallbackSelectionFor = (
   skills: SkillDefinition[],
@@ -15,7 +16,7 @@ export const fallbackSelectionFor = (
   outcome: TurnOutcome,
 ): { skill: SkillDefinition; selected: SelectedSkill } | null => {
   const fallbackName = selected.fallbackSkillName;
-  if (outcome.outcome.status === "completed" || !fallbackName || fallbackName === selected.skillName) {
+  if (outcome.outcome.status !== "failed" || !fallbackName || fallbackName === selected.skillName) {
     return null;
   }
   const skill = findSkill(skills, fallbackName);
@@ -28,12 +29,10 @@ export const fallbackSelectionFor = (
     selected: {
       skillName: fallbackName,
       reason: "fallback",
-      metadata: {
-        fallbackFor: {
-          skillName: selected.skillName,
-          outcomeStatus: outcome.outcome.status,
-          ...(failureReason ? { failureReason } : {}),
-        },
+      fallbackFor: {
+        skillName: selected.skillName,
+        outcomeStatus: outcome.outcome.status,
+        ...(failureReason ? { failureReason } : {}),
       },
     },
   };

@@ -162,7 +162,11 @@ const settledFailure = (session: PreparedSession, skillName: string, reason: str
 
 const hasAnswerText = (answer: string | undefined): boolean => typeof answer === "string" && answer.trim().length > 0;
 
-/** Records one directive-bound dispatch that did not answer the turn. */
+/**
+ * Records one directive-bound dispatch that failed for a reason this provider decided. An
+ * outcome the executor settled is logged by the executor; a policy outcome (suppression,
+ * an ephemeral conversation) is the turn working as configured and is not logged here.
+ */
 type ReportDispatchFailure = (
   session: PreparedSession,
   agentSkill: AgentSkillSpine,
@@ -383,12 +387,13 @@ const turnSkillForAgentSkill = (
       if (!skill.execution) {
         return fail("no_execution");
       }
-      // Suppression is the turn's execution policy, not a failure; its counters record it.
+      // Suppression and an ephemeral conversation are the turn's execution policy, not
+      // failures; suppression's counters record it.
       if (shouldSuppressSkillEffect(skillEffects, agentSkill, skill.execution)) {
         return settledFailure(session, agentSkill.skillName, recordSuppression(agentSkill, "turn"));
       }
       if (requiresDurableConversationDenied(conversationDurability, skill)) {
-        return fail("requires_durable_conversation");
+        return settledFailure(session, agentSkill.skillName, "requires_durable_conversation");
       }
       const executor = executorRegistry.resolve(skill.execution);
       if (!executor) {
@@ -427,8 +432,8 @@ const turnSkillForAgentSkill = (
       if (result.disposition !== "settled") {
         return fail("deferred");
       }
+      // The executor logs the outcomes it settles (`external_skill_dispatch_failed`).
       if (result.outcome.status !== "completed") {
-        reportFailure(session, agentSkill, result.outcome.error?.code ?? result.outcome.status);
         return outcomeFor(session, agentSkill.skillName, result.outcome);
       }
       // A terminal turn skill answers the visitor; structured content alone renders a blank reply.

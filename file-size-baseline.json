@@ -16,7 +16,7 @@
   "backend/src/modules/chat/services/chatService.ts": 2254,
   "backend/src/modules/chat/services/chatSessionPreparer.ts": 1481,
   "backend/src/modules/chat/services/chatTurnAssembly.ts": 1518,
-  "backend/src/modules/chat/services/chatTurnLifecycle.ts": 1575,
+  "backend/src/modules/chat/services/chatTurnLifecycle.ts": 1570,
   "backend/src/modules/chat/services/retrievalTurnSkill.ts": 1160,
   "backend/src/modules/chat/services/turnPlanService.ts": 1053,
   "backend/src/modules/connectors/plugins/email/emailInboundProcessor.ts": 1006,
@@ -44,7 +44,7 @@
   "frontend/lib/anonymous-chat-context.tsx": 1317,
   "frontend/lib/dashboard-routes.ts": 1223,
   "frontend/lib/radioso-embed-launcher.js": 2567,
-  "packages/conversation-contract/index.d.ts": 2352,
+  "packages/conversation-contract/index.d.ts": 2354,
   "packages/conversation-engine/src/routineRunner.ts": 1567,
   "packages/routine-document/src/tokens.ts": 1124
 }

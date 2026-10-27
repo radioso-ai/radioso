@@ -1472,7 +1472,7 @@ Primary internals:
   candidate evaluation and ranked activation, and reaction recording all run
   from here, returning `proceed` or `yield_turn` — #1260)
 - `packages/conversation-engine/src/skillFallback.ts` (the skill a selection's
-  `fallbackSkillName` dispatches when the selected skill does not complete, and
+  `fallbackSkillName` dispatches when the selected skill fails, and
   the dispatch stage's `failureReason` and `fallbackFor` outputs)
 
 Useful searches:

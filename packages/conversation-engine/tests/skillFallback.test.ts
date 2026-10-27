@@ -73,7 +73,7 @@ const fallbackInput = (input: {
 const dispatchStages = (stages: ConversationTraceStage[]) => stages.filter((stage) => stage.kind === "skill_dispatch");
 
 describe("DefaultConversationEngine skill fallback", () => {
-  it("dispatches the fallback skill in place of a selected skill that settles without completing", async () => {
+  it("dispatches the fallback skill in place of a selected skill that fails", async () => {
     const input = fallbackInput({
       outcomes: {
         "order.lookup": failedLookup,
@@ -88,12 +88,10 @@ describe("DefaultConversationEngine skill fallback", () => {
     expect(fallbackSelection).toEqual({
       skillName: "retrieval.answer",
       reason: "fallback",
-      metadata: {
-        fallbackFor: {
-          skillName: "order.lookup",
-          outcomeStatus: "failed",
-          failureReason: "suppressed_for_safe_test",
-        },
+      fallbackFor: {
+        skillName: "order.lookup",
+        outcomeStatus: "failed",
+        failureReason: "suppressed_for_safe_test",
       },
     });
     // Outcomes are what compose renders, so the fallback's replaces the failed one.
@@ -222,7 +220,24 @@ describe("DefaultConversationEngine skill fallback", () => {
     expect(dispatchStages(result.trace.stages)).toHaveLength(1);
   });
 
-  it("does not fall back again when the fallback itself settles without completing", async () => {
+  it.each(["awaiting_confirmation", "awaiting_tool", "paused", "active"] as const)(
+    "keeps a skill that settled %s, which is in progress rather than failed",
+    async (status) => {
+      const input = fallbackInput({
+        outcomes: {
+          "order.lookup": { status },
+          "retrieval.answer": { status: "completed", answer: "Grounded answer." },
+        },
+      });
+
+      const result = await new DefaultConversationEngine().processTurn(input);
+
+      expect(input.dispatcher.dispatch).toHaveBeenCalledOnce();
+      expect(result.outcomes.map((outcome) => outcome.skillName)).toEqual(["order.lookup"]);
+    },
+  );
+
+  it("does not fall back again when the fallback itself fails", async () => {
     const input = fallbackInput({
       outcomes: {
         "order.lookup": failedLookup,

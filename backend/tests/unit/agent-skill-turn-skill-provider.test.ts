@@ -670,14 +670,14 @@ describe("RepositoryAgentSkillTurnSkillProvider suppressed-effects collector", (
 
 describe("RepositoryAgentSkillTurnSkillProvider dispatch failures", () => {
   const dispatchBoundSkill = async (
-    executor: SkillExecutorPort["dispatch"],
+    executor: SkillExecutorPort["dispatch"] | null,
   ) => {
     const logger = { warn: vi.fn() };
     const provider = new RepositoryAgentSkillTurnSkillProvider({
       agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
-      executorRegistry: new SkillExecutorRegistry([
-        { kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, executor: { dispatch: executor } },
-      ]),
+      executorRegistry: new SkillExecutorRegistry(executor
+        ? [{ kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, executor: { dispatch: executor } }]
+        : []),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
       logger,
     });
@@ -718,14 +718,31 @@ describe("RepositoryAgentSkillTurnSkillProvider dispatch failures", () => {
     expect(logger.warn).toHaveBeenCalledWith(...failureLog("empty_answer"));
   });
 
-  it("passes an executor's failed outcome through and logs its code, never its content", async () => {
+  it("passes an executor's failed outcome through without a second warn, since the executor logs its own", async () => {
     const { outcome, logger } = await dispatchBoundSkill(async () => ({
       disposition: "settled",
       outcome: { status: "failed", error: { code: "mcp_timeout", message: "Tool call timed out" } },
     }));
 
     expect(outcome.outcome).toMatchObject({ status: "failed", error: { code: "mcp_timeout" } });
-    expect(logger.warn).toHaveBeenCalledWith(...failureLog("mcp_timeout"));
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("settles a skill with no registered executor as no_executor", async () => {
+    const { outcome, logger } = await dispatchBoundSkill(null);
+
+    expect(outcome.outcome).toMatchObject({ status: "failed", error: { code: "no_executor" } });
+    expect(logger.warn).toHaveBeenCalledWith(...failureLog("no_executor"));
+  });
+
+  it("settles a deferred dispatch as failed, because a terminal turn skill must answer now", async () => {
+    const { outcome, logger } = await dispatchBoundSkill(async () => ({
+      disposition: "deferred",
+      ticket: { ticketId: "ticket-1" },
+    }));
+
+    expect(outcome.outcome).toMatchObject({ status: "failed", error: { code: "deferred" } });
+    expect(logger.warn).toHaveBeenCalledWith(...failureLog("deferred"));
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("Where is order 123?");
   });
 

@@ -648,7 +648,7 @@ export const envelopeToFlowGraph = (
           stage.kind,
           span,
         )
-        phaseLabels.act ??= skill.label
+        phaseLabels.act = skill.label
         if (path?.nodes.length) {
           for (const pathNode of path.nodes) flow.add(pathNode)
           flow.edges.push(...path.edges)

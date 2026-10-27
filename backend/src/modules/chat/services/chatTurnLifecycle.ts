@@ -49,6 +49,7 @@ import type { ChatResponse, ChatRoute, ChatSuggestion, ChatTurnHandoff, ChatTurn
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
+import { presentedSkillTurnOutcome } from "./presentedSkillTurn.js";
 import { appendConversationSummaryStage } from "./conversationSummaryTracePresenter.js";
 import {
   attachCapabilitySubTrace,
@@ -251,12 +252,6 @@ export const actionIdempotencyKey = (
 ): string =>
   `routine-action:${conversationId}:${type}:${createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
 
-const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): SkillTurnOutcome => ({
-  skillName: presentation.skillName,
-  outcome: presentation.skillOutcome,
-  status: presentation.skillStatus,
-});
-
 
 class RoutineActionAuthorizationError extends Error {
   constructor(
@@ -435,7 +430,7 @@ export const buildTurnTraceForPresentation = (
   const activitySummaryPresenter = new ActivitySummaryPresenter();
   const activityTracePresenter = new ActivityTracePresenter();
   const route = getChatTurnRoute(input.session, input.engineTrace);
-  const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
+  const skillTurnOutcome = presentedSkillTurnOutcome(input.presentation);
   const retrieval = input.presentation.effectiveRetrieval ?? input.session.retrieval;
   const execution = {
     surface: "assistant" as const,

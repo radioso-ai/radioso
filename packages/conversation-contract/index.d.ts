@@ -569,8 +569,10 @@ export interface SelectedSkill {
   input?: unknown;
   reason?: string;
   metadata?: Record<string, unknown>;
-  /** Registered skill the engine dispatches in place of this one when it settles without completing. */
+  /** Registered skill the engine dispatches in place of this one when it settles `failed`; an in-progress status never falls back. */
   fallbackSkillName?: string;
+  /** Set by the engine on a fallback selection: the skill it stands in for and how that skill settled. */
+  fallbackFor?: { skillName: string; outcomeStatus: SkillOutcomeStatus; failureReason?: string };
 }
 
 export type SkillInputValue = string | number | boolean;

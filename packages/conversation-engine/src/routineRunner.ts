@@ -29,8 +29,9 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { REDACTED_VALUE, redactSensitiveValues } from "@radioso/conversation-contract";
+import { REDACTED_VALUE } from "@radioso/conversation-contract";
 
+import { declaredSlotVariables, outboundVariables, sensitiveSlotKeys } from "./outboundSlotValues.js";
 import {
   collectedSlotsForStep,
   isSlotCollectionStepSatisfied,
@@ -355,35 +356,6 @@ const pendingStepFor = (
     .filter((slot) => !hasVariable(variables, slot.key))
     .map((slot) => slot.key),
 });
-
-/** The routine's slot keys its author marked sensitive, in declared order. */
-export const sensitiveSlotKeys = (routine: Routine): string[] =>
-  (routine.slots ?? []).filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key);
-
-/**
- * The variables as a copy that leaves the conversation carries them: a sensitive slot's value
- * reads as the redaction marker. The run's own state keeps the value, since the routine needs it
- * to run; every payload, ending, and trace the runner hands out goes through here.
- */
-const outboundVariables = (
-  routine: Routine,
-  variables: Record<string, unknown>,
-): Record<string, unknown> => redactSensitiveValues(variables, sensitiveSlotKeys(routine));
-
-/** The declared slots' values as they leave the conversation, sensitive ones masked. */
-const declaredSlotVariables = (
-  routine: Routine,
-  variables: Record<string, unknown>,
-): Record<string, unknown> =>
-  outboundVariables(
-    routine,
-    Object.fromEntries(
-      (routine.slots ?? [])
-        .map((slot) => slot.key)
-        .filter((key) => hasVariable(variables, key))
-        .map((key) => [key, variables[key]]),
-    ),
-  );
 
 /** Per-value character bound for a traced slot value (including the ellipsis), matching the host's output-bounding magnitude. */
 const MAX_TRACE_SLOT_VALUE_CHARS = 500;

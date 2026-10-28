@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-10-27
+last_updated: 2026-10-28
 ---
 
 import { Callout } from 'nextra/components'
@@ -239,7 +239,7 @@ In the hosted Cloud Run environments, the backend and frontend scale to zero whe
 Document ingestion always writes a durable processing job to Postgres first; the dispatch driver only controls how workers learn that the job exists. Set `WORKER_DISPATCH_DRIVER` to one of:
 
 - `noop` — the default. Workers poll the job table. Right for local runs and single-host deployments.
-- `cloud-tasks` — the API enqueues a Cloud Task per job. Configure `WORKER_TASKS_QUEUE_LOCATION`, `WORKER_TASKS_QUEUE_NAME`, `WORKER_TASKS_CRAWL_QUEUE_NAME`, `WORKER_TASKS_SERVICE_URL`, `WORKER_TASKS_INVOKER_SERVICE_ACCOUNT`, and `WORKER_TASK_AUTH_TOKEN`. Cloud Tasks and Cloud Scheduler send that shared token in `X-Radioso-Worker-Token` alongside Google OIDC, so a proxy in front of a self-hosted task server must preserve the header. Generate a random value of at least 32 characters and give the backend, document worker, and crawler worker the same value.
+- `cloud-tasks` — the API enqueues a Cloud Task per job. Configure `WORKER_TASKS_QUEUE_LOCATION`, `WORKER_TASKS_QUEUE_NAME`, `WORKER_TASKS_CRAWL_QUEUE_NAME`, `WORKER_TASKS_SERVICE_URL`, `WORKER_TASKS_CRAWL_SERVICE_URL` (the crawler worker's URL, set on the crawler worker too), `WORKER_TASKS_INVOKER_SERVICE_ACCOUNT`, and `WORKER_TASK_AUTH_TOKEN`. Cloud Tasks and Cloud Scheduler send that shared token in `X-Radioso-Worker-Token` alongside Google OIDC, so a proxy in front of a self-hosted task server must preserve the header. Generate a random value of at least 32 characters and give the backend, document worker, and crawler worker the same value.
 - `amqp` — a RabbitMQ-compatible AMQP 0-9-1 broker wakes the workers. Configure `WORKER_AMQP_URL`, `WORKER_AMQP_QUEUE_NAME`, `WORKER_AMQP_CRAWL_QUEUE_NAME`, and `WORKER_AMQP_PREFETCH`. Messages carry job ids and trace metadata only; Postgres remains the source of truth for job state, retries, and leases, and the worker polling loop stays active for recovery, so a lost broker message delays a job rather than losing it. Delayed retries follow the job table's `available_at` value, not broker-delayed delivery.
 
 Document processing and website crawling use separate queues in both push drivers, so a long-running crawl does not block document work.

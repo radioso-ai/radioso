@@ -211,6 +211,7 @@ test("renderEnvFile preserves autoscaling worker env keys", () => {
     WORKER_TASKS_QUEUE_NAME: "document-jobs",
     WORKER_TASKS_CRAWL_QUEUE_NAME: "website-crawls",
     WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
+    WORKER_TASKS_CRAWL_SERVICE_URL: "https://crawler-worker.example.com",
     WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "worker@example.iam.gserviceaccount.com",
     DOCUMENT_PROCESSING_JOB_LEASE_MS: "300000",
     WEBSITE_CRAWL_JOB_LEASE_MS: "900000",
@@ -224,6 +225,7 @@ test("renderEnvFile preserves autoscaling worker env keys", () => {
   assert.match(content, /WORKER_TASKS_QUEUE_NAME=document-jobs/);
   assert.match(content, /WORKER_TASKS_CRAWL_QUEUE_NAME=website-crawls/);
   assert.match(content, /WORKER_TASKS_SERVICE_URL=https:\/\/worker.example.com/);
+  assert.match(content, /WORKER_TASKS_CRAWL_SERVICE_URL=https:\/\/crawler-worker.example.com/);
   assert.match(content, /WORKER_TASKS_INVOKER_SERVICE_ACCOUNT=worker@example.iam.gserviceaccount.com/);
   assert.match(content, /DOCUMENT_PROCESSING_JOB_LEASE_MS=300000/);
   assert.match(content, /WEBSITE_CRAWL_JOB_LEASE_MS=900000/);
@@ -249,6 +251,7 @@ test("listRequiredKeys requires Cloud Tasks settings only when Cloud Tasks dispa
   assert.ok(cloudTasksRequired.includes("WORKER_TASKS_QUEUE_NAME"));
   assert.ok(cloudTasksRequired.includes("WORKER_TASKS_CRAWL_QUEUE_NAME"));
   assert.ok(cloudTasksRequired.includes("WORKER_TASKS_SERVICE_URL"));
+  assert.ok(cloudTasksRequired.includes("WORKER_TASKS_CRAWL_SERVICE_URL"));
   assert.ok(cloudTasksRequired.includes("WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"));
   assert.ok(cloudTasksRequired.includes("DOCUMENT_PROCESSING_JOB_LEASE_MS"));
 });

@@ -597,6 +597,11 @@ const envSchema = z.object({
       ["GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_PROJECT is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       ["WORKER_TASKS_QUEUE_NAME", "WORKER_TASKS_QUEUE_NAME is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
       ["WORKER_TASKS_SERVICE_URL", "WORKER_TASKS_SERVICE_URL is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
+      // Crawl tasks only run on the crawler worker; the document worker answers them with a permanent 410.
+      [
+        "WORKER_TASKS_CRAWL_SERVICE_URL",
+        "WORKER_TASKS_CRAWL_SERVICE_URL is required when WORKER_DISPATCH_DRIVER is cloud-tasks",
+      ],
       [
         "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT",
         "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT is required when WORKER_DISPATCH_DRIVER is cloud-tasks",

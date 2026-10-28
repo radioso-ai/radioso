@@ -1,5 +1,9 @@
 # --- Service accounts ---
 
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
 data "google_service_account" "backend" {
   account_id = "${local.resource_name_prefix}-backend"
 }
@@ -1549,7 +1553,7 @@ resource "google_cloud_run_v2_service_iam_member" "document_worker_invoker" {
 
 resource "google_cloud_run_v2_service" "crawler_worker" {
   count    = var.deploy_services ? 1 : 0
-  name     = "${local.resource_name_prefix}-crawler-worker"
+  name     = local.crawler_worker_name
   location = var.region
 
   template {
@@ -1798,11 +1802,10 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
         name  = "WORKER_TASKS_SERVICE_URL"
         value = local.worker_tasks_service_url
       }
-      # WORKER_TASKS_CRAWL_SERVICE_URL is intentionally omitted on the crawler
-      # worker: it never enqueues crawl tasks (only consumes them), so the
-      # crawl dispatcher would just fall back to WORKER_TASKS_SERVICE_URL even
-      # if invoked. Omitting it also avoids a self-reference cycle on the
-      # crawler_worker resource.
+      env {
+        name  = "WORKER_TASKS_CRAWL_SERVICE_URL"
+        value = local.crawler_worker_url
+      }
       env {
         name  = "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
         value = data.google_service_account.worker_task_invoker.email

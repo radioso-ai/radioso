@@ -1243,6 +1243,12 @@ describe("routine defaults", () => {
         expect(reaskSection).not.toMatch(/Do not say that something is missing/);
       });
 
+      it("still keeps the reply from listing what the step already has", async () => {
+        const reaskSection = await renderWith({ missingSlots: [programSlot], exhausted: true });
+
+        expect(reaskSection).toContain("Do not list what you already have.");
+      });
+
       it("words the exhausted instruction from the shipped prompt", async () => {
         const reaskSection = await renderWith({ missingSlots: [], exhausted: true });
 

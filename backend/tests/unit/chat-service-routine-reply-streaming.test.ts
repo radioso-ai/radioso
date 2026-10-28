@@ -1498,45 +1498,122 @@ describe("ChatService gives a routine step that reads the visitor's page what th
     },
   );
 
-  it.each([
-    { stream: true, page: withContent, reads: [pageUrl, pageExcerpt] },
-    { stream: false, page: withContent, reads: [pageUrl, pageExcerpt] },
-    { stream: true, page: metadataOnly, reads: [pageUrl] },
-    { stream: true, page: undefined, reads: [] },
-  ])(
-    "gives a retrieval-fed step's grounded reply the page as quoted evidence beside the retrieved excerpts, never in its system prompt (streamed: $stream)",
-    async ({ stream, page, reads }) => {
-      const routine: Routine = {
-        id: "edition_booking",
-        rootStepId: "lookup",
-        steps: [{ id: "lookup", kind: "skill", skillName: retrievalContextSkillDefinition.name }, pageStep],
-        transitions: [{ from: "lookup", to: "answer", condition: "always" }],
-      };
-      const lookup = vi.fn(async () => ({
-        disposition: "settled" as const,
-        outcome: {
-          status: "context_ready",
-          outputs: { has_context: true },
-          metadata: { __retrievalResult: stagedRetrieval() },
-        } as unknown as SkillOutcome,
-      }));
-      const model = recordingModel(groundedEnvelope("The Autumn retreat runs 30 Oct to 2 Nov[[1]]. How many are coming?"));
-      const harness = await chatService({
-        routineProvider: skillStepRoutineProvider(retrievalContextSkillDefinition, { dispatch: lookup }, routine),
-        chatGateway: model.chatGateway,
-        order: [],
-      });
+  const retrievalThenPageRoutine: Routine = {
+    id: "edition_booking",
+    rootStepId: "lookup",
+    steps: [{ id: "lookup", kind: "skill", skillName: retrievalContextSkillDefinition.name }, pageStep],
+    transitions: [{ from: "lookup", to: "answer", condition: "always" }],
+  };
 
-      await runTurn(harness, { ...request("book this edition"), stream, pageContext: page });
-
-      expect(lookup).toHaveBeenCalledOnce();
-      const groundedReply = model.calls.find((call) => call.prompt.includes("Result 1 (Opening hours)"));
-      for (const expected of reads) {
-        expect(groundedReply?.prompt).toContain(expected);
+  /** A retrieval step that stages `retrieval`, run on the production stack beside a model answering `output`. */
+  const retrievalFedTurn = async (output: string, retrieval: RetrievalPipelineResult = stagedRetrieval()) => {
+    const lookup = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: {
+        status: retrieval.contexts.length > 0 ? "context_ready" : "no_context",
+        outputs: { has_context: retrieval.contexts.length > 0 },
+        metadata: { __retrievalResult: retrieval },
+      } as unknown as SkillOutcome,
+    }));
+    const model = recordingModel(output);
+    const harness = await chatService({
+      routineProvider: skillStepRoutineProvider(retrievalContextSkillDefinition, { dispatch: lookup }, retrievalThenPageRoutine),
+      chatGateway: model.chatGateway,
+      order: [],
+    });
+    /** Runs the turn and resolves with what the visitor was shown. */
+    const run = async (stream: boolean, page?: typeof metadataOnly): Promise<string> => {
+      const turn = { ...request("book this edition"), stream, ...(page ? { pageContext: page } : {}) };
+      if (!stream) {
+        return (await harness.service.answer(turn)).answer;
       }
-      expect(groundedReply?.systemPrompt).not.toContain(pageExcerpt);
-      // A page the routine reads as context and cannot get is not something the reply explains.
-      expect(groundedReply?.prompt).not.toContain("page_context_unavailable");
+      const observed: Observed = { order: [], events: [] };
+      expect(await drainTurn(harness.service.streamAnswer(turn), observed)).toBeUndefined();
+      const done = observed.events.find((event) => event.type === "done");
+      expect(chunkText(observed.events)).toBe(done?.type === "done" ? done.answer : undefined);
+      return chunkText(observed.events);
+    };
+    const groundedReply = () => model.calls.find((call) => call.prompt.includes("Result 1 (Opening hours)"));
+    return { run, lookup, model, groundedReply };
+  };
+
+  /** An answer with no cited claim: nothing in it is sourced from the retrieved excerpts. */
+  const uncitedEnvelope = (answer: string): string => JSON.stringify({
+    coverage: "answered_sufficient_evidence",
+    requestFocus: "the edition's price",
+    outcome: "answer",
+    answer,
+    v: 2,
+    claims: [],
+    suggestions: [],
+    grounding: "degraded",
+  });
+
+  it.each([true, false])(
+    "gives a retrieval-fed step's grounded reply the page content as current-page evidence beside the retrieved excerpts, never in its system prompt (streamed: %s)",
+    async (stream) => {
+      const turn = await retrievalFedTurn(groundedEnvelope("The Autumn retreat runs 30 Oct to 2 Nov[[1]]. How many are coming?"));
+
+      await turn.run(stream, withContent);
+
+      expect(turn.lookup).toHaveBeenCalledOnce();
+      expect(turn.groundedReply()?.prompt).toContain(pageUrl);
+      expect(turn.groundedReply()?.prompt).toContain(pageExcerpt);
+      expect(turn.groundedReply()?.systemPrompt).not.toContain(pageExcerpt);
     },
   );
+
+  it("keeps a page read that got only the page's identity out of a grounded reply's evidence, leaving it in the step instruction", async () => {
+    const turn = await retrievalFedTurn(groundedEnvelope("The studio is open nine to five on weekdays[[1]]. How many are coming?"));
+
+    await turn.run(true, metadataOnly);
+
+    expect(turn.groundedReply()?.prompt).not.toContain(pageUrl);
+    expect(turn.groundedReply()?.systemPrompt).toContain(`<page_context>Current page: "Autumn retreat" (${pageUrl})</page_context>`);
+  });
+
+  it.each([true, false])(
+    "replaces a grounded reply that cites no retrieved excerpt with a decline when the page read got only the page's identity (streamed: %s)",
+    async (stream) => {
+      const turn = await retrievalFedTurn(uncitedEnvelope("The Autumn retreat costs 400 euros. How many are coming?"));
+
+      const shown = await turn.run(stream, metadataOnly);
+
+      expect(shown).toBe("I couldn't find that.");
+    },
+  );
+
+  it("gives a grounded step with nothing retrieved the no-context decline when the page read got only the page's identity", async () => {
+    const turn = await retrievalFedTurn(
+      uncitedEnvelope("You're on the Autumn retreat page. How many are coming?"),
+      { ...stagedRetrieval(), contexts: [], prompt: "" },
+    );
+
+    const shown = await turn.run(false, metadataOnly);
+
+    expect(shown).toBe("I couldn't find that.");
+    // Nothing is generated from the page's URL and title alone.
+    expect(turn.model.calls.some((call) => call.prompt.includes(pageUrl))).toBe(false);
+  });
+
+  it.each([true, false])(
+    "lets a grounded reply state a fact from the page content without citing a retrieved excerpt (streamed: %s)",
+    async (stream) => {
+      const pageAnswer = "The Autumn retreat runs 30 Oct to 2 Nov. How many are coming?";
+      const turn = await retrievalFedTurn(uncitedEnvelope(pageAnswer));
+
+      const shown = await turn.run(stream, withContent);
+
+      expect(shown).toBe(pageAnswer);
+    },
+  );
+
+  it("gives a grounded reply no page-unavailable condition when the channel sends no page", async () => {
+    const turn = await retrievalFedTurn(groundedEnvelope("The studio is open nine to five on weekdays[[1]]. How many are coming?"));
+
+    await turn.run(true);
+
+    // A page the routine reads as context and cannot get is not something the reply explains.
+    expect(turn.groundedReply()?.prompt).not.toContain("page_context_unavailable");
+  });
 });

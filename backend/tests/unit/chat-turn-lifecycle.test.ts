@@ -32,6 +32,7 @@ import type {
   PageReadCapability,
   PageReadDecision,
   PageReadGateOutcome,
+  PageReadRequest,
 } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
 
 interface RecordedAudit {
@@ -123,7 +124,7 @@ const pageReadCapability: PageReadCapability = {
 };
 
 const pageReadSession = (input: {
-  decision: PageReadDecision;
+  decision: PageReadDecision<PageReadRequest>;
   gate: PageReadGateOutcome;
   source?: PageReadCandidateSource;
   capability?: PageReadCapability;
@@ -472,8 +473,19 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       gate: { kind: "unsupported_operation" },
       expectedLabels: { outcome: "unsupported_operation", operation: "transform" },
     },
+    // A request for the page as context labels the operation the gate served, not `context`.
+    {
+      decision: { required: true, operation: "context", resolvedRequest: "book this edition" },
+      gate: { kind: "capture", operation: "metadata", resolvedRequest: "book this edition" },
+      expectedLabels: { outcome: "capture", operation: "metadata" },
+    },
+    {
+      decision: { required: true, operation: "context", resolvedRequest: "book this edition" },
+      gate: { kind: "unavailable" },
+      expectedLabels: { outcome: "unavailable", operation: "context" },
+    },
   ] satisfies Array<{
-    decision: PageReadDecision;
+    decision: PageReadDecision<PageReadRequest>;
     gate: PageReadGateOutcome;
     expectedLabels: { outcome: PageReadGateOutcome["kind"]; operation: string };
   }>)(

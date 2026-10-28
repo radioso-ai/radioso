@@ -47,3 +47,14 @@ export const freezePageReadOutcome = (
  */
 export const pageReadOperationOf = (outcome: PageReadOutcome): PageReadRequest | null =>
   outcome.gate.kind === "capture" ? outcome.gate.operation : outcome.merged.decision.operation;
+
+/**
+ * Whether the page this turn captured is evidence an answer may state facts from without
+ * citing a retrieved excerpt. A read the turn itself asked for is, at the operation it named:
+ * the page's identity answers "what page am I on?". A request for the page as context is
+ * evidence only once the page's content was captured; its URL and title alone are context for
+ * the routine step that references them, not a source of facts.
+ */
+export const admitsPageEvidence = (outcome: PageReadOutcome | undefined): boolean =>
+  outcome?.gate.kind === "capture"
+  && !(outcome.merged.decision.operation === "context" && outcome.gate.operation === "metadata");

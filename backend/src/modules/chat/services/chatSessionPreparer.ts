@@ -60,7 +60,7 @@ import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, default
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
-import type { PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
+import { admitsPageEvidence, type PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
 import type { SessionPreparationTimings } from "./turnTraceEnvelope.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
@@ -909,9 +909,9 @@ export class ChatSessionPreparer {
   }
 
   /**
-   * Routine execution happens before direct/retrieval preparation re-runs the
-   * spine. Admit the frozen page fragment there without re-resolving or changing
-   * the already-prepared host variables.
+   * Routine execution happens before direct/retrieval preparation re-runs the spine. Admit the
+   * frozen page fragment there without re-resolving the prepared host variables; an answer
+   * renders it only when the read admits the page as evidence (`admitsPageEvidence`).
    */
   applyFrozenPageReadOutcome(session: PreparedSession): void {
     if (session.pageReadOutcome?.gate.kind !== "capture" || !session.pageContext) {
@@ -930,7 +930,7 @@ export class ChatSessionPreparer {
         ...session.resolvedContext.fragments.filter((fragment) => !isPageFragment(fragment)),
       ],
       renderFragments: [
-        ...page.renderFragments,
+        ...(admitsPageEvidence(session.pageReadOutcome) ? page.renderFragments : []),
         ...session.resolvedContext.renderFragments.filter((fragment) => !isPageFragment(fragment)),
       ],
       staged: [

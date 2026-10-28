@@ -299,11 +299,14 @@ imports from `services/`.
   returns the focused decline; elapsed time never closes the gate. When retrieved
   contexts exist, a valid `outcome=answer` result without a valid sourced assertion
   is discarded and rewritten through the focused decline path. Lexical overlap
-  never satisfies this delivery guard. A page-read turn whose typed gate captured
-  page content is exempt because that content is an admitted source outside the
-  citation index. Malformed results remain visible with a computed `degraded`
-  verdict, while partial answers with at least one valid assertion remain visible
-  and degraded.
+  never satisfies this delivery guard. A turn whose page read admits the page as
+  evidence (`admitsPageEvidence` in `services/pageRead/pageReadSessionOutcome.ts`)
+  is exempt because that page is an admitted source outside the citation index: any
+  read the turn asked for, and a routine's `context` read once the page content was
+  captured. A routine read that got only the URL and title admits nothing, so its
+  grounded replies keep the guard and the citation hold. Malformed results remain
+  visible with a computed `degraded` verdict, while partial answers with at least one
+  valid assertion remain visible and degraded.
   Raw envelope JSON is never emitted or persisted.
 - Coverage verdict head (#1260): the grounded envelope's `coverage`,
   `requestFocus`, and `outcome` fields precede `answer` in schema order, so the
@@ -522,7 +525,8 @@ imports from `services/`.
   `services/routines/pageReadAwareRoutineRunner.ts`
   binds the routine to the page excerpt the turn may read, and commits that capture to
   the session as the reply of a turn the routine keeps starts being generated, so a
-  grounded step reply, which reads the session, reads the page too. A routine asks the
+  grounded step reply, which reads the session, reads the page content too (a read that
+  got only the URL and title adds no current-page block there). A routine asks the
   gate for the page as `context` (`services/pageRead/pageReadDecision.ts`), which the
   gate serves at the richest operation the channel supports.
 - Routine endings: `services/routineEndingEffects.ts` is the one place every chat

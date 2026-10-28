@@ -65,12 +65,13 @@ const filledSlotsLine = (routine: Routine, variables: Record<string, unknown>): 
   return filled.length > 0 ? [`Slots that already have a value from earlier turns: ${filled.map((slot) => slot.key).join(", ")}.`] : [];
 };
 
-// Read as a reply, not as free-standing text (#1664). Otherwise a bare "30 ottobre" with an
-// arrival and a departure slot landed in either one, and a "yes" to dates the step had just
-// offered filled neither, since the message itself states no value.
-const replyReadingRules = [
-  "Read the latest message as a reply to your last message. Return a value for a slot only when the message, read that way, gives it for that slot.",
-  "A value that could fill more than one slot and is given without saying which one it is for goes in none of them. One value goes into two slots only when the message gives it for both.",
+// Without these (#1664), a bare "30 ottobre" with an arrival and a departure slot landed in
+// either one, and a "yes" to dates the step had just offered filled neither, since the
+// message itself states no value. Framing the whole message as a reply to the last question
+// went too far: answers were mapped onto whatever was asked ("1 novembre" filled the course
+// after "which course?"), and a date the opening message gave for another slot was dropped.
+const slotAssignmentRules = [
+  "A value that could fill more than one slot goes in none of them unless the message or the conversation before it makes clear which one it is for. One value goes into two slots only when the message gives it for both.",
   "When your last message proposed values for slots and the latest message accepts them, in any words, those values are given this turn. Return each proposed value for its slot, replacing any value the slot already holds. A value the user changes while accepting is the one to keep.",
 ];
 
@@ -85,7 +86,7 @@ const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, t
     "",
     "Extract every declared slot present in the latest user message in one pass, whether or not the current step asks for it.",
     "Judge each slot on its own: a slot's description applies only to that slot and never stops you from extracting another.",
-    ...replyReadingRules,
+    ...slotAssignmentRules,
     "A condition that refers to a slot as {{slot.<key>}} holds only when that slot has a value, given in the latest message or earlier in the conversation; when you return a value for every slot such a condition refers to, it holds.",
     ...(routine.slots.some((slot) => slot.type === "date") ? [dateRule(today)] : []),
     'Return extracted values in "variables" keyed by each slot\'s key; omit slots not provided or accepted this turn.',

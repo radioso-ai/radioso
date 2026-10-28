@@ -82,12 +82,12 @@ slots already hold a value from earlier turns (keys only), and it lists the
 values it extracts before it picks a condition, so a condition such as "the user
 provided {{slot.arrival}}" is judged against what it just captured.
 
-The selector reads the message as a reply to the agent's last message, and a
-value goes only to the slot the message gives it for. After "When do you
-arrive?", "30 October" fills the arrival. With no question before it, a bare "30
-October" fills neither the arrival nor the departure, since it doesn't say which
-one it is, so both are still asked for. One value fills two slots only when the
-message gives it for both. When the agent's last message proposed values ("the
+A value that could fill more than one slot goes only to the slot that the
+message, or the conversation before it, says it is for. After "When do you
+arrive?", "30 October" fills the arrival, and once the arrival is given, "1
+November" fills the departure. With nothing to say which, a bare "30 October"
+fills neither the arrival nor the departure, so both are still asked for. One
+value fills two slots only when the message gives it for both. When the agent's last message proposed values ("the
 course runs from 30 October to 2 November: shall I book those dates?"), a reply
 that accepts them, in any words, gives those values this turn: "sì, confermo"
 fills the arrival and the departure with the proposed dates, replacing whatever

@@ -604,6 +604,7 @@ describe("runtime configuration", () => {
       WORKER_TASKS_QUEUE_LOCATION: "europe-west1",
       WORKER_TASKS_QUEUE_NAME: "document-processing",
       WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
+      WORKER_TASKS_CRAWL_SERVICE_URL: "https://crawler-worker.example.com",
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "tasks@example.iam.gserviceaccount.com",
     } as const;
 
@@ -618,6 +619,21 @@ describe("runtime configuration", () => {
       WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
     });
     expect(env.WORKER_TASK_AUTH_TOKEN).toBe("0123456789abcdef0123456789abcdef");
+  });
+
+  // The document worker answers crawl pushes with a permanent 410, so a crawl task
+  // aimed at WORKER_TASKS_SERVICE_URL is dropped and the crawl stalls after one slice.
+  it("requires the crawler worker URL for Cloud Tasks dispatch", () => {
+    expect(() => getEnv({
+      ...baseEnv,
+      WORKER_DISPATCH_DRIVER: "cloud-tasks",
+      GOOGLE_CLOUD_PROJECT: "radioso-test",
+      WORKER_TASKS_QUEUE_LOCATION: "europe-west1",
+      WORKER_TASKS_QUEUE_NAME: "document-processing",
+      WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "tasks@example.iam.gserviceaccount.com",
+      WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
+    })).toThrow(/WORKER_TASKS_CRAWL_SERVICE_URL/);
   });
 
   it("requires AMQP broker settings when AMQP worker dispatch is enabled", () => {
@@ -967,7 +983,10 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('command = ["npm", "run", "start:crawler-worker-server"]');
     expect(computeTf).toContain('resource "google_cloud_run_v2_service_iam_member" "crawler_worker_invoker"');
     expect(computeTf).toContain('value = try(google_cloud_run_v2_service.crawler_worker[0].uri, "")');
-    expect(computeTf).toContain('name  = "WORKER_TASKS_CRAWL_SERVICE_URL"');
+    // The crawler worker dispatches its own slice continuations, so it needs its URL too. It
+    // reads the deterministic run.app URL because it cannot reference its own resource.
+    expect((computeTf.match(/name\s+=\s+"WORKER_TASKS_CRAWL_SERVICE_URL"/g) ?? [])).toHaveLength(3);
+    expect(computeTf).toContain("value = local.crawler_worker_url");
     expect((computeTf.match(/name\s+=\s+"WORKER_TASK_AUTH_TOKEN"/g) ?? [])).toHaveLength(3);
     expect((computeTf.match(/secret {2}= google_secret_manager_secret\.secrets\["worker-task-auth-token"\]\.secret_id/g) ?? [])).toHaveLength(3);
     expect(computeTf).toContain('network_interfaces {');

@@ -14,10 +14,14 @@ locals {
   resend_channel_region = startswith(var.region, "europe-") ? "eu-west-1" : "us-east-1"
   # The document worker self-references its own public URL for Cloud Tasks
   # retry dispatch, so Terraform cannot use a direct reference and we keep the
-  # placeholder + override pattern. The crawler worker URL has no such cycle:
-  # the backend and document worker reference google_cloud_run_v2_service.crawler_worker
-  # directly, and the crawler worker itself does not enqueue crawl tasks.
+  # placeholder + override pattern. The backend and document worker reference
+  # google_cloud_run_v2_service.crawler_worker directly.
   worker_tasks_service_url = coalesce(var.worker_tasks_service_url_override, "https://example.invalid")
+  # The crawler worker enqueues its own crawl slice continuations, so it needs its
+  # URL as well. Reading the resource's uri there would be a self-reference cycle,
+  # so it gets Cloud Run's deterministic URL, built from name, project number and region.
+  crawler_worker_name = "${local.resource_name_prefix}-crawler-worker"
+  crawler_worker_url  = "https://${local.crawler_worker_name}-${data.google_project.current.number}.${var.region}.run.app"
   document_worker_recovery_schedule = coalesce(
     var.document_worker_recovery_schedule,
     var.worker_recovery_schedule,

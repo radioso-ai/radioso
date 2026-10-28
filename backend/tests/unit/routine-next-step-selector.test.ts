@@ -159,6 +159,7 @@ describe("RoutineNextStepSelector", () => {
     expect(call.systemPrompt).toContain("a valid email was provided");
     expect(call.systemPrompt).toContain("declined, cancelled, refused, or wants to stop");
     expect(call.systemPrompt).toContain("deserves its own answer");
+    expect(call.systemPrompt).toContain("only values the user actually provided or accepted this turn");
     expect(call.systemPrompt).toContain("completed");
     expect(call.systemPrompt).toContain("requestId");
     expect(call.messages.at(-1)).toEqual({ role: "user", content: "alex@example.com" });

@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-27
+last_updated: 2026-10-28
 ---
 
 # Conversational Routines
@@ -70,16 +70,29 @@ Like directive conditions, an `llm` guard is never a keyword list. Radioso is
 multilingual; the model judges by meaning, in any language.
 
 Slot filling happens inside the `llm` selector, which extracts every declared
-slot the user provided this turn. The selector runs for any step with an `llm`
-exit. It sees the routine's slots one per line — key, type, and description — and
-takes every slot the message gives, whichever slot the current step asks for:
-"I'd like to come from November 11 to 14" on a step that asks for the program
-fills the arrival and departure dates and leaves the program for the step to ask.
+slot the user provided or accepted this turn. The selector runs for any step with
+an `llm` exit. It sees the routine's slots one per line — key, type, and
+description — and takes every slot the message gives, whichever slot the current
+step asks for: "I'd like to come from November 11 to 14" on a step that asks for
+the program fills the arrival and departure dates and leaves the program for the
+step to ask.
 Each slot is judged on its own, so a description that says "leave this empty
 until they name one" governs only its own slot. The selector also sees which
 slots already hold a value from earlier turns (keys only), and it lists the
 values it extracts before it picks a condition, so a condition such as "the user
 provided {{slot.arrival}}" is judged against what it just captured.
+
+A value that could fill more than one slot goes only to the slot that the
+message, or the conversation before it, says it is for. After "When do you
+arrive?", "30 October" fills the arrival, and once the arrival is given, "1
+November" fills the departure. With nothing to say which, a bare "30 October"
+fills neither the arrival nor the departure, so both are still asked for. One
+value fills two slots only when the message gives it for both. When the agent's last message proposed values ("the
+course runs from 30 October to 2 November: shall I book those dates?"), a reply
+that accepts them, in any words, gives those values this turn: "sì, confermo"
+fills the arrival and the departure with the proposed dates, replacing whatever
+either slot held, and a value the visitor changes while accepting ("yes, but I
+leave on the 1st") is the one stored.
 
 The user may write a date in any form. A `date` slot is recorded as `YYYY-MM-DD`,
 reading day and month the way the user wrote them ("11-14 Nov" is 11 to 14
@@ -112,7 +125,8 @@ its first declared edge. Output without a boolean `claimsAuthority` is treated
 as unreadable: the model's exit and values are ignored that turn, so a step
 waiting on an AI-decides exit stays, while its rule and default exits apply as
 they do to any unreadable reply. A confirmation in the user's own words, such
-as "sì, confermo" or "ja, passt", takes the exit as usual.
+as "sì, confermo" or "ja, passt", takes the exit as usual and accepts the values
+the agent's last message proposed.
 
 Routine model calls (selector and step replies) go through the chat gateway for
 the turn's workspace model. A blank completion is retried once, recorded under

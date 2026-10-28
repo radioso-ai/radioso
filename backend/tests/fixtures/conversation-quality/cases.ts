@@ -64,6 +64,35 @@ const contactFormAwaitingName: NonNullable<ConversationQualityCase["routineStart
   status: "active",
 };
 
+/** The Italian edition page the `book-edition` cases run on; its text gives the edition's dates. */
+const ognissantiEditionPage: NonNullable<ConversationQualityCase["pageContext"]> = {
+  pageUrl: "https://example.invalid/corsi/ognissanti-per-la-pace",
+  pageTitle: "Corso residenziale Ognissanti per la pace",
+  pageLocale: "it",
+  browserLocale: "it-IT",
+  content:
+    "Corso residenziale Ognissanti per la pace. Edizione d'autunno: dal 30 ottobre al 2 novembre 2026. Arrivo dalle 15:00, partenza dopo pranzo.",
+};
+
+/** The dates step has offered the edition's dates from the page and asked the visitor to confirm them. */
+const ognissantiDatesOffered: NonNullable<ConversationQualityCase["history"]> = [
+  { role: "user", content: "Vorrei prenotare questo corso." },
+  {
+    role: "assistant",
+    content: "Volentieri! Il corso residenziale Ognissanti per la pace va dal 30 ottobre al 2 novembre 2026: confermi queste date?",
+  },
+];
+
+/** The `book-edition` routine waiting on its dates step, with the course already named. */
+const onOgnissantiDatesStep = (
+  variables: Record<string, unknown> = {},
+): NonNullable<ConversationQualityCase["routineStartState"]> => ({
+  routineId: BOOK_EDITION_ROUTINE_ID,
+  path: ["program", "dates"],
+  variables: { program: "Corso residenziale Ognissanti per la pace", ...variables },
+  status: "active",
+});
+
 /** The mountain yoga course's fee and room rates, none of which belongs in an answer about another course. */
 const MOUNTAIN_COURSE_FIGURES_ABSENT: ConversationQualityCase["assertions"] = ["345", "310", "255", "195"].map((figure) => ({
   type: "answer_does_not_contain",
@@ -707,14 +736,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       status: "active",
     },
     query: "Il corso residenziale Ognissanti per la pace",
-    pageContext: {
-      pageUrl: "https://example.invalid/corsi/ognissanti-per-la-pace",
-      pageTitle: "Corso residenziale Ognissanti per la pace",
-      pageLocale: "it",
-      browserLocale: "it-IT",
-      content:
-        "Corso residenziale Ognissanti per la pace. Edizione d'autunno: dal 30 ottobre al 2 novembre 2026. Arrivo dalle 15:00, partenza dopo pranzo.",
-    },
+    pageContext: ognissantiEditionPage,
     clientContextCapabilities: contentPageReadCapabilities,
     assertions: [
       { type: "routine_step_reached", routineId: BOOK_EDITION_ROUTINE_ID, stepId: "dates" },
@@ -772,33 +794,17 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   {
     id: "routine-reask-asks-without-announcing-gap",
     name: "A re-asked step asks for the rest without announcing what is missing",
-    tags: ["routine", "reask", "reask-framing", "multilingual"],
-    history: [
-      { role: "user", content: "Vorrei prenotare questo corso." },
-      {
-        role: "assistant",
-        content: "Volentieri! Il corso residenziale Ognissanti per la pace va dal 30 ottobre al 2 novembre 2026: confermi queste date?",
-      },
-    ],
-    routineStartState: {
-      routineId: BOOK_EDITION_ROUTINE_ID,
-      path: ["program", "dates"],
-      variables: { program: "Corso residenziale Ognissanti per la pace" },
-      status: "active",
-    },
+    tags: ["routine", "reask", "reask-framing", "slot-filling", "multilingual"],
+    history: ognissantiDatesOffered,
+    routineStartState: onOgnissantiDatesStep(),
     query: "Arrivo il 30 ottobre",
-    pageContext: {
-      pageUrl: "https://example.invalid/corsi/ognissanti-per-la-pace",
-      pageTitle: "Corso residenziale Ognissanti per la pace",
-      pageLocale: "it",
-      browserLocale: "it-IT",
-      content:
-        "Corso residenziale Ognissanti per la pace. Edizione d'autunno: dal 30 ottobre al 2 novembre 2026. Arrivo dalle 15:00, partenza dopo pranzo.",
-    },
+    pageContext: ognissantiEditionPage,
     clientContextCapabilities: contentPageReadCapabilities,
     assertions: [
       { type: "routine_step_reached", routineId: BOOK_EDITION_ROUTINE_ID, stepId: "dates" },
       { type: "routine_slots_filled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["arrival"] },
+      // #1664: the arrival date is not copied into the departure.
+      { type: "routine_slots_unfilled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["departure"] },
       { type: "answer_contains", pattern: "\\?", matchMode: "regex" },
       // The Italian ways the reply announced the gap in production.
       { type: "answer_does_not_contain", pattern: "\\bmanca|\\bmancano|serv[eo]no? ancora|ho ancora bisogno", matchMode: "regex" },
@@ -807,6 +813,56 @@ export const conversationQualityCases: ConversationQualityCase[] = [
         expectedAnswer: "Perfetto, arrivo il 30 ottobre. E quando riparti? L'edizione termina il 2 novembre.",
         criteria: "Acknowledges the arrival date and asks when the visitor leaves, optionally offering the edition's end date. Does not announce that something is missing or still needed, and does not list what was already collected.",
       },
+    ],
+  },
+  // #1664: a bare date fills only a slot the message gives it for. The routine has an arrival
+  // and a departure date; the opening message names one date without saying which it is, so it
+  // never lands in the departure, as it did in production.
+  {
+    id: "routine-bare-date-leaves-departure-empty",
+    name: "A bare date in the opening message does not fill the departure",
+    tags: ["routine", "slot-filling", "multilingual"],
+    query: "Vorrei prenotare questo corso per il 30 ottobre",
+    pageContext: ognissantiEditionPage,
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "turn_activates_routine", routineId: BOOK_EDITION_ROUTINE_ID },
+      { type: "routine_slots_unfilled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["departure"] },
+    ],
+  },
+  // #1664: accepting the dates a step offered fills them. The dates step stated the edition's
+  // dates and asked the visitor to confirm; a bare confirmation states no value, yet it gives
+  // both dates, so the routine completes.
+  {
+    id: "routine-acceptance-fills-offered-dates",
+    name: "Accepting the dates a step offered fills both date slots",
+    tags: ["routine", "slot-filling", "multilingual"],
+    history: ognissantiDatesOffered,
+    routineStartState: onOgnissantiDatesStep(),
+    query: "Sì, confermo",
+    pageContext: ognissantiEditionPage,
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "routine_slots_filled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["arrival", "departure"] },
+      { type: "routine_step_reached", routineId: BOOK_EDITION_ROUTINE_ID, stepId: "done" },
+    ],
+  },
+  // #1664: accepting offered dates replaces a date an earlier turn put in the wrong slot. The
+  // departure already holds the arrival date; the confirmation sets it to the offered end date.
+  // Trace assertions read slot keys, never values, so these pass whether or not the departure
+  // was replaced; that it ends up as 2026-11-02 is checked by hand.
+  {
+    id: "routine-acceptance-replaces-wrong-date",
+    name: "Accepting the dates a step offered replaces a date held in the wrong slot",
+    tags: ["routine", "slot-filling", "multilingual"],
+    history: ognissantiDatesOffered,
+    routineStartState: onOgnissantiDatesStep({ departure: "2026-10-30" }),
+    query: "Sì, confermo",
+    pageContext: ognissantiEditionPage,
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "routine_slots_filled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["arrival", "departure"] },
+      { type: "routine_step_reached", routineId: BOOK_EDITION_ROUTINE_ID, stepId: "done" },
     ],
   },
   quickReplyCase({

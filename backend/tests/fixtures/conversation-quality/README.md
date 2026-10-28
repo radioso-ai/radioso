@@ -16,7 +16,7 @@ repo-committed regression suite you run from the CLI.
 | `routines.ts` | 5 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, and `book-edition`, whose dates step references `{{context.page_context}}` |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 53 seed cases |
+| `cases.ts` | the 56 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -24,7 +24,8 @@ repo-committed regression suite you run from the CLI.
 Two layers (see `src/modules/eval/suite/`):
 
 - **Deterministic (no LLM, gate every run):** `turn_route`, `turn_uses_skill`,
-  `turn_activates_routine`, `routine_step_reached`, `routine_yielded`, `turn_asks_clarification`,
+  `turn_activates_routine`, `routine_step_reached`, `routine_slots_filled`,
+  `routine_slots_unfilled`, `routine_yielded`, `turn_asks_clarification`,
   `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
   `turn_directive_committed`, plus the product `retrieval_*`, `answer_cites_document`,
   `answer_contains` / `answer_does_not_contain`.
@@ -82,6 +83,24 @@ Run only these cases with:
 
 ```bash
 pnpm run evals -- --tag directive-withholds
+```
+
+## Slot-filling cases
+
+The `slot-filling`-tagged cases run the `book-edition` routine on an Italian course page, where
+the routine holds an arrival and a departure date. A date the visitor gives without saying which
+one it is ("Vorrei prenotare per 30 ottobre") leaves the departure empty, and "Arrivo il 30
+ottobre" fills only the arrival; `routine_slots_unfilled` checks the slot stayed empty. A bare
+"Sì, confermo" to the dates the step offered fills both and completes the routine.
+
+`routine-acceptance-replaces-wrong-date` starts with the departure already holding the arrival
+date. Trace assertions read slot keys, never values, so the case passes whether or not the
+confirmation replaced it; that the departure ends up as `2026-11-02` is checked by hand.
+
+Run only these cases with:
+
+```bash
+pnpm run evals -- --tag slot-filling
 ```
 
 ## Review cases

@@ -83,6 +83,7 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
     const selected = this.promptContextSelectorService.selectInStages(rangeAnswerSelectionStages({
       ranked: reranked.contexts,
       rangeChunkIds: plan.rangeChunkIds,
+      reservedEligibleChunkIds: plan.reservedEligibleChunkIds,
       reservedCount: dateRangeReservedOutsidePassages,
       maxPassages: dateRangeListingContextTopK,
       minPassages: RETRIEVAL_BEHAVIOR.finalContextTopK,

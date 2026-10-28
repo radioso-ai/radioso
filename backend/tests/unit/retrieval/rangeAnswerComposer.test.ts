@@ -23,6 +23,10 @@ const candidate = (chunkId: string, metadata: Record<string, unknown> = {}, docu
 });
 const inDecember = (chunkId: string, documentId?: string) =>
   candidate(chunkId, { dateFrom: "2026-12-10", dateTo: "2026-12-10" }, documentId);
+// Dated entirely before the requested December range: a passage from a different period's
+// digest, the shape of passage this fix keeps out of the reserved slots.
+const inNovember = (chunkId: string, documentId?: string) =>
+  candidate(chunkId, { dateFrom: "2026-11-10", dateTo: "2026-11-16" }, documentId);
 const ranked = (candidates: RetrievedCandidate[]): RerankedCandidate[] =>
   candidates.map((entry, index) => ({ ...entry, relevanceScore: 1 - index / 100, rerankPosition: index }));
 const ids = (entries: Array<{ chunkId: string }>) => entries.map((entry) => entry.chunkId);
@@ -62,6 +66,68 @@ describe("composeRangeAnswerPool", () => {
 
     expect(ids(plan.pool)).toEqual(["range-1", "a", "b", "c", "d"]);
   });
+
+  it("treats a passage overlapping the range's edge as within it, not dated elsewhere", () => {
+    // Starts in November, runs into the requested December range: an overlap, not an outside date.
+    const overlapping = candidate("overlap", { dateFrom: "2026-11-28", dateTo: "2026-12-02" });
+    const plan = composeRangeAnswerPool({
+      rangeCandidates: [],
+      generalCandidates: [overlapping, candidate("policy")],
+      range: december,
+      poolSize: 10,
+      reservedCount: 4,
+    });
+
+    expect(plan.rangeChunkIds.has("overlap")).toBe(true);
+    expect(plan.reservedEligibleChunkIds.has("overlap")).toBe(false);
+  });
+
+  it("treats an open-ended date (only one of dateFrom/dateTo known) as undated, not dated elsewhere", () => {
+    const openStart = candidate("open-start", { dateFrom: "2026-01-01" });
+    const openEnd = candidate("open-end", { dateTo: "2026-02-01" });
+    const plan = composeRangeAnswerPool({
+      rangeCandidates: [],
+      generalCandidates: [openStart, openEnd],
+      range: december,
+      poolSize: 10,
+      reservedCount: 4,
+    });
+
+    expect(plan.reservedEligibleChunkIds.has("open-start")).toBe(true);
+    expect(plan.reservedEligibleChunkIds.has("open-end")).toBe(true);
+  });
+
+  it("treats an unparseable date as undated, not dated elsewhere", () => {
+    const unparseable = candidate("garbage-date", { dateFrom: "not-a-date", dateTo: "also-not-a-date" });
+    const plan = composeRangeAnswerPool({
+      rangeCandidates: [],
+      generalCandidates: [unparseable],
+      range: december,
+      poolSize: 10,
+      reservedCount: 4,
+    });
+
+    expect(plan.reservedEligibleChunkIds.has("garbage-date")).toBe(true);
+  });
+
+  it("prefers undated candidates over dated-elsewhere ones for a tight outside pool share", () => {
+    // The dated-elsewhere passage ranks ahead of the undated ones, as a digest for an
+    // adjacent period often does, but the tight outside share still favors the undated ones.
+    const digest = inNovember("november-digest");
+    const general = [digest, candidate("policy"), candidate("faq"), candidate("venue"), candidate("glossary")];
+    const plan = composeRangeAnswerPool({
+      rangeCandidates: Array.from({ length: 50 }, (_value, index) => inDecember(`range-${index}`)),
+      generalCandidates: general,
+      range: december,
+      poolSize: 50,
+      reservedCount: 4,
+    });
+
+    const outsidePool = ids(plan.pool).filter((chunkId) => !plan.rangeChunkIds.has(chunkId));
+    expect(outsidePool).toEqual(["policy", "faq", "venue", "glossary"]);
+    expect(outsidePool).not.toContain("november-digest");
+    expect(plan.reservedEligibleChunkIds.has("november-digest")).toBe(false);
+  });
 });
 
 describe("range answer selection", () => {
@@ -73,6 +139,7 @@ describe("range answer selection", () => {
     const stages = rangeAnswerSelectionStages({
       ranked: ranked(plan.pool),
       rangeChunkIds: plan.rangeChunkIds,
+      reservedEligibleChunkIds: plan.reservedEligibleChunkIds,
       reservedCount: 4,
       maxPassages: 20,
       minPassages: 12,
@@ -102,6 +169,63 @@ describe("range answer selection", () => {
 
     expect(selected).toHaveLength(12);
     expect(ids(selected).filter((chunkId) => chunkId.startsWith("range-"))).toHaveLength(2);
+  });
+
+  // The issue's acceptance list, at the selection stage: a well-covered range keeps
+  // dated-elsewhere passages out of the reserve; a sparse range still fills from them;
+  // undated passages keep their reserved share regardless.
+  describe("undated vs. dated-elsewhere outside the range", () => {
+    const run = (input: { rangeCount: number; outside: RetrievedCandidate[] }) => {
+      const rangeCandidates = Array.from({ length: input.rangeCount }, (_value, index) => inDecember(`range-${index}`));
+      const plan = composeRangeAnswerPool({
+        rangeCandidates,
+        generalCandidates: input.outside,
+        range: december,
+        poolSize: 50,
+        reservedCount: 4,
+      });
+      const stages = rangeAnswerSelectionStages({
+        ranked: ranked(plan.pool),
+        rangeChunkIds: plan.rangeChunkIds,
+        reservedEligibleChunkIds: plan.reservedEligibleChunkIds,
+        reservedCount: 4,
+        maxPassages: 20,
+        minPassages: 12,
+      });
+      return new PromptContextSelectorService(100_000).selectInStages(stages);
+    };
+
+    it("keeps a dated-elsewhere passage out of a well-covered range's reserved slots, even outranking the undated ones", () => {
+      const digest = inNovember("november-digest");
+      const selected = run({
+        rangeCount: 40,
+        outside: [digest, candidate("policy"), candidate("faq"), candidate("venue"), candidate("glossary")],
+      });
+
+      expect(ids(selected)).not.toContain("november-digest");
+      expect(ids(selected).filter((chunkId) => ["policy", "faq", "venue", "glossary"].includes(chunkId)))
+        .toEqual(["policy", "faq", "venue", "glossary"]);
+    });
+
+    it("fills a sparse range's answer with a dated-elsewhere passage when nothing undated is available", () => {
+      const digest = inNovember("november-digest");
+      const selected = run({ rangeCount: 2, outside: [digest] });
+
+      expect(ids(selected)).toContain("november-digest");
+      expect(selected).toHaveLength(3);
+    });
+
+    it("gives undated passages their reserved share even when a dated-elsewhere passage is also present", () => {
+      const digest = inNovember("november-digest");
+      const selected = run({
+        rangeCount: 40,
+        outside: [candidate("policy"), digest, candidate("venue"), candidate("glossary"), candidate("faq")],
+      });
+
+      expect(ids(selected).filter((chunkId) => chunkId !== "november-digest" && !chunkId.startsWith("range-")))
+        .toEqual(["policy", "venue", "glossary", "faq"]);
+      expect(ids(selected)).not.toContain("november-digest");
+    });
   });
 });
 

@@ -145,15 +145,15 @@ describe("date range answers under the production retrieval settings", () => {
   const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
 
   it("holds the date listing limit of passages for a busy month, and the trace lists every one", async () => {
-    const outOfRange = Array.from({ length: 6 }, (_value, index) =>
+    // Undated general context (no metadata): the kind of passage the reserve exists for.
+    const generalContext = Array.from({ length: 6 }, (_value, index) =>
       passage(`february-${index + 1}`, {
-        title: `February course ${index + 1}`,
-        metadata: { dateFrom: "2027-02-10", dateTo: "2027-02-10" },
+        title: `General page ${index + 1}`,
         similarity: 0.6 - index / 100,
       }));
     const { result, selection } = await runJanuaryTurn({
       rangeCount: 40,
-      semanticHits: [...outOfRange, januaryCourse(0, 0.55), januaryCourse(1, 0.54)],
+      semanticHits: [...generalContext, januaryCourse(0, 0.55), januaryCourse(1, 0.54)],
     });
 
     expect(result.contexts).toHaveLength(cap);
@@ -162,6 +162,38 @@ describe("date range answers under the production retrieval settings", () => {
     // A pure date question keeps all but the reserved passages for the month's events.
     const januaryContexts = result.contexts.filter((context) => context.title.startsWith("January course"));
     expect(januaryContexts).toHaveLength(cap - reserved);
+  });
+
+  it("keeps a passage dated in another period out of the reserve, even when it outranks the undated passages", async () => {
+    // A digest for an adjacent period: dated entirely outside January, and the shape of
+    // passage this fix keeps out of the reserve regardless of how well it matches the query.
+    const adjacentPeriodDigest = passage("february-digest", {
+      title: "February digest",
+      metadata: { dateFrom: "2027-02-01", dateTo: "2027-02-28" },
+      similarity: 0.95,
+    });
+    const venue = passage("venue", { title: "Venue page", similarity: 0.5 });
+    const { result } = await runJanuaryTurn({
+      rangeCount: 40,
+      semanticHits: [adjacentPeriodDigest, venue],
+    });
+
+    expect(result.contexts.map((context) => context.title)).not.toContain("February digest");
+    expect(result.contexts.map((context) => context.title)).toContain("Venue page");
+  });
+
+  it("fills a sparse month's answer with a passage dated in another period when nothing undated is available", async () => {
+    const adjacentPeriodDigest = passage("february-digest", {
+      title: "February digest",
+      metadata: { dateFrom: "2027-02-01", dateTo: "2027-02-28" },
+      similarity: 0.95,
+    });
+    const { result } = await runJanuaryTurn({
+      rangeCount: 2,
+      semanticHits: [adjacentPeriodDigest],
+    });
+
+    expect(result.contexts.map((context) => context.title)).toContain("February digest");
   });
 
   it("keeps the best match outside the range in the answer when a busy range would fill it", async () => {

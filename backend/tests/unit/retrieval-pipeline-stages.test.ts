@@ -552,38 +552,56 @@ describe("retrieval pipeline stages", () => {
     // Runs a listing question for `range` through retrieval, preparation, and context
     // selection over `inRangeCount` courses in December plus 15 sooner November courses
     // that the semantic search ranks above every December course.
+    const course = (id: string, date: string, similarity: number): RetrievedChunk => ({
+      chunkId: `chunk-${id}`,
+      documentId: `doc-${id}`,
+      title: `Course ${id}`,
+      content: `Course ${id} meets on ${date}. Bring a mat and arrive ten minutes early.`,
+      searchText: `Course ${id} ${date}`,
+      similarity,
+      chunkIndex: 0,
+      startOffset: 0,
+      endOffset: 80,
+      metadata: { dateFrom: date, dateTo: date },
+    });
+    // Undated general context, like a venue or pricing page: the kind of passage the
+    // range answer's reserved slots exist for.
+    const generalContextPage = (id: string, similarity: number): RetrievedChunk => ({
+      chunkId: `chunk-${id}`,
+      documentId: `doc-${id}`,
+      title: `Page ${id}`,
+      content: `Page ${id}: arrive ten minutes early and bring a mat.`,
+      searchText: `Page ${id}`,
+      similarity,
+      chunkIndex: 0,
+      startOffset: 0,
+      endOffset: 80,
+    });
+
+    // Runs a listing question for `range` through retrieval, preparation, and context
+    // selection over `inRangeCount` courses in December plus 15 undated general-context
+    // pages (the "outside" group, unless `outsideCandidates` overrides it) that the
+    // semantic search ranks above every December course.
     const answerContextsForRange = async (input: {
       range: { dateFrom: string; dateTo: string };
       inRangeCount: number;
       rewrite?: Record<string, unknown>;
+      outsideCandidates?: RetrievedChunk[];
     }) => {
       const clock = () => new Date("2026-10-21T12:00:00.000Z");
-      const course = (id: string, date: string, similarity: number): RetrievedChunk => ({
-        chunkId: `chunk-${id}`,
-        documentId: `doc-${id}`,
-        title: `Course ${id}`,
-        content: `Course ${id} meets on ${date}. Bring a mat and arrive ten minutes early.`,
-        searchText: `Course ${id} ${date}`,
-        similarity,
-        chunkIndex: 0,
-        startOffset: 0,
-        endOffset: 80,
-        metadata: { dateFrom: date, dateTo: date },
-      });
       const rangeDays = Math.round(
         (Date.parse(`${input.range.dateTo}T00:00:00Z`) - Date.parse(`${input.range.dateFrom}T00:00:00Z`)) / 86_400_000,
       ) + 1;
       const firstDay = Number(input.range.dateFrom.slice(8, 10));
       const inRangeCourses = Array.from({ length: input.inRangeCount }, (_value, index) =>
         course(`december-${index + 1}`, `2026-12-${String(firstDay + (index % rangeDays)).padStart(2, "0")}`, 0));
-      const novemberCourses = Array.from({ length: 15 }, (_value, index) =>
-        course(`november-${index + 1}`, `2026-11-${String(2 + index).padStart(2, "0")}`, 0.9 - index / 100));
-      const corpus = [...inRangeCourses, ...novemberCourses];
+      const outsideCandidates = input.outsideCandidates ?? Array.from({ length: 15 }, (_value, index) =>
+        generalContextPage(`november-${index + 1}`, 0.9 - index / 100));
       const dateOf = (chunk: RetrievedChunk) => String(chunk.metadata?.dateFrom);
       const temporal: TemporalCandidateRetrievalPort = {
         async findInWindow(lookup) {
           const window = lookup.window;
-          return corpus
+          return inRangeCourses
             .filter((chunk) => window.kind === "requested_range"
               ? dateOf(chunk) >= window.range.dateFrom && dateOf(chunk) <= window.range.dateTo
               : dateOf(chunk) >= window.today)
@@ -599,7 +617,7 @@ describe("retrieval pipeline stages", () => {
         },
         { async search() { return []; } },
         lexicalSearchStub({ async search() { return []; } }),
-        { async hydrate() { return novemberCourses; } },
+        { async hydrate() { return outsideCandidates; } },
         temporal,
         clock,
       );
@@ -674,6 +692,18 @@ describe("retrieval pipeline stages", () => {
       expect(contexts).toHaveLength(dateRangeListingContextTopK);
       expect(contexts.filter((context) => context.documentId.startsWith("doc-december-")))
         .toHaveLength(dateRangeListingContextTopK - dateRangeReservedOutsidePassages);
+    });
+
+    it("keeps a passage dated in another period out of a busy week's reserve, even when it outranks the undated pages", async () => {
+      // A digest for the adjacent week, dated entirely before the requested one, ranked
+      // above the undated pages: the shape of passage this fix keeps out of the reserve.
+      const adjacentWeekDigest = course("adjacent-week-digest", "2026-11-30", 0.95);
+      const pages = [adjacentWeekDigest, ...Array.from({ length: 4 }, (_value, index) =>
+        generalContextPage(`page-${index + 1}`, 0.6 - index / 100))];
+      const { contexts } = await answerContextsForRange({ range: week, inRangeCount: 16, outsideCandidates: pages });
+
+      expect(contexts.some((context) => context.documentId === "doc-adjacent-week-digest")).toBe(false);
+      expect(contexts.filter((context) => context.documentId.startsWith("doc-page-"))).toHaveLength(4);
     });
 
   });

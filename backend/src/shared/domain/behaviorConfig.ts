@@ -274,12 +274,14 @@ export const RETRIEVAL_BEHAVIOR = {
     // holds a busy week in that language with room to spare. The answer still keeps only
     // the top `dateRangeListingContextTopK` of them.
     dateRangeLookupDepth: 40,
-    // Passages a requested-range answer keeps for the best matches outside the range, ahead
-    // of the range's own passages, so a question that names a period without asking for its
-    // events ("what do I bring to a course in December?") still reads the page that answers
-    // it. Four fits the top two such documents at `promptContextMaxPerDocument` passages
-    // each, and the reserve is added to the range's passages up to the listing limit, so a
-    // busy period still gives its events 16 of the 20.
+    // Passages a requested-range answer keeps for the best undated matches outside the
+    // range, ahead of the range's own passages, so a question that names a period without
+    // asking for its events ("what do I bring to a course in December?") still reads the
+    // page that answers it. Four fits the top two such documents at
+    // `promptContextMaxPerDocument` passages each, and the reserve is added to the range's
+    // passages up to the listing limit, so a busy period's events get 16 of the 20 when
+    // undated candidates fill the reserve, or the full 20 when nothing undated outside the
+    // range competes for it.
     dateRangeReservedOutsidePassages: 4,
   },
   hybrid: {

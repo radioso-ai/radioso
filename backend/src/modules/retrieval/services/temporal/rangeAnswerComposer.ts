@@ -24,8 +24,9 @@ const isDatedElsewhere = (candidate: RetrievedCandidate, range: RequestedDateRan
  * (the lookup's, most similar to the question first, then any ranked candidate dated in the
  * range) and the best candidates outside the range (undated, or dated elsewhere, in their
  * semantic and lexical order) are two groups. The pool handed to reranking always holds the
- * first `reservedCount` candidates outside the range, the range fills the rest, and further
- * candidates outside it fill in when the range runs short.
+ * first `reservedCount` undated candidates outside the range, the range fills the rest, and
+ * further candidates outside it — undated or dated elsewhere — fill in when the range runs
+ * short.
  */
 export const composeRangeAnswerPool = (input: {
   rangeCandidates: RetrievedCandidate[];

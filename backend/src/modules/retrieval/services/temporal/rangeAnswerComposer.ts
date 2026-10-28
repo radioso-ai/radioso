@@ -7,50 +7,25 @@ import {
 
 /**
  * Whether a candidate outside the requested range is dated entirely in another period, as
- * opposed to undated. Placing a passage there with confidence needs both ends of its date:
- * one of `dateFrom`/`dateTo` missing (open-ended) or neither parseable (unparseable) cannot
- * be placed, so it counts as undated, same as a passage with no date metadata at all. A date
- * overlapping the range at either end counts as within it, per `positionInDateRange`, so it
- * is never dated elsewhere.
+ * opposed to undated. This reads a candidate's date the way the rest of the platform already
+ * does: one known date is that single day (`positionInDateRange`'s own rule — the structured
+ * lookup reads a chunk the same way, and the date-aware retrieval trigger backfills a chunk's
+ * `date_to` column from `date_from` when a source writes only one, the WordPress connector
+ * among them). A date overlapping the range at either end counts as within it, so it is never
+ * dated elsewhere; a candidate with no date at all is undated.
  */
 const isDatedElsewhere = (candidate: RetrievedCandidate, range: RequestedDateRange): boolean => {
-  const dates = datesFromMetadata(candidate.metadata);
-  if (!dates.dateFrom || !dates.dateTo) {
-    return false;
-  }
-  const position = positionInDateRange(dates, range);
+  const position = positionInDateRange(datesFromMetadata(candidate.metadata), range);
   return position === "before" || position === "after";
-};
-
-/**
- * Splits the outside group so undated candidates — general context such as prices, booking
- * and the venue, which is what the reserved slots exist for — lead the order, and passages
- * dated entirely in another period trail behind them. A tight pool slice drawn from the front
- * of this order reaches for undated candidates first and only falls back to a dated-elsewhere
- * one when too few undated candidates exist to fill it.
- */
-const splitOutsideGroup = (
-  outsideGroup: RetrievedCandidate[],
-  range: RequestedDateRange,
-): { ordered: RetrievedCandidate[]; undatedChunkIds: ReadonlySet<string> } => {
-  const undated: RetrievedCandidate[] = [];
-  const datedElsewhere: RetrievedCandidate[] = [];
-  for (const candidate of outsideGroup) {
-    (isDatedElsewhere(candidate, range) ? datedElsewhere : undated).push(candidate);
-  }
-  return {
-    ordered: [...undated, ...datedElsewhere],
-    undatedChunkIds: new Set(undated.map((candidate) => candidate.chunkId)),
-  };
 };
 
 /**
  * The one place that decides what a requested-range answer is built from. The range's passages
  * (the lookup's, most similar to the question first, then any ranked candidate dated in the
  * range) and the best candidates outside the range (undated, or dated elsewhere, in their
- * semantic and lexical order, undated ones first) are two groups. The pool handed to reranking
- * always holds the first `reservedCount` candidates outside the range, the range fills the
- * rest, and further candidates outside it fill in when the range runs short.
+ * semantic and lexical order) are two groups. The pool handed to reranking always holds the
+ * first `reservedCount` candidates outside the range, the range fills the rest, and further
+ * candidates outside it fill in when the range runs short.
  */
 export const composeRangeAnswerPool = (input: {
   rangeCandidates: RetrievedCandidate[];
@@ -73,12 +48,30 @@ export const composeRangeAnswerPool = (input: {
   ];
   const rangeChunkIds = new Set(rangeGroup.map((candidate) => candidate.chunkId));
   const outsideGroup = input.generalCandidates.filter((candidate) => !rangeChunkIds.has(candidate.chunkId));
-  const { ordered: orderedOutsideGroup, undatedChunkIds } = splitOutsideGroup(outsideGroup, input.range);
+  const undated = outsideGroup.filter((candidate) => !isDatedElsewhere(candidate, input.range));
+  const undatedChunkIds = new Set(undated.map((candidate) => candidate.chunkId));
 
-  const reserveShare = Math.min(input.reservedCount, outsideGroup.length, input.poolSize);
+  // Only undated candidates compete for reserved-slot pool capacity; a range with nothing
+  // undated outside it gives that capacity back to its own passages, same as a range with no
+  // outside candidates at all.
+  const reserveShare = Math.min(input.reservedCount, undated.length, input.poolSize);
   const rangeShare = Math.min(rangeGroup.length, input.poolSize - reserveShare);
+  const outsidePoolCapacity = input.poolSize - rangeShare;
+
+  // The reserve's own lead — the top `reserveShare` undated candidates — guarantees the pool's
+  // limited outside share always has enough of them to fill the reserve. Anything left in that
+  // share fills from the outside group's own relevance order (undated or dated elsewhere), not
+  // a reorder that would bury a high-ranked dated-elsewhere candidate — the next period's
+  // events, when this one is sparse — below every undated one and cut it from the pool.
+  const reservedLead = undated.slice(0, reserveShare);
+  const reservedLeadIds = new Set(reservedLead.map((candidate) => candidate.chunkId));
+  const outsidePoolFill = [
+    ...reservedLead,
+    ...outsideGroup.filter((candidate) => !reservedLeadIds.has(candidate.chunkId)),
+  ].slice(0, outsidePoolCapacity);
+
   return {
-    pool: [...rangeGroup.slice(0, rangeShare), ...orderedOutsideGroup.slice(0, input.poolSize - rangeShare)],
+    pool: [...rangeGroup.slice(0, rangeShare), ...outsidePoolFill],
     rangeChunkIds,
     reservedEligibleChunkIds: undatedChunkIds,
   };

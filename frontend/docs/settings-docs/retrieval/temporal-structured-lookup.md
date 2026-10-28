@@ -1,7 +1,7 @@
 ---
 title: "Temporal Structured Lookup"
 description: "How retrieval uses event dates to list, boost, and order events for upcoming-event and date-range questions."
-last_updated: 2026-10-21
+last_updated: 2026-10-29
 ---
 
 # Temporal Structured Lookup
@@ -23,7 +23,7 @@ When temporal structured lookup is enabled, the lookup fetches dated chunks dire
 - A question that names a date or period fetches the chunks whose dates overlap it, whatever else it asks: "What's on the week of 7 December?" and "Are there Kriya courses in November?" both do. A multi-day event that starts before the period or ends after it counts. Within the period, the passages closest in meaning to the question come first, so in the second question the Kriya courses lead the other November courses. Every event's first passage comes ahead of any event's second one, so a busy week lists as many events as fit. When the question can't be embedded, the period's passages come soonest first.
 - A question that asks what's coming up without naming a period or a topic fetches ongoing and upcoming events, soonest first.
 
-The lookup reads up to 40 passages for a period, enough for a busy week, and the agent's source scope, any document scope, and its metadata rules apply to them as to every other result. The answer always keeps up to four of the best matches from outside the period, so "What do I need to bring to a residential course in December?" still reads your packing-list page, when search ranks it among those four, alongside December's course cards. The period's passages take the rest, most relevant first and at most two per event, up to 20 passages in all; when a period has few events, more of the best matches fill the answer to the usual 12. For a busy period, the 16 passages closest to the question reach the answer, and the prompt lists them by date.
+The lookup reads up to 40 passages for a period, enough for a busy week, and the agent's source scope, any document scope, and its metadata rules apply to them as to every other result. The answer always keeps up to four of the best-matching passages from outside the period that carry no date of their own — a packing-list page or a pricing page, for instance — so "What do I need to bring to a residential course in December?" still reads your packing-list page alongside December's course cards. A passage dated to a different period does not take one of those four; it reaches the answer only when the period is sparse, filling the answer out to the usual 12 passages alongside the period's own, so "Nothing on the 2nd of August — the next course starts the 16th" still has that course to point to. The period's passages otherwise take the rest, most relevant first and at most two per event, up to 20 passages in all. For a busy period, the 16 passages closest to the question reach the answer, and the prompt lists them by date.
 
 ### Upcoming Boost
 

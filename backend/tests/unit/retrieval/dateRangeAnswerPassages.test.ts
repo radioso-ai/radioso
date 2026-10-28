@@ -145,23 +145,48 @@ describe("date range answers under the production retrieval settings", () => {
   const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
 
   it("holds the date listing limit of passages for a busy month, and the trace lists every one", async () => {
-    // Undated general context (no metadata): the kind of passage the reserve exists for.
-    const generalContext = Array.from({ length: 6 }, (_value, index) =>
+    // Dated entirely in February, and nothing undated competes for the reserve: the range
+    // reclaims it too, same as when there is no outside candidate at all.
+    const februaryCourses = Array.from({ length: 6 }, (_value, index) =>
       passage(`february-${index + 1}`, {
-        title: `General page ${index + 1}`,
+        title: `February course ${index + 1}`,
+        metadata: { dateFrom: "2027-02-10", dateTo: "2027-02-10" },
         similarity: 0.6 - index / 100,
       }));
     const { result, selection } = await runJanuaryTurn({
       rangeCount: 40,
-      semanticHits: [...generalContext, januaryCourse(0, 0.55), januaryCourse(1, 0.54)],
+      semanticHits: [...februaryCourses, januaryCourse(0, 0.55), januaryCourse(1, 0.54)],
     });
 
     expect(result.contexts).toHaveLength(cap);
     expect(selection?.metrics?.finalContextCount).toBe(cap);
     expect(selection?.outputs?.finalContexts).toHaveLength(cap);
-    // A pure date question keeps all but the reserved passages for the month's events.
     const januaryContexts = result.contexts.filter((context) => context.title.startsWith("January course"));
-    expect(januaryContexts).toHaveLength(cap - reserved);
+    expect(januaryContexts).toHaveLength(cap);
+    expect(result.contexts.some((context) => context.title.startsWith("February course"))).toBe(false);
+  });
+
+  it("mixes a partial reserve with range reclaim when only some outside candidates are undated", async () => {
+    const februaryCourses = Array.from({ length: 10 }, (_value, index) =>
+      passage(`february-${index + 1}`, {
+        title: `February course ${index + 1}`,
+        metadata: { dateFrom: "2027-02-10", dateTo: "2027-02-10" },
+        similarity: 0.6 - index / 100,
+      }));
+    const pages = [
+      passage("policy", { title: "Course cancellation policy", similarity: 0.5 }),
+      passage("venue", { title: "Venue page", similarity: 0.49 }),
+    ];
+    const { result } = await runJanuaryTurn({
+      rangeCount: 40,
+      semanticHits: [...februaryCourses, ...pages],
+    });
+
+    expect(result.contexts).toHaveLength(cap);
+    expect(result.contexts.map((context) => context.title)).toEqual(
+      expect.arrayContaining(["Course cancellation policy", "Venue page"]),
+    );
+    expect(result.contexts.some((context) => context.title.startsWith("February course"))).toBe(false);
   });
 
   it("keeps a passage dated in another period out of the reserve, even when it outranks the undated passages", async () => {

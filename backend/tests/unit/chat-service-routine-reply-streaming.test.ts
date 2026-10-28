@@ -1593,7 +1593,9 @@ describe("ChatService gives a routine step that reads the visitor's page what th
 
     expect(shown).toBe("I couldn't find that.");
     // Nothing is generated from the page's URL and title alone.
-    expect(turn.model.calls.some((call) => call.prompt.includes(pageUrl))).toBe(false);
+    for (const call of turn.model.calls) {
+      expect(call.prompt).not.toContain(pageUrl);
+    }
   });
 
   it.each([true, false])(

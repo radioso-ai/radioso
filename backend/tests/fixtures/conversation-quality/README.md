@@ -16,7 +16,7 @@ repo-committed regression suite you run from the CLI.
 | `routines.ts` | 5 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, and `book-edition`, whose dates step references `{{context.page_context}}` |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 52 seed cases |
+| `cases.ts` | the 53 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary

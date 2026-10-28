@@ -1066,7 +1066,7 @@ describe("routine defaults", () => {
       expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toBe("PROGRESS:\nREASK:");
     });
 
-    it("tells a re-asked step that the reply fell short and what is still missing", async () => {
+    it("tells a re-asked step that the reply fell short and what it still asks for", async () => {
       const gw = gateway("ok");
       await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({
         step: currentStep,
@@ -1078,9 +1078,40 @@ describe("routine defaults", () => {
       const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
       const reaskSection = systemPrompt.slice(systemPrompt.indexOf("REASK:"));
       expect(reaskSection).toMatch(/did not give everything this step needs/);
-      expect(reaskSection).toContain("Still missing: program.");
+      expect(reaskSection).toContain("Still to ask for: program.");
       // The slot description is extractor guidance and never reaches the reply.
       expect(reaskSection).not.toContain("The program they want to attend.");
+    });
+
+    it("asks a re-asked step for the rest as a plain question, never announcing a gap (#1662)", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({
+        step: currentStep,
+        steering: [],
+        turn,
+        reask: { missingSlots: [programSlot] },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      const reaskSection = systemPrompt.slice(systemPrompt.indexOf("REASK:"));
+      expect(reaskSection).toMatch(/as a plain question/);
+      expect(reaskSection).toMatch(/Do not say that something is missing, still needed, or the only thing left/);
+      expect(reaskSection).not.toMatch(/still missing/i);
+    });
+
+    it("lets a re-asked step offer again a fact the user needs to answer (#1662)", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({
+        step: currentStep,
+        steering: [],
+        turn,
+        reask: { missingSlots: [programSlot] },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      const reaskSection = systemPrompt.slice(systemPrompt.indexOf("REASK:"));
+      expect(reaskSection).toMatch(/fact the user needs in order to answer/);
+      expect(reaskSection).toMatch(/offer it again in the question/);
     });
 
     it("tells an ordinary re-ask that what the first ask said has been said (#1449)", async () => {
@@ -1110,7 +1141,7 @@ describe("routine defaults", () => {
 
       const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
       expect(systemPrompt).toMatch(/REASK:.*did not give everything this step needs/s);
-      expect(systemPrompt).not.toContain("Still missing");
+      expect(systemPrompt).not.toContain("Still to ask for");
     });
 
     it("adds no re-ask context to a step asked for the first time", async () => {
@@ -1133,13 +1164,19 @@ describe("routine defaults", () => {
         return systemPrompt.slice(systemPrompt.indexOf("REASK:"));
       };
 
-      it("adds the exhausted instruction after what is still missing", async () => {
+      it("adds the exhausted instruction after what the step still asks for", async () => {
         const reaskSection = await renderWith(
           { missingSlots: [programSlot], exhausted: true },
           { reaskExhaustedPromptTemplate: "ASK DIFFERENTLY" },
         );
 
-        expect(reaskSection).toMatch(/Still missing: program\.\nASK DIFFERENTLY$/);
+        expect(reaskSection).toMatch(/Still to ask for: program\.\nASK DIFFERENTLY$/);
+      });
+
+      it("leaves saying what is still needed to the exhausted instruction (#1662)", async () => {
+        const reaskSection = await renderWith({ missingSlots: [programSlot], exhausted: true });
+
+        expect(reaskSection).not.toMatch(/Do not say that something is missing/);
       });
 
       it("words the exhausted instruction from the shipped prompt", async () => {

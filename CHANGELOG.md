@@ -9,6 +9,29 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.26.0] - 2026-10-28
+
+### Added
+
+- **voice:** connect ElevenLabs from the Voice card and open calls with the agent's greeting ([#1655](https://github.com/radioso-ai/radioso/pull/1655))
+
+### Fixed
+
+- **crawler:** send crawl slice continuations to the crawler worker ([#1668](https://github.com/radioso-ai/radioso/pull/1668))
+- **routines:** fill a slot only from what the reply gives it, and from an accepted offer ([#1667](https://github.com/radioso-ai/radioso/pull/1667))
+- **routines:** ask a re-asked step's question without announcing the gap ([#1663](https://github.com/radioso-ai/radioso/pull/1663))
+- **routines:** let a routine step read the page the visitor is on ([#1661](https://github.com/radioso-ai/radioso/pull/1661))
+- **chat:** report failed turns to error tracking with a provider failure kind ([#1654](https://github.com/radioso-ai/radioso/pull/1654))
+- **llm:** run only models the platform endpoint serves ([#1651](https://github.com/radioso-ai/radioso/pull/1651))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `249_agent_voice_runtime_connections.sql`
+
+[1.26.0]: https://github.com/radioso-ai/radioso/compare/v1.25.0...v1.26.0
+
 ## [1.25.0] - 2026-10-27
 
 ### Added

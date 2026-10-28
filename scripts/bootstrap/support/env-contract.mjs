@@ -69,6 +69,7 @@ const keyOrder = [
   "WORKER_TASKS_QUEUE_NAME",
   "WORKER_TASKS_CRAWL_QUEUE_NAME",
   "WORKER_TASKS_SERVICE_URL",
+  "WORKER_TASKS_CRAWL_SERVICE_URL",
   "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT",
   "WORKER_AMQP_URL",
   "WORKER_AMQP_QUEUE_NAME",
@@ -174,6 +175,7 @@ export const listRequiredKeys = (values, contract = getEnvContract()) => {
     required.add("WORKER_TASKS_QUEUE_NAME");
     required.add("WORKER_TASKS_CRAWL_QUEUE_NAME");
     required.add("WORKER_TASKS_SERVICE_URL");
+    required.add("WORKER_TASKS_CRAWL_SERVICE_URL");
     required.add("WORKER_TASKS_INVOKER_SERVICE_ACCOUNT");
   }
   return [...required];

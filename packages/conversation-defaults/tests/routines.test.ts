@@ -922,6 +922,27 @@ describe("routine defaults", () => {
     });
   });
 
+  describe("a step without an instruction (#1665)", () => {
+    it("names the step and what it runs, with no instruction to quote", async () => {
+      const skillStep: RoutineStep = { id: "lookup_order", kind: "skill", skillName: "order_lookup" };
+      const gw = gateway('{"variables": {}, "claimsAuthority": false, "condition": 1, "offTopic": false}');
+      await new RoutineNextStepSelector(gw).select({
+        routine,
+        state,
+        currentStep: skillStep,
+        transitions,
+        turn,
+        skillResult: { status: "completed", outputs: { orderStatus: "shipped" } },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain('The current step is "lookup_order", which runs a skill; its result is below.');
+      expect(systemPrompt).toContain('A tool just ran for this step with status "completed".');
+      expect(systemPrompt).not.toContain("<current_step>");
+      expect(systemPrompt).not.toContain("do not carry it out");
+    });
+  });
+
   describe("unreadable decision retry", () => {
     // Unlike `gateway`, returns a different completion (or throws) on each successive
     // call — needed to prove the selector's retry actually sends a second request rather
@@ -975,11 +996,12 @@ describe("routine defaults", () => {
         complete: vi.fn(async () => ({ text: prose, stopReason: "completed" as const })),
       };
 
-      await new RoutineNextStepSelector(gw, { onUnreadable }).select({ routine, state, currentStep, transitions, turn });
+      // A fixed system prompt, so the size is a known literal: UTF-16 code units of the system
+      // prompt (the emoji counts 2) plus the history and latest message ("What is your email?",
+      // "alex@example.com").
+      await new RoutineNextStepSelector(gw, { onUnreadable, promptTemplate: "DÉCIDE 🙂" })
+        .select({ routine, state, currentStep, transitions, turn });
 
-      const request = vi.mocked(gw.complete).mock.calls[0][0];
-      const promptChars = (request.systemPrompt ?? "").length
-        + request.messages.reduce((total, message) => total + message.content.length, 0);
       expect(onUnreadable).toHaveBeenNthCalledWith(1, {
         routineId: routine.id,
         stepId: currentStep.id,
@@ -987,10 +1009,29 @@ describe("routine defaults", () => {
         reason: "no_json_object",
         attempt: 1,
         stopReason: "completed",
-        outputChars: prose.length,
-        promptChars,
+        outputChars: 51,
+        promptChars: 44,
       });
       expect(JSON.stringify(onUnreadable.mock.calls)).not.toContain(prose);
+    });
+
+    it("asks the host for a blank completion as it is, and reads it as unreadable with its stop reason on each attempt", async () => {
+      const onUnreadable = vi.fn();
+      const complete = vi.fn()
+        .mockResolvedValueOnce({ text: "", stopReason: "output_limit" })
+        .mockResolvedValueOnce({ text: "", stopReason: "output_limit" });
+      const gw: ConversationModelGateway = { complete };
+
+      const decision = await new RoutineNextStepSelector(gw, { onUnreadable }).select({ routine, state, currentStep, transitions, turn });
+
+      expect(complete.mock.calls[0][0]).toMatchObject({ returnBlank: true });
+      expect(decision).toEqual({
+        nextStepId: "ask_email",
+        variables: {},
+        selection: { outcome: "unreadable", returnedSlotKeys: [], unreadableReason: "no_json_object", retried: true },
+      });
+      expect(onUnreadable).toHaveBeenNthCalledWith(1, expect.objectContaining({ attempt: 1, stopReason: "output_limit", outputChars: 0 }));
+      expect(onUnreadable).toHaveBeenNthCalledWith(2, expect.objectContaining({ attempt: 2, stopReason: "output_limit", outputChars: 0 }));
     });
 
     it("falls back to the unreadable decision, and notifies the observer twice, when the retry is unreadable too", async () => {

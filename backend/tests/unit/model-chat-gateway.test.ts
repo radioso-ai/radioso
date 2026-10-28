@@ -182,6 +182,24 @@ describe("ModelChatGateway", () => {
     expect(completionRecord).toEqual({ stopReason: "output_limit" });
   });
 
+  it("records a blank completion's stop reason before failing it as blank", async () => {
+    const gateway = new ModelChatGateway(new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
+      async complete() {
+        return { ...textResult(""), stopReason: "output_limit" };
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient));
+    const completionRecord: ChatGatewayCompletionRecord = {};
+
+    await expect(
+      gateway.answer({ query: "Question", history: [], prompt: "User prompt", usageContext, completionRecord }),
+    ).rejects.toBeInstanceOf(BlankChatAnswerError);
+    expect(completionRecord).toEqual({ stopReason: "output_limit" });
+  });
+
   it("overwrites a reused completion record, so a provider that gives no stop reason leaves none", async () => {
     const gateway = new ModelChatGateway(new ModelInferencePipelineService({
       metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },

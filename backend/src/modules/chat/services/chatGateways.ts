@@ -26,14 +26,15 @@ export class ModelChatGateway implements ChatGateway {
       responseFormat: generation.responseFormat,
       signal: input.signal,
       validateResult(result) {
+        // Recorded before the blank check, so a blank completion still says why it stopped.
+        if (input.completionRecord) {
+          input.completionRecord.stopReason = result.stopReason;
+        }
         if (!result.text?.trim()) {
           throw new BlankChatAnswerError();
         }
       },
     });
-    if (input.completionRecord) {
-      input.completionRecord.stopReason = result.stopReason;
-    }
     return result.text;
   }
 

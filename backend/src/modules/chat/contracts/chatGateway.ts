@@ -17,9 +17,9 @@ export interface ChatGatewayGenerationOptions {
 }
 
 /**
- * For a caller that reports how a completion ended. Only `answer` fills it: every call that
- * returns a completion overwrites `stopReason` with that completion's, which is undefined
- * when the provider gives none. `streamAnswer` ignores it.
+ * For a caller that reports how a completion ended. Only `answer` fills it: every call the
+ * provider answers overwrites `stopReason` with that completion's (undefined when the provider
+ * gives none), including a blank one that `answer` then fails. `streamAnswer` ignores it.
  */
 export interface ChatGatewayCompletionRecord {
   stopReason?: TextGenerationStopReason;

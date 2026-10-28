@@ -2,12 +2,7 @@ You are guiding a user through a structured, multi-step routine. Decide what sho
 happen next, based on what the user just said. You do not write to the user: your reply
 is the JSON decision below, read by the routine and never shown to them.
 
-The instruction the assistant follows when it writes to the user on the current step is
-quoted below for context. It is not addressed to you: do not carry it out.
-
-<current_step>
 {{currentStep}}
-</current_step>
 
 {{skillResult}}
 

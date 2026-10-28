@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { BlankChatAnswerError } from "../../src/modules/chat/services/chatAnswerErrors.js";
 import { RoutineChatModelGateway } from "../../src/modules/chat/services/routines/routineChatModelGateway.js";
 import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
-import type { ChatGateway, ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
+import type {
+  ChatGateway,
+  ChatGatewayCompletionRecord,
+  ChatGatewayInput,
+} from "../../src/modules/chat/contracts/chatGateway.js";
 
 const turnContext = {
   workspaceContext: { workspaceId: "ws_1" },
@@ -199,7 +203,24 @@ describe("RoutineChatModelGateway", () => {
         .resolves.toEqual({ text: '{"variables": {', stopReason: "output_limit" });
     });
 
-    it("reports the blank retry's stop reason, not the blank call's", async () => {
+    it("hands a blank completion back, with its own stop reason, to a caller that reads blanks itself", async () => {
+      const calls: ChatGatewayInput[] = [];
+      const gateway = new RoutineChatModelGateway({
+        async answer(input) {
+          calls.push(input);
+          if (input.completionRecord) {
+            input.completionRecord.stopReason = "output_limit";
+          }
+          throw new BlankChatAnswerError();
+        },
+      }, turnContext);
+
+      await expect(gateway.complete({ messages: [{ role: "user", content: "si" }], returnBlank: true }))
+        .resolves.toEqual({ text: "", stopReason: "output_limit" });
+      expect(calls).toHaveLength(1);
+    });
+
+    it("retries a blank for any other caller, and describes the retry it returns by the retry's own stop reason", async () => {
       const calls: ChatGatewayInput[] = [];
       const gateway = new RoutineChatModelGateway({
         async answer(input) {
@@ -219,6 +240,22 @@ describe("RoutineChatModelGateway", () => {
 
       await expect(gateway.complete({ messages: [{ role: "user", content: "si" }] }))
         .resolves.toEqual({ text: "{}", stopReason: "completed" });
+      expect(calls).toHaveLength(2);
+    });
+
+    it("maps a provider stop reason the contract does not name to other", async () => {
+      const gateway = new RoutineChatModelGateway({
+        async answer(input) {
+          if (input.completionRecord) {
+            // A provider adapter that grows a reason the conversation contract does not list.
+            input.completionRecord.stopReason = "content_filter" as unknown as ChatGatewayCompletionRecord["stopReason"];
+          }
+          return "{}";
+        },
+      }, turnContext);
+
+      await expect(gateway.complete({ messages: [{ role: "user", content: "si" }] }))
+        .resolves.toEqual({ text: "{}", stopReason: "other" });
     });
 
     it("omits the stop reason when the host gateway records none", async () => {

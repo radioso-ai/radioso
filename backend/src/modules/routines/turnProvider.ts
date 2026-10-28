@@ -452,10 +452,12 @@ export const createRoutineTurnProvider = (
       routines,
       new RoutineNextStepSelector(modelGateway, {
         promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
-        // The event carries ids, the reason, and the completion's sizes and stop reason;
-        // never the prompt or the completion's text.
-        onUnreadable: (event) => {
-          dependencies.logger.warn({ agentId, workspaceId, ...event }, "Routine next-step decision was unreadable");
+        // Ids, the reason, and the completion's stop reason and sizes; never prompt or completion text.
+        onUnreadable: ({ routineId, stepId, sessionId, reason, attempt, stopReason, outputChars, promptChars }) => {
+          dependencies.logger.warn(
+            { agentId, workspaceId, routineId, stepId, sessionId, reason, attempt, stopReason, outputChars, promptChars },
+            "Routine next-step decision was unreadable",
+          );
         },
       }),
       new RoutineStepRenderer(modelGateway, {

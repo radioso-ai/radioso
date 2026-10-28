@@ -136,8 +136,11 @@ as "sì, confermo" or "ja, passt", takes the exit as usual and accepts the value
 the agent's last message proposed.
 
 Routine model calls (selector and step replies) go through the chat gateway for
-the turn's workspace model. A blank completion is retried once, recorded under
-its own usage attempt; a second blank fails the turn. A turn that makes more than
+the turn's workspace model. A blank step reply is retried once, recorded under
+its own usage attempt; a second blank fails the turn. The selector asks for a
+blank completion back (`returnBlank` on the request) and reads it as an
+unreadable reply, so its own single retry covers it and a second blank re-asks
+the step instead of failing the turn. A turn that makes more than
 one routine model call meters each call under its own usage attempt, so a turn
 running both a selector pass and a step reply records both.
 
@@ -852,13 +855,16 @@ that itself fails — keeps the step's original re-ask. The selector's
 optional `onUnreadable` observer reports, for each unreadable completion,
 why it failed (`no_json_object`, `invalid_json`, or
 `missing_required_fields`), which attempt it was, the model's stop reason
-when the gateway reports one (`output_limit` is a reply cut off at the output
-cap), and the lengths in characters of the prompt (`promptChars`) and of the
-completion (`outputChars`), never the prompt or completion text;
+when the gateway reports one, and two sizes in UTF-16 code units (JavaScript
+string length): `promptChars`, the system prompt plus every message's content
+the selector sent, and `outputChars`, the completion's text. Neither is the size
+of the serialized request, and neither carries the prompt or completion text.
 `createRoutineTurnProvider` wires it to a `logger.warn` carrying the routine,
 step, and session id. A short `outputChars` with `stopReason: "completed"` is a
-reply the model finished in prose; `output_limit` is a decision that ran out of
-room. The same reason, and a `retried` flag,
+reply the model finished in prose. `output_limit` says only that the provider
+stopped at the output cap; on a reasoning model hidden reasoning counts toward
+that cap, so it often comes with `outputChars: 0`, a blank completion. The same
+reason, and a `retried` flag,
 land on the turn's `selection` trace, so an operator can read them from
 `turn_trace` without reproducing the conversation.
 

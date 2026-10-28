@@ -170,12 +170,14 @@ describe("RoutineNextStepSelector", () => {
     // A fixed-text gateway returns the same unreadable completion on the retry too, so both
     // attempts are reported and the selector falls back to the unreadable decision.
     const gw = gateway("not json at all");
-    const selector = new RoutineNextStepSelector(gw, { onUnreadable });
+    // A fixed system prompt, so the size is a known literal: "DECIDE" plus "What is your
+    // email?" and "alex@example.com".
+    const selector = new RoutineNextStepSelector(gw, { onUnreadable, promptTemplate: "DECIDE" });
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });
     expect(gw.complete).toHaveBeenCalledTimes(2);
     expect(decision.nextStepId).toBe("ask_email");
     expect(decision.selection).toMatchObject({ unreadableReason: "no_json_object", retried: true });
-    const shape = { outputChars: "not json at all".length, promptChars: expect.any(Number) };
+    const shape = { outputChars: 15, promptChars: 41 };
     expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1, ...shape });
     expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2, ...shape });
     expect(JSON.stringify(onUnreadable.mock.calls)).not.toContain("not json at all");

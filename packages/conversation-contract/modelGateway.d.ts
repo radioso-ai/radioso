@@ -6,12 +6,18 @@ export interface ConversationModelRequest {
   messages: ConversationMessage[];
   systemPrompt?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * Set by a caller that reads a blank completion itself: the host hands it back as an empty
+   * completion with its stop reason. Unset, a host may retry a blank or fail the call.
+   */
+  returnBlank?: boolean;
 }
 
 /**
- * Why the model stopped generating a completion: `output_limit` means it was cut off at
- * the host's output cap, `completed` that it finished on its own, `other` any other
- * reason the provider gives, such as a content filter.
+ * Why the model stopped generating a completion: `output_limit` means the provider stopped at
+ * the host's output cap (on a reasoning model, hidden reasoning counts toward that cap, so the
+ * visible text can be short or empty), `completed` that it finished on its own, `other` any
+ * other reason the provider gives, such as a content filter.
  */
 export type ConversationModelStopReason = "completed" | "output_limit" | "other";
 

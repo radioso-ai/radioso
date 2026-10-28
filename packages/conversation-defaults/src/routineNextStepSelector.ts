@@ -38,6 +38,26 @@ const skillResultBlock = (skillResult?: RoutineSkillResult): string => {
   return `A tool just ran for this step with status "${skillResult.status}".${outputs}`;
 };
 
+// An instruction is quoted, and marked as the assistant's: spliced in as plain text, one that
+// scripted a greeting and a question was carried out on a routine's opening turn, and the
+// selector answered the visitor instead of deciding (#1665). A step without one is named.
+const currentStepBlock = (step: RoutineStep, skillResult?: RoutineSkillResult): string => {
+  if (step.action) {
+    return [
+      "The instruction the assistant follows when it writes to the user on the current step is",
+      "quoted below for context. It is not addressed to you: do not carry it out.",
+      "",
+      "<current_step>",
+      step.action,
+      "</current_step>",
+    ].join("\n");
+  }
+  if (step.kind === "skill") {
+    return `The current step is "${step.id}", which runs a skill${skillResult ? "; its result is below" : ""}.`;
+  }
+  return `The current step is "${step.id}".`;
+};
+
 const slotLine = (slot: RoutineSlotSchema): string => {
   const description = slot.description?.replace(/\s+/g, " ").trim();
   return `- ${slot.key} (${slot.type})${description ? `: ${description}` : ""}`;
@@ -113,11 +133,14 @@ export interface RoutineUnreadableEvent {
   reason: RoutineUnreadableReason;
   /** Which completion this was: the original call, or the one retry. */
   attempt: 1 | 2;
-  /** Why the model stopped, when the gateway reports it: `output_limit` is a reply cut off at the cap. */
+  /** Why the model stopped, when the gateway reports it. */
   stopReason?: ConversationModelStopReason;
-  /** Length of the completion's text, in characters. */
+  /** Length of the completion's text in UTF-16 code units (JavaScript string length); 0 for a blank completion. */
   outputChars: number;
-  /** Length of the request's system prompt and messages together, in characters. */
+  /**
+   * Length of the system prompt plus every message's content, in UTF-16 code units: the text
+   * the selector sent, not the size of the serialized request.
+   */
   promptChars: number;
 }
 
@@ -195,11 +218,11 @@ const requestChars = (request: ConversationModelRequest): number =>
 /** What an unreadable completion looked like, by its sizes and stop reason only. */
 const completionShape = (
   completion: ConversationModelCompletion,
-  promptChars: number,
+  request: ConversationModelRequest,
 ): Pick<RoutineUnreadableEvent, "stopReason" | "outputChars" | "promptChars"> => ({
   ...(completion.stopReason ? { stopReason: completion.stopReason } : {}),
   outputChars: completion.text.length,
-  promptChars,
+  promptChars: requestChars(request),
 });
 
 const parseDecision = (raw: string): ParsedDecision => {
@@ -337,14 +360,15 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       .map((transition, index) => `${index + 1}. ${transition.condition}`)
       .join("\n");
     const systemPrompt = renderPromptTemplate("chat/routine-next-step.md", this.promptTemplate, {
-      currentStep: input.currentStep.action ?? input.currentStep.id,
+      currentStep: currentStepBlock(input.currentStep, input.skillResult),
       skillResult: skillResultBlock(input.skillResult),
       conditions,
       slotSchema: slotSchemaBlock(input.routine, input.state.variables, this.clock()),
     });
 
-    const request: ConversationModelRequest = { messages: turnMessages(input.turn), systemPrompt };
-    const promptChars = requestChars(request);
+    // A blank completion comes back as one, so it is read, retried and reported like any other
+    // unreadable reply, with its stop reason, rather than retried out of sight by the host.
+    const request: ConversationModelRequest = { messages: turnMessages(input.turn), systemPrompt, returnBlank: true };
 
     // Purely observational: an observer that throws must not fail the turn, so every call
     // to it is isolated here rather than left for each call site to remember.
@@ -356,7 +380,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
           sessionId: input.state.sessionId,
           reason,
           attempt,
-          ...completionShape(completion, promptChars),
+          ...completionShape(completion, request),
         });
       } catch {
         // Swallowed — see above.

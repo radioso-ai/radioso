@@ -92,7 +92,14 @@ course runs from 30 October to 2 November: shall I book those dates?"), a reply
 that accepts them, in any words, gives those values this turn: "sì, confermo"
 fills the arrival and the departure with the proposed dates, replacing whatever
 either slot held, and a value the visitor changes while accepting ("yes, but I
-leave on the 1st") is the one stored.
+leave on the 1st") is the one stored. A proposed value is one the visitor has
+not given, or one different from what they gave, such as a date the agent offers
+instead. Reading back values the visitor already gave proposes nothing, however
+the recap words them: after "you'd like a refund for order 123, shall I send
+this?", a "yes" returns no slot, so each slot keeps the visitor's own words, and
+only a value the reply changes is stored. The selector reads an acceptance only
+on a turn it runs: on a step still missing one of its slots, on a step with an
+`llm` exit, or on the turn that starts the routine.
 
 The user may write a date in any form. A `date` slot is recorded as `YYYY-MM-DD`,
 reading day and month the way the user wrote them ("11-14 Nov" is 11 to 14

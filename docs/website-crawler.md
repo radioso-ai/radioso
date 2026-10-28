@@ -1,7 +1,7 @@
 ---
 title: "Website Crawler Provider"
 description: "API and provider contract for website ingestion including crawl policy, job management, deployment topology, and disabling."
-last_updated: 2026-10-27
+last_updated: 2026-10-28
 ---
 
 # Website Crawler Provider
@@ -302,13 +302,13 @@ The Terraform configuration provisions two Cloud Run services:
 - `radioso-<env>-worker` runs `start:worker-server` and receives the document Cloud Tasks queue.
 - `radioso-<env>-crawler-worker` runs `start:crawler-worker-server` and receives the website crawl Cloud Tasks queue.
 
-The dispatcher reads `WORKER_TASKS_CRAWL_SERVICE_URL` to know where website crawl Cloud Tasks pushes should land. When unset it falls back to `WORKER_TASKS_SERVICE_URL`, so a single-worker deployment still works. Terraform discovers the crawler worker URL automatically by referencing `google_cloud_run_v2_service.crawler_worker.uri` from the backend and document worker — no override variable is needed. The document worker URL still needs `worker_tasks_service_url_override` on the second apply because the document worker self-references its own URI for retry dispatch.
+Website crawl Cloud Tasks pushes land at `WORKER_TASKS_CRAWL_SERVICE_URL`, which every service needs when `WORKER_DISPATCH_DRIVER=cloud-tasks`. That includes the crawler worker, because it queues the continuation task for each slice it finishes. The backend and document worker read the URL from `google_cloud_run_v2_service.crawler_worker.uri`. The crawler worker gets Cloud Run's deterministic URL, `https://radioso-<env>-crawler-worker-<project-number>.<region>.run.app`, which Terraform builds from the service name, project number, and region, since a service can't reference its own `uri`. Neither needs an override variable. The document worker URL still needs `worker_tasks_service_url_override` on the second apply because the document worker self-references its own URI for retry dispatch.
 
 Every `/internal/tasks/*` request also carries `X-Radioso-Worker-Token`. Set the same `WORKER_TASK_AUTH_TOKEN` value on the backend, document worker, and crawler worker; the included Terraform manages and injects it for Cloud Run and adds it to Cloud Scheduler recovery requests. Google OIDC remains enabled as the infrastructure-level check. A reverse proxy in front of a self-hosted task server must forward the custom header, and the token must be at least 32 characters.
 
 Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. In Cloud Tasks driven environments, both worker services use `min_instances = 0` and request-based CPU so they can scale to zero when idle. The task-server runtimes process explicit Cloud Tasks deliveries by job ID. They do not start the continuous database polling loops.
 
-The crawler worker runs a job in two-minute slices, below Cloud Scheduler's three-minute request deadline and Cloud Run's five-minute request timeout. At the end of a slice it saves the frontier checkpoint, atomically returns the same job to `queued`, creates a continuation task, and finishes the current request. Pages interrupted by the slice boundary stay pending for the next delivery instead of being counted as failures.
+The crawler worker runs a job in two-minute slices, below Cloud Scheduler's three-minute request deadline and Cloud Run's five-minute request timeout. At the end of a slice it saves the frontier checkpoint, atomically returns the same job to `queued`, creates a continuation task, and finishes the current request. Pages interrupted by the slice boundary stay pending for the next delivery instead of being counted as failures. If a crawl shows `Queued` again after its first slice and stays there, check the document worker's request logs for `410` responses on `/internal/tasks/website-crawl`: the continuation went to the document worker, which means the crawler worker's `WORKER_TASKS_CRAWL_SERVICE_URL` points at the wrong service.
 
 Terraform also provisions Cloud Scheduler recovery jobs for both workers. Each crawler recovery request reserves 120 seconds for a crawl slice inside a 150-second request budget, so it starts another queued job only when the first finishes within the initial 30-second window. When a recovered crawl yields, the request stops after dispatching its continuation rather than reclaiming the same job again. Document recovery defaults to hourly (`document_worker_recovery_schedule = "0 * * * *"`). Crawler recovery defaults to daily (`crawler_worker_recovery_schedule = "0 3 * * *"`) because normal crawls are delivered through Cloud Tasks and the crawler is usually idle. This keeps missed-dispatch recovery available without using a frequent recovery request as a keepalive.
 

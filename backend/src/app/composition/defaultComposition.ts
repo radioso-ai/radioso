@@ -486,7 +486,6 @@ export const createDefaultWebsiteCrawlJobDispatcher = (
     | "WORKER_TASKS_QUEUE_LOCATION"
     | "WORKER_TASKS_QUEUE_NAME"
     | "WORKER_TASKS_CRAWL_QUEUE_NAME"
-    | "WORKER_TASKS_SERVICE_URL"
     | "WORKER_TASKS_CRAWL_SERVICE_URL"
     | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
     | "WORKER_TASK_AUTH_TOKEN"
@@ -503,7 +502,7 @@ export const createDefaultWebsiteCrawlJobDispatcher = (
         projectId: env.GOOGLE_CLOUD_PROJECT!,
         location: env.WORKER_TASKS_QUEUE_LOCATION!,
         queueName: env.WORKER_TASKS_CRAWL_QUEUE_NAME ?? env.WORKER_TASKS_QUEUE_NAME!,
-        workerServiceUrl: env.WORKER_TASKS_CRAWL_SERVICE_URL ?? env.WORKER_TASKS_SERVICE_URL!,
+        workerServiceUrl: env.WORKER_TASKS_CRAWL_SERVICE_URL!,
         invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
         workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
         logger,

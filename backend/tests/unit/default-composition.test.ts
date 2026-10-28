@@ -615,8 +615,7 @@ describe("default application composition", () => {
       WORKER_TASKS_QUEUE_LOCATION: "us-central1",
       WORKER_TASKS_QUEUE_NAME: "radioso-document-jobs",
       WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
-      WORKER_TASKS_SERVICE_URL: "https://backend.example.com",
-      WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
+      WORKER_TASKS_CRAWL_SERVICE_URL: "https://crawler-worker.example.com",
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
       WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
       WORKER_AMQP_URL: undefined,
@@ -674,7 +673,6 @@ describe("default application composition", () => {
         WORKER_TASKS_QUEUE_LOCATION: "us-central1",
         WORKER_TASKS_QUEUE_NAME: "radioso-document-jobs",
         WORKER_TASKS_CRAWL_QUEUE_NAME: "radioso-website-crawls",
-        WORKER_TASKS_SERVICE_URL: "https://document-worker.example.com",
         WORKER_TASKS_CRAWL_SERVICE_URL: "https://crawler-worker.example.com",
         WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
         WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
@@ -704,41 +702,6 @@ describe("default application composition", () => {
     }
   });
 
-  it("composition falls back to WORKER_TASKS_SERVICE_URL when no crawl-specific URL is set", async () => {
-    const createTask = vi.fn().mockResolvedValue([{ name: "task" }]);
-    const fakeClient = {
-      queuePath: (project: string, location: string, queue: string) =>
-        `projects/${project}/locations/${location}/queues/${queue}`,
-      createTask,
-    } as never;
-
-    const dispatcher = createDefaultWebsiteCrawlJobDispatcher({
-      WORKER_DISPATCH_DRIVER: "cloud-tasks",
-      GOOGLE_CLOUD_PROJECT: "radioso-test",
-      WORKER_TASKS_QUEUE_LOCATION: "us-central1",
-      WORKER_TASKS_QUEUE_NAME: "radioso-document-jobs",
-      WORKER_TASKS_CRAWL_QUEUE_NAME: "radioso-website-crawls",
-      WORKER_TASKS_SERVICE_URL: "https://document-worker.example.com",
-      WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
-      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
-      WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
-      WORKER_AMQP_URL: undefined,
-      WORKER_AMQP_QUEUE_NAME: undefined,
-      WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
-    }, createLogger() as any);
-
-    (dispatcher as unknown as { client: typeof fakeClient }).client = fakeClient;
-
-    await dispatcher.dispatch({
-      jobId: "11111111-1111-4111-8111-111111111111",
-      workspaceId: "22222222-2222-4222-8222-222222222222",
-    });
-
-    expect(createTask.mock.calls[0][0].task.httpRequest.url).toBe(
-      "https://document-worker.example.com/internal/tasks/website-crawl",
-    );
-  });
-
   it("falls back to the document queue for crawler tasks when crawl AMQP queue is absent", () => {
     const dispatcher = createDefaultWebsiteCrawlJobDispatcher({
       WORKER_DISPATCH_DRIVER: "amqp",
@@ -746,7 +709,6 @@ describe("default application composition", () => {
       WORKER_TASKS_QUEUE_LOCATION: undefined,
       WORKER_TASKS_QUEUE_NAME: undefined,
       WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
-      WORKER_TASKS_SERVICE_URL: undefined,
       WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
       WORKER_TASK_AUTH_TOKEN: undefined,

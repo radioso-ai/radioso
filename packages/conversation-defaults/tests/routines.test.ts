@@ -745,6 +745,9 @@ describe("routine defaults", () => {
       expect(systemPrompt).toContain("goes in none of them unless the message or the conversation before it makes clear which one it is for");
       expect(systemPrompt).toContain("One value goes into two slots only when the message gives it for both.");
       expect(systemPrompt).toContain("the latest message accepts them, in any words, those values are given this turn");
+      // The selector never writes to the user (#1665), so the offer it reads is the assistant's.
+      expect(systemPrompt).toContain("When the assistant's last message proposed values for slots");
+      expect(systemPrompt).not.toMatch(/\byour (last|earlier|previous) (message|reply)/u);
       expect(systemPrompt).toContain("replacing any value the slot already holds");
       expect(systemPrompt).toContain("A value the user changes while accepting is the one to keep.");
       expect(systemPrompt).toContain("omit slots not provided or accepted this turn");

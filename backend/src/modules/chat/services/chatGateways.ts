@@ -31,7 +31,7 @@ export class ModelChatGateway implements ChatGateway {
         }
       },
     });
-    if (input.completionRecord && result.stopReason) {
+    if (input.completionRecord) {
       input.completionRecord.stopReason = result.stopReason;
     }
     return result.text;

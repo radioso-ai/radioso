@@ -75,7 +75,7 @@ const filledSlotsLine = (routine: Routine, variables: Record<string, unknown>): 
 // after "which course?"), and a date the opening message gave for another slot was dropped.
 const slotAssignmentRules = [
   "A value that could fill more than one slot goes in none of them unless the message or the conversation before it makes clear which one it is for. One value goes into two slots only when the message gives it for both.",
-  "When your last message proposed values for slots and the latest message accepts them, in any words, those values are given this turn. Return each proposed value for its slot, replacing any value the slot already holds. A value the user changes while accepting is the one to keep.",
+  "When the assistant's last message proposed values for slots and the latest message accepts them, in any words, those values are given this turn. Return each proposed value for its slot, replacing any value the slot already holds. A value the user changes while accepting is the one to keep.",
 ];
 
 const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, today: Date): string => {

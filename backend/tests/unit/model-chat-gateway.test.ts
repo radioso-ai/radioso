@@ -182,6 +182,23 @@ describe("ModelChatGateway", () => {
     expect(completionRecord).toEqual({ stopReason: "output_limit" });
   });
 
+  it("overwrites a reused completion record, so a provider that gives no stop reason leaves none", async () => {
+    const gateway = new ModelChatGateway(new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
+      async complete() {
+        return textResult("Answer");
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient));
+    const completionRecord: ChatGatewayCompletionRecord = { stopReason: "output_limit" };
+
+    await gateway.answer({ query: "Question", history: [], prompt: "User prompt", usageContext, completionRecord });
+
+    expect(completionRecord.stopReason).toBeUndefined();
+  });
+
   it("passes an AbortSignal through streaming generation", async () => {
     const requests: TextGenerationRequest[] = [];
     const controller = new AbortController();

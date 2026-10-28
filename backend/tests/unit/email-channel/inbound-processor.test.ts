@@ -585,9 +585,27 @@ describe("EmailInboundProcessor: evidence about sent mail", () => {
 
     expect(await h.runEvent(event.id)).toBe("processed");
 
-    expect(h.deliveryEvents.applyStatus).toHaveBeenCalledWith({ provider: "local", providerMessageId: "re_sent_1", status: bounced });
+    expect(h.deliveryEvents.applyStatus).toHaveBeenCalledWith({ provider: "local", providerMessageId: "re_sent_1", status: bounced, rfcMessageId: null });
     expect(h.inbound.events.get(event.id)?.state).toBe("processed");
     expect(h.fetchMessage).not.toHaveBeenCalled();
+  });
+
+  it("carries the event's preserved Message-ID into the port, for the fallback (#1619)", async () => {
+    const h = harness();
+    const event = h.inbound.seedEvent({
+      eventKind: "delivery_status",
+      providerObjectId: "re_sent_1",
+      envelope: { status: bounced, rfcMessageId: "<intent-1@customer.test>" },
+    });
+
+    expect(await h.runEvent(event.id)).toBe("processed");
+
+    expect(h.deliveryEvents.applyStatus).toHaveBeenCalledWith({
+      provider: "local",
+      providerMessageId: "re_sent_1",
+      status: bounced,
+      rfcMessageId: "<intent-1@customer.test>",
+    });
   });
 
   it("settles an event about mail it did not send as ignored, and logs it by event", async () => {

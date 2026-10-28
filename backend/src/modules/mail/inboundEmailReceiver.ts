@@ -36,6 +36,13 @@ export type VerifiedInboundEvent =
       status: DeliveryStatusFacts;
       recipients: readonly string[];
       emailKind: string | null;
+      /**
+       * The RFC `Message-ID` the provider preserved from the send, when it echoes it back on the
+       * event (#1619): the fallback a provider id that never reached this deployment's own record
+       * can still be matched by, after a provider 5xx whose outcome went unrecorded. Null for a
+       * provider, or an event, that carries none.
+       */
+      rfcMessageId: string | null;
     }
   | { kind: "domain_status"; providerEventId: string; providerObjectId: string; occurredAt: Date }
   | { kind: "unsupported"; providerEventId: string; occurredAt: Date; providerType: string };

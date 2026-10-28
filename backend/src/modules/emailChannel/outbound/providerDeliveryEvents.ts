@@ -30,7 +30,14 @@ export const bounceDetailCode = (bounce: DeliveryStatusFacts["bounce"]): string 
  */
 export class ProviderDeliveryEvents {
   constructor(private readonly deps: {
-    intents: Pick<EmailSendIntentRepository, "findByProviderMessageId" | "findByOutboundRfcMessageIds" | "recordComplaint">;
+    intents: Pick<
+      EmailSendIntentRepository,
+      | "findByProviderMessageId"
+      | "findByOutboundRfcMessageIds"
+      | "findBySuppliedRfcMessageId"
+      | "recordProviderMessageId"
+      | "recordComplaint"
+    >;
     writer: Pick<SendIntentWriter, "apply">;
     audit: Pick<AuditPort, "record">;
     metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
@@ -38,20 +45,69 @@ export class ProviderDeliveryEvents {
     logger: EmailChannelJobLogger;
   }) {}
 
-  async applyStatus(input: { provider: string; providerMessageId: string; status: DeliveryStatusFacts }): Promise<ProviderDeliveryOutcome> {
-    const intent = await this.deps.intents.findByProviderMessageId(input.provider, input.providerMessageId);
-    const outcome = !intent
+  async applyStatus(input: {
+    provider: string;
+    providerMessageId: string;
+    status: DeliveryStatusFacts;
+    /** The RFC Message-ID the event carried, if any; the fallback when the provider id is foreign (#1619). */
+    rfcMessageId?: string | null;
+  }): Promise<ProviderDeliveryOutcome> {
+    const resolved = await this.resolveIntent(input);
+    const outcome = !resolved
       ? "foreign"
       : input.status.type === "complained"
-        ? await this.recordComplaint(intent)
-        : await this.applyEvidence(intent, {
+        ? await this.recordComplaint(resolved.intent)
+        : await this.applyEvidence(resolved.intent, {
             kind: "provider_status",
             status: input.status.type,
             source: "webhook",
             detailCode: bounceDetailCode(input.status.bounce),
           });
     this.count(input.status.type, "webhook", outcome);
+    if (resolved?.matchedBy === "message_id") await this.recordFallbackMatch(resolved.intent, input);
     return outcome;
+  }
+
+  /**
+   * The intent a delivery event names: by the provider's own id first (research A6), and only when
+   * that is unknown, by the RFC Message-ID the event carried (#1619) — the id Radioso minted on its
+   * own verified sending domain, so a match is still only ever this deployment's own send, never
+   * another workspace's. Resolving never writes: the evidence transition applies to the intent's
+   * version exactly as read, and the fallback's own bookkeeping follows it.
+   */
+  private async resolveIntent(input: {
+    provider: string;
+    providerMessageId: string;
+    rfcMessageId?: string | null;
+  }): Promise<{ intent: EmailSendIntentRecord; matchedBy: "provider_id" | "message_id" } | null> {
+    const byProviderId = await this.deps.intents.findByProviderMessageId(input.provider, input.providerMessageId);
+    if (byProviderId) return { intent: byProviderId, matchedBy: "provider_id" };
+    if (!input.rfcMessageId) return null;
+    const byMessageId = await this.deps.intents.findBySuppliedRfcMessageId(input.provider, input.rfcMessageId);
+    if (!byMessageId) {
+      this.countMessageIdFallback("foreign");
+      return null;
+    }
+    return { intent: byMessageId, matchedBy: "message_id" };
+  }
+
+  /**
+   * Observes a Message-ID fallback match, after its evidence has already applied at the intent's
+   * read version: counted and logged by ids only, and the provider's own id recorded on the intent
+   * when this deployment never learned it, so a later event for the same send matches directly.
+   */
+  private async recordFallbackMatch(
+    intent: EmailSendIntentRecord,
+    input: { provider: string; providerMessageId: string },
+  ): Promise<void> {
+    this.countMessageIdFallback("settled");
+    this.deps.logger.info(
+      { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId },
+      "email_send_settled_by_message_id",
+    );
+    if (intent.providerMessageId === null) {
+      await this.deps.intents.recordProviderMessageId(intent.id, { provider: input.provider, providerMessageId: input.providerMessageId });
+    }
   }
 
   /** Bounces the sends behind the Radioso Message-Ids an inbound delivery status report names. */
@@ -111,6 +167,14 @@ export class ProviderDeliveryEvents {
     this.deps.metrics?.incrementCounter("email_send_provider_events_total", {
       help: "Provider delivery evidence for sent email by status, source and outcome.",
       labels: { status, source, outcome },
+    });
+  }
+
+  /** Only counted when the provider id was foreign and the Message-ID fallback was attempted (#1619). */
+  private countMessageIdFallback(outcome: "settled" | "foreign"): void {
+    this.deps.metrics?.incrementCounter("email_send_message_id_fallback_total", {
+      help: "Delivery events a foreign provider id left to the RFC Message-ID fallback, settled or still foreign.",
+      labels: { outcome },
     });
   }
 }

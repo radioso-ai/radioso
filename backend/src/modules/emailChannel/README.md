@@ -129,7 +129,11 @@ It does not own:
   the trigger's authority holds (`repostAuthorized`) and looks accepted sends,
   and `uncertain` attempts whose acceptance arrived late, up after 24;
   `providerDeliveryEvents.ts` applies
-  provider delivery events and inbound DSN bounces. Every writer applies
+  provider delivery events and inbound DSN bounces, falling back from a
+  foreign provider id to the RFC Message-ID a delivery event carries when the
+  provider's own id was never recorded (a 5xx whose outcome stayed unknown),
+  and recording that id on the intent so a later event matches directly.
+  Every writer applies
   `sendIntentTransitions.ts` through `sendIntentWriter.ts`, whose unit of
   work (bound in `backend/src/app/composition/emailChannel/outbound.ts`) commits the
   fenced transition with the delivery failure it raises or clears, and which

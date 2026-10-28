@@ -56,7 +56,13 @@ const eventRowOf = (provider: string, event: VerifiedInboundEvent): Parameters<E
     case "message_received":
       return { provider, providerEventId: event.providerEventId, eventKind: event.kind, providerObjectId: event.providerObjectId, envelope: event.envelope };
     case "delivery_status":
-      return { provider, providerEventId: event.providerEventId, eventKind: event.kind, providerObjectId: event.providerObjectId, envelope: { status: event.status } };
+      return {
+        provider,
+        providerEventId: event.providerEventId,
+        eventKind: event.kind,
+        providerObjectId: event.providerObjectId,
+        envelope: { status: event.status, rfcMessageId: event.rfcMessageId },
+      };
     case "domain_status":
       return { provider, providerEventId: event.providerEventId, eventKind: event.kind, providerObjectId: event.providerObjectId, envelope: {} };
     case "unsupported":

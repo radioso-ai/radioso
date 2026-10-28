@@ -1,7 +1,7 @@
 ---
 title: "Email Channel"
 description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies or let grounded ones send themselves, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
-last_updated: 2026-10-24
+last_updated: 2026-10-29
 ---
 
 # Email Channel
@@ -244,7 +244,11 @@ send goes `uncertain` too.
 report a delivery outcome after a send has already gone `uncertain`.
 Radioso applies it without any operator step: a late `delivered` clears the
 flag on its own, while a late `bounced` or `failed` keeps the flag open,
-now carrying that reason. Late evidence about an earlier attempt updates
+now carrying that reason. Even when a crash or a provider 5xx meant Radioso
+never recorded the provider's own id for the send, a later event still
+matches it by the Message-ID Radioso generated, so the same automatic
+resolution applies — you don't need to step in just because that id was
+never confirmed. Late evidence about an earlier attempt updates
 that attempt only: once you've asked for a resend, the newer copy keeps its
 own status and stays resolvable on its own evidence.
 

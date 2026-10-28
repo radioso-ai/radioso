@@ -1,7 +1,7 @@
 import { sql, type Selectable } from "kysely";
 import { z } from "zod";
 
-import { currentTimestamp, nowPlusSeconds, toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, isUniqueViolation, nowPlusSeconds, toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
 import { parseRfcMessageId, type OutboundThreadingHeaders, type RfcMessageId } from "../../mail/public.js";
 import type { EngagementMode } from "../mailboxes/effectiveMode.js";
@@ -447,6 +447,48 @@ export class EmailSendIntentRepository {
       )
       .execute();
     return rows.map(mapIntent);
+  }
+
+  /**
+   * The intent behind its own supplied RFC Message-ID, with no mailbox in scope (#1619): the
+   * fallback for a provider delivery event whose own id this deployment never recorded, after a
+   * provider 5xx whose outcome was unknown. The id is minted on the mailbox's verified sending
+   * domain with the intent's own id, so a match can only ever be this deployment's own send.
+   */
+  async findBySuppliedRfcMessageId(provider: string, rfcMessageId: string): Promise<EmailSendIntentRecord | null> {
+    const row = await this.db
+      .selectFrom("email_send_intents")
+      .selectAll()
+      .where("provider", "=", provider)
+      .where("supplied_rfc_message_id", "=", rfcMessageId)
+      .executeTakeFirst();
+    return row ? mapIntent(row) : null;
+  }
+
+  /**
+   * Records the provider's own id for an intent the Message-ID fallback reached (#1619), so a
+   * later event for the same send matches directly, without the fallback. Fenced on the column
+   * being unset; a concurrent writer that assigned the same id first is left as it is.
+   */
+  async recordProviderMessageId(id: string, input: { provider: string; providerMessageId: string }): Promise<boolean> {
+    try {
+      const row = await this.db
+        .updateTable("email_send_intents")
+        .set((eb) => ({
+          provider_message_id: input.providerMessageId,
+          version: eb("version", "+", 1),
+          updated_at: currentTimestamp(),
+        }))
+        .where("id", "=", id)
+        .where("provider", "=", input.provider)
+        .where("provider_message_id", "is", null)
+        .returning("id")
+        .executeTakeFirst();
+      return row !== undefined;
+    } catch (error) {
+      if (isUniqueViolation(error)) return false;
+      throw error;
+    }
   }
 
   /**

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-19T13:33:20.806Z",
+  "generatedAt": "2026-10-28T10:09:04.569Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -258,6 +258,16 @@
       "samples": 5
     },
     "voice-outcome-handoff": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-step-page-excerpt-injection": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-step-reads-page-edition-dates": {
       "status": "pass",
       "passRate": 1,
       "samples": 5

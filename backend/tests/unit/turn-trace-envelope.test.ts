@@ -15,6 +15,7 @@ import {
   type PageReadTraceDiagnostic,
 } from "../../src/modules/chat/services/turnTraceEnvelope.js";
 import type {
+  PageReadCandidateSource,
   PageReadDecision,
   PageReadGateOutcome,
 } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
@@ -71,6 +72,7 @@ describe("attachContextVariablesToGather", () => {
     resolved: true,
     operation: "lookup",
     outcome: "context_ready",
+    source: "routine",
   };
 
   it("keeps host variables but excludes page context from the gather stage on every turn", () => {
@@ -150,6 +152,7 @@ describe("attachContextVariablesToGather", () => {
         resolved,
         operation,
         outcome,
+        source: required ? "planner" : null,
       };
       const result = attachContextVariablesToGather(spine(), {
         page_context: {
@@ -242,7 +245,7 @@ describe("buildPageReadTraceDiagnostic", () => {
     decision: PageReadDecision;
     gate: PageReadGateOutcome;
     resolvedInput: boolean;
-    expected: Omit<PageReadTraceDiagnostic, "schemaVersion" | "requested">;
+    expected: Omit<PageReadTraceDiagnostic, "schemaVersion" | "requested" | "source">;
   }>)(
     "maps $gate.kind to the content-free diagnostic outcome",
     ({ available, decision, gate, resolvedInput, expected }) => {
@@ -260,8 +263,33 @@ describe("buildPageReadTraceDiagnostic", () => {
       })).toEqual({
         schemaVersion: 1,
         requested: false,
+        source: null,
         ...expected,
       });
+    },
+  );
+
+  it.each([
+    { source: { kind: "routine", routineId: "booking" } },
+    { source: { kind: "directive", directiveId: "page-help" } },
+    { source: { kind: "planner" } },
+  ] satisfies Array<{ source: PageReadCandidateSource }>)(
+    "names the kind of the $source.kind that decided the read, never which one",
+    ({ source }) => {
+      const diagnostic = buildPageReadTraceDiagnostic({
+        capability: { available: true, mode: "content", supportedOperations: ["metadata", "lookup", "summarize"] },
+        outcome: {
+          merged: {
+            decision: { required: true, operation: "lookup", resolvedRequest: "Find it" },
+            contributors: [{ source, operation: "lookup", resolvedRequest: "Find it" }],
+          },
+          gate: { kind: "capture", operation: "lookup", resolvedRequest: "Find it" },
+        },
+        resolved: true,
+      });
+
+      expect(diagnostic.source).toBe(source.kind);
+      expect(JSON.stringify(diagnostic)).not.toMatch(/booking|page-help/u);
     },
   );
 });

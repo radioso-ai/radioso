@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-19T13:33:20.806Z",
+  "generatedAt": "2026-10-28T14:44:50.191Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -258,6 +258,36 @@
       "samples": 5
     },
     "voice-outcome-handoff": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-step-page-excerpt-injection": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-step-reads-page-edition-dates": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-reask-asks-without-announcing-gap": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-acceptance-fills-offered-dates": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-acceptance-replaces-wrong-date": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-bare-date-leaves-departure-empty": {
       "status": "pass",
       "passRate": 1,
       "samples": 5

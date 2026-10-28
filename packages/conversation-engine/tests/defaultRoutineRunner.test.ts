@@ -202,6 +202,135 @@ describe("DefaultRoutineRunner", () => {
 
       expect(result.response.answer).toBe("Confirm booking for <page>https://example.com/programs/yoga</page>?");
     });
+
+    describe("the evidence a referenced context variable carries", () => {
+      const datesRoutine: Routine = {
+        id: "contact",
+        rootStepId: "dates",
+        steps: [{
+          id: "dates",
+          kind: "chat",
+          action: "Tell them the edition dates on {{context.page_context}} and ask them to confirm. {{context.page_context}}",
+          metadata: { collectsSlots: ["arrival"] },
+        }],
+        slots: [{ id: "slot_arrival", key: "arrival", type: "date", required: true }],
+        transitions: [],
+      };
+      const pageWithText: TurnContext["stagedContext"][number] = {
+        ...stagedPage,
+        data: { kind: "page_context", pageUrl: "https://example.com/programs/yoga", content: "Runs 30 Oct to 2 Nov." },
+      };
+      const evidenceRenderer = (): RoutineContextRenderer => ({
+        render: vi.fn(() => "<page>yoga</page>"),
+        evidence: vi.fn(({ name, stagedContext }) => {
+          const staged = stagedContext.find((entry: TurnContext["stagedContext"][number]) => entry.id === name);
+          const content = (staged?.data as { content?: string } | undefined)?.content;
+          return content ? `<excerpt>${content}</excerpt>` : null;
+        }),
+      });
+      // A fresh mock per test: wrapping the shared echo mock would share its call history.
+      const freshRenderer = (): ConversationRoutineStepRenderer => ({
+        render: vi.fn(async ({ steering }) => ({ answer: steering[0]?.action ?? "", metadata: {} })),
+      });
+      const replyInput = (renderer: ConversationRoutineStepRenderer) => vi.mocked(renderer.render).mock.calls[0]?.[0];
+
+      it("gives the step's reply the evidence beside its instruction, never inside it, on the turn it is first asked", async () => {
+        const renderer = freshRenderer();
+        const runner = new DefaultRoutineRunner(
+          [datesRoutine],
+          { select: vi.fn(async () => ({ nextStepId: "dates" })) },
+          renderer,
+          undefined,
+          { contextRenderer: evidenceRenderer() },
+        );
+
+        const result = await runner.resume({
+          turn: { ...turn, stagedContext: [pageWithText] },
+          state: state([]),
+          activationTurn: true,
+        });
+
+        expect(replyInput(renderer)?.contextEvidence).toEqual(["<excerpt>Runs 30 Oct to 2 Nov.</excerpt>"]);
+        expect(replyInput(renderer)?.reask).toBeUndefined();
+        expect(result.response.answer).not.toContain("Runs 30 Oct");
+      });
+
+      it("gives it again when the step is asked again", async () => {
+        const renderer = freshRenderer();
+        const runner = new DefaultRoutineRunner(
+          [datesRoutine],
+          { select: vi.fn(async () => ({ nextStepId: "dates", variables: {} })) },
+          renderer,
+          undefined,
+          { contextRenderer: evidenceRenderer() },
+        );
+
+        await runner.resume({ turn: { ...turn, stagedContext: [pageWithText] }, state: state(["dates"]) });
+
+        expect(replyInput(renderer)?.reask).toBeDefined();
+        expect(replyInput(renderer)?.contextEvidence).toEqual(["<excerpt>Runs 30 Oct to 2 Nov.</excerpt>"]);
+      });
+
+      it("gives an await step's reply the evidence too", async () => {
+        const awaitRoutine: Routine = {
+          id: "contact",
+          rootStepId: "approve",
+          steps: [{
+            id: "approve",
+            kind: "await",
+            action: "Confirm booking for {{context.page_context}}?",
+            decision: { captureKey: "decision", options: [{ id: "yes", label: "Yes" }, { id: "no", label: "No" }] },
+          }],
+          transitions: [],
+        };
+        const renderer = freshRenderer();
+        const runner = new DefaultRoutineRunner(
+          [awaitRoutine],
+          { select: vi.fn(async () => ({ nextStepId: "approve" })) },
+          renderer,
+          undefined,
+          { contextRenderer: evidenceRenderer() },
+        );
+
+        await runner.resume({ turn: { ...turn, stagedContext: [pageWithText] }, state: state([]) });
+
+        expect(replyInput(renderer)?.contextEvidence).toEqual(["<excerpt>Runs 30 Oct to 2 Nov.</excerpt>"]);
+      });
+
+      it("asks for a variable's evidence once, however often the instruction references it", async () => {
+        const contextRenderer = evidenceRenderer();
+        const runner = new DefaultRoutineRunner(
+          [datesRoutine],
+          { select: vi.fn(async () => ({ nextStepId: "dates" })) },
+          freshRenderer(),
+          undefined,
+          { contextRenderer },
+        );
+
+        await runner.resume({ turn: { ...turn, stagedContext: [pageWithText] }, state: state([]), activationTurn: true });
+
+        expect(contextRenderer.evidence).toHaveBeenCalledOnce();
+        expect(contextRenderer.evidence).toHaveBeenCalledWith({ name: "page_context", stagedContext: [pageWithText] });
+      });
+
+      it.each<[string, RoutineContextRenderer, TurnContext["stagedContext"]]>([
+        ["the variable carries none", evidenceRenderer(), [stagedPage]],
+        ["the renderer gives none", { render: () => "<page>yoga</page>" }, [pageWithText]],
+      ])("gives no evidence when %s", async (_case, contextRenderer, stagedContext) => {
+        const renderer = freshRenderer();
+        const runner = new DefaultRoutineRunner(
+          [datesRoutine],
+          { select: vi.fn(async () => ({ nextStepId: "dates" })) },
+          renderer,
+          undefined,
+          { contextRenderer },
+        );
+
+        await runner.resume({ turn: { ...turn, stagedContext }, state: state([]), activationTurn: true });
+
+        expect(replyInput(renderer)).not.toHaveProperty("contextEvidence");
+      });
+    });
   });
 
   it("dispatches a root skill step and passes its outputs as staged context to the rendered chat step", async () => {
@@ -3747,6 +3876,22 @@ describe("DefaultRoutineRunner slot values checked against their declared type (
     const result = await runner.resume({ turn, state: state(["ask_email", "ask_adults"], { email: "giulia@example.com" }) });
 
     expect(result.terminal).toEqual({ kind: "complete", stepId: "done", collected: { email: "giulia@example.com", adults: 2 } });
+  });
+
+  // #1664: accepting the dates a step offered corrects a date an earlier turn put in the wrong slot.
+  it("hands off this turn's value for a slot that already held one", async () => {
+    const runner = new DefaultRoutineRunner([booking], choosing("done", { adults: 2, arrival: "2026-11-02" }), renderer());
+
+    const result = await runner.resume({
+      turn,
+      state: state(["ask_email", "ask_adults"], { email: "giulia@example.com", arrival: "2026-10-30" }),
+    });
+
+    expect(result.terminal).toEqual({
+      kind: "complete",
+      stepId: "done",
+      collected: { email: "giulia@example.com", adults: 2, arrival: "2026-11-02" },
+    });
   });
 
   it("drops a rejected value for another step's slot without holding the step the visitor answered", async () => {

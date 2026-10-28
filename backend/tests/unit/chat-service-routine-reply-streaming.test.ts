@@ -379,7 +379,10 @@ const contactModel = (input: {
 
 // --- A routine runner double that claims the turn with given effects and reply. ---
 
-const claimingRoutine = (claims: Array<{ effects?: Partial<ConversationRoutineRunEffects>; reply: PendingRenderableTurn }>) => {
+const claimingRoutine = (
+  claims: Array<{ effects?: Partial<ConversationRoutineRunEffects>; reply: PendingRenderableTurn }>,
+  routines?: readonly Routine[],
+) => {
   const claim = vi.fn<NonNullable<ConversationRoutineRunner["claim"]>>();
   for (const entry of claims) {
     claim.mockImplementationOnce(async ({ state }) => ({
@@ -407,6 +410,7 @@ const claimingRoutine = (claims: Array<{ effects?: Partial<ConversationRoutineRu
   };
   const routineProvider: ChatRoutineProvider = {
     forTurn: async () => ({
+      ...(routines ? { routines } : {}),
       activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
       runner,
     }),
@@ -1356,6 +1360,54 @@ describe("ChatService streams a routine reply that reports no completed action",
       expect(claim).toHaveBeenCalledTimes(2);
     });
   });
+
+  it.each([true, false])(
+    "records the page read of a routine whose step reads the visitor's page (streamed: %s)",
+    async (stream) => {
+      const pageRoutine: Routine = {
+        id: "contact.request",
+        rootStepId: "ask_email",
+        steps: [{
+          id: "ask_email",
+          kind: "chat",
+          action: "Name the course on {{context.page_context}} and ask for the visitor's email.",
+          metadata: { contextRefs: ["page_context"] },
+        }],
+        transitions: [],
+      };
+      const { routineProvider } = claimingRoutine(
+        [{ reply: streamingReply(["Which email ", "can we use?"]) }],
+        [pageRoutine],
+      );
+      const observed: Observed = { order: [], events: [] };
+      const harness = await chatService({ routineProvider, chatGateway: unusedGateway, order: observed.order });
+      const turn = {
+        ...request("book this edition"),
+        stream,
+        pageContext: { pageUrl: "https://example.test/courses/autumn", content: "Autumn retreat, 30 Oct to 2 Nov." },
+      };
+
+      let turnTrace;
+      if (stream) {
+        expect(await drainTurn(harness.service.streamAnswer(turn), observed)).toBeUndefined();
+        const done = observed.events.find((event) => event.type === "done");
+        turnTrace = done?.type === "done" ? done.turnTrace : undefined;
+      } else {
+        turnTrace = (await harness.service.answer(turn)).turnTrace;
+      }
+
+      const assistant = vi.mocked(harness.messageRepository.create).mock.calls
+        .map(([message]) => message)
+        .find((message) => message.role === "assistant");
+      expect(assistant?.metadata?.pageRead).toEqual({
+        decision: { required: true, operation: "lookup", resolvedRequest: "book this edition" },
+        winnerSource: { kind: "routine", routineId: "contact.request" },
+        gateOutcome: "capture",
+      });
+      const gather = turnTrace?.spine.stages.find((stage) => stage.kind === "gather");
+      expect(gather?.outputs?.pageRead).toMatchObject({ source: "routine", outcome: "context_ready", resolved: true });
+    },
+  );
 
   it("renders the reply whole on the non-streaming path, as before", async () => {
     const reply = streamingReply(["Which email ", "can we use?"]);

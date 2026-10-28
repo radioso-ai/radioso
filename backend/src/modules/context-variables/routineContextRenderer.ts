@@ -63,11 +63,21 @@ const renderPageContext = (data: unknown): string | null => {
   return `<page_context>Current page: ${line}</page_context>`;
 };
 
+const PAGE_EXCERPT_TAG = "page_excerpt";
+// The `<` of anything a model could read as the excerpt's own opening or closing tag, in any
+// case and spacing. Structural: it matches the frame's tag name, not page vocabulary.
+const PAGE_EXCERPT_TAG_START = new RegExp(`<(?=\\s*/?\\s*${PAGE_EXCERPT_TAG}\\b)`, "giu");
+
 // The visible page text, present only when the widget sent it and this turn's page read
-// captured it. Escaped like the identity fields, so page text cannot close the excerpt.
+// captured it. It reaches the reply as evidence, not inside the system prompt, so it keeps
+// the page's own characters: escaped, "Yoga & Meditazione" reached the visitor as
+// "Yoga &amp; Meditazione". Only a sequence that could close the excerpt or open another is
+// broken up, so page text cannot step outside the frame and pass as an instruction.
 const pageExcerptEvidence = (data: unknown): string | null => {
-  const content = isRecord(data) ? escapedString(data.content) : null;
-  return content === null ? null : `<page_excerpt>${content}</page_excerpt>`;
+  const content = isRecord(data) ? usableString(data.content) : null;
+  return content === null
+    ? null
+    : `<${PAGE_EXCERPT_TAG}>${content.replace(PAGE_EXCERPT_TAG_START, "&lt;")}</${PAGE_EXCERPT_TAG}>`;
 };
 
 const stagedValue = (data: unknown): unknown =>

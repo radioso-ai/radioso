@@ -454,8 +454,11 @@ On each turn, before normal skill selection, the engine checks for a routine:
      title, and locale. The host's context renderer can also give a variable's
      evidence, which the runner hands the step renderer as `contextEvidence`, once
      per referenced variable, on the step's first ask and on every re-ask. For
-     `page_context` the evidence is the captured page excerpt, escaped and framed
-     as `<page_excerpt>`, present when the embed sends page content. The renderer
+     `page_context` the evidence is the captured page excerpt, framed as
+     `<page_excerpt>` and present when the embed sends page content. The text
+     keeps the page's own characters, so "Yoga & Meditazione" reads as written;
+     only a sequence that would close the frame or open another is broken up, so
+     page text cannot step outside it. The renderer
      puts the evidence in one user-role message before the visitor's message,
      framed as untrusted quoted data, so the reply can state facts from the page
      while the step instruction stays the only instruction.

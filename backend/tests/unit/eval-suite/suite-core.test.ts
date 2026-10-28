@@ -225,6 +225,44 @@ describe("trace assertions", () => {
     ).status).toBe("error");
   });
 
+  it("passes routine_slots_unfilled only when none of the named slots holds a value after the turn", () => {
+    const output = observed({
+      turnTrace: trace([
+        {
+          id: `routine:${BOOK_DEMO_ROUTINE_ID}`,
+          kind: "routine_activate",
+          status: "applied",
+          outputs: { routineId: BOOK_DEMO_ROUTINE_ID },
+          subTrace: {
+            namespace: "routine",
+            version: 1,
+            payload: {
+              routineId: BOOK_DEMO_ROUTINE_ID,
+              startStepId: "ask_name",
+              landedStepId: "ask_name",
+              capturedSlotKeys: ["preferredDate"],
+              filledSlotKeys: ["preferredDate"],
+              steps: [{ stepId: "ask_name", kind: "chat", event: "reasked" }],
+            },
+          },
+        },
+      ]),
+    });
+    const unfilled = (slotKeys: string[]) =>
+      evaluateTraceAssertion({ type: "routine_slots_unfilled", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys }, output);
+
+    expect(unfilled(["email", "name"]).status).toBe("pass");
+    expect(unfilled(["email", "preferredDate"])).toMatchObject({ status: "fail", reason: expect.stringContaining("preferredDate") });
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_unfilled", routineId: CONTACT_SUPPORT_ROUTINE_ID, slotKeys: ["email"] },
+      output,
+    ).status).toBe("fail");
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_unfilled", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys: ["email"] },
+      observed({}),
+    ).status).toBe("error");
+  });
+
   it("passes routine_yielded only when the routine yielded the turn and stays parked on the step", () => {
     const output = observed({
       turnTrace: trace([

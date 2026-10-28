@@ -732,6 +732,32 @@ describe("routine defaults", () => {
       const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
       expect(systemPrompt).toContain("Record a date slot's value as YYYY-MM-DD");
       expect(systemPrompt).toContain("Today is 2026-09-30 (UTC)");
+      expect(systemPrompt).toContain("a date they give for a date slot counts as provided");
+    });
+
+    // #1664: a bare date with two date slots went to either one, and a "yes" to dates the step
+    // had just offered filled neither.
+    it("reads the message as a reply, so a value fills only the slot it is given for and an accepted proposal fills its slots", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain("Read the latest message as a reply to your last message.");
+      expect(systemPrompt).toContain("given without saying which one it is for goes in none of them");
+      expect(systemPrompt).toContain("One value goes into two slots only when the message gives it for both.");
+      expect(systemPrompt).toContain("the latest message accepts them, in any words, those values are given this turn");
+      expect(systemPrompt).toContain("replacing any value the slot already holds");
+      expect(systemPrompt).toContain("A value the user changes while accepting is the one to keep.");
+      expect(systemPrompt).toContain("omit slots not provided or accepted this turn");
+    });
+
+    it("leaves the reply and acceptance rules out when the routine declares no slots", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).not.toContain("Read the latest message as a reply");
+      expect(systemPrompt).not.toContain("accepts them");
     });
 
     it("leaves the date rule out when no slot is a date", async () => {

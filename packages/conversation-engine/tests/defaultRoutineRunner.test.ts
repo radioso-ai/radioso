@@ -3878,6 +3878,22 @@ describe("DefaultRoutineRunner slot values checked against their declared type (
     expect(result.terminal).toEqual({ kind: "complete", stepId: "done", collected: { email: "giulia@example.com", adults: 2 } });
   });
 
+  // #1664: accepting the dates a step offered corrects a date an earlier turn put in the wrong slot.
+  it("hands off this turn's value for a slot that already held one", async () => {
+    const runner = new DefaultRoutineRunner([booking], choosing("done", { adults: 2, arrival: "2026-11-02" }), renderer());
+
+    const result = await runner.resume({
+      turn,
+      state: state(["ask_email", "ask_adults"], { email: "giulia@example.com", arrival: "2026-10-30" }),
+    });
+
+    expect(result.terminal).toEqual({
+      kind: "complete",
+      stepId: "done",
+      collected: { email: "giulia@example.com", adults: 2, arrival: "2026-11-02" },
+    });
+  });
+
   it("drops a rejected value for another step's slot without holding the step the visitor answered", async () => {
     const runner = new DefaultRoutineRunner(
       [booking],

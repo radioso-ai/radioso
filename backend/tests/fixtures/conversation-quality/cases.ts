@@ -765,6 +765,50 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       },
     ],
   },
+  // #1662: a re-asked step asks for the rest as a plain question. The dates step offered the
+  // edition's dates and the visitor gave only the arrival, so the step is asked again for the
+  // departure. The reply asks when they leave (it may offer the edition's end date again)
+  // without announcing that something is missing, as "Mi manca solo la data di partenza" did.
+  {
+    id: "routine-reask-asks-without-announcing-gap",
+    name: "A re-asked step asks for the rest without announcing what is missing",
+    tags: ["routine", "reask", "reask-framing", "multilingual"],
+    history: [
+      { role: "user", content: "Vorrei prenotare questo corso." },
+      {
+        role: "assistant",
+        content: "Volentieri! Il corso residenziale Ognissanti per la pace va dal 30 ottobre al 2 novembre 2026: confermi queste date?",
+      },
+    ],
+    routineStartState: {
+      routineId: BOOK_EDITION_ROUTINE_ID,
+      path: ["program", "dates"],
+      variables: { program: "Corso residenziale Ognissanti per la pace" },
+      status: "active",
+    },
+    query: "Arrivo il 30 ottobre",
+    pageContext: {
+      pageUrl: "https://example.invalid/corsi/ognissanti-per-la-pace",
+      pageTitle: "Corso residenziale Ognissanti per la pace",
+      pageLocale: "it",
+      browserLocale: "it-IT",
+      content:
+        "Corso residenziale Ognissanti per la pace. Edizione d'autunno: dal 30 ottobre al 2 novembre 2026. Arrivo dalle 15:00, partenza dopo pranzo.",
+    },
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "routine_step_reached", routineId: BOOK_EDITION_ROUTINE_ID, stepId: "dates" },
+      { type: "routine_slots_filled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["arrival"] },
+      { type: "answer_contains", pattern: "\\?", matchMode: "regex" },
+      // The Italian ways the reply announced the gap in production.
+      { type: "answer_does_not_contain", pattern: "\\bmanca|\\bmancano|serv[eo]no? ancora|ho ancora bisogno", matchMode: "regex" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Perfetto, arrivo il 30 ottobre. E quando riparti? L'edizione termina il 2 novembre.",
+        criteria: "Acknowledges the arrival date and asks when the visitor leaves, optionally offering the edition's end date. Does not announce that something is missing or still needed, and does not list what was already collected.",
+      },
+    ],
+  },
   quickReplyCase({
     id: "quick-reply-greeting-en",
     name: "An English greeting is answered by the planner's own reply",

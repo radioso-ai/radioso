@@ -438,7 +438,8 @@ const voiceGreetingSource = (greetings: AgentGreetingReader): VoiceGreetingSourc
  * deployment fallback, so a workspace without one gets no session. On a vendor agent Radioso
  * maintains (the runtime connections, `VoiceRuntimeConnectionRepository` in production) the start
  * also hands the page the call's first message, with the agent's greeting from chat's
- * `AgentGreetingReader` (`ChatBootstrapService`). The same service tells a page
+ * `AgentGreetingReader` (`ChatBootstrapService`), and the call's language, which the ElevenLabs
+ * provisioner over the same `fetch` reads off the vendor agent it keeps. The same service tells a page
  * whether to offer sessions, from the key's presence alone (`hasCredentials` decrypts nothing) and
  * whether the backend holds the master key to read it.
  */
@@ -459,6 +460,7 @@ export const createVoiceSessionStartComposition = (deps: {
     starts: deps.starts,
     connections: deps.connections,
     greetings: voiceGreetingSource(deps.greetings),
+    sessionLanguages: { elevenlabs: createElevenLabsRuntimeProvisioner({ fetch: deps.fetch }) },
     newSessionKey: randomUUID,
     metrics: deps.metricsRegistry,
     logger: deps.logger,

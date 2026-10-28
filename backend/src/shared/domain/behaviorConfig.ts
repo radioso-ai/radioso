@@ -422,6 +422,11 @@ export const VOICE_BEHAVIOR = {
   // longer starts the call without it rather than keep the visitor on Connecting. The greeting
   // still lands in the cache for the next call.
   sessionGreetingWaitMs: 2_500,
+  // A session start on a vendor agent Radioso maintains waits this long for the vendor agent's
+  // settings, which say whether the session may set its language; it reads them beside the greeting
+  // while the vendor opens the session, so the same bound keeps either from holding the start
+  // longer than the other. One that takes longer starts the call in the vendor agent's language.
+  sessionLanguageWaitMs: 2_500,
 } as const;
 
 export const DOCUMENT_BEHAVIOR = {

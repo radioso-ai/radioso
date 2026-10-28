@@ -6,6 +6,7 @@ import {
   type VoiceRuntimeAgentEnsured,
   type VoiceRuntimeAgentSpec,
   type VoiceRuntimeProvisioner,
+  type VoiceSessionLanguageSource,
   type VoiceVendorCredential,
 } from "../../domain.js";
 import { discardBody, isTimeout, readBoundedText } from "./fetchHelpers.js";
@@ -80,13 +81,18 @@ type JsonRecord = Record<string, unknown>;
 const isRecord = (value: unknown): value is JsonRecord => typeof value === "object" && value !== null && !Array.isArray(value);
 const recordOr = (value: unknown): JsonRecord => (isRecord(value) ? value : {});
 
-/** The vendor's language for a Radioso locale: the whole tag when the vendor lists it, else its language, else English. */
-const vendorLanguageOf = (locale: string | null): { language: ElevenLabsLanguage; supported: boolean } => {
-  if (!locale) return { language: DEFAULT_LANGUAGE, supported: true };
+/** The vendor's language for a Radioso locale: the whole tag when the vendor lists it, else its language; null when it lists neither. */
+const listedLanguageOf = (locale: string): ElevenLabsLanguage | null => {
   const tag = locale.toLowerCase();
   const subtag = tag.split("-")[0] ?? "";
   const listed = [tag, subtag].find((candidate) => PRESET_LANGUAGES.has(candidate)) as ElevenLabsLanguage | undefined;
-  const language = listed ?? LANGUAGE_ALIASES[subtag];
+  return listed ?? LANGUAGE_ALIASES[subtag] ?? null;
+};
+
+/** The language calls on the agent start in: the vendor's for the agent's default locale, else English. */
+const vendorLanguageOf = (locale: string | null): { language: ElevenLabsLanguage; supported: boolean } => {
+  if (!locale) return { language: DEFAULT_LANGUAGE, supported: true };
+  const language = listedLanguageOf(locale);
   return language ? { language, supported: true } : { language: DEFAULT_LANGUAGE, supported: false };
 };
 
@@ -169,18 +175,29 @@ const parseStoredAgent = (text: string | null): StoredAgent | null => {
 
 /**
  * The overrides with every one Radioso owns allowed, and everything else as stored: the custom LLM
- * extra body, which carries each session's key, and the agent's first message, which a session
- * Radioso starts sets to the agent's greeting. Each nested section goes back whole, since the
- * vendor refuses one given in part. A session that sets the first message on an agent that does
- * not allow it is closed by the vendor, so only an agent Radioso maintains is sent one.
+ * extra body, which carries each session's key, the agent's first message, which a session Radioso
+ * starts sets to the agent's greeting, and the agent's language, which it sets to the session's.
+ * Each nested section goes back whole, since the vendor refuses one given in part. A session that
+ * sets an override its agent does not allow is closed by the vendor, so only an agent Radioso
+ * maintains is sent one, and a language only once `sessionLanguageAllowed` reads it allowed.
  */
 const ownedOverrides = (stored: JsonRecord): JsonRecord => {
   const configOverride = recordOr(stored.conversation_config_override);
   return {
     ...stored,
     custom_llm_extra_body: true,
-    conversation_config_override: { ...configOverride, agent: { ...recordOr(configOverride.agent), first_message: true } },
+    conversation_config_override: { ...configOverride, agent: { ...recordOr(configOverride.agent), first_message: true, language: true } },
   };
+};
+
+/**
+ * Whether the agent as stored lets a session set its language. A vendor agent Radioso created
+ * before it allowed that, or one whose overrides someone changed in the vendor's dashboard, does
+ * not, until Connect or a default-locale sync sets it up again.
+ */
+const sessionLanguageAllowed = (stored: StoredAgent): boolean => {
+  const configOverride = recordOr(recordOr(stored.platformSettings.overrides).conversation_config_override);
+  return recordOr(configOverride.agent).language === true;
 };
 
 /**
@@ -216,9 +233,12 @@ const withTimeout = (timeoutMs: number) => AbortSignal.timeout(timeoutMs);
  * language the vendor offers but the one calls start in, so a mid-call switch can reach any
  * language an answer is written in), `turn` (no speculative turns: each one would be a real
  * Radioso turn) and `platform_settings.overrides` (the custom LLM extra body that carries the
- * session key, and the first message a session sets). The REST credential's secret lives in a workspace secret the agent references; a
- * secret stays while an agent references it, so a rotation points the agent at the new one first
- * and a release deletes the agent first.
+ * session key, and the first message and language a session sets). The REST credential's secret
+ * lives in a workspace secret the agent references; a secret stays while an agent references it,
+ * so a rotation points the agent at the new one first and a release deletes the agent first.
+ *
+ * It is also the `VoiceSessionLanguageSource`: it reads the agent, which the vendor serves with
+ * its overrides, so a session sets its language only on an agent that allows it today.
  */
 export const createElevenLabsRuntimeProvisioner = (dependencies: {
   fetch: ProvisionerFetch;
@@ -226,7 +246,7 @@ export const createElevenLabsRuntimeProvisioner = (dependencies: {
   probeTimeoutMs?: number;
   /** Each management request's limit; tests only. */
   requestTimeoutMs?: number;
-}): VoiceRuntimeProvisioner => {
+}): VoiceRuntimeProvisioner & VoiceSessionLanguageSource => {
   const requestTimeoutMs = dependencies.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
 
   /** One request; a request that never gets an answer rejects as unreachable or timeout. */
@@ -434,6 +454,14 @@ export const createElevenLabsRuntimeProvisioner = (dependencies: {
       if (!response.ok && response.status !== 404) throw await vendorErrorOf(response);
       await discardBody(response);
       if (stored.secretId) await deleteSecretQuietly(region, credential, stored.secretId);
+    },
+
+    languageFor: async ({ region, credential, vendorAgentId, locale }) => {
+      const language = listedLanguageOf(locale);
+      if (!language) return { outcome: "unsupported" };
+      const stored = await readAgent(region, credential, vendorAgentId);
+      if (!stored) throw new VoiceVendorRequestError("refused", 404);
+      return sessionLanguageAllowed(stored) ? { outcome: "set", language } : { outcome: "not_allowed" };
     },
   };
 };

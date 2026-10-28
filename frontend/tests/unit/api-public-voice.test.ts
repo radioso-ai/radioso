@@ -101,6 +101,20 @@ describe('public voice session start: recording notice', () => {
     const none = await startPublicVoiceSession('token', { locale: 'it' })
     expect(none.kind === 'started' ? none.session : null).not.toHaveProperty('firstMessage')
   })
+
+  it("keeps the vendor's language for the call, and leaves it out when the start names none", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond(200, { ...session, vendorLanguage: 'it' })))
+    expect(await startPublicVoiceSession('token', { locale: 'it' }))
+      .toMatchObject({ kind: 'started', session: { vendorLanguage: 'it' } })
+
+    vi.stubGlobal('fetch', vi.fn(async () => respond(200, { ...session, vendorLanguage: ' ' })))
+    const blank = await startPublicVoiceSession('token', { locale: 'it' })
+    expect(blank.kind === 'started' ? blank.session : null).not.toHaveProperty('vendorLanguage')
+
+    vi.stubGlobal('fetch', vi.fn(async () => respond(200, session)))
+    const none = await startPublicVoiceSession('token', { locale: 'it' })
+    expect(none.kind === 'started' ? none.session : null).not.toHaveProperty('vendorLanguage')
+  })
 })
 
 describe('vendor conversation report', () => {

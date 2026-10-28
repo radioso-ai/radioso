@@ -24,7 +24,10 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `isMaintainedRuntime`, the one rule for whether a binding is one of them). It
   names no vendor and no wire: no secret id, custom LLM, preset or tag. The
   agent's greeting reaches it as `VoiceGreetingSource` (words in a language, or
-  none), so it knows nothing of how chat greets.
+  none), so it knows nothing of how chat greets; the language a session on a
+  maintained vendor agent sets reaches it as `VoiceSessionLanguageSource` (the
+  vendor's code, `unsupported` or `not_allowed`), so it knows no vendor's
+  language list.
 - `services/` runs the turn: `voiceTurnService.ts` resolves or binds the
   session's conversation, reads the agent's voice settings and the
   conversation's routine state and owner, starts the chat turn with
@@ -71,13 +74,17 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   through `VoiceVendorCredentialReader`, asks that vendor's
   `VoiceSessionStarter` for the session, and mints the session key (a UUID).
   On a vendor agent Radioso maintains (`isMaintainedRuntime` over
-  `VoiceRuntimeConnectionStore.find`) the start also hands back the call's
-  `firstMessage`: `sessionFirstMessage.ts` reads the connection and the
-  agent's greeting in the session's language (`VoiceGreetingSource`) while the
-  vendor opens the session, waits `VOICE_BEHAVIOR.sessionGreetingWaitMs` (2.5 s)
-  for the greeting, and joins the recording notice and the greeting, each
-  through `speechText.ts`'s `spokenText`, a paragraph apart. A greeting that is
-  late or fails, or a connection that cannot be read, never fails the start.
+  `VoiceRuntimeConnectionStore.find`, read once by `sessionPreparation.ts`'s
+  `readSessionMaintenance` while the vendor opens the session) the start also
+  hands back the call's `firstMessage` and `vendorLanguage`.
+  `sessionFirstMessage.ts` reads the agent's greeting in the session's
+  language (`VoiceGreetingSource`), waits `VOICE_BEHAVIOR.sessionGreetingWaitMs` (2.5 s)
+  for it, and joins the recording notice and the greeting, each
+  through `speechText.ts`'s `spokenText`, a paragraph apart.
+  `sessionLanguage.ts` asks the vendor's `VoiceSessionLanguageSource` for the
+  session's resolved language tag beside it, and waits
+  `VOICE_BEHAVIOR.sessionLanguageWaitMs` (2.5 s). A greeting or a language that
+  is late or fails, or a connection that cannot be read, never fails the start.
   The same service is the `VoiceSessionAvailabilityPort`: by the gate a start
   passes (`voice.enabled`, a bound `voice.runtime`) and the presence of that
   vendor's key (`presence`, which decrypts nothing and reads `unreadable`
@@ -202,7 +209,7 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   and a 5-second limit on the answer that leaves the audio itself unbounded.
   `describeConversation` reads the conversation document (64 KB cap) for its
   `agent_id`. `runtimeProvisioner.ts` is the ElevenLabs
-  `VoiceRuntimeProvisioner`: it finds the key's region by asking all four
+  `VoiceRuntimeProvisioner` and `VoiceSessionLanguageSource`: it finds the key's region by asking all four
   region hosts at once (the one that answers `200` is it; a permission code
   is a key that may not manage agents; a host that did not answer keeps the
   key from reading as wrong), creates the agent (a workspace secret holding
@@ -215,7 +222,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   secret (a secret stays while an agent references it; a `404` agent counts as
   released). It owns the vendor's preset-language table
   (`ELEVENLABS_PRESET_LANGUAGES`), maps the agent's default locale onto it
-  (whole tag, then language, else English), and reads both error envelopes
+  (whole tag, then language, else English), and maps a session's language tag
+  onto it the same way, asking nothing for a tag it lists no language of
+  (`unsupported`) and otherwise reading the agent for whether its
+  `platform_settings.overrides` allow `conversation_config_override.agent.language`
+  (`set` or `not_allowed`; a `404` agent rejects as `refused`). It reads both error envelopes
   (`detail.code`/`detail.status`, and a validation `detail` array), 5 s per
   region probe and 10 s per management request. The audio stops when it stalls for 15 s while the listener
   waits; a listener who pauses never trips it. The ElevenLabs adapters use the region
@@ -269,8 +280,9 @@ helpers and the shared chat message limit from `app/http`
   start registry, the runtime connections (the same
   `VoiceRuntimeConnectionRepository` the connection service writes) and chat's
   `AgentGreetingReader` (`ChatBootstrapService.readGreeting`, asked on the
-  `voice` surface) as the `VoiceGreetingSource`; exposed as
-  `AppDependencies.voiceSessionStarts`.
+  `voice` surface) as the `VoiceGreetingSource`, and the ElevenLabs
+  provisioner with the same `fetch` as the `VoiceSessionLanguageSource`;
+  exposed as `AppDependencies.voiceSessionStarts`.
   `app/server/dependencies.ts` builds one `VoiceSessionRepository` and hands it
   to both: the turn reads bindings and starts from it, and the start records
   into it. `createVoiceRecordingComposition` builds the recording services
@@ -432,6 +444,26 @@ helpers and the shared chat message limit from `app/http`
   hands it to the page in the call's language, else the agent's default, else
   English, else the first one written. On a maintained vendor agent the same
   line opens the call's `firstMessage` (next decision), so it is also spoken.
+- **The call's language.** A maintained vendor agent allows the session to set
+  its language (the ElevenLabs provisioner allows
+  `conversation_config_override.agent.language` on create and on every repair
+  and default-locale sync), so a session Radioso starts on it hands the page the
+  vendor's code for the session's language as `vendorLanguage`, and the
+  vendor's speech recognition and voice start in it with the greeting. A
+  vendor agent created before it allowed that, or one whose override someone
+  turned off in the vendor's dashboard, closes a session that sets it, so the
+  start reads the permission off the vendor agent itself on every start, beside
+  the greeting, rather than trusting a record: no migration, no version to keep
+  in step, and a rolling deploy (an old instance's create, or an old embed)
+  never sends a language a vendor agent refuses. That read costs one vendor
+  `GET` per call on a maintained vendor agent, in parallel with the signed URL.
+  Not allowed, late (`VOICE_BEHAVIOR.sessionLanguageWaitMs`) or failed, the call
+  starts in the vendor agent's own language; Connect, or a default-locale
+  sync, allows it again. A runtime the operator bound by hand gets no language,
+  like no first message. Each started call on a maintained vendor agent logs
+  `Voice session language prepared` (the vendor's code when set) or a warn,
+  and counts `voice_session_language_total{vendor,outcome}` (`set`,
+  `unsupported`, `not_allowed`, `timed_out`, `failed`).
 - **The call's first message.** A maintained vendor agent keeps no first
   message of its own and allows the session to set one (the ElevenLabs
   provisioner allows `conversation_config_override.agent.first_message`), so a
@@ -1093,11 +1125,14 @@ secret id or a URL.
   two pools, refused at once while held)
 - `cd backend && pnpm exec vitest run tests/contract/public-voice-session.contract.test.ts tests/contract/settings-credentials.contract.test.ts`
   (the session start through the embed's public session, with a fake vendor
-  `fetch`, including a session after Connect that carries `firstMessage`; the
+  `fetch`, including a session after Connect that carries `firstMessage` and
+  `vendorLanguage`, and one on a vendor agent that does not allow the language; the
   ElevenLabs key in the credential store)
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-session-start.test.ts tests/unit/chat-bootstrap-service.test.ts`
   (the first message: maintained or not, notice and greeting as speech, the
-  greeting's wait, failure and outcome counts; and chat's `readGreeting`, which
+  greeting's wait, failure and outcome counts; the language: maintained or
+  not, set, unsupported, not allowed, late or failed, read once beside the
+  greeting; and chat's `readGreeting`, which
   shares the web chat's greeting cache and records nothing)
 - `cd backend && pnpm exec vitest run tests/contract/voice-operator-reply.contract.test.ts`
   (an Inbox reply on a human-owned call spoken on the next turn, then marked

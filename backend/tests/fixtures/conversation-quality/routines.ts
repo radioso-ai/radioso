@@ -9,6 +9,7 @@ export const CONTACT_SUPPORT_ROUTINE_ID = "routine:cq-agent:contact-support:v1";
 export const BOOK_DEMO_ROUTINE_ID = "routine:cq-agent:book-demo:v1";
 export const START_RETURN_ROUTINE_ID = "routine:cq-agent:start-return:v1";
 export const BOOK_RETREAT_ROUTINE_ID = "routine:cq-agent:book-retreat:v1";
+export const BOOK_EDITION_ROUTINE_ID = "routine:cq-agent:book-edition:v1";
 /** The tool name `startReturnRoutine` is exposed under; the same name in chat and on the agent-facing doors. */
 export const START_RETURN_TOOL_NAME = "start_return";
 /** The skill the return routine dispatches once it holds an order id and a reason. */
@@ -187,9 +188,56 @@ export const bookRetreatRoutine: RoutineDefinition = {
   ],
 };
 
+/**
+ * A booking form whose dates step reads the course page the visitor is on (#1659): the step
+ * states the edition's dates from the page and asks the visitor to confirm them, rather than
+ * asking the visitor for dates the page already gives. Cases start it mid-run, so its narrow
+ * trigger only has to stay out of the other cases' way.
+ */
+export const bookEditionRoutine: RoutineDefinition = {
+  id: BOOK_EDITION_ROUTINE_ID,
+  agentId: CQ_AGENT_ID,
+  lineageId: "lineage:book-edition",
+  version: 1,
+  enabled: true,
+  createdAt: FIXED_DATE,
+  updatedAt: FIXED_DATE,
+  name: "Book a course edition",
+  activation: {
+    triggerDescription: "the visitor wants to book a place on the course edition shown on the page they are viewing — not a product demo, a sales call, or a stay at the retreat centre",
+    gateRef: null,
+    priority: 10,
+    reentryMode: "once_per_conversation",
+  },
+  slots: [
+    { stableSlotId: "slot_program", key: "program", type: "text", required: true, description: "The course the visitor wants to book.", ordinal: 0 },
+    { stableSlotId: "slot_dates", key: "dates", type: "text", required: true, description: "The edition dates the visitor confirms.", ordinal: 1 },
+  ],
+  steps: [
+    { stableStepId: "program", kind: "chat", instruction: "Ask which course they want to book: {{slot.program}}", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+    {
+      stableStepId: "dates",
+      kind: "chat",
+      instruction: "Tell them the start and end dates of the edition from the page they are on, {{context.page_context}}, and ask them to confirm those dates: {{slot.dates}}",
+      toolRef: null,
+      actionType: null,
+      ordinal: 1,
+      metadata: {},
+    },
+  ],
+  transitions: [
+    defaultTransition("program", "dates", 0),
+    defaultTransition("dates", "done", 1),
+  ],
+  terminals: [
+    { stableStepId: "done", kind: "complete", instruction: "Tell them the booking team will contact them to finish the booking.", ordinal: 0 },
+  ],
+};
+
 export const conversationQualityRoutines: RoutineDefinition[] = [
   contactSupportRoutine,
   bookDemoRoutine,
   startReturnRoutine,
   bookRetreatRoutine,
+  bookEditionRoutine,
 ];

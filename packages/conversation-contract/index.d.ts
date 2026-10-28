@@ -1434,6 +1434,8 @@ export interface RoutineStepReplyInput {
    * follows its instruction, so `steering` is empty and `reask` absent.
    */
   stuckHandoff?: boolean;
+  /** {@link RoutineContextRenderer.evidence} of the context variables the step references; absent when none carries any. */
+  contextEvidence?: readonly string[];
 }
 
 /**
@@ -1914,11 +1916,7 @@ export interface ProcessTurnInput {
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
-  /**
-   * Optional second activation pass for routines explicitly gated by coverage
-   * criteria. The normal routine activator always runs first, so an active routine
-   * keeps control and legacy activation behavior is unchanged.
-   */
+  /** A second activation pass for coverage-gated routines, after the normal activator, so an active routine keeps control. */
   coverageRoutineActivator?: ConversationCoverageRoutineActivator;
   /** Records bounded post-evidence decisions without exposing request/evidence text. */
   coverageReactionRecorder?: ConversationCoverageReactionRecorder;
@@ -2238,13 +2236,14 @@ export type PreparedRoutineCandidates =
   | { kind: "none" };
 
 /**
- * Renders one staged context variable as text a step instruction can embed (the engine
- * substitutes each `{{context.<name>}}` token in a step's action with it); null when the
- * variable is absent or must not be shown. The host owns what any variable looks like — the
- * engine knows no field of any of them.
+ * Renders one staged context variable for a routine step; the host owns what any variable looks
+ * like, and the engine knows no field of any of them. `render` is the text substituted for each
+ * `{{context.<name>}}` token in a step's action; `evidence` is untrusted content the step reply
+ * reads as quoted data beside the instruction, never in it. Each is null when there is none.
  */
 export interface RoutineContextRenderer {
   render(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
+  evidence?(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
 }
 
 /** Renders a grounded answer for a routine step, or null when the step is not groundable. */

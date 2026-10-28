@@ -822,7 +822,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     id: "routine-bare-date-leaves-departure-empty",
     name: "A bare date in the opening message does not fill the departure",
     tags: ["routine", "slot-filling", "multilingual"],
-    query: "Vorrei prenotare per 30 ottobre",
+    query: "Vorrei prenotare questo corso per il 30 ottobre",
     pageContext: ognissantiEditionPage,
     clientContextCapabilities: contentPageReadCapabilities,
     assertions: [

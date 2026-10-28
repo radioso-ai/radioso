@@ -31,10 +31,13 @@ const stagedTurn: TurnContext = {
   }],
 };
 
+const pageEvidence = "<page_excerpt>Autumn retreat: 30 October to 2 November.</page_excerpt>";
+
 const replyInputs: Array<{ name: string; input: RoutineStepReplyInput }> = [
   { name: "step reply", input: { step: askEmail, steering: stepSteering, turn } },
   { name: "re-ask", input: { step: askEmail, steering: stepSteering, turn, reask: { missingSlots: [{ id: "slot_email", key: "email", type: "email", required: true }], exhausted: true } } },
   { name: "cited step reply", input: { step: askEmail, steering: stepSteering, turn: stagedTurn } },
+  { name: "step reply with context evidence", input: { step: askEmail, steering: stepSteering, turn, contextEvidence: [pageEvidence] } },
   {
     name: "handoff terminal",
     input: {
@@ -173,6 +176,19 @@ describe("RoutineStepRenderer streamed step reply", () => {
     expect(deltas[0]).toBe("Which");
     expect(finished).toEqual(expected);
     expect(streamed.requests.map((entry) => entry.request)).toEqual(rendered.requests.map((entry) => entry.request));
+  });
+
+  it("streams a step reply that reads the context evidence beside the visitor's message, not in the system prompt", async () => {
+    const { gateway, requests } = gatewayFor("unused", [["Is it the 30 October edition?"]]);
+
+    await drain(
+      new RoutineStepRenderer(gateway).prepare({ step: askEmail, steering: stepSteering, turn, contextEvidence: [pageEvidence] }).stream!(),
+    );
+
+    const [{ request }] = requests;
+    expect(request.systemPrompt).not.toContain(pageEvidence);
+    expect(request.messages.at(-2)?.content).toContain(pageEvidence);
+    expect(request.messages.at(-1)).toEqual({ role: "user", content: turn.inputEvent.content });
   });
 
   it("retries a blank stream once, and shows only the retry", async () => {

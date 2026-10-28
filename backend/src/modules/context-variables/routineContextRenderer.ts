@@ -42,9 +42,9 @@ const findStagedVariable = (name: string, stagedContext: readonly StagedContext[
   stagedContext.find((staged) => staged.kind === "context_variable" && stagedVariableName(staged) === name) ?? null;
 
 // Only the page's identity reaches a step instruction: URL, title, and language. The visible
-// page excerpt stays out — it is the injection surface, and the page-read pipeline already
-// hands the model the excerpt as evidence where a turn needs it. The fields that do reach it
-// are visitor-browser-supplied, so they are escaped: a title cannot close the framing tag.
+// page excerpt stays out — it is the injection surface — and reaches the step reply only as
+// evidence beside it (`pageExcerptEvidence`). The fields that do reach it are
+// visitor-browser-supplied, so they are escaped: a title cannot close the framing tag.
 const renderPageContext = (data: unknown): string | null => {
   if (!isRecord(data)) {
     return null;
@@ -61,6 +61,13 @@ const renderPageContext = (data: unknown): string | null => {
   const language = pageLocale ? `language ${pageLocale}` : null;
   const line = [identity || null, language].filter((part): part is string => part !== null).join(", ");
   return `<page_context>Current page: ${line}</page_context>`;
+};
+
+// The visible page text, present only when the widget sent it and this turn's page read
+// captured it. Escaped like the identity fields, so page text cannot close the excerpt.
+const pageExcerptEvidence = (data: unknown): string | null => {
+  const content = isRecord(data) ? escapedString(data.content) : null;
+  return content === null ? null : `<page_excerpt>${content}</page_excerpt>`;
 };
 
 const stagedValue = (data: unknown): unknown =>
@@ -108,5 +115,9 @@ export const routineContextRenderer: RoutineContextRenderer = {
     return name === PAGE_CONTEXT_VARIABLE_NAME
       ? renderPageContext(staged.data)
       : renderVariable(name, staged);
+  },
+  evidence({ name, stagedContext }) {
+    const staged = name === PAGE_CONTEXT_VARIABLE_NAME ? findStagedVariable(name, stagedContext) : null;
+    return staged ? pageExcerptEvidence(staged.data) : null;
   },
 };

@@ -991,10 +991,7 @@ export class ChatService {
   }
 
   private withResponseLanguage(session: PreparedSession, responseLanguage: string | undefined): PreparedSession {
-    return {
-      ...session,
-      responseLanguage,
-    };
+    return { ...session, responseLanguage };
   }
 
   async answer(input: ChatAnswerInput): Promise<ChatResponse> {
@@ -1713,7 +1710,7 @@ export class ChatService {
           yield { type: "status", stage: "composing" };
           this.checkTurnCancellation(coordination, "rendering");
         }
-        session = this.withResponseLanguage(session, await responseLanguagePromise);
+        const responseLanguage = await responseLanguagePromise;
         let replyShown = false;
         let routineTurn: ChatTurnAssemblyRoutineResult;
         if (routineReply.delivery === "stream") {
@@ -1738,6 +1735,9 @@ export class ChatService {
         } else {
           routineTurn = routineReply.turn;
         }
+        // Copied only once the reply is generated: the routine commits its page-read decision
+        // onto the session it was claimed with when the stream ends, and the copy must carry it.
+        session = this.withResponseLanguage(session, responseLanguage);
         const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
           session,
           workspaceId: input.workspaceId,

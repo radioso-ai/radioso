@@ -5,7 +5,7 @@ import { WorkbenchReplayRunner } from "../../../src/modules/chat/services/workbe
 import type { RetrievalTurnPort } from "../../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { TurnRouter } from "../../../src/modules/chat/services/turnRouter.js";
 import type { TurnSkill } from "../../../src/modules/chat/services/turnOutcome.js";
-import type { ChatGateway } from "../../../src/modules/chat/contracts/chatGateway.js";
+import type { ChatGateway, ChatGatewayInput } from "../../../src/modules/chat/contracts/chatGateway.js";
 import { ChatAnswerSupport } from "../../../src/modules/chat/services/chatAnswerSupport.js";
 import { ChatAnswerPresenter } from "../../../src/modules/chat/services/chatAnswerPresenter.js";
 import { AssistantSuggestionExpansionService } from "../../../src/modules/chat/services/assistantSuggestionExpansionService.js";
@@ -29,6 +29,7 @@ import { RoutineNextStepSelector, RoutineStepRenderer } from "@radioso/conversat
 import type { ConversationRoutineSkillDispatcher, RoutineSkillResult } from "@radioso/conversation-contract";
 import type { ChatRoutineProvider } from "../../../src/modules/chat/contracts/routineProvider.js";
 import { compileRoutineDefinition, createDirectInvocationTurnPorts, createRoutineTurnReporter } from "../../../src/modules/routines/public.js";
+import { routineContextRenderer } from "../../../src/modules/context-variables/public.js";
 import { loadPromptTemplate } from "../../../src/shared/infra/prompts/promptLoader.js";
 import {
   conversationQualityAgentConfig,
@@ -202,6 +203,7 @@ describe("buildReplayInput", () => {
  */
 const routineStack = () => {
   const dispatched: string[] = [];
+  const requests: ChatGatewayInput[] = [];
   const routines = conversationQualityRoutines.map((definition) => compileRoutineDefinition(definition));
   const registrations = routines.map((routine) => ({
     routine,
@@ -233,6 +235,7 @@ const routineStack = () => {
   };
   const chatGateway: ChatGateway = {
     async answer(input) {
+      requests.push(input);
       const asksForCondition = input.systemPrompt?.includes("1. The user provided");
       if (asksForCondition) {
         const slot = input.systemPrompt?.match(/1\. The user provided \{\{slot\.(\w+)\}\}/u)?.[1];
@@ -259,7 +262,7 @@ const routineStack = () => {
         new RoutineNextStepSelector(modelGateway, { promptTemplate: loadPromptTemplate("chat/routine-next-step.md") }),
         new RoutineStepRenderer(modelGateway, { promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"), responseLanguage }),
         dispatcher,
-        { ...direct?.runnerOptions },
+        { contextRenderer: routineContextRenderer, ...direct?.runnerOptions },
       );
       if (direct) {
         return { routines, runner, activator: direct.activator, reentryGate: direct.reentryGate, slotCorrection: direct.slotCorrection, reporter: direct.reporter };
@@ -267,7 +270,7 @@ const routineStack = () => {
       return { routines, runner, activator: { activate: async () => null }, reporter: createRoutineTurnReporter(routines) };
     },
   };
-  return { dispatched, chatGateway, routineProvider };
+  return { dispatched, requests, chatGateway, routineProvider };
 };
 
 describe("conversation-quality suite drives a routine by transcript and by tool call alike (SC-002)", () => {
@@ -305,6 +308,38 @@ describe("conversation-quality suite drives a routine by transcript and by tool 
       throw new Error(`expected pass, got ${reports[0]?.status}: ${JSON.stringify(reports[0]?.verdicts, null, 2)}`);
     }
     expect(stack.dispatched).toEqual(evalCase.id === "routine-return-invocation-partial" ? [] : [CREATE_RETURN_TICKET_SKILL]);
+  });
+});
+
+describe("conversation-quality suite gives a routine step the page it references (#1659)", () => {
+  it("hands the dates step the page's text beside its instruction, never inside it", async () => {
+    const evalCase = conversationQualityCases.find((candidate) => candidate.id === "routine-step-reads-page-edition-dates")!;
+    const stack = routineStack();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      routineProvider: stack.routineProvider,
+      chatGateway: stack.chatGateway,
+      chatAnswerPresenter: new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true }),
+    });
+    const port = createWorkbenchReplayRunnerPort(runner, {
+      workspaceId: CQ_WORKSPACE_ID,
+      agentId: CQ_AGENT_ID,
+      baselineAgentConfig: conversationQualityAgentConfig,
+    });
+
+    const { reports } = await runConversationQualitySuite([evalCase], port, { workspaceId: CQ_WORKSPACE_ID });
+
+    expect(reports[0]?.verdicts.find((verdict) => verdict.assertion.type === "routine_step_reached")?.status).toBe("pass");
+    const stepReply = stack.requests.find((request) =>
+      request.systemPrompt?.includes("guiding the user through a guided flow") &&
+      request.systemPrompt.includes("ask them to confirm those dates"));
+    expect(stepReply?.prompt).toContain("<page_excerpt>");
+    expect(stepReply?.prompt).toContain("dal 30 ottobre al 2 novembre 2026");
+    expect(stepReply?.systemPrompt).not.toContain("30 ottobre");
   });
 });
 

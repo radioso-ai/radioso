@@ -13,10 +13,10 @@ repo-committed regression suite you run from the CLI.
 | File | What it is |
 |------|------------|
 | `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
-| `routines.ts` | 2 seed `RoutineDefinition`s: `contact-support`, `book-demo` |
+| `routines.ts` | 5 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, and `book-edition`, whose dates step references `{{context.page_context}}` |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 50 seed cases |
+| `cases.ts` | the 52 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary

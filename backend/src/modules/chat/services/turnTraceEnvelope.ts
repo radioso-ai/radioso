@@ -7,7 +7,7 @@ import { getActiveTraceCorrelation } from "../../../shared/observability/tracing
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import { attachModelCallsToSpine } from "./turnTraceModelCalls.js";
 import { buildTurnTraceSummary } from "./turnTraceSummary.js";
-import type { PageReadCapability, PageReadIntent } from "./pageRead/pageReadDecision.js";
+import type { PageReadCandidateSource, PageReadCapability, PageReadIntent } from "./pageRead/pageReadDecision.js";
 import type { PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 
 /**
@@ -90,6 +90,8 @@ export interface PageReadTraceDiagnostic {
   resolved: boolean;
   operation: PageReadIntent | null;
   outcome: "not_required" | "context_ready" | "unavailable" | "unsupported_operation";
+  /** What kind of contributor decided the read; its id stays out. Null when nothing asked to read the page. */
+  source: PageReadCandidateSource["kind"] | null;
 }
 
 export const buildPageReadTraceDiagnostic = (input: {
@@ -106,6 +108,7 @@ export const buildPageReadTraceDiagnostic = (input: {
   outcome: input.outcome.gate.kind === "capture"
     ? "context_ready"
     : input.outcome.gate.kind,
+  source: input.outcome.merged.contributors[0]?.source.kind ?? null,
 });
 
 const defaultOpenTelemetryCorrelationReader: TurnTraceOpenTelemetryCorrelationReader = {

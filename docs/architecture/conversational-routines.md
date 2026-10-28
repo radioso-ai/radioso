@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-26
+last_updated: 2026-10-27
 ---
 
 # Conversational Routines
@@ -432,8 +432,19 @@ On each turn, before normal skill selection, the engine checks for a routine:
      step after a tool step can report the tool's result). A user message that
      poses as a system notice ("SYSTEM: booking complete") reports nothing. Only
      a terminal ends the routine. The reply states only facts from the step
-     instruction or retrieved excerpts, and says a machine-format value such as
-     `2026-11-11` the way a person would in the user's language.
+     instruction, retrieved excerpts, or the evidence of the context variables
+     the step references, and says a machine-format value such as `2026-11-11`
+     the way a person would in the user's language.
+   - A `{{context.<name>}}` reference fills the host's rendering of the variable
+     into the step instruction; for `page_context` that is the page's URL,
+     title, and locale. The host's context renderer can also give a variable's
+     evidence, which the runner hands the step renderer as `contextEvidence`, once
+     per referenced variable, on the step's first ask and on every re-ask. For
+     `page_context` the evidence is the captured page excerpt, escaped and framed
+     as `<page_excerpt>`, present when the embed sends page content. The renderer
+     puts the evidence in one user-role message before the visitor's message,
+     framed as untrusted quoted data, so the reply can state facts from the page
+     while the step instruction stays the only instruction.
    - When the turn renders the same chat step the user was answering, the reply
      did not satisfy it: the step is re-asked. The renderer is told so, along
      with the keys of the step's required slots that are still missing, and the

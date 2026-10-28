@@ -38,6 +38,7 @@ import {
   slotFilledGuardPasses,
 } from "./slotCollectionStep.js";
 import { checkSlotValue } from "./slotValue.js";
+import { STEP_REFERENCE, stepForReply } from "./stepReferences.js";
 
 type RoutineFieldGuard = Extract<RoutineGuard, { kind: "field" }>;
 
@@ -186,48 +187,6 @@ const projectStep = (step: RoutineStep): SteeringRule[] =>
         description: `routine step ${step.id}`,
       }]
     : [];
-
-// A step instruction embeds two kinds of reference: `{{slot.<key>}}` reads a captured
-// variable, `{{context.<name>}}` reads a staged context variable (the visitor's current
-// page, a host-pushed value). Both resolve in ONE pass over the authored text, so a value
-// substituted for one reference is never re-scanned for the other — a visitor-typed slot
-// value or a page title cannot smuggle a second reference in.
-const STEP_REFERENCE = /\{\{\s*(slot|context)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
-
-const stringifySlotValue = (value: unknown): string => {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return String(value);
-  }
-  if (typeof value === "function" || typeof value === "symbol") {
-    return value.toString();
-  }
-  if (value === null || value === undefined) {
-    return "";
-  }
-  return Array.isArray(value) ? value.toString() : Object.prototype.toString.call(value);
-};
-
-/**
- * Fills captured slots and referenced context into a step's authored instruction before it
- * is rendered. The host's renderer decides what any context variable looks like; the engine
- * only substitutes. An uncaptured slot, an absent or withheld context variable, or no
- * context renderer at all leaves an empty string, never the raw token.
- */
-const resolveStepAction = (
-  action: string,
-  variables: Record<string, unknown>,
-  stagedContext: TurnContext["stagedContext"],
-  contextRenderer: RoutineContextRenderer | undefined,
-): string =>
-  action.replace(STEP_REFERENCE, (_match, kind: string, name: string) => {
-    if (kind === "context") {
-      return contextRenderer?.render({ name, stagedContext }) ?? "";
-    }
-    return Object.prototype.hasOwnProperty.call(variables, name) ? stringifySlotValue(variables[name]) : "";
-  });
 
 const assignOutputs = (
   outputAssignments: Record<string, string> | undefined,
@@ -1443,15 +1402,13 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         throw new Error(`routine_await_step_missing_decision:${routine.id}:${step.id}`);
       }
       const nextState: RoutineState = { ...stateWithoutReaskCount, path, variables, attempts, status: "suspended" };
-      const renderedStep = step.action
-        ? { ...step, action: resolveStepAction(step.action, variables, stagedContext, this.options.contextRenderer) }
-        : step;
-      const baseSteering = projectStep(renderedStep);
+      const rendered = stepForReply(step, variables, stagedContext, this.options.contextRenderer);
+      const baseSteering = projectStep(rendered.step);
       const steering = input.steeringResolver
         ? await input.steeringResolver.resolve({ step, baseSteering, turn })
         : baseSteering;
       const reply = this.prepareReply({
-        step: renderedStep,
+        ...rendered,
         steering,
         turn,
       });
@@ -1496,13 +1453,11 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // Fill the captured slot values and referenced context into the step's instruction
     // before it reaches the renderer, so "{{slot.phone}}" renders the real value and
     // "{{context.page_context}}" the host's rendering of the visitor's page.
-    const renderedStep = step.action
-      ? { ...step, action: resolveStepAction(step.action, variables, stagedContext, this.options.contextRenderer) }
-      : step;
+    const rendered = stepForReply(step, variables, stagedContext, this.options.contextRenderer);
     const turnWithStagedContext: TurnContext = stagedContext === turn.stagedContext
       ? turn
       : { ...turn, stagedContext };
-    const baseSteering = projectStep(renderedStep);
+    const baseSteering = projectStep(rendered.step);
     const steering = input.steeringResolver
       ? await input.steeringResolver.resolve({ step, baseSteering, turn: turnWithStagedContext })
       : baseSteering;
@@ -1519,7 +1474,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       ? { ...(missing ?? { missingSlots: [] }), exhausted: true }
       : missing;
     const reply = this.prepareReply({
-      step: renderedStep,
+      ...rendered,
       steering,
       turn: turnWithStagedContext,
       ...(reask ? { reask } : {}),

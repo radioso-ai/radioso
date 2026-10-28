@@ -374,6 +374,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       resolved: true,
       operation: "lookup",
       outcome: "context_ready",
+      source: "planner",
     });
   });
 

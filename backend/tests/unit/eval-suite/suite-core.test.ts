@@ -263,6 +263,89 @@ describe("trace assertions", () => {
     ).status).toBe("error");
   });
 
+  it("fails routine_slots_unfilled when the routine claimed the turn but recorded no step trace", () => {
+    const output = observed({
+      turnTrace: trace([
+        {
+          id: `routine:${BOOK_DEMO_ROUTINE_ID}`,
+          kind: "routine_activate",
+          status: "applied",
+          outputs: { routineId: BOOK_DEMO_ROUTINE_ID },
+        },
+      ]),
+    });
+
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_unfilled", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys: ["email"] },
+      output,
+    )).toMatchObject({ status: "fail", reason: expect.stringContaining("no step trace") });
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_filled", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys: ["email"] },
+      output,
+    ).status).toBe("fail");
+  });
+
+  // The selector's returned keys say what the reply gave this turn, which the filled keys
+  // cannot: a slot that already held a value stays filled whether or not it was replaced.
+  it("passes routine_slots_returned and routine_slots_not_returned from the keys the selector returned this turn", () => {
+    const output = observed({
+      turnTrace: trace([
+        {
+          id: `routine:${BOOK_DEMO_ROUTINE_ID}`,
+          kind: "routine_resume",
+          status: "applied",
+          outputs: { routineId: BOOK_DEMO_ROUTINE_ID },
+          subTrace: {
+            namespace: "routine",
+            version: 1,
+            payload: {
+              routineId: BOOK_DEMO_ROUTINE_ID,
+              startStepId: "ask_name",
+              landedStepId: "confirm",
+              capturedSlotKeys: [],
+              filledSlotKeys: ["email", "name", "preferredDate"],
+              steps: [
+                { stepId: "ask_name", kind: "chat", event: "advanced", viaSelector: true, selection: { outcome: "transition", returnedSlotKeys: ["name"] } },
+                { stepId: "ask_date", kind: "chat", event: "advanced", viaSelector: true, selection: { outcome: "transition", returnedSlotKeys: ["preferredDate"] } },
+                { stepId: "confirm", kind: "chat", event: "rendered" },
+              ],
+            },
+          },
+        },
+      ]),
+    });
+    const returned = (slotKeys: string[]) =>
+      evaluateTraceAssertion({ type: "routine_slots_returned", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys }, output);
+    const notReturned = (slotKeys: string[]) =>
+      evaluateTraceAssertion({ type: "routine_slots_not_returned", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys }, output);
+
+    expect(returned(["name", "preferredDate"]).status).toBe("pass");
+    expect(returned(["name", "email"])).toMatchObject({ status: "fail", reason: expect.stringContaining("email") });
+    expect(notReturned(["email"]).status).toBe("pass");
+    expect(notReturned(["email", "preferredDate"])).toMatchObject({ status: "fail", reason: expect.stringContaining("preferredDate") });
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_not_returned", routineId: CONTACT_SUPPORT_ROUTINE_ID, slotKeys: ["email"] },
+      output,
+    ).status).toBe("fail");
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_returned", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys: ["email"] },
+      observed({}),
+    ).status).toBe("error");
+  });
+
+  it("fails routine_slots_not_returned when the routine claimed the turn but recorded no step trace", () => {
+    const output = observed({
+      turnTrace: trace([
+        { id: `routine:${BOOK_DEMO_ROUTINE_ID}`, kind: "routine_resume", status: "applied", outputs: { routineId: BOOK_DEMO_ROUTINE_ID } },
+      ]),
+    });
+
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_not_returned", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys: ["email"] },
+      output,
+    )).toMatchObject({ status: "fail", reason: expect.stringContaining("no step trace") });
+  });
+
   it("passes routine_yielded only when the routine yielded the turn and stays parked on the step", () => {
     const output = observed({
       turnTrace: trace([

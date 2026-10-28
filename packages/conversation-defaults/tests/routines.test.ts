@@ -745,9 +745,37 @@ describe("routine defaults", () => {
       expect(systemPrompt).toContain("goes in none of them unless the message or the conversation before it makes clear which one it is for");
       expect(systemPrompt).toContain("One value goes into two slots only when the message gives it for both.");
       expect(systemPrompt).toContain("the latest message accepts them, in any words, those values are given this turn");
+      expect(systemPrompt).toContain("A proposed value is one the user has not given, or one different from what they gave, such as a date you offered instead.");
       expect(systemPrompt).toContain("replacing any value the slot already holds");
       expect(systemPrompt).toContain("A value the user changes while accepting is the one to keep.");
       expect(systemPrompt).toContain("omit slots not provided or accepted this turn");
+    });
+
+    // A step that reads held values back and asks to confirm runs the selector through its
+    // AI-decided exit; read as a proposal, the "yes" replaced the visitor's own words with the
+    // assistant's paraphrase.
+    it("treats reading back values the user already gave as proposing nothing", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain(
+        "Repeating back values the user already gave, as a summary or to confirm them, proposes nothing, even in your own words.",
+      );
+      expect(systemPrompt).toContain(
+        "Accepting such a recap gives no value: return a repeated slot only when the latest message changes it, so each slot keeps the user's own words.",
+      );
+    });
+
+    it("extracts what the latest message gives or accepts, without contradicting the acceptance rule", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain(
+        "Extract every declared slot that the latest user message gives, or accepts as described below, in one pass, whether or not the current step asks for it.",
+      );
+      expect(systemPrompt).not.toContain("present in the latest user message");
     });
 
     // Framing the message as a reply to the last question mapped answers onto whatever was
@@ -767,6 +795,7 @@ describe("routine defaults", () => {
       const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
       expect(systemPrompt).not.toContain("goes in none of them");
       expect(systemPrompt).not.toContain("accepts them");
+      expect(systemPrompt).not.toContain("proposes nothing");
     });
 
     it("leaves the date rule out when no slot is a date", async () => {
@@ -1212,6 +1241,12 @@ describe("routine defaults", () => {
         const reaskSection = await renderWith({ missingSlots: [programSlot], exhausted: true });
 
         expect(reaskSection).not.toMatch(/Do not say that something is missing/);
+      });
+
+      it("still keeps the reply from listing what the step already has", async () => {
+        const reaskSection = await renderWith({ missingSlots: [programSlot], exhausted: true });
+
+        expect(reaskSection).toContain("Do not list what you already have.");
       });
 
       it("words the exhausted instruction from the shipped prompt", async () => {

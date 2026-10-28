@@ -153,6 +153,8 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("routine_step_reached"), routineId: z.string().min(1), stepId: z.string().min(1) }),
   z.object({ type: z.literal("routine_slots_filled"), routineId: z.string().min(1), slotKeys: z.array(z.string().min(1)).min(1) }),
   z.object({ type: z.literal("routine_slots_unfilled"), routineId: z.string().min(1), slotKeys: z.array(z.string().min(1)).min(1) }),
+  z.object({ type: z.literal("routine_slots_returned"), routineId: z.string().min(1), slotKeys: z.array(z.string().min(1)).min(1) }),
+  z.object({ type: z.literal("routine_slots_not_returned"), routineId: z.string().min(1), slotKeys: z.array(z.string().min(1)).min(1) }),
   z.object({ type: z.literal("routine_yielded"), routineId: z.string().min(1), stepId: z.string().min(1) }),
   z.object({ type: z.literal("turn_asks_clarification") }),
   z.object({ type: z.literal("turn_grounding_verdict"), verdict: z.enum(["grounded", "degraded", "no_support"]) }),

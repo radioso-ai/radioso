@@ -65,7 +65,7 @@ describe("RoutineNextStepSelector", () => {
     const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("- name (text): Visitor name.");
     expect(call.systemPrompt).toContain("- email (email): Visitor email.");
-    expect(call.systemPrompt).toContain("Extract every declared slot present");
+    expect(call.systemPrompt).toContain("Extract every declared slot that the latest user message gives");
   });
 
   it("omits slot extraction schema instructions when the routine has no typed slots", async () => {
@@ -75,7 +75,7 @@ describe("RoutineNextStepSelector", () => {
 
     const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).not.toContain("Declared slots");
-    expect(call.systemPrompt).not.toContain("Extract every declared slot present");
+    expect(call.systemPrompt).not.toContain("Extract every declared slot");
   });
 
   it("tolerates a code-fenced / prose-wrapped JSON object", async () => {

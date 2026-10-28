@@ -92,7 +92,14 @@ course runs from 30 October to 2 November: shall I book those dates?"), a reply
 that accepts them, in any words, gives those values this turn: "sì, confermo"
 fills the arrival and the departure with the proposed dates, replacing whatever
 either slot held, and a value the visitor changes while accepting ("yes, but I
-leave on the 1st") is the one stored.
+leave on the 1st") is the one stored. A proposed value is one the visitor has
+not given, or one different from what they gave, such as a date the agent offers
+instead. Reading back values the visitor already gave proposes nothing, however
+the recap words them: after "you'd like a refund for order 123, shall I send
+this?", a "yes" returns no slot, so each slot keeps the visitor's own words, and
+only a value the reply changes is stored. The selector reads an acceptance only
+on a turn it runs: on a step still missing one of its slots, on a step with an
+`llm` exit, or on the turn that starts the routine.
 
 The user may write a date in any form. A `date` slot is recorded as `YYYY-MM-DD`,
 reading day and month the way the user wrote them ("11-14 Nov" is 11 to 14
@@ -454,8 +461,11 @@ On each turn, before normal skill selection, the engine checks for a routine:
      title, and locale. The host's context renderer can also give a variable's
      evidence, which the runner hands the step renderer as `contextEvidence`, once
      per referenced variable, on the step's first ask and on every re-ask. For
-     `page_context` the evidence is the captured page excerpt, escaped and framed
-     as `<page_excerpt>`, present when the embed sends page content. The renderer
+     `page_context` the evidence is the captured page excerpt, framed as
+     `<page_excerpt>` and present when the embed sends page content. The text
+     keeps the page's own characters, so "Yoga & Meditazione" reads as written;
+     only a sequence that would close the frame or open another is broken up, so
+     page text cannot step outside it. The renderer
      puts the evidence in one user-role message before the visitor's message,
      framed as untrusted quoted data, so the reply can state facts from the page
      while the step instruction stays the only instruction.

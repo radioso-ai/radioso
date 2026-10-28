@@ -29,6 +29,13 @@ export type SuiteTraceAssertion =
   | { type: "routine_slots_filled"; routineId: string; slotKeys: string[] }
   /** None of the named slots holds a value after the turn: the negation of `routine_slots_filled`. */
   | { type: "routine_slots_unfilled"; routineId: string; slotKeys: string[] }
+  /**
+   * The next-step selector returned a value for every named slot this turn, on any step. Unlike
+   * `routine_slots_filled`, it tells a replaced value from one the slot already held.
+   */
+  | { type: "routine_slots_returned"; routineId: string; slotKeys: string[] }
+  /** The selector returned a value for none of the named slots this turn: the negation of `routine_slots_returned`. */
+  | { type: "routine_slots_not_returned"; routineId: string; slotKeys: string[] }
   /** The active routine yielded the turn to a normal answer and stays parked on `stepId`. */
   | { type: "routine_yielded"; routineId: string; stepId: string }
   | { type: "turn_asks_clarification" }
@@ -93,6 +100,8 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "routine_step_reached",
   "routine_slots_filled",
   "routine_slots_unfilled",
+  "routine_slots_returned",
+  "routine_slots_not_returned",
   "routine_yielded",
   "turn_asks_clarification",
   "turn_grounding_verdict",
@@ -234,6 +243,91 @@ const routineTrace = (stage: TraceStage): RoutineRunTrace | undefined => {
   return sub.payload as RoutineRunTrace;
 };
 
+type RoutineSlotKeysAssertion = Extract<
+  SuiteTraceAssertion,
+  { type: "routine_slots_filled" | "routine_slots_unfilled" | "routine_slots_returned" | "routine_slots_not_returned" }
+>;
+
+/**
+ * The routine's slot keys this turn, from every matching stage's routine subtrace: the keys
+ * it holds after the turn, and the keys the selector returned a value for on any step.
+ * `undefined` when no matching stage carries a subtrace, so a check that a slot is empty or
+ * was not returned cannot pass on a turn that recorded nothing to read.
+ */
+const routineSlotKeys = (matches: TraceStage[]): { filled: Set<string>; returned: Set<string> } | undefined => {
+  const traces = matches.map(routineTrace).filter((trace): trace is RoutineRunTrace => trace !== undefined);
+  if (traces.length === 0) {
+    return undefined;
+  }
+  return {
+    filled: new Set(traces.flatMap((trace) => trace.filledSlotKeys)),
+    returned: new Set(traces.flatMap((trace) => trace.steps.flatMap((step) => step.selection?.returnedSlotKeys ?? []))),
+  };
+};
+
+const listOrNone = (keys: Iterable<string>): string => [...keys].join(", ") || "none";
+
+/** Which slot keys each assertion reads, whether the named slots must be among them, and how a verdict reads. */
+const SLOT_KEY_CHECKS: Record<
+  RoutineSlotKeysAssertion["type"],
+  {
+    keys: "filled" | "returned";
+    present: boolean;
+    passes: (routineId: string, expected: string) => string;
+    fails: (routineId: string, offending: string, observed: string) => string;
+  }
+> = {
+  routine_slots_filled: {
+    keys: "filled",
+    present: true,
+    passes: (routineId, expected) => `Routine "${routineId}" filled ${expected}.`,
+    fails: (routineId, offending, observed) => `Routine "${routineId}" left ${offending} unfilled; filled: ${observed}.`,
+  },
+  routine_slots_unfilled: {
+    keys: "filled",
+    present: false,
+    passes: (routineId, expected) => `Routine "${routineId}" left ${expected} unfilled.`,
+    fails: (routineId, offending) => `Routine "${routineId}" filled ${offending}; expected it unfilled.`,
+  },
+  routine_slots_returned: {
+    keys: "returned",
+    present: true,
+    passes: (routineId, expected) => `Routine "${routineId}" selector returned ${expected} this turn.`,
+    fails: (routineId, offending, observed) =>
+      `Routine "${routineId}" selector returned no value for ${offending} this turn; returned: ${observed}.`,
+  },
+  routine_slots_not_returned: {
+    keys: "returned",
+    present: false,
+    passes: (routineId, expected) => `Routine "${routineId}" selector returned no value for ${expected} this turn.`,
+    fails: (routineId, offending) => `Routine "${routineId}" selector returned ${offending} this turn; expected no value.`,
+  },
+};
+
+const evaluateRoutineSlotKeys = (
+  assertion: RoutineSlotKeysAssertion,
+  output: EvalRunObservedOutput,
+): SuiteTraceAssertionVerdict => {
+  if (!output.turnTrace) {
+    return missingTrace(assertion);
+  }
+  const matches = routineStages(output, assertion.routineId);
+  if (matches.length === 0) {
+    return fail(assertion, `Routine "${assertion.routineId}" did not claim the turn.`);
+  }
+  const slotKeys = routineSlotKeys(matches);
+  if (!slotKeys) {
+    return fail(assertion, `Routine "${assertion.routineId}" recorded no step trace to read its slots from.`);
+  }
+  const check = SLOT_KEY_CHECKS[assertion.type];
+  const observed = slotKeys[check.keys];
+  const offending = assertion.slotKeys.filter((key) => observed.has(key) !== check.present);
+  if (offending.length === 0) {
+    return pass(assertion, check.passes(assertion.routineId, assertion.slotKeys.join(", ")));
+  }
+  return fail(assertion, check.fails(assertion.routineId, offending.join(", "), listOrNone(observed)));
+};
+
 /**
  * Every skill the turn dispatched, whether as a turn skill (`skill_dispatch` stage)
  * or as a routine skill step (a `skill_dispatched` entry in the routine subtrace),
@@ -343,42 +437,11 @@ export const evaluateTraceAssertion = (
           : `Routine "${assertion.routineId}" recorded no step trace to match "${assertion.stepId}".`,
       );
     }
-    case "routine_slots_filled": {
-      if (!output.turnTrace) {
-        return missingTrace(assertion);
-      }
-      const matches = routineStages(output, assertion.routineId);
-      if (matches.length === 0) {
-        return fail(assertion, `Routine "${assertion.routineId}" did not claim the turn.`);
-      }
-      const filled = new Set(matches.flatMap((stage) => routineTrace(stage)?.filledSlotKeys ?? []));
-      const missing = assertion.slotKeys.filter((key) => !filled.has(key));
-      if (missing.length === 0) {
-        return pass(assertion, `Routine "${assertion.routineId}" filled ${assertion.slotKeys.join(", ")}.`);
-      }
-      return fail(
-        assertion,
-        `Routine "${assertion.routineId}" left ${missing.join(", ")} unfilled; filled: ${[...filled].join(", ") || "none"}.`,
-      );
-    }
-    case "routine_slots_unfilled": {
-      if (!output.turnTrace) {
-        return missingTrace(assertion);
-      }
-      const matches = routineStages(output, assertion.routineId);
-      if (matches.length === 0) {
-        return fail(assertion, `Routine "${assertion.routineId}" did not claim the turn.`);
-      }
-      const filled = new Set(matches.flatMap((stage) => routineTrace(stage)?.filledSlotKeys ?? []));
-      const unexpected = assertion.slotKeys.filter((key) => filled.has(key));
-      if (unexpected.length === 0) {
-        return pass(assertion, `Routine "${assertion.routineId}" left ${assertion.slotKeys.join(", ")} unfilled.`);
-      }
-      return fail(
-        assertion,
-        `Routine "${assertion.routineId}" filled ${unexpected.join(", ")}; expected ${assertion.slotKeys.join(", ")} unfilled.`,
-      );
-    }
+    case "routine_slots_filled":
+    case "routine_slots_unfilled":
+    case "routine_slots_returned":
+    case "routine_slots_not_returned":
+      return evaluateRoutineSlotKeys(assertion, output);
     case "routine_yielded": {
       if (!output.turnTrace) {
         return missingTrace(assertion);

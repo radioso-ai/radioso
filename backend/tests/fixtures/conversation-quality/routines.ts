@@ -10,6 +10,7 @@ export const BOOK_DEMO_ROUTINE_ID = "routine:cq-agent:book-demo:v1";
 export const START_RETURN_ROUTINE_ID = "routine:cq-agent:start-return:v1";
 export const BOOK_RETREAT_ROUTINE_ID = "routine:cq-agent:book-retreat:v1";
 export const BOOK_EDITION_ROUTINE_ID = "routine:cq-agent:book-edition:v1";
+export const KITCHEN_NOTE_ROUTINE_ID = "routine:cq-agent:kitchen-note:v1";
 /** The tool name `startReturnRoutine` is exposed under; the same name in chat and on the agent-facing doors. */
 export const START_RETURN_TOOL_NAME = "start_return";
 /** The skill the return routine dispatches once it holds an order id and a reason. */
@@ -235,10 +236,50 @@ export const bookEditionRoutine: RoutineDefinition = {
   ],
 };
 
+/**
+ * A recap before a hand-off, as a reception flow ends: the note step takes the visitor's
+ * note in their own words, and the confirm step reads it back and asks to confirm it, with
+ * an exit the model judges. A "yes" to that recap must leave the note as the visitor wrote
+ * it. Cases start it on the confirm step; its trigger names a booked guest's food needs so
+ * that it stays out of the booking, contact, demo, and refund cases that start without a
+ * routine.
+ */
+export const kitchenNoteRoutine: RoutineDefinition = {
+  id: KITCHEN_NOTE_ROUTINE_ID,
+  agentId: CQ_AGENT_ID,
+  lineageId: "lineage:kitchen-note",
+  version: 1,
+  enabled: true,
+  createdAt: FIXED_DATE,
+  updatedAt: FIXED_DATE,
+  name: "Pass a note to the kitchen",
+  activation: {
+    triggerDescription: "a guest who has already booked a stay wants the kitchen told about a food allergy, intolerance, or diet — not a booking, a demo, a return, a refund, or a request to reach support",
+    gateRef: null,
+    priority: 10,
+    reentryMode: "once_per_conversation",
+  },
+  slots: [
+    { stableSlotId: "slot_note", key: "note", type: "text", required: true, description: "What the guest wants the kitchen to know, in their own words.", ordinal: 0 },
+  ],
+  steps: [
+    { stableStepId: "ask_note", kind: "chat", instruction: "Ask what the kitchen should know about their diet: {{slot.note}}", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+    { stableStepId: "confirm_note", kind: "chat", instruction: "Read back the note for the kitchen, {{slot.note}}, and ask them to confirm you should pass it on.", toolRef: null, actionType: null, ordinal: 1, metadata: {} },
+  ],
+  transitions: [
+    defaultTransition("ask_note", "confirm_note", 0),
+    { ...defaultTransition("confirm_note", "done", 1), guardKind: "llm", guardText: "the guest confirmed the note should be passed on to the kitchen" },
+  ],
+  terminals: [
+    { stableStepId: "done", kind: "complete", instruction: "Tell them the kitchen has their note.", ordinal: 0 },
+  ],
+};
+
 export const conversationQualityRoutines: RoutineDefinition[] = [
   contactSupportRoutine,
   bookDemoRoutine,
   startReturnRoutine,
   bookRetreatRoutine,
   bookEditionRoutine,
+  kitchenNoteRoutine,
 ];

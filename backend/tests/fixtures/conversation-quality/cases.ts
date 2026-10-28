@@ -865,6 +865,33 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "routine_step_reached", routineId: BOOK_EDITION_ROUTINE_ID, stepId: "done" },
     ],
   },
+  // #1666: a step reply says a value was noted only when the routine holds it. The dates step
+  // holds the arrival and has asked when the visitor leaves; the visitor answers with their name,
+  // which fills no slot. The reply asks for the departure again and never says one was noted, as
+  // "per il rientro segno il 1° novembre" did while no slot held a departure.
+  {
+    id: "routine-reply-claims-only-held-slots",
+    name: "A step reply never says a value the routine does not hold was noted",
+    tags: ["routine", "slot-honesty", "multilingual"],
+    history: [
+      ...ognissantiDatesOffered,
+      { role: "user", content: "Arrivo il 30 ottobre" },
+      { role: "assistant", content: "Perfetto, arrivo il 30 ottobre. E quando riparti?" },
+    ],
+    routineStartState: onOgnissantiDatesStep({ arrival: "2026-10-30" }),
+    query: "Mi chiamo Giulia Verdi",
+    pageContext: ognissantiEditionPage,
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "routine_slots_unfilled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["departure"] },
+      { type: "answer_contains", pattern: "\\?", matchMode: "regex" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Piacere, Giulia! L'edizione termina il 2 novembre: quando riparti?",
+        criteria: "Asks the visitor when they leave, optionally offering the edition's end date as a question. Does not say or imply that a departure date has been noted, recorded, set, or booked.",
+      },
+    ],
+  },
   quickReplyCase({
     id: "quick-reply-greeting-en",
     name: "An English greeting is answered by the planner's own reply",

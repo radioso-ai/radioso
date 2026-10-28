@@ -38,6 +38,7 @@ const replyInputs: Array<{ name: string; input: RoutineStepReplyInput }> = [
   { name: "re-ask", input: { step: askEmail, steering: stepSteering, turn, reask: { missingSlots: [{ id: "slot_email", key: "email", type: "email", required: true }], exhausted: true } } },
   { name: "cited step reply", input: { step: askEmail, steering: stepSteering, turn: stagedTurn } },
   { name: "step reply with context evidence", input: { step: askEmail, steering: stepSteering, turn, contextEvidence: [pageEvidence] } },
+  { name: "step reply with held slots", input: { step: askEmail, steering: stepSteering, turn, heldSlots: { full_name: "Alex" } } },
   {
     name: "handoff terminal",
     input: {

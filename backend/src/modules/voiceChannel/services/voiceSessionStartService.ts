@@ -65,11 +65,11 @@ interface VoiceSessionStartServiceDependencies {
   connections: Pick<VoiceRuntimeConnectionStore, "find">;
   /** The agent's greeting, which a call on a maintained vendor agent says first. */
   greetings: VoiceGreetingSource;
-  /** How long a start waits for the greeting; `VOICE_BEHAVIOR.sessionGreetingWaitMs` unless a test names another. */
+  /** How long a start waits for the greeting; `VOICE_BEHAVIOR.sessionPreparationWaitMs` unless a test names another. */
   greetingWaitMs?: number;
   /** Each vendor's answer for the language a session on a maintained vendor agent starts in. */
   sessionLanguages: Readonly<Record<VoiceVendor, VoiceSessionLanguageSource>>;
-  /** How long a start waits for that answer; `VOICE_BEHAVIOR.sessionLanguageWaitMs` unless a test names another. */
+  /** How long a start waits for that answer; `VOICE_BEHAVIOR.sessionPreparationWaitMs` unless a test names another. */
   languageWaitMs?: number;
   /** Mints the key the voice runtime sends back on every turn of the session. */
   newSessionKey: () => string;
@@ -182,14 +182,14 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     const preparingFirstMessage = maintenance.then((known) => prepareSessionFirstMessage(
       {
         greetings: this.dependencies.greetings,
-        waitMs: this.dependencies.greetingWaitMs ?? VOICE_BEHAVIOR.sessionGreetingWaitMs,
+        waitMs: this.dependencies.greetingWaitMs ?? VOICE_BEHAVIOR.sessionPreparationWaitMs,
         now: this.dependencies.now ?? Date.now,
       },
       { maintenance: known, workspaceId, agentId, locale: input.locale ?? null },
     ));
     const preparingLanguage = maintenance.then((known) => prepareSessionLanguage(
-      { languages: this.dependencies.sessionLanguages[vendor], waitMs: this.languageWaitMs() },
-      { maintenance: known, runtime, credential: reading.credential, locale },
+      { languages: this.dependencies.sessionLanguages[vendor], waitMs: this.languageWaitMs(), now: this.dependencies.now ?? Date.now },
+      { maintenance: known, runtime, credential: reading.credential, locale, agentDefaultLocale: profile.defaultLocale },
     ));
     let session: VoiceVendorSession;
     try {
@@ -222,27 +222,32 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
   }
 
   private languageWaitMs(): number {
-    return this.dependencies.languageWaitMs ?? VOICE_BEHAVIOR.sessionLanguageWaitMs;
+    return this.dependencies.languageWaitMs ?? VOICE_BEHAVIOR.sessionPreparationWaitMs;
   }
 
   /**
    * One log line and one count per started session on a vendor agent Radioso maintains, saying how
-   * its language came out: the vendor's code when the session sets one, closed values otherwise,
-   * ids only. A vendor agent that does not allow the language is a warn, since Connect fixes it.
+   * its language came out and how long the answer took: the vendor's code when the session sets
+   * one, closed values otherwise, ids only. A vendor agent that does not allow the language is a
+   * warn, since Connect fixes it.
    */
   private observeLanguage(session: { workspaceId: string; agentId: string; vendor: VoiceVendor }, preparation: SessionLanguagePreparation): void {
     if (preparation.outcome === "skipped") return;
     const { logger } = this.dependencies;
     switch (preparation.outcome) {
       case "set":
-        logger.info({ ...session, outcome: preparation.outcome, language: preparation.language }, "Voice session language prepared");
+        logger.info(
+          { ...session, outcome: preparation.outcome, language: preparation.language, durationMs: preparation.durationMs },
+          "Voice session language prepared",
+        );
         break;
+      case "default":
       case "unsupported":
-        logger.info({ ...session, outcome: preparation.outcome }, "Voice session language prepared");
+        logger.info({ ...session, outcome: preparation.outcome, durationMs: preparation.durationMs }, "Voice session language prepared");
         break;
       case "not_allowed":
         logger.warn(
-          { ...session, outcome: preparation.outcome },
+          { ...session, outcome: preparation.outcome, durationMs: preparation.durationMs },
           "Voice session language is not allowed on the vendor agent; the call starts in its default language until Reconnect sets it up",
         );
         break;
@@ -290,7 +295,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     }
     const { greeting, durationMs } = preparation;
     if (greeting.outcome === "timed_out") {
-      const waitMs = this.dependencies.greetingWaitMs ?? VOICE_BEHAVIOR.sessionGreetingWaitMs;
+      const waitMs = this.dependencies.greetingWaitMs ?? VOICE_BEHAVIOR.sessionPreparationWaitMs;
       logger.warn({ ...session, outcome: greeting.outcome, recordingNotice, waitMs }, "Voice session greeting was not ready in time; the call starts without it");
     } else if (greeting.outcome === "failed") {
       logger.warn(

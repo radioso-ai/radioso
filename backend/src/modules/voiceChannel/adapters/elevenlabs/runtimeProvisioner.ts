@@ -31,6 +31,26 @@ const PRESET_LANGUAGES: ReadonlySet<string> = new Set(ELEVENLABS_PRESET_LANGUAGE
 /** Language subtags that name a language the vendor lists under another code. */
 const LANGUAGE_ALIASES: Readonly<Record<string, ElevenLabsLanguage>> = { nb: "no", nn: "no" };
 const DEFAULT_LANGUAGE: ElevenLabsLanguage = "en";
+const ENGLISH: ElevenLabsLanguage = "en";
+
+/**
+ * Presets a session may not set as its language. The browser client's session override names a
+ * shorter list (`ConversationConfigOverrideAgentLanguage` in `@elevenlabs/types` 0.25.0), and the
+ * vendor closes a session (1008) that sets a language it does not take, which is worse than a call
+ * in the agent's own language: a session in one of these sets none.
+ */
+const SESSION_UNSETTABLE_LANGUAGES: ReadonlySet<ElevenLabsLanguage> = new Set<ElevenLabsLanguage>([
+  "ast", "yue", "mt", "mi", "my", "mn", "oc", "or", "tg", "uz", "yo", "am", "lo", "lg", "sn", "ckb", "wo", "zu",
+]);
+/** Presets the session override names by another of the vendor's codes: Filipino is `tl` there. */
+const SESSION_LANGUAGE_ALIASES: Readonly<Partial<Record<ElevenLabsLanguage, ElevenLabsLanguage>>> = { fil: "tl" };
+
+/**
+ * The vendor's text-to-speech models that speak English alone; its `_v2_5`, multilingual and v3
+ * models speak the other presets too. An agent whose voice is one of these speaks no other
+ * language, so a session on it sets none but English.
+ */
+const ENGLISH_ONLY_TTS_MODELS: ReadonlySet<string> = new Set(["eleven_monolingual_v1", "eleven_turbo_v2", "eleven_flash_v2"]);
 
 /** Marks every agent Radioso created, so the vendor's own list can filter them. */
 const MANAGED_TAG = "radioso-managed";
@@ -200,6 +220,12 @@ const sessionLanguageAllowed = (stored: StoredAgent): boolean => {
   return recordOr(configOverride.agent).language === true;
 };
 
+/** Whether the agent as stored speaks with a voice model that speaks English alone. */
+const speaksEnglishOnly = (stored: StoredAgent): boolean => {
+  const modelId = recordOr(stored.conversationConfig.tts).model_id;
+  return typeof modelId === "string" && ENGLISH_ONLY_TTS_MODELS.has(modelId);
+};
+
 /**
  * The agent section with every field Radioso owns set, and everything else as stored. Radioso
  * writes the agent's instructions, its first words (none of its own: a session Radioso starts sets
@@ -238,7 +264,8 @@ const withTimeout = (timeoutMs: number) => AbortSignal.timeout(timeoutMs);
  * so a rotation points the agent at the new one first and a release deletes the agent first.
  *
  * It is also the `VoiceSessionLanguageSource`: it reads the agent, which the vendor serves with
- * its overrides, so a session sets its language only on an agent that allows it today.
+ * its overrides and its voice, so a session sets its language only on an agent that allows it
+ * today and can speak it.
  */
 export const createElevenLabsRuntimeProvisioner = (dependencies: {
   fetch: ProvisionerFetch;
@@ -456,12 +483,19 @@ export const createElevenLabsRuntimeProvisioner = (dependencies: {
       if (stored.secretId) await deleteSecretQuietly(region, credential, stored.secretId);
     },
 
-    languageFor: async ({ region, credential, vendorAgentId, locale }) => {
-      const language = listedLanguageOf(locale);
-      if (!language) return { outcome: "unsupported" };
+    // A session in the language the agent starts calls in, or in one the client cannot set, asks
+    // the vendor nothing; any other reads the agent for whether it may, and can speak it.
+    languageFor: async ({ region, credential, vendorAgentId, locale, agentDefaultLocale }) => {
+      const listed = listedLanguageOf(locale);
+      if (!listed) return { outcome: "unsupported" };
+      const language = SESSION_LANGUAGE_ALIASES[listed] ?? listed;
+      const primary = vendorLanguageOf(agentDefaultLocale).language;
+      if (listed === primary || language === primary) return { outcome: "default" };
+      if (SESSION_UNSETTABLE_LANGUAGES.has(language)) return { outcome: "unsupported" };
       const stored = await readAgent(region, credential, vendorAgentId);
       if (!stored) throw new VoiceVendorRequestError("refused", 404);
-      return sessionLanguageAllowed(stored) ? { outcome: "set", language } : { outcome: "not_allowed" };
+      if (!sessionLanguageAllowed(stored)) return { outcome: "not_allowed" };
+      return language !== ENGLISH && speaksEnglishOnly(stored) ? { outcome: "unsupported" } : { outcome: "set", language };
     },
   };
 };

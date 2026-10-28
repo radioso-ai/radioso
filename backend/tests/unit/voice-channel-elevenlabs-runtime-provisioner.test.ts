@@ -426,10 +426,23 @@ describe("ElevenLabs runtime provisioner: keeping the agent", () => {
   });
 });
 
+/**
+ * The languages `@elevenlabs/client`'s session override takes (`ConversationConfigOverrideAgentLanguage`
+ * in `@elevenlabs/types` 0.25.0). Written out here, not in the adapter, to pin that a session sets
+ * only one of them.
+ */
+const CLIENT_SESSION_LANGUAGES = [
+  "en", "ja", "zh", "de", "hi", "fr", "ko", "pt", "pt-br", "it", "es", "id", "nl", "tr", "pl", "sv", "bg", "ro", "ar", "cs",
+  "el", "fi", "ms", "da", "ta", "uk", "ru", "hu", "hr", "sk", "no", "vi", "tl", "af", "hy", "as", "az", "be", "bn", "bs",
+  "ca", "et", "gl", "ka", "gu", "ha", "he", "is", "ga", "jv", "kn", "kk", "ky", "lv", "lt", "lb", "mk", "ml", "mr", "ne",
+  "ps", "fa", "pa", "sr", "sd", "sl", "so", "sw", "te", "th", "ur", "cy",
+];
+
 describe("ElevenLabs runtime provisioner: a session's language", () => {
   /** The agent as stored, letting a session set its language or not. */
-  const agentAllowingLanguage = (allowed: boolean | undefined) => ({
+  const agentAllowingLanguage = (allowed: boolean | undefined, ttsModelId = "eleven_flash_v2_5") => ({
     ...storedAgent(),
+    conversation_config: { ...storedAgent().conversation_config, tts: { model_id: ttsModelId, voice_id: "voice_1" } },
     platform_settings: {
       overrides: { custom_llm_extra_body: true, conversation_config_override: { agent: { first_message: true, ...(allowed === undefined ? {} : { language: allowed }) } } },
     },
@@ -440,7 +453,7 @@ describe("ElevenLabs runtime provisioner: a session's language", () => {
       ["GET", `${EU}/v1/convai/agents/agent_42`, () => json(200, agentAllowingLanguage(true))],
     ]);
 
-    expect(await provisioner.languageFor({ region: "eu", credential, vendorAgentId: "agent_42", locale: "it-CH" })).toEqual({ outcome: "set", language: "it" });
+    expect(await provisioner.languageFor({ region: "eu", credential, vendorAgentId: "agent_42", locale: "it-CH", agentDefaultLocale: "en" })).toEqual({ outcome: "set", language: "it" });
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ method: "GET", headers: { "xi-api-key": credential.apiKey }, redirect: "error" });
   });
@@ -454,13 +467,69 @@ describe("ElevenLabs runtime provisioner: a session's language", () => {
   ])("maps the session's locale %s onto the vendor's preset languages as %s", async (locale, language) => {
     const { provisioner } = fakeElevenLabs([["GET", `${US}/v1/convai/agents/agent_42`, () => json(200, agentAllowingLanguage(true))]]);
 
-    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale })).toEqual({ outcome: "set", language });
+    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale, agentDefaultLocale: "de" })).toEqual({ outcome: "set", language });
+  });
+
+  it.each([
+    ["the agent's default locale's language", "it-CH", "it-IT"],
+    ["English, for an agent that names no default locale", "en-GB", null],
+    ["English, for an agent whose default locale the vendor speaks no language of", "en", "km"],
+  ])("asks the vendor nothing when the session speaks %s, which calls start in anyway", async (_case, locale, agentDefaultLocale) => {
+    const { calls, provisioner } = fakeElevenLabs([]);
+
+    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale, agentDefaultLocale })).toEqual({ outcome: "default" });
+    expect(calls).toEqual([]);
+  });
+
+  it.each(["ast", "yue", "mt", "mi", "my", "mn", "oc", "or", "tg", "uz", "yo", "am", "lo", "lg", "sn", "ckb", "wo", "zu"])(
+    "sets no language, asking the vendor nothing, for %s, a preset the client's session override does not name",
+    async (locale) => {
+      const { calls, provisioner } = fakeElevenLabs([]);
+
+      expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale, agentDefaultLocale: "en" })).toEqual({ outcome: "unsupported" });
+      expect(calls).toEqual([]);
+    },
+  );
+
+  it.each(["fil", "fil-PH"])("sets Filipino (%s) as tl, the code the client's session override names for it", async (locale) => {
+    const { provisioner } = fakeElevenLabs([["GET", `${US}/v1/convai/agents/agent_42`, () => json(200, agentAllowingLanguage(true))]]);
+
+    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale, agentDefaultLocale: "en" })).toEqual({ outcome: "set", language: "tl" });
+  });
+
+  it("sets only languages the client's session override names, and reaches every one of them", async () => {
+    const set = new Set<string>();
+    for (const preset of ELEVENLABS_PRESET_LANGUAGES) {
+      const { provisioner } = fakeElevenLabs([["GET", `${US}/v1/convai/agents/agent_42`, () => json(200, agentAllowingLanguage(true))]]);
+      const answer = await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: preset, agentDefaultLocale: "km" });
+      if (answer.outcome === "set") set.add(answer.language);
+      else if (preset !== "en") expect(answer, preset).toEqual({ outcome: "unsupported" });
+    }
+
+    expect([...set].filter((language) => !CLIENT_SESSION_LANGUAGES.includes(language))).toEqual([]);
+    expect(CLIENT_SESSION_LANGUAGES.filter((language) => language !== "en" && !set.has(language))).toEqual([]);
+  });
+
+  it.each(["eleven_flash_v2", "eleven_turbo_v2", "eleven_monolingual_v1"])(
+    "sets no language but English on an agent whose voice is the English-only %s",
+    async (ttsModelId) => {
+      const { provisioner } = fakeElevenLabs([["GET", `${US}/v1/convai/agents/agent_42`, () => json(200, agentAllowingLanguage(true, ttsModelId))]]);
+
+      expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "it", agentDefaultLocale: "en" })).toEqual({ outcome: "unsupported" });
+      expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "en", agentDefaultLocale: "it" })).toEqual({ outcome: "set", language: "en" });
+    },
+  );
+
+  it.each(["eleven_flash_v2_5", "eleven_turbo_v2_5", "eleven_multilingual_v2"])("sets the session's language on an agent whose voice is the multilingual %s", async (ttsModelId) => {
+    const { provisioner } = fakeElevenLabs([["GET", `${US}/v1/convai/agents/agent_42`, () => json(200, agentAllowingLanguage(true, ttsModelId))]]);
+
+    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "it", agentDefaultLocale: "en" })).toEqual({ outcome: "set", language: "it" });
   });
 
   it("asks the vendor nothing for a locale it speaks no language of: the call starts in the agent's own language", async () => {
     const { calls, provisioner } = fakeElevenLabs([]);
 
-    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "km-KH" })).toEqual({ outcome: "unsupported" });
+    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "km-KH", agentDefaultLocale: "en" })).toEqual({ outcome: "unsupported" });
     expect(calls).toEqual([]);
   });
 
@@ -470,14 +539,14 @@ describe("ElevenLabs runtime provisioner: a session's language", () => {
   ])("says the session may not set its language on an agent that %s, since the vendor closes a session that sets it anyway", async (_case, allowed) => {
     const { provisioner } = fakeElevenLabs([["GET", `${US}/v1/convai/agents/agent_42`, () => json(200, agentAllowingLanguage(allowed))]]);
 
-    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "it" })).toEqual({ outcome: "not_allowed" });
+    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "it", agentDefaultLocale: "en" })).toEqual({ outcome: "not_allowed" });
   });
 
   it("says the same of an agent whose overrides the vendor serves without a section", async () => {
     const stored = { ...storedAgent(), platform_settings: {} };
     const { provisioner } = fakeElevenLabs([["GET", `${US}/v1/convai/agents/agent_42`, () => json(200, stored)]]);
 
-    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "it" })).toEqual({ outcome: "not_allowed" });
+    expect(await provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "it", agentDefaultLocale: "en" })).toEqual({ outcome: "not_allowed" });
   });
 
   it.each([
@@ -487,7 +556,7 @@ describe("ElevenLabs runtime provisioner: a session's language", () => {
   ] as const)("rejects when %s", async (_case, respond, reason, vendorStatus) => {
     const { provisioner } = fakeElevenLabs([["GET", `${US}/v1/convai/agents/agent_42`, respond]]);
 
-    const error = await rejectionOf(provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "it" }));
+    const error = await rejectionOf(provisioner.languageFor({ region: "us", credential, vendorAgentId: "agent_42", locale: "it", agentDefaultLocale: "en" }));
 
     expect(error.reason).toBe(reason);
     expect(error.vendorStatus).toBe(vendorStatus);

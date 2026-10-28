@@ -71,8 +71,8 @@ const PRIVACY_NOTICE_VARIABLE = 'radioso_privacy_notice'
 /**
  * The session's agent overrides: the first message and the language the start named, and none it
  * did not, since the vendor closes a session that sets one its agent does not allow. The language
- * is the vendor's own code, which Radioso maps from the vendor's language list; the client's type
- * names fewer languages than the vendor speaks, so it is passed on as that type.
+ * is the vendor's own code, and Radioso names only codes the client's `Language` type lists, so
+ * the start's string is passed on as that type.
  */
 const agentOverridesOf = ({ firstMessage, vendorLanguage }: { firstMessage?: string; vendorLanguage?: string }) => {
   if (!firstMessage && !vendorLanguage) return {}

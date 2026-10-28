@@ -9072,7 +9072,7 @@
           },
           "vendorLanguage": {
             "type": "string",
-            "description": "The vendor's code for the language the call starts in: `locale` mapped onto the languages the vendor speaks, such as `it` for `it-CH` or `pt-br` for `pt-BR`. Present only when the agent's vendor agent is one Radioso maintains, that vendor agent lets a session set its language, and the vendor speaks `locale`'s language. Pass it as the session's language override, on `elevenlabs` the client's `overrides.agent.language`, and send no override when it is absent: the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one."
+            "description": "The vendor's code for the language the call starts in: `locale` mapped onto the languages the vendor speaks, such as `it` for `it-CH` or `pt-br` for `pt-BR`. Present only when the agent's vendor agent is one Radioso maintains, that vendor agent lets a session set its language, the vendor's browser client can set `locale`'s language and the vendor agent's voice speaks it, and it is not the language the vendor agent starts calls in already. Pass it as the session's language override, on `elevenlabs` the client's `overrides.agent.language`, and send no override when it is absent: the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one."
           }
         },
         "required": [

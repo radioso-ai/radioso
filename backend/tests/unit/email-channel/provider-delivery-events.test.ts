@@ -379,6 +379,39 @@ describe("ProviderDeliveryEvents", () => {
       expect(h.onlyIntent().state).toBe("delivered");
     });
 
+    it("adds an ids-only log when the fallback records an acceptance, even when the status itself does not settle", async () => {
+      const h = await queuedUnknownProvider();
+      const intent = h.onlyIntent();
+
+      await webhookByMessageId(h, status("sent"), { providerMessageId: "lm_late_1", rfcMessageId: intent.suppliedRfcMessageId });
+
+      expect(h.logger.info).toHaveBeenCalledWith(
+        { sendIntentId: intent.id, workspaceId: SEND_IDS.workspace, conversationId: SEND_IDS.conversation },
+        "email_send_accepted_by_message_id",
+      );
+    });
+
+    it("never counts or logs a complaint matched by Message-ID as settled, since a complaint settles no delivery state", async () => {
+      const h = await queuedUnknownProvider();
+      const intent = h.onlyIntent();
+
+      const outcome = await webhookByMessageId(h, status("complained"), {
+        providerMessageId: "lm_late_1",
+        rfcMessageId: intent.suppliedRfcMessageId,
+      });
+
+      // The complaint itself is recorded, and the acceptance it revealed still lands...
+      expect(outcome).toBe("applied");
+      expect(h.onlyIntent()).toMatchObject({ state: "accepted", providerMessageId: "lm_late_1", complainedAt: h.clock() });
+      // ...but neither is a delivery settlement: the fallback metric and log must say so.
+      expect(h.counted("email_send_message_id_fallback_total")).toEqual([{ outcome: "matched_ignored" }]);
+      expect(h.logger.info).not.toHaveBeenCalledWith(expect.anything(), "email_send_settled_by_message_id");
+      expect(h.logger.info).toHaveBeenCalledWith(
+        { sendIntentId: intent.id, workspaceId: SEND_IDS.workspace, conversationId: SEND_IDS.conversation },
+        "email_send_accepted_by_message_id",
+      );
+    });
+
     it("settles the send past the 23h re-POST window too, resolving the uncertain the same way late evidence does", async () => {
       const h = await uncertainUnknownProvider();
       const intent = h.onlyIntent();

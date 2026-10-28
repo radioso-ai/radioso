@@ -70,7 +70,8 @@ export class ProviderDeliveryEvents {
     // it): recording the acceptance first is what lets the status evidence below settle it, the
     // same way it would have if the provider's own acceptance response had simply arrived.
     const intent = resolved.matchedBy === "message_id" ? await this.recordFallbackAcceptance(resolved.intent, input) : resolved.intent;
-    const outcome = input.status.type === "complained"
+    const isComplaint = input.status.type === "complained";
+    const outcome = isComplaint
       ? await this.recordComplaint(intent)
       : await this.applyEvidence(intent, {
           kind: "provider_status",
@@ -79,7 +80,8 @@ export class ProviderDeliveryEvents {
           detailCode: bounceDetailCode(input.status.bounce),
         });
     this.count(input.status.type, "webhook", outcome);
-    if (resolved.matchedBy === "message_id") this.observeFallback(outcome, intent);
+    // A complaint records once, but settles no delivery state; it never counts as `settled` here.
+    if (resolved.matchedBy === "message_id") this.observeFallback(isComplaint ? "ignored" : outcome, intent);
     return outcome;
   }
 
@@ -112,6 +114,9 @@ export class ProviderDeliveryEvents {
    * to `accepted` with a lookup scheduled; `uncertain` keeps its state via `recordLateAcceptance`).
    * A match whose id is already known (including a later event naming a different one) is left as
    * it is: this is acceptance evidence, never a correction of a provider id already on record.
+   * Logged by ids only when it lands, so a fallback that only ever records the acceptance — the
+   * triggering event's own status settling nothing, or being a complaint, which never settles
+   * delivery state — still leaves a trace distinct from the fuller "settled" line below.
    */
   private async recordFallbackAcceptance(
     intent: EmailSendIntentRecord,
@@ -128,7 +133,12 @@ export class ProviderDeliveryEvents {
         },
       },
     );
-    return written.outcome === "applied" ? written.intent : intent;
+    if (written.outcome !== "applied") return intent;
+    this.deps.logger.info(
+      { sendIntentId: written.intent.id, workspaceId: written.intent.workspaceId, conversationId: written.intent.conversationId },
+      "email_send_accepted_by_message_id",
+    );
+    return written.intent;
   }
 
   /** Bounces the sends behind the Radioso Message-Ids an inbound delivery status report names. */
@@ -192,11 +202,12 @@ export class ProviderDeliveryEvents {
   }
 
   /**
-   * Observes a Message-ID match: `settled` only when its evidence actually applied (a status this
-   * deployment's state machine accepted, from whichever state the fallback found the intent in);
-   * `matched_ignored` when the fallback found the right intent but the evidence did not change it
-   * (an out-of-order or non-settling status, or a terminal intent) — never counted or logged as
-   * settled just because the lookup matched (#1619).
+   * Observes a Message-ID match: `settled` only when a delivery-state status actually applied (a
+   * status this deployment's state machine accepted, from whichever state the fallback found the
+   * intent in); `matched_ignored` when the fallback found the right intent but nothing settled —
+   * an out-of-order or non-settling status, a terminal intent, or a complaint, which records once
+   * but settles no delivery state of its own. Never counted or logged as settled just because the
+   * lookup matched, or because the triggering event happened to apply something (#1619).
    */
   private observeFallback(outcome: "applied" | "ignored", intent: EmailSendIntentRecord): void {
     const fallbackOutcome: MessageIdFallbackOutcome = outcome === "applied" ? "settled" : "matched_ignored";

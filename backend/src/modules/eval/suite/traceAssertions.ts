@@ -27,6 +27,8 @@ export type SuiteTraceAssertion =
   | { type: "routine_step_reached"; routineId: string; stepId: string }
   /** Every named slot is filled after the turn, whichever step the routine landed on. */
   | { type: "routine_slots_filled"; routineId: string; slotKeys: string[] }
+  /** None of the named slots holds a value after the turn: the negation of `routine_slots_filled`. */
+  | { type: "routine_slots_unfilled"; routineId: string; slotKeys: string[] }
   /** The active routine yielded the turn to a normal answer and stays parked on `stepId`. */
   | { type: "routine_yielded"; routineId: string; stepId: string }
   | { type: "turn_asks_clarification" }
@@ -90,6 +92,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_activates_routine",
   "routine_step_reached",
   "routine_slots_filled",
+  "routine_slots_unfilled",
   "routine_yielded",
   "turn_asks_clarification",
   "turn_grounding_verdict",
@@ -356,6 +359,24 @@ export const evaluateTraceAssertion = (
       return fail(
         assertion,
         `Routine "${assertion.routineId}" left ${missing.join(", ")} unfilled; filled: ${[...filled].join(", ") || "none"}.`,
+      );
+    }
+    case "routine_slots_unfilled": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      const matches = routineStages(output, assertion.routineId);
+      if (matches.length === 0) {
+        return fail(assertion, `Routine "${assertion.routineId}" did not claim the turn.`);
+      }
+      const filled = new Set(matches.flatMap((stage) => routineTrace(stage)?.filledSlotKeys ?? []));
+      const unexpected = assertion.slotKeys.filter((key) => filled.has(key));
+      if (unexpected.length === 0) {
+        return pass(assertion, `Routine "${assertion.routineId}" left ${assertion.slotKeys.join(", ")} unfilled.`);
+      }
+      return fail(
+        assertion,
+        `Routine "${assertion.routineId}" filled ${unexpected.join(", ")}; expected ${assertion.slotKeys.join(", ")} unfilled.`,
       );
     }
     case "routine_yielded": {

@@ -732,6 +732,41 @@ describe("routine defaults", () => {
       const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
       expect(systemPrompt).toContain("Record a date slot's value as YYYY-MM-DD");
       expect(systemPrompt).toContain("Today is 2026-09-30 (UTC)");
+      expect(systemPrompt).toContain("a date they give for a date slot counts as provided");
+    });
+
+    // #1664: a bare date with two date slots went to either one, and a "yes" to dates the step
+    // had just offered filled neither.
+    it("fills a value only into the slot it is given for, and an accepted proposal into its slots", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain("goes in none of them unless the message or the conversation before it makes clear which one it is for");
+      expect(systemPrompt).toContain("One value goes into two slots only when the message gives it for both.");
+      expect(systemPrompt).toContain("the latest message accepts them, in any words, those values are given this turn");
+      expect(systemPrompt).toContain("replacing any value the slot already holds");
+      expect(systemPrompt).toContain("A value the user changes while accepting is the one to keep.");
+      expect(systemPrompt).toContain("omit slots not provided or accepted this turn");
+    });
+
+    // Framing the message as a reply to the last question mapped answers onto whatever was
+    // asked ("1 novembre" filled the course after "which course?") and dropped a date the
+    // opening message stated for a slot the step did not ask about.
+    it("does not frame the message as a reply to the last question", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn });
+
+      expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "").not.toContain("Read the latest message as a reply");
+    });
+
+    it("leaves the slot-assignment and acceptance rules out when the routine declares no slots", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).not.toContain("goes in none of them");
+      expect(systemPrompt).not.toContain("accepts them");
     });
 
     it("leaves the date rule out when no slot is a date", async () => {

@@ -14,6 +14,7 @@ import {
   BOOK_RETREAT_ROUTINE_ID,
   CONTACT_SUPPORT_ROUTINE_ID,
   CREATE_RETURN_TICKET_SKILL,
+  KITCHEN_NOTE_ROUTINE_ID,
   START_RETURN_ROUTINE_ID,
   START_RETURN_TOOL_NAME,
 } from "./routines.js";
@@ -92,6 +93,9 @@ const onOgnissantiDatesStep = (
   variables: { program: "Corso residenziale Ognissanti per la pace", ...variables },
   status: "active",
 });
+
+/** The note a guest gave the kitchen-note routine, word for word as the routine holds it. */
+const KITCHEN_NOTE_IN_VISITOR_WORDS = "sono celiaca, niente glutine neanche in tracce, e la sera mangio solo verdure cotte";
 
 /** The mountain yoga course's fee and room rates, none of which belongs in an answer about another course. */
 const MOUNTAIN_COURSE_FIGURES_ABSENT: ConversationQualityCase["assertions"] = ["345", "310", "255", "195"].map((figure) => ({
@@ -806,12 +810,13 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       // #1664: the arrival date is not copied into the departure.
       { type: "routine_slots_unfilled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["departure"] },
       { type: "answer_contains", pattern: "\\?", matchMode: "regex" },
-      // The Italian ways the reply announced the gap in production.
-      { type: "answer_does_not_contain", pattern: "\\bmanca|\\bmancano|serv[eo]no? ancora|ho ancora bisogno", matchMode: "regex" },
+      // The Italian ways a reply announces the gap: "manca", "serve ancora", "servono ancora",
+      // "serve solo", "resta solo", "ho ancora bisogno".
+      { type: "answer_does_not_contain", pattern: "\\bmanca|\\bserv(?:e|ono) (?:ancora|solo)|\\brest(?:a|ano) solo|ho ancora bisogno", matchMode: "regex" },
       {
         type: "llm_judge",
-        expectedAnswer: "Perfetto, arrivo il 30 ottobre. E quando riparti? L'edizione termina il 2 novembre.",
-        criteria: "Acknowledges the arrival date and asks when the visitor leaves, optionally offering the edition's end date. Does not announce that something is missing or still needed, and does not list what was already collected.",
+        expectedAnswer: "Perfetto! E quando riparti? L'edizione termina il 2 novembre.",
+        criteria: "Asks when the visitor leaves, optionally offering the edition's end date. Does not announce that something is missing or still needed, and does not list what was already collected.",
       },
     ],
   },
@@ -849,8 +854,9 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   },
   // #1664: accepting offered dates replaces a date an earlier turn put in the wrong slot. The
   // departure already holds the arrival date; the confirmation sets it to the offered end date.
-  // Trace assertions read slot keys, never values, so these pass whether or not the departure
-  // was replaced; that it ends up as 2026-11-02 is checked by hand.
+  // The departure is filled before the turn, so only `routine_slots_returned` fails when the
+  // confirmation leaves the wrong date in place. Trace assertions read keys, never values, so
+  // that the returned departure is 2026-11-02 is checked by hand.
   {
     id: "routine-acceptance-replaces-wrong-date",
     name: "Accepting the dates a step offered replaces a date held in the wrong slot",
@@ -862,7 +868,37 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     clientContextCapabilities: contentPageReadCapabilities,
     assertions: [
       { type: "routine_slots_filled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["arrival", "departure"] },
+      { type: "routine_slots_returned", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["departure"] },
       { type: "routine_step_reached", routineId: BOOK_EDITION_ROUTINE_ID, stepId: "done" },
+    ],
+  },
+  // A "yes" to a recap keeps the visitor's own words. The confirm step reads back the note the
+  // visitor wrote and asks to confirm it; read as a proposal, the "sì" replaced the note with the
+  // assistant's rewording. The routine moves on, and the selector returns no note.
+  {
+    id: "routine-accepted-recap-keeps-visitor-words",
+    name: "Accepting a read-back of a held note leaves the note as the visitor wrote it",
+    tags: ["routine", "slot-filling", "multilingual"],
+    history: [
+      { role: "user", content: "Ho già prenotato il ritiro di novembre e vorrei avvisare la cucina di una cosa." },
+      { role: "assistant", content: "Certo! Cosa deve sapere la cucina?" },
+      { role: "user", content: KITCHEN_NOTE_IN_VISITOR_WORDS },
+      {
+        role: "assistant",
+        content: "Ricapitolo la nota per la cucina: sei celiaca, quindi niente glutine nemmeno in tracce, e a cena preferisci verdure cotte. Confermi che la inoltro così?",
+      },
+    ],
+    routineStartState: {
+      routineId: KITCHEN_NOTE_ROUTINE_ID,
+      path: ["ask_note", "confirm_note"],
+      variables: { note: KITCHEN_NOTE_IN_VISITOR_WORDS },
+      status: "active",
+    },
+    query: "sì",
+    assertions: [
+      { type: "routine_step_reached", routineId: KITCHEN_NOTE_ROUTINE_ID, stepId: "done" },
+      { type: "routine_slots_filled", routineId: KITCHEN_NOTE_ROUTINE_ID, slotKeys: ["note"] },
+      { type: "routine_slots_not_returned", routineId: KITCHEN_NOTE_ROUTINE_ID, slotKeys: ["note"] },
     ],
   },
   quickReplyCase({

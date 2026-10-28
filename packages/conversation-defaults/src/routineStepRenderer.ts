@@ -144,8 +144,11 @@ const reaskBlock = (reask: RoutineStepReask | undefined, exhaustedPrompt: string
     "The user's latest reply did not give everything this step needs, so this message asks again. Do not act as if the step is done.",
     [
       "You already asked this step's question earlier in the conversation. Whatever you said with it then, such as thanks or explanations the step instruction asks for, has been said: do not say it again. A fact the user needs in order to answer may be given again: when you offered a value for what you still ask for, such as a date, offer it again in the question. Respond to the user's reply in a few words, then ask for the rest as a plain question in different words from your earlier messages, and briefly say why when that helps the user answer.",
-      // Past the limit the exhausted prompt says plainly what is still needed, so the reply may name it.
-      ...(reask.exhausted ? [] : ["Do not say that something is missing, still needed, or the only thing left, and do not list what you already have."]),
+      // Past the limit the exhausted prompt says plainly what is still needed, so the reply may
+      // name it; it still does not list what the step already holds.
+      reask.exhausted
+        ? "Do not list what you already have."
+        : "Do not say that something is missing, still needed, or the only thing left, and do not list what you already have.",
       "Do not blame the user or quote their reply back. Anything else the user asked for that is outside your scope is still declined, as above.",
     ].join(" "),
     ...(missing.length > 0 ? [`Still to ask for: ${missing.join(", ")}.`] : []),

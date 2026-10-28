@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-28T14:44:50.191Z",
+  "generatedAt": "2026-10-28T22:01:02.111Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -288,6 +288,11 @@
       "samples": 5
     },
     "routine-bare-date-leaves-departure-empty": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-accepted-recap-keeps-visitor-words": {
       "status": "pass",
       "passRate": 1,
       "samples": 5

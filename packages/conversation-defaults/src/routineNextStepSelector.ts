@@ -73,9 +73,15 @@ const filledSlotsLine = (routine: Routine, variables: Record<string, unknown>): 
 // message itself states no value. Framing the whole message as a reply to the last question
 // went too far: answers were mapped onto whatever was asked ("1 novembre" filled the course
 // after "which course?"), and a date the opening message gave for another slot was dropped.
+// Acceptance covers only what the assistant proposed: a step that reads held values back and
+// asks to confirm also runs the selector (through its AI-decided exit), and read as a
+// proposal, the "yes" replaced the user's own words with the assistant's paraphrase.
+// The proposer is named as "the assistant", never "you": the selector is told it never
+// writes to the user (#1665).
 const slotAssignmentRules = [
   "A value that could fill more than one slot goes in none of them unless the message or the conversation before it makes clear which one it is for. One value goes into two slots only when the message gives it for both.",
-  "When the assistant's last message proposed values for slots and the latest message accepts them, in any words, those values are given this turn. Return each proposed value for its slot, replacing any value the slot already holds. A value the user changes while accepting is the one to keep.",
+  "When the assistant's last message proposed values for slots and the latest message accepts them, in any words, those values are given this turn. A proposed value is one the user has not given, or one different from what they gave, such as a date the assistant offered instead. Return each proposed value for its slot, replacing any value the slot already holds. A value the user changes while accepting is the one to keep.",
+  "Repeating back values the user already gave, as a summary or to confirm them, proposes nothing, even in the assistant's own words. Accepting such a recap gives no value: return a repeated slot only when the latest message changes it, so each slot keeps the user's own words.",
 ];
 
 const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, today: Date): string => {
@@ -87,7 +93,7 @@ const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, t
     ...routine.slots.map(slotLine),
     ...filledSlotsLine(routine, variables),
     "",
-    "Extract every declared slot present in the latest user message in one pass, whether or not the current step asks for it.",
+    "Extract every declared slot that the latest user message gives, or accepts as described below, in one pass, whether or not the current step asks for it.",
     "Judge each slot on its own: a slot's description applies only to that slot and never stops you from extracting another.",
     ...slotAssignmentRules,
     "A condition that refers to a slot as {{slot.<key>}} holds only when that slot has a value, given in the latest message or earlier in the conversation; when you return a value for every slot such a condition refers to, it holds.",

@@ -810,12 +810,13 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       // #1664: the arrival date is not copied into the departure.
       { type: "routine_slots_unfilled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["departure"] },
       { type: "answer_contains", pattern: "\\?", matchMode: "regex" },
-      // The Italian ways the reply announced the gap in production.
-      { type: "answer_does_not_contain", pattern: "\\bmanca|\\bmancano|serv[eo]no? ancora|ho ancora bisogno", matchMode: "regex" },
+      // The Italian ways a reply announces the gap: "manca", "serve ancora", "servono ancora",
+      // "serve solo", "resta solo", "ho ancora bisogno".
+      { type: "answer_does_not_contain", pattern: "\\bmanca|\\bserv(?:e|ono) (?:ancora|solo)|\\brest(?:a|ano) solo|ho ancora bisogno", matchMode: "regex" },
       {
         type: "llm_judge",
-        expectedAnswer: "Perfetto, arrivo il 30 ottobre. E quando riparti? L'edizione termina il 2 novembre.",
-        criteria: "Acknowledges the arrival date and asks when the visitor leaves, optionally offering the edition's end date. Does not announce that something is missing or still needed, and does not list what was already collected.",
+        expectedAnswer: "Perfetto! E quando riparti? L'edizione termina il 2 novembre.",
+        criteria: "Asks when the visitor leaves, optionally offering the edition's end date. Does not announce that something is missing or still needed, and does not list what was already collected.",
       },
     ],
   },

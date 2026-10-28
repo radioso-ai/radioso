@@ -211,14 +211,15 @@ export const bookEditionRoutine: RoutineDefinition = {
   },
   slots: [
     { stableSlotId: "slot_program", key: "program", type: "text", required: true, description: "The course the visitor wants to book.", ordinal: 0 },
-    { stableSlotId: "slot_dates", key: "dates", type: "text", required: true, description: "The edition dates the visitor confirms.", ordinal: 1 },
+    { stableSlotId: "slot_arrival", key: "arrival", type: "date", required: true, description: "The date the visitor arrives.", ordinal: 1 },
+    { stableSlotId: "slot_departure", key: "departure", type: "date", required: true, description: "The date the visitor leaves.", ordinal: 2 },
   ],
   steps: [
     { stableStepId: "program", kind: "chat", instruction: "Ask which course they want to book: {{slot.program}}", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
     {
       stableStepId: "dates",
       kind: "chat",
-      instruction: "Tell them the start and end dates of the edition from the page they are on, {{context.page_context}}, and ask them to confirm those dates: {{slot.dates}}",
+      instruction: "Tell them the start and end dates of the edition from the page they are on, {{context.page_context}}, and ask them to confirm those dates as {{slot.arrival}} and {{slot.departure}}",
       toolRef: null,
       actionType: null,
       ordinal: 1,

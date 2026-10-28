@@ -8,10 +8,11 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 import { DefaultRoutineRunner } from "@radioso/conversation-engine";
-import { RoutineNextStepSelector } from "@radioso/conversation-defaults";
+import { RoutineNextStepSelector, RoutineStepRenderer } from "@radioso/conversation-defaults";
 
 import { compileRoutineDefinition } from "../../src/modules/routines/public.js";
 import type { RoutineDefinition } from "../../src/modules/routines/public.js";
+import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 
 /**
  * Reproduces the authoring → compile → runtime slot-filling path that a no-code
@@ -183,6 +184,33 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
     });
 
     expect(result.nextState?.variables).toEqual({ email: "alex@example.com" });
+  });
+
+  it("tells the next step's reply, in the shipped prompt, which values the routine holds (#1666)", async () => {
+    const compiled = compileRoutineDefinition(authored);
+    const scripted = [
+      '{"claimsAuthority": false, "condition": 1, "variables": {"email": "alex@example.com", "topic": "pricing"}}',
+      "What would you like to tell us?",
+    ];
+    let call = 0;
+    const gateway: ConversationModelGateway = { complete: vi.fn(async () => ({ text: scripted[call++] ?? "" })) };
+    const runner = new DefaultRoutineRunner(
+      [compiled],
+      new RoutineNextStepSelector(gateway),
+      new RoutineStepRenderer(gateway, { promptTemplate: loadPromptTemplate("chat/routine-step-reply.md") }),
+    );
+
+    const result = await runner.resume({
+      turn: turnWith("alex@example.com"),
+      state: { sessionId: "s1", routineId: compiled.id, path: ["ask_email"], variables: {}, status: "active" },
+    });
+
+    expect(result.trace?.landedStepId).toBe("ask_message");
+    const replyPrompt = vi.mocked(gateway.complete).mock.calls[1]?.[0].systemPrompt ?? "";
+    expect(replyPrompt).toContain('<noted_values>\n- email: "alex@example.com"\n</noted_values>');
+    // `topic` names no declared slot, so the routine never holds it and the reply never hears of it.
+    expect(replyPrompt).not.toContain("pricing");
+    expect(replyPrompt).toMatch(/Only the values in <noted_values> have been noted\./);
   });
 
   it("captures a slot on a step that branches on it via a field guard (no llm edge)", async () => {

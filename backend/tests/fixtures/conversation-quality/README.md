@@ -16,7 +16,7 @@ repo-committed regression suite you run from the CLI.
 | `routines.ts` | 5 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, and `book-edition`, whose dates step references `{{context.page_context}}` |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 56 seed cases |
+| `cases.ts` | the 57 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -101,6 +101,19 @@ Run only these cases with:
 
 ```bash
 pnpm run evals -- --tag slot-filling
+```
+
+## Slot-honesty case
+
+`routine-reply-claims-only-held-slots` runs the same routine on its dates step, holding the
+course and the arrival, after the assistant asked when the visitor leaves. The visitor answers
+with their name, which fills no slot. The reply has to ask for the departure again, ending on a
+question, and the judge checks it says nothing about a departure date being noted. The step
+reply reads the values the routine holds from a `<noted_values>` list in its prompt, and only
+those count as noted.
+
+```bash
+pnpm run evals -- --tag slot-honesty
 ```
 
 ## Review cases

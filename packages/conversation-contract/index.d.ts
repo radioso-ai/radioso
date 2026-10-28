@@ -1399,24 +1399,21 @@ export interface ConversationRoutineNextStepSelector {
 }
 
 /**
- * Renders the reply for the routine's current step. The host implements this with
- * the Radioso composer (the projected step steering is passed in), so the pure
- * engine owns graph mechanics and the host owns generation/presentation. It is told
- * only what it needs to write the message — the step and its projected steering for
- * this turn, and on a re-ask what the step still lacks — not the graph topology or
- * slot values.
+ * Renders the reply for the routine's current step. The host implements this with the Radioso
+ * composer (the projected step steering is passed in), so the pure engine owns graph mechanics
+ * and the host owns generation/presentation. It is told only what it needs to write the message —
+ * the step and its projected steering for this turn, the values its declared slots hold, and on a
+ * re-ask what the step still lacks — never the graph topology.
  *
- * The rules play two roles (#1351): a `source: "routine"` rule is the step's own
- * instruction and controls what the message asks for or does; every other rule
- * (authored directives) is subordinate guidance that shapes how it is said and
- * never replaces the step's question or action.
+ * The rules play two roles (#1351): a `source: "routine"` rule is the step's own instruction and
+ * controls what the message asks for or does; every other rule (authored directives) is
+ * subordinate guidance that shapes how it is said and never replaces the step's question or action.
  */
 export interface ConversationRoutineStepRenderer {
   render(input: RoutineStepReplyInput): Promise<RenderableTurn>;
   /**
-   * Decides the reply without generating it: no model call happens until the returned
-   * reply's `render()` or `stream()`, and `prepare(input).render()` produces what
-   * `render(input)` would. Optional; a runner without it renders with `render`.
+   * Decides the reply without generating it: no model call happens until the returned reply's `render()` or `stream()`,
+   * and `prepare(input).render()` produces what `render(input)` would. Optional; a runner without it renders with `render`.
    */
   prepare?(input: RoutineStepReplyInput): PendingRenderableTurn;
 }
@@ -1428,20 +1425,23 @@ export interface RoutineStepReplyInput {
   turn: TurnContext;
   reask?: RoutineStepReask;
   /**
-   * True when the runner ends the routine on `step` because the visitor stayed stuck on it
-   * past the re-ask limit, and a person takes the conversation over (#1384). The reply tells
-   * the visitor a person continues from here; it neither asks the step's question nor
-   * follows its instruction, so `steering` is empty and `reask` absent.
+   * True when the runner ends the routine on `step` because the visitor stayed stuck on it past
+   * the re-ask limit, and a person takes the conversation over (#1384). The reply says a person
+   * continues from here, never the step's question or instruction: `steering` is empty, `reask` absent.
    */
   stuckHandoff?: boolean;
   /** {@link RoutineContextRenderer.evidence} of the context variables the step references; absent when none carries any. */
   contextEvidence?: readonly string[];
+  /**
+   * Every declared slot holding a value, in declared order, a sensitive one as {@link REDACTED_VALUE}: the only values
+   * the reply may say were noted (#1666). Visitor data, never traced. Empty when none is held; absent with no slots declared.
+   */
+  heldSlots?: Readonly<Record<string, unknown>>;
 }
 
 /**
- * Present when the turn renders the same chat step the user was answering, because
- * their reply did not satisfy it. Absent on a step's first rendering, including the
- * routine's activation turn.
+ * Present when the turn renders the same chat step the user was answering, because their reply did
+ * not satisfy it. Absent on a step's first rendering, including the routine's activation turn.
  */
 export interface RoutineStepReask {
   /**

@@ -31,7 +31,7 @@ import type {
 } from "@radioso/conversation-contract";
 import { REDACTED_VALUE } from "@radioso/conversation-contract";
 
-import { declaredSlotVariables, outboundVariables, sensitiveSlotKeys } from "./outboundSlotValues.js";
+import { declaredSlotVariables, heldSlotsForReply, outboundVariables, sensitiveSlotKeys } from "./outboundSlotValues.js";
 import {
   collectedSlotsForStep,
   isSlotCollectionStepSatisfied,
@@ -1379,11 +1379,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const steering = input.steeringResolver
         ? await input.steeringResolver.resolve({ step, baseSteering, turn })
         : baseSteering;
-      const reply = this.prepareReply({
-        ...rendered,
-        steering,
-        turn,
-      });
+      const reply = this.prepareReply({ ...rendered, steering, turn, ...heldSlotsForReply(routine, variables) });
       traceSteps.push({ stepId: step.id, kind: step.kind, event: "suspended" });
       const trace: RoutineRunTrace = {
         routineId: routine.id,
@@ -1450,6 +1446,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       steering,
       turn: turnWithStagedContext,
       ...(reask ? { reask } : {}),
+      // What the reply may say was noted, read after this turn's values are merged (#1666).
+      ...heldSlotsForReply(routine, variables),
     });
 
     const terminalKind = terminalKindFor(step);

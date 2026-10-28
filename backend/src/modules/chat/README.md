@@ -521,7 +521,10 @@ imports from `services/`.
   unstreamed remainder, and planned suggestions are expanded as on the whole path.
   `services/routines/pageReadAwareRoutineRunner.ts`
   binds the routine to the page excerpt the turn may read, and commits that capture to
-  the session once a turn the routine keeps has its reply.
+  the session as the reply of a turn the routine keeps starts being generated, so a
+  grounded step reply, which reads the session, reads the page too. A routine asks the
+  gate for the page as `context` (`services/pageRead/pageReadDecision.ts`), which the
+  gate serves at the richest operation the channel supports.
 - Routine endings: `services/routineEndingEffects.ts` is the one place every chat
   path (routine, coverage, rendered; streaming or not; a resume after an approval in
   `services/approvalResumeTurn.ts`) turns the engine's ending report into effects.

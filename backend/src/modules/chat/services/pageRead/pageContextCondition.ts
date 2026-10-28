@@ -20,6 +20,11 @@ export const pageContextConditionFor = (
   if (!outcome || !outcome.merged.decision.required) {
     return null;
   }
+  // A request for the page as context (a routine step that reads it) asks nothing of the page
+  // the reply must answer, so a channel that cannot serve it leaves the reply nothing to explain.
+  if (outcome.merged.decision.operation === "context") {
+    return null;
+  }
   if (outcome.gate.kind === "unavailable") {
     return {
       kind: "page_context_unavailable",

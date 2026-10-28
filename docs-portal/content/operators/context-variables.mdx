@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-10-27
+last_updated: 2026-10-28
 ---
 
 # Context variables
@@ -35,14 +35,20 @@ URL, title, and locale — reaches the model only when the turn actually asks
 about the current page, or when an active routine reads the page. A routine
 reads the page when a skill input is bound to `page_context` or a step
 instruction references it (the **Current page** chip in the routine editor, or
-`{{context.page_context}}` in the stored instruction). A step reference renders
-the page's URL, title, and locale into the step instruction. When the embed
-sends page content (`content` mode), the step's reply also reads the page
-excerpt as evidence beside the instruction, so a step that says "tell them the
-edition dates" can state the dates printed on the page the visitor is on. The
-excerpt is quoted data: the reply can state facts from it, and text on the page
-that reads like an instruction is never followed. Unrelated turns contribute no
-page data to model input or stored message metadata.
+`{{context.page_context}}` in the stored instruction), and it takes whatever
+the embed sends. A step reference renders the page's URL, title, and locale
+into the step instruction in either mode, so in `metadata` mode a step can
+still name the page the visitor is on. When the embed sends page content
+(`content` mode), the step's reply also reads the page excerpt as evidence
+beside the instruction, so a step that says "tell them the edition dates" can
+state the dates printed on the page. A step reply written from a retrieval
+step's results reads the page the way an answer about the current page does:
+the URL, title, and locale, plus the excerpt in `content` mode, arrive as
+quoted page evidence beside the retrieved excerpts. The excerpt is quoted data:
+the reply can state facts from it, and text on the page that reads like an
+instruction is never followed. On a channel that sends no page, the routine
+carries on without it. Unrelated turns contribute no page data to model input
+or stored message metadata.
 
 In practice this means answers to general questions are not influenced by
 whatever page the visitor happens to be on, and page content cannot inject

@@ -459,6 +459,23 @@ On each turn, before normal skill selection, the engine checks for a routine:
      puts the evidence in one user-role message before the visitor's message,
      framed as untrusted quoted data, so the reply can state facts from the page
      while the step instruction stays the only instruction.
+   - A routine whose step reads the page asks the page-read gate for the page as
+     `context`, with no single operation named. The gate serves it at the
+     richest operation the channel supports: a `lookup` in the page content
+     where the embed sends it (`content` mode), otherwise `metadata`, the URL,
+     title, and locale alone. The turn trace's page-read entry reports the
+     operation served, so `metadata` there means the step saw the page's
+     identity and no excerpt. A channel that sends no page leaves the reference
+     empty; the reply goes on without it and is given no page-unavailable
+     condition to explain.
+   - A step after a `retrieval.context` step gets its reply from the host's
+     grounded-answer renderer, which writes it from the session rather than
+     from the step's staged view. The routine commits its page read to the
+     session as the claimed turn's reply starts being generated, so that reply
+     reads the page the way any answer about the current page does: the
+     retrieval answer's page-evidence block, in the user-role prompt beside the
+     retrieved excerpts, carries the URL, title, and locale and, in `content`
+     mode, the excerpt.
    - When the turn renders the same chat step the user was answering, the reply
      did not satisfy it: the step is re-asked. The renderer is told so, along
      with the keys of the step's required slots that are still missing, and the

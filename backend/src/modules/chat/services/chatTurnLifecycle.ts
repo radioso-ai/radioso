@@ -100,11 +100,11 @@ import {
 } from "./reviewDraft.js";
 import { reviewedTurnAuditEvent } from "./reviewTurnAudit.js";
 import type {
+  MergedPageReadDecision,
   PageReadCandidateSource,
-  PageReadDecision,
   PageReadGateOutcome,
 } from "./pageRead/pageReadDecision.js";
-import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
+import { freezePageReadOutcome, pageReadOperationOf } from "./pageRead/pageReadSessionOutcome.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
@@ -390,7 +390,7 @@ interface TurnTracePresentation {
 }
 
 interface PersistedPageReadDecision {
-  decision: PageReadDecision;
+  decision: MergedPageReadDecision["decision"];
   winnerSource: PageReadCandidateSource | null;
   gateOutcome: PageReadGateOutcome["kind"];
 }
@@ -1156,7 +1156,7 @@ export class ChatTurnLifecycle {
         help: "Page-read gate outcomes by result and selected operation.",
         labels: {
           outcome: session.pageReadOutcome.gate.kind,
-          operation: session.pageReadOutcome.merged.decision.operation ?? "none",
+          operation: pageReadOperationOf(session.pageReadOutcome) ?? "none",
         },
       });
     }

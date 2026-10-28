@@ -6,6 +6,7 @@ import {
   type PageReadCapability,
   type PageReadDecision,
   type PageReadGateOutcome,
+  type PageReadRequest,
 } from "./pageReadDecision.js";
 
 export interface PageReadOutcome {
@@ -13,7 +14,7 @@ export interface PageReadOutcome {
   gate: PageReadGateOutcome;
 }
 
-export interface PageReadOutcomeCarrier {
+interface PageReadOutcomeCarrier {
   pageReadCapability?: PageReadCapability | null;
   pageReadOutcome?: PageReadOutcome;
 }
@@ -38,3 +39,11 @@ export const freezePageReadOutcome = (
   carrier.pageReadOutcome = outcome;
   return outcome;
 };
+
+/**
+ * The operation an outcome reports: the one the gate served when it captured the page, so a
+ * trace tells the page's identity (`metadata`) from its content; otherwise the one requested,
+ * null when nothing asked to read the page.
+ */
+export const pageReadOperationOf = (outcome: PageReadOutcome): PageReadRequest | null =>
+  outcome.gate.kind === "capture" ? outcome.gate.operation : outcome.merged.decision.operation;

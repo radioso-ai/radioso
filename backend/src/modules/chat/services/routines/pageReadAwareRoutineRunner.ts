@@ -10,21 +10,19 @@ import type { ChatSessionPreparer, PreparedSession } from "../chatSessionPrepare
 import { pageReadRoutineCandidates } from "../pageRead/pageReadRoutineCandidates.js";
 import { freezePageReadOutcome } from "../pageRead/pageReadSessionOutcome.js";
 
-/** The reply, with `after` run once it has been generated, whole or streamed — never when generating it failed. */
-const replyThen = (reply: PendingRenderableTurn, after: () => void): PendingRenderableTurn => {
+/** The reply, generated whole or streamed only once `commit` has run; `commit` runs only when the reply is asked for. */
+const replyAfterCommit = (reply: PendingRenderableTurn, commit: () => void): PendingRenderableTurn => {
   const stream = reply.stream?.bind(reply);
   return {
     render: async () => {
-      const turn = await reply.render();
-      after();
-      return turn;
+      commit();
+      return reply.render();
     },
     ...(stream
       ? {
           stream: async function* () {
-            const turn = yield* stream();
-            after();
-            return turn;
+            commit();
+            return yield* stream();
           },
         }
       : {}),
@@ -35,7 +33,9 @@ const replyThen = (reply: PendingRenderableTurn, after: () => void): PendingRend
  * The provider's routine runner, bound to the page excerpt this turn may read. The capture
  * is tentative: the routine may yield the turn off-topic, so the decision is frozen on a
  * detached carrier and the routine binds against a scoped staged view. Only a turn the
- * routine keeps commits the capture to the session, once its reply has been generated.
+ * routine keeps commits the capture to the session: a claimed turn as its reply starts being
+ * generated, so a step reply written from the session (a grounded answer) reads the page the
+ * routine read; a resumed turn, whose runner generates as it walks, once it has resumed.
  */
 export const pageReadAwareRoutineRunner = (input: {
   session: PreparedSession;
@@ -90,7 +90,7 @@ export const pageReadAwareRoutineRunner = (input: {
             const scoped = await scopedToPageRead(claimInput);
             const claimed = await claim(scoped.input);
             return claimed.kind === "claimed"
-              ? { ...claimed, reply: replyThen(claimed.reply, scoped.commit) }
+              ? { ...claimed, reply: replyAfterCommit(claimed.reply, scoped.commit) }
               : claimed;
           },
         }

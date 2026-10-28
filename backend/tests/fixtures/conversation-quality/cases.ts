@@ -887,8 +887,8 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "answer_contains", pattern: "\\?", matchMode: "regex" },
       {
         type: "llm_judge",
-        expectedAnswer: "Piacere, Giulia! L'edizione termina il 2 novembre: quando riparti?",
-        criteria: "Asks the visitor when they leave, optionally offering the edition's end date as a question. Does not say or imply that a departure date has been noted, recorded, set, or booked.",
+        expectedAnswer: "Piacere, Giulia! E quando riparti?",
+        criteria: "Asks when the visitor leaves; offering a date as a question is fine. Does not say or imply that a departure date has been noted, recorded, set, or booked.",
       },
     ],
   },

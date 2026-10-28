@@ -92,7 +92,14 @@ course runs from 30 October to 2 November: shall I book those dates?"), a reply
 that accepts them, in any words, gives those values this turn: "sì, confermo"
 fills the arrival and the departure with the proposed dates, replacing whatever
 either slot held, and a value the visitor changes while accepting ("yes, but I
-leave on the 1st") is the one stored.
+leave on the 1st") is the one stored. A proposed value is one the visitor has
+not given, or one different from what they gave, such as a date the agent offers
+instead. Reading back values the visitor already gave proposes nothing, however
+the recap words them: after "you'd like a refund for order 123, shall I send
+this?", a "yes" returns no slot, so each slot keeps the visitor's own words, and
+only a value the reply changes is stored. The selector reads an acceptance only
+on a turn it runs: on a step still missing one of its slots, on a step with an
+`llm` exit, or on the turn that starts the routine.
 
 The user may write a date in any form. A `date` slot is recorded as `YYYY-MM-DD`,
 reading day and month the way the user wrote them ("11-14 Nov" is 11 to 14
@@ -454,8 +461,11 @@ On each turn, before normal skill selection, the engine checks for a routine:
      title, and locale. The host's context renderer can also give a variable's
      evidence, which the runner hands the step renderer as `contextEvidence`, once
      per referenced variable, on the step's first ask and on every re-ask. For
-     `page_context` the evidence is the captured page excerpt, escaped and framed
-     as `<page_excerpt>`, present when the embed sends page content. The renderer
+     `page_context` the evidence is the captured page excerpt, framed as
+     `<page_excerpt>` and present when the embed sends page content. The text
+     keeps the page's own characters, so "Yoga & Meditazione" reads as written;
+     only a sequence that would close the frame or open another is broken up, so
+     page text cannot step outside it. The renderer
      puts the evidence in one user-role message before the visitor's message,
      framed as untrusted quoted data, so the reply can state facts from the page
      while the step instruction stays the only instruction.
@@ -471,11 +481,18 @@ On each turn, before normal skill selection, the engine checks for a routine:
    - A step after a `retrieval.context` step gets its reply from the host's
      grounded-answer renderer, which writes it from the session rather than
      from the step's staged view. The routine commits its page read to the
-     session as the claimed turn's reply starts being generated, so that reply
-     reads the page the way any answer about the current page does: the
-     retrieval answer's page-evidence block, in the user-role prompt beside the
-     retrieved excerpts, carries the URL, title, and locale and, in `content`
-     mode, the excerpt.
+     session as the claimed turn's reply starts being generated. When the page's
+     content was captured, that reply reads the page the way any answer about
+     the current page does: the retrieval answer's current-page block, in the
+     user-role prompt beside the retrieved excerpts, carries the URL, title,
+     locale, and visible excerpt with a trailing note that the page is
+     untrusted, and the excerpt counts as a source of its own, so a fact taken
+     from it needs no citation. A `context` read served as `metadata` admits the
+     page's identity as context, not evidence (`admitsPageEvidence`): the
+     grounded reply gets no current-page block, keeps the citation hold and the
+     rewrite of an answer that cites no retrieved excerpt, and with nothing
+     retrieved gets the no-context decline. A planner's own `metadata` read
+     ("what page am I on?") still admits the identity as evidence.
    - When the turn renders the same chat step the user was answering, the reply
      did not satisfy it: the step is re-asked. The renderer is told so, along
      with the keys of the step's required slots that are still missing, and the

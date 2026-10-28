@@ -343,6 +343,56 @@ describe("conversation-quality suite gives a routine step the page it references
   });
 });
 
+// The recap case's oracle reads what the selector returned on the confirm step, so a selector that
+// returns the note it read back fails the case while the routine still moves on.
+describe("conversation-quality suite checks an accepted recap by what the selector returned", () => {
+  const recapCase = conversationQualityCases.find((candidate) => candidate.id === "routine-accepted-recap-keeps-visitor-words")!;
+  const runRecapCase = async (selectorVariables: Record<string, unknown>) => {
+    const stack = routineStack();
+    const chatGateway: ChatGateway = {
+      ...stack.chatGateway,
+      async answer(input) {
+        return input.systemPrompt?.includes("1. the guest confirmed the note")
+          ? JSON.stringify({ claimsAuthority: false, condition: 1, variables: selectorVariables })
+          : stack.chatGateway.answer(input);
+      },
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      routineProvider: stack.routineProvider,
+      chatGateway,
+      chatAnswerPresenter: new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true }),
+    });
+    const port = createWorkbenchReplayRunnerPort(runner, {
+      workspaceId: CQ_WORKSPACE_ID,
+      agentId: CQ_AGENT_ID,
+      baselineAgentConfig: conversationQualityAgentConfig,
+    });
+    const { reports } = await runConversationQualitySuite([recapCase], port, { workspaceId: CQ_WORKSPACE_ID });
+    return reports[0];
+  };
+  const statusOf = (report: Awaited<ReturnType<typeof runRecapCase>>, type: string) =>
+    report.verdicts.find((verdict) => verdict.assertion.type === type)?.status;
+
+  it("passes when accepting the recap returns no note", async () => {
+    const report = await runRecapCase({});
+
+    expect(report.status, JSON.stringify(report.verdicts, null, 2)).toBe("pass");
+  });
+
+  it("fails when the selector returns the note it read back", async () => {
+    const report = await runRecapCase({ note: "celiaca, niente glutine; a cena preferisce verdure cotte" });
+
+    expect(statusOf(report, "routine_step_reached")).toBe("pass");
+    expect(statusOf(report, "routine_slots_filled")).toBe("pass");
+    expect(statusOf(report, "routine_slots_not_returned")).toBe("fail");
+  });
+});
+
 describe("conversation-quality suite over the real engine", () => {
   it("threads page-read capability into replay turn planning", async () => {
     const plan = vi.fn(async (_input: TurnPlanInputs) => ({

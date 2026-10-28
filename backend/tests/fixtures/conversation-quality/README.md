@@ -13,10 +13,10 @@ repo-committed regression suite you run from the CLI.
 | File | What it is |
 |------|------------|
 | `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
-| `routines.ts` | 5 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, and `book-edition`, whose dates step references `{{context.page_context}}` |
+| `routines.ts` | 6 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, and `kitchen-note`, whose confirm step reads a held note back |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 56 seed cases |
+| `cases.ts` | the 57 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -25,7 +25,8 @@ Two layers (see `src/modules/eval/suite/`):
 
 - **Deterministic (no LLM, gate every run):** `turn_route`, `turn_uses_skill`,
   `turn_activates_routine`, `routine_step_reached`, `routine_slots_filled`,
-  `routine_slots_unfilled`, `routine_yielded`, `turn_asks_clarification`,
+  `routine_slots_unfilled`, `routine_slots_returned`, `routine_slots_not_returned`,
+  `routine_yielded`, `turn_asks_clarification`,
   `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
   `turn_directive_committed`, plus the product `retrieval_*`, `answer_cites_document`,
   `answer_contains` / `answer_does_not_contain`.
@@ -87,15 +88,26 @@ pnpm run evals -- --tag directive-withholds
 
 ## Slot-filling cases
 
-The `slot-filling`-tagged cases run the `book-edition` routine on an Italian course page, where
+Most `slot-filling`-tagged cases run the `book-edition` routine on an Italian course page, where
 the routine holds an arrival and a departure date. A date the visitor gives without saying which
 one it is ("Vorrei prenotare per 30 ottobre") leaves the departure empty, and "Arrivo il 30
 ottobre" fills only the arrival; `routine_slots_unfilled` checks the slot stayed empty. A bare
 "Sì, confermo" to the dates the step offered fills both and completes the routine.
 
+`routine_slots_filled` and `routine_slots_unfilled` read which slots hold a value after the turn;
+`routine_slots_returned` and `routine_slots_not_returned` read which slots the next-step selector
+returned a value for this turn, on any step. Only the second pair tells a replaced value from one
+the slot already held. Each fails when the routine claimed the turn but recorded no step trace.
+
 `routine-acceptance-replaces-wrong-date` starts with the departure already holding the arrival
-date. Trace assertions read slot keys, never values, so the case passes whether or not the
-confirmation replaced it; that the departure ends up as `2026-11-02` is checked by hand.
+date, and `routine_slots_returned` checks that the confirmation returned a departure. Trace
+assertions read slot keys, never values, so that the departure ends up as `2026-11-02` is checked
+by hand.
+
+`routine-accepted-recap-keeps-visitor-words` runs the `kitchen-note` routine on its confirm step,
+which reads back the note the visitor wrote and asks to confirm it. A "sì" moves the routine on,
+and `routine_slots_not_returned` checks that the selector returned no note, so the note keeps the
+visitor's own words rather than the recap's.
 
 Run only these cases with:
 

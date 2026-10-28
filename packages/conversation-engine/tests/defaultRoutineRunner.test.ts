@@ -3878,19 +3878,26 @@ describe("DefaultRoutineRunner slot values checked against their declared type (
     expect(result.terminal).toEqual({ kind: "complete", stepId: "done", collected: { email: "giulia@example.com", adults: 2 } });
   });
 
-  // #1664: accepting the dates a step offered corrects a date an earlier turn put in the wrong slot.
+  // #1664: accepting the dates a step offered corrects a date an earlier turn put in the wrong
+  // slot. The departure held the arrival date; this turn returns both offered dates.
   it("hands off this turn's value for a slot that already held one", async () => {
-    const runner = new DefaultRoutineRunner([booking], choosing("done", { adults: 2, arrival: "2026-11-02" }), renderer());
+    const departureSlot = { id: "slot_departure", key: "departure", type: "date" as const, required: false };
+    const withDeparture: Routine = { ...booking, slots: [emailSlot, adultsSlot, arrivalSlot, departureSlot] };
+    const runner = new DefaultRoutineRunner(
+      [withDeparture],
+      choosing("done", { adults: 2, arrival: "2026-10-30", departure: "2026-11-02" }),
+      renderer(),
+    );
 
     const result = await runner.resume({
       turn,
-      state: state(["ask_email", "ask_adults"], { email: "giulia@example.com", arrival: "2026-10-30" }),
+      state: state(["ask_email", "ask_adults"], { email: "giulia@example.com", departure: "2026-10-30" }),
     });
 
     expect(result.terminal).toEqual({
       kind: "complete",
       stepId: "done",
-      collected: { email: "giulia@example.com", adults: 2, arrival: "2026-11-02" },
+      collected: { email: "giulia@example.com", adults: 2, arrival: "2026-10-30", departure: "2026-11-02" },
     });
   });
 

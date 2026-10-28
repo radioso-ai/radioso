@@ -8,6 +8,7 @@ import type {
 } from "../../src/shared/infra/llm/providerTypes.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import type { ChatGatewayCompletionRecord } from "../../src/modules/chat/contracts/chatGateway.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
 const recordingUsageRecorder = () => {
@@ -162,6 +163,23 @@ describe("ModelChatGateway", () => {
     });
 
     expect(requests[0]?.signal).toBe(controller.signal);
+  });
+
+  it("records why the provider stopped on a caller-supplied completion record", async () => {
+    const gateway = new ModelChatGateway(new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
+      async complete() {
+        return { ...textResult("Answer"), stopReason: "output_limit" };
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient));
+    const completionRecord: ChatGatewayCompletionRecord = {};
+
+    await gateway.answer({ query: "Question", history: [], prompt: "User prompt", usageContext, completionRecord });
+
+    expect(completionRecord).toEqual({ stopReason: "output_limit" });
   });
 
   it("passes an AbortSignal through streaming generation", async () => {

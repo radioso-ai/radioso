@@ -4,6 +4,7 @@ import type {
   JsonSchemaResponseFormat,
   ReasoningEffort,
   ReusableInputBoundary,
+  TextGenerationStopReason,
 } from "../../../shared/infra/llm/providerTypes.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 
@@ -13,6 +14,14 @@ export interface ChatGatewayGenerationOptions {
   maxOutputTokens?: number;
   reasoningEffort?: ReasoningEffort;
   responseFormat?: JsonSchemaResponseFormat;
+}
+
+/**
+ * Filled in by `answer` once its completion is accepted, for a caller that reports how the
+ * completion ended. Left empty when the provider gives no stop reason.
+ */
+export interface ChatGatewayCompletionRecord {
+  stopReason?: TextGenerationStopReason;
 }
 
 export interface ChatGatewayInput {
@@ -30,6 +39,7 @@ export interface ChatGatewayInput {
   usageContext: ChatGatewayUsageContext;
   generation?: ChatGatewayGenerationOptions;
   signal?: AbortSignal;
+  completionRecord?: ChatGatewayCompletionRecord;
 }
 
 export interface ChatGateway {

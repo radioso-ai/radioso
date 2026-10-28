@@ -42,7 +42,7 @@
   "frontend/lib/anonymous-chat-context.tsx": 1317,
   "frontend/lib/dashboard-routes.ts": 1223,
   "frontend/lib/radioso-embed-launcher.js": 2567,
-  "packages/conversation-contract/index.d.ts": 2353,
+  "packages/conversation-contract/index.d.ts": 2345,
   "packages/conversation-engine/src/routineRunner.ts": 1522,
   "packages/routine-document/src/tokens.ts": 1124
 }

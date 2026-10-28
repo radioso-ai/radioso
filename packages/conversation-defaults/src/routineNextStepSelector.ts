@@ -1,6 +1,9 @@
 import type {
   ConversationMessage,
+  ConversationModelCompletion,
   ConversationModelGateway,
+  ConversationModelRequest,
+  ConversationModelStopReason,
   ConversationRoutineNextStepSelector,
   Routine,
   RoutineNextStepDecision,
@@ -93,7 +96,10 @@ const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, t
   ].join("\n");
 };
 
-/** Identifies which routine/step/session produced an unreadable decision, for correlation in logs. */
+/**
+ * Identifies which routine/step/session produced an unreadable decision, for correlation in
+ * logs, and describes the completion by its sizes and stop reason only, never its text.
+ */
 export interface RoutineUnreadableEvent {
   routineId: string;
   stepId: string;
@@ -101,6 +107,12 @@ export interface RoutineUnreadableEvent {
   reason: RoutineUnreadableReason;
   /** Which completion this was: the original call, or the one retry. */
   attempt: 1 | 2;
+  /** Why the model stopped, when the gateway reports it: `output_limit` is a reply cut off at the cap. */
+  stopReason?: ConversationModelStopReason;
+  /** Length of the completion's text, in characters. */
+  outputChars: number;
+  /** Length of the request's system prompt and messages together, in characters. */
+  promptChars: number;
 }
 
 /**
@@ -170,6 +182,19 @@ const extractJsonObject = (raw: string): string | null => {
 // Cancellation, not a parsing failure: the turn itself is going away, so the retry below
 // must let this propagate rather than keep retrying or falling back to a stale decision.
 const isAbortError = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
+
+const requestChars = (request: ConversationModelRequest): number =>
+  (request.systemPrompt ?? "").length + request.messages.reduce((total, message) => total + message.content.length, 0);
+
+/** What an unreadable completion looked like, by its sizes and stop reason only. */
+const completionShape = (
+  completion: ConversationModelCompletion,
+  promptChars: number,
+): Pick<RoutineUnreadableEvent, "stopReason" | "outputChars" | "promptChars"> => ({
+  ...(completion.stopReason ? { stopReason: completion.stopReason } : {}),
+  outputChars: completion.text.length,
+  promptChars,
+});
 
 const parseDecision = (raw: string): ParsedDecision => {
   const json = extractJsonObject(raw.trim());
@@ -312,25 +337,37 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       slotSchema: slotSchemaBlock(input.routine, input.state.variables, this.clock()),
     });
 
+    const request: ConversationModelRequest = { messages: turnMessages(input.turn), systemPrompt };
+    const promptChars = requestChars(request);
+
     // Purely observational: an observer that throws must not fail the turn, so every call
     // to it is isolated here rather than left for each call site to remember.
-    const notifyUnreadable = (reason: RoutineUnreadableReason, attempt: 1 | 2): void => {
+    const notifyUnreadable = (reason: RoutineUnreadableReason, attempt: 1 | 2, completion: ConversationModelCompletion): void => {
       try {
-        this.onUnreadable({ routineId: input.routine.id, stepId: input.currentStep.id, sessionId: input.state.sessionId, reason, attempt });
+        this.onUnreadable({
+          routineId: input.routine.id,
+          stepId: input.currentStep.id,
+          sessionId: input.state.sessionId,
+          reason,
+          attempt,
+          ...completionShape(completion, promptChars),
+        });
       } catch {
         // Swallowed — see above.
       }
     };
 
-    const request = { messages: turnMessages(input.turn), systemPrompt };
-    const completeAndParse = () => this.modelGateway.complete(request).then((result) => parseDecision(result.text));
+    const completeAndParse = async () => {
+      const completion = await this.modelGateway.complete(request);
+      return { completion, decision: parseDecision(completion.text) };
+    };
 
-    let decision = await completeAndParse();
+    let { completion, decision } = await completeAndParse();
     let retried = false;
     // `attempt` is always 1 or 2 here: the loop condition caps it at 2, and the body breaks
     // before a third increment.
     for (let attempt = 1; decision.unreadableReason && attempt <= 2; attempt += 1) {
-      notifyUnreadable(decision.unreadableReason, attempt as 1 | 2);
+      notifyUnreadable(decision.unreadableReason, attempt as 1 | 2, completion);
       if (attempt === 2) {
         break;
       }
@@ -339,7 +376,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
         // The selector only reads this turn and chooses an exit; it has no side effects of
         // its own, so repeating the exact same request is safe — it can only replace one
         // unreadable completion with a readable one, never double an action.
-        decision = await completeAndParse();
+        ({ completion, decision } = await completeAndParse());
       } catch (error) {
         if (isAbortError(error)) {
           throw error;

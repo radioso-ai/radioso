@@ -820,6 +820,7 @@ produced a measured failure on gpt-5.4-mini:
 
 | Rule | What breaking it did |
 |---|---|
+| The selector quotes the step's instruction in a `<current_step>` block, as the instruction the assistant follows when it writes to the user, and is told it never writes to the user itself. | Spliced in as plain text, a step instruction that scripts a greeting and a question was carried out on the routine's opening turn, where no assistant message precedes the visitor's: the selector answered the visitor in a short prose reply instead of a decision on 9 of 10 opening turns, and 4 of 10 stayed unreadable after the retry, so the opening message filled no slot. Quoted, 0 of 10. |
 | Slots reach the selector one per line (`- key (type): description`), never as a JSON dump. | With the JSON dump the model returned no values whenever the current step's own question went unanswered: stated dates were kept in 0 of 20 runs. |
 | An output format is never part of a slot's type label; the date rule says how to *record* a value. | Labelled `date, YYYY-MM-DD`, the model treated the format as what the visitor must type: it re-asked dates it had captured, asked visitors for "the format YYYY-MM-DD", and read "11-14 Nov" as month 11, day 14. |
 | `variables` comes before `condition` in the selector's JSON shape. | With `condition` first the model decided "stay" before extracting, and kept a complete answer on the same step. Listing values first raises blank completions from about 0.2% to 2%; `RoutineChatModelGateway` retries a blank once. |
@@ -840,9 +841,14 @@ captured slots and chosen exit, while an unreadable retry — or a retry call
 that itself fails — keeps the step's original re-ask. The selector's
 optional `onUnreadable` observer reports, for each unreadable completion,
 why it failed (`no_json_object`, `invalid_json`, or
-`missing_required_fields`) and which attempt it was, never the raw
-completion; `createRoutineTurnProvider` wires it to a `logger.warn` carrying
-the routine, step, and session id. The same reason, and a `retried` flag,
+`missing_required_fields`), which attempt it was, the model's stop reason
+when the gateway reports one (`output_limit` is a reply cut off at the output
+cap), and the lengths in characters of the prompt (`promptChars`) and of the
+completion (`outputChars`), never the prompt or completion text;
+`createRoutineTurnProvider` wires it to a `logger.warn` carrying the routine,
+step, and session id. A short `outputChars` with `stopReason: "completed"` is a
+reply the model finished in prose; `output_limit` is a decision that ran out of
+room. The same reason, and a `retried` flag,
 land on the turn's `selection` trace, so an operator can read them from
 `turn_trace` without reproducing the conversation.
 

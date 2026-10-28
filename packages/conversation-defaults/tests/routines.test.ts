@@ -868,6 +868,28 @@ describe("routine defaults", () => {
     });
   });
 
+  describe("the current step's instruction (#1665)", () => {
+    // A step instruction is written to the assistant ("greet them, then ask which course").
+    // Spliced into the selector's prompt as plain text, the model carried it out on an
+    // opening turn and answered the visitor in prose instead of returning a decision.
+    it("quotes the step's instruction in its own block, as context the selector does not carry out", async () => {
+      const step: RoutineStep = {
+        id: "pick_course",
+        kind: "chat",
+        action: "Greet the visitor warmly, then ask which course they want to book.",
+      };
+      const gw = gateway('{"variables": {}, "claimsAuthority": false, "condition": null, "offTopic": false}');
+      await new RoutineNextStepSelector(gw).select({ routine, state, currentStep: step, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      const quoted = /<current_step>\n([\s\S]*?)\n<\/current_step>/u.exec(systemPrompt);
+      expect(quoted?.[1]).toBe(step.action);
+      expect(systemPrompt.split(step.action ?? "")).toHaveLength(2);
+      expect(systemPrompt.slice(0, quoted?.index)).toContain("It is not addressed to you: do not carry it out.");
+      expect(systemPrompt).toContain("You do not write to the user");
+    });
+  });
+
   describe("unreadable decision retry", () => {
     // Unlike `gateway`, returns a different completion (or throws) on each successive
     // call — needed to prove the selector's retry actually sends a second request rather
@@ -909,7 +931,34 @@ describe("routine defaults", () => {
         sessionId: state.sessionId,
         reason: "no_json_object",
         attempt: 1,
+        outputChars: "I think they want a retreat.".length,
+        promptChars: expect.any(Number),
       });
+    });
+
+    it("reports why the provider stopped and how long the prompt and reply were, never the reply's text", async () => {
+      const onUnreadable = vi.fn();
+      const prose = "Happy to help! Which course would you like to book?";
+      const gw: ConversationModelGateway = {
+        complete: vi.fn(async () => ({ text: prose, stopReason: "completed" as const })),
+      };
+
+      await new RoutineNextStepSelector(gw, { onUnreadable }).select({ routine, state, currentStep, transitions, turn });
+
+      const request = vi.mocked(gw.complete).mock.calls[0][0];
+      const promptChars = (request.systemPrompt ?? "").length
+        + request.messages.reduce((total, message) => total + message.content.length, 0);
+      expect(onUnreadable).toHaveBeenNthCalledWith(1, {
+        routineId: routine.id,
+        stepId: currentStep.id,
+        sessionId: state.sessionId,
+        reason: "no_json_object",
+        attempt: 1,
+        stopReason: "completed",
+        outputChars: prose.length,
+        promptChars,
+      });
+      expect(JSON.stringify(onUnreadable.mock.calls)).not.toContain(prose);
     });
 
     it("falls back to the unreadable decision, and notifies the observer twice, when the retry is unreadable too", async () => {
@@ -926,8 +975,8 @@ describe("routine defaults", () => {
       });
       expect(gw.complete).toHaveBeenCalledTimes(2);
       expect(onUnreadable).toHaveBeenCalledTimes(2);
-      expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 });
-      expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2 });
+      expect(onUnreadable).toHaveBeenNthCalledWith(1, expect.objectContaining({ routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 }));
+      expect(onUnreadable).toHaveBeenNthCalledWith(2, expect.objectContaining({ routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2, outputChars: "still not json".length }));
     });
 
     it("calls the model only once, and never the observer, when the first completion is readable", async () => {
@@ -956,7 +1005,7 @@ describe("routine defaults", () => {
       // Only the first attempt's own unreadable completion is reported — the retry's error
       // is not a reading of a completion, so it has no reason to report.
       expect(onUnreadable).toHaveBeenCalledTimes(1);
-      expect(onUnreadable).toHaveBeenCalledWith({ routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 });
+      expect(onUnreadable).toHaveBeenCalledWith(expect.objectContaining({ routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 }));
     });
 
     it("rethrows an aborted retry instead of swallowing the cancellation", async () => {

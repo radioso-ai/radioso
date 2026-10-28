@@ -175,8 +175,10 @@ describe("RoutineNextStepSelector", () => {
     expect(gw.complete).toHaveBeenCalledTimes(2);
     expect(decision.nextStepId).toBe("ask_email");
     expect(decision.selection).toMatchObject({ unreadableReason: "no_json_object", retried: true });
-    expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 });
-    expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2 });
+    const shape = { outputChars: "not json at all".length, promptChars: expect.any(Number) };
+    expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1, ...shape });
+    expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2, ...shape });
+    expect(JSON.stringify(onUnreadable.mock.calls)).not.toContain("not json at all");
   });
 
   it("keeps the unreadable decision, rather than throwing, when the retry call itself fails for a reason other than cancellation", async () => {

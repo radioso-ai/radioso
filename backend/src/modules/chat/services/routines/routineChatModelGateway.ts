@@ -1,10 +1,16 @@
 import type {
   ConversationMessage,
+  ConversationModelCompletion,
   ConversationModelGateway,
   ConversationModelRequest,
 } from "@radioso/conversation-contract";
 
-import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../../contracts/chatGateway.js";
+import type {
+  ChatGateway,
+  ChatGatewayCompletionRecord,
+  ChatGatewayInput,
+  ChatGatewayUsageContext,
+} from "../../contracts/chatGateway.js";
 import { BlankChatAnswerError, isBlankChatAnswerError } from "../chatAnswerErrors.js";
 import { CHAT_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import type { LlmCapabilityResolveInput } from "../../../../shared/infra/llm/workspaceContext.js";
@@ -63,6 +69,16 @@ const routineActivationUsageContext = (usageContext: ChatGatewayUsageContext): C
  */
 const withCallOrdinal = (usageContext: ChatGatewayUsageContext, ordinal: number): ChatGatewayUsageContext =>
   ordinal === 1 ? usageContext : { ...usageContext, attemptKey: `${usageContext.attemptKey}:${ordinal}` };
+
+/** One completion, with the stop reason the host gateway recorded for it. */
+const answerWithStopReason = async (
+  host: RoutineChatGateway,
+  request: ChatGatewayInput,
+): Promise<ConversationModelCompletion> => {
+  const completionRecord: ChatGatewayCompletionRecord = {};
+  const text = await host.answer({ ...request, completionRecord });
+  return { text, ...(completionRecord.stopReason ? { stopReason: completionRecord.stopReason } : {}) };
+};
 
 /** The retry of a call whose answer came back blank, metered under that call's own attempt. */
 const blankRetryRequest = (request: ChatGatewayInput): ChatGatewayInput => ({
@@ -136,10 +152,10 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
     return canStream(host) ? (input) => streamRetryingBlank(host, this.nextRequest(input)) : undefined;
   }
 
-  async complete(input: ConversationModelRequest): Promise<{ text: string }> {
+  async complete(input: ConversationModelRequest): Promise<ConversationModelCompletion> {
     const request = this.nextRequest(input);
     try {
-      return { text: await this.chatGateway.answer(request) };
+      return await answerWithStopReason(this.chatGateway, request);
     } catch (error) {
       // The model occasionally returns an empty completion for a routine prompt, and one
       // blank call used to fail the whole turn. Retry once, under its own usage attempt so
@@ -147,7 +163,7 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
       if (!isBlankChatAnswerError(error)) {
         throw error;
       }
-      return { text: await this.chatGateway.answer(blankRetryRequest(request)) };
+      return answerWithStopReason(this.chatGateway, blankRetryRequest(request));
     }
   }
 

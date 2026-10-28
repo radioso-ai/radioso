@@ -184,6 +184,50 @@ describe("RoutineChatModelGateway", () => {
     expect(calls[0]?.signal).toBe(controller.signal);
   });
 
+  describe("stop reason (#1665)", () => {
+    it("returns the stop reason the host gateway records for the completion", async () => {
+      const gateway = new RoutineChatModelGateway({
+        async answer(input) {
+          if (input.completionRecord) {
+            input.completionRecord.stopReason = "output_limit";
+          }
+          return '{"variables": {';
+        },
+      }, turnContext);
+
+      await expect(gateway.complete({ messages: [{ role: "user", content: "si" }] }))
+        .resolves.toEqual({ text: '{"variables": {', stopReason: "output_limit" });
+    });
+
+    it("reports the blank retry's stop reason, not the blank call's", async () => {
+      const calls: ChatGatewayInput[] = [];
+      const gateway = new RoutineChatModelGateway({
+        async answer(input) {
+          calls.push(input);
+          if (calls.length === 1) {
+            if (input.completionRecord) {
+              input.completionRecord.stopReason = "output_limit";
+            }
+            throw new BlankChatAnswerError();
+          }
+          if (input.completionRecord) {
+            input.completionRecord.stopReason = "completed";
+          }
+          return "{}";
+        },
+      }, turnContext);
+
+      await expect(gateway.complete({ messages: [{ role: "user", content: "si" }] }))
+        .resolves.toEqual({ text: "{}", stopReason: "completed" });
+    });
+
+    it("omits the stop reason when the host gateway records none", async () => {
+      const gateway = new RoutineChatModelGateway({ answer: async () => "ok" }, turnContext);
+
+      await expect(gateway.complete({ messages: [{ role: "user", content: "si" }] })).resolves.toEqual({ text: "ok" });
+    });
+  });
+
   describe("streaming", () => {
     it("offers a stream only when the host gateway can stream", () => {
       const answerOnly: Pick<ChatGateway, "answer"> = { answer: async () => "ok" };
@@ -262,7 +306,9 @@ describe("RoutineChatModelGateway", () => {
 
       expect(deltas).toEqual(["Sure", " — what is your email?"]);
       expect(calls.map((call) => call.via)).toEqual(["streamAnswer", "answer"]);
-      expect(calls[0].input).toEqual(calls[1].input);
+      // Only a completion asks for its stop reason back; the request itself is the same.
+      const { completionRecord: _completionRecord, ...completionRequest } = calls[1].input;
+      expect(calls[0].input).toEqual(completionRequest);
       expect(calls[0].input.usageContext).toBe(turnContext.usageContext);
     });
 

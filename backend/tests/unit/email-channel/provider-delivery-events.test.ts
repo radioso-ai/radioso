@@ -28,14 +28,24 @@ const uncertain = async () => {
 
 /**
  * A send whose first provider call came back a 5xx (an unknown outcome, never accepted): the
- * reconciler's re-POST never resolves it either, and once the key's window closes the send is
- * `uncertain` without ever learning the provider's own id for it (#1619, research A6 fallback).
+ * outbox stays `queued` with its request frozen, re-POSTing on its own 5-minute schedule, while a
+ * delivery event for it can already be arriving — this is the issue's own timing, inside the 23h
+ * re-POST window, with no provider id of its own recorded yet (#1619, research A6 fallback).
  */
-const uncertainUnknownProvider = async () => {
+const queuedUnknownProvider = async () => {
   const h = createSendPathHarness();
   h.driver.send.mockResolvedValueOnce({ dispatched: true, providerMessageId: null, deliveredMessageId: null });
   await h.deliver();
   expect(h.onlyIntent()).toMatchObject({ state: "queued", providerMessageId: null, outcomeUnknown: true });
+  return h;
+};
+
+/**
+ * The same 5xx-unknown send, carried past the 23h re-POST window with still no provider id
+ * recorded: the reconciler gives up re-POSTing and the send is `uncertain` (#1619).
+ */
+const uncertainUnknownProvider = async () => {
+  const h = await queuedUnknownProvider();
   h.advance(DAY);
   await h.reconciler.run({ maxJobs: 5 });
   expect(h.onlyIntent()).toMatchObject({ state: "uncertain", providerMessageId: null });
@@ -45,6 +55,12 @@ const uncertainUnknownProvider = async () => {
 const webhook = (h: ReturnType<typeof createSendPathHarness>, facts: DeliveryStatusFacts, providerMessageId = PROVIDER_ID) =>
   h.deliveryEvents.applyStatus({ provider: "resend", providerMessageId, status: facts });
 
+/**
+ * A delivery event naming the send only by the Message-ID it preserved. `ProviderDeliveryEvents`
+ * is provider-neutral, so these tests exercise it directly against the harness's own provider
+ * label ("resend", fixed by `createSendPathHarness`); in production only the Lettermint adapter
+ * fills `rfcMessageId` for a delivery event, since Resend (SES) rewrites it (research A7, #1619).
+ */
 const webhookByMessageId = (
   h: ReturnType<typeof createSendPathHarness>,
   facts: DeliveryStatusFacts,
@@ -319,7 +335,51 @@ describe("ProviderDeliveryEvents", () => {
   });
 
   describe("the RFC Message-ID fallback, after a 5xx whose outcome never recorded the provider's id (#1619)", () => {
-    it("settles the send by its own Message-ID, and records the provider's id for later events", async () => {
+    it("settles the send inside the re-POST window — the issue's own timing — straight from queued to delivered", async () => {
+      const h = await queuedUnknownProvider();
+      const intent = h.onlyIntent();
+
+      const outcome = await webhookByMessageId(h, status("delivered"), {
+        providerMessageId: "lm_late_1",
+        rfcMessageId: intent.suppliedRfcMessageId,
+      });
+
+      expect(outcome).toBe("applied");
+      expect(h.onlyIntent()).toMatchObject({
+        state: "delivered",
+        providerMessageId: "lm_late_1",
+        deliveredRfcMessageId: intent.suppliedRfcMessageId,
+        nextReconcileAt: null,
+      });
+      // Indexed exactly as a normal acceptance would be, so thread resolution finds it.
+      expect(h.threads.index).toContainEqual(expect.objectContaining({
+        sendIntentId: intent.id,
+        rfcMessageId: intent.suppliedRfcMessageId,
+        origin: "radioso_generated",
+      }));
+      expect(h.counted("email_send_message_id_fallback_total")).toEqual([{ outcome: "settled" }]);
+    });
+
+    it("records the acceptance inside the re-POST window even when the status itself does not settle, so a later event matches directly", async () => {
+      const h = await queuedUnknownProvider();
+      const intent = h.onlyIntent();
+
+      const outcome = await webhookByMessageId(h, status("sent"), {
+        providerMessageId: "lm_late_1",
+        rfcMessageId: intent.suppliedRfcMessageId,
+      });
+
+      // The status itself ("sent") settles nothing, but the acceptance it carried still lands.
+      expect(outcome).toBe("ignored");
+      expect(h.onlyIntent()).toMatchObject({ state: "accepted", providerMessageId: "lm_late_1" });
+      expect(h.counted("email_send_message_id_fallback_total")).toEqual([{ outcome: "matched_ignored" }]);
+
+      // A later event now matches by the provider's own id directly, no fallback needed.
+      expect(await webhook(h, status("delivered"), "lm_late_1")).toBe("applied");
+      expect(h.onlyIntent().state).toBe("delivered");
+    });
+
+    it("settles the send past the 23h re-POST window too, resolving the uncertain the same way late evidence does", async () => {
       const h = await uncertainUnknownProvider();
       const intent = h.onlyIntent();
 
@@ -337,7 +397,7 @@ describe("ProviderDeliveryEvents", () => {
       expect(h.counted("email_send_message_id_fallback_total")).toEqual([{ outcome: "settled" }]);
     });
 
-    it("logs the intent it settled by Message-ID, by ids only", async () => {
+    it("logs the intent it settled by Message-ID, by ids only, and only when something actually settled", async () => {
       const h = await uncertainUnknownProvider();
       const intent = h.onlyIntent();
 
@@ -347,6 +407,15 @@ describe("ProviderDeliveryEvents", () => {
         { sendIntentId: intent.id, workspaceId: SEND_IDS.workspace, conversationId: SEND_IDS.conversation },
         "email_send_settled_by_message_id",
       );
+    });
+
+    it("does not log settlement for a match whose evidence was ignored", async () => {
+      const h = await uncertainUnknownProvider();
+      const intent = h.onlyIntent();
+
+      await webhookByMessageId(h, status("sent"), { providerMessageId: "lm_first", rfcMessageId: intent.suppliedRfcMessageId });
+
+      expect(h.logger.info).not.toHaveBeenCalledWith(expect.anything(), "email_send_settled_by_message_id");
     });
 
     it("never overwrites a provider id already recorded, even when a later event's id differs", async () => {
@@ -362,12 +431,12 @@ describe("ProviderDeliveryEvents", () => {
       expect(h.onlyIntent()).toMatchObject({ state: "delivered", providerMessageId: "lm_first" });
     });
 
-    it("still reports foreign when neither the provider id nor the Message-ID name a send of this deployment", async () => {
+    it("still reports foreign when the Message-ID looks like ours but names no send of this deployment", async () => {
       const h = await uncertainUnknownProvider();
 
       const outcome = await webhookByMessageId(h, status("bounced"), {
         providerMessageId: "lm_unrelated",
-        rfcMessageId: "<not-ours@elsewhere.example>",
+        rfcMessageId: "<00000000-0000-4000-8000-000000000000@customer.test>",
       });
 
       expect(outcome).toBe("foreign");
@@ -379,6 +448,18 @@ describe("ProviderDeliveryEvents", () => {
       const h = await uncertainUnknownProvider();
 
       const outcome = await webhookByMessageId(h, status("bounced"), { providerMessageId: "lm_unrelated", rfcMessageId: null });
+
+      expect(outcome).toBe("foreign");
+      expect(h.counted("email_send_message_id_fallback_total")).toEqual([]);
+    });
+
+    it("does not attempt the fallback, or count it, for a Message-ID that is not shaped like one Radioso generated", async () => {
+      const h = await uncertainUnknownProvider();
+
+      const outcome = await webhookByMessageId(h, status("bounced"), {
+        providerMessageId: "lm_unrelated",
+        rfcMessageId: "<not-ours@elsewhere.example>",
+      });
 
       expect(outcome).toBe("foreign");
       expect(h.counted("email_send_message_id_fallback_total")).toEqual([]);

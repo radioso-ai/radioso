@@ -400,30 +400,6 @@ describeIntegration("email send intent repository (Postgres)", () => {
       expect(await intents.findBySuppliedRfcMessageId("resend", intent.suppliedRfcMessageId)).toBeNull();
       expect(await intents.findBySuppliedRfcMessageId("local", "<unrelated@example.test>")).toBeNull();
     });
-
-    it("records the provider's id once, only while it is still unknown", async () => {
-      const { intent } = await materialize();
-
-      expect(await intents.recordProviderMessageId(intent.id, { provider: "resend", providerMessageId: "lm_late_1" }))
-        .toBe(false);
-      expect(await intents.recordProviderMessageId(intent.id, { provider: "local", providerMessageId: "lm_late_1" }))
-        .toBe(true);
-      expect(await intents.recordProviderMessageId(intent.id, { provider: "local", providerMessageId: "lm_later" }))
-        .toBe(false);
-
-      expect(await intents.findById(intent.id)).toMatchObject({ providerMessageId: "lm_late_1", version: intent.version + 1 });
-    });
-
-    it("leaves a concurrently assigned id as it is, rather than erroring", async () => {
-      const first = await materialize();
-      const second = await materialize();
-      await intents.recordProviderMessageId(first.intent.id, { provider: "local", providerMessageId: "lm_shared" });
-
-      const raced = await intents.recordProviderMessageId(second.intent.id, { provider: "local", providerMessageId: "lm_shared" });
-
-      expect(raced).toBe(false);
-      expect(await intents.findById(second.intent.id)).toMatchObject({ providerMessageId: null });
-    });
   });
 
   describe("claimDueForReconcile", () => {

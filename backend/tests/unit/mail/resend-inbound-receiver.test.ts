@@ -260,7 +260,7 @@ describe("Resend inbound receiver: event kinds", () => {
     expect(event).toMatchObject({ kind: "message_received", envelope: { receivedFor: [] } });
   });
 
-  it("maps email.bounced to a bounced status without the provider's bounce message, keeping its own Message-ID", () => {
+  it("maps email.bounced to a bounced status without the provider's bounce message", () => {
     const event = verifiedEvent(webhookBody("webhooks/email.bounced.json"));
 
     expect(event).toEqual({
@@ -271,14 +271,14 @@ describe("Resend inbound receiver: event kinds", () => {
       status: { type: "bounced", bounce: { type: "Permanent", subType: "Suppressed", statusCode: null } },
       recipients: ["delivered@resend.dev"],
       emailKind: null,
-      rfcMessageId: "<111-222-333@email.example.com>",
+      rfcMessageId: null,
     });
     expect(JSON.stringify(event)).not.toContain("suppression list");
   });
 
-  it("drops a delivery event's message_id that is not an RFC Message-ID, rather than carrying it loosely", () => {
+  it("carries no Message-ID on a delivery event: Resend (SES) rewrites the supplied id, so `message_id` here is never the deployment's own (research A7)", () => {
     const event = verifiedEvent(webhookBody("webhooks/email.bounced.json", (payload) => {
-      dataOf(payload).message_id = "not-a-message-id";
+      dataOf(payload).message_id = "<111-222-333@email.example.com>";
     }));
 
     expect(event).toMatchObject({ rfcMessageId: null });

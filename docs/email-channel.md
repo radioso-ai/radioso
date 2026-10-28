@@ -245,12 +245,13 @@ report a delivery outcome after a send has already gone `uncertain`.
 Radioso applies it without any operator step: a late `delivered` clears the
 flag on its own, while a late `bounced` or `failed` keeps the flag open,
 now carrying that reason. Even when a crash or a provider 5xx meant Radioso
-never recorded the provider's own id for the send, a later event still
-matches it by the Message-ID Radioso generated, so the same automatic
-resolution applies — you don't need to step in just because that id was
-never confirmed. Late evidence about an earlier attempt updates
-that attempt only: once you've asked for a resend, the newer copy keeps its
-own status and stays resolvable on its own evidence.
+never recorded the provider's own id for the send, a later event from a
+provider that preserves the Message-ID it was sent with still matches it
+by that id, so the same automatic resolution applies — you don't need to
+step in just because that id was never confirmed. Late evidence about an
+earlier attempt updates that attempt only: once you've asked for a resend,
+the newer copy keeps its own status and stays resolvable on its own
+evidence.
 
 ## Draft mode: review before it sends
 

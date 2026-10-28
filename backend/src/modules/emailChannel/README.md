@@ -130,9 +130,14 @@ It does not own:
   and `uncertain` attempts whose acceptance arrived late, up after 24;
   `providerDeliveryEvents.ts` applies
   provider delivery events and inbound DSN bounces, falling back from a
-  foreign provider id to the RFC Message-ID a delivery event carries when the
-  provider's own id was never recorded (a 5xx whose outcome stayed unknown),
-  and recording that id on the intent so a later event matches directly.
+  foreign provider id to the RFC Message-ID a delivery event carries, when
+  the provider echoes it and the intent's own id was never recorded (a 5xx
+  whose outcome stayed unknown, inside the re-POST window or past it):
+  it applies the same `provider_accepted` acceptance and thread-index entry
+  a normal one gets, then the status evidence on top, so late evidence
+  settles it exactly as if the provider's acceptance had arrived on time.
+  A provider that rewrites the supplied Message-Id (Resend, over SES)
+  never carries one to match, so the fallback is Lettermint's today.
   Every writer applies
   `sendIntentTransitions.ts` through `sendIntentWriter.ts`, whose unit of
   work (bound in `backend/src/app/composition/emailChannel/outbound.ts`) commits the

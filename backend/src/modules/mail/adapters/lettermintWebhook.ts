@@ -180,8 +180,8 @@ const envelopeOf = (data: Record<string, unknown>): InboundEnvelope => ({
 /**
  * The RFC `Message-ID` Lettermint preserved from the send, from the echoed headers of a delivery
  * event (#1619): the `rfcMessageId` fallback that settles a send whose provider id this deployment
- * never recorded. Validated and normalized the same way an outbound id is minted (`rfcMessageId`),
- * so a header that is absent, or not one, is dropped rather than compared loosely.
+ * never recorded. Validated the same way an outbound id is minted (`rfcMessageId`), so a header
+ * that is absent, or not a well-formed Message-ID, is dropped rather than compared loosely.
  */
 const rfcMessageIdOf = (data: Record<string, unknown>): string | null => {
   const raw = headerValue(data.headers, "message-id");

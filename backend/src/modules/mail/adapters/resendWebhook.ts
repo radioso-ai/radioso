@@ -1,6 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { parseRfcMessageId } from "../emailHeaderValues.js";
 import type {
   DeliveryStatusFacts,
   InboundEnvelope,
@@ -145,7 +144,11 @@ const parseResendEvent = (rawBody: Buffer, providerEventId: string): VerifiedInb
           status: { type: deliveryType, bounce: bounceOf(deliveryType, data) },
           recipients: stringsOf(data.to),
           emailKind: isRecord(data.tags) ? nonEmptyString(data.tags.kind) : null,
-          rfcMessageId: rfcMessageIdOf(data),
+          // Resend (SES) replaces the supplied Message-ID with its own `<…@<region>.amazonses.com>`
+          // id (research A7, S0 result; `resendDriver.ts`'s send path carries the same note), so
+          // `data.message_id` here is never `email_send_intents.supplied_rfc_message_id`: the
+          // RFC Message-ID fallback (#1619) has nothing of ours to match against on this provider.
+          rfcMessageId: null,
         }
       : null;
   }
@@ -154,17 +157,6 @@ const parseResendEvent = (rawBody: Buffer, providerEventId: string): VerifiedInb
     return domainId ? { kind: "domain_status", providerEventId, providerObjectId: domainId, occurredAt } : null;
   }
   return { kind: "unsupported", providerEventId, occurredAt, providerType };
-};
-
-/**
- * The RFC `Message-ID` Resend echoes as the delivery event's own `message_id` (#1619): the
- * fallback that settles a send whose provider id this deployment never recorded. Validated and
- * normalized the same way an outbound id is minted (`rfcMessageId`), so a value that is not one is
- * dropped rather than compared loosely.
- */
-const rfcMessageIdOf = (data: Record<string, unknown>): string | null => {
-  const raw = nonEmptyString(data.message_id);
-  return raw ? parseRfcMessageId(raw) : null;
 };
 
 const envelopeOf = (data: Record<string, unknown>): InboundEnvelope => ({

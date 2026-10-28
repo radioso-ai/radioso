@@ -1,7 +1,7 @@
 import { sql, type Selectable } from "kysely";
 import { z } from "zod";
 
-import { currentTimestamp, isUniqueViolation, nowPlusSeconds, toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, nowPlusSeconds, toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
 import { parseRfcMessageId, type OutboundThreadingHeaders, type RfcMessageId } from "../../mail/public.js";
 import type { EngagementMode } from "../mailboxes/effectiveMode.js";
@@ -463,32 +463,6 @@ export class EmailSendIntentRepository {
       .where("supplied_rfc_message_id", "=", rfcMessageId)
       .executeTakeFirst();
     return row ? mapIntent(row) : null;
-  }
-
-  /**
-   * Records the provider's own id for an intent the Message-ID fallback reached (#1619), so a
-   * later event for the same send matches directly, without the fallback. Fenced on the column
-   * being unset; a concurrent writer that assigned the same id first is left as it is.
-   */
-  async recordProviderMessageId(id: string, input: { provider: string; providerMessageId: string }): Promise<boolean> {
-    try {
-      const row = await this.db
-        .updateTable("email_send_intents")
-        .set((eb) => ({
-          provider_message_id: input.providerMessageId,
-          version: eb("version", "+", 1),
-          updated_at: currentTimestamp(),
-        }))
-        .where("id", "=", id)
-        .where("provider", "=", input.provider)
-        .where("provider_message_id", "is", null)
-        .returning("id")
-        .executeTakeFirst();
-      return row !== undefined;
-    } catch (error) {
-      if (isUniqueViolation(error)) return false;
-      throw error;
-    }
   }
 
   /**

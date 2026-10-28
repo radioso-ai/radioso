@@ -74,7 +74,6 @@ export class InMemoryEmailSendIntents implements Pick<
   | "findByProviderMessageId"
   | "findByOutboundRfcMessageIds"
   | "findBySuppliedRfcMessageId"
-  | "recordProviderMessageId"
   | "recordComplaint"
   | "listDeliveryStates"
   | "listByMessageId"
@@ -186,14 +185,6 @@ export class InMemoryEmailSendIntents implements Pick<
   async findBySuppliedRfcMessageId(provider: string, rfcMessageId: string) {
     const row = [...this.rows.values()].find((candidate) => candidate.provider === provider && candidate.suppliedRfcMessageId === rfcMessageId);
     return row ? copy(row) : null;
-  }
-
-  async recordProviderMessageId(id: string, input: Args<EmailSendIntentRepository["recordProviderMessageId"]>[1]) {
-    const current = this.rows.get(id);
-    if (!current || current.provider !== input.provider || current.providerMessageId !== null) return false;
-    this.rows.set(id, { ...current, providerMessageId: input.providerMessageId, version: current.version + 1 });
-    this.log.push("recordProviderMessageId");
-    return true;
   }
 
   async transition(id: string, expectedVersion: number, event: SendIntentEvent): Promise<SendIntentTransitionOutcome> {

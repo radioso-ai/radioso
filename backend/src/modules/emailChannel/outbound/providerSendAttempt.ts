@@ -50,8 +50,12 @@ const messageOf = (intent: EmailSendIntentRecord, request: SendRequestSnapshot &
   threading: request.threading,
 });
 
-/** The thread index rows an accepted send is found by: the supplied id, and the delivered one when it differs. */
-const outboundIndexEntries = (intent: EmailSendIntentRecord, rfcMessageIds: readonly string[]) =>
+/**
+ * The thread index rows an accepted send is found by: the supplied id, and the delivered one when
+ * it differs. Shared with `providerDeliveryEvents.ts`'s Message-ID fallback (#1619), whose late
+ * acceptance indexes the same way a normal one does.
+ */
+export const outboundIndexEntries = (intent: EmailSendIntentRecord, rfcMessageIds: readonly string[]) =>
   [...new Set(rfcMessageIds)].map((rfcMessageId) => ({
     workspaceId: intent.workspaceId,
     mailboxId: intent.mailboxId,

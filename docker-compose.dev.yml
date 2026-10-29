@@ -18,6 +18,7 @@ x-backend-dev-volumes: &backend-dev-volumes
   - ./backend/prompts:/app/backend/prompts
   - ./packages/census/src:/app/packages/census/src
   - ./packages/conversation-contract/index.d.ts:/app/packages/conversation-contract/index.d.ts:ro
+  - ./packages/conversation-contract/modelGateway.d.ts:/app/packages/conversation-contract/modelGateway.d.ts:ro
   - ./packages/conversation-defaults/src:/app/packages/conversation-defaults/src
   - ./packages/conversation-engine/src:/app/packages/conversation-engine/src
   - ./packages/conversation-tools/src:/app/packages/conversation-tools/src

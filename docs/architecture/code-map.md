@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-27
+last_updated: 2026-10-29
 ---
 
 # Code Map
@@ -1430,6 +1430,7 @@ and dashboard settings adapt into these contracts at composition time.
 Public surfaces and contracts:
 
 - `packages/conversation-contract/index.d.ts`
+- `packages/conversation-contract/modelGateway.d.ts` (the model port a host implements: request, completion with its stop reason, and `ConversationModelGateway`; re-exported from `index.d.ts`)
 - `packages/conversation-contract/index.js` (runtime values of the `declare const` code lists; change the two together)
 
 Useful searches:

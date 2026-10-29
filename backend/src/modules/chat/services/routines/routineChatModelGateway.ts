@@ -1,12 +1,20 @@
 import type {
   ConversationMessage,
+  ConversationModelCompletion,
   ConversationModelGateway,
   ConversationModelRequest,
+  ConversationModelStopReason,
 } from "@radioso/conversation-contract";
 
-import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../../contracts/chatGateway.js";
+import type {
+  ChatGateway,
+  ChatGatewayCompletionRecord,
+  ChatGatewayInput,
+  ChatGatewayUsageContext,
+} from "../../contracts/chatGateway.js";
 import { BlankChatAnswerError, isBlankChatAnswerError } from "../chatAnswerErrors.js";
 import { CHAT_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
+import type { TextGenerationStopReason } from "../../../../shared/infra/llm/providerTypes.js";
 import type { LlmCapabilityResolveInput } from "../../../../shared/infra/llm/workspaceContext.js";
 
 /**
@@ -63,6 +71,45 @@ const routineActivationUsageContext = (usageContext: ChatGatewayUsageContext): C
  */
 const withCallOrdinal = (usageContext: ChatGatewayUsageContext, ordinal: number): ChatGatewayUsageContext =>
   ordinal === 1 ? usageContext : { ...usageContext, attemptKey: `${usageContext.attemptKey}:${ordinal}` };
+
+/**
+ * The provider's stop reason in the conversation contract's terms. Mapped case by case, so a
+ * reason a provider adapter adds later reads as `other` rather than leaking through.
+ */
+const toConversationStopReason = (reason: TextGenerationStopReason | undefined): ConversationModelStopReason | undefined => {
+  switch (reason) {
+    case undefined:
+      return undefined;
+    case "completed":
+      return "completed";
+    case "output_limit":
+      return "output_limit";
+    default:
+      return "other";
+  }
+};
+
+/** One host answer: its completion, described by the stop reason the host recorded, and whether it came back blank. */
+interface HostAnswer {
+  completion: ConversationModelCompletion;
+  blank: boolean;
+}
+
+const answerOnce = async (host: RoutineChatGateway, request: ChatGatewayInput): Promise<HostAnswer> => {
+  const completionRecord: ChatGatewayCompletionRecord = {};
+  const described = (text: string): ConversationModelCompletion => {
+    const stopReason = toConversationStopReason(completionRecord.stopReason);
+    return { text, ...(stopReason ? { stopReason } : {}) };
+  };
+  try {
+    return { completion: described(await host.answer({ ...request, completionRecord })), blank: false };
+  } catch (error) {
+    if (!isBlankChatAnswerError(error)) {
+      throw error;
+    }
+    return { completion: described(""), blank: true };
+  }
+};
 
 /** The retry of a call whose answer came back blank, metered under that call's own attempt. */
 const blankRetryRequest = (request: ChatGatewayInput): ChatGatewayInput => ({
@@ -136,19 +183,22 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
     return canStream(host) ? (input) => streamRetryingBlank(host, this.nextRequest(input)) : undefined;
   }
 
-  async complete(input: ConversationModelRequest): Promise<{ text: string }> {
+  async complete(input: ConversationModelRequest): Promise<ConversationModelCompletion> {
     const request = this.nextRequest(input);
-    try {
-      return { text: await this.chatGateway.answer(request) };
-    } catch (error) {
-      // The model occasionally returns an empty completion for a routine prompt, and one
-      // blank call used to fail the whole turn. Retry once, under its own usage attempt so
-      // the failed call and the retry are both accounted for.
-      if (!isBlankChatAnswerError(error)) {
-        throw error;
-      }
-      return { text: await this.chatGateway.answer(blankRetryRequest(request)) };
+    const first = await answerOnce(this.chatGateway, request);
+    // A caller that reads blanks itself (the next-step selector) gets this one back, stop
+    // reason and all, and retries it on its own terms.
+    if (!first.blank || input.returnBlank) {
+      return first.completion;
     }
+    // The model occasionally returns an empty completion for a routine prompt, and one
+    // blank call used to fail the whole turn. Retry once, under its own usage attempt so
+    // the failed call and the retry are both accounted for.
+    const retry = await answerOnce(this.chatGateway, blankRetryRequest(request));
+    if (retry.blank) {
+      throw new BlankChatAnswerError();
+    }
+    return retry.completion;
   }
 
   /** The host request for the turn's next model call, metered under that call's own usage attempt. */

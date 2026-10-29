@@ -331,7 +331,7 @@ describe("page-read three-sink gate", () => {
     expect(shouldSuppressRetrievalSenseClarification(session)).toBe(false);
   });
 
-  it("stages only the page's identity in all three sinks for a read served as metadata", async () => {
+  it("stages what the request carried in all three sinks for a planner read that names metadata", async () => {
     const { input, preparer, session } = await harness();
     freezePlannerDecision(session, { required: true, operation: "metadata", resolvedRequest: "Which page am I on?" });
 
@@ -339,9 +339,8 @@ describe("page-read three-sink gate", () => {
     const support = new ChatAnswerSupport();
 
     expect(support.buildContextBlock(prepared)).toContain(pageContext.pageUrl);
-    expect(support.buildContextBlock(prepared)).not.toContain(pageContext.content);
-    expect(JSON.stringify(prepared.stagedContext)).not.toContain(pageContext.content);
-    expect(JSON.stringify(prepared.resolvedContext.snapshot)).not.toContain(pageContext.content);
+    expect(support.buildContextBlock(prepared)).toContain(pageContext.content);
+    expect(JSON.stringify(prepared.stagedContext)).toContain(pageContext.content);
     expect(prepared.resolvedContext.snapshot).toHaveProperty("page_context");
   });
 

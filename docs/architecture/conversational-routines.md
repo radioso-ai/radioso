@@ -474,9 +474,10 @@ On each turn, before normal skill selection, the engine checks for a routine:
      contributor that names an operation wins over it. The gate serves it at
      the richest operation the channel supports: a `lookup` in the page content
      where the embed sends it (`content` mode), otherwise `metadata`, the URL,
-     title, and locale alone. What is staged matches what is served
-     (`capturedPageContext`): a `metadata` serve stages the identity alone,
-     even when the request also carried content. The turn trace's page-read
+     title, and locale alone. A `context` request downgraded to `metadata`
+     stages the identity alone, even when the request also carried content
+     (`capturedPageContext`); a read that names `metadata` stages what the
+     request carried. The turn trace's page-read
      entry, the gate metric, and the message's `pageRead` record
      (`servedOperation`) report the operation served, so `metadata` there means
      the step saw the page's identity and no excerpt. A channel that sends no

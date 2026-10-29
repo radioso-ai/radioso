@@ -52,9 +52,20 @@ export const pageReadOperationOf = (outcome: PageReadOutcome): PageReadRequest |
   outcome.gate.kind === "capture" ? outcome.gate.operation : outcome.merged.decision.operation;
 
 /**
- * The page fields this turn's read admits, or null when the gate captured nothing. A read
- * served as `metadata` admits the page's identity alone, whatever else the request carried,
- * so what is staged always matches the operation the trace reports.
+ * A read whose only `metadata` serve came from downgrading a request for the page as context
+ * (a routine step that reads it, on a channel that sends no content): nobody named `metadata`,
+ * so the page's URL and title are context for that step, never the whole page or evidence.
+ */
+const isIdentityOnlyContextRead = (outcome: PageReadOutcome): boolean =>
+  outcome.gate.kind === "capture"
+  && outcome.gate.operation === "metadata"
+  && !outcome.merged.contributors.some((contributor) => contributor.operation === "metadata");
+
+/**
+ * The page fields this turn's read admits, or null when the gate captured nothing. A read that
+ * names its operation stages what the request carried. A request for the page as context
+ * downgraded to `metadata` stages the page's identity alone, so a routine step never sees an
+ * excerpt the trace reports it did not get.
  */
 export const capturedPageContext = (
   outcome: PageReadOutcome | undefined,
@@ -63,7 +74,7 @@ export const capturedPageContext = (
   if (outcome?.gate.kind !== "capture" || !pageContext) {
     return null;
   }
-  if (outcome.gate.operation !== "metadata") {
+  if (!isIdentityOnlyContextRead(outcome)) {
     return pageContext;
   }
   const { content: _content, ...identity } = pageContext;
@@ -72,14 +83,12 @@ export const capturedPageContext = (
 
 /**
  * Whether the page this turn captured is evidence an answer may state facts from without
- * citing a retrieved excerpt. Its content is. Its identity alone is only when a contributor
- * asked for it by name: the URL and title answer "what page am I on?", while a request for
- * the page as context leaves them context for the routine step that references them.
+ * citing a retrieved excerpt: any captured read but a request for the page as context
+ * downgraded to `metadata`. A named `metadata` read admits the URL and title, which answer
+ * "what page am I on?".
  */
 export const admitsPageEvidence = (outcome: PageReadOutcome | undefined): boolean =>
-  outcome?.gate.kind === "capture"
-  && (outcome.gate.operation !== "metadata"
-    || outcome.merged.contributors.some((contributor) => contributor.operation === "metadata"));
+  outcome?.gate.kind === "capture" && !isIdentityOnlyContextRead(outcome);
 
 /** What a turn's message metadata records of its page read: the request, its winner, and what the gate served. */
 export interface PageReadRecord {

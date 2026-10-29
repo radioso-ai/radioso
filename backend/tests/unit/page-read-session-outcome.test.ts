@@ -42,7 +42,7 @@ const page = {
 };
 
 describe("capturedPageContext", () => {
-  it("stages only the page's identity for a read served as metadata, whatever the request carried", () => {
+  it("stages only the page's identity for a context request served as metadata, whatever the request carried", () => {
     const outcome = outcomeFor({ capability: metadataOnly, routineCandidates: [routine] });
 
     expect(capturedPageContext(outcome, page)).toEqual({
@@ -53,13 +53,23 @@ describe("capturedPageContext", () => {
     });
   });
 
-  it("stages a planner's metadata read as the page's identity too", () => {
+  it("stages what the request carried for a read that names metadata", () => {
     const outcome = outcomeFor({
       capability: content,
       planner: { required: true, operation: "metadata", resolvedRequest: "Which page am I on?" },
     });
 
-    expect(capturedPageContext(outcome, page)).not.toHaveProperty("content");
+    expect(capturedPageContext(outcome, page)).toEqual(page);
+  });
+
+  it("stages what the request carried when a contributor names metadata beside a context request", () => {
+    const outcome = outcomeFor({
+      capability: metadataOnly,
+      routineCandidates: [routine],
+      planner: { required: true, operation: "metadata", resolvedRequest: "Which page am I on?" },
+    });
+
+    expect(capturedPageContext(outcome, page)).toEqual(page);
   });
 
   it("stages the whole page for a read served from its content", () => {

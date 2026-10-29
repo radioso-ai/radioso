@@ -75,8 +75,9 @@ message includes `clientContextCapabilities["page.read"]` with an explicit
 negotiates it against the `pageContext` actually supplied, narrowing to
 `metadata` unless both agree on `content`, and withholding the capability
 entirely when the advertised claim says `available: false`. Both modes go
-through the same relevance gate. A read served in `metadata` mode carries the
-URL, title, and locales only, even when the message also sent `content`.
+through the same relevance gate. A routine's read served in `metadata` mode
+carries the URL, title, and locales only, even when the message also sent
+`content`.
 
 ## Host-defined variables
 

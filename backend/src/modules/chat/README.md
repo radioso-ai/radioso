@@ -301,12 +301,12 @@ imports from `services/`.
   is discarded and rewritten through the focused decline path. Lexical overlap
   never satisfies this delivery guard. A turn whose page read admits the page as
   evidence (`admitsPageEvidence` in `services/pageRead/pageReadSessionOutcome.ts`)
-  is exempt because that page is an admitted source outside the citation index: its
-  content once captured, and its identity alone when a contributor named `metadata`.
-  A routine read that got only the URL and title admits nothing, so its grounded
-  replies keep the guard and the citation hold. What a read stages matches what was
-  served (`capturedPageContext`: a `metadata` serve stages the identity alone), and the
-  preparer, the composer, and retrieval-sense suppression all read these two helpers. Malformed results remain
+  is exempt because that page is an admitted source outside the citation index: any
+  captured read but a routine's `context` request downgraded to `metadata`. That read
+  admits nothing, so its grounded replies keep the guard and the citation hold, and it
+  stages the identity alone (`capturedPageContext`); a read that names `metadata` stages
+  what the request carried. The preparer, the composer, and
+  retrieval-sense suppression all read these two helpers. Malformed results remain
   visible with a computed `degraded` verdict, while partial answers with at least one
   valid assertion remain visible and degraded.
   Raw envelope JSON is never emitted or persisted.

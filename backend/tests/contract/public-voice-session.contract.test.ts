@@ -86,9 +86,11 @@ const MANAGED_SIGNED_URL = "wss://api.elevenlabs.io/v1/convai/conversation?agent
 
 /**
  * ElevenLabs as Connect and a start meet a US account: the region probe answers on the US host
- * alone, then a secret, a new agent, and a signed URL for it.
+ * alone, then a secret, a new agent, and a signed URL for it. The agent reads back as it was
+ * created, with the multilingual voice model the vendor gives it, unless `storedOverrides` names
+ * the overrides it holds instead.
  */
-const connectableVendor = () => {
+const connectableVendor = (options: { storedOverrides?: Record<string, unknown> } = {}) => {
   const calls: Array<{ method: string; url: string; body: Record<string, unknown> | undefined }> = [];
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const fetch = vi.fn<VendorFetch>(async (input, init) => {
@@ -99,6 +101,12 @@ const connectableVendor = () => {
     if (url.endsWith("/v1/convai/agents?page_size=1")) return json(200, { agents: [], next_cursor: null });
     if (method === "POST" && url.endsWith("/v1/convai/secrets")) return json(200, { secret_id: "sec_1" });
     if (method === "POST" && url.endsWith("/v1/convai/agents/create")) return json(200, { agent_id: "agent_managed" });
+    const created = calls.find((call) => call.url.endsWith("/v1/convai/agents/create"))?.body;
+    if (method === "GET" && url.endsWith("/v1/convai/agents/agent_managed") && created) {
+      const platformSettings = options.storedOverrides ? { overrides: options.storedOverrides } : created.platform_settings;
+      const conversationConfig = { ...(created.conversation_config as Record<string, unknown>), tts: { model_id: "eleven_flash_v2_5", voice_id: "voice_default" } };
+      return json(200, { agent_id: "agent_managed", tags: created.tags, conversation_config: conversationConfig, platform_settings: platformSettings });
+    }
     if (url.includes("/v1/convai/conversation/get-signed-url?agent_id=agent_managed")) return json(200, { signed_url: MANAGED_SIGNED_URL });
     return json(404, { detail: { type: "not_found" } });
   });
@@ -145,7 +153,7 @@ describe("public voice session start contract", () => {
     await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ name: "Marta", proactiveGreetingEnabled: true }).expect(200);
     await request(app).post(`/api/v1/agents/${agentId}/voice/connection`).set({ ...dashboard, "X-Radioso-CSRF": "1" }).expect(200);
     const create = vendor.calls.find((call) => call.url.endsWith("/v1/convai/agents/create"));
-    expect(create?.body).toMatchObject({ platform_settings: { overrides: { conversation_config_override: { agent: { first_message: true } } } } });
+    expect(create?.body).toMatchObject({ platform_settings: { overrides: { conversation_config_override: { agent: { first_message: true, language: true } } } } });
     const { startVoiceSession } = await visitor();
 
     const first = await startVoiceSession({ locale: "it" }).expect(200);
@@ -153,12 +161,33 @@ describe("public voice session start contract", () => {
 
     expect(first.body).toMatchObject({
       signedUrl: MANAGED_SIGNED_URL,
+      locale: "it",
+      vendorLanguage: "it",
       recordingNotice: "Questa chiamata viene registrata.",
       firstMessage: "Questa chiamata viene registrata.\n\nCiao! Sono Marta: come posso aiutarti?",
     });
     // The greeting is generated once and read from the cache after, as the web chat reads it.
     expect(second.body.firstMessage).toBe(first.body.firstMessage);
     expect(chatGateway.answer).toHaveBeenCalledOnce();
+  });
+
+  it("hands a session on an ElevenLabs agent Radioso connected no language when that agent does not let a session set one", async () => {
+    // A vendor agent whose overrides allow the first message alone, as one Connect set up before the
+    // language was allowed: the vendor closes a session that sets a language it does not allow.
+    const vendor = connectableVendor({ storedOverrides: { custom_llm_extra_body: true, conversation_config_override: { agent: { first_message: true } } } });
+    const { app, dashboard, agentId, visitor } = await embedWorkspace({
+      vendorFetch: vendor.fetch,
+      envOverrides: { APP_BASE_URL: "https://api.radioso.test" },
+      voice: { ...boundVoice, runtime: null },
+    });
+    await request(app).post(`/api/v1/agents/${agentId}/voice/connection`).set({ ...dashboard, "X-Radioso-CSRF": "1" }).expect(200);
+    const { startVoiceSession } = await visitor();
+
+    const started = await startVoiceSession({ locale: "it" }).expect(200);
+
+    expect(started.body).toMatchObject({ signedUrl: MANAGED_SIGNED_URL, locale: "it" });
+    expect(started.body).not.toHaveProperty("vendorLanguage");
+    expect(vendor.calls.some((call) => call.method === "GET" && call.url.endsWith("/v1/convai/agents/agent_managed"))).toBe(true);
   });
 
   it("starts an EU-residency account's session on the EU host", async () => {

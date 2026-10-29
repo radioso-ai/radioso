@@ -1736,7 +1736,7 @@ export class ChatService {
           routineTurn = routineReply.turn;
         }
         // Copied only once the reply is generated: the routine commits its page-read decision
-        // onto the session it was claimed with when the stream ends, and the copy must carry it.
+        // onto the session it was claimed with as the reply starts, and the copy must carry it.
         session = this.withResponseLanguage(session, responseLanguage);
         const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
           session,

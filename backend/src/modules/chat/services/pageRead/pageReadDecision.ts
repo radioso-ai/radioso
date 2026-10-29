@@ -3,6 +3,11 @@ export const PAGE_READ_INTENTS = [...PAGE_READ_OPERATIONS, "transform"] as const
 
 export type PageReadOperation = (typeof PAGE_READ_OPERATIONS)[number];
 export type PageReadIntent = PageReadOperation | "transform";
+/**
+ * What a contributor asks of the page: one intent, or `context` — the page as context for the
+ * turn, which the gate serves at the richest operation the channel supports.
+ */
+export type PageReadRequest = PageReadIntent | "context";
 
 export interface PageReadCapability {
   available: boolean;
@@ -10,9 +15,10 @@ export interface PageReadCapability {
   supportedOperations: PageReadOperation[];
 }
 
-export type PageReadDecision =
+/** The planner decides for one intent; the merged decision may carry a `context` request. */
+export type PageReadDecision<Request extends PageReadRequest = PageReadIntent> =
   | { required: false; operation: null; resolvedRequest: null }
-  | { required: true; operation: PageReadIntent; resolvedRequest: string };
+  | { required: true; operation: Request; resolvedRequest: string };
 
 export type PageReadCandidateSource =
   | { kind: "routine"; routineId: string }
@@ -21,16 +27,17 @@ export type PageReadCandidateSource =
 
 export interface PageReadCandidate {
   source: PageReadCandidateSource;
+  /** Omitted when the contributor asks for the page as context rather than for one operation. */
   operation?: PageReadIntent;
   resolvedRequest?: string;
 }
 
 export interface MergedPageReadDecision {
-  decision: PageReadDecision;
+  decision: PageReadDecision<PageReadRequest>;
   /** Every contributing candidate after defaulting; first entry is the winner. */
   contributors: Array<{
     source: PageReadCandidateSource;
-    operation: PageReadIntent;
+    operation: PageReadRequest;
     resolvedRequest: string;
   }>;
 }
@@ -76,11 +83,14 @@ const SOURCE_AUTHORITY: Record<PageReadCandidateSource["kind"], number> = {
   planner: 2,
 };
 
-const OPERATION_BREADTH: Record<PageReadIntent, number> = {
+// A `context` request names no need of its own, so within one authority any contributor that
+// names an operation wins over it.
+const OPERATION_BREADTH: Record<PageReadRequest, number> = {
   transform: 0,
   summarize: 1,
   lookup: 2,
   metadata: 3,
+  context: 4,
 };
 
 const sourceKey = (source: PageReadCandidateSource): string => {
@@ -120,9 +130,9 @@ export const mergePageReadDecision = (input: {
       : []),
   ];
   const contributors = candidates
-    .map((candidate) => ({
+    .map((candidate): MergedPageReadDecision["contributors"][number] => ({
       source: candidate.source,
-      operation: candidate.operation ?? "lookup",
+      operation: candidate.operation ?? "context",
       resolvedRequest: candidate.resolvedRequest ?? input.fallbackRequest,
     }))
     .sort((left, right) =>
@@ -153,6 +163,19 @@ export type PageReadGateOutcome =
   | { kind: "unavailable" }
   | { kind: "unsupported_operation" };
 
+// The operations a `context` request accepts, in the order the gate tries them: the page's
+// content where the channel sends it (a lookup first, since a reference reads facts from the
+// page), then the page's identity alone.
+const CONTEXT_OPERATIONS: readonly PageReadOperation[] = ["lookup", "summarize", "metadata"];
+
+/** The operation the channel serves for a request, or null when it supports none it accepts. */
+const servedOperation = (
+  request: Exclude<PageReadRequest, "transform">,
+  supportedOperations: readonly PageReadOperation[],
+): PageReadOperation | null =>
+  (request === "context" ? CONTEXT_OPERATIONS : [request])
+    .find((operation) => supportedOperations.includes(operation)) ?? null;
+
 export const evaluatePageReadGate = (
   merged: MergedPageReadDecision,
   capability: PageReadCapability | null,
@@ -166,12 +189,13 @@ export const evaluatePageReadGate = (
   if (merged.decision.operation === "transform") {
     return { kind: "unsupported_operation" };
   }
-  if (!capability.supportedOperations.includes(merged.decision.operation)) {
+  const operation = servedOperation(merged.decision.operation, capability.supportedOperations);
+  if (!operation) {
     return { kind: "unavailable" };
   }
   return {
     kind: "capture",
-    operation: merged.decision.operation,
+    operation,
     resolvedRequest: merged.decision.resolvedRequest,
   };
 };

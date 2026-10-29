@@ -13,9 +13,13 @@ import type { VoiceSessionEvent } from './voice-session'
 /**
  * What the page needs to open the session on the vendor, from the start's answer; `signedUrl` is a
  * bearer credential. `recordingNotice` is the agent's line telling the caller the call is recorded;
- * `firstMessage` is what the call says first, present only on a vendor agent Radioso maintains.
+ * `firstMessage` is what the call says first and `vendorLanguage` the vendor's code for the language
+ * it starts in, each present only on a vendor agent Radioso maintains that allows the session to set it.
  */
-export type StartedVoiceSession = Pick<PublicVoiceSessionResponse, 'vendor' | 'signedUrl' | 'sessionKey' | 'locale' | 'recordingNotice' | 'firstMessage'> & {
+export type StartedVoiceSession = Pick<
+  PublicVoiceSessionResponse,
+  'vendor' | 'signedUrl' | 'sessionKey' | 'locale' | 'recordingNotice' | 'firstMessage' | 'vendorLanguage'
+> & {
   /** The agent's privacy notice the panel showed before the call, which the call says and records. */
   privacyNotice?: VoiceCallPrivacyNotice
 }
@@ -147,6 +151,7 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
           locale: start.session.locale,
           ...(start.session.privacyNotice ? { privacyNotice: start.session.privacyNotice } : {}),
           ...(start.session.firstMessage ? { firstMessage: start.session.firstMessage } : {}),
+          ...(start.session.vendorLanguage ? { vendorLanguage: start.session.vendorLanguage } : {}),
         },
         {
           onConnecting: () => {

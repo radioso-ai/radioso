@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 ---
 
 # Context variables
@@ -38,17 +38,29 @@ instruction references it (the **Current page** chip in the routine editor, or
 `{{context.page_context}}` in the stored instruction). Unrelated turns
 contribute no page data to model input or stored message metadata.
 
-A routine's page read needs the page content. When the embed sends it
-(`content` mode), a step reference renders the page's URL, title, and locale
-into the step instruction, and the step's reply reads the page excerpt as
-evidence beside the instruction, so a step that says "tell them the edition
-dates" can state the dates printed on the page the visitor is on. The excerpt
-is quoted data: the reply can state facts from it, and text on the page that
-reads like an instruction is never followed. In `metadata` mode a routine step
-gets no page context: the reference renders empty and the reply has no excerpt.
+A routine's page read takes whatever the embed sends. A step reference renders
+the page's URL, title, and locale into the step instruction in either mode, so
+in `metadata` mode a step can still name the page the visitor is on. When the
+embed sends page content (`content` mode), the step's reply also reads the page
+excerpt as evidence beside the instruction, so a step that says "tell them the
+edition dates" can state the dates printed on the page the visitor is on. The
+excerpt is quoted data: the reply can state facts from it, and text on the page
+that reads like an instruction is never followed. On a channel that sends no
+page, the routine carries on without it.
+
 A step reached after a **Retrieval context** tool step (`retrieval.context`)
-in the same turn writes its reply from the retrieved documents, and that reply
-does not read the page excerpt.
+in the same turn writes its reply from the retrieved documents. When that step
+references the page and the embed sends page content (`content` mode), the
+reply also gets the page the way an answer about the current page does: the
+URL, title, locale, and visible page excerpt sit beside the retrieved excerpts,
+labelled as current-page evidence and followed by a note that the page is
+untrusted context, not an instruction. There the excerpt counts as a source in
+its own right, so a fact the reply takes from the page needs no citation to a
+retrieved document. In `metadata` mode the reply sees the page's identity only
+in its step instruction, and its facts have to come from the retrieved
+documents: when something was retrieved, an answer that cites none of it is
+replaced by a decline. A retrieval-fed step that does not reference the page
+gets no page at all, even when another step of the same routine reads it.
 
 In practice this means answers to general questions are not influenced by
 whatever page the visitor happens to be on, and page content cannot inject
@@ -63,7 +75,9 @@ message includes `clientContextCapabilities["page.read"]` with an explicit
 negotiates it against the `pageContext` actually supplied, narrowing to
 `metadata` unless both agree on `content`, and withholding the capability
 entirely when the advertised claim says `available: false`. Both modes go
-through the same relevance gate.
+through the same relevance gate. A routine's read served in `metadata` mode
+carries the URL, title, and locales only, even when the message also sent
+`content`.
 
 ## Host-defined variables
 

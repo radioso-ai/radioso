@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildOutboundHeaders,
+  outboundMessageId,
   REFERENCES_LIMIT,
   replySubject,
   replyToAddress,
+  sendIntentIdOfOutboundMessageId,
 } from "../../../src/modules/emailChannel/outbound/outboundHeaders.js";
 import { EmailHeaderValueError, parseRfcMessageId, rfcMessageId } from "../../../src/modules/mail/public.js";
 
@@ -55,6 +57,27 @@ describe("buildOutboundHeaders: Message-ID", () => {
       expect(() => headersFor({ newMessageUuid })).toThrow();
     },
   );
+});
+
+describe("sendIntentIdOfOutboundMessageId (#1619)", () => {
+  it("reads back the send intent id an outbound Message-ID was minted from", () => {
+    expect(sendIntentIdOfOutboundMessageId(outboundMessageId("acme.test", MESSAGE_UUID))).toBe(MESSAGE_UUID);
+  });
+
+  it("lowercases the id, since a UUID is case-insensitive", () => {
+    expect(sendIntentIdOfOutboundMessageId(`<${MESSAGE_UUID.toUpperCase()}@ACME.test>`)).toBe(MESSAGE_UUID);
+  });
+
+  it.each([
+    "<not-a-uuid@acme.test>",
+    `<x${MESSAGE_UUID}@acme.test>`,
+    `<${MESSAGE_UUID}>`,
+    `<${MESSAGE_UUID}@>`,
+    `${MESSAGE_UUID}@acme.test`,
+    `<${MESSAGE_UUID}@acme.test@evil.test>`,
+  ])("names no send for %j", (id) => {
+    expect(sendIntentIdOfOutboundMessageId(id)).toBeNull();
+  });
 });
 
 describe("buildOutboundHeaders: threading", () => {

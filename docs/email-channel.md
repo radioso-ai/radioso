@@ -1,7 +1,7 @@
 ---
 title: "Email Channel"
 description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies or let grounded ones send themselves, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
-last_updated: 2026-10-24
+last_updated: 2026-10-29
 ---
 
 # Email Channel
@@ -247,6 +247,15 @@ flag on its own, while a late `bounced` or `failed` keeps the flag open,
 now carrying that reason. Late evidence about an earlier attempt updates
 that attempt only: once you've asked for a resend, the newer copy keeps its
 own status and stays resolvable on its own evidence.
+
+**Matching by Message-ID on Lettermint.** When a Lettermint delivery event
+carries the Message-ID Radioso set on the send, Radioso matches the event to
+that send by it. This is how a send whose request ended in a provider 5xx
+gets its outcome: Radioso records the event's Lettermint message id as the
+provider's acceptance, then applies the delivery or bounce the same way as
+any other late evidence, whether the send is still inside its retry window
+or already `uncertain`. Resend delivers under a Message-ID of its own, so on
+Resend those sends resolve through the retry window or an operator.
 
 ## Draft mode: review before it sends
 

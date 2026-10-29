@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { parseRfcMessageId } from "../emailHeaderValues.js";
 import type {
   DeliveryStatusFacts,
   InboundEnvelope,
@@ -159,6 +160,7 @@ const parseLettermintEvent = (rawBody: Buffer): VerifiedInboundEvent | null => {
           status: { type: deliveryType, bounce: bounceOf(deliveryType, data) },
           recipients: recipientsOf(data),
           emailKind: tagValue(data.tags, KIND_TAG),
+          rfcMessageId: rfcMessageIdOf(data),
         }
       : null;
   }
@@ -174,6 +176,17 @@ const envelopeOf = (data: Record<string, unknown>): InboundEnvelope => ({
   subject: typeof data.subject === "string" ? data.subject : null,
   rfcMessageId: headerValue(data.headers, "message-id"),
 });
+
+/**
+ * The RFC `Message-ID` Lettermint preserved from the send, from the echoed headers of a delivery
+ * event (#1619): the `rfcMessageId` fallback that settles a send whose provider id this deployment
+ * never recorded. Validated the same way an outbound id is minted (`rfcMessageId`), so a header
+ * that is absent, or not a well-formed Message-ID, is dropped rather than compared loosely.
+ */
+const rfcMessageIdOf = (data: Record<string, unknown>): string | null => {
+  const raw = headerValue(data.headers, "message-id");
+  return raw ? parseRfcMessageId(raw) : null;
+};
 
 /** Bounce reason codes are short tokens; anything else is not echoed (FR-045). */
 const PROVIDER_TOKEN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;

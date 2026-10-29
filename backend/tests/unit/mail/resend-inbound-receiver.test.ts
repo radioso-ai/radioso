@@ -271,8 +271,17 @@ describe("Resend inbound receiver: event kinds", () => {
       status: { type: "bounced", bounce: { type: "Permanent", subType: "Suppressed", statusCode: null } },
       recipients: ["delivered@resend.dev"],
       emailKind: null,
+      rfcMessageId: null,
     });
     expect(JSON.stringify(event)).not.toContain("suppression list");
+  });
+
+  it("carries no Message-ID on a delivery event: Resend (SES) rewrites the supplied id, so `message_id` here is never the deployment's own (research A7)", () => {
+    const event = verifiedEvent(webhookBody("webhooks/email.bounced.json", (payload) => {
+      dataOf(payload).message_id = "<111-222-333@email.example.com>";
+    }));
+
+    expect(event).toMatchObject({ rfcMessageId: null });
   });
 
   it("keeps only the enhanced status code from a bounce message that names the recipient", () => {

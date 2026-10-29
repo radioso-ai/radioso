@@ -1,3 +1,4 @@
+import { answerDocumentKey } from "../domain/answerCandidatePool.js";
 import type { FinalPromptContext, RerankedCandidate } from "../domain/retrievalPipelineTypes.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
@@ -41,7 +42,7 @@ export class PromptContextSelectorService {
         return false;
       }
 
-      const documentKey = this.buildDocumentKey(context);
+      const documentKey = answerDocumentKey(context);
       const documentCount = documentCounts.get(documentKey) ?? 0;
       if (documentCount > 0 && !options.allowSiblingContext) {
         return false;
@@ -109,11 +110,6 @@ export class PromptContextSelectorService {
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
-  }
-
-  private buildDocumentKey(context: RerankedCandidate): string {
-    const titleKey = context.title.replace(/\s+/g, " ").trim().toLowerCase();
-    return titleKey ? `title:${titleKey}` : `document:${context.documentId}`;
   }
 
   private packContent(content: string): string {

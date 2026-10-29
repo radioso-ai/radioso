@@ -1,7 +1,7 @@
 ---
 title: "Rerank Top K"
 description: "Retrieval setting controlling how many reranked candidates proceed to context assembly and answer composition."
-last_updated: 2026-10-21
+last_updated: 2026-10-29
 ---
 
 # Rerank Top K
@@ -23,7 +23,7 @@ This setting determines the size of the shortlist that reranking evaluates.
 
 So this setting does not directly set the number of citations in the final answer. It controls how much retrieved evidence reranking gets to judge before the final prompt is assembled.
 
-The system never keeps fewer than 12 candidates (the final context target), and never more than 50: a value below 12 acts as 12, and a value above 50 is capped at 50. This prevents a very low rerank value from accidentally limiting broad answers to only a few sources. Whatever this setting is set to, the answer itself still only ever uses up to 12 passages, at most 2 per document, each cut to 900 characters — `Rerank Top K` controls the shortlist reranking judges, not how much of it survives into the prompt. One case raises both limits: when temporal structured lookup finds passages in the period a question names, such as a busy week of events, the shortlist and the answer hold one per passage found plus up to 4 kept for the best matches from outside the period, between 12 and 20.
+The system never keeps fewer than 12 candidates (the final context target), and never more than 50: a value below 12 acts as 12, and a value above 50 is capped at 50. This prevents a very low rerank value from accidentally limiting broad answers to only a few sources. Whatever this setting is set to, the answer itself still only ever uses up to 12 passages, at most 2 per document, each cut to 900 characters — `Rerank Top K` controls the shortlist reranking judges, not how much of it survives into the prompt. One case raises both limits: when temporal structured lookup finds passages in the period a question names, such as a busy week of events, the shortlist and the answer hold one per passage found plus up to 4 kept for the best matches from outside the period — a packing-list or pricing page, for instance. A passage dated to another period keeps one of those 4 only when the question is about a named topic and search ranks the passage above everything in the period; otherwise the period's own passages take its place, and it comes in only to fill a sparse period out to 12. Either way the total runs between 12 and 20.
 
 ### Lower Values
 

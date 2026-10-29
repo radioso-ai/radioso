@@ -83,14 +83,14 @@ const SOURCE_AUTHORITY: Record<PageReadCandidateSource["kind"], number> = {
   planner: 2,
 };
 
-// A `context` request is served as a lookup wherever a lookup could be, and as the page's
-// identity where it could not, so it ranks just broader than a lookup.
+// A `context` request names no need of its own, so within one authority any contributor that
+// names an operation wins over it.
 const OPERATION_BREADTH: Record<PageReadRequest, number> = {
   transform: 0,
   summarize: 1,
-  context: 2,
-  lookup: 3,
-  metadata: 4,
+  lookup: 2,
+  metadata: 3,
+  context: 4,
 };
 
 const sourceKey = (source: PageReadCandidateSource): string => {

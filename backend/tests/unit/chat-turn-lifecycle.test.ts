@@ -364,6 +364,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       },
       winnerSource: { kind: "planner" },
       gateOutcome: "capture",
+      servedOperation: "lookup",
     });
     const gather = completed.response.turnTrace?.spine.stages.find((stage) => stage.kind === "gather");
     expect(gather?.outputs?.contextVariables).toBeUndefined();
@@ -426,6 +427,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         decision,
         winnerSource: expectedWinner,
         gateOutcome: gate.kind,
+        servedOperation: null,
       });
       expect(assistantMessage?.metadata).not.toHaveProperty("contextVariables");
       expect(JSON.stringify(assistantMessage?.metadata)).not.toContain("Visible page text.");
@@ -508,7 +510,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       expect(metrics.incrementCounter).toHaveBeenCalledWith(
         "chat_page_read_gate_outcomes_total",
         {
-          help: "Page-read gate outcomes by result and selected operation.",
+          help: "Page-read gate outcomes by result and operation: the one served on capture, otherwise the one requested.",
           labels: expectedLabels,
         },
       );

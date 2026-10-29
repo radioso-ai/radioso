@@ -301,10 +301,12 @@ imports from `services/`.
   is discarded and rewritten through the focused decline path. Lexical overlap
   never satisfies this delivery guard. A turn whose page read admits the page as
   evidence (`admitsPageEvidence` in `services/pageRead/pageReadSessionOutcome.ts`)
-  is exempt because that page is an admitted source outside the citation index: any
-  read the turn asked for, and a routine's `context` read once the page content was
-  captured. A routine read that got only the URL and title admits nothing, so its
-  grounded replies keep the guard and the citation hold. Malformed results remain
+  is exempt because that page is an admitted source outside the citation index: its
+  content once captured, and its identity alone when a contributor named `metadata`.
+  A routine read that got only the URL and title admits nothing, so its grounded
+  replies keep the guard and the citation hold. What a read stages matches what was
+  served (`capturedPageContext`: a `metadata` serve stages the identity alone), and the
+  preparer, the composer, and retrieval-sense suppression all read these two helpers. Malformed results remain
   visible with a computed `degraded` verdict, while partial answers with at least one
   valid assertion remain visible and degraded.
   Raw envelope JSON is never emitted or persisted.
@@ -524,9 +526,10 @@ imports from `services/`.
   unstreamed remainder, and planned suggestions are expanded as on the whole path.
   `services/routines/pageReadAwareRoutineRunner.ts`
   binds the routine to the page excerpt the turn may read, and commits that capture to
-  the session as the reply of a turn the routine keeps starts being generated, so a
-  grounded step reply, which reads the session, reads the page content too (a read that
-  got only the URL and title adds no current-page block there). A routine asks the
+  the session for a turn the routine keeps. When the step the claim renders references
+  the page, the commit comes as the reply starts (undone if the reply fails or is
+  abandoned), so that step's grounded reply reads the page from the session; for any
+  other step it comes once the reply exists, as for a resumed turn. A routine asks the
   gate for the page as `context` (`services/pageRead/pageReadDecision.ts`), which the
   gate serves at the richest operation the channel supports.
 - Routine endings: `services/routineEndingEffects.ts` is the one place every chat

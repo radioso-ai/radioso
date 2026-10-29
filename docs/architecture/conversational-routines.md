@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 ---
 
 # Conversational Routines
@@ -470,29 +470,36 @@ On each turn, before normal skill selection, the engine checks for a routine:
      framed as untrusted quoted data, so the reply can state facts from the page
      while the step instruction stays the only instruction.
    - A routine whose step reads the page asks the page-read gate for the page as
-     `context`, with no single operation named. The gate serves it at the
-     richest operation the channel supports: a `lookup` in the page content
+     `context`, with no single operation named; within one authority any
+     contributor that names an operation wins over it. The gate serves it at
+     the richest operation the channel supports: a `lookup` in the page content
      where the embed sends it (`content` mode), otherwise `metadata`, the URL,
-     title, and locale alone. The turn trace's page-read entry reports the
-     operation served, so `metadata` there means the step saw the page's
-     identity and no excerpt. A channel that sends no page leaves the reference
-     empty; the reply goes on without it and is given no page-unavailable
-     condition to explain.
+     title, and locale alone. What is staged matches what is served
+     (`capturedPageContext`): a `metadata` serve stages the identity alone,
+     even when the request also carried content. The turn trace's page-read
+     entry, the gate metric, and the message's `pageRead` record
+     (`servedOperation`) report the operation served, so `metadata` there means
+     the step saw the page's identity and no excerpt. A channel that sends no
+     page leaves the reference empty; a context request gives the reply no
+     page-unavailable condition, though a named request in the same turn (a
+     visitor asking to summarize the page) still brings its own.
    - A step after a `retrieval.context` step gets its reply from the host's
      grounded-answer renderer, which writes it from the session rather than
-     from the step's staged view. The routine commits its page read to the
-     session as the claimed turn's reply starts being generated. When the page's
-     content was captured, that reply reads the page the way any answer about
-     the current page does: the retrieval answer's current-page block, in the
+     from the step's staged view. When the step the claimed reply renders
+     references the page, the routine commits its page read to the session as
+     that reply starts, and undoes the commit if the reply fails or is
+     abandoned. For any other step it commits once the reply exists, so that
+     step's grounded reply is written from the session as the routine found it:
+     no page, and the source guards on. For a step that references it, the page
+     counts as evidence (`admitsPageEvidence`) once its
+     content was captured: the retrieval answer's current-page block, in the
      user-role prompt beside the retrieved excerpts, carries the URL, title,
      locale, and visible excerpt with a trailing note that the page is
-     untrusted, and the excerpt counts as a source of its own, so a fact taken
-     from it needs no citation. A `context` read served as `metadata` admits the
-     page's identity as context, not evidence (`admitsPageEvidence`): the
-     grounded reply gets no current-page block, keeps the citation hold and the
-     rewrite of an answer that cites no retrieved excerpt, and with nothing
-     retrieved gets the no-context decline. A planner's own `metadata` read
-     ("what page am I on?") still admits the identity as evidence.
+     untrusted, and a fact taken from the excerpt needs no citation. A
+     `metadata` serve admits the identity as context, not evidence: no
+     current-page block, and the citation hold and the rewrite of an answer that
+     cites no retrieved excerpt stay on. A contributor that names `metadata`
+     (a planner's "what page am I on?") still admits the identity as evidence.
    - When the turn renders the same chat step the user was answering, the reply
      did not satisfy it: the step is re-asked. The renderer is told so, along
      with the keys of the step's required slots that are still missing, and the

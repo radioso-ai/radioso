@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 ---
 
 # Context variables
@@ -49,16 +49,18 @@ that reads like an instruction is never followed. On a channel that sends no
 page, the routine carries on without it.
 
 A step reached after a **Retrieval context** tool step (`retrieval.context`)
-in the same turn writes its reply from the retrieved documents. In `content`
-mode that reply also gets the page the way an answer about the current page
-does: the URL, title, locale, and visible page excerpt sit beside the retrieved
-excerpts, labelled as current-page evidence and followed by a note that the
-page is untrusted context, not an instruction. There the excerpt counts as a
-source in its own right, so a fact the reply takes from the page needs no
-citation to a retrieved document. In `metadata` mode the reply sees the page's
-identity only in a step instruction that references it, and its facts still
-have to come from the retrieved documents: a reply that cites none of them is
-replaced by a decline.
+in the same turn writes its reply from the retrieved documents. When that step
+references the page and the embed sends page content (`content` mode), the
+reply also gets the page the way an answer about the current page does: the
+URL, title, locale, and visible page excerpt sit beside the retrieved excerpts,
+labelled as current-page evidence and followed by a note that the page is
+untrusted context, not an instruction. There the excerpt counts as a source in
+its own right, so a fact the reply takes from the page needs no citation to a
+retrieved document. In `metadata` mode the reply sees the page's identity only
+in its step instruction, and its facts have to come from the retrieved
+documents: when something was retrieved, an answer that cites none of it is
+replaced by a decline. A retrieval-fed step that does not reference the page
+gets no page at all, even when another step of the same routine reads it.
 
 In practice this means answers to general questions are not influenced by
 whatever page the visitor happens to be on, and page content cannot inject
@@ -73,7 +75,8 @@ message includes `clientContextCapabilities["page.read"]` with an explicit
 negotiates it against the `pageContext` actually supplied, narrowing to
 `metadata` unless both agree on `content`, and withholding the capability
 entirely when the advertised claim says `available: false`. Both modes go
-through the same relevance gate.
+through the same relevance gate. A read served in `metadata` mode carries the
+URL, title, and locales only, even when the message also sent `content`.
 
 ## Host-defined variables
 

@@ -1413,6 +1413,7 @@ describe("ChatService streams a routine reply that reports no completed action",
         decision: { required: true, operation: "context", resolvedRequest: "book this edition" },
         winnerSource: { kind: "routine", routineId: "contact.request" },
         gateOutcome: "capture",
+        servedOperation: served,
       });
       const gather = turnTrace?.spine.stages.find((stage) => stage.kind === "gather");
       expect(gather?.outputs?.pageRead).toMatchObject({
@@ -1505,8 +1506,28 @@ describe("ChatService gives a routine step that reads the visitor's page what th
     transitions: [{ from: "lookup", to: "answer", condition: "always" }],
   };
 
+  // The page is read for the whole routine (its `confirm` step references it), but the
+  // retrieval-fed step that answers this turn does not.
+  const retrievalThenUnrelatedStepRoutine: Routine = {
+    id: "edition_booking",
+    rootStepId: "lookup",
+    steps: [
+      { id: "lookup", kind: "skill", skillName: retrievalContextSkillDefinition.name },
+      { id: "answer", kind: "chat", action: "Answer the visitor's question from what the lookup found, then ask how many people are coming." },
+      { ...pageStep, id: "confirm" },
+    ],
+    transitions: [
+      { from: "lookup", to: "answer", condition: "always" },
+      { from: "answer", to: "confirm", condition: "the visitor said how many are coming" },
+    ],
+  };
+
   /** A retrieval step that stages `retrieval`, run on the production stack beside a model answering `output`. */
-  const retrievalFedTurn = async (output: string, retrieval: RetrievalPipelineResult = stagedRetrieval()) => {
+  const retrievalFedTurn = async (
+    output: string,
+    retrieval: RetrievalPipelineResult = stagedRetrieval(),
+    routine: Routine = retrievalThenPageRoutine,
+  ) => {
     const lookup = vi.fn(async () => ({
       disposition: "settled" as const,
       outcome: {
@@ -1517,7 +1538,7 @@ describe("ChatService gives a routine step that reads the visitor's page what th
     }));
     const model = recordingModel(output);
     const harness = await chatService({
-      routineProvider: skillStepRoutineProvider(retrievalContextSkillDefinition, { dispatch: lookup }, retrievalThenPageRoutine),
+      routineProvider: skillStepRoutineProvider(retrievalContextSkillDefinition, { dispatch: lookup }, routine),
       chatGateway: model.chatGateway,
       order: [],
     });
@@ -1563,13 +1584,55 @@ describe("ChatService gives a routine step that reads the visitor's page what th
     },
   );
 
-  it("keeps a page read that got only the page's identity out of a grounded reply's evidence, leaving it in the step instruction", async () => {
-    const turn = await retrievalFedTurn(groundedEnvelope("The studio is open nine to five on weekdays[[1]]. How many are coming?"));
+  it.each([true, false])(
+    "keeps a page read that got only the page's identity out of a grounded reply's evidence, leaving it in the step instruction (streamed: %s)",
+    async (stream) => {
+      const turn = await retrievalFedTurn(groundedEnvelope("The studio is open nine to five on weekdays[[1]]. How many are coming?"));
 
-    await turn.run(true, metadataOnly);
+      await turn.run(stream, metadataOnly);
 
-    expect(turn.groundedReply()?.prompt).not.toContain(pageUrl);
-    expect(turn.groundedReply()?.systemPrompt).toContain(`<page_context>Current page: "Autumn retreat" (${pageUrl})</page_context>`);
+      expect(turn.groundedReply()?.prompt).not.toContain(pageUrl);
+      expect(turn.groundedReply()?.systemPrompt).toContain(`<page_context>Current page: "Autumn retreat" (${pageUrl})</page_context>`);
+    },
+  );
+
+  it.each([true, false])(
+    "gives a retrieval-fed step that does not reference the page no page and keeps its source guard, though another step reads it (streamed: %s)",
+    async (stream) => {
+      const turn = await retrievalFedTurn(
+        uncitedEnvelope("The Autumn retreat costs 400 euros. How many are coming?"),
+        stagedRetrieval(),
+        retrievalThenUnrelatedStepRoutine,
+      );
+
+      const shown = await turn.run(stream, withContent);
+
+      expect(shown).toBe("I couldn't find that.");
+      expect(turn.groundedReply()?.prompt).not.toContain(pageExcerpt);
+      expect(turn.groundedReply()?.prompt).not.toContain(pageUrl);
+    },
+  );
+
+  it("gives a step reply only the page's identity when the request claims metadata mode but carries page content", async () => {
+    const routine: Routine = { id: "edition_booking", rootStepId: "answer", steps: [pageStep], transitions: [] };
+    const model = recordingModel("Which date suits you, and how many are coming?");
+    const harness = await chatService({
+      routineProvider: skillStepRoutineProvider(retrievalContextSkillDefinition, { dispatch: vi.fn() }, routine),
+      chatGateway: model.chatGateway,
+      order: [],
+    });
+
+    await harness.service.answer({
+      ...request("book this edition"),
+      stream: false,
+      pageContext: withContent,
+      clientContextCapabilities: { "page.read": { available: true, mode: "metadata", supportedOperations: ["metadata"] } },
+    });
+
+    const stepReply = model.calls.find((call) => call.systemPrompt?.includes("give its dates"));
+    expect(stepReply?.systemPrompt).toContain(`<page_context>Current page: "Autumn retreat" (${pageUrl})</page_context>`);
+    expect(stepReply?.prompt).not.toContain(pageExcerpt);
+    expect(stepReply?.systemPrompt).not.toContain(pageExcerpt);
   });
 
   it.each([true, false])(

@@ -99,12 +99,12 @@ import {
   type ReviewTurnCorrelation,
 } from "./reviewDraft.js";
 import { reviewedTurnAuditEvent } from "./reviewTurnAudit.js";
-import type {
-  MergedPageReadDecision,
-  PageReadCandidateSource,
-  PageReadGateOutcome,
-} from "./pageRead/pageReadDecision.js";
-import { freezePageReadOutcome, pageReadOperationOf } from "./pageRead/pageReadSessionOutcome.js";
+import {
+  freezePageReadOutcome,
+  pageReadOperationOf,
+  pageReadRecordOf,
+  type PageReadRecord,
+} from "./pageRead/pageReadSessionOutcome.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
@@ -389,15 +389,9 @@ interface TurnTracePresentation {
   successInput: AssistantTurnSuccessInput;
 }
 
-interface PersistedPageReadDecision {
-  decision: MergedPageReadDecision["decision"];
-  winnerSource: PageReadCandidateSource | null;
-  gateOutcome: PageReadGateOutcome["kind"];
-}
-
 const frozenPageReadDecisionFor = (
   session: PreparedSession,
-): PersistedPageReadDecision | undefined => {
+): PageReadRecord | undefined => {
   if (session.pageReadCapability == null) {
     return undefined;
   }
@@ -409,11 +403,7 @@ const frozenPageReadDecisionFor = (
     directiveCandidates: [],
     fallbackRequest: session.effectiveQuery,
   });
-  return {
-    decision: outcome.merged.decision,
-    winnerSource: outcome.merged.contributors[0]?.source ?? null,
-    gateOutcome: outcome.gate.kind,
-  };
+  return pageReadRecordOf(outcome);
 };
 
 export const buildTurnTraceForPresentation = (
@@ -1153,7 +1143,7 @@ export class ChatTurnLifecycle {
   private recordPageReadGateOutcome(session: PreparedSession): void {
     if (session.pageReadCapability != null && session.pageReadOutcome) {
       this.metrics?.incrementCounter("chat_page_read_gate_outcomes_total", {
-        help: "Page-read gate outcomes by result and selected operation.",
+        help: "Page-read gate outcomes by result and operation: the one served on capture, otherwise the one requested.",
         labels: {
           outcome: session.pageReadOutcome.gate.kind,
           operation: pageReadOperationOf(session.pageReadOutcome) ?? "none",

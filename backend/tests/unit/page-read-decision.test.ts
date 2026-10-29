@@ -133,15 +133,16 @@ describe("mergePageReadDecision", () => {
     });
   });
 
-  it("ranks a context request broader than a lookup and narrower than a summary within one authority", () => {
+  it("lets any named operation beat a request for the page as context within one authority", () => {
     const candidates: PageReadCandidate[] = [
+      { source: { kind: "directive", directiveId: "a-context" } },
       { source: { kind: "directive", directiveId: "lookup" }, operation: "lookup" },
-      { source: { kind: "directive", directiveId: "context" } },
+      { source: { kind: "directive", directiveId: "metadata" }, operation: "metadata" },
       { source: { kind: "directive", directiveId: "summarize" }, operation: "summarize" },
     ];
 
     expect(merge({ directiveCandidates: candidates }).contributors.map(({ operation }) => operation))
-      .toEqual(["summarize", "context", "lookup"]);
+      .toEqual(["summarize", "lookup", "metadata", "context"]);
   });
 
   it("keeps every defaulted contributor in winner-first order", () => {

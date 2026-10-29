@@ -317,4 +317,50 @@ describe("page-read three-sink gate", () => {
 
     expect(shouldSuppressRetrievalSenseClarification(session)).toBe(true);
   });
+
+  it("keeps workspace-result clarification when a request for the page as context got only its identity", async () => {
+    const { session } = await harness({ available: true, mode: "metadata", supportedOperations: ["metadata"] });
+    freezePageReadOutcome(session, {
+      planner: null,
+      routineCandidates: [{ source: { kind: "routine", routineId: "booking" } }],
+      directiveCandidates: [],
+      fallbackRequest: session.effectiveQuery,
+    });
+
+    expect(session.pageReadOutcome?.gate).toMatchObject({ kind: "capture", operation: "metadata" });
+    expect(shouldSuppressRetrievalSenseClarification(session)).toBe(false);
+  });
+
+  it("stages only the page's identity in all three sinks for a read served as metadata", async () => {
+    const { input, preparer, session } = await harness();
+    freezePlannerDecision(session, { required: true, operation: "metadata", resolvedRequest: "Which page am I on?" });
+
+    const prepared = await preparer.prepareDirect(input, session);
+    const support = new ChatAnswerSupport();
+
+    expect(support.buildContextBlock(prepared)).toContain(pageContext.pageUrl);
+    expect(support.buildContextBlock(prepared)).not.toContain(pageContext.content);
+    expect(JSON.stringify(prepared.stagedContext)).not.toContain(pageContext.content);
+    expect(JSON.stringify(prepared.resolvedContext.snapshot)).not.toContain(pageContext.content);
+    expect(prepared.resolvedContext.snapshot).toHaveProperty("page_context");
+  });
+
+  it("stages only the page's identity for a routine whose context read was served as metadata", async () => {
+    const { preparer, session } = await harness({ available: true, mode: "metadata", supportedOperations: ["metadata"] });
+    const outcome = freezePageReadOutcome({ pageReadCapability: session.pageReadCapability }, {
+      planner: null,
+      routineCandidates: [{ source: { kind: "routine", routineId: "booking" } }],
+      directiveCandidates: [],
+      fallbackRequest: session.effectiveQuery,
+    });
+
+    const staged = preparer.stagedPageContextFor(session, outcome);
+    session.pageReadOutcome = outcome;
+    preparer.applyFrozenPageReadOutcome(session);
+
+    expect(JSON.stringify(staged)).toContain(pageContext.pageUrl);
+    expect(JSON.stringify(staged)).not.toContain(pageContext.content);
+    expect(JSON.stringify(session.resolvedContext)).not.toContain(pageContext.content);
+    expect(JSON.stringify(session.stagedContext)).not.toContain(pageContext.content);
+  });
 });

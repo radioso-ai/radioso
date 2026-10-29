@@ -527,11 +527,10 @@ describe("ChatTurnAssembly.claimRoutineTurn", () => {
     expect(deltas).toEqual(["What would you like", " to tell them?"]);
     expect(streamed.modelCalls).toEqual(["selector answer routine_turn", "reply stream routine_turn:2"]);
     expect(rendered.modelCalls).toEqual(["selector answer routine_turn", "reply answer routine_turn:2"]);
-    // The page the routine read is committed as its reply starts being generated, whole or
-    // streamed — after the claim's own calls, before the reply's — so a reply written from the
-    // session reads it.
-    expect(streamed.pageReadCommits).toEqual([1]);
-    expect(rendered.pageReadCommits).toEqual([1]);
+    // The rendered step reads no page, so the routine's page read is committed once the reply
+    // exists, whole or streamed.
+    expect(streamed.pageReadCommits).toEqual([2]);
+    expect(rendered.pageReadCommits).toEqual([2]);
     expect(next.value.presentation).toEqual(whole?.presentation);
     expect(next.value.routineStateTransition).toEqual(whole?.routineStateTransition);
     expect(next.value.routineStateTransition).toMatchObject({

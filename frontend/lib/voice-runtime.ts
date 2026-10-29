@@ -1,4 +1,5 @@
 import { voiceVendorNames, type VoiceVendorName } from './api-llm-providers'
+import type { PublicVoiceSessionResponse } from './api-types'
 import type { VoiceMode } from './voice-session'
 
 /** The voice runtimes the chat panel can open a session on: every vendor the API contract names. */
@@ -57,14 +58,24 @@ export interface VoiceCallPrivacyNotice {
   version: string
 }
 
+/** The vendor's code for the language a call starts in, as the session start's contract lists them. */
+export type VoiceVendorLanguage = NonNullable<PublicVoiceSessionResponse['vendorLanguage']>
+
 export interface VoiceRuntime {
   /**
-   * `firstMessage` is what the call says first, which the session sets on the vendor agent; it is
-   * given only when the session start returned one, which it does only for a vendor agent that
-   * allows it.
+   * `firstMessage` is what the call says first, and `vendorLanguage` the vendor's code for the
+   * language the call starts in; the session sets each on the vendor agent. Each is given only when
+   * the session start returned it, which it does only for a vendor agent that allows it.
    */
   open: (
-    input: { signedUrl: string; sessionKey: string; locale: string; privacyNotice?: VoiceCallPrivacyNotice; firstMessage?: string },
+    input: {
+      signedUrl: string
+      sessionKey: string
+      locale: string
+      privacyNotice?: VoiceCallPrivacyNotice
+      firstMessage?: string
+      vendorLanguage?: VoiceVendorLanguage
+    },
     callbacks: VoiceRuntimeCallbacks,
     signal: AbortSignal,
   ) => Promise<VoiceRuntimeSession>

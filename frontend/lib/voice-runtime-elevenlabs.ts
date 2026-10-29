@@ -1,6 +1,6 @@
 import { Conversation } from '@elevenlabs/client'
 
-import { VoiceMicrophoneUnavailableError, type VoiceRuntime } from './voice-runtime'
+import { VoiceMicrophoneUnavailableError, type VoiceRuntime, type VoiceVendorLanguage } from './voice-runtime'
 
 /**
  * The client's audio worklets, served from the app host (`app/voice-worklets/[name]/route.ts`).
@@ -69,15 +69,33 @@ const watchVendorSocket = (vendorOrigin: string, onSocket: (socket: WebSocket) =
 const PRIVACY_NOTICE_VARIABLE = 'radioso_privacy_notice'
 
 /**
+ * The session's agent overrides: the first message and the language the start named, and none it
+ * did not, since the vendor closes a session that sets one its agent does not allow. The contract
+ * lists the language codes Radioso sends; each must be one the client's language override takes,
+ * so a client that stops taking one fails the typecheck here.
+ */
+const agentOverridesOf = ({ firstMessage, vendorLanguage }: { firstMessage?: string; vendorLanguage?: VoiceVendorLanguage }) => {
+  if (!firstMessage && !vendorLanguage) return {}
+  return {
+    overrides: {
+      agent: {
+        ...(firstMessage ? { firstMessage } : {}),
+        ...(vendorLanguage ? { language: vendorLanguage } : {}),
+      },
+    },
+  }
+}
+
+/**
  * ElevenLabs Agents in the browser. The session key, the caller's language and the version of the
  * privacy notice the panel showed travel in the custom LLM extra body, where Radioso's `elevenlabs`
  * dialect reads them on every turn; the notice's line is a dynamic variable the first message says.
- * A first message from the session start is the session's first-message override, which only an
- * agent that allows it accepts: the vendor closes a session that sets one its agent does not allow,
- * so a session without one sets no override at all.
+ * A first message and a language from the session start are the session's overrides, which only an
+ * agent that allows them accepts: the vendor closes a session that sets one its agent does not
+ * allow, so a session without either sets no override at all.
  */
 export const elevenLabsVoiceRuntime: VoiceRuntime = {
-  async open({ signedUrl, sessionKey, locale, privacyNotice, firstMessage }, callbacks, signal) {
+  async open({ signedUrl, sessionKey, locale, privacyNotice, firstMessage, vendorLanguage }, callbacks, signal) {
     // Until the session opens, aborting abandons its handshake; once it is open, the session's own
     // `end` closes it.
     let abandonHandshake: (() => void) | null = null
@@ -102,7 +120,7 @@ export const elevenLabsVoiceRuntime: VoiceRuntime = {
           ...(privacyNotice ? { privacy_notice_version: privacyNotice.version } : {}),
         },
         dynamicVariables: { [PRIVACY_NOTICE_VARIABLE]: privacyNotice?.text ?? '' },
-        ...(firstMessage ? { overrides: { agent: { firstMessage } } } : {}),
+        ...agentOverridesOf({ firstMessage, vendorLanguage }),
         workletPaths: WORKLET_PATHS,
         libsampleratePath: LIBSAMPLERATE_PATH,
         onConnect: () => callbacks.onConnected(),

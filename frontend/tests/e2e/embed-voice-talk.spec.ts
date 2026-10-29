@@ -208,8 +208,9 @@ test("a visitor talks to the agent: connecting, listening, speaking, talking ove
   expect(voiceStarts[0].headers["x-radioso-public-session"]).toBe("public-session-token");
   await expect.poll(() => vendor.initiations()).toHaveLength(1);
   expect(vendor.initiations()[0].custom_llm_extra_body).toEqual({ session_key: SESSION_KEY, locale: "en" });
-  // A start that names no first message sets none: an agent that does not allow one closes the session.
+  // A start that names no first message or language sets neither: an agent that does not allow one closes the session.
   expect(vendor.initiations()[0]).not.toHaveProperty(["conversation_config_override", "agent", "first_message"]);
+  expect(vendor.initiations()[0]).not.toHaveProperty(["conversation_config_override", "agent", "language"]);
 
   vendor.accept();
   await expect(callStatus(frame, "Listening")).toBeVisible();
@@ -242,16 +243,16 @@ test("a visitor talks to the agent: connecting, listening, speaking, talking ove
   await expect.poll(() => vendor.closedByPage()).toBe(1);
 });
 
-test("a call on an agent Radioso maintains opens with what the session start says first", async ({ page, context }) => {
+test("a call on an agent Radioso maintains opens with what the session start says first, in the language it names", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
   const vendor = await vendorStandIn(page);
   const firstMessage = "This call is recorded so the team can review it.\n\nHi, I'm Marta. How can I help?";
-  const { frame } = await openEmbed(page, { ...callsOffered, voiceStart: { status: 200, body: { ...startedSession, firstMessage } } });
+  const { frame } = await openEmbed(page, { ...callsOffered, voiceStart: { status: 200, body: { ...startedSession, firstMessage, vendorLanguage: "it" } } });
 
   await frame.getByRole("button", { name: "Talk" }).click();
   await expect.poll(() => vendor.initiations()).toHaveLength(1);
 
-  expect(vendor.initiations()[0].conversation_config_override).toMatchObject({ agent: { first_message: firstMessage } });
+  expect(vendor.initiations()[0].conversation_config_override).toMatchObject({ agent: { first_message: firstMessage, language: "it" } });
   vendor.accept();
   await expect(callStatus(frame, "Listening")).toBeVisible();
 });

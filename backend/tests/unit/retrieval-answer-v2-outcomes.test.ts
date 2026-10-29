@@ -6,6 +6,11 @@ import { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerP
 import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type {
+  PageReadCandidateSource,
+  PageReadOperation,
+  PageReadRequest,
+} from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
+import type {
   ComposedDecline,
   FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -181,6 +186,25 @@ const capturedPageReadSession = (): PreparedSession => {
   return session;
 };
 
+/** A session whose page read `requested` an operation (or the page as `context`) and the gate `served` one. */
+const pageReadSession = (
+  source: PageReadCandidateSource,
+  requested: PageReadRequest,
+  served: PageReadOperation,
+): PreparedSession => {
+  const session = baseSession();
+  const resolvedRequest = "book this edition";
+  session.pageContext = { pageUrl: "https://example.invalid/courses/autumn", pageTitle: "Autumn retreat" };
+  session.pageReadOutcome = {
+    merged: {
+      decision: { required: true, operation: requested, resolvedRequest },
+      contributors: [{ source, operation: requested, resolvedRequest }],
+    },
+    gate: { kind: "capture", operation: served, resolvedRequest },
+  };
+  return session;
+};
+
 describe("retrieval answer decline classification", () => {
   const zeroContextSession = (): PreparedSession => {
     const session = baseSession();
@@ -337,6 +361,68 @@ describe("unsupported-answer delivery guard", () => {
     expect(presented.answer).toBe(pageAnswer);
     expect(presented.skillOutcome).toBe("grounded_degraded");
     expect(counts().fallbackCalls).toBe(0);
+  });
+
+  it("keeps a planner's metadata page read as evidence for an answer that cites no retrieved excerpt", async () => {
+    const pageAnswer = "You're on the Autumn retreat page.";
+    const { composer, counts } = buildComposer(unsupportedAnswerEnvelope(pageAnswer));
+
+    const presented = await composer.composeAnswer(
+      pageReadSession({ kind: "planner" }, "metadata", "metadata"),
+      "Which page am I on?",
+      undefined,
+      undefined,
+    );
+
+    expect(presented.answer).toBe(pageAnswer);
+    expect(counts().fallbackCalls).toBe(0);
+  });
+
+  it("keeps a routine's read of the page content as evidence for an answer that cites no retrieved excerpt", async () => {
+    const pageAnswer = "The Autumn retreat runs 30 Oct to 2 Nov.";
+    const { composer, counts } = buildComposer(unsupportedAnswerEnvelope(pageAnswer));
+
+    const presented = await composer.composeAnswer(
+      pageReadSession({ kind: "routine", routineId: "booking" }, "context", "lookup"),
+      "book this edition",
+      undefined,
+      undefined,
+    );
+
+    expect(presented.answer).toBe(pageAnswer);
+    expect(counts().fallbackCalls).toBe(0);
+  });
+
+  it("declines an uncited answer when a routine's read of the page got only its identity", async () => {
+    const { composer, counts } = buildComposer(unsupportedAnswerEnvelope("The retreat costs 400 euros."));
+
+    const presented = await composer.composeAnswer(
+      pageReadSession({ kind: "routine", routineId: "booking" }, "context", "metadata"),
+      "book this edition",
+      undefined,
+      undefined,
+    );
+
+    expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(counts().fallbackCalls).toBe(1);
+  });
+
+  it("holds and declines a streamed uncited answer when a routine's read of the page got only its identity", async () => {
+    const { composer, counts } = buildComposer(unsupportedAnswerEnvelope("The retreat costs 400 euros."));
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(
+        pageReadSession({ kind: "routine", routineId: "booking" }, "context", "metadata"),
+        "book this edition",
+        undefined,
+        undefined,
+      ),
+    );
+
+    expect(chunks).toEqual([]);
+    expect(result.hasStreamedAnswer).toBe(false);
+    expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(counts().fallbackCalls).toBe(1);
   });
 
   it("streams captured page-read output live instead of holding it for one committed block", async () => {

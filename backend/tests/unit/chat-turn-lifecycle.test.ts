@@ -32,6 +32,7 @@ import type {
   PageReadCapability,
   PageReadDecision,
   PageReadGateOutcome,
+  PageReadRequest,
 } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
 
 interface RecordedAudit {
@@ -123,7 +124,7 @@ const pageReadCapability: PageReadCapability = {
 };
 
 const pageReadSession = (input: {
-  decision: PageReadDecision;
+  decision: PageReadDecision<PageReadRequest>;
   gate: PageReadGateOutcome;
   source?: PageReadCandidateSource;
   capability?: PageReadCapability;
@@ -363,6 +364,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       },
       winnerSource: { kind: "planner" },
       gateOutcome: "capture",
+      servedOperation: "lookup",
     });
     const gather = completed.response.turnTrace?.spine.stages.find((stage) => stage.kind === "gather");
     expect(gather?.outputs?.contextVariables).toBeUndefined();
@@ -425,6 +427,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         decision,
         winnerSource: expectedWinner,
         gateOutcome: gate.kind,
+        servedOperation: null,
       });
       expect(assistantMessage?.metadata).not.toHaveProperty("contextVariables");
       expect(JSON.stringify(assistantMessage?.metadata)).not.toContain("Visible page text.");
@@ -472,8 +475,19 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       gate: { kind: "unsupported_operation" },
       expectedLabels: { outcome: "unsupported_operation", operation: "transform" },
     },
+    // A request for the page as context labels the operation the gate served, not `context`.
+    {
+      decision: { required: true, operation: "context", resolvedRequest: "book this edition" },
+      gate: { kind: "capture", operation: "metadata", resolvedRequest: "book this edition" },
+      expectedLabels: { outcome: "capture", operation: "metadata" },
+    },
+    {
+      decision: { required: true, operation: "context", resolvedRequest: "book this edition" },
+      gate: { kind: "unavailable" },
+      expectedLabels: { outcome: "unavailable", operation: "context" },
+    },
   ] satisfies Array<{
-    decision: PageReadDecision;
+    decision: PageReadDecision<PageReadRequest>;
     gate: PageReadGateOutcome;
     expectedLabels: { outcome: PageReadGateOutcome["kind"]; operation: string };
   }>)(
@@ -496,7 +510,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       expect(metrics.incrementCounter).toHaveBeenCalledWith(
         "chat_page_read_gate_outcomes_total",
         {
-          help: "Page-read gate outcomes by result and selected operation.",
+          help: "Page-read gate outcomes by result and operation: the one served on capture, otherwise the one requested.",
           labels: expectedLabels,
         },
       );

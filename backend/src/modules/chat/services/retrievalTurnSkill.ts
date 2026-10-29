@@ -3,6 +3,7 @@ import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPrese
 import { BlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
+import { admitsPageEvidence } from "./pageRead/pageReadSessionOutcome.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import {
@@ -106,10 +107,9 @@ export const buildRetrievalTurnOutcome = (session: PreparedSession): TurnOutcome
   buildPreparedTurnOutcome(session, { kind: RETRIEVAL_OUTCOME_KIND, skillName: RETRIEVAL_TURN_SKILL });
 
 /**
- * Enforces the v2 grounding protocol at delivery time. A valid answer envelope
- * must carry at least one in-range sourced assertion; lexical similarity is not
- * evidence and cannot turn an anchor-free draft into a grounded answer. Captured
- * page content is a separate source admitted by the fused planner's typed gate.
+ * Enforces the v2 grounding protocol at delivery time. A valid answer envelope must carry at
+ * least one in-range sourced assertion; lexical similarity is not evidence and cannot turn an
+ * anchor-free draft into a grounded answer. Admitted page evidence is a source of its own.
  */
 const shouldSuppressUnsupportedDraft = (
   session: PreparedSession,
@@ -117,7 +117,7 @@ const shouldSuppressUnsupportedDraft = (
   summary: GroundingSummary,
 ): boolean =>
   session.retrieval.contexts.length > 0
-  && session.pageReadOutcome?.gate.kind !== "capture"
+  && !admitsPageEvidence(session.pageReadOutcome)
   && envelope.parseStatus === "valid_v2"
   && envelope.outcome === "answer"
   && summary.sourcedClaimCount === 0;
@@ -878,15 +878,15 @@ export class RetrievalAnswerComposer {
         contextCount: session.retrieval.contexts.length,
         maxRetainedCodePoints: RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints,
       });
-      // Captured page content was never gated by citations (a separate source the
-      // planner's typed gate already admitted): once the head resolves, it releases
+      // Admitted page evidence (`admitsPageEvidence`) is never gated by citations, being a
+      // separate source the page-read gate admitted: once the head resolves, it releases
       // live from that point on, the same as any other immediate-release case below
       // (`releasesImmediately`), regardless of this setting. Workspace default true,
       // agent-overridable (FR-025): with it off, an `answer` commitment against
       // indexed sources streams from its first token instead of holding for one
       // (FR-026). `no_support` / `out_of_scope` bypass the gate on their own via
       // `bypassCitationGate` below, regardless of this setting (FR-027).
-      const pageCaptureBypassesGate = session.pageReadOutcome?.gate.kind === "capture";
+      const pageCaptureBypassesGate = admitsPageEvidence(session.pageReadOutcome);
       const citationHoldEnabled = session.retrieval.responseSettings?.citationHoldEnabled ?? true;
       const requiresIndexedSourceGate = !pageCaptureBypassesGate && citationHoldEnabled;
       let citationGateEngaged = false;

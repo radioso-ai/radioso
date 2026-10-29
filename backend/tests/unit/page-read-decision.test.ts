@@ -116,21 +116,33 @@ describe("mergePageReadDecision", () => {
     });
   });
 
-  it("defaults omitted operation and request before sorting and recording contributors", () => {
+  it("reads a candidate that names no operation as asking for the page as context", () => {
     expect(merge({
       routineCandidates: [{ source: { kind: "routine", routineId: "routine-a" } }],
     })).toEqual({
       decision: {
         required: true,
-        operation: "lookup",
+        operation: "context",
         resolvedRequest: "latest resolved request",
       },
       contributors: [{
         source: { kind: "routine", routineId: "routine-a" },
-        operation: "lookup",
+        operation: "context",
         resolvedRequest: "latest resolved request",
       }],
     });
+  });
+
+  it("lets any named operation beat a request for the page as context within one authority", () => {
+    const candidates: PageReadCandidate[] = [
+      { source: { kind: "directive", directiveId: "a-context" } },
+      { source: { kind: "directive", directiveId: "lookup" }, operation: "lookup" },
+      { source: { kind: "directive", directiveId: "metadata" }, operation: "metadata" },
+      { source: { kind: "directive", directiveId: "summarize" }, operation: "summarize" },
+    ];
+
+    expect(merge({ directiveCandidates: candidates }).contributors.map(({ operation }) => operation))
+      .toEqual(["summarize", "lookup", "metadata", "context"]);
   });
 
   it("keeps every defaulted contributor in winner-first order", () => {
@@ -219,6 +231,50 @@ describe("evaluatePageReadGate", () => {
       operation: "lookup",
       resolvedRequest: "find the return window",
     });
+  });
+
+  describe("a request for the page as context", () => {
+    const contextRequest = () => merge({
+      routineCandidates: [{ source: { kind: "routine", routineId: "booking" }, resolvedRequest: "book this edition" }],
+    });
+
+    it("is served as the page's identity by a channel that sends only metadata", () => {
+      expect(evaluatePageReadGate(
+        contextRequest(),
+        capability({ mode: "metadata", supportedOperations: ["metadata"] }),
+      )).toEqual({ kind: "capture", operation: "metadata", resolvedRequest: "book this edition" });
+    });
+
+    it("is served as a lookup in the page's content by a channel that sends it", () => {
+      expect(evaluatePageReadGate(contextRequest(), capability())).toEqual({
+        kind: "capture",
+        operation: "lookup",
+        resolvedRequest: "book this edition",
+      });
+    });
+
+    it("takes any content operation the channel offers before the page's identity", () => {
+      expect(evaluatePageReadGate(
+        contextRequest(),
+        capability({ supportedOperations: ["metadata", "summarize"] }),
+      )).toEqual({ kind: "capture", operation: "summarize", resolvedRequest: "book this edition" });
+    });
+
+    it("is unavailable when the channel offers no page at all", () => {
+      expect(evaluatePageReadGate(contextRequest(), null)).toEqual({ kind: "unavailable" });
+      expect(evaluatePageReadGate(
+        contextRequest(),
+        capability({ available: false, mode: null, supportedOperations: [] }),
+      )).toEqual({ kind: "unavailable" });
+    });
+  });
+
+  it("keeps a named content operation unavailable on a channel that sends only metadata", () => {
+    const required = merge({ planner: plannerDecision("lookup", "find the return window") });
+    expect(evaluatePageReadGate(
+      required,
+      capability({ mode: "metadata", supportedOperations: ["metadata"] }),
+    )).toEqual({ kind: "unavailable" });
   });
 });
 

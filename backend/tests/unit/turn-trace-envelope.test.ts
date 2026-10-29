@@ -18,6 +18,7 @@ import type {
   PageReadCandidateSource,
   PageReadDecision,
   PageReadGateOutcome,
+  PageReadOperation,
 } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
 import {
   createModelCallTraceCollector,
@@ -292,6 +293,44 @@ describe("buildPageReadTraceDiagnostic", () => {
       expect(JSON.stringify(diagnostic)).not.toMatch(/booking|page-help/u);
     },
   );
+
+  it.each([
+    { mode: "metadata", supportedOperations: ["metadata"], served: "metadata" },
+    { mode: "content", supportedOperations: ["metadata", "lookup", "summarize"], served: "lookup" },
+  ] satisfies Array<{ mode: "metadata" | "content"; supportedOperations: PageReadOperation[]; served: PageReadOperation }>)(
+    "reports the operation a $mode channel served for a request for the page as context",
+    ({ mode, supportedOperations, served }) => {
+      const diagnostic = buildPageReadTraceDiagnostic({
+        capability: { available: true, mode, supportedOperations },
+        outcome: {
+          merged: {
+            decision: { required: true, operation: "context", resolvedRequest: "book this edition" },
+            contributors: [{ source: { kind: "routine", routineId: "booking" }, operation: "context", resolvedRequest: "book this edition" }],
+          },
+          gate: { kind: "capture", operation: served, resolvedRequest: "book this edition" },
+        },
+        resolved: true,
+      });
+
+      expect(diagnostic).toMatchObject({ operation: served, outcome: "context_ready", source: "routine" });
+    },
+  );
+
+  it("reports the requested operation when the gate served none", () => {
+    const diagnostic = buildPageReadTraceDiagnostic({
+      capability: { available: false, mode: null, supportedOperations: [] },
+      outcome: {
+        merged: {
+          decision: { required: true, operation: "context", resolvedRequest: "book this edition" },
+          contributors: [{ source: { kind: "routine", routineId: "booking" }, operation: "context", resolvedRequest: "book this edition" }],
+        },
+        gate: { kind: "unavailable" },
+      },
+      resolved: false,
+    });
+
+    expect(diagnostic).toMatchObject({ operation: "context", outcome: "unavailable" });
+  });
 });
 
 describe("attachCapabilitySubTrace", () => {

@@ -97,19 +97,19 @@ import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import type { AnswerCoverageRecord } from "../../answerCoverage/public.js";
 import type { RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
-import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
+import { admitsPageEvidence, freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
 
 const CLARIFICATION_TURN_SKILL = builtInAnswerSkills.clarification;
 
 /**
- * An admitted current-page excerpt makes a retrieval-sense question unnecessary.
+ * Admitted page evidence (`admitsPageEvidence`) makes a retrieval-sense question unnecessary.
  * The evaluator still scopes workspace retrieval; only its visitor-facing question
  * is suppressed.
  */
 export const shouldSuppressRetrievalSenseClarification = (
   session: Pick<PreparedSession, "pageReadOutcome">,
-): boolean => session.pageReadOutcome?.gate.kind === "capture";
+): boolean => admitsPageEvidence(session.pageReadOutcome);
 
 type PrepareRetrievalInput = Parameters<ChatSessionPreparer["prepareRetrieval"]>[0];
 

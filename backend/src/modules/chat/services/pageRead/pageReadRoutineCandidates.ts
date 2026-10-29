@@ -17,12 +17,16 @@ const readsPageContext = (step: RoutineStep): boolean => {
   return Array.isArray(contextRefs) && contextRefs.includes(PAGE_CONTEXT_VARIABLE);
 };
 
+/** Whether a step depends on the visitor's page: a skill input bound to it, or a reference in its instruction. */
+export const stepReadsPageContext = (step: RoutineStep): boolean =>
+  bindsPageContext(step) || readsPageContext(step);
+
 /** Every step that depends on the visitor's page, each as one candidate sourced from the routine. */
 export const pageReadRoutineCandidates = (
   routine: Pick<Routine, "id" | "steps">,
 ): PageReadCandidate[] =>
   routine.steps
-    .filter((step) => bindsPageContext(step) || readsPageContext(step))
+    .filter(stepReadsPageContext)
     .map(() => ({
       source: { kind: "routine" as const, routineId: routine.id },
     }));

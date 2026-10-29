@@ -234,7 +234,7 @@ describe("Lettermint webhook: event kinds", () => {
     expect(event).toMatchObject({ kind: "message_received", envelope: { receivedFor: [] } });
   });
 
-  it("maps message.delivered to delivered with the recipient and the kind tag", () => {
+  it("maps message.delivered to delivered with the recipient, the kind tag and the preserved Message-ID", () => {
     expect(verifiedEvent(webhookBody("message.delivered.json"))).toEqual({
       kind: "delivery_status",
       providerEventId: "9b0c4a4e-4e29-4d8b-8b3a-3f0f3e6d2f9b",
@@ -243,7 +243,28 @@ describe("Lettermint webhook: event kinds", () => {
       status: { type: "delivered", bounce: null },
       recipients: ["ada@example.test"],
       emailKind: "channel_reply",
+      rfcMessageId: "<5b0e1f9e.k3x9@acme.test>",
     });
+  });
+
+  it("reads the delivery event's Message-ID header case-insensitively", () => {
+    const event = verifiedEvent(webhookBody("message.delivered.json", (payload) => {
+      dataOf(payload).headers = [{ name: "MESSAGE-ID", value: "<upper@acme.test>" }];
+    }));
+
+    expect(event).toMatchObject({ rfcMessageId: "<upper@acme.test>" });
+  });
+
+  it("drops a delivery event's Message-ID header that is not one, rather than carrying it loosely", () => {
+    const event = verifiedEvent(webhookBody("message.delivered.json", (payload) => {
+      dataOf(payload).headers = [{ name: "Message-ID", value: "not-a-message-id" }];
+    }));
+
+    expect(event).toMatchObject({ rfcMessageId: null });
+  });
+
+  it("carries no Message-ID for a delivery event whose headers were not captured", () => {
+    expect(verifiedEvent(webhookBody("message.hard_bounced.json"))).toMatchObject({ rfcMessageId: null });
   });
 
   it("maps a hard bounce to a permanent bounce keeping only the enhanced status code", () => {
@@ -257,6 +278,7 @@ describe("Lettermint webhook: event kinds", () => {
       status: { type: "bounced", bounce: { type: "Permanent", subType: null, statusCode: "5.1.1" } },
       recipients: ["alice@customer.test"],
       emailKind: "contact_notification",
+      rfcMessageId: null,
     });
     expect(JSON.stringify(event.kind === "delivery_status" ? event.status : null)).not.toContain("alice@customer.test");
     expect(JSON.stringify(event)).not.toContain("User unknown");

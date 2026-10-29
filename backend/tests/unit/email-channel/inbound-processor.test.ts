@@ -585,9 +585,44 @@ describe("EmailInboundProcessor: evidence about sent mail", () => {
 
     expect(await h.runEvent(event.id)).toBe("processed");
 
-    expect(h.deliveryEvents.applyStatus).toHaveBeenCalledWith({ provider: "local", providerMessageId: "re_sent_1", status: bounced });
+    expect(h.deliveryEvents.applyStatus).toHaveBeenCalledWith({ provider: "local", providerMessageId: "re_sent_1", status: bounced, rfcMessageId: null });
     expect(h.inbound.events.get(event.id)?.state).toBe("processed");
     expect(h.fetchMessage).not.toHaveBeenCalled();
+  });
+
+  it("carries the event's preserved Message-ID into the port, for the fallback (#1619)", async () => {
+    const h = harness();
+    const event = h.inbound.seedEvent({
+      eventKind: "delivery_status",
+      providerObjectId: "re_sent_1",
+      envelope: { status: bounced, rfcMessageId: "<intent-1@customer.test>" },
+    });
+
+    expect(await h.runEvent(event.id)).toBe("processed");
+
+    expect(h.deliveryEvents.applyStatus).toHaveBeenCalledWith({
+      provider: "local",
+      providerMessageId: "re_sent_1",
+      status: bounced,
+      rfcMessageId: "<intent-1@customer.test>",
+    });
+  });
+
+  it("ignores a persisted status whose Message-ID is not one, reading its own write back as strictly as the adapter wrote it (#1619)", async () => {
+    const h = harness();
+    const event = h.inbound.seedEvent({
+      eventKind: "delivery_status",
+      providerObjectId: "re_sent_1",
+      envelope: { status: bounced, rfcMessageId: "not-a-message-id" },
+    });
+
+    expect(await h.runEvent(event.id)).toBe("ignored");
+
+    expect(h.deliveryEvents.applyStatus).not.toHaveBeenCalled();
+    expect(h.logger.info).toHaveBeenCalledWith(
+      { eventId: event.id, eventKind: "delivery_status", attempt: 1, reason: "no_status" },
+      "email_inbound_event_ignored",
+    );
   });
 
   it("settles an event about mail it did not send as ignored, and logs it by event", async () => {

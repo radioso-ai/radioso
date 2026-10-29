@@ -144,6 +144,11 @@ const parseResendEvent = (rawBody: Buffer, providerEventId: string): VerifiedInb
           status: { type: deliveryType, bounce: bounceOf(deliveryType, data) },
           recipients: stringsOf(data.to),
           emailKind: isRecord(data.tags) ? nonEmptyString(data.tags.kind) : null,
+          // Resend (SES) replaces the supplied Message-ID with its own `<…@<region>.amazonses.com>`
+          // id (research A7, S0 result; `resendDriver.ts`'s send path carries the same note), so
+          // `data.message_id` here is never `email_send_intents.supplied_rfc_message_id`: the
+          // RFC Message-ID fallback (#1619) has nothing of ours to match against on this provider.
+          rfcMessageId: null,
         }
       : null;
   }

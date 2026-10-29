@@ -279,5 +279,13 @@ export const nextSendIntentState = (current: SendIntentSnapshot | null, event: S
   }
 };
 
+/**
+ * Whether the intent already records this event because another writer applied it first: the
+ * same provider acceptance. A delivery event matched by its Message-ID can land before the send's
+ * own writer records the provider's response (#1619); applying it again would change nothing.
+ */
+export const alreadyRecords = (current: Pick<SendIntentSnapshot, "providerMessageId">, event: SendIntentEvent): boolean =>
+  event.kind === "provider_accepted" && current.providerMessageId === event.providerMessageId;
+
 export const isTerminalSendIntentState = (state: SendIntentState): boolean =>
   state === "delivered" || state === "bounced" || state === "failed";

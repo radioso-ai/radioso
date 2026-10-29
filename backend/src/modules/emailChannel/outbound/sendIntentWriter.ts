@@ -7,7 +7,7 @@ import type {
   SendIntentTransitionOutcome,
 } from "../persistence/emailSendIntentRepository.js";
 import type { EmailThreadRepository } from "../persistence/emailThreadRepository.js";
-import type { SendIntentEffect, SendIntentEvent, SendIntentState } from "./sendIntentTransitions.js";
+import { alreadyRecords, type SendIntentEffect, type SendIntentEvent, type SendIntentState } from "./sendIntentTransitions.js";
 
 /** The delivering channel's name on the failures it raises, as registered in the reply dispatcher. */
 export const EMAIL_DELIVERY_PROVIDER = "email";
@@ -35,10 +35,14 @@ export interface EmailSendUnitOfWork {
 
 type Applied = Extract<SendIntentTransitionOutcome, { outcome: "applied" }>;
 
-/** How a writer's event landed. `previousState` is the state the event was finally applied to. */
-type SendIntentWriteOutcome =
+/**
+ * How a writer's event landed. `previousState` is the state the event was finally applied to;
+ * `already_recorded` is an event another writer applied first, so there was nothing to write.
+ */
+export type SendIntentWriteOutcome =
   | (Applied & { previousState: SendIntentState })
-  | Exclude<SendIntentTransitionOutcome, { outcome: "applied" | "conflict" }>;
+  | Exclude<SendIntentTransitionOutcome, { outcome: "applied" | "conflict" }>
+  | { outcome: "ignored"; reason: "already_recorded"; intent: EmailSendIntentRecord };
 
 type Ignored = Extract<SendIntentTransitionOutcome, { outcome: "ignored" }>;
 
@@ -62,9 +66,11 @@ export const countEmailSendIntentState = (
  * lost race re-applies the event to the intent as it now is, which the state machine judges on
  * that row: a terminal intent drops it, and an unsent settlement read before another claim froze
  * the request no longer applies. An event the machine drops is logged at info with ids only, so a
- * stale or unsupported event can be traced by intent. A transition's delivery-failure effects
- * commit in its transaction. `create_resend_intent` is left to the caller that asked for the
- * resend: it is the operator resolution's to act on.
+ * stale or unsupported event can be traced by intent. An event the row already records, applied
+ * first by another writer, returns quietly: nothing was lost, so it is neither a fence conflict
+ * nor an ignored event. A transition's delivery-failure effects commit in its transaction.
+ * `create_resend_intent` is left to the caller that asked for the resend: it is the operator
+ * resolution's to act on.
  */
 export class SendIntentWriter {
   constructor(private readonly deps: {
@@ -101,6 +107,7 @@ export class SendIntentWriter {
       }
       if (result.outcome === "ignored") this.logIgnored(result, event, options);
       if (result.outcome !== "conflict") return result;
+      if (alreadyRecords(result.current, event)) return { outcome: "ignored", reason: "already_recorded", intent: result.current };
       this.deps.metrics?.incrementCounter("email_send_transition_conflicts_total", {
         help: "Send-intent transitions re-applied after losing the version fence, by writer.",
         labels: { writer: options.writer },

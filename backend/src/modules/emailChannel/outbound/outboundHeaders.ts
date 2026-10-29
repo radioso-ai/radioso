@@ -23,7 +23,10 @@ interface OutboundHeadersInput {
  */
 export const REFERENCES_LIMIT = 20;
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const UUID = new RegExp(`^${UUID_PATTERN}$`, "iu");
+/** `<uuid@domain>`, the shape `outboundMessageId` mints; the UUID is captured. */
+const OUTBOUND_MESSAGE_ID = new RegExp(`^<(${UUID_PATTERN})@[^<>@\\s]+>$`, "iu");
 /** Thread tokens are RFC 4648 base32 (`relayTokens.ts`), which is `atext` with no `+` of its own. */
 const PLUS_TAG = /^[A-Za-z0-9]+$/u;
 /**
@@ -53,6 +56,14 @@ export const outboundMessageId = (sendingDomain: string, newMessageUuid: string)
   }
   return rfcMessageId(`<${newMessageUuid}@${sendingDomain.toLowerCase()}>`);
 };
+
+/**
+ * The send intent an outbound Message-ID names, read back from the UUID `outboundMessageId` put in
+ * its left half; lowercased, as a UUID is case-insensitive. Null for an id of any other shape. The
+ * caller still checks the intent's own id matches: this names a candidate, never proves one.
+ */
+export const sendIntentIdOfOutboundMessageId = (messageId: string): string | null =>
+  OUTBOUND_MESSAGE_ID.exec(messageId)?.[1]?.toLowerCase() ?? null;
 
 /**
  * Threading headers for one outbound email (FR-033, FR-034): a fresh Message-ID on the sending

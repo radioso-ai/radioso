@@ -4,6 +4,7 @@ import { traceOperation } from "../../../shared/observability/tracing/operations
 import { requestDrainBestEffort, type EmailChannelDrainDispatcherPort } from "../drains.js";
 import type { EmailChannelJobLogger } from "../emailChannelAudit.js";
 import type { EmailSendIntentRecord, SendRequestSnapshot } from "../persistence/emailSendIntentRepository.js";
+import { outboundIndexEntries, recordProviderAcceptance } from "./providerAcceptance.js";
 import type { EmailSendUnitOfWork, SendIntentWriter, SendIntentWriterName } from "./sendIntentWriter.js";
 
 /**
@@ -49,23 +50,6 @@ const messageOf = (intent: EmailSendIntentRecord, request: SendRequestSnapshot &
   idempotencyKey: intent.idempotencyKey,
   threading: request.threading,
 });
-
-/** The thread index rows an accepted send is found by: the supplied id, and the delivered one when it differs. */
-const outboundIndexEntries = (intent: EmailSendIntentRecord, rfcMessageIds: readonly string[]) =>
-  [...new Set(rfcMessageIds)].map((rfcMessageId) => ({
-    workspaceId: intent.workspaceId,
-    mailboxId: intent.mailboxId,
-    conversationId: intent.conversationId,
-    messageId: intent.messageId,
-    direction: "outbound" as const,
-    origin: rfcMessageId === intent.suppliedRfcMessageId ? "radioso_generated" as const : "provider_delivered" as const,
-    rfcMessageId,
-    subject: intent.request?.subject ?? null,
-    ccAddresses: [],
-    attachments: [],
-    inboundDeliveryId: null,
-    sendIntentId: intent.id,
-  }));
 
 /**
  * One provider call for a send whose request is frozen, and its outcome applied through the fence
@@ -169,35 +153,21 @@ export class ProviderSendAttempt {
   }
 
   /**
-   * Records the acceptance with the thread index rows its Message-Ids are found by. An acceptance
-   * that reaches a send the outbox already gave up on as `uncertain` is recorded on it too (FR-036):
-   * its later delivery or bounce then correlates, and a teammate is not left resending mail the
-   * provider already holds without knowing it.
+   * Records the provider's response as its acceptance (`recordProviderAcceptance`), then fetches
+   * the Message-ID it delivered under when the response did not carry one.
    */
   private async recordAcceptance(
     intent: EmailSendIntentRecord,
     accepted: Extract<ProviderCallResult, { result: "accepted" }>,
     options: SendOptions,
   ): Promise<EmailSendIntentRecord> {
-    const written = await this.deps.writer.apply(
+    const written = await recordProviderAcceptance(
+      this.deps,
       intent,
-      { kind: "provider_accepted", providerMessageId: accepted.providerMessageId, deliveredMessageId: accepted.deliveredMessageId },
-      {
-        writer: options.writer,
-        attempt: options.attempt,
-        onApplied: async (scope, applied) => {
-          const ids = [applied.suppliedRfcMessageId, ...(applied.deliveredRfcMessageId ? [applied.deliveredRfcMessageId] : [])];
-          await scope.threads.insertIndexEntries(outboundIndexEntries(applied, ids));
-        },
-      },
+      { providerMessageId: accepted.providerMessageId, deliveredMessageId: accepted.deliveredMessageId },
+      options,
     );
     if (written.outcome === "not_found") return intent;
-    if (written.outcome === "applied" && written.previousState === "uncertain") {
-      this.deps.logger.info(
-        { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId, attempt: options.attempt },
-        "email_send_late_acceptance",
-      );
-    }
     await this.fetchDeliveredMessageId(written.intent);
     return written.intent;
   }

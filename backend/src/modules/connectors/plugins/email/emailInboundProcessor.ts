@@ -1,5 +1,4 @@
 import type { ConnectorChatPort } from "@radioso/connector-api";
-import { z } from "zod";
 
 import type { ConversationActivityWriter } from "../../../conversationActivity/contracts/index.js";
 import {
@@ -23,13 +22,13 @@ import {
 } from "../../../emailChannel/public.js";
 import {
   InboundFetchError,
-  type DeliveryStatusFacts,
   type InboundEmailMessage,
   type InboundEmailReceiver,
   type InboundEnvelope,
 } from "../../../mail/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../../shared/observability/tracing/operations.js";
+import { readDeliveryStatus } from "./emailDeliveryStatusEnvelope.js";
 import { resolveEngagementDisposition, type EngagementDisposition, type IngestOnlyReason } from "./emailEngagementDisposition.js";
 import { classifyInbound } from "./emailInboundClassification.js";
 import { routeDeliveredTo, type InboundRouteLookups, type MailboxTarget } from "./emailInboundRouting.js";
@@ -261,10 +260,15 @@ export class EmailInboundProcessor {
 
   /** A provider event about mail Radioso sent: it settles the send it names, if it names one. */
   private async applyDeliveryStatus(event: InboundEventRecord, providerMessageId: string): Promise<InboundEventOutcome> {
-    const status = readDeliveryStatus(event.envelope);
-    if (!status) return this.ignore(event, "no_status");
+    const parsed = readDeliveryStatus(event.envelope);
+    if (!parsed) return this.ignore(event, "no_status");
     try {
-      const applied = await this.deps.deliveryEvents.applyStatus({ provider: event.provider, providerMessageId, status });
+      const applied = await this.deps.deliveryEvents.applyStatus({
+        provider: event.provider,
+        providerMessageId,
+        status: parsed.status,
+        rfcMessageId: parsed.rfcMessageId,
+      });
       return applied === "foreign" ? this.ignore(event, "foreign_send") : this.settle(event, "processed", null);
     } catch (error) {
       this.deps.logger.warn({ eventId: event.id, attempt: event.attempts, errorName: errorName(error) }, "email_delivery_status_failed");
@@ -855,29 +859,6 @@ export class EmailInboundProcessor {
 const hasAttemptsLeft = (event: InboundEventRecord): boolean => event.attempts <= RETRY_DELAYS_SECONDS.length;
 
 const isUnfinished = (delivery: InboundDeliveryRecord): boolean => delivery.state !== "done" && delivery.state !== "failed";
-
-/** Tokens the provider adapter already reduced the bounce detail to; re-checked when read back. */
-const PROVIDER_TOKEN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u;
-const ENHANCED_STATUS_CODE = /^[245]\.\d{1,3}\.\d{1,3}$/u;
-
-const deliveryStatusSchema = z.object({
-  status: z.object({
-    type: z.enum(["sent", "delivered", "delivery_delayed", "bounced", "complained", "failed", "suppressed"]),
-    bounce: z
-      .object({
-        type: z.string().regex(PROVIDER_TOKEN),
-        subType: z.string().regex(PROVIDER_TOKEN).nullable(),
-        statusCode: z.string().regex(ENHANCED_STATUS_CODE).nullable(),
-      })
-      .nullable(),
-  }),
-});
-
-/** The delivery status the webhook persisted; null when it is not one this processor can read. */
-const readDeliveryStatus = (envelope: unknown): DeliveryStatusFacts | null => {
-  const parsed = deliveryStatusSchema.safeParse(envelope);
-  return parsed.success ? parsed.data.status : null;
-};
 
 const errorName = (error: unknown): string => (error instanceof Error ? error.name : "unknown");
 

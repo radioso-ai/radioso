@@ -145,7 +145,9 @@ describe("date range answers under the production retrieval settings", () => {
   const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
 
   it("holds the date listing limit of passages for a busy month, and the trace lists every one", async () => {
-    const outOfRange = Array.from({ length: 6 }, (_value, index) =>
+    // Dated entirely in February, and nothing undated competes for the reserve: the range
+    // reclaims it too, same as when there is no outside candidate at all.
+    const februaryCourses = Array.from({ length: 6 }, (_value, index) =>
       passage(`february-${index + 1}`, {
         title: `February course ${index + 1}`,
         metadata: { dateFrom: "2027-02-10", dateTo: "2027-02-10" },
@@ -153,15 +155,71 @@ describe("date range answers under the production retrieval settings", () => {
       }));
     const { result, selection } = await runJanuaryTurn({
       rangeCount: 40,
-      semanticHits: [...outOfRange, januaryCourse(0, 0.55), januaryCourse(1, 0.54)],
+      semanticHits: [...februaryCourses, januaryCourse(0, 0.55), januaryCourse(1, 0.54)],
     });
 
     expect(result.contexts).toHaveLength(cap);
     expect(selection?.metrics?.finalContextCount).toBe(cap);
     expect(selection?.outputs?.finalContexts).toHaveLength(cap);
-    // A pure date question keeps all but the reserved passages for the month's events.
     const januaryContexts = result.contexts.filter((context) => context.title.startsWith("January course"));
-    expect(januaryContexts).toHaveLength(cap - reserved);
+    expect(januaryContexts).toHaveLength(cap);
+    expect(result.contexts.some((context) => context.title.startsWith("February course"))).toBe(false);
+  });
+
+  it("mixes a partial reserve with range reclaim when only some outside candidates are undated", async () => {
+    // The four best outside matches alternate: two undated pages and two February courses.
+    const februaryCourses = Array.from({ length: 10 }, (_value, index) =>
+      passage(`february-${index + 1}`, {
+        title: `February course ${index + 1}`,
+        metadata: { dateFrom: "2027-02-10", dateTo: "2027-02-10" },
+        similarity: 0.6 - index / 100,
+      }));
+    const pages = [
+      passage("policy", { title: "Course cancellation policy", similarity: 0.62 }),
+      passage("venue", { title: "Venue page", similarity: 0.595 }),
+    ];
+    const { result } = await runJanuaryTurn({
+      rangeCount: 40,
+      semanticHits: [...februaryCourses, ...pages],
+    });
+
+    expect(result.contexts).toHaveLength(cap);
+    expect(result.contexts.map((context) => context.title)).toEqual(
+      expect.arrayContaining(["Course cancellation policy", "Venue page"]),
+    );
+    expect(result.contexts.some((context) => context.title.startsWith("February course"))).toBe(false);
+  });
+
+  it("keeps a passage dated in another period out of the reserve, even when it outranks the undated passages", async () => {
+    // A digest for an adjacent period: dated entirely outside January, and the shape of
+    // passage this fix keeps out of the reserve regardless of how well it matches the query.
+    const adjacentPeriodDigest = passage("february-digest", {
+      title: "February digest",
+      metadata: { dateFrom: "2027-02-01", dateTo: "2027-02-28" },
+      similarity: 0.95,
+    });
+    const venue = passage("venue", { title: "Venue page", similarity: 0.5 });
+    const { result } = await runJanuaryTurn({
+      rangeCount: 40,
+      semanticHits: [adjacentPeriodDigest, venue],
+    });
+
+    expect(result.contexts.map((context) => context.title)).not.toContain("February digest");
+    expect(result.contexts.map((context) => context.title)).toContain("Venue page");
+  });
+
+  it("fills a sparse month's answer with a passage dated in another period when nothing undated is available", async () => {
+    const adjacentPeriodDigest = passage("february-digest", {
+      title: "February digest",
+      metadata: { dateFrom: "2027-02-01", dateTo: "2027-02-28" },
+      similarity: 0.95,
+    });
+    const { result } = await runJanuaryTurn({
+      rangeCount: 2,
+      semanticHits: [adjacentPeriodDigest],
+    });
+
+    expect(result.contexts.map((context) => context.title)).toContain("February digest");
   });
 
   it("keeps the best match outside the range in the answer when a busy range would fill it", async () => {

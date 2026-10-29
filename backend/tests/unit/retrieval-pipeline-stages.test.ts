@@ -549,41 +549,57 @@ describe("retrieval pipeline stages", () => {
       expect(calls).toEqual([]);
     });
 
+    const course = (id: string, date: string, similarity: number): RetrievedChunk => ({
+      chunkId: `chunk-${id}`,
+      documentId: `doc-${id}`,
+      title: `Course ${id}`,
+      content: `Course ${id} meets on ${date}. Bring a mat and arrive ten minutes early.`,
+      searchText: `Course ${id} ${date}`,
+      similarity,
+      chunkIndex: 0,
+      startOffset: 0,
+      endOffset: 80,
+      metadata: { dateFrom: date, dateTo: date },
+    });
+    // Undated general context, like a venue or pricing page: the kind of passage the
+    // range answer's reserved slots exist for. Named apart from `course` so a fixture's
+    // name always says whether it carries a date.
+    const generalContextPage = (id: string, similarity: number): RetrievedChunk => ({
+      chunkId: `chunk-${id}`,
+      documentId: `doc-${id}`,
+      title: `Page ${id}`,
+      content: `Page ${id}: arrive ten minutes early and bring a mat.`,
+      searchText: `Page ${id}`,
+      similarity,
+      chunkIndex: 0,
+      startOffset: 0,
+      endOffset: 80,
+    });
+
     // Runs a listing question for `range` through retrieval, preparation, and context
     // selection over `inRangeCount` courses in December plus 15 sooner November courses
-    // that the semantic search ranks above every December course.
+    // (dated elsewhere, the "outside" group, unless `outsideCandidates` overrides it) that
+    // the semantic search ranks above every December course.
     const answerContextsForRange = async (input: {
       range: { dateFrom: string; dateTo: string };
       inRangeCount: number;
       rewrite?: Record<string, unknown>;
+      outsideCandidates?: RetrievedChunk[];
     }) => {
       const clock = () => new Date("2026-10-21T12:00:00.000Z");
-      const course = (id: string, date: string, similarity: number): RetrievedChunk => ({
-        chunkId: `chunk-${id}`,
-        documentId: `doc-${id}`,
-        title: `Course ${id}`,
-        content: `Course ${id} meets on ${date}. Bring a mat and arrive ten minutes early.`,
-        searchText: `Course ${id} ${date}`,
-        similarity,
-        chunkIndex: 0,
-        startOffset: 0,
-        endOffset: 80,
-        metadata: { dateFrom: date, dateTo: date },
-      });
       const rangeDays = Math.round(
         (Date.parse(`${input.range.dateTo}T00:00:00Z`) - Date.parse(`${input.range.dateFrom}T00:00:00Z`)) / 86_400_000,
       ) + 1;
       const firstDay = Number(input.range.dateFrom.slice(8, 10));
       const inRangeCourses = Array.from({ length: input.inRangeCount }, (_value, index) =>
         course(`december-${index + 1}`, `2026-12-${String(firstDay + (index % rangeDays)).padStart(2, "0")}`, 0));
-      const novemberCourses = Array.from({ length: 15 }, (_value, index) =>
+      const outsideCandidates = input.outsideCandidates ?? Array.from({ length: 15 }, (_value, index) =>
         course(`november-${index + 1}`, `2026-11-${String(2 + index).padStart(2, "0")}`, 0.9 - index / 100));
-      const corpus = [...inRangeCourses, ...novemberCourses];
       const dateOf = (chunk: RetrievedChunk) => String(chunk.metadata?.dateFrom);
       const temporal: TemporalCandidateRetrievalPort = {
         async findInWindow(lookup) {
           const window = lookup.window;
-          return corpus
+          return inRangeCourses
             .filter((chunk) => window.kind === "requested_range"
               ? dateOf(chunk) >= window.range.dateFrom && dateOf(chunk) <= window.range.dateTo
               : dateOf(chunk) >= window.today)
@@ -599,7 +615,7 @@ describe("retrieval pipeline stages", () => {
         },
         { async search() { return []; } },
         lexicalSearchStub({ async search() { return []; } }),
-        { async hydrate() { return novemberCourses; } },
+        { async hydrate() { return outsideCandidates; } },
         temporal,
         clock,
       );
@@ -622,9 +638,29 @@ describe("retrieval pipeline stages", () => {
       return { contexts: selected.contexts, inRangeCourses };
     };
 
-    it("brings every event of a busy requested week into the answer, ahead of the best matches outside it", async () => {
+    it("brings every event of a busy requested week into the answer, and excludes the best matches outside it when none are undated", async () => {
+      // The 15 November courses are dated elsewhere and nothing outside the week is undated,
+      // so there is nothing legitimate for the reserve; it goes unfilled rather than taking
+      // the best-matching wrong-period events.
       const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16 });
 
+      expect(contexts).toHaveLength(16);
+      expect(new Set(contexts.map((context) => context.documentId)))
+        .toEqual(new Set(inRangeCourses.map((chunk) => chunk.documentId)));
+      const dates = contexts.map((context) => String(context.metadata?.dateFrom));
+      expect(dates).toEqual([...dates].sort());
+      expect(contexts.some((context) => context.documentId.startsWith("doc-november-"))).toBe(false);
+    });
+
+    it("brings a busy requested week into the answer for a topic question too, with the best matches outside it", async () => {
+      // Search ranks the November courses above every December course, so for a question about
+      // a named topic they are its best matches, and the answer keeps their real dates.
+      const { contexts, inRangeCourses } = await answerContextsForRange({
+        range: week,
+        inRangeCount: 16,
+        rewrite: { temporalQueryMode: "topic_refinement" },
+      });
+
       // Every week course, soonest first, then the reserved best matches from outside the week.
       const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
       expect(contexts).toHaveLength(16 + reserved);
@@ -636,24 +672,24 @@ describe("retrieval pipeline stages", () => {
       expect(contexts.slice(16).every((context) => context.documentId.startsWith("doc-november-"))).toBe(true);
     });
 
-    it.each([
-      ["a topic question", { temporalQueryMode: "topic_refinement" }],
-      ["a question with no temporal label", { queryShape: "general_grounding", temporalQueryMode: "none" }],
-    ])("brings a busy requested week into the answer for %s too", async (_label, rewrite) => {
-      const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16, rewrite });
+    it("brings a busy requested week into the answer for a question with no temporal label too, excluding the best matches outside it", async () => {
+      const { contexts, inRangeCourses } = await answerContextsForRange({
+        range: week,
+        inRangeCount: 16,
+        rewrite: { queryShape: "general_grounding", temporalQueryMode: "none" },
+      });
 
-      // Every week course, soonest first, then the reserved best matches from outside the week.
-      const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
-      expect(contexts).toHaveLength(16 + reserved);
-      const leading = contexts.slice(0, 16);
-      expect(new Set(leading.map((context) => context.documentId)))
+      expect(contexts).toHaveLength(16);
+      expect(new Set(contexts.map((context) => context.documentId)))
         .toEqual(new Set(inRangeCourses.map((chunk) => chunk.documentId)));
-      const dates = leading.map((context) => String(context.metadata?.dateFrom));
+      const dates = contexts.map((context) => String(context.metadata?.dateFrom));
       expect(dates).toEqual([...dates].sort());
-      expect(contexts.slice(16).every((context) => context.documentId.startsWith("doc-november-"))).toBe(true);
+      expect(contexts.some((context) => context.documentId.startsWith("doc-november-"))).toBe(false);
     });
 
-    it("keeps an ordinary answer size when the requested day has only a couple of events", async () => {
+    it("fills a sparse day's answer with dated-elsewhere events from outside it, up to the ordinary passage count", async () => {
+      // Nothing undated exists outside the day either, so the sparse-range fill reaches the
+      // November courses — "nothing today; the next ones are..." — same as before this fix.
       const { contexts, inRangeCourses } = await answerContextsForRange({
         range: { dateFrom: "2026-12-07", dateTo: "2026-12-07" },
         inRangeCount: 2,
@@ -662,18 +698,53 @@ describe("retrieval pipeline stages", () => {
       expect(contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
       expect(contexts.slice(0, 2).map((context) => context.documentId))
         .toEqual(inRangeCourses.map((chunk) => chunk.documentId));
+      expect(contexts.slice(2).every((context) => context.documentId.startsWith("doc-november-"))).toBe(true);
     });
 
-    it("holds at most the date listing limit when a requested range has more events than fit", async () => {
+    it("holds at most the date listing limit when a requested range has more events than fit, reclaiming the reserve when nothing outside it is undated", async () => {
       const { contexts } = await answerContextsForRange({
         range: { dateFrom: "2026-12-01", dateTo: "2026-12-31" },
         inRangeCount: 30,
       });
 
-      const { dateRangeListingContextTopK, dateRangeReservedOutsidePassages } = RETRIEVAL_BEHAVIOR.temporal;
+      // 30 December events are plenty to fill the listing limit on their own; with nothing
+      // undated among the November courses outside the range, the range reclaims the reserve
+      // too, same as when there is no outside candidate at all.
+      const { dateRangeListingContextTopK } = RETRIEVAL_BEHAVIOR.temporal;
       expect(contexts).toHaveLength(dateRangeListingContextTopK);
-      expect(contexts.filter((context) => context.documentId.startsWith("doc-december-")))
-        .toHaveLength(dateRangeListingContextTopK - dateRangeReservedOutsidePassages);
+      expect(contexts.every((context) => context.documentId.startsWith("doc-december-"))).toBe(true);
+    });
+
+    it("mixes a partial reserve with range reclaim when only some outside candidates are undated", async () => {
+      const pages = [
+        ...Array.from({ length: 2 }, (_value, index) => generalContextPage(`page-${index + 1}`, 0.6 - index / 100)),
+        ...Array.from({ length: 10 }, (_value, index) => course(`november-${index + 1}`, "2026-11-20", 0.5 - index / 100)),
+      ];
+      const { contexts } = await answerContextsForRange({
+        range: { dateFrom: "2026-12-01", dateTo: "2026-12-31" },
+        inRangeCount: 30,
+        outsideCandidates: pages,
+      });
+
+      const { dateRangeListingContextTopK } = RETRIEVAL_BEHAVIOR.temporal;
+      expect(contexts).toHaveLength(dateRangeListingContextTopK);
+      expect(contexts.filter((context) => context.documentId.startsWith("doc-page-"))).toHaveLength(2);
+      expect(contexts.some((context) => context.documentId.startsWith("doc-november-"))).toBe(false);
+    });
+
+    it("keeps a passage dated in another period out of a busy week's reserve, even when it outranks the undated pages", async () => {
+      // A digest for the adjacent week, dated entirely before the requested one, ranked
+      // above the undated pages: its reserved slot goes to the week's own courses, and the
+      // fourth page, ranked below the four best outside matches, stays out.
+      const adjacentWeekDigest = course("adjacent-week-digest", "2026-11-30", 0.95);
+      const pages = [adjacentWeekDigest, ...Array.from({ length: 4 }, (_value, index) =>
+        generalContextPage(`page-${index + 1}`, 0.6 - index / 100))];
+      const { contexts } = await answerContextsForRange({ range: week, inRangeCount: 16, outsideCandidates: pages });
+
+      expect(contexts).toHaveLength(16 + 3);
+      expect(contexts.some((context) => context.documentId === "doc-adjacent-week-digest")).toBe(false);
+      expect(contexts.filter((context) => context.documentId.startsWith("doc-page-")).map((context) => context.documentId))
+        .toEqual(["doc-page-1", "doc-page-2", "doc-page-3"]);
     });
 
   });

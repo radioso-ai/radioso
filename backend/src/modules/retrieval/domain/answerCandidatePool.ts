@@ -7,6 +7,15 @@ export const maxAnswerContextPassages = Math.max(
 );
 
 /**
+ * The document a passage counts against for the answer's `promptContextMaxPerDocument` limit:
+ * passages under one title count together, and a passage with no title counts by its document.
+ */
+export const answerDocumentKey = (passage: { title: string; documentId: string }): string => {
+  const titleKey = passage.title.replace(/\s+/g, " ").trim().toLowerCase();
+  return titleKey ? `title:${titleKey}` : `document:${passage.documentId}`;
+};
+
+/**
  * How many fused candidates stay in play for the answer: at least enough to fill the answer's
  * prompt context target (`contextTopK`, by default `finalContextTopK`), raised further by the
  * operator's rerank top K, but never past the reranker's candidate limit. This is the single

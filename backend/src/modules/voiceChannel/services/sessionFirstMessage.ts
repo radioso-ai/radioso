@@ -1,25 +1,18 @@
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
-import {
-  isMaintainedRuntime,
-  type VoiceGreetingSource,
-  type VoiceRuntimeBinding,
-  type VoiceRuntimeConnectionStore,
-} from "../domain.js";
+import type { VoiceGreetingSource } from "../domain.js";
+import { withinWait, type SessionMaintenance } from "./sessionPreparation.js";
 import { hasSpokenWords, spokenText } from "./speechText.js";
 
 /** How the greeting a call opens with came out: the closed values the start counts it by. */
 export type SessionGreetingOutcome = "spoken" | "none" | "timed_out" | "failed";
 
 /**
- * What a session start learned for the call's first message. `unmaintained`: the bound vendor agent
- * is not one Radioso keeps, so the session may set no first message (the vendor closes a session
- * that sets one its agent does not allow). `unknown`: the connection could not be read, which
- * leaves the same answer. `maintained`: the greeting as words to say (null when there are none),
- * or why there is none.
+ * What a session start learned for the call's first message: on a vendor agent Radioso maintains,
+ * the greeting as words to say, or why there is none; otherwise why the session may set none (see
+ * `SessionMaintenance`).
  */
 export type SessionFirstMessagePreparation =
-  | { kind: "unmaintained" }
-  | { kind: "unknown"; errorClass: string }
+  | Exclude<SessionMaintenance, { kind: "maintained" }>
   | { kind: "maintained"; durationMs: number; greeting: SessionGreeting };
 
 type SessionGreeting =
@@ -29,7 +22,6 @@ type SessionGreeting =
   | { outcome: "failed"; errorClass: string };
 
 interface SessionFirstMessageDependencies {
-  connections: Pick<VoiceRuntimeConnectionStore, "find">;
   greetings: VoiceGreetingSource;
   /** How long the greeting may take before the call starts without it. */
   waitMs: number;
@@ -42,36 +34,17 @@ const asSpeech = (text: string | null): string | null => {
   return said.length > 0 && hasSpokenWords(said) ? said : null;
 };
 
-/** The work's value, or `timedOut` once `waitMs` passes first; a late rejection is the race's, never unhandled. */
-const withinWait = async <T>(work: Promise<T>, waitMs: number): Promise<{ timedOut: false; value: T } | { timedOut: true }> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<{ timedOut: true }>((resolve) => {
-    timer = setTimeout(() => resolve({ timedOut: true }), waitMs);
-  });
-  try {
-    return await Promise.race([work.then((value) => ({ timedOut: false as const, value })), deadline]);
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
 /**
- * Reads what a session's first message needs: whether Radioso maintains the bound vendor agent,
- * and on one it does, the agent's greeting in the session's language, within `waitMs`. A greeting
- * still being generated when the wait ends finishes on its own and is cached for the next call.
- * Never rejects.
+ * Reads what a session's first message needs: on a vendor agent Radioso maintains, the agent's
+ * greeting in the session's language, within `waitMs`. A greeting still being generated when the
+ * wait ends finishes on its own and is cached for the next call. Never rejects.
  */
 export const prepareSessionFirstMessage = async (
   dependencies: SessionFirstMessageDependencies,
-  input: { workspaceId: string; agentId: string; runtime: VoiceRuntimeBinding; locale: string | null },
+  input: { maintenance: SessionMaintenance; workspaceId: string; agentId: string; locale: string | null },
 ): Promise<SessionFirstMessagePreparation> => {
-  const { workspaceId, agentId } = input;
-  try {
-    const connection = await dependencies.connections.find({ workspaceId, agentId });
-    if (!isMaintainedRuntime(input.runtime, connection)) return { kind: "unmaintained" };
-  } catch (error) {
-    return { kind: "unknown", errorClass: errorClassOf(error) };
-  }
+  const { maintenance, workspaceId, agentId } = input;
+  if (maintenance.kind !== "maintained") return maintenance;
   const startedAt = dependencies.now();
   const greeting = await readGreeting(dependencies, { workspaceId, agentId, locale: input.locale });
   return { kind: "maintained", durationMs: dependencies.now() - startedAt, greeting };

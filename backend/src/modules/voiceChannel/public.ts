@@ -18,7 +18,9 @@ export type {
   VoiceRuntimeConnectionFailure,
   VoiceRuntimeConnectionPort,
   VoiceRuntimeConnectionStore,
+  VoiceRuntimeProvisioner,
   VoiceSessionAvailabilityPort,
+  VoiceSessionLanguageSource,
   VoiceSessionStartLookup,
   VoiceSessionStartPort,
   VoiceSessionStartRegistry,
@@ -50,7 +52,7 @@ export {
   VoiceRuntimeConnectionError,
 } from "./domain.js";
 export { createElevenLabsSessionStarter } from "./adapters/elevenlabs/sessionStarter.js";
-export { createElevenLabsRuntimeProvisioner } from "./adapters/elevenlabs/runtimeProvisioner.js";
+export { ELEVENLABS_SESSION_LANGUAGES, createElevenLabsRuntimeProvisioner } from "./adapters/elevenlabs/runtimeProvisioner.js";
 export { VoiceSessionRepository } from "./persistence/voiceSessionRepository.js";
 export { VoiceSessionEraser } from "./persistence/voiceSessionEraser.js";
 export { VoiceRecordingErasureRepository } from "./persistence/voiceRecordingErasureRepository.js";

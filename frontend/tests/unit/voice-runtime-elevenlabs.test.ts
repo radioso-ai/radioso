@@ -81,6 +81,22 @@ describe('ElevenLabs voice runtime', () => {
     expect(startSession.mock.calls[1][0]).not.toHaveProperty('overrides')
   })
 
+  it("starts the call in the start's vendor language as the session's override, beside the first message, and sets none without one", async () => {
+    await elevenLabsVoiceRuntime.open(
+      { signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'it-CH', firstMessage: 'Ciao! Sono Marta.', vendorLanguage: 'it' },
+      callbacks(),
+      openSignal(),
+    )
+    expect((startSession.mock.calls[0][0] as { overrides?: unknown }).overrides).toEqual({ agent: { firstMessage: 'Ciao! Sono Marta.', language: 'it' } })
+
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'pt-BR', vendorLanguage: 'pt-br' }, callbacks(), openSignal())
+    expect((startSession.mock.calls[1][0] as { overrides?: unknown }).overrides).toEqual({ agent: { language: 'pt-br' } })
+
+    // A vendor agent that does not allow the language override closes a session that sets one.
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'it', firstMessage: 'Ciao!' }, callbacks(), openSignal())
+    expect((startSession.mock.calls[2][0] as { overrides?: unknown }).overrides).toEqual({ agent: { firstMessage: 'Ciao!' } })
+  })
+
   it("names the vendor's id for the call once the session is open, and none when the client has none", async () => {
     startSession.mockResolvedValueOnce({ endSession, getId: () => 'conv_01jx8k2m' })
     const named = await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())

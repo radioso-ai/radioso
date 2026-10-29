@@ -16,16 +16,20 @@ const isStartedSession = (body: unknown): body is PublicVoiceSessionResponse => 
 const hasText = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 
 /**
- * What the page keeps of the answer: the expiry is the vendor's to enforce. `firstMessage` is kept
- * only when the start names one, since a vendor agent that does not allow it closes the session.
+ * What the page keeps of the answer: the expiry is the vendor's to enforce. `firstMessage` and
+ * `vendorLanguage` are kept only when the start names them, since a vendor agent that does not
+ * allow either closes a session that sets it.
  */
-const startedSessionOf = ({ vendor, signedUrl, sessionKey, locale, recordingNotice, firstMessage }: PublicVoiceSessionResponse): StartedVoiceSession => ({
+const startedSessionOf = (
+  { vendor, signedUrl, sessionKey, locale, recordingNotice, firstMessage, vendorLanguage }: PublicVoiceSessionResponse,
+): StartedVoiceSession => ({
   vendor,
   signedUrl,
   sessionKey,
   locale,
   ...(hasText(recordingNotice) ? { recordingNotice } : {}),
   ...(hasText(firstMessage) ? { firstMessage } : {}),
+  ...(hasText(vendorLanguage) ? { vendorLanguage } : {}),
 })
 
 /**

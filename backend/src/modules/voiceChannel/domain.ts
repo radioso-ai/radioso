@@ -537,6 +537,39 @@ export interface VoiceGreetingSource {
 }
 
 /**
+ * The language a session on a vendor agent Radioso maintains sets for itself, which the vendor's
+ * speech recognition and voice start in. `set`: the vendor's own code for the session's language,
+ * which the vendor agent lets a session set. `default`: the vendor agent starts calls in the
+ * session's language already, so the session sets none. `unsupported`: the session cannot start in
+ * its language (the vendor speaks no language of the locale, its browser client cannot set that
+ * one, or the vendor agent's voice is not known to speak more than English), so it sets none and
+ * starts in the vendor agent's own language. `not_allowed`: the vendor agent does not let a session
+ * set its language, and the vendor closes a session that sets it anyway; Connect, or a change of the
+ * agent's default locale, allows it again.
+ */
+export type VoiceSessionLanguage =
+  | { outcome: "set"; language: string }
+  | { outcome: "default" }
+  | { outcome: "unsupported" }
+  | { outcome: "not_allowed" };
+
+/**
+ * What a session on a vendor agent may set as its language, read from the vendor agent itself, so a
+ * session sets one only where the vendor agent allows it today and does not start in it already.
+ * One adapter per vendor implements it, keyed like the session starters. `locale` is the session's
+ * language tag. Aborting `signal` stops the read. Rejects with a `VoiceVendorRequestError`.
+ */
+export interface VoiceSessionLanguageSource {
+  languageFor(input: {
+    region: VoiceVendorRegion;
+    credential: VoiceVendorCredential;
+    vendorAgentId: string;
+    locale: string;
+    signal?: AbortSignal;
+  }): Promise<VoiceSessionLanguage>;
+}
+
+/**
  * How a session start ended. `started` carries what the page needs to open the session: the
  * vendor's URL, the session key the voice runtime sends back on every turn, and the caller's
  * language. `unavailable`: the agent takes no voice sessions (it is gone, voice is off, or no vendor
@@ -559,6 +592,12 @@ export type VoiceSessionStartResult =
      * Radioso maintains, which allows the session to set it, and only when there is something to say.
      */
     firstMessage?: string;
+    /**
+     * The vendor's code for the language the call starts in, for the page to hand the vendor as the
+     * session's language. Present only on a vendor agent Radioso maintains that lets a session set
+     * it today, and only when the vendor speaks the session's language.
+     */
+    vendorLanguage?: string;
   }
 
   | { kind: "unavailable" }

@@ -71,6 +71,17 @@ describe('a voice call', () => {
     )
   })
 
+  it("opens the session in the vendor's language the start names, when it names one", async () => {
+    const { open } = callWith({ startSession: async () => ({ ...started, session: { ...started.session, vendorLanguage: 'it' } }) })
+    await flush()
+
+    expect(open).toHaveBeenCalledWith(
+      { signedUrl: 'wss://vendor.test/session?sig=1', sessionKey: 'session-key-1', locale: 'it', vendorLanguage: 'it' },
+      expect.any(Object),
+      expect.any(AbortSignal),
+    )
+  })
+
   it("loads the vendor's client before the start, then opens the session with what the start returned", async () => {
     const order: string[] = []
     const { open, events, lines, vendor } = callWith({

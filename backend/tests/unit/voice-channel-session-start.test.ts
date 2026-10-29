@@ -5,6 +5,7 @@ import {
   VoiceVendorRequestError,
   type VoiceGreetingSource,
   type VoiceRuntimeConnection,
+  type VoiceSessionLanguageSource,
   type VoiceSessionStarter,
   type VoiceSessionStartRegistry,
   type VoiceVendorCredentialPresence,
@@ -48,7 +49,12 @@ const serviceWith = (overrides: {
   /** The agent's runtime connection; none unless a case names one. */
   connection?: VoiceRuntimeConnection | null | Error;
   greeting?: VoiceGreetingSource["greetingFor"];
-  greetingWaitMs?: number;
+  /** How long the start waits for the greeting and the language; the behaviour default unless a case names another. */
+  preparationWaitMs?: number;
+  /** The vendor's answer for the session's language; a locale it speaks no language of unless a case names another. */
+  language?: VoiceSessionLanguageSource["languageFor"];
+  /** The service's clock; a fixed instant unless a case moves it. */
+  clock?: () => number;
 } = {}) => {
   const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn() };
@@ -70,6 +76,7 @@ const serviceWith = (overrides: {
     return connection;
   });
   const greetingFor = vi.fn<VoiceGreetingSource["greetingFor"]>(overrides.greeting ?? (async () => null));
+  const languageFor = vi.fn<VoiceSessionLanguageSource["languageFor"]>(overrides.language ?? (async () => ({ outcome: "unsupported" })));
   const voice = overrides.voice === undefined ? boundVoice : overrides.voice;
   const service = new VoiceSessionStartService({
     agents: {
@@ -80,18 +87,24 @@ const serviceWith = (overrides: {
     starts: { register },
     connections: { find: findConnection },
     greetings: { greetingFor },
-    ...(overrides.greetingWaitMs === undefined ? {} : { greetingWaitMs: overrides.greetingWaitMs }),
+    ...(overrides.preparationWaitMs === undefined ? {} : { preparationWaitMs: overrides.preparationWaitMs }),
+    sessionLanguages: { elevenlabs: { languageFor } },
     newSessionKey: () => sessionKey,
-    now: () => now,
+    now: overrides.clock ?? (() => now),
     metrics,
     logger,
   });
-  return { service, logger, metrics, startSession, read, presence, register, findConnection, greetingFor };
+  return { service, logger, metrics, startSession, read, presence, register, findConnection, greetingFor, languageFor };
 };
 
 const greetingOutcomes = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) =>
   metrics.incrementCounter.mock.calls
     .filter(([name]) => name === "voice_session_greeting_total")
+    .map(([, options]) => (options as { labels: Record<string, string> }).labels);
+
+const languageOutcomes = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) =>
+  metrics.incrementCounter.mock.calls
+    .filter(([name]) => name === "voice_session_language_total")
     .map(([, options]) => (options as { labels: Record<string, string> }).labels);
 
 const startOutcomes = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) =>
@@ -309,7 +322,7 @@ describe("voice session start: the call's first message", () => {
       voice: noticed,
       connection: maintainedConnection,
       greeting: () => new Promise<string | null>(() => undefined),
-      greetingWaitMs: 10,
+      preparationWaitMs: 10,
     });
 
     const result = await service.start({ workspaceId, agentId, visitor, locale: "en" });
@@ -383,6 +396,249 @@ describe("voice session start: the call's first message", () => {
     expect(await service.start({ workspaceId, agentId, visitor })).toEqual({ kind: "failed" });
     expect(findConnection).not.toHaveBeenCalled();
     expect(greetingFor).not.toHaveBeenCalled();
+  });
+});
+
+describe("voice session start: the call's language", () => {
+  it("starts a call on a vendor agent Radioso maintains in the session's language, as the vendor names it, when the agent lets a session set it", async () => {
+    const { service, languageFor, metrics, logger } = serviceWith({
+      connection: maintainedConnection,
+      language: async () => ({ outcome: "set", language: "it" }),
+    });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "it-CH" });
+
+    expect(result).toMatchObject({ kind: "started", locale: "it-CH", vendorLanguage: "it" });
+    expect(languageFor).toHaveBeenCalledWith({ region: "eu", credential: { apiKey }, vendorAgentId: "agent_42", locale: "it-CH", signal: expect.any(AbortSignal) });
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "set" }]);
+    expect(logger.info).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", outcome: "set", language: "it", durationMs: expect.any(Number) },
+      "Voice session language prepared",
+    );
+    expect(JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls])).not.toContain(apiKey);
+  });
+
+  it("asks for the language the call starts in, the agent's default when the page names none, and sets none when the vendor agent starts in it already", async () => {
+    const { service, languageFor, metrics, logger } = serviceWith({
+      connection: maintainedConnection,
+      defaultLocale: "pt-BR",
+      language: async () => ({ outcome: "default" }),
+    });
+
+    const result = await service.start({ workspaceId, agentId, visitor });
+
+    expect(languageFor).toHaveBeenCalledWith(expect.objectContaining({ locale: "pt-BR" }));
+    expect(result).toMatchObject({ kind: "started", locale: "pt-BR" });
+    expect(result).not.toHaveProperty("vendorLanguage");
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "default" }]);
+    expect(logger.info).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", outcome: "default", durationMs: expect.any(Number) },
+      "Voice session language prepared",
+    );
+  });
+
+  it("measures how long the vendor took to say", async () => {
+    let clock = now;
+    const { service, logger } = serviceWith({
+      connection: maintainedConnection,
+      language: async () => {
+        clock += 180;
+        return { outcome: "set", language: "it" };
+      },
+      clock: () => clock,
+    });
+
+    await service.start({ workspaceId, agentId, visitor, locale: "it" });
+
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ outcome: "set", durationMs: 180 }), "Voice session language prepared");
+  });
+
+  it("sets no language for a locale the vendor speaks no language of, and the call starts in the agent's own", async () => {
+    const { service, metrics, logger } = serviceWith({ connection: maintainedConnection, language: async () => ({ outcome: "unsupported" }) });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "km" });
+
+    expect(result).toMatchObject({ kind: "started", locale: "km" });
+    expect(result).not.toHaveProperty("vendorLanguage");
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "unsupported" }]);
+    expect(logger.info).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", outcome: "unsupported", durationMs: expect.any(Number) },
+      "Voice session language prepared",
+    );
+  });
+
+  it("sets no language on a vendor agent that does not let a session set it, which the vendor would close, and says so", async () => {
+    const { service, metrics, logger } = serviceWith({
+      connection: maintainedConnection,
+      greeting: async () => "Ciao!",
+      language: async () => ({ outcome: "not_allowed" }),
+    });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "it" });
+
+    expect(result).toMatchObject({ kind: "started", firstMessage: "Ciao!" });
+    expect(result).not.toHaveProperty("vendorLanguage");
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "not_allowed" }]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", outcome: "not_allowed", durationMs: expect.any(Number) },
+      "Voice session language is not allowed on the vendor agent; the call starts in its default language until Reconnect sets it up",
+    );
+  });
+
+  it.each([
+    ["Radioso keeps no connection for the agent", null],
+    ["the bound vendor agent is another than the one Radioso created", { ...maintainedConnection, vendorAgentId: "agent_7" }],
+  ])("sets no language, and asks the vendor nothing, when %s", async (_case, connection) => {
+    const { service, languageFor, metrics } = serviceWith({ connection, language: async () => ({ outcome: "set", language: "it" }) });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "it" });
+
+    expect(result).toMatchObject({ kind: "started" });
+    expect(result).not.toHaveProperty("vendorLanguage");
+    expect(languageFor).not.toHaveBeenCalled();
+    expect(languageOutcomes(metrics)).toEqual([]);
+  });
+
+  it("sets no language, and asks the vendor nothing, when the connection cannot be read", async () => {
+    const { service, languageFor, metrics } = serviceWith({ connection: new Error("connection terminated"), language: async () => ({ outcome: "set", language: "it" }) });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "it" });
+
+    expect(result).toMatchObject({ kind: "started" });
+    expect(result).not.toHaveProperty("vendorLanguage");
+    expect(languageFor).not.toHaveBeenCalled();
+    expect(languageOutcomes(metrics)).toEqual([]);
+  });
+
+  it("starts the call without a language when the vendor cannot say, and logs why with no key", async () => {
+    const { service, metrics, logger } = serviceWith({
+      connection: maintainedConnection,
+      language: async () => {
+        throw new VoiceVendorRequestError("unreachable", 503);
+      },
+    });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "it" });
+
+    expect(result).toMatchObject({ kind: "started" });
+    expect(result).not.toHaveProperty("vendorLanguage");
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "failed" }]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        workspaceId,
+        agentId,
+        vendor: "elevenlabs",
+        outcome: "failed",
+        errorClass: "VoiceVendorRequestError",
+        reason: "unreachable",
+        vendorStatus: 503,
+        durationMs: expect.any(Number),
+      },
+      "Voice session language could not be read; the call starts in the vendor agent's default language",
+    );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(apiKey);
+  });
+
+  it("starts the call without a language when the vendor is slow to say", async () => {
+    const { service, metrics, logger } = serviceWith({
+      connection: maintainedConnection,
+      language: () => new Promise(() => undefined),
+      preparationWaitMs: 10,
+    });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "it" });
+
+    expect(result).toMatchObject({ kind: "started" });
+    expect(result).not.toHaveProperty("vendorLanguage");
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "timed_out" }]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", outcome: "timed_out", waitMs: 10 },
+      "Voice session language was not ready in time; the call starts in the vendor agent's default language",
+    );
+  });
+
+  it("reads the language while the vendor opens the session, beside the greeting", async () => {
+    let openSession!: () => void;
+    const vendorOpening = new Promise<void>((resolve) => {
+      openSession = resolve;
+    });
+    const { service, languageFor, greetingFor } = serviceWith({
+      connection: maintainedConnection,
+      greeting: async () => "Ciao!",
+      language: async () => ({ outcome: "set", language: "it" }),
+      starter: async () => {
+        await vendorOpening;
+        return { signedUrl, expiresAt };
+      },
+    });
+
+    const started = service.start({ workspaceId, agentId, visitor, locale: "it" });
+    await vi.waitFor(() => {
+      expect(languageFor).toHaveBeenCalled();
+      expect(greetingFor).toHaveBeenCalled();
+    });
+    openSession();
+
+    expect(await started).toMatchObject({ kind: "started", firstMessage: "Ciao!", vendorLanguage: "it" });
+  });
+
+  it("stops the vendor's language read once the start stops waiting for it", async () => {
+    const seen: { signal?: AbortSignal } = {};
+    const { service } = serviceWith({
+      connection: maintainedConnection,
+      language: ({ signal }) => {
+        seen.signal = signal;
+        return new Promise(() => undefined);
+      },
+      preparationWaitMs: 10,
+    });
+
+    expect(await service.start({ workspaceId, agentId, visitor, locale: "it" })).toMatchObject({ kind: "started" });
+    expect(seen.signal?.aborted).toBe(true);
+  });
+
+  it("stops the vendor's language read when the vendor refuses the start", async () => {
+    const seen: { signal?: AbortSignal } = {};
+    let readStarted!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      readStarted = resolve;
+    });
+    const { service } = serviceWith({
+      connection: maintainedConnection,
+      language: ({ signal }) => {
+        seen.signal = signal;
+        readStarted();
+        return new Promise(() => undefined);
+      },
+      starter: async () => {
+        await reading;
+        throw new VoiceVendorRequestError("rejected", 401);
+      },
+    });
+
+    expect(await service.start({ workspaceId, agentId, visitor, locale: "it" })).toEqual({ kind: "failed" });
+    expect(seen.signal?.aborted).toBe(true);
+  });
+
+  it("reads the agent's connection once for the first message and the language", async () => {
+    const { service, findConnection } = serviceWith({ connection: maintainedConnection, language: async () => ({ outcome: "set", language: "it" }) });
+
+    await service.start({ workspaceId, agentId, visitor, locale: "it" });
+
+    expect(findConnection).toHaveBeenCalledOnce();
+  });
+
+  it("hands back and counts no language for a start the vendor refused, whatever the language read said", async () => {
+    const { service, metrics } = serviceWith({
+      connection: maintainedConnection,
+      language: async () => ({ outcome: "set", language: "it" }),
+      starter: async () => {
+        throw new VoiceVendorRequestError("rejected", 401);
+      },
+    });
+
+    expect(await service.start({ workspaceId, agentId, visitor, locale: "it" })).toEqual({ kind: "failed" });
+    expect(languageOutcomes(metrics)).toEqual([]);
   });
 });
 

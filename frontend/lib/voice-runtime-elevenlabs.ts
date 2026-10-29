@@ -1,6 +1,6 @@
-import { Conversation, type Language } from '@elevenlabs/client'
+import { Conversation } from '@elevenlabs/client'
 
-import { VoiceMicrophoneUnavailableError, type VoiceRuntime } from './voice-runtime'
+import { VoiceMicrophoneUnavailableError, type VoiceRuntime, type VoiceVendorLanguage } from './voice-runtime'
 
 /**
  * The client's audio worklets, served from the app host (`app/voice-worklets/[name]/route.ts`).
@@ -70,17 +70,17 @@ const PRIVACY_NOTICE_VARIABLE = 'radioso_privacy_notice'
 
 /**
  * The session's agent overrides: the first message and the language the start named, and none it
- * did not, since the vendor closes a session that sets one its agent does not allow. The language
- * is the vendor's own code, and Radioso names only codes the client's `Language` type lists, so
- * the start's string is passed on as that type.
+ * did not, since the vendor closes a session that sets one its agent does not allow. The contract
+ * lists the language codes Radioso sends; each must be one the client's language override takes,
+ * so a client that stops taking one fails the typecheck here.
  */
-const agentOverridesOf = ({ firstMessage, vendorLanguage }: { firstMessage?: string; vendorLanguage?: string }) => {
+const agentOverridesOf = ({ firstMessage, vendorLanguage }: { firstMessage?: string; vendorLanguage?: VoiceVendorLanguage }) => {
   if (!firstMessage && !vendorLanguage) return {}
   return {
     overrides: {
       agent: {
         ...(firstMessage ? { firstMessage } : {}),
-        ...(vendorLanguage ? { language: vendorLanguage as Language } : {}),
+        ...(vendorLanguage ? { language: vendorLanguage } : {}),
       },
     },
   }

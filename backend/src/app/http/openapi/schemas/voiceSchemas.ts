@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { publicVoiceSessionStartSchema, publicVoiceVendorConversationSchema } from "../../routes/publicChatRouteSchemas.js";
 import { agentVoiceSettingsInputSchema, agentVoiceSettingsSchema } from "../../../../modules/agents/public.js";
-import { VOICE_CALL_READINESS_GAPS } from "../../../../modules/voiceChannel/public.js";
+import { ELEVENLABS_SESSION_LANGUAGES, VOICE_CALL_READINESS_GAPS } from "../../../../modules/voiceChannel/public.js";
 import { VOICE_VENDORS } from "../../../../shared/domain/voiceVendor.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -89,12 +89,13 @@ export const registerPublicVoiceSessionSchemas = (registry: OpenAPIRegistry, sch
           + "Pass it as the session's first-message override, on `elevenlabs` the client's `overrides.agent.firstMessage`, and send no override when it is absent: "
           + "a vendor agent set up outside Radioso closes a session that sets a first message it does not allow.",
       }),
-      vendorLanguage: z.string().optional().openapi({
+      vendorLanguage: z.enum(ELEVENLABS_SESSION_LANGUAGES).optional().openapi({
         description: "The vendor's code for the language the call starts in: `locale` mapped onto the languages the vendor speaks, such as `it` for `it-CH` or `pt-br` for `pt-BR`. "
           + "Present only when the agent's vendor agent is one Radioso maintains, that vendor agent lets a session set its language, the vendor's browser client can set `locale`'s language and the vendor agent's voice speaks it, "
           + "and it is not the language the vendor agent starts calls in already. "
           + "Pass it as the session's language override, on `elevenlabs` the client's `overrides.agent.language`, and send no override when it is absent: "
-          + "the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one.",
+          + "the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one. "
+          + "The values are the codes the `elevenlabs` browser client's language override takes.",
       }),
     }),
   );

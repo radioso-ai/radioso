@@ -34,6 +34,8 @@ import {
   type VoiceRuntimeConnectionAudit,
   type VoiceRuntimeConnectionLock,
   type VoiceRuntimeConnectionStore,
+  type VoiceRuntimeProvisioner,
+  type VoiceSessionLanguageSource,
   type VoiceVendorCredentialReader,
   type VoiceVendorCredentialSealer,
   type VoiceSessionAvailabilityPort,
@@ -432,14 +434,24 @@ const voiceGreetingSource = (greetings: AgentGreetingReader): VoiceGreetingSourc
 });
 
 /**
+ * Each vendor's adapter for the vendor agents Radioso maintains, built once: Connect sets them up
+ * with it as a `VoiceRuntimeProvisioner`, and a session start reads the language a session may set
+ * with the same instance as a `VoiceSessionLanguageSource`.
+ */
+export const createVoiceRuntimeProvisioners = (fetch: typeof globalThis.fetch): Readonly<Record<VoiceVendor, VoiceRuntimeProvisioner & VoiceSessionLanguageSource>> => ({
+  elevenlabs: createElevenLabsRuntimeProvisioner({ fetch }),
+});
+
+/**
  * Starts voice sessions on the vendor agent each Radioso agent is bound to: the ElevenLabs session
  * starter over `fetch`, the workspace's vendor key from the workspace credential store, and a
  * registry of started sessions (`VoiceSessionRepository` in production). A vendor key is always the workspace's own; there is no
  * deployment fallback, so a workspace without one gets no session. On a vendor agent Radioso
  * maintains (the runtime connections, `VoiceRuntimeConnectionRepository` in production) the start
  * also hands the page the call's first message, with the agent's greeting from chat's
- * `AgentGreetingReader` (`ChatBootstrapService`), and the call's language, which the ElevenLabs
- * provisioner over the same `fetch` reads off the vendor agent it keeps. The same service tells a page
+ * `AgentGreetingReader` (`ChatBootstrapService`), and the call's language, which each vendor's
+ * `VoiceSessionLanguageSource` (the provisioner from `createVoiceRuntimeProvisioners`) reads off the
+ * vendor agent it keeps. The same service tells a page
  * whether to offer sessions, from the key's presence alone (`hasCredentials` decrypts nothing) and
  * whether the backend holds the master key to read it.
  */
@@ -448,6 +460,7 @@ export const createVoiceSessionStartComposition = (deps: {
   starts: VoiceSessionStartRegistry;
   connections: Pick<VoiceRuntimeConnectionStore, "find">;
   greetings: AgentGreetingReader;
+  sessionLanguages: Readonly<Record<VoiceVendor, VoiceSessionLanguageSource>>;
   credentials: VoiceVendorCredentialStore;
   fetch: typeof globalThis.fetch;
   metricsRegistry: MetricsRegistry | null;
@@ -460,7 +473,7 @@ export const createVoiceSessionStartComposition = (deps: {
     starts: deps.starts,
     connections: deps.connections,
     greetings: voiceGreetingSource(deps.greetings),
-    sessionLanguages: { elevenlabs: createElevenLabsRuntimeProvisioner({ fetch: deps.fetch }) },
+    sessionLanguages: deps.sessionLanguages,
     newSessionKey: randomUUID,
     metrics: deps.metricsRegistry,
     logger: deps.logger,
@@ -527,8 +540,8 @@ type AgentRuntimeProfileRepository = {
 };
 
 /**
- * Connects agents' voice channels to vendor agents Radioso creates and maintains: the ElevenLabs
- * provisioner over `fetch`, the workspace's vendor key from the credential store, the connection
+ * Connects agents' voice channels to vendor agents Radioso creates and maintains: each vendor's
+ * provisioner (from `createVoiceRuntimeProvisioners`), the workspace's vendor key from the credential store, the connection
  * records and their per-agent lock, the access grants for the REST credential each vendor agent carries, and the agent
  * service as the binding's writer, so a binding is an agent write like any other.
  */
@@ -540,7 +553,7 @@ export const createVoiceRuntimeConnectionComposition = (deps: {
   agentService: Pick<AgentService, "get" | "update">;
   accessGrants: VoiceRuntimeGrants;
   credentials: VoiceVendorCredentialStore;
-  fetch: typeof globalThis.fetch;
+  provisioners: Readonly<Record<VoiceVendor, VoiceRuntimeProvisioner>>;
   /** `APP_BASE_URL`; unset, or its host unreachable from the public internet, nothing can be connected. */
   appBaseUrl: string | undefined;
   auditService: Pick<AuditPort, "record">;
@@ -557,7 +570,7 @@ export const createVoiceRuntimeConnectionComposition = (deps: {
     },
     connections: deps.connections,
     credentials: voiceVendorCredentialReader(deps.credentials),
-    provisioners: { elevenlabs: createElevenLabsRuntimeProvisioner({ fetch: deps.fetch }) },
+    provisioners: deps.provisioners,
     channelCredentials: voiceRuntimeChannelCredentials(deps.accessGrants),
     binder: {
       bind: async ({ workspaceId, agentId, runtime }) => {
@@ -608,11 +621,13 @@ export const wireVoiceRuntimeConnections = (deps: {
   logger: AppLogger;
 }) => {
   const voiceRuntimeConnectionStore = new VoiceRuntimeConnectionRepository(deps.database.kysely);
+  const provisioners = createVoiceRuntimeProvisioners(deps.fetch);
   const voiceSessionStarts = createVoiceSessionStartComposition({
     agentRepository: deps.agentRepository,
     starts: deps.starts,
     connections: voiceRuntimeConnectionStore,
     greetings: deps.greetings,
+    sessionLanguages: provisioners,
     credentials: deps.credentials,
     fetch: deps.fetch,
     metricsRegistry: deps.metricsRegistry,
@@ -625,7 +640,7 @@ export const wireVoiceRuntimeConnections = (deps: {
     agentService: deps.agentService,
     accessGrants: deps.accessGrants,
     credentials: deps.credentials,
-    fetch: deps.fetch,
+    provisioners,
     appBaseUrl: deps.appBaseUrl,
     auditService: deps.auditService,
     metricsRegistry: deps.metricsRegistry,

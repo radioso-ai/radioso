@@ -539,13 +539,13 @@ export interface VoiceGreetingSource {
 /**
  * The language a session on a vendor agent Radioso maintains sets for itself, which the vendor's
  * speech recognition and voice start in. `set`: the vendor's own code for the session's language,
- * which the vendor agent lets a session set. `default`: the session's language is the one the
- * vendor agent starts calls in already, so the session sets none. `unsupported`: the session cannot
- * start in its language (the vendor speaks no language of the locale, its browser client cannot set
- * that one, or the vendor agent's voice speaks English alone), so it sets none and starts in the
- * vendor agent's own language. `not_allowed`: the vendor agent does not let a session set its
- * language, and the vendor closes a session that sets it anyway; Connect, or a change of the agent's
- * default locale, allows it again.
+ * which the vendor agent lets a session set. `default`: the vendor agent starts calls in the
+ * session's language already, so the session sets none. `unsupported`: the session cannot start in
+ * its language (the vendor speaks no language of the locale, its browser client cannot set that
+ * one, or the vendor agent's voice is not known to speak more than English), so it sets none and
+ * starts in the vendor agent's own language. `not_allowed`: the vendor agent does not let a session
+ * set its language, and the vendor closes a session that sets it anyway; Connect, or a change of the
+ * agent's default locale, allows it again.
  */
 export type VoiceSessionLanguage =
   | { outcome: "set"; language: string }
@@ -555,10 +555,9 @@ export type VoiceSessionLanguage =
 
 /**
  * What a session on a vendor agent may set as its language, read from the vendor agent itself, so a
- * session sets one only where the vendor agent allows it today. One adapter per vendor implements
- * it, keyed like the session starters. `locale` is the session's language tag; `agentDefaultLocale`
- * is the agent's default locale, which the vendor agent starts calls in (null: the agent names none).
- * Rejects with a `VoiceVendorRequestError`.
+ * session sets one only where the vendor agent allows it today and does not start in it already.
+ * One adapter per vendor implements it, keyed like the session starters. `locale` is the session's
+ * language tag. Aborting `signal` stops the read. Rejects with a `VoiceVendorRequestError`.
  */
 export interface VoiceSessionLanguageSource {
   languageFor(input: {
@@ -566,7 +565,7 @@ export interface VoiceSessionLanguageSource {
     credential: VoiceVendorCredential;
     vendorAgentId: string;
     locale: string;
-    agentDefaultLocale: string | null;
+    signal?: AbortSignal;
   }): Promise<VoiceSessionLanguage>;
 }
 

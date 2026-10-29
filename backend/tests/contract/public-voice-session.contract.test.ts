@@ -87,7 +87,8 @@ const MANAGED_SIGNED_URL = "wss://api.elevenlabs.io/v1/convai/conversation?agent
 /**
  * ElevenLabs as Connect and a start meet a US account: the region probe answers on the US host
  * alone, then a secret, a new agent, and a signed URL for it. The agent reads back as it was
- * created, unless `storedOverrides` names the overrides it holds instead.
+ * created, with the multilingual voice model the vendor gives it, unless `storedOverrides` names
+ * the overrides it holds instead.
  */
 const connectableVendor = (options: { storedOverrides?: Record<string, unknown> } = {}) => {
   const calls: Array<{ method: string; url: string; body: Record<string, unknown> | undefined }> = [];
@@ -103,7 +104,8 @@ const connectableVendor = (options: { storedOverrides?: Record<string, unknown> 
     const created = calls.find((call) => call.url.endsWith("/v1/convai/agents/create"))?.body;
     if (method === "GET" && url.endsWith("/v1/convai/agents/agent_managed") && created) {
       const platformSettings = options.storedOverrides ? { overrides: options.storedOverrides } : created.platform_settings;
-      return json(200, { agent_id: "agent_managed", tags: created.tags, conversation_config: created.conversation_config, platform_settings: platformSettings });
+      const conversationConfig = { ...(created.conversation_config as Record<string, unknown>), tts: { model_id: "eleven_flash_v2_5", voice_id: "voice_default" } };
+      return json(200, { agent_id: "agent_managed", tags: created.tags, conversation_config: conversationConfig, platform_settings: platformSettings });
     }
     if (url.includes("/v1/convai/conversation/get-signed-url?agent_id=agent_managed")) return json(200, { signed_url: MANAGED_SIGNED_URL });
     return json(404, { detail: { type: "not_found" } });

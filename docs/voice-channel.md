@@ -302,10 +302,10 @@ when it is absent: an ElevenLabs agent that doesn't allow the override closes
 the session (WebSocket close code `1008`, "Override for field 'first_message'
 is not allowed by config"). See [What the call says first](#what-the-call-says-first).
 `vendorLanguage` is the language the call starts in, as ElevenLabs names it
-(`it` for `it-CH`, `pt-br` for `pt-BR`). It is present only when the agent is
+(`it` for `it-CH`, `pt-br` for `pt-BR`), one of the 72 codes the ElevenLabs
+client's language override takes. It is present only when the agent is
 connected to an ElevenLabs agent Radioso maintains, the call can start in the
-session's language, and that language differs from the ElevenLabs agent's
-own. Pass it as the session's language override (`overrides.agent.language`),
+session's language, and that agent doesn't start in it already. Pass it as the session's language override (`overrides.agent.language`),
 and pass none when it is absent, for the same reason. See
 [The language a call starts in](#the-language-a-call-starts-in).
 
@@ -983,13 +983,17 @@ caller's first words. An Italian visitor on an agent whose default locale is
 English hears an Italian greeting, and their Italian answer is transcribed as
 Italian.
 
-When the session's language is the ElevenLabs agent's own, the one for the
-agent's default locale, the call starts in it with nothing more to do. For any
-other language, the session start hands the page the language as
+While ElevenLabs opens the session, the start reads the ElevenLabs agent's
+settings, for up to 2.5 seconds: the language its calls start in, whether it
+allows the language override, and its voice model. When the agent starts calls
+in the session's language already, the call starts in it with nothing more to
+do; that includes Brazilian Portuguese for a visitor whose locale is plain
+`pt`. For any other language, the start hands the page the language as
 `vendorLanguage`, and the embed sets it as the session's language override.
-ElevenLabs closes a session that sets an override its agent doesn't allow, so
-before it names one, the start reads the ElevenLabs agent's settings while
-ElevenLabs opens the session, for up to 2.5 seconds.
+The start names one only when the agent allows the override, because
+ElevenLabs closes a session that sets an override its agent doesn't allow.
+The start reads what the ElevenLabs agent actually does, so a call follows
+the agent's language even after someone changes it in ElevenLabs.
 
 A call can start in 72 languages: every language the ElevenLabs client's
 language override takes. That covers the major European, Asian, Indian and
@@ -1004,8 +1008,9 @@ The call also starts in the ElevenLabs agent's own language when:
 
 - ElevenLabs Agents doesn't speak the session's language.
 - The ElevenLabs agent's voice is an English-only speech model
-  (`eleven_flash_v2`, `eleven_turbo_v2` or `eleven_monolingual_v1`), and the
-  session's language isn't English. Pick a multilingual model in ElevenLabs,
+  (`eleven_flash_v2`, `eleven_turbo_v2` or `eleven_monolingual_v1`), or its
+  settings name no speech model, and the session's language isn't English.
+  Radioso leaves the voice to you: pick a multilingual model in ElevenLabs,
   such as `eleven_flash_v2_5`, `eleven_turbo_v2_5` or `eleven_multilingual_v2`,
   for calls to start in other languages.
 - The ElevenLabs agent doesn't allow the language override, for example
@@ -1022,10 +1027,12 @@ The backend logs `Voice session language prepared` with the outcome, the
 ElevenLabs language code when the session sets one, and `durationMs`, or a
 warn when the ElevenLabs agent doesn't allow the override, answered late, or
 failed. It counts each started call on a connected agent in
-`voice_session_language_total` by `outcome`: `set`, `default` (the session's
-language is the ElevenLabs agent's own, and ElevenLabs isn't asked),
+`voice_session_language_total` by `outcome`: `set`, `default` (the
+ElevenLabs agent starts calls in the session's language already),
 `unsupported` (one of the cases above), `not_allowed`, `timed_out` or
-`failed`.
+`failed`. Each counts one read of the ElevenLabs agent, except an
+`unsupported` for a language ElevenLabs Agents doesn't speak at all, which asks
+nothing.
 
 #### Switch an ElevenLabs call's language
 

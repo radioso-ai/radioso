@@ -65,12 +65,10 @@ interface VoiceSessionStartServiceDependencies {
   connections: Pick<VoiceRuntimeConnectionStore, "find">;
   /** The agent's greeting, which a call on a maintained vendor agent says first. */
   greetings: VoiceGreetingSource;
-  /** How long a start waits for the greeting; `VOICE_BEHAVIOR.sessionPreparationWaitMs` unless a test names another. */
-  greetingWaitMs?: number;
   /** Each vendor's answer for the language a session on a maintained vendor agent starts in. */
   sessionLanguages: Readonly<Record<VoiceVendor, VoiceSessionLanguageSource>>;
-  /** How long a start waits for that answer; `VOICE_BEHAVIOR.sessionPreparationWaitMs` unless a test names another. */
-  languageWaitMs?: number;
+  /** How long a start waits for the greeting and for the language; `VOICE_BEHAVIOR.sessionPreparationWaitMs` unless a test names another. */
+  preparationWaitMs?: number;
   /** Mints the key the voice runtime sends back on every turn of the session. */
   newSessionKey: () => string;
   now?: () => number;
@@ -121,7 +119,11 @@ const sessionRuntimeOf = <Runtime>(voice: { enabled: boolean; runtime: Runtime |
  * then fails as `credential_unreadable`, which the operator can see and fix.
  */
 export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSessionAvailabilityPort {
-  constructor(private readonly dependencies: VoiceSessionStartServiceDependencies) {}
+  private readonly preparationWaitMs: number;
+
+  constructor(private readonly dependencies: VoiceSessionStartServiceDependencies) {
+    this.preparationWaitMs = dependencies.preparationWaitMs ?? VOICE_BEHAVIOR.sessionPreparationWaitMs;
+  }
 
   async readiness(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<VoiceCallReadiness> {
     const binding = sessionRuntimeOf(input.voice);
@@ -164,12 +166,12 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     if (reading.kind !== "present") return failed(FAILED_OUTCOME_OF_READING[reading.kind]);
 
     const sessionKey = this.dependencies.newSessionKey();
-    const now = (this.dependencies.now ?? Date.now)();
+    const clock = this.dependencies.now ?? Date.now;
     try {
       await this.dependencies.starts.register({
         session: { workspaceId, agentId, vendor, sessionKey },
         visitor: input.visitor,
-        expiresAt: new Date(now + VOICE_BEHAVIOR.sessionStartTtlMs),
+        expiresAt: new Date(clock() + VOICE_BEHAVIOR.sessionStartTtlMs),
         vendorAgent: { agentId: runtime.agentId, region: runtime.region },
       });
     } catch (error) {
@@ -178,18 +180,16 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
 
     const locale = resolveVoiceLanguage({ session: input.locale, agentDefault: profile.defaultLocale }).tag;
     // Read while the vendor opens the session, the connection once for both; none of it rejects.
+    // A start the vendor refuses stops the language read, which nothing will wait for.
+    const preparation = new AbortController();
     const maintenance = readSessionMaintenance(this.dependencies.connections, { workspaceId, agentId, runtime });
     const preparingFirstMessage = maintenance.then((known) => prepareSessionFirstMessage(
-      {
-        greetings: this.dependencies.greetings,
-        waitMs: this.dependencies.greetingWaitMs ?? VOICE_BEHAVIOR.sessionPreparationWaitMs,
-        now: this.dependencies.now ?? Date.now,
-      },
+      { greetings: this.dependencies.greetings, waitMs: this.preparationWaitMs, now: clock },
       { maintenance: known, workspaceId, agentId, locale: input.locale ?? null },
     ));
     const preparingLanguage = maintenance.then((known) => prepareSessionLanguage(
-      { languages: this.dependencies.sessionLanguages[vendor], waitMs: this.languageWaitMs(), now: this.dependencies.now ?? Date.now },
-      { maintenance: known, runtime, credential: reading.credential, locale, agentDefaultLocale: profile.defaultLocale },
+      { languages: this.dependencies.sessionLanguages[vendor], waitMs: this.preparationWaitMs, now: clock },
+      { maintenance: known, runtime, credential: reading.credential, locale, signal: preparation.signal },
     ));
     let session: VoiceVendorSession;
     try {
@@ -199,6 +199,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
         credential: reading.credential,
       });
     } catch (error) {
+      preparation.abort();
       return failed("vendor_failed", vendorErrorFields(error));
     }
     this.record(vendor, "started");
@@ -219,10 +220,6 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
       ...(firstMessage ? { firstMessage } : {}),
       ...(vendorLanguage ? { vendorLanguage } : {}),
     };
-  }
-
-  private languageWaitMs(): number {
-    return this.dependencies.languageWaitMs ?? VOICE_BEHAVIOR.sessionPreparationWaitMs;
   }
 
   /**
@@ -253,7 +250,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
         break;
       case "timed_out":
         logger.warn(
-          { ...session, outcome: preparation.outcome, waitMs: this.languageWaitMs() },
+          { ...session, outcome: preparation.outcome, waitMs: this.preparationWaitMs },
           "Voice session language was not ready in time; the call starts in the vendor agent's default language",
         );
         break;
@@ -295,8 +292,10 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     }
     const { greeting, durationMs } = preparation;
     if (greeting.outcome === "timed_out") {
-      const waitMs = this.dependencies.greetingWaitMs ?? VOICE_BEHAVIOR.sessionPreparationWaitMs;
-      logger.warn({ ...session, outcome: greeting.outcome, recordingNotice, waitMs }, "Voice session greeting was not ready in time; the call starts without it");
+      logger.warn(
+        { ...session, outcome: greeting.outcome, recordingNotice, waitMs: this.preparationWaitMs },
+        "Voice session greeting was not ready in time; the call starts without it",
+      );
     } else if (greeting.outcome === "failed") {
       logger.warn(
         { ...session, outcome: greeting.outcome, step: "greeting", errorClass: greeting.errorClass },

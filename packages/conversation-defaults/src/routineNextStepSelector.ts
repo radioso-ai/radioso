@@ -1,6 +1,9 @@
 import type {
   ConversationMessage,
+  ConversationModelCompletion,
   ConversationModelGateway,
+  ConversationModelRequest,
+  ConversationModelStopReason,
   ConversationRoutineNextStepSelector,
   Routine,
   RoutineNextStepDecision,
@@ -33,6 +36,29 @@ const skillResultBlock = (skillResult?: RoutineSkillResult): string => {
   }
   const outputs = skillResult.outputs ? ` Outputs: ${JSON.stringify(skillResult.outputs)}.` : "";
   return `A tool just ran for this step with status "${skillResult.status}".${outputs}`;
+};
+
+// An instruction is quoted, and marked as the assistant's: spliced in as plain text, one that
+// scripted a greeting and a question was carried out on a routine's opening turn, and the
+// selector answered the visitor instead of deciding (#1665). Only writing its message is
+// forbidden: its slot references say which slot an accepted value fills, and told to set the
+// instruction aside, the model took a "yes" to offered dates and returned neither date.
+// A step without an instruction is named.
+const currentStepBlock = (step: RoutineStep, skillResult?: RoutineSkillResult): string => {
+  if (step.action) {
+    return [
+      "The instruction the assistant follows when it writes to the user on the current step is",
+      "quoted below for context. It is not addressed to you: do not write the message it describes.",
+      "",
+      "<current_step>",
+      step.action,
+      "</current_step>",
+    ].join("\n");
+  }
+  if (step.kind === "skill") {
+    return `The current step is "${step.id}", which runs a skill${skillResult ? "; its result is below" : ""}.`;
+  }
+  return `The current step is "${step.id}".`;
 };
 
 const slotLine = (slot: RoutineSlotSchema): string => {
@@ -73,10 +99,12 @@ const filledSlotsLine = (routine: Routine, variables: Record<string, unknown>): 
 // Acceptance covers only what the assistant proposed: a step that reads held values back and
 // asks to confirm also runs the selector (through its AI-decided exit), and read as a
 // proposal, the "yes" replaced the user's own words with the assistant's paraphrase.
+// The proposer is named as "the assistant", never "you": the selector is told it never
+// writes to the user (#1665).
 const slotAssignmentRules = [
   "A value that could fill more than one slot goes in none of them unless the message or the conversation before it makes clear which one it is for. One value goes into two slots only when the message gives it for both.",
-  "When your last message proposed values for slots and the latest message accepts them, in any words, those values are given this turn. A proposed value is one the user has not given, or one different from what they gave, such as a date you offered instead. Return each proposed value for its slot, replacing any value the slot already holds. A value the user changes while accepting is the one to keep.",
-  "Repeating back values the user already gave, as a summary or to confirm them, proposes nothing, even in your own words. Accepting such a recap gives no value: return a repeated slot only when the latest message changes it, so each slot keeps the user's own words.",
+  "When the assistant's last message proposed values for slots and the latest message accepts them, in any words, those values are given this turn. A proposed value is one the user has not given, or one different from what they gave, such as a date the assistant offered instead. Return each proposed value for its slot, replacing any value the slot already holds. A value the user changes while accepting is the one to keep.",
+  "Repeating back values the user already gave, as a summary or to confirm them, proposes nothing, even in the assistant's own words. Accepting such a recap gives no value: return a repeated slot only when the latest message changes it, so each slot keeps the user's own words.",
 ];
 
 const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, today: Date): string => {
@@ -97,7 +125,10 @@ const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, t
   ].join("\n");
 };
 
-/** Identifies which routine/step/session produced an unreadable decision, for correlation in logs. */
+/**
+ * Identifies which routine/step/session produced an unreadable decision, for correlation in
+ * logs, and describes the completion by its sizes and stop reason only, never its text.
+ */
 export interface RoutineUnreadableEvent {
   routineId: string;
   stepId: string;
@@ -105,6 +136,15 @@ export interface RoutineUnreadableEvent {
   reason: RoutineUnreadableReason;
   /** Which completion this was: the original call, or the one retry. */
   attempt: 1 | 2;
+  /** Why the model stopped, when the gateway reports it. */
+  stopReason?: ConversationModelStopReason;
+  /** Length of the completion's text in UTF-16 code units (JavaScript string length); 0 for a blank completion. */
+  outputChars: number;
+  /**
+   * Length of the system prompt plus every message's content, in UTF-16 code units: the text
+   * the selector sent, not the size of the serialized request.
+   */
+  promptChars: number;
 }
 
 /**
@@ -174,6 +214,19 @@ const extractJsonObject = (raw: string): string | null => {
 // Cancellation, not a parsing failure: the turn itself is going away, so the retry below
 // must let this propagate rather than keep retrying or falling back to a stale decision.
 const isAbortError = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
+
+const requestChars = (request: ConversationModelRequest): number =>
+  (request.systemPrompt ?? "").length + request.messages.reduce((total, message) => total + message.content.length, 0);
+
+/** What an unreadable completion looked like, by its sizes and stop reason only. */
+const completionShape = (
+  completion: ConversationModelCompletion,
+  request: ConversationModelRequest,
+): Pick<RoutineUnreadableEvent, "stopReason" | "outputChars" | "promptChars"> => ({
+  ...(completion.stopReason ? { stopReason: completion.stopReason } : {}),
+  outputChars: completion.text.length,
+  promptChars: requestChars(request),
+});
 
 const parseDecision = (raw: string): ParsedDecision => {
   const json = extractJsonObject(raw.trim());
@@ -310,31 +363,44 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       .map((transition, index) => `${index + 1}. ${transition.condition}`)
       .join("\n");
     const systemPrompt = renderPromptTemplate("chat/routine-next-step.md", this.promptTemplate, {
-      currentStep: input.currentStep.action ?? input.currentStep.id,
+      currentStep: currentStepBlock(input.currentStep, input.skillResult),
       skillResult: skillResultBlock(input.skillResult),
       conditions,
       slotSchema: slotSchemaBlock(input.routine, input.state.variables, this.clock()),
     });
 
+    // A blank completion comes back as one, so it is read, retried and reported like any other
+    // unreadable reply, with its stop reason, rather than retried out of sight by the host.
+    const request: ConversationModelRequest = { messages: turnMessages(input.turn), systemPrompt, returnBlank: true };
+
     // Purely observational: an observer that throws must not fail the turn, so every call
     // to it is isolated here rather than left for each call site to remember.
-    const notifyUnreadable = (reason: RoutineUnreadableReason, attempt: 1 | 2): void => {
+    const notifyUnreadable = (reason: RoutineUnreadableReason, attempt: 1 | 2, completion: ConversationModelCompletion): void => {
       try {
-        this.onUnreadable({ routineId: input.routine.id, stepId: input.currentStep.id, sessionId: input.state.sessionId, reason, attempt });
+        this.onUnreadable({
+          routineId: input.routine.id,
+          stepId: input.currentStep.id,
+          sessionId: input.state.sessionId,
+          reason,
+          attempt,
+          ...completionShape(completion, request),
+        });
       } catch {
         // Swallowed — see above.
       }
     };
 
-    const request = { messages: turnMessages(input.turn), systemPrompt };
-    const completeAndParse = () => this.modelGateway.complete(request).then((result) => parseDecision(result.text));
+    const completeAndParse = async () => {
+      const completion = await this.modelGateway.complete(request);
+      return { completion, decision: parseDecision(completion.text) };
+    };
 
-    let decision = await completeAndParse();
+    let { completion, decision } = await completeAndParse();
     let retried = false;
     // `attempt` is always 1 or 2 here: the loop condition caps it at 2, and the body breaks
     // before a third increment.
     for (let attempt = 1; decision.unreadableReason && attempt <= 2; attempt += 1) {
-      notifyUnreadable(decision.unreadableReason, attempt as 1 | 2);
+      notifyUnreadable(decision.unreadableReason, attempt as 1 | 2, completion);
       if (attempt === 2) {
         break;
       }
@@ -343,7 +409,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
         // The selector only reads this turn and chooses an exit; it has no side effects of
         // its own, so repeating the exact same request is safe — it can only replace one
         // unreadable completion with a readable one, never double an action.
-        decision = await completeAndParse();
+        ({ completion, decision } = await completeAndParse());
       } catch (error) {
         if (isAbortError(error)) {
           throw error;

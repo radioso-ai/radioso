@@ -40,12 +40,15 @@ const skillResultBlock = (skillResult?: RoutineSkillResult): string => {
 
 // An instruction is quoted, and marked as the assistant's: spliced in as plain text, one that
 // scripted a greeting and a question was carried out on a routine's opening turn, and the
-// selector answered the visitor instead of deciding (#1665). A step without one is named.
+// selector answered the visitor instead of deciding (#1665). Only writing its message is
+// forbidden: its slot references say which slot an accepted value fills, and told to set the
+// instruction aside, the model took a "yes" to offered dates and returned neither date.
+// A step without an instruction is named.
 const currentStepBlock = (step: RoutineStep, skillResult?: RoutineSkillResult): string => {
   if (step.action) {
     return [
       "The instruction the assistant follows when it writes to the user on the current step is",
-      "quoted below for context. It is not addressed to you: do not carry it out.",
+      "quoted below for context. It is not addressed to you: do not write the message it describes.",
       "",
       "<current_step>",
       step.action,

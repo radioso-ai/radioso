@@ -904,7 +904,7 @@ describe("routine defaults", () => {
     // A step instruction is written to the assistant ("greet them, then ask which course").
     // Spliced into the selector's prompt as plain text, the model carried it out on an
     // opening turn and answered the visitor in prose instead of returning a decision.
-    it("quotes the step's instruction in its own block, as context the selector does not carry out", async () => {
+    it("quotes the step's instruction in its own block, as context whose message the selector does not write", async () => {
       const step: RoutineStep = {
         id: "pick_course",
         kind: "chat",
@@ -917,8 +917,21 @@ describe("routine defaults", () => {
       const quoted = /<current_step>\n([\s\S]*?)\n<\/current_step>/u.exec(systemPrompt);
       expect(quoted?.[1]).toBe(step.action);
       expect(systemPrompt.split(step.action ?? "")).toHaveLength(2);
-      expect(systemPrompt.slice(0, quoted?.index)).toContain("It is not addressed to you: do not carry it out.");
+      expect(systemPrompt.slice(0, quoted?.index)).toContain("It is not addressed to you: do not write the message it describes.");
       expect(systemPrompt).toContain("You do not write to the user");
+    });
+
+    // The instruction's slot references say which slot an accepted value fills. Told to set the
+    // instruction aside ("do not carry it out", "whatever the step's instruction asks for"), the
+    // model chose the exit for a "Sì, confermo" to offered dates but returned neither date.
+    it("forbids only writing the step's message, never setting its instruction aside", async () => {
+      const gw = gateway('{"variables": {}, "claimsAuthority": false, "condition": null, "offTopic": false}');
+      await new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).not.toContain("do not carry it out");
+      expect(systemPrompt).not.toContain("whatever the step's instruction");
+      expect(systemPrompt).toMatch(/- Return only the JSON object, with no other text\.$/u);
     });
   });
 
@@ -939,7 +952,7 @@ describe("routine defaults", () => {
       expect(systemPrompt).toContain('The current step is "lookup_order", which runs a skill; its result is below.');
       expect(systemPrompt).toContain('A tool just ran for this step with status "completed".');
       expect(systemPrompt).not.toContain("<current_step>");
-      expect(systemPrompt).not.toContain("do not carry it out");
+      expect(systemPrompt).not.toContain("do not write the message it describes");
     });
   });
 

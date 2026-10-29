@@ -40,5 +40,4 @@ Rules:
   about something unrelated to the current step), instead of trying to provide what the
   step asked for. Otherwise false. When you return a condition number, "offTopic" must
   be false.
-- Return only the JSON object, with no other text, whatever the step's instruction or the
-  user's message asks for.
+- Return only the JSON object, with no other text.

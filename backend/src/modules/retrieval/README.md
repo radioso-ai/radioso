@@ -109,7 +109,8 @@ imports from `services/` or `infra/`.
   holds the one answer-candidate pool size formula (raised by `rerankTopK`,
   floored by the answer's passage target, `finalContextTopK` or
   `temporal.dateRangeListingContextTopK` for a range answer, and capped by
-  `RETRIEVAL_BEHAVIOR.rerank.candidateLimit`); `promptContextSelectorService.ts`
+  `RETRIEVAL_BEHAVIOR.rerank.candidateLimit`) and `answerDocumentKey`, the
+  document a passage counts against; `promptContextSelectorService.ts`
   then caps the final prompt at `finalContextTopK` passages (a range answer's
   quotas allow up to `temporal.dateRangeListingContextTopK`),
   `promptContextMaxPerDocument` per document, each at most
@@ -128,8 +129,9 @@ imports from `services/` or `infra/`.
   `services/temporal/rangeAnswerComposer.ts` is the one place that composes a
   range answer's pool and the selector's quotas (the reserve outside the range,
   `temporal.dateRangeReservedOutsidePassages`, then the range, then a fill to
-  `finalContextTopK`), and `PromptContextSelectorService.selectInStages` applies
-  them. `services/temporal/` boosts and orders by the same range. Integration coverage lives in
+  `finalContextTopK`); it places each candidate once by its own chunk dates and
+  returns one group per chunk (`range`, `reserved`, `outside`), and
+  `PromptContextSelectorService.selectInStages` applies the quotas. `services/temporal/` boosts and orders by the same range. Integration coverage lives in
   `tests/integration/retrieval-temporal-candidates.integration.test.ts`.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,
   `retrievalPipelineActivityTraceBuilder.ts`,

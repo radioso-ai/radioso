@@ -549,9 +549,6 @@ describe("retrieval pipeline stages", () => {
       expect(calls).toEqual([]);
     });
 
-    // Runs a listing question for `range` through retrieval, preparation, and context
-    // selection over `inRangeCount` courses in December plus 15 sooner November courses
-    // that the semantic search ranks above every December course.
     const course = (id: string, date: string, similarity: number): RetrievedChunk => ({
       chunkId: `chunk-${id}`,
       documentId: `doc-${id}`,
@@ -655,11 +652,32 @@ describe("retrieval pipeline stages", () => {
       expect(contexts.some((context) => context.documentId.startsWith("doc-november-"))).toBe(false);
     });
 
-    it.each([
-      ["a topic question", { temporalQueryMode: "topic_refinement" }],
-      ["a question with no temporal label", { queryShape: "general_grounding", temporalQueryMode: "none" }],
-    ])("brings a busy requested week into the answer for %s too, excluding the best matches outside it", async (_label, rewrite) => {
-      const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16, rewrite });
+    it("brings a busy requested week into the answer for a topic question too, with the best matches outside it", async () => {
+      // Search ranks the November courses above every December course, so for a question about
+      // a named topic they are its best matches, and the answer keeps their real dates.
+      const { contexts, inRangeCourses } = await answerContextsForRange({
+        range: week,
+        inRangeCount: 16,
+        rewrite: { temporalQueryMode: "topic_refinement" },
+      });
+
+      // Every week course, soonest first, then the reserved best matches from outside the week.
+      const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
+      expect(contexts).toHaveLength(16 + reserved);
+      const leading = contexts.slice(0, 16);
+      expect(new Set(leading.map((context) => context.documentId)))
+        .toEqual(new Set(inRangeCourses.map((chunk) => chunk.documentId)));
+      const dates = leading.map((context) => String(context.metadata?.dateFrom));
+      expect(dates).toEqual([...dates].sort());
+      expect(contexts.slice(16).every((context) => context.documentId.startsWith("doc-november-"))).toBe(true);
+    });
+
+    it("brings a busy requested week into the answer for a question with no temporal label too, excluding the best matches outside it", async () => {
+      const { contexts, inRangeCourses } = await answerContextsForRange({
+        range: week,
+        inRangeCount: 16,
+        rewrite: { queryShape: "general_grounding", temporalQueryMode: "none" },
+      });
 
       expect(contexts).toHaveLength(16);
       expect(new Set(contexts.map((context) => context.documentId)))
@@ -716,14 +734,17 @@ describe("retrieval pipeline stages", () => {
 
     it("keeps a passage dated in another period out of a busy week's reserve, even when it outranks the undated pages", async () => {
       // A digest for the adjacent week, dated entirely before the requested one, ranked
-      // above the undated pages: the shape of passage this fix keeps out of the reserve.
+      // above the undated pages: its reserved slot goes to the week's own courses, and the
+      // fourth page, ranked below the four best outside matches, stays out.
       const adjacentWeekDigest = course("adjacent-week-digest", "2026-11-30", 0.95);
       const pages = [adjacentWeekDigest, ...Array.from({ length: 4 }, (_value, index) =>
         generalContextPage(`page-${index + 1}`, 0.6 - index / 100))];
       const { contexts } = await answerContextsForRange({ range: week, inRangeCount: 16, outsideCandidates: pages });
 
+      expect(contexts).toHaveLength(16 + 3);
       expect(contexts.some((context) => context.documentId === "doc-adjacent-week-digest")).toBe(false);
-      expect(contexts.filter((context) => context.documentId.startsWith("doc-page-"))).toHaveLength(4);
+      expect(contexts.filter((context) => context.documentId.startsWith("doc-page-")).map((context) => context.documentId))
+        .toEqual(["doc-page-1", "doc-page-2", "doc-page-3"]);
     });
 
   });

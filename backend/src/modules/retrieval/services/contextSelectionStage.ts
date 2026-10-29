@@ -10,6 +10,7 @@ import type {
   RerankedCandidate,
   RerankStatus,
   RetrievedCandidate,
+  TemporalQueryMode,
 } from "../domain/retrievalPipelineTypes.js";
 import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
 import { orderTemporalPromptContexts } from "./temporal/temporalContextOrdering.js";
@@ -74,6 +75,7 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
       rangeCandidates,
       generalCandidates: input.scoredCandidates,
       range,
+      temporalQueryMode: temporalQueryModeOf(input) ?? "none",
       poolSize: answerCandidatePoolSize(input.settings.rerankTopK, dateRangeListingContextTopK),
       reservedCount: dateRangeReservedOutsidePassages,
     });
@@ -82,16 +84,12 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
     const reranked = await this.rank(input, plan.pool, { keepPoolOrder: true });
     const selected = this.promptContextSelectorService.selectInStages(rangeAnswerSelectionStages({
       ranked: reranked.contexts,
-      rangeChunkIds: plan.rangeChunkIds,
-      reservedEligibleChunkIds: plan.reservedEligibleChunkIds,
-      reservedCount: dateRangeReservedOutsidePassages,
+      groups: plan.groups,
       maxPassages: dateRangeListingContextTopK,
       minPassages: RETRIEVAL_BEHAVIOR.finalContextTopK,
     }));
-    const rangeFirst = [
-      ...selected.filter((context) => plan.rangeChunkIds.has(context.chunkId)),
-      ...selected.filter((context) => !plan.rangeChunkIds.has(context.chunkId)),
-    ];
+    const inRange = (context: FinalPromptContext): boolean => plan.groups.get(context.chunkId) === "range";
+    const rangeFirst = [...selected.filter(inRange), ...selected.filter((context) => !inRange(context))];
     const temporalOrdering = this.orderForPrompt(input, rangeFirst);
     return {
       rerankedContexts: reranked.contexts,
@@ -128,7 +126,7 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
       contexts,
       enabled: input.settings.temporalDeterministicSortEnabled ?? true,
       queryShape: input.rewrittenQuery?.structuredResult?.queryShape ?? input.shapeSelection?.queryShape,
-      temporalQueryMode: input.temporalQueryMode ?? input.rewrittenQuery?.structuredResult?.temporalQueryMode,
+      temporalQueryMode: temporalQueryModeOf(input),
       today: formatIsoDateUtc(this.clock()),
       dateRange: input.temporalDateRange,
     });
@@ -142,3 +140,6 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
     }));
   }
 }
+
+const temporalQueryModeOf = (input: CandidatePreparationStageResult): TemporalQueryMode | undefined =>
+  input.temporalQueryMode ?? input.rewrittenQuery?.structuredResult?.temporalQueryMode;

@@ -78,9 +78,9 @@ or imply that it has. Do not ask for anything again, repeat an earlier question,
 Do not add links, contact details, recommendations, options, or follow-up questions.`;
 
 export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
-happen next, based on what the user just said.
+happen next, based on what the user just said. You do not write to the user: your reply
+is the JSON decision below, read by the routine and never shown to them.
 
-The current step's instruction to the user was:
 {{currentStep}}
 
 {{skillResult}}

@@ -1,3 +1,5 @@
+import type { ConversationModelGateway } from "./modelGateway.js";
+
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
 /** Provider-neutral semantic state for whether a request is resolved by admitted evidence. */
@@ -793,22 +795,12 @@ export interface ConversationEvent {
   createdAt?: string;
 }
 
-/** One generation request to the host's model. */
-export interface ConversationModelRequest {
-  messages: ConversationMessage[];
-  systemPrompt?: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface ConversationModelGateway {
-  complete(input: ConversationModelRequest): Promise<{ text: string; metadata?: Record<string, unknown> }>;
-  /**
-   * Generates the same request as text deltas, in order; joined, they are the text
-   * `complete` would return, untrimmed. A stream that ends with nothing but whitespace is a
-   * blank completion. Optional: a gateway without it is only ever asked to `complete`.
-   */
-  stream?(input: ConversationModelRequest): AsyncIterable<string>;
-}
+export type {
+  ConversationModelCompletion,
+  ConversationModelGateway,
+  ConversationModelRequest,
+  ConversationModelStopReason,
+} from "./modelGateway.js";
 
 /**
  * A detector-supplied option for a generic clarification decision. The payload is

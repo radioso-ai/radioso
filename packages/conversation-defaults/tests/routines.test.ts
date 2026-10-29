@@ -745,7 +745,10 @@ describe("routine defaults", () => {
       expect(systemPrompt).toContain("goes in none of them unless the message or the conversation before it makes clear which one it is for");
       expect(systemPrompt).toContain("One value goes into two slots only when the message gives it for both.");
       expect(systemPrompt).toContain("the latest message accepts them, in any words, those values are given this turn");
-      expect(systemPrompt).toContain("A proposed value is one the user has not given, or one different from what they gave, such as a date you offered instead.");
+      expect(systemPrompt).toContain("A proposed value is one the user has not given, or one different from what they gave, such as a date the assistant offered instead.");
+      // The selector never writes to the user (#1665), so the offer it reads is the assistant's.
+      expect(systemPrompt).toContain("When the assistant's last message proposed values for slots");
+      expect(systemPrompt).not.toMatch(/\byour (last|earlier|previous) (message|reply)|\byou offered\b|\bin your own words\b/u);
       expect(systemPrompt).toContain("replacing any value the slot already holds");
       expect(systemPrompt).toContain("A value the user changes while accepting is the one to keep.");
       expect(systemPrompt).toContain("omit slots not provided or accepted this turn");
@@ -760,7 +763,7 @@ describe("routine defaults", () => {
 
       const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
       expect(systemPrompt).toContain(
-        "Repeating back values the user already gave, as a summary or to confirm them, proposes nothing, even in your own words.",
+        "Repeating back values the user already gave, as a summary or to confirm them, proposes nothing, even in the assistant's own words.",
       );
       expect(systemPrompt).toContain(
         "Accepting such a recap gives no value: return a repeated slot only when the latest message changes it, so each slot keeps the user's own words.",
@@ -897,6 +900,62 @@ describe("routine defaults", () => {
     });
   });
 
+  describe("the current step's instruction (#1665)", () => {
+    // A step instruction is written to the assistant ("greet them, then ask which course").
+    // Spliced into the selector's prompt as plain text, the model carried it out on an
+    // opening turn and answered the visitor in prose instead of returning a decision.
+    it("quotes the step's instruction in its own block, as context whose message the selector does not write", async () => {
+      const step: RoutineStep = {
+        id: "pick_course",
+        kind: "chat",
+        action: "Greet the visitor warmly, then ask which course they want to book.",
+      };
+      const gw = gateway('{"variables": {}, "claimsAuthority": false, "condition": null, "offTopic": false}');
+      await new RoutineNextStepSelector(gw).select({ routine, state, currentStep: step, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      const quoted = /<current_step>\n([\s\S]*?)\n<\/current_step>/u.exec(systemPrompt);
+      expect(quoted?.[1]).toBe(step.action);
+      expect(systemPrompt.split(step.action ?? "")).toHaveLength(2);
+      expect(systemPrompt.slice(0, quoted?.index)).toContain("It is not addressed to you: do not write the message it describes.");
+      expect(systemPrompt).toContain("You do not write to the user");
+    });
+
+    // The instruction's slot references say which slot an accepted value fills. Told to set the
+    // instruction aside ("do not carry it out", "whatever the step's instruction asks for"), the
+    // model chose the exit for a "Sì, confermo" to offered dates but returned neither date.
+    it("forbids only writing the step's message, never setting its instruction aside", async () => {
+      const gw = gateway('{"variables": {}, "claimsAuthority": false, "condition": null, "offTopic": false}');
+      await new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).not.toContain("do not carry it out");
+      expect(systemPrompt).not.toContain("whatever the step's instruction");
+      expect(systemPrompt).toMatch(/- Return only the JSON object, with no other text\.$/u);
+    });
+  });
+
+  describe("a step without an instruction (#1665)", () => {
+    it("names the step and what it runs, with no instruction to quote", async () => {
+      const skillStep: RoutineStep = { id: "lookup_order", kind: "skill", skillName: "order_lookup" };
+      const gw = gateway('{"variables": {}, "claimsAuthority": false, "condition": 1, "offTopic": false}');
+      await new RoutineNextStepSelector(gw).select({
+        routine,
+        state,
+        currentStep: skillStep,
+        transitions,
+        turn,
+        skillResult: { status: "completed", outputs: { orderStatus: "shipped" } },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain('The current step is "lookup_order", which runs a skill; its result is below.');
+      expect(systemPrompt).toContain('A tool just ran for this step with status "completed".');
+      expect(systemPrompt).not.toContain("<current_step>");
+      expect(systemPrompt).not.toContain("do not write the message it describes");
+    });
+  });
+
   describe("unreadable decision retry", () => {
     // Unlike `gateway`, returns a different completion (or throws) on each successive
     // call — needed to prove the selector's retry actually sends a second request rather
@@ -938,7 +997,54 @@ describe("routine defaults", () => {
         sessionId: state.sessionId,
         reason: "no_json_object",
         attempt: 1,
+        outputChars: "I think they want a retreat.".length,
+        promptChars: expect.any(Number),
       });
+    });
+
+    it("reports why the provider stopped and how long the prompt and reply were, never the reply's text", async () => {
+      const onUnreadable = vi.fn();
+      const prose = "Happy to help! Which course would you like to book?";
+      const gw: ConversationModelGateway = {
+        complete: vi.fn(async () => ({ text: prose, stopReason: "completed" as const })),
+      };
+
+      // A fixed system prompt, so the size is a known literal: UTF-16 code units of the system
+      // prompt (the emoji counts 2) plus the history and latest message ("What is your email?",
+      // "alex@example.com").
+      await new RoutineNextStepSelector(gw, { onUnreadable, promptTemplate: "DÉCIDE 🙂" })
+        .select({ routine, state, currentStep, transitions, turn });
+
+      expect(onUnreadable).toHaveBeenNthCalledWith(1, {
+        routineId: routine.id,
+        stepId: currentStep.id,
+        sessionId: state.sessionId,
+        reason: "no_json_object",
+        attempt: 1,
+        stopReason: "completed",
+        outputChars: 51,
+        promptChars: 44,
+      });
+      expect(JSON.stringify(onUnreadable.mock.calls)).not.toContain(prose);
+    });
+
+    it("asks the host for a blank completion as it is, and reads it as unreadable with its stop reason on each attempt", async () => {
+      const onUnreadable = vi.fn();
+      const complete = vi.fn()
+        .mockResolvedValueOnce({ text: "", stopReason: "output_limit" })
+        .mockResolvedValueOnce({ text: "", stopReason: "output_limit" });
+      const gw: ConversationModelGateway = { complete };
+
+      const decision = await new RoutineNextStepSelector(gw, { onUnreadable }).select({ routine, state, currentStep, transitions, turn });
+
+      expect(complete.mock.calls[0][0]).toMatchObject({ returnBlank: true });
+      expect(decision).toEqual({
+        nextStepId: "ask_email",
+        variables: {},
+        selection: { outcome: "unreadable", returnedSlotKeys: [], unreadableReason: "no_json_object", retried: true },
+      });
+      expect(onUnreadable).toHaveBeenNthCalledWith(1, expect.objectContaining({ attempt: 1, stopReason: "output_limit", outputChars: 0 }));
+      expect(onUnreadable).toHaveBeenNthCalledWith(2, expect.objectContaining({ attempt: 2, stopReason: "output_limit", outputChars: 0 }));
     });
 
     it("falls back to the unreadable decision, and notifies the observer twice, when the retry is unreadable too", async () => {
@@ -955,8 +1061,8 @@ describe("routine defaults", () => {
       });
       expect(gw.complete).toHaveBeenCalledTimes(2);
       expect(onUnreadable).toHaveBeenCalledTimes(2);
-      expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 });
-      expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2 });
+      expect(onUnreadable).toHaveBeenNthCalledWith(1, expect.objectContaining({ routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 }));
+      expect(onUnreadable).toHaveBeenNthCalledWith(2, expect.objectContaining({ routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2, outputChars: "still not json".length }));
     });
 
     it("calls the model only once, and never the observer, when the first completion is readable", async () => {
@@ -985,7 +1091,7 @@ describe("routine defaults", () => {
       // Only the first attempt's own unreadable completion is reported — the retry's error
       // is not a reading of a completion, so it has no reason to report.
       expect(onUnreadable).toHaveBeenCalledTimes(1);
-      expect(onUnreadable).toHaveBeenCalledWith({ routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 });
+      expect(onUnreadable).toHaveBeenCalledWith(expect.objectContaining({ routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 }));
     });
 
     it("rethrows an aborted retry instead of swallowing the cancellation", async () => {

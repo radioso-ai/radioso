@@ -259,6 +259,23 @@ describe("page-read three-sink gate", () => {
     expect(directPrompt).not.toContain(pageContext.content);
   });
 
+  it("gives answer composition no condition when a request for the page as context finds no page", async () => {
+    const { input, preparer, session } = await harness({ available: false, mode: null, supportedOperations: [] });
+    freezePageReadOutcome(session, {
+      planner: null,
+      routineCandidates: [{ source: { kind: "routine", routineId: "booking" } }],
+      directiveCandidates: [],
+      fallbackRequest: session.effectiveQuery,
+    });
+
+    const prepared = await preparer.prepareDirect(input, session);
+    const support = new ChatAnswerSupport();
+
+    expect(prepared.pageReadOutcome?.gate).toEqual({ kind: "unavailable" });
+    expect(support.pageContextCondition(prepared)).toBeNull();
+    expect(support.buildPromptWithContext("BASE_PROMPT", prepared)).not.toContain("page_context_unavailable");
+  });
+
   it("freezes the merged decision and gate once so downstream reads cannot recompute it", async () => {
     const { session } = await harness();
     const first = freezePlannerDecision(session, {
@@ -299,5 +316,50 @@ describe("page-read three-sink gate", () => {
     });
 
     expect(shouldSuppressRetrievalSenseClarification(session)).toBe(true);
+  });
+
+  it("keeps workspace-result clarification when a request for the page as context got only its identity", async () => {
+    const { session } = await harness({ available: true, mode: "metadata", supportedOperations: ["metadata"] });
+    freezePageReadOutcome(session, {
+      planner: null,
+      routineCandidates: [{ source: { kind: "routine", routineId: "booking" } }],
+      directiveCandidates: [],
+      fallbackRequest: session.effectiveQuery,
+    });
+
+    expect(session.pageReadOutcome?.gate).toMatchObject({ kind: "capture", operation: "metadata" });
+    expect(shouldSuppressRetrievalSenseClarification(session)).toBe(false);
+  });
+
+  it("stages what the request carried in all three sinks for a planner read that names metadata", async () => {
+    const { input, preparer, session } = await harness();
+    freezePlannerDecision(session, { required: true, operation: "metadata", resolvedRequest: "Which page am I on?" });
+
+    const prepared = await preparer.prepareDirect(input, session);
+    const support = new ChatAnswerSupport();
+
+    expect(support.buildContextBlock(prepared)).toContain(pageContext.pageUrl);
+    expect(support.buildContextBlock(prepared)).toContain(pageContext.content);
+    expect(JSON.stringify(prepared.stagedContext)).toContain(pageContext.content);
+    expect(prepared.resolvedContext.snapshot).toHaveProperty("page_context");
+  });
+
+  it("stages only the page's identity for a routine whose context read was served as metadata", async () => {
+    const { preparer, session } = await harness({ available: true, mode: "metadata", supportedOperations: ["metadata"] });
+    const outcome = freezePageReadOutcome({ pageReadCapability: session.pageReadCapability }, {
+      planner: null,
+      routineCandidates: [{ source: { kind: "routine", routineId: "booking" } }],
+      directiveCandidates: [],
+      fallbackRequest: session.effectiveQuery,
+    });
+
+    const staged = preparer.stagedPageContextFor(session, outcome);
+    session.pageReadOutcome = outcome;
+    preparer.applyFrozenPageReadOutcome(session);
+
+    expect(JSON.stringify(staged)).toContain(pageContext.pageUrl);
+    expect(JSON.stringify(staged)).not.toContain(pageContext.content);
+    expect(JSON.stringify(session.resolvedContext)).not.toContain(pageContext.content);
+    expect(JSON.stringify(session.stagedContext)).not.toContain(pageContext.content);
   });
 });

@@ -7109,6 +7109,11 @@ export interface components {
             recordingNotice?: string;
             /** @description What the call says first: the recording notice, then the agent's greeting in the session's language, as plain speech. Present only when the agent's vendor agent is one Radioso maintains (connected from the agent's Voice card) and there is something to say. Pass it as the session's first-message override, on `elevenlabs` the client's `overrides.agent.firstMessage`, and send no override when it is absent: a vendor agent set up outside Radioso closes a session that sets a first message it does not allow. */
             firstMessage?: string;
+            /**
+             * @description The vendor's code for the language the call starts in: `locale` mapped onto the languages the vendor speaks, such as `it` for `it-CH` or `pt-br` for `pt-BR`. Present only when the agent's vendor agent is one Radioso maintains, that vendor agent lets a session set its language, the vendor's browser client can set `locale`'s language and the vendor agent's voice speaks it, and it is not the language the vendor agent starts calls in already. Pass it as the session's language override, on `elevenlabs` the client's `overrides.agent.language`, and send no override when it is absent: the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one. The values are the codes the `elevenlabs` browser client's language override takes.
+             * @enum {string}
+             */
+            vendorLanguage?: "en" | "zh" | "es" | "hi" | "pt" | "fr" | "de" | "ja" | "ar" | "ko" | "id" | "it" | "nl" | "tr" | "pl" | "ru" | "sv" | "tl" | "ms" | "ro" | "uk" | "el" | "cs" | "da" | "fi" | "bg" | "hr" | "sk" | "ta" | "vi" | "no" | "hu" | "af" | "hy" | "as" | "az" | "be" | "bn" | "bs" | "ca" | "et" | "gl" | "ka" | "gu" | "ha" | "he" | "is" | "ga" | "jv" | "kn" | "kk" | "ky" | "lv" | "lt" | "lb" | "mk" | "ml" | "mr" | "ne" | "ps" | "fa" | "pa" | "sr" | "sd" | "sl" | "so" | "sw" | "te" | "th" | "ur" | "cy" | "pt-br";
         };
         /** @description The vendor's id for the call the page opened: on `elevenlabs`, what the client's `getId()` returns once the session is connected. */
         PublicVoiceVendorConversationRequest: {

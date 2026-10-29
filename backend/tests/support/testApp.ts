@@ -8,6 +8,7 @@ import {
   createVoiceChannelComposition,
   createVoiceRecordingComposition,
   createVoiceRuntimeConnectionComposition,
+  createVoiceRuntimeProvisioners,
   createVoiceSessionStartComposition,
   keepVoiceRuntimesInStepWithAgents,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
@@ -2882,11 +2883,13 @@ export const createTestDependencies = (overrides: {
       if (voiceRuntimeConnectionRows.get(agentId)?.workspaceId === workspaceId) voiceRuntimeConnectionRows.delete(agentId);
     },
   };
+  const voiceRuntimeProvisioners = createVoiceRuntimeProvisioners(voiceVendorFetch);
   const voiceSessionStarts = createVoiceSessionStartComposition({
     agentRepository,
     starts: voiceSessions,
     connections: voiceRuntimeConnectionStore,
     greetings: chatBootstrapService,
+    sessionLanguages: voiceRuntimeProvisioners,
     credentials: workspaceProviderCredentialsService,
     fetch: voiceVendorFetch,
     metricsRegistry,
@@ -2909,7 +2912,7 @@ export const createTestDependencies = (overrides: {
     agentService,
     accessGrants: accessGrantService,
     credentials: workspaceProviderCredentialsService,
-    fetch: voiceVendorFetch,
+    provisioners: voiceRuntimeProvisioners,
     appBaseUrl: env.APP_BASE_URL,
     auditService,
     metricsRegistry,

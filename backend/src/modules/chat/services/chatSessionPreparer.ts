@@ -60,7 +60,7 @@ import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, default
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
-import type { PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
+import { admitsPageEvidence, capturedPageContext, type PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
 import type { SessionPreparationTimings } from "./turnTraceEnvelope.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
@@ -885,9 +885,7 @@ export class ChatSessionPreparer {
   }
 
   private gatedPageContext(session: PreparedSession): AssistantPageContext | null {
-    return session.pageReadOutcome?.gate.kind === "capture"
-      ? session.pageContext ?? null
-      : null;
+    return capturedPageContext(session.pageReadOutcome, session.pageContext);
   }
 
   /**
@@ -896,10 +894,11 @@ export class ChatSessionPreparer {
    * turn must fall through to normal answering with zero page-derived context.
    */
   stagedPageContextFor(session: PreparedSession, outcome: PageReadOutcome): StagedContext[] {
-    if (outcome.gate.kind !== "capture" || !session.pageContext) {
+    const captured = capturedPageContext(outcome, session.pageContext);
+    if (!captured) {
       return [...session.stagedContext];
     }
-    const page = resolveContextForTurn(session.pageContext);
+    const page = resolveContextForTurn(captured);
     return [
       ...page.staged,
       ...session.stagedContext.filter(
@@ -909,15 +908,16 @@ export class ChatSessionPreparer {
   }
 
   /**
-   * Routine execution happens before direct/retrieval preparation re-runs the
-   * spine. Admit the frozen page fragment there without re-resolving or changing
-   * the already-prepared host variables.
+   * Routine execution happens before direct/retrieval preparation re-runs the spine. Admit the
+   * frozen page fragment there without re-resolving the prepared host variables; an answer
+   * renders it only when the read admits the page as evidence (`admitsPageEvidence`).
    */
   applyFrozenPageReadOutcome(session: PreparedSession): void {
-    if (session.pageReadOutcome?.gate.kind !== "capture" || !session.pageContext) {
+    const captured = capturedPageContext(session.pageReadOutcome, session.pageContext);
+    if (!captured) {
       return;
     }
-    const page = resolveContextForTurn(session.pageContext);
+    const page = resolveContextForTurn(captured);
     const isPageFragment = (fragment: ResolvedTurnContext["fragments"][number]): boolean =>
       fragment.kind === "page_context";
     const isPageStaged = (entry: StagedContext): boolean =>
@@ -930,7 +930,7 @@ export class ChatSessionPreparer {
         ...session.resolvedContext.fragments.filter((fragment) => !isPageFragment(fragment)),
       ],
       renderFragments: [
-        ...page.renderFragments,
+        ...(admitsPageEvidence(session.pageReadOutcome) ? page.renderFragments : []),
         ...session.resolvedContext.renderFragments.filter((fragment) => !isPageFragment(fragment)),
       ],
       staged: [

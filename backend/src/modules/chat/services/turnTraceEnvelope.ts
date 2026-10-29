@@ -7,8 +7,8 @@ import { getActiveTraceCorrelation } from "../../../shared/observability/tracing
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import { attachModelCallsToSpine } from "./turnTraceModelCalls.js";
 import { buildTurnTraceSummary } from "./turnTraceSummary.js";
-import type { PageReadCandidateSource, PageReadCapability, PageReadIntent } from "./pageRead/pageReadDecision.js";
-import type { PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
+import type { PageReadCandidateSource, PageReadCapability, PageReadRequest } from "./pageRead/pageReadDecision.js";
+import { pageReadOperationOf, type PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 
 /**
  * Versioned envelope persisted per chat turn. The conversation spine is the root
@@ -88,7 +88,8 @@ export interface PageReadTraceDiagnostic {
   required: boolean;
   requested: false;
   resolved: boolean;
-  operation: PageReadIntent | null;
+  /** The operation served on `context_ready` (`metadata` is the page's identity alone); otherwise the one requested. */
+  operation: PageReadRequest | null;
   outcome: "not_required" | "context_ready" | "unavailable" | "unsupported_operation";
   /** What kind of contributor decided the read; its id stays out. Null when nothing asked to read the page. */
   source: PageReadCandidateSource["kind"] | null;
@@ -104,7 +105,7 @@ export const buildPageReadTraceDiagnostic = (input: {
   required: input.outcome.merged.decision.required,
   requested: false,
   resolved: input.outcome.gate.kind === "capture" && input.resolved,
-  operation: input.outcome.merged.decision.operation,
+  operation: pageReadOperationOf(input.outcome),
   outcome: input.outcome.gate.kind === "capture"
     ? "context_ready"
     : input.outcome.gate.kind,

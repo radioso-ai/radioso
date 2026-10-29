@@ -392,16 +392,6 @@ describeIntegration("email send intent repository (Postgres)", () => {
     });
   });
 
-  describe("the RFC Message-ID fallback (#1619)", () => {
-    it("finds the intent by its own supplied Message-ID, scoped to the provider and not the mailbox", async () => {
-      const { intent } = await materialize();
-
-      expect(await intents.findBySuppliedRfcMessageId("local", intent.suppliedRfcMessageId)).toMatchObject({ id: intent.id });
-      expect(await intents.findBySuppliedRfcMessageId("resend", intent.suppliedRfcMessageId)).toBeNull();
-      expect(await intents.findBySuppliedRfcMessageId("local", "<unrelated@example.test>")).toBeNull();
-    });
-  });
-
   describe("claimDueForReconcile", () => {
     it("claims due unsettled intents only, and two sweeps never claim the same one", async () => {
       const due = await Promise.all(Array.from({ length: 12 }, async () => {

@@ -450,22 +450,6 @@ export class EmailSendIntentRepository {
   }
 
   /**
-   * The intent behind its own supplied RFC Message-ID, with no mailbox in scope (#1619): the
-   * fallback for a provider delivery event whose own id this deployment never recorded, after a
-   * provider 5xx whose outcome was unknown. The id is minted on the mailbox's verified sending
-   * domain with the intent's own id, so a match can only ever be this deployment's own send.
-   */
-  async findBySuppliedRfcMessageId(provider: string, rfcMessageId: string): Promise<EmailSendIntentRecord | null> {
-    const row = await this.db
-      .selectFrom("email_send_intents")
-      .selectAll()
-      .where("provider", "=", provider)
-      .where("supplied_rfc_message_id", "=", rfcMessageId)
-      .executeTakeFirst();
-    return row ? mapIntent(row) : null;
-  }
-
-  /**
    * Records the recipient's complaint once (research A6). It changes no delivery state, but bumps
    * `version` like every write, so a writer that read before it re-reads.
    */

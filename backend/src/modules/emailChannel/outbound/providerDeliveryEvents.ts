@@ -3,7 +3,8 @@ import type { DeliveryStatusFacts } from "../../mail/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { recordEmailChannelAudit, type EmailChannelJobLogger } from "../emailChannelAudit.js";
 import type { EmailSendIntentRecord, EmailSendIntentRepository } from "../persistence/emailSendIntentRepository.js";
-import { outboundIndexEntries } from "./providerSendAttempt.js";
+import { sendIntentIdOfOutboundMessageId } from "./outboundHeaders.js";
+import { recordProviderAcceptance } from "./providerAcceptance.js";
 import type { SendIntentEvent } from "./sendIntentTransitions.js";
 import type { SendIntentWriter } from "./sendIntentWriter.js";
 
@@ -12,16 +13,34 @@ type ProviderDeliveryOutcome = "applied" | "ignored" | "foreign";
 
 type ProviderStatusEvent = Extract<SendIntentEvent, { kind: "provider_status" }>;
 
-/** Outcome of the Message-ID fallback itself, independent of whether the status it carried settled anything (#1619). */
-type MessageIdFallbackOutcome = "settled" | "matched_ignored" | "foreign";
+/**
+ * What the Message-ID fallback did (#1619): settled the send, recorded only the acceptance the
+ * event revealed, matched a send it had nothing to change on, or named no send it may settle.
+ */
+type MessageIdFallbackOutcome = "settled" | "accepted" | "matched_ignored" | "foreign";
 
 /**
- * `<uuid@domain>`, the shape every outbound Message-ID is minted in (`outboundMessageId`): a
- * cheap structural filter before the unindexed `supplied_rfc_message_id` lookup (#1619), so a
- * transactional email's own Message-ID, or any id with no chance of being ours, skips the query
- * rather than scanning for it.
+ * Why the matched send had no provider id of its own: a provider call came back with an unknown
+ * outcome (the 5xx recovery the fallback exists for), or the call was still in flight when the
+ * provider's event raced its response. `none` when no send matched.
  */
-const RADIOSO_MESSAGE_ID = /^<[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@[^<>]+>$/iu;
+type MessageIdFallbackPhase = "outcome_unknown" | "in_flight" | "none";
+
+const phaseOf = (intent: Pick<EmailSendIntentRecord, "outcomeUnknown">): MessageIdFallbackPhase =>
+  intent.outcomeUnknown ? "outcome_unknown" : "in_flight";
+
+/** Whether the intent records a provider message other than the one an event names: that message is not this send. */
+const recordsAnotherMessage = (intent: Pick<EmailSendIntentRecord, "providerMessageId">, providerMessageId: string): boolean =>
+  intent.providerMessageId !== null && intent.providerMessageId !== providerMessageId;
+
+/** Both halves of a Message-ID Radioso mints are case-insensitive (a hex UUID, a lowercased domain). */
+const sameMessageId = (left: string, right: string): boolean => left.toLowerCase() === right.toLowerCase();
+
+const idsOf = (intent: EmailSendIntentRecord) => ({
+  sendIntentId: intent.id,
+  workspaceId: intent.workspaceId,
+  conversationId: intent.conversationId,
+});
 
 /**
  * The sanitized detail of a bounce or suppression (research A6, FR-045): the provider's type and
@@ -42,14 +61,11 @@ export const bounceDetailCode = (bounce: DeliveryStatusFacts["bounce"]): string 
  */
 export class ProviderDeliveryEvents {
   constructor(private readonly deps: {
-    intents: Pick<
-      EmailSendIntentRepository,
-      "findByProviderMessageId" | "findByOutboundRfcMessageIds" | "findBySuppliedRfcMessageId" | "recordComplaint"
-    >;
+    intents: Pick<EmailSendIntentRepository, "findByProviderMessageId" | "findById" | "findByOutboundRfcMessageIds" | "recordComplaint">;
     writer: Pick<SendIntentWriter, "apply">;
     audit: Pick<AuditPort, "record">;
     metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
-    /** Audit failures at warn; an event it drops at info, with ids only. */
+    /** Audit failures at warn; an event it drops, and a send the Message-ID fallback accepted or settled, at info, with ids only. */
     logger: EmailChannelJobLogger;
   }) {}
 
@@ -60,85 +76,97 @@ export class ProviderDeliveryEvents {
     /** The RFC Message-ID the event carried, if any; the fallback when the provider id is foreign (#1619). */
     rfcMessageId?: string | null;
   }): Promise<ProviderDeliveryOutcome> {
-    const resolved = await this.resolveIntent(input);
-    if (!resolved) {
-      this.count(input.status.type, "webhook", "foreign");
-      return "foreign";
+    const byProviderId = await this.deps.intents.findByProviderMessageId(input.provider, input.providerMessageId);
+    if (byProviderId) return this.applyTo(byProviderId, input.status);
+    const bySentMessageId = await this.findBySentMessageId(input.provider, input.rfcMessageId ?? null);
+    return bySentMessageId ? this.applyByMessageId(bySentMessageId, input) : this.foreign(input.status);
+  }
+
+  /**
+   * The send a delivery event names only by the RFC Message-ID it carried (#1619): the intent
+   * whose primary key is that Message-ID's UUID, sent through the same provider under exactly that
+   * Message-ID. Radioso mints both the supplied id and the one the frozen request sends with
+   * `outboundMessageId`, from the intent's id and its mailbox's sending domain, which is set once
+   * when the mailbox is created, so the two are one string and a match is this deployment's own
+   * send. Null and uncounted for an id of any other shape; null and counted for one naming no send.
+   */
+  private async findBySentMessageId(provider: string, rfcMessageId: string | null): Promise<EmailSendIntentRecord | null> {
+    if (rfcMessageId === null) return null;
+    const intentId = sendIntentIdOfOutboundMessageId(rfcMessageId);
+    if (intentId === null) return null;
+    const intent = await this.deps.intents.findById(intentId);
+    if (intent?.provider === provider && sameMessageId(intent.suppliedRfcMessageId, rfcMessageId)) return intent;
+    this.countFallback("foreign", "none");
+    return null;
+  }
+
+  /**
+   * A send matched only by its Message-ID may have no provider id of its own yet: a 5xx whose
+   * outcome stayed unknown (inside the 23h re-POST window or past it), or a provider response still
+   * in flight. The event's provider id is recorded first, as the acceptance that response would
+   * have recorded, which is what lets the event's status settle the send. A send that records a
+   * different provider message is that message's, so the event is foreign to it.
+   */
+  private async applyByMessageId(
+    matched: EmailSendIntentRecord,
+    input: { providerMessageId: string; status: DeliveryStatusFacts },
+  ): Promise<ProviderDeliveryOutcome> {
+    const phase = phaseOf(matched);
+    const accepted = await this.acceptByMessageId(matched, input.providerMessageId, phase);
+    if (recordsAnotherMessage(accepted.intent, input.providerMessageId)) {
+      this.countFallback("foreign", phase);
+      return this.foreign(input.status);
     }
-    // A match reached only by Message-ID may still be `queued` or `uncertain` with no provider id
-    // of its own recorded (the issue's own timing: a 5xx inside the 23h re-POST window, or past
-    // it): recording the acceptance first is what lets the status evidence below settle it, the
-    // same way it would have if the provider's own acceptance response had simply arrived.
-    const intent = resolved.matchedBy === "message_id" ? await this.recordFallbackAcceptance(resolved.intent, input) : resolved.intent;
-    const isComplaint = input.status.type === "complained";
-    const outcome = isComplaint
-      ? await this.recordComplaint(intent)
-      : await this.applyEvidence(intent, {
-          kind: "provider_status",
-          status: input.status.type,
-          source: "webhook",
-          detailCode: bounceDetailCode(input.status.bounce),
-        });
-    this.count(input.status.type, "webhook", outcome);
+    const outcome = await this.applyTo(accepted.intent, input.status);
     // A complaint records once, but settles no delivery state; it never counts as `settled` here.
-    if (resolved.matchedBy === "message_id") this.observeFallback(isComplaint ? "ignored" : outcome, intent);
+    const settled = outcome === "applied" && input.status.type !== "complained";
+    this.countFallback(settled ? "settled" : accepted.recorded ? "accepted" : "matched_ignored", phase);
+    if (settled) this.deps.logger.info({ ...idsOf(accepted.intent), phase }, "email_send_settled_by_message_id");
     return outcome;
   }
 
   /**
-   * The intent a delivery event names: by the provider's own id first (research A6), and only when
-   * that is unknown, by the RFC Message-ID the event carried (#1619) — the id Radioso minted on its
-   * own verified sending domain, so a match is still only ever this deployment's own send, never
-   * another workspace's. An id that cannot possibly be ours never reaches the lookup at all, so
-   * it is counted as not having tried the fallback, distinct from one that tried and missed.
+   * Records the event's provider id on a matched send that has none, through the same acceptance
+   * and thread index rows a provider response records (`recordProviderAcceptance`; an `uncertain`
+   * send keeps its state), and returns the row as it now is. The event carried the send's own
+   * Message-ID, which is the id the provider delivered under. A provider id already on record is
+   * never replaced.
    */
-  private async resolveIntent(input: {
-    provider: string;
-    providerMessageId: string;
-    rfcMessageId?: string | null;
-  }): Promise<{ intent: EmailSendIntentRecord; matchedBy: "provider_id" | "message_id" } | null> {
-    const byProviderId = await this.deps.intents.findByProviderMessageId(input.provider, input.providerMessageId);
-    if (byProviderId) return { intent: byProviderId, matchedBy: "provider_id" };
-    if (!input.rfcMessageId || !RADIOSO_MESSAGE_ID.test(input.rfcMessageId)) return null;
-    const byMessageId = await this.deps.intents.findBySuppliedRfcMessageId(input.provider, input.rfcMessageId);
-    if (!byMessageId) {
-      this.countMessageIdFallback("foreign");
-      return null;
-    }
-    return { intent: byMessageId, matchedBy: "message_id" };
+  private async acceptByMessageId(
+    intent: EmailSendIntentRecord,
+    providerMessageId: string,
+    phase: MessageIdFallbackPhase,
+  ): Promise<{ intent: EmailSendIntentRecord; recorded: boolean }> {
+    if (intent.providerMessageId !== null) return { intent, recorded: false };
+    const written = await recordProviderAcceptance(
+      this.deps,
+      intent,
+      { providerMessageId, deliveredMessageId: intent.suppliedRfcMessageId },
+      { writer: "webhook" },
+    );
+    if (written.outcome === "not_found") return { intent, recorded: false };
+    const recorded = written.outcome === "applied";
+    if (recorded) this.deps.logger.info({ ...idsOf(written.intent), phase }, "email_send_accepted_by_message_id");
+    return { intent: written.intent, recorded };
   }
 
-  /**
-   * Records the provider's own id for a Message-ID match that has none yet, through the same
-   * `provider_accepted` event and thread-index insert a normal acceptance applies (`queued` moves
-   * to `accepted` with a lookup scheduled; `uncertain` keeps its state via `recordLateAcceptance`).
-   * A match whose id is already known (including a later event naming a different one) is left as
-   * it is: this is acceptance evidence, never a correction of a provider id already on record.
-   * Logged by ids only when it lands, so a fallback that only ever records the acceptance — the
-   * triggering event's own status settling nothing, or being a complaint, which never settles
-   * delivery state — still leaves a trace distinct from the fuller "settled" line below.
-   */
-  private async recordFallbackAcceptance(
-    intent: EmailSendIntentRecord,
-    input: { providerMessageId: string },
-  ): Promise<EmailSendIntentRecord> {
-    if (intent.providerMessageId !== null) return intent;
-    const written = await this.deps.writer.apply(
-      intent,
-      { kind: "provider_accepted", providerMessageId: input.providerMessageId, deliveredMessageId: intent.suppliedRfcMessageId },
-      {
-        writer: "webhook",
-        onApplied: async (scope, applied) => {
-          await scope.threads.insertIndexEntries(outboundIndexEntries(applied, [applied.suppliedRfcMessageId]));
-        },
-      },
-    );
-    if (written.outcome !== "applied") return intent;
-    this.deps.logger.info(
-      { sendIntentId: written.intent.id, workspaceId: written.intent.workspaceId, conversationId: written.intent.conversationId },
-      "email_send_accepted_by_message_id",
-    );
-    return written.intent;
+  /** A provider status on the send it names: a complaint is recorded once, any other status is evidence. */
+  private async applyTo(intent: EmailSendIntentRecord, status: DeliveryStatusFacts): Promise<"applied" | "ignored"> {
+    const outcome = status.type === "complained"
+      ? await this.recordComplaint(intent)
+      : await this.applyEvidence(intent, {
+          kind: "provider_status",
+          status: status.type,
+          source: "webhook",
+          detailCode: bounceDetailCode(status.bounce),
+        });
+    this.count(status.type, "webhook", outcome);
+    return outcome;
+  }
+
+  private foreign(status: DeliveryStatusFacts): "foreign" {
+    this.count(status.type, "webhook", "foreign");
+    return "foreign";
   }
 
   /** Bounces the sends behind the Radioso Message-Ids an inbound delivery status report names. */
@@ -201,30 +229,11 @@ export class ProviderDeliveryEvents {
     });
   }
 
-  /**
-   * Observes a Message-ID match: `settled` only when a delivery-state status actually applied (a
-   * status this deployment's state machine accepted, from whichever state the fallback found the
-   * intent in); `matched_ignored` when the fallback found the right intent but nothing settled —
-   * an out-of-order or non-settling status, a terminal intent, or a complaint, which records once
-   * but settles no delivery state of its own. Never counted or logged as settled just because the
-   * lookup matched, or because the triggering event happened to apply something (#1619).
-   */
-  private observeFallback(outcome: "applied" | "ignored", intent: EmailSendIntentRecord): void {
-    const fallbackOutcome: MessageIdFallbackOutcome = outcome === "applied" ? "settled" : "matched_ignored";
-    this.countMessageIdFallback(fallbackOutcome);
-    if (fallbackOutcome === "settled") {
-      this.deps.logger.info(
-        { sendIntentId: intent.id, workspaceId: intent.workspaceId, conversationId: intent.conversationId },
-        "email_send_settled_by_message_id",
-      );
-    }
-  }
-
-  /** Counted only when the provider id was foreign and the Message-ID fallback was attempted (#1619). */
-  private countMessageIdFallback(outcome: MessageIdFallbackOutcome): void {
+  /** Counted only once the provider id named no send and the event's Message-ID had Radioso's shape (#1619). */
+  private countFallback(outcome: MessageIdFallbackOutcome, phase: MessageIdFallbackPhase): void {
     this.deps.metrics?.incrementCounter("email_send_message_id_fallback_total", {
-      help: "Delivery events the RFC Message-ID fallback matched (settled or left unchanged) or still left foreign.",
-      labels: { outcome },
+      help: "Delivery events matched by the RFC Message-ID they carried, by what that changed and the matched send's phase.",
+      labels: { outcome, phase },
     });
   }
 }

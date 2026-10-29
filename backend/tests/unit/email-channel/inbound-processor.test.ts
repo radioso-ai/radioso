@@ -608,6 +608,23 @@ describe("EmailInboundProcessor: evidence about sent mail", () => {
     });
   });
 
+  it("ignores a persisted status whose Message-ID is not one, reading its own write back as strictly as the adapter wrote it (#1619)", async () => {
+    const h = harness();
+    const event = h.inbound.seedEvent({
+      eventKind: "delivery_status",
+      providerObjectId: "re_sent_1",
+      envelope: { status: bounced, rfcMessageId: "not-a-message-id" },
+    });
+
+    expect(await h.runEvent(event.id)).toBe("ignored");
+
+    expect(h.deliveryEvents.applyStatus).not.toHaveBeenCalled();
+    expect(h.logger.info).toHaveBeenCalledWith(
+      { eventId: event.id, eventKind: "delivery_status", attempt: 1, reason: "no_status" },
+      "email_inbound_event_ignored",
+    );
+  });
+
   it("settles an event about mail it did not send as ignored, and logs it by event", async () => {
     const h = harness();
     h.deliveryEvents.applyStatus.mockResolvedValueOnce("foreign");

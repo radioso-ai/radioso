@@ -129,20 +129,24 @@ It does not own:
   the trigger's authority holds (`repostAuthorized`) and looks accepted sends,
   and `uncertain` attempts whose acceptance arrived late, up after 24;
   `providerDeliveryEvents.ts` applies
-  provider delivery events and inbound DSN bounces, falling back from a
-  foreign provider id to the RFC Message-ID a delivery event carries, when
-  the provider echoes it and the intent's own id was never recorded (a 5xx
-  whose outcome stayed unknown, inside the re-POST window or past it):
-  it applies the same `provider_accepted` acceptance and thread-index entry
-  a normal one gets, then the status evidence on top, so late evidence
-  settles it exactly as if the provider's acceptance had arrived on time.
-  A provider that rewrites the supplied Message-Id (Resend, over SES)
-  never carries one to match, so the fallback is Lettermint's today.
+  provider delivery events and inbound DSN bounces. An event whose provider
+  id names no send falls back to the RFC Message-ID it carries
+  (`rfcMessageId`: the Lettermint adapter reads it from the event's echoed
+  headers; the Resend adapter leaves it null, as SES delivers under its own
+  id). `sendIntentIdOfOutboundMessageId` in `outboundHeaders.ts` reads the
+  intent id back out of it for a primary-key lookup, and an intent on the
+  same provider with the same supplied Message-ID records the event's
+  provider id as its acceptance before the status applies, so a 5xx whose
+  outcome stayed unknown settles from the provider's own event. An intent
+  that records a different provider id is foreign to the event. Both the
+  send attempt and this fallback record an acceptance through
+  `providerAcceptance.ts`, which writes the thread index rows with it.
   Every writer applies
   `sendIntentTransitions.ts` through `sendIntentWriter.ts`, whose unit of
   work (bound in `backend/src/app/composition/emailChannel/outbound.ts`) commits the
   fenced transition with the delivery failure it raises or clears, and which
-  logs an event the machine ignores at info with ids only. The
+  logs an event the machine ignores at info with ids only; an event another
+  writer already recorded (the same provider acceptance) returns quietly. The
   `email.send` handler is registered by `createEmailChannelApplicationModule`.
 
 ## Focused checks

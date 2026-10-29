@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { DeliveryStatusFacts } from "../../../mail/public.js";
+import { parseRfcMessageId, type DeliveryStatusFacts } from "../../../mail/public.js";
 
 /**
  * The provider delivery-status envelope the email webhook persisted (`emailWebhook.ts`'s
@@ -30,7 +30,8 @@ const deliveryStatusSchema = z.object({
       })
       .nullable(),
   }),
-  rfcMessageId: z.string().nullable().optional(),
+  // Held to the same length and syntax the provider adapter checked before persisting it.
+  rfcMessageId: z.string().refine((value) => parseRfcMessageId(value) !== null).nullable().optional(),
 });
 
 /** The delivery status the webhook persisted; null when it is not one this processor can read. */

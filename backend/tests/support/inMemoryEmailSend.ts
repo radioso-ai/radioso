@@ -73,7 +73,6 @@ export class InMemoryEmailSendIntents implements Pick<
   | "claimDueForReconcile"
   | "findByProviderMessageId"
   | "findByOutboundRfcMessageIds"
-  | "findBySuppliedRfcMessageId"
   | "recordComplaint"
   | "listDeliveryStates"
   | "listByMessageId"
@@ -180,11 +179,6 @@ export class InMemoryEmailSendIntents implements Pick<
       .map((entry) => entry.sendIntentId)
       .filter((id): id is string => typeof id === "string"));
     return [...ids].map((id) => this.rows.get(id)).filter((row): row is EmailSendIntentRecord => row !== undefined).map(copy);
-  }
-
-  async findBySuppliedRfcMessageId(provider: string, rfcMessageId: string) {
-    const row = [...this.rows.values()].find((candidate) => candidate.provider === provider && candidate.suppliedRfcMessageId === rfcMessageId);
-    return row ? copy(row) : null;
   }
 
   async transition(id: string, expectedVersion: number, event: SendIntentEvent): Promise<SendIntentTransitionOutcome> {

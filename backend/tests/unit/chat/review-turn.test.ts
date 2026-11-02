@@ -6,7 +6,7 @@ import type { ChatService } from "../../../src/modules/chat/services/chatService
 import type { ChatResponse } from "../../../src/modules/chat/types/chatResponses.js";
 import type { ChatReviewResult } from "../../../src/modules/chat/types/chatReview.js";
 import type { PreparedSession } from "../../../src/modules/chat/services/chatSessionPreparer.js";
-import type { TurnSkill } from "../../../src/modules/chat/services/turnOutcome.js";
+import type { TurnOutcomeRenderer, TurnSkill } from "../../../src/modules/chat/services/turnOutcome.js";
 import type { TurnSelectionStrategy } from "../../../src/modules/chat/services/turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "../../../src/modules/chat/services/turnSkillSelector.js";
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../../src/modules/chat/services/routines/contactRoutine.js";
@@ -989,6 +989,14 @@ describe("skill effects suppressed by a review turn", () => {
 
   const strategy: TurnSelectionStrategy = { select: () => ["retrieval"] };
 
+  // Composition's skill-result renderer: these tests dispatch turn skills and never render them.
+  const skillResultRenderer: TurnOutcomeRenderer = {
+    supports: () => false,
+    render: async () => {
+      throw new Error("skill result render not used");
+    },
+  };
+
   it("records both suppression sites with the review reason and the mode-labelled counter", async () => {
     const dispatch = vi.fn(async (): Promise<SkillDispatchResult> => ({
       disposition: "settled",
@@ -999,6 +1007,7 @@ describe("skill effects suppressed by a review turn", () => {
       agentSkills: { listByAgent: vi.fn(async () => [agentSkill("order_lookup"), externallyExecutedRetrieveSkill("grounded_search")]) },
       executorRegistry: new SkillExecutorRegistry([{ kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, executor: { dispatch } }]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
       metricsRegistry,
     });
     const turnSession = reviewSession("order_lookup");
@@ -1035,6 +1044,7 @@ describe("skill effects suppressed by a review turn", () => {
       agentSkills: { listByAgent: vi.fn(async () => [agentSkill("order_lookup")]) },
       executorRegistry: new SkillExecutorRegistry([]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
       metricsRegistry,
     });
     const session = {

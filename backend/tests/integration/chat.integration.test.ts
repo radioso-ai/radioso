@@ -144,6 +144,36 @@ const bindAlwaysDirectiveToAgentSkill = async (
   await publishTestAgentBaseline(app, { workspaceId, agentId: agent.id });
 };
 
+/**
+ * A chat gateway that records every model call and writes `reply` for each, so a test can read
+ * the prompt the agent's model was given and tell its reply from the text a skill returned.
+ */
+const recordingChatGateway = (reply: string) => {
+  const calls: Array<{ attemptKey: string; prompt: string }> = [];
+  const gateway: ChatGateway = {
+    async answer(input) {
+      calls.push({ attemptKey: input.usageContext.attemptKey, prompt: input.prompt });
+      return reply;
+    },
+    async *streamAnswer(input) {
+      calls.push({ attemptKey: input.usageContext.attemptKey, prompt: input.prompt });
+      yield reply.slice(0, 12);
+      yield reply.slice(12);
+    },
+  };
+  return { gateway, calls };
+};
+
+const settledSkillExecutorRegistry = (answer: string) => new SkillExecutorRegistry([{
+  kind: "internal",
+  adapter: "test_bound_skill",
+  executor: {
+    async dispatch(): Promise<SkillDispatchResult> {
+      return { disposition: "settled", outcome: { status: "completed", answer } };
+    },
+  },
+}]);
+
 describe("chat integration", () => {
   it.each([
     ["grounded", groundedV2Envelope, GROUNDED_V2_VISIBLE, "grounded", 3],
@@ -232,7 +262,8 @@ describe("chat integration", () => {
     const skillExecutorRegistry = new SkillExecutorRegistry([
       { kind: "internal", adapter: "test_bound_skill", executor },
     ]);
-    const { app, dependencies, repositories } = createTestApp({ skillExecutorRegistry });
+    const { gateway, calls } = recordingChatGateway("Your order 123 is on its way.");
+    const { app, dependencies, repositories } = createTestApp({ skillExecutorRegistry, chatGateway: gateway });
     const { token, workspaceId } = await issueTestToken(app, "bound-agent-skill-json@example.com");
     await bindAlwaysDirectiveToAgentSkill(app, dependencies, repositories, workspaceId, "order_lookup");
 
@@ -245,8 +276,11 @@ describe("chat integration", () => {
     const selected = response.body.debug.turnTrace.spine.stages.find((stage: { kind?: string }) =>
       stage.kind === "skill_selection"
     );
+    const composed = calls.find((call) => call.attemptKey === "skill_result");
     expect(dispatched).toBe(true);
-    expect(response.body.answer).toBe("Fake skill says order 123 is in transit.");
+    expect(composed?.prompt).toContain("<skill_findings>\nFake skill says order 123 is in transit.\n</skill_findings>");
+    expect(composed?.prompt).toContain("Look up the order.");
+    expect(response.body.answer).toBe("Your order 123 is on its way.");
     expect(response.body.skillOutcome).toBe("completed");
     expect(selected.outputs).toMatchObject({
       selectedSkills: ["order_lookup"],
@@ -257,19 +291,45 @@ describe("chat integration", () => {
     );
   });
 
-  it("streams directive-bound non-streamable agent skills through the fallback renderer", async () => {
-    const executor: SkillExecutorPort = {
-      async dispatch(): Promise<SkillDispatchResult> {
-        return {
-          disposition: "settled",
-          outcome: { status: "completed", answer: "Fallback streamed fake skill answer." },
-        };
-      },
-    };
-    const skillExecutorRegistry = new SkillExecutorRegistry([
-      { kind: "internal", adapter: "test_bound_skill", executor },
-    ]);
-    const { app, dependencies, repositories } = createTestApp({ skillExecutorRegistry });
+  it("answers from a tool's reply envelope without showing the visitor its JSON", async () => {
+    const toolText = [
+      "Valmora Books publishes Autobiografia di uno Yogi.",
+      "",
+      JSON.stringify({
+        conversationId: "4d3c2b1a-0000-4000-8000-000000000001",
+        answerCoverage: { status: "answered" },
+        ownership: { owner: "agent" },
+        traceId: "trace-valmora-1",
+        citations: [{ documentId: "doc-1", title: "Catalogo" }],
+      }, null, 2),
+    ].join("\n");
+    const { gateway, calls } = recordingChatGateway("We publish Autobiografia di uno Yogi.");
+    const { app, dependencies, repositories } = createTestApp({
+      skillExecutorRegistry: settledSkillExecutorRegistry(toolText),
+      chatGateway: gateway,
+    });
+    const { token, workspaceId } = await issueTestToken(app, "bound-agent-skill-envelope@example.com");
+    await bindAlwaysDirectiveToAgentSkill(app, dependencies, repositories, workspaceId, "valmora_books");
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Which books do you publish on yoga?", stream: false })
+      .expect(200);
+
+    const composed = calls.find((call) => call.attemptKey === "skill_result");
+    expect(composed?.prompt).toContain(`<skill_findings>\n${toolText}\n</skill_findings>`);
+    expect(response.body.answer).toBe("We publish Autobiografia di uno Yogi.");
+    expect(response.body.answer).not.toContain("traceId");
+    expect(response.body.answer).not.toContain("conversationId");
+  });
+
+  it("streams a directive-bound agent skill's reply as the agent's model writes it", async () => {
+    const { gateway, calls } = recordingChatGateway("Your order 123 is on its way.");
+    const { app, dependencies, repositories } = createTestApp({
+      skillExecutorRegistry: settledSkillExecutorRegistry("Fake skill says order 123 is in transit."),
+      chatGateway: gateway,
+    });
     const { token, workspaceId } = await issueTestToken(app, "bound-agent-skill-stream@example.com");
     await bindAlwaysDirectiveToAgentSkill(app, dependencies, repositories, workspaceId, "order_lookup");
 
@@ -292,10 +352,10 @@ describe("chat integration", () => {
     const events = parseSseEvents(response.body);
     const chunks = events.filter((event) => event.event === "chunk");
     const done = events.find((event) => event.event === "done");
-    expect(chunks).toEqual([
-      { event: "chunk", data: { text: "Fallback streamed fake skill answer." } },
-    ]);
-    expect(done?.data.answer).toBe("Fallback streamed fake skill answer.");
+    const composed = calls.find((call) => call.attemptKey === "stream_skill_result");
+    expect(composed?.prompt).toContain("<skill_findings>\nFake skill says order 123 is in transit.\n</skill_findings>");
+    expect(chunks.map((event) => event.data.text).join("")).toBe("Your order 123 is on its way.");
+    expect(done?.data.answer).toBe("Your order 123 is on its way.");
     expect(done?.data.debug).toMatchObject({
       turnTrace: {
         spine: {

@@ -226,6 +226,17 @@ export const CHAT_BEHAVIOR = {
     // never settle. Composition-owned; never tuned per phrase.
     disconnectAbortCeilingMs: 120_000,
   },
+  // A directive-bound skill's result rides into the skill-result-answer prompt as
+  // findings text; an oversized MCP result put in whole could overflow the model's
+  // input and fail the turn after the tool has already run.
+  skillResult: {
+    // Cap on the skill's returned text, in the pre-call guard's input-token estimate
+    // (a non-ASCII code point costs a full token, so a character cap would not hold for
+    // every script). Matches the grounded-context budget a retrieval answer carries
+    // (RETRIEVAL_BEHAVIOR.promptContextTokenBudget) and leaves 32,000 - 4,096 output - 4,800
+    // = 23,104 tokens for the rest of the prompt.
+    maxFindingsInputTokens: 4_800,
+  },
 } as const;
 
 export const RETRIEVAL_BEHAVIOR = {

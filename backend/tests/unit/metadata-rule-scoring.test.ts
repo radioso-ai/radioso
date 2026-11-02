@@ -117,6 +117,28 @@ describe("metadata rule scoring", () => {
     });
   });
 
+  it("resolves today() to the turn's local date when the caller names it", () => {
+    // 02:00 UTC on 3 November is still 2 November in Los Angeles: an event dated that day is not past.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-03T02:00:00.000Z"));
+    const rule = {
+      id: "upcoming-filter",
+      field: "dateFrom",
+      valueType: "date" as const,
+      operator: "gte" as const,
+      value: "today()",
+      effect: "filter" as const,
+      enabled: true,
+      triggerMode: "always_on" as const,
+    };
+    const candidates = [candidate({ chunkId: "local-today", documentId: "local-today-doc", metadata: { dateFrom: "2026-11-02" } })];
+    const service = new MetadataRuleScoringService();
+
+    expect(service.apply({ candidates, metadataRules: [rule], today: "2026-11-02" }).candidates.map((entry) => entry.chunkId))
+      .toEqual(["local-today"]);
+    expect(service.apply({ candidates, metadataRules: [rule] }).candidates).toHaveLength(0);
+  });
+
   it("supports grouped OR conditions within a single rule", () => {
     const service = new MetadataRuleScoringService();
 

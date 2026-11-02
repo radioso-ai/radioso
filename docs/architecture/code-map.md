@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-29
+last_updated: 2026-11-02
 ---
 
 # Code Map
@@ -1186,6 +1186,40 @@ Focused checks:
 Related docs:
 
 - [Data retention](../../docs-portal/content/operators/data-retention.mdx)
+
+## Workspace Time Zone
+
+Owns the zone a turn reads "today" in (#1600), so "tomorrow" and "this weekend"
+mean the visitor's day. `shared/domain/referenceTimeZone.ts` holds the one rule:
+the visitor's IANA zone when their client reports a valid one, else the
+workspace's (`workspaces.time_zone`, null for UTC), else UTC, validated with
+`Intl` and never throwing. The website embed and hosted chat page send the
+browser's zone as `pageContext.browserTimeZone`; the chat APIs and Ray's
+`test_agent_turn` take `userTimeZone`. A chat turn resolves the zone once in the
+session preparer and hands it to the planner, the turn interpreter, and the
+retrieval request; any other retrieval run reads the workspace zone in
+`RetrievalPipelineService.interpret`. Every "today" downstream is
+`formatIsoDate`/`formatPromptDate` (`shared/domain/clock.ts`) in that zone. The
+trace's context stage records `timeZoneSource` (`visitor`, `workspace`,
+`default`), never the zone.
+
+Public surfaces and key files:
+
+- `backend/src/shared/domain/referenceTimeZone.ts`, `backend/src/shared/domain/clock.ts`
+- `backend/src/modules/chat/services/turnReferenceTimeZone.ts` (a chat turn's zone)
+- `backend/src/modules/retrieval/domain/workspaceTimeZoneReader.ts` (retrieval's fallback port)
+- `backend/src/modules/settings/services/timeZoneSettingsService.ts` (the setting, validation and audit)
+- `backend/src/db/repositories/workspaceTimeZoneSettingsRepository.ts` (setting store)
+- `backend/src/app/http/routes/settingsRoutes.ts` (`GET`/`PUT /api/v1/settings/time-zone`)
+- `backend/src/modules/operatorCopilot/tools/timeZoneSettingProposals.ts` (`propose_time_zone_setting`)
+- `frontend/lib/browser-time-zone.ts` (the browser's zone on public chat messages)
+- `frontend/components/dashboard/settings/time-zone-card.tsx` (Settings → Workspace → Time zone)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/shared/referenceTimeZone.test.ts tests/unit/retrieval/relativeDatesTimeZone.test.ts tests/unit/chat-session-preparer-time-zone.test.ts tests/unit/time-zone-settings-service.test.ts tests/contract/settings-time-zone.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/workspace-time-zone.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec vitest run tests/unit/public-chat-browser-time-zone.test.ts tests/unit/time-zone-options.test.ts`
 
 ## Data Subject Requests
 

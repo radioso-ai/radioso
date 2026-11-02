@@ -61,11 +61,10 @@ import {
 } from "../../../shared/analytics/productAnalyticsService.js";
 import {
   NoopUsageLimitPolicy,
-  type AnswerUsageKind,
   type UsageLimitPolicy,
   type UsageLimitReservation,
 } from "../../../shared/domain/usageLimitPolicy.js";
-import { WORKBENCH_TEST_SOURCE_CHANNELS } from "../../../shared/domain/conversationSource.js";
+import { chatAnswerUsageKind, chatTurnTraceAttributes } from "./chatTurnAttributes.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import type { ConversationSummaryStore } from "../contracts/conversationSummary.js";
 import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
@@ -190,29 +189,6 @@ export { ModelChatGateway } from "./chatGateways.js";
 export type { SuspendedRoutineReader } from "./approvalResumeTurn.js";
 export { ChatTurnSupersededError, ChatTurnDisconnectAbortError } from "./conversationTurnRegistry.js";
 
-/** Operator-driven workbench/test-chat traffic metering as a cheaper `test_run`; every
- *  other channel is a real customer conversation reply. */
-const chatAnswerUsageKind = (sourceChannel?: string | null): AnswerUsageKind =>
-  sourceChannel != null && (WORKBENCH_TEST_SOURCE_CHANNELS as readonly string[]).includes(sourceChannel)
-    ? "test_run"
-    : "conversation_reply";
-
-const chatTurnTraceAttributes = (input: {
-  accountId?: string;
-  conversationId?: string;
-  sourceChannel?: string | null;
-  stream: boolean;
-  workspaceId: string;
-  executionMode?: TurnExecutionMode;
-}): Record<string, unknown> => ({
-  "radioso.account_id": input.accountId,
-  "radioso.conversation_id": input.conversationId,
-  "radioso.workspace_id": input.workspaceId,
-  "chat.source_channel": input.sourceChannel ?? "assistant",
-  "chat.stream": input.stream,
-  "chat.execution_mode": input.executionMode ?? "live",
-});
-
 /**
  * Everything ChatService needs to run a turn. The turn runtime (presenter +
  * registered skills) is assembled by composition via {@link buildChatTurnRuntime}
@@ -328,6 +304,8 @@ interface ChatAnswerInput {
   inputMetadata?: UserMessageInputMetadata;
   metadataFilter?: Record<string, unknown>;
   pageContext?: AssistantPageContext | null;
+  /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
+  visitorTimeZone?: string | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
@@ -925,6 +903,7 @@ export class ChatService {
         ...this.buildTurnPlanDirectiveInputs(session, input.accountId),
         visitorContext: this.planVisitorContext(session),
         agentId: session.agent.id,
+        timeZone: session.referenceTimeZone?.timeZone,
         workspaceContext: buildAgentChatWorkspaceContext(session.agent),
         usageContext: {
           accountId: input.accountId,
@@ -1440,6 +1419,8 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+    /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
+    visitorTimeZone?: string | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
@@ -1533,6 +1514,8 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+    /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
+    visitorTimeZone?: string | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */

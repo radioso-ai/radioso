@@ -1,5 +1,6 @@
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
+import { WorkspaceTimeZoneSettingsRepository } from "../../../db/repositories/workspaceTimeZoneSettingsRepository.js";
 import {
   createAgentRetrievalScopeResolver,
   createDefaultDocumentJobDispatcher,
@@ -104,6 +105,7 @@ export const buildDocumentRetrievalGraph = (input: {
     documentTypeCatalogRepository: repositories.documentTypeCatalogRepository,
     supportedEmbeddingModels: listSupportedEmbeddingModels(llmRegistry),
     embeddingTransitions,
+    timeZoneSettingsStore: new WorkspaceTimeZoneSettingsRepository(infrastructure.database.kysely),
   });
   // forward-declared: VectorIndexReconciler's onIdle closure captures this binding before
   // PgVectorTransitionMaintenance (which itself takes the reconciler as a constructor argument)
@@ -242,6 +244,9 @@ export const buildDocumentRetrievalGraph = (input: {
     retrievalDefaultsProvider,
     skillSettingsResolver,
     agentRetrievalScope,
+    workspaceTimeZones: {
+      readWorkspaceTimeZone: async (workspaceId) => (await repositories.workspaceRepository.findById(workspaceId))?.timeZone ?? null,
+    },
     telemetryService: infrastructure.telemetryService,
     usageEventRecorder: infrastructure.usageEventRecorder,
     workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,

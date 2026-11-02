@@ -76,6 +76,8 @@ export class QueryRewriteService {
     lexicalRewriteInstructions?: string;
     workspaceContext?: LlmCapabilityResolveInput;
     usageContext?: ModelCallUsageContext;
+    /** The zone the rewrite reads today's date in; UTC when absent. */
+    timeZone?: string;
   }): Promise<RewrittenRetrievalQuery> {
     if (!input.enabled) {
       return this.skipped(input.query);
@@ -93,6 +95,7 @@ export class QueryRewriteService {
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         workspaceContext: input.workspaceContext,
         usageContext: resolveFallbackUsageContext(input, "query_interpretation"),
+        timeZone: input.timeZone,
       });
       return this.rewriteFromProposal({
         query: input.query,

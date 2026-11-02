@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, check the email channel and its held replies, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-10-25
+last_updated: 2026-11-02
 ---
 
 # Ray
@@ -391,11 +391,18 @@ on its own initiative, and the card says when applying it lets the sweep erase
 conversations sooner, which nothing restores. See
 [Data retention](/operators/data-retention).
 
+A time zone proposal sets the zone the workspace reads today's date in, such as
+`America/Los_Angeles`, or UTC. Ask Ray why "tomorrow" comes out a day off for your
+visitors and it reads the current zone from the workspace settings and drafts the
+zone they are in. Visitors whose browser reports a zone keep their own today; the
+workspace zone covers email, Slack, voice, API calls, and everyone else. Ray can
+also test a turn as a visitor in a given zone before you apply anything.
+
 **Apply** asks for the permission that governs what the proposal changes, not one
 permission for all of them: `workspace.agents.manage` for an agent, directive, agent
 setting, routine, skill, or context variable; `workspace.documents.manage` for a
-document or a crawl; `workspace.settings.manage` for ingestion settings and
-workspace settings; `workspace.settings.manage` and `workspace.history.delete`
+document or a crawl; `workspace.settings.manage` for ingestion settings,
+workspace settings, and the time zone; `workspace.settings.manage` and `workspace.history.delete`
 for privacy settings, since a retention window erases conversations. An
 operator who manages knowledge but not agents sees Apply on the document cards
 and a read-only view of the rest. Ray sends the confirmed proposal through the same guarded

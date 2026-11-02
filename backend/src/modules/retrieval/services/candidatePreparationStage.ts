@@ -1,4 +1,4 @@
-import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatIsoDate, systemClock } from "../../../shared/domain/clock.js";
 import { CandidatePreparationService } from "./candidatePreparationService.js";
 import { buildAppliedConstraintForRule, MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -41,6 +41,8 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       ? preparedCandidates.filter((candidate) => new Set(documentScope).has(candidate.documentId))
       : preparedCandidates;
     const minimumUsefulCandidateCount = RETRIEVAL_BEHAVIOR.hybrid.minimumUsefulCandidateCount;
+    // One "today" for the turn, in its zone: the `today()` rule token and the upcoming boost.
+    const today = formatIsoDate(this.clock(), input.request.referenceTimeZone?.timeZone);
     const alwaysOnRules = (input.settings.metadataRules ?? []).filter(
       (rule) => rule.enabled && rule.triggerMode !== "match_turn",
     );
@@ -56,6 +58,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       this.metadataRuleScoringService.apply({
         candidates: normalizedCandidates,
         metadataRules: [...alwaysOnRules, ...matchedTriggerBoostRules, ...activeHardFilterRules],
+        today,
       });
     const normalizedUsefulCandidateCount = normalizedCandidates.filter(hasUsefulCandidateEvidence).length;
     const usefulCandidateCount = (candidates: RetrievedCandidate[]): number =>
@@ -137,7 +140,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       candidates: selectedCandidates.candidates,
       enabled: (input.settings.temporalBoostUpcomingEnabled ?? true)
         && ((input.temporalQueryMode ?? "none") !== "none" || input.temporalDateRange !== undefined),
-      today: formatIsoDateUtc(this.clock()),
+      today,
       dateRange: input.temporalDateRange,
     });
     const orderedCandidates = this.applyResolvedCandidateOrdering(input, boostedCandidates);
@@ -148,6 +151,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
     const temporalCandidates = this.scopeTemporalCandidates(input.temporalContexts ?? [], {
       documentScope,
       metadataRules: [...alwaysOnRules, ...matchedTriggerBoostRules, ...retainedHardFilterRules],
+      today,
     });
     const requestedRangeLookup = input.temporalLookupRanking !== undefined;
     const temporallyMergedCandidates = mergeTemporalCandidates({
@@ -187,7 +191,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
 
   private scopeTemporalCandidates(
     temporalContexts: RetrievedChunk[],
-    scope: { documentScope?: string[]; metadataRules: RetrievalMetadataRule[] },
+    scope: { documentScope?: string[]; metadataRules: RetrievalMetadataRule[]; today: string },
   ): RetrievedChunk[] {
     const scopedDocuments = scope.documentScope && scope.documentScope.length > 0
       ? new Set(scope.documentScope)
@@ -200,7 +204,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
     }
     const passing = new Set(
       this.metadataRuleScoringService
-        .apply({ candidates: inScope.map(toTemporalCandidate), metadataRules: scope.metadataRules })
+        .apply({ candidates: inScope.map(toTemporalCandidate), metadataRules: scope.metadataRules, today: scope.today })
         .candidates.map((candidate) => candidate.chunkId),
     );
     return inScope.filter((chunk) => passing.has(chunk.chunkId));

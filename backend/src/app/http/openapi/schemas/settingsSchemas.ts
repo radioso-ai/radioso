@@ -7,6 +7,7 @@ import {
   updateGeneralSettingsSchema,
   updatePlatformSettingsSchema,
   updatePrivacySettingsSchema,
+  updateTimeZoneSettingsSchema,
   updateSettingsSchema,
 } from "../../routes/settingsRouteSchemas.js";
 import {
@@ -530,10 +531,31 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     }),
   );
 
+  const timeZoneDescription =
+    "The IANA zone the workspace reads today's date in, such as Europe/Rome, for a turn whose visitor reports no zone of their own: relative dates in a question (today, tomorrow, this weekend) resolve in it. Null, the default, reads today in UTC.";
+  const TimeZoneSettingsSchema = registry.register(
+    "TimeZoneSettings",
+    z.object({
+      timeZone: z.string().nullable().openapi({ description: timeZoneDescription, example: "Europe/Rome" }),
+    }),
+  );
+
+  const UpdateTimeZoneSettingsRequestSchema = registry.register(
+    "UpdateTimeZoneSettingsRequest",
+    updateTimeZoneSettingsSchema.extend({
+      timeZone: updateTimeZoneSettingsSchema.shape.timeZone.openapi({
+        description: "An IANA zone name, stored by its canonical name, or null to read today in UTC.",
+        example: "America/Los_Angeles",
+      }),
+    }),
+  );
+
   Object.assign(schemas, {
     RetrievalDefaultsResponseSchema,
     PrivacySettingsSchema,
     UpdatePrivacySettingsRequestSchema,
+    TimeZoneSettingsSchema,
+    UpdateTimeZoneSettingsRequestSchema,
     IngestionSettingsSchema,
     DocumentTypeFieldSchema,
     DocumentTypeDefinitionSchema,

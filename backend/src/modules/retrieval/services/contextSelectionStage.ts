@@ -2,7 +2,7 @@ import { RerankService } from "./rerankService.js";
 import { PromptContextSelectorService } from "./promptContextSelectorService.js";
 import { answerCandidatePoolSize } from "../domain/answerCandidatePool.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatIsoDate, systemClock } from "../../../shared/domain/clock.js";
 import type { CandidatePreparationStageResult, ContextSelectionStage as ContextSelectionStageContract } from "./retrievalPipelineStages.js";
 import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
 import type {
@@ -118,6 +118,7 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
       topK: pool.length,
       workspaceContext: { workspaceId: input.request.workspaceId },
       usageContext: input.request.usageContext,
+      timeZone: input.request.referenceTimeZone?.timeZone,
     });
   }
 
@@ -127,7 +128,7 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
       enabled: input.settings.temporalDeterministicSortEnabled ?? true,
       queryShape: input.rewrittenQuery?.structuredResult?.queryShape ?? input.shapeSelection?.queryShape,
       temporalQueryMode: temporalQueryModeOf(input),
-      today: formatIsoDateUtc(this.clock()),
+      today: formatIsoDate(this.clock(), input.request.referenceTimeZone?.timeZone),
       dateRange: input.temporalDateRange,
     });
   }

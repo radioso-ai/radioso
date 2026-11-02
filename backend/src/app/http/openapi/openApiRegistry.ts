@@ -279,6 +279,8 @@ export interface OpenApiSchemaCatalog {
   IngestionSettingsSchema: z.ZodTypeAny;
   PrivacySettingsSchema: z.ZodTypeAny;
   UpdatePrivacySettingsRequestSchema: z.ZodTypeAny;
+  TimeZoneSettingsSchema: z.ZodTypeAny;
+  UpdateTimeZoneSettingsRequestSchema: z.ZodTypeAny;
   DocumentTypeFieldSchema: z.ZodTypeAny;
   DocumentTypeDefinitionSchema: z.ZodTypeAny;
   RetiredDocumentTypeFieldSchema: z.ZodTypeAny;

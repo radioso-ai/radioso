@@ -1,4 +1,4 @@
-import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatIsoDate, systemClock } from "../../../shared/domain/clock.js";
 import type {
   QueryEmbeddingPort,
 } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
@@ -124,7 +124,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       ? planTemporalLookup({
           mode: temporalQueryMode,
           dateRange: temporalDateRange,
-          today: formatIsoDateUtc(retrievalNow),
+          today: formatIsoDate(retrievalNow, input.request.referenceTimeZone?.timeZone),
           settings: input.settings,
           similarTo: embeddingResult && activeEmbedding.length === embeddingResult.space.dimensions
             ? { space: embeddingResult.space, queryVector: activeEmbedding }

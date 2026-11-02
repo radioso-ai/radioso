@@ -70,6 +70,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       similarityThreshold: settings.similarityThreshold,
       usageContext: input.request.usageContext,
       agenticToolFactories: input.request.agenticToolFactories,
+      timeZone: input.request.referenceTimeZone?.timeZone,
     });
 
     const contexts: FinalPromptContext[] = runResult.selectedChunks.map(toFinalPromptContext);
@@ -81,6 +82,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       ...(rewrittenQuery.structuredResult?.requestedDateRange
         ? { requestedDateRange: rewrittenQuery.structuredResult.requestedDateRange }
         : {}),
+      timeZone: input.request.referenceTimeZone?.timeZone,
       settings: {
         responseIdentity: input.request.responseIdentity,
         customInstruction: responseBehavior?.customInstruction ?? settings.customInstruction,

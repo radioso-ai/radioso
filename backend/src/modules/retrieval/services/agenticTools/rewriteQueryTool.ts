@@ -5,10 +5,12 @@ import type { AgentTool } from "../../../../shared/agent-runtime/index.js";
 import type { LlmCapabilityResolveInput } from "../../../../shared/infra/llm/workspaceContext.js";
 import type { QueryRewritePort } from "../../domain/queryRewritePort.js";
 
-export interface RewriteQueryToolDeps {
+interface RewriteQueryToolDeps {
   readonly queryRewrite: QueryRewritePort;
   readonly workspaceContext?: LlmCapabilityResolveInput;
   readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
+  /** The zone the rewrite reads today's date in; UTC when absent. */
+  readonly timeZone?: string;
 }
 
 const inputSchema = z.object({
@@ -35,6 +37,7 @@ export const createRewriteQueryTool = (
     return deps.queryRewrite.rewrite({
       query: input.query,
       workspaceContext: deps.workspaceContext,
+      timeZone: deps.timeZone,
       usageContext: deps.usageContext
         ? { ...deps.usageContext, attemptKey: `rewrite_tool:${ctx.stepIndex}:${ctx.callId}` }
         : undefined,

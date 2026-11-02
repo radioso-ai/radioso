@@ -78,10 +78,10 @@ import {
   phraseRetrievalSenseAsk,
   presentableSenseCandidates,
   type AgenticRetrievalToolFactory,
-  type RetrievalExecutionDiagnostics,
   type RetrievalSenseDetectorPort,
   type StructuredRewriteResult,
 } from "../../retrieval/public.js";
+import { retrievalDiagnosticsMetadata } from "./retrievalDiagnosticsMetadata.js";
 import {
   clarificationDecisionMetric,
   type ClarificationMetricDecision,
@@ -132,20 +132,6 @@ const clarificationTraceStage = (
   turn?.kind === "continue"
     ? turn.stage
     : turn?.engineTrace.stages.find((stage) => stage.kind === "clarification");
-
-const retrievalDiagnosticsMetadata = (
-  session: PreparedSession,
-): {
-  route: PreparedSession["turnRoute"];
-  contextCount: number;
-  rewriteStatus?: RetrievalExecutionDiagnostics["rewriteStatus"];
-  triggerStatus?: NonNullable<RetrievalExecutionDiagnostics["triggerAnalysis"]>["status"];
-} => ({
-  route: session.turnRoute,
-  contextCount: session.retrieval.contexts.length,
-  rewriteStatus: session.retrieval.diagnostics.rewriteStatus,
-  triggerStatus: session.retrieval.diagnostics.triggerAnalysis?.status,
-});
 
 export const applyCoverageAssessment = (
   session: Pick<PreparedSession, "answerCoverage" | "answerCoverageDebug" | "answerCoverageInteractionTrace" | "effectiveQuery" | "userMessage">,
@@ -1257,6 +1243,7 @@ export class ChatTurnAssembly {
         usageAttribution: input.session.usageAttribution,
         conversationSummary: input.session.conversationSummary,
         pageReadCapability: input.session.pageReadCapability,
+        timeZone: input.session.referenceTimeZone?.timeZone,
       })
       : await this.routeTurn(input.request, input.session));
     const resolved = input.resolvedRetrievalSense

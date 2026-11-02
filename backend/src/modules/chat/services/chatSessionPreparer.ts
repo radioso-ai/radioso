@@ -56,8 +56,10 @@ import type {
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { sensitiveSlotsAwaited } from "../../routines/public.js";
 import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
-import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, defaultAgentVoiceSettings, isAgentRetrievalEnabled, isPrivacyNoticeVersionOf, unpublishedAgentPublicIdentity } from "../../agents/public.js";
-import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
+import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/public.js";
+import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
+import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
+import type { ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
 import { admitsPageEvidence, capturedPageContext, type PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
@@ -164,6 +166,8 @@ export interface PreparedSession {
   priorRewriteContinuityState?: RewriteContinuityState;
   /** Shared per-turn response language label detected from the user message and history. */
   responseLanguage?: string;
+  /** The zone this turn reads "today" in, resolved once at prepare from the visitor and the workspace. */
+  referenceTimeZone?: ReferenceTimeZone;
   routineStartMessageId?: string;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
@@ -275,6 +279,8 @@ export interface PrepareChatSessionInput {
   documentScope?: string[];
   pageContext?: AssistantPageContext | null;
   pageReadCapability?: PageReadCapability | null;
+  /** The IANA zone the visitor's client reports; an invalid one is ignored and the workspace's zone applies. */
+  visitorTimeZone?: string | null;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
   chatSessionId?: string | null;
@@ -489,7 +495,7 @@ export class ChatSessionPreparer {
       }));
     const agent = revisionResolved.agent;
     const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
-    const [rewriteContinuityState, conversationSummary] = await Promise.all([
+    const [rewriteContinuityState, conversationSummary, referenceTimeZone] = await Promise.all([
       conversation
         ? this.loadRewriteContinuityState(input.workspaceId, conversation.id)
         : Promise.resolve(undefined),
@@ -498,6 +504,7 @@ export class ChatSessionPreparer {
         : conversation
           ? loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger)
           : Promise.resolve(undefined),
+      timed("referenceTimeZone", () => resolveTurnReferenceTimeZone(this.workspaceRepository, input)),
     ]);
     const newConversationVisitorId = conversation
       ? null
@@ -612,7 +619,7 @@ export class ChatSessionPreparer {
     // recompute with the real gate decision.
     const requestFacts = this.resolveVisitorRequestFacts(conversationForTurn, false);
     const directOnlyTurn = this.prepareDirectOnlyTurn(
-      this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
+      this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage, { referenceTimeZone }),
       agent,
     );
     const { retrieval, turnRoute } = options.skipRetrieval
@@ -628,6 +635,7 @@ export class ChatSessionPreparer {
           effectiveQuery: input.query,
           pageContext: input.pageContext ?? null,
           pageReadCapability: input.pageReadCapability ?? null,
+          referenceTimeZone,
           priorRewriteContinuityState: rewriteContinuityState,
           conversationSummary,
           usageAttribution: input.usageAttribution,
@@ -648,6 +656,7 @@ export class ChatSessionPreparer {
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       pageReadCapability: input.pageReadCapability ?? null,
+      referenceTimeZone,
       priorRewriteContinuityState: rewriteContinuityState,
       conversationSummary,
       usageAttribution: input.usageAttribution,
@@ -1049,7 +1058,7 @@ export class ChatSessionPreparer {
       session.history,
       session.conversation,
       session.userMessage,
-      session.responseLanguage,
+      session,
     );
     const { retrieval, turnRoute } = isAgentRetrievalEnabled(session.agent)
       ? await this.prepareRetrievalEnabledTurn(pipelineInput)
@@ -1096,7 +1105,7 @@ export class ChatSessionPreparer {
         session.history,
         session.conversation,
         session.userMessage,
-        session.responseLanguage,
+        session,
       ),
       retrievalSettingsOverride: { queryRewriteEnabled: false },
     };
@@ -1140,7 +1149,7 @@ export class ChatSessionPreparer {
     history: MessageRecord[],
     conversation?: ConversationRecord,
     userMessage?: MessageRecord,
-    responseLanguage?: string,
+    turn: Pick<PreparedSession, "responseLanguage" | "referenceTimeZone"> = {},
   ): RetrievalPipelineRequest {
     return {
       workspaceId: input.workspaceId,
@@ -1151,7 +1160,8 @@ export class ChatSessionPreparer {
         customInstruction: agent.customInstruction,
         citationDisplayEnabled: agent.citationDisplayEnabled,
       },
-      responseLanguage,
+      responseLanguage: turn.responseLanguage,
+      referenceTimeZone: turn.referenceTimeZone,
       responseBehaviorEnabled: true,
       agentSkillSettings: agent.skillSettings,
       agenticToolFactories: input.agenticToolFactories,
@@ -1277,113 +1287,14 @@ export class ChatSessionPreparer {
 
   private async resolveLegacyAgent(workspaceId: string): Promise<AgentRecord> {
     if (!this.workspaceRepository) {
-      const now = new Date();
-      return {
-        id: workspaceId,
-        workspaceId,
-        name: "",
-        customInstruction: "",
-        suggestedQuestionsEnabled: true,
-        assistantLinkUtmEnabled: true,
-        citationDisplayEnabled: true,
-        contactRequestsEnabled: false,
-        webhookExportsEnabled: false,
-        contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
-        retrievalEnabled: true,
-        sourceScope: { mode: "all" },
-        skillSettings: {},
-        logo: null,
-        // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
-        theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
-        branding: defaultAgentBrandingSettings(),
-        greetingInstruction: "",
-        assistantDefaultLocale: null,
-        proactiveGreetingEnabled: false,
-        voice: defaultAgentVoiceSettings(),
-        mechanicsReplies: {},
-        chatModelOverride: null,
-        surfaceSettings: {
-          authenticatedChat: {
-            enabled: true,
-          },
-          anonymousChat: {
-            enabled: false,
-            token: null,
-          },
-          websiteEmbed: {
-            enabled: false,
-            token: null,
-            allowedOrigins: [],
-            launcherLabel: "Chat with us",
-            launcherPosition: "bottom-right",
-            // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
-            theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
-            copy: {},
-            expertOverrides: {},
-            voiceCallsOffered: false,
-          },
-          extensions: {},
-        },
-        ...unpublishedAgentPublicIdentity(),
-        createdAt: now,
-        updatedAt: now,
-      };
+      return legacyAgentWithoutWorkspace(workspaceId, new Date());
     }
 
     const workspace = await this.workspaceRepository.findById(workspaceId);
     if (!workspace) {
       throw notFound("Workspace not found");
     }
-    return {
-      id: workspace.defaultAgentId ?? workspace.id,
-      workspaceId,
-      name: workspace.assistantName,
-      customInstruction: "",
-      suggestedQuestionsEnabled: true,
-      assistantLinkUtmEnabled: true,
-      citationDisplayEnabled: true,
-      contactRequestsEnabled: false,
-      webhookExportsEnabled: false,
-      contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
-      retrievalEnabled: true,
-      sourceScope: { mode: "all" },
-      skillSettings: {},
-      logo: null,
-      // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
-      theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
-      branding: defaultAgentBrandingSettings(),
-      greetingInstruction: workspace.greetingInstruction,
-      assistantDefaultLocale: workspace.assistantDefaultLocale,
-      proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
-      voice: defaultAgentVoiceSettings(),
-      mechanicsReplies: {},
-      chatModelOverride: null,
-      surfaceSettings: {
-        authenticatedChat: {
-          enabled: true,
-        },
-        anonymousChat: {
-          enabled: workspace.anonymousChatEnabled,
-          token: workspace.anonymousChatToken,
-        },
-        websiteEmbed: {
-          enabled: workspace.websiteEmbedEnabled,
-          token: workspace.websiteEmbedToken,
-          allowedOrigins: workspace.websiteEmbedAllowedOrigins,
-          launcherLabel: workspace.websiteEmbedLauncherLabel,
-          launcherPosition: workspace.websiteEmbedLauncherPosition,
-          // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
-          theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
-          copy: {},
-          expertOverrides: {},
-          voiceCallsOffered: false,
-        },
-        extensions: {},
-      },
-      ...unpublishedAgentPublicIdentity(),
-      createdAt: workspace.createdAt,
-      updatedAt: workspace.updatedAt,
-    };
+    return legacyAgentForWorkspace(workspaceId, workspace);
   }
 
   private async ensureConversation(conversationId: string, workspaceId: string, chatSessionId?: string | null) {

@@ -39,7 +39,7 @@ export const realCatalogDependencies = () => {
     contextVariables: { listByWorkspace: stub(), listByAgent: stub() },
     workspaceSettings: {
       getRetrievalDefaults: stub(), getIngestionSettings: stub(), listLlmModels: stub(), getManagedLlmModels: stub(),
-      getProviderCredentialHealth: stub(), getGeneralSettings: stub(), getPrivacySettings: stub(),
+      getProviderCredentialHealth: stub(), getGeneralSettings: stub(), getPrivacySettings: stub(), getTimeZoneSettings: stub(),
     },
     proposalRepository: { createProposal: stub() },
     proposalAdapters: copilotProposalTargetTypes.map((targetType) => ({

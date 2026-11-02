@@ -696,6 +696,7 @@ export class WorkbenchReplayRunner {
         }),
         agentId: session.agent.id,
         visitorContext: visitorMatchContext(session).context,
+        timeZone: session.referenceTimeZone?.timeZone,
         workspaceContext: buildAgentChatWorkspaceContext(session.agent),
         usageContext: {
           accountId: input.accountId ?? undefined,

@@ -14,3 +14,8 @@ export const ingestionSettingsChangeEffect = {
 export const ingestionSettingsReviewedEffect = { exposure: "live", reversibility: "reversible", metered: false } as const;
 export { websiteEmbedLauncherPositions } from "./domain/websiteEmbedSettings.js";
 export * from "./copilotPrimitiveRegistry.js";
+export {
+  TimeZoneSettingsService,
+  type TimeZoneSettings,
+  type TimeZoneSettingsStore,
+} from "./services/timeZoneSettingsService.js";

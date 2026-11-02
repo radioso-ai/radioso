@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatIsoDateUtc, formatPromptDateUtc, PROMPT_DATE_BUDGET_STAND_IN } from "../../src/shared/domain/clock.js";
+import { formatIsoDate, formatPromptDate, PROMPT_DATE_BUDGET_STAND_IN } from "../../src/shared/domain/clock.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { SharedAnswerInstructionBuilder } from "../../src/modules/retrieval/services/sharedAnswerInstructionBuilder.js";
@@ -28,27 +28,45 @@ const candidate = (overrides: Partial<RetrievedCandidate> = {}): RetrievedCandid
 
 const fixedClock = (iso: string) => () => new Date(iso);
 
-describe("formatIsoDateUtc", () => {
-  it("formats a date as UTC YYYY-MM-DD", () => {
-    expect(formatIsoDateUtc(new Date("2026-06-02T23:59:59Z"))).toBe("2026-06-02");
+describe("formatIsoDate", () => {
+  it("formats a date as UTC YYYY-MM-DD when no zone is named", () => {
+    expect(formatIsoDate(new Date("2026-06-02T23:59:59Z"))).toBe("2026-06-02");
   });
 
   it("zero-pads month and day", () => {
-    expect(formatIsoDateUtc(new Date("2026-01-05T00:00:00Z"))).toBe("2026-01-05");
+    expect(formatIsoDate(new Date("2026-01-05T00:00:00Z"))).toBe("2026-01-05");
+  });
+
+  it("reads the calendar date in the zone it is given", () => {
+    // 02:00 UTC on 3 November is 18:00 on 2 November in Los Angeles and 11:00 on 3 November in Tokyo.
+    const now = new Date("2026-11-03T02:00:00Z");
+    expect(formatIsoDate(now, "America/Los_Angeles")).toBe("2026-11-02");
+    expect(formatIsoDate(now, "Asia/Tokyo")).toBe("2026-11-03");
+    expect(formatIsoDate(now, "UTC")).toBe("2026-11-03");
+  });
+
+  it("falls back to UTC rather than throwing for a zone Intl does not know", () => {
+    expect(formatIsoDate(new Date("2026-11-03T02:00:00Z"), "Not/AZone")).toBe("2026-11-03");
   });
 });
 
-describe("formatPromptDateUtc", () => {
+describe("formatPromptDate", () => {
   it("names the UTC day's weekday after its ISO date, so a prompt can count days from it", () => {
-    expect(formatPromptDateUtc(new Date("2026-10-21T23:30:00Z"))).toBe("2026-10-21 (Wednesday)");
-    expect(formatPromptDateUtc(new Date("2026-10-25T00:00:00Z"))).toBe("2026-10-25 (Sunday)");
-    expect(formatPromptDateUtc(new Date("2026-10-26T00:00:00Z"))).toBe("2026-10-26 (Monday)");
+    expect(formatPromptDate(new Date("2026-10-21T23:30:00Z"))).toBe("2026-10-21 (Wednesday)");
+    expect(formatPromptDate(new Date("2026-10-25T00:00:00Z"))).toBe("2026-10-25 (Sunday)");
+    expect(formatPromptDate(new Date("2026-10-26T00:00:00Z"))).toBe("2026-10-26 (Monday)");
+  });
+
+  it("names the local day and its weekday in the zone it is given", () => {
+    const now = new Date("2026-11-03T02:00:00Z");
+    expect(formatPromptDate(now, "America/Los_Angeles")).toBe("2026-11-02 (Monday)");
+    expect(formatPromptDate(now, "Asia/Tokyo")).toBe("2026-11-03 (Tuesday)");
   });
 
   it("is never longer than the planner's budget stand-in", () => {
     const week = Array.from({ length: 7 }, (_value, day) => new Date(Date.UTC(2026, 9, 19 + day)));
     for (const day of week) {
-      expect(formatPromptDateUtc(day).length).toBeLessThanOrEqual(PROMPT_DATE_BUDGET_STAND_IN.length);
+      expect(formatPromptDate(day).length).toBeLessThanOrEqual(PROMPT_DATE_BUDGET_STAND_IN.length);
     }
   });
 });

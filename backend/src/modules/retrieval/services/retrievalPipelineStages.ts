@@ -2,6 +2,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import type { ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
 import type { AgenticRetrievalToolFactory } from "./agenticRetrievalRunner.js";
 import type { RetrievalResponseBehavior } from "../public.js";
 import type {
@@ -42,6 +43,11 @@ export interface RetrievalPipelineRequest {
   agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   precomputedRewriteProposal?: StructuredRewriteResult;
+  /**
+   * The zone "today" is read in for this run. A chat turn supplies the one it resolved; when
+   * absent, the pipeline reads the workspace's setting, else UTC.
+   */
+  referenceTimeZone?: ReferenceTimeZone;
 }
 
 export interface RetrievalContextStageResult {

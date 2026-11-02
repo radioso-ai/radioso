@@ -157,7 +157,7 @@ export const withCopilotActor = (
  * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
  * literal enum, so adding a target type cannot silently miss one of those sites again.
  */
-export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "document_operation", "ingestion_settings", "website_crawl", "workspace_setting", "agent_publication", "agent_greeting", "privacy_setting"] as const;
+export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "document_operation", "ingestion_settings", "website_crawl", "workspace_setting", "agent_publication", "agent_greeting", "privacy_setting", "time_zone_setting"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 /**
  * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
@@ -183,6 +183,7 @@ export const copilotProposalPermissions = {
   agent_greeting: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
   // A shorter retention window erases conversations, so applying one takes what deleting one takes.
   privacy_setting: { read: ["workspace.settings.read"], manage: ["workspace.settings.manage", "workspace.history.delete"] },
+  time_zone_setting: { read: ["workspace.settings.read"], manage: ["workspace.settings.manage"] },
 } as const satisfies Record<CopilotProposalTargetType, {
   readonly read: readonly [AccountPermission, ...AccountPermission[]];
   readonly manage: readonly [AccountPermission, ...AccountPermission[]];
@@ -473,6 +474,16 @@ export interface CopilotWorkspaceSettingProposalAdapter extends CopilotProposalA
  * settings it read. `validatePayload` merges it against the stored settings and states whether the
  * change lets the retention sweep erase conversations sooner.
  */
+/**
+ * The workspace's time zone, supplied by Ray from settings it read. `validatePayload` checks the
+ * zone against the runtime's IANA zone data and the stored zone it replaces.
+ */
+export interface CopilotTimeZoneSettingProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "time_zone_setting";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
 export interface CopilotPrivacySettingProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "privacy_setting";
   /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
@@ -543,7 +554,8 @@ export type CopilotAnyProposalAdapter =
   | CopilotWorkspaceSettingProposalAdapter
   | CopilotAgentPublicationProposalAdapter
   | CopilotAgentGreetingProposalAdapter
-  | CopilotPrivacySettingProposalAdapter;
+  | CopilotPrivacySettingProposalAdapter
+  | CopilotTimeZoneSettingProposalAdapter;
 
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 

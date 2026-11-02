@@ -337,6 +337,41 @@ export const registerSettingsPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/settings/time-zone",
+    tags: ["Settings"],
+    summary: "Read the workspace's time zone",
+    operationId: "getTimeZoneSettings",
+    description: "The zone the workspace reads today's date in when a visitor's client reports none. Requires workspace.settings.read.",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: { description: "The workspace's time zone", content: { "application/json": { schema: schemas.TimeZoneSettingsSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Caller lacks workspace.settings.read", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/settings/time-zone",
+    tags: ["Settings"],
+    summary: "Set the zone the workspace reads today's date in",
+    operationId: "updateTimeZoneSettings",
+    description:
+      "Sets the IANA zone relative dates resolve in: the query rewrite, the answer, the rerank, the date-range lookup, and the `today()` metadata rule token all read today's date in it. A visitor whose client reports a valid zone (the website embed sends the browser's; `userTimeZone` on a chat request) reads today in their own zone instead. Null, the default, reads today in UTC. Each change records a `workspace.time_zone_settings.updated` audit event. Requires workspace.settings.manage.",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: { required: true, content: { "application/json": { schema: schemas.UpdateTimeZoneSettingsRequestSchema } } },
+    },
+    responses: {
+      200: { description: "The saved time zone, by its canonical name", content: { "application/json": { schema: schemas.TimeZoneSettingsSchema } } },
+      400: { description: "Request validation failed: the zone is not an IANA time zone name, or null", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Caller lacks workspace.settings.manage", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/settings/document-types",
     tags: ["Settings"],
     summary: "Read the workspace document type catalog used by metadata extraction",

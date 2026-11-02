@@ -65,6 +65,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
           lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
           workspaceContext,
           usageContext: { ...usageContext, operation: "query_interpretation", attemptKey: "rewrite" },
+          timeZone: input.request.referenceTimeZone?.timeZone,
         });
     const activeQuery = rewrittenQuery.retrievalEligible ? rewrittenQuery.effectiveQuery : input.request.query;
     const activeParsedQuery: ParsedQueryInterpretation = rewrittenQuery.retrievalEligible

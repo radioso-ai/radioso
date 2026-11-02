@@ -20,6 +20,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       },
       contexts: input.contexts,
       ...(input.temporalDateRange ? { requestedDateRange: input.temporalDateRange } : {}),
+      timeZone: input.request.referenceTimeZone?.timeZone,
     });
 
     return {

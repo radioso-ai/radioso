@@ -178,6 +178,36 @@ describe('buildRoutineRunTrace', () => {
     })
   })
 
+  it('tells the slots a turn replaced from the ones it captured, by key', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        capturedSlotKeys: ['message'],
+        replacedSlotKeys: ['email', 42],
+        filledSlotKeys: ['email', 'message'],
+        steps: [{
+          stepId: 'ask_email',
+          kind: 'chat',
+          event: 'advanced',
+          capturedSlotKeys: ['message'],
+          replacedSlotKeys: ['email'],
+        }],
+      }),
+    )
+
+    expect(view?.capturedSlotKeys).toEqual(['message'])
+    expect(view?.replacedSlotKeys).toEqual(['email'])
+    expect(view?.steps[0]).toMatchObject({ capturedSlotKeys: ['message'], replacedSlotKeys: ['email'] })
+  })
+
+  it('carries no replaced keys when the turn replaced none', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({ steps: [{ stepId: 'ask_email', kind: 'chat', event: 'advanced' }] }),
+    )
+
+    expect(view).not.toHaveProperty('replacedSlotKeys')
+    expect(view?.steps[0]).not.toHaveProperty('replacedSlotKeys')
+  })
+
   it('carries a valid selection trace for a step', () => {
     const view = buildRoutineRunTrace(
       routineStage({

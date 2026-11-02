@@ -1593,6 +1593,8 @@ export interface RoutineTraceStepEntry {
     | "reask_limit_handoff";
   /** Declared slot keys captured at this step this turn (names only — never values). */
   capturedSlotKeys?: string[];
+  /** Declared slot keys that held a value and were given a different one at this step this turn (names only — never values). */
+  replacedSlotKeys?: string[];
   /** Declared slots whose returned value was not stored because it does not fit the slot's type (keys only). */
   rejectedSlots?: RoutineTraceRejectedSlot[];
   /** On `reask_limit_reached` and `reask_limit_handoff`: how many times in a row the step has now been asked again. */
@@ -1655,6 +1657,11 @@ export interface RoutineRunTrace {
   terminalKind?: RoutineTerminalKind;
   /** Declared slot keys newly captured this turn (names only). */
   capturedSlotKeys: string[];
+  /**
+   * Declared slot keys that held a value before this turn and were given a different one
+   * (names only); absent when the turn replaced none. A key captured this turn is not listed.
+   */
+  replacedSlotKeys?: string[];
   /** Declared slot keys filled after this turn (names only). */
   filledSlotKeys: string[];
   /**

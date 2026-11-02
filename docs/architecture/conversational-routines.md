@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-29
+last_updated: 2026-11-02
 ---
 
 # Conversational Routines
@@ -633,9 +633,12 @@ filtering of its own. The trace carries slot names only —
 never captured values, which may be personal data — so it is safe to show in the
 debug surface. This is the first place to look when a routine "isn't filling
 slots": a step with an empty `returnedSlotKeys` means the model extracted nothing
-from that turn's message, while a key in `returnedSlotKeys` that is missing from
-`capturedSlotKeys` was returned but did not newly fill a slot (for example, it
-restated a value the slot already held). An `off_topic` outcome captures nothing
+from that turn's message. A returned key lands in `capturedSlotKeys` when it
+filled an empty slot, and in `replacedSlotKeys` when the slot already held a value
+and the turn stored a different one, as when the visitor accepts a corrected date
+the reply offered. Both lists sit on the step that stored the value and, merged, on
+the turn. A returned key in neither list restated the value the slot already held.
+An `off_topic` outcome captures nothing
 that turn, even when `returnedSlotKeys` is non-empty — those keys show what the
 model read from the message, not what the routine kept.
 

@@ -259,14 +259,45 @@ const reaskFor = (
  */
 const foldStepEntry = (start: RoutineTraceStepEntry, walked: RoutineTraceStepEntry): RoutineTraceStepEntry => {
   const capturedSlotKeys = [...new Set([...(start.capturedSlotKeys ?? []), ...(walked.capturedSlotKeys ?? [])])];
+  const replacedSlotKeys = [...new Set([...(start.replacedSlotKeys ?? []), ...(walked.replacedSlotKeys ?? [])])];
   const rejectedSlots = [...(start.rejectedSlots ?? []), ...(walked.rejectedSlots ?? [])];
   return {
     ...start,
     ...walked,
     event: walked.event === "rendered" ? start.event : walked.event,
     ...(capturedSlotKeys.length > 0 ? { capturedSlotKeys } : {}),
+    ...(replacedSlotKeys.length > 0 ? { replacedSlotKeys } : {}),
     ...(rejectedSlots.length > 0 ? { rejectedSlots } : {}),
   };
+};
+
+/** Whether a value given for a slot is the one it already holds. Slot values are JSON data. */
+const sameSlotValue = (held: unknown, given: unknown): boolean =>
+  Object.is(held, given)
+  || (typeof held === "object" && held !== null && typeof given === "object" && given !== null
+    && JSON.stringify(held) === JSON.stringify(given));
+
+/** A step entry's slot keys: those a decision newly filled, and those whose held value it changed. */
+const stepSlotKeyFields = (changes: { captured: string[]; replaced: string[] }): Pick<
+  RoutineTraceStepEntry,
+  "capturedSlotKeys" | "replacedSlotKeys"
+> => ({
+  ...(changes.captured.length > 0 ? { capturedSlotKeys: changes.captured } : {}),
+  ...(changes.replaced.length > 0 ? { replacedSlotKeys: changes.replaced } : {}),
+});
+
+/**
+ * The turn's slot keys, from its steps. A slot captured this turn and changed again later in it
+ * is listed as captured only: it held no value before the turn.
+ */
+const runSlotKeyFields = (steps: readonly RoutineTraceStepEntry[]): Pick<
+  RoutineRunTrace,
+  "capturedSlotKeys" | "replacedSlotKeys"
+> => {
+  const capturedSlotKeys = [...new Set(steps.flatMap((entry) => entry.capturedSlotKeys ?? []))];
+  const replacedSlotKeys = [...new Set(steps.flatMap((entry) => entry.replacedSlotKeys ?? []))]
+    .filter((key) => !capturedSlotKeys.includes(key));
+  return { capturedSlotKeys, ...(replacedSlotKeys.length > 0 ? { replacedSlotKeys } : {}) };
 };
 
 /**
@@ -688,16 +719,20 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // Slot KEYS only — never the captured values (which may be PII).
     const declaredSlotKeys = new Set((routine.slots ?? []).map((slot) => slot.key));
     const traceSteps: RoutineTraceStepEntry[] = [];
-    const capturedKeysFrom = (
+    // The declared slots a decision gave a value: `captured` held none before it, `replaced`
+    // held a different one.
+    const slotKeyChanges = (
       before: Record<string, unknown>,
       decision?: { variables?: Record<string, unknown> },
-    ): string[] => {
-      if (!decision?.variables) {
-        return [];
-      }
-      return Object.keys(decision.variables).filter(
-        (key) => !hasVariable(before, key) && (declaredSlotKeys.size === 0 || declaredSlotKeys.has(key)),
-      );
+    ): { captured: string[]; replaced: string[] } => {
+      const given = Object.entries(decision?.variables ?? {})
+        .filter(([key]) => declaredSlotKeys.size === 0 || declaredSlotKeys.has(key));
+      return {
+        captured: given.filter(([key]) => !hasVariable(before, key)).map(([key]) => key),
+        replaced: given
+          .filter(([key, value]) => hasVariable(before, key) && !sameSlotValue(before[key], value))
+          .map(([key]) => key),
+      };
     };
     // Set by `selectNext` each call: whether it consulted the LLM selector (vs taking a
     // default/structured-guard edge), and what the selector reported its model returned.
@@ -1002,13 +1037,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // routine's first turn the step read the opening message and was never asked, so
       // staying on it is its first ask, not a re-ask (#1450).
       {
-        const captured = capturedKeysFrom(state.variables, decision);
         const stayed = step.id === currentStepId;
         startEntry = {
           stepId: currentStep.id,
           kind: currentStep.kind,
           event: stayed ? (input.activationTurn ? "rendered" : "reasked") : "advanced",
-          ...(captured.length > 0 ? { capturedSlotKeys: captured } : {}),
+          ...stepSlotKeyFields(slotKeyChanges(state.variables, decision)),
           ...(tracedRejected.length > 0 ? { rejectedSlots: tracedRejected } : {}),
           viaSelector: mainSelectorRan,
           ...(mainSelection ? { selection: mainSelection } : {}),
@@ -1057,10 +1091,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (lastSelection) {
         entry.selection = lastSelection;
       }
-      const captured = capturedKeysFrom(before, decision);
-      if (captured.length > 0) {
-        entry.capturedSlotKeys = captured;
-      }
+      Object.assign(entry, stepSlotKeyFields(slotKeyChanges(before, decision)));
       if (lastRejectedSlots.length > 0) {
         entry.rejectedSlots = lastRejectedSlots;
       }
@@ -1243,7 +1274,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
             startStepId: currentStepId,
             landedStepId: currentStep.id,
             terminalKind: "stuck",
-            capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+            ...runSlotKeyFields(traceSteps),
             filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
             ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
             steps: traceSteps,
@@ -1368,10 +1399,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         if (lastSelection) {
           skillEntry.selection = lastSelection;
         }
-        const capturedAtSkill = capturedKeysFrom(beforeSkill, skillDecision);
-        if (capturedAtSkill.length > 0) {
-          skillEntry.capturedSlotKeys = capturedAtSkill;
-        }
+        Object.assign(skillEntry, stepSlotKeyFields(slotKeyChanges(beforeSkill, skillDecision)));
         if (lastRejectedSlots.length > 0) {
           skillEntry.rejectedSlots = [...(skillEntry.rejectedSlots ?? []), ...lastRejectedSlots];
         }
@@ -1422,7 +1450,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         routineId: routine.id,
         startStepId: currentStepId,
         landedStepId: step.id,
-        capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+        ...runSlotKeyFields(traceSteps),
         filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
         ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
         steps: traceSteps,
@@ -1500,7 +1528,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       startStepId: currentStepId,
       landedStepId: step.id,
       ...(terminalKind ? { terminalKind } : {}),
-      capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+      ...runSlotKeyFields(traceSteps),
       filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
       ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
       steps: traceSteps,

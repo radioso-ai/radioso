@@ -722,7 +722,7 @@ imports from `services/`.
   live conversation — and a Ray `test_agent_turn` probe turn, which persists to
   `audit_events` the same way a live turn does — never sets it either, so its
   trace reports only which slots were filled (`filledSlotKeys`,
-  `capturedSlotKeys`), exactly as before slot values existed at all. A Test Chat
+  `capturedSlotKeys`, `replacedSlotKeys`), exactly as before slot values existed at all. A Test Chat
   turn that ends on a routine ending that notifies operators — a hand-off, or a
   completion with an operator notice, whose `handoff.notify` / `completion.notify`
   action a replayed turn never dispatches — carries the notice content (`kind`,

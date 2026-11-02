@@ -910,6 +910,8 @@ interface RoutineTraceStepView {
   kind: string
   event: string
   capturedSlotKeys: string[]
+  /** Slot keys that already held a value and were given a different one at this step. */
+  replacedSlotKeys?: string[]
   viaSelector: boolean
   skillName?: string
   skillStatus?: string
@@ -937,6 +939,8 @@ interface RoutineRunTraceView {
   landedStepId?: string
   terminalKind?: string
   capturedSlotKeys: string[]
+  /** Slot keys that held a value before the turn and were given a different one. */
+  replacedSlotKeys?: string[]
   filledSlotKeys: string[]
   steps: RoutineTraceStepView[]
 }
@@ -960,11 +964,13 @@ export const buildRoutineRunTrace = (
     .map((entry): RoutineTraceStepView => {
       const selection = buildRoutineStepSelection(entry.selection)
       const rejectedSlotKeys = rejectedSlotKeysOf(entry.rejectedSlots)
+      const replacedSlotKeys = asStringArray(entry.replacedSlotKeys)
       return {
         stepId: asString(entry.stepId) ?? '',
         kind: asString(entry.kind) ?? 'chat',
         event: asString(entry.event) ?? '',
         capturedSlotKeys: asStringArray(entry.capturedSlotKeys),
+        ...(replacedSlotKeys.length > 0 ? { replacedSlotKeys } : {}),
         viaSelector: entry.viaSelector === true,
         ...(asString(entry.skillName) ? { skillName: asString(entry.skillName) } : {}),
         ...(asString(entry.skillStatus) ? { skillStatus: asString(entry.skillStatus) } : {}),
@@ -975,11 +981,13 @@ export const buildRoutineRunTrace = (
         ...(entry.readOpeningMessage === true ? { readOpeningMessage: true } : {}),
       }
     })
+  const replacedSlotKeys = asStringArray(payload.replacedSlotKeys)
   return {
     startStepId: asString(payload.startStepId),
     landedStepId: asString(payload.landedStepId),
     terminalKind: asString(payload.terminalKind),
     capturedSlotKeys: asStringArray(payload.capturedSlotKeys),
+    ...(replacedSlotKeys.length > 0 ? { replacedSlotKeys } : {}),
     filledSlotKeys: asStringArray(payload.filledSlotKeys),
     steps,
   }
@@ -1121,6 +1129,17 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
                   <SlotKeyChips keys={step.capturedSlotKeys} tone="bg-emerald-500/10 text-emerald-600" />
                 </div>
               ) : null}
+              {step.replacedSlotKeys ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                    title="The slot already held a value, and this step stored a different one in its place."
+                  >
+                    replaced
+                  </span>
+                  <SlotKeyChips keys={step.replacedSlotKeys} tone="bg-sky-500/10 text-sky-600" />
+                </div>
+              ) : null}
               {step.rejectedSlotKeys ? (
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span
@@ -1154,6 +1173,7 @@ function RoutineStageDetail({
   const completed = typeof outputs.completed === 'boolean' ? outputs.completed : undefined
   const trace = buildRoutineRunTrace(stage)
   const capturedThisTurn = new Set(trace?.capturedSlotKeys ?? [])
+  const replacedThisTurn = new Set(trace?.replacedSlotKeys ?? [])
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
@@ -1181,11 +1201,14 @@ function RoutineStageDetail({
                   className={`rounded-full px-2 py-0.5 font-mono text-[11px] ${
                     capturedThisTurn.has(key)
                       ? 'bg-emerald-500/10 text-emerald-600'
-                      : 'bg-muted text-muted-foreground'
+                      : replacedThisTurn.has(key)
+                        ? 'bg-sky-500/10 text-sky-600'
+                        : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   {key}
                   {capturedThisTurn.has(key) ? <span className="ml-1 not-italic">• new</span> : null}
+                  {replacedThisTurn.has(key) ? <span className="ml-1 not-italic">• replaced</span> : null}
                 </li>
               ))}
             </ul>

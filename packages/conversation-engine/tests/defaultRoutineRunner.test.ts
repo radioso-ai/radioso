@@ -2094,6 +2094,75 @@ describe("DefaultRoutineRunner trace", () => {
     expect(JSON.stringify(result.trace)).not.toContain("a@b.c");
   });
 
+  describe("a slot the turn gives a new value for while it already holds one", () => {
+    const selecting = (variables: Record<string, unknown>, nextStepId = "ask_message") =>
+      new DefaultRoutineRunner(
+        [slotRoutine],
+        { select: vi.fn(async () => ({ nextStepId, variables })) },
+        { render: vi.fn(echoRenderer.render) },
+      );
+
+    it("records the slot as replaced, by key only, and not as captured", async () => {
+      const result = await selecting({ email: "new@example.com" }).resume({
+        turn,
+        state: state(["ask_email"], { email: "old@example.com" }),
+      });
+
+      expect(result.trace).toMatchObject({ capturedSlotKeys: [], replacedSlotKeys: ["email"], filledSlotKeys: ["email"] });
+      expect(result.trace?.steps[0]).toEqual({
+        stepId: "ask_email",
+        kind: "chat",
+        event: "advanced",
+        replacedSlotKeys: ["email"],
+        viaSelector: true,
+      });
+      expect(JSON.stringify(result.trace)).not.toContain("new@example.com");
+      expect(JSON.stringify(result.trace)).not.toContain("old@example.com");
+    });
+
+    it("tells a replaced slot from one captured beside it", async () => {
+      const result = await selecting({ email: "new@example.com", message: "Call me back" }, "done").resume({
+        turn,
+        state: state(["ask_email", "ask_message"], { email: "old@example.com" }),
+      });
+
+      expect(result.trace).toMatchObject({ capturedSlotKeys: ["message"], replacedSlotKeys: ["email"] });
+      expect(result.trace?.steps[0]).toMatchObject({ capturedSlotKeys: ["message"], replacedSlotKeys: ["email"] });
+    });
+
+    it("records nothing replaced when the turn returns the value the slot already holds", async () => {
+      const result = await selecting({ email: "old@example.com" }).resume({
+        turn,
+        state: state(["ask_email"], { email: "old@example.com" }),
+      });
+
+      expect(result.trace).not.toHaveProperty("replacedSlotKeys");
+      expect(result.trace?.steps[0]).not.toHaveProperty("replacedSlotKeys");
+    });
+
+    it("records a slot replaced while fast-forwarding past a satisfied step", async () => {
+      const forwardRoutine: Routine = {
+        ...slotRoutine,
+        transitions: [
+          { from: "ask_email", to: "ask_message", condition: "The user provided {{slot.email}}." },
+          { from: "ask_message", to: "done", condition: "The user provided {{slot.message}}." },
+        ],
+      };
+      const select = vi.fn()
+        .mockResolvedValueOnce({ nextStepId: "ask_message", variables: { message: "Call me back" } })
+        .mockResolvedValueOnce({ nextStepId: "ask_message", variables: { email: "new@example.com" } });
+      const runner = new DefaultRoutineRunner([forwardRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+      const result = await runner.resume({
+        turn,
+        state: state(["ask_email"], { email: "old@example.com", message: "Hello" }),
+      });
+
+      expect(result.trace?.replacedSlotKeys).toEqual(expect.arrayContaining(["message", "email"]));
+      expect(result.trace?.capturedSlotKeys).toEqual([]);
+    });
+  });
+
   describe("the routine's first turn (#1450)", () => {
     it("records a first step the opening message did not satisfy as asked for the first time, not re-asked", async () => {
       const runner = new DefaultRoutineRunner(

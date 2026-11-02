@@ -12,7 +12,7 @@ import type { AgentSkillRepositoryPort, AgentSkillSpine } from "../../src/module
 import { RepositoryAgentSkillTurnSkillProvider } from "../../src/app/composition/builtIn/agentSkillTurnSkillProvider.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityCheckInput, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { ChatTurnSkillSelector } from "../../src/modules/chat/services/turnSkillSelector.js";
-import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
+import type { TurnOutcomeRenderer, TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { TurnSelectionStrategy } from "../../src/modules/chat/services/turnSelectionStrategy.js";
 import { EXTERNAL_SKILLS_ADAPTER } from "../../src/modules/externalSkills/executor/mcpSkillExecutor.js";
@@ -44,6 +44,14 @@ const agentSkill = (overrides: Partial<AgentSkillSpine> & Pick<AgentSkillSpine, 
     updatedAt: now,
     ...rest,
   };
+};
+
+/** Composition's skill-result renderer: these tests dispatch turn skills and never render them. */
+const skillResultRenderer: TurnOutcomeRenderer = {
+  supports: () => false,
+  render: async () => {
+    throw new Error("skill result render not used");
+  },
 };
 
 const repositoryWith = (
@@ -171,6 +179,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
         executor: { dispatch },
       }]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
       metricsRegistry,
       logger,
     });
@@ -215,6 +224,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
         executor: { dispatch },
       }]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
     const session = sessionWithBinding("order_lookup");
     session.skillEffects = "allowed";
@@ -256,6 +266,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
         executor: { dispatch },
       }]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
     const session = sessionWithBinding("grounded_search");
     session.skillEffects = "suppressed";
@@ -297,6 +308,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       ]),
       executorRegistry: registry,
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
     const session = sessionWithBinding("order_lookup");
 
@@ -351,6 +363,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       agentSkills: liveRepository,
       executorRegistry: new SkillExecutorRegistry([]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
     const baseSession = sessionWithBinding("order_lookup");
     const pinnedSession: PreparedSession = {
@@ -372,6 +385,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       agentSkills: liveRepository,
       executorRegistry: new SkillExecutorRegistry([]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
     // No `authoredAgentSkills` — e.g. a trusted historical replay baseline with no pinned
     // revision at all (see chatSessionPreparer.ts's resolveRuntimeRevision).
@@ -381,6 +395,20 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
 
     expect(liveRepository.listByAgent).toHaveBeenCalledWith(workspaceId, agentId);
     expect(runtime.turnSkills).toHaveLength(1);
+  });
+
+  it("renders its turn skills through the renderer composition hands it", async () => {
+    const renderer: TurnOutcomeRenderer = { supports: () => true, render: vi.fn() };
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" }), agentSkill({ skillName: "catalog_lookup" })]),
+      executorRegistry: new SkillExecutorRegistry([]),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer: renderer,
+    });
+
+    const runtime = await provider.forSession(sessionWithBinding("order_lookup"));
+
+    expect(runtime.turnSkills.map((skill) => skill.renderer)).toEqual([renderer, renderer]);
   });
 
   it("checks cancellation immediately before external skill dispatch", async () => {
@@ -396,6 +424,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
         executor: { dispatch },
       }]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
     const session = sessionWithBinding("order_lookup");
     const throwIfCancelled = vi.fn(() => {
@@ -422,6 +451,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       ]),
       executorRegistry: new SkillExecutorRegistry([]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
 
     const runtime = await provider.forSession(sessionWithBinding("grounded_search"));
@@ -452,6 +482,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       ]),
       executorRegistry: registry,
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
     const session = sessionWithBinding("grounded_search");
 
@@ -503,6 +534,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
       executorRegistry: new SkillExecutorRegistry([]),
       capabilityPolicy: denyExternalSkills,
+      skillResultRenderer,
     });
 
     const runtime = await provider.forSession(sessionWithBinding("order_lookup"));
@@ -565,6 +597,7 @@ describe("RepositoryAgentSkillTurnSkillProvider suppressed-effects collector", (
       agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
       executorRegistry: externalExecutorRegistry(settledDispatch()),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
     const session = sessionWithBinding("order_lookup");
     session.skillEffects = "suppressed";
@@ -581,6 +614,7 @@ describe("RepositoryAgentSkillTurnSkillProvider suppressed-effects collector", (
       agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
       executorRegistry: externalExecutorRegistry(dispatch),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
       metricsRegistry,
     });
     const session = sessionWithBinding("order_lookup");
@@ -606,6 +640,7 @@ describe("RepositoryAgentSkillTurnSkillProvider suppressed-effects collector", (
       agentSkills: repositoryWith([externallyExecutedRetrieveSkill("grounded_search")]),
       executorRegistry: externalExecutorRegistry(dispatch),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
       metricsRegistry,
     });
     const session = sessionWithBinding("grounded_search");
@@ -632,6 +667,7 @@ describe("RepositoryAgentSkillTurnSkillProvider suppressed-effects collector", (
       ]),
       executorRegistry: externalExecutorRegistry(dispatch),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
       metricsRegistry,
     });
     const turnSession = sessionWithBinding("order_lookup");
@@ -655,6 +691,7 @@ describe("RepositoryAgentSkillTurnSkillProvider suppressed-effects collector", (
       agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
       executorRegistry: externalExecutorRegistry(settledDispatch()),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
     });
     const session = sessionWithBinding("order_lookup");
     session.skillEffects = "suppressed";
@@ -679,6 +716,7 @@ describe("RepositoryAgentSkillTurnSkillProvider dispatch failures", () => {
         ? [{ kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, executor: { dispatch: executor } }]
         : []),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
       logger,
     });
     const session = sessionWithBinding("order_lookup");

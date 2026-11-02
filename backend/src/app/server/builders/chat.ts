@@ -505,8 +505,7 @@ export const buildChatServices = (input: {
   const fallbackReplyComposer = input.llmRegistry.createFallbackReplyComposer(
     input.usageEventRecorder,
   );
-  // Composition owns terminal-answer skill registration: assemble the chat turn
-  // runtime here and inject it, so the host does not inline composer wiring.
+  // Composition assembles the chat turn runtime once and injects it, so the host does not inline composer wiring.
   const chatTurnRuntime = buildChatTurnRuntime({
     chatGateway,
     fallbackReplyComposer,
@@ -777,6 +776,7 @@ export const buildChatServices = (input: {
     agentSkills: new AgentSkillRepository(input.database.kysely),
     executorRegistry: input.composition.skillExecutorRegistry,
     capabilityPolicy: input.composition.capabilityPolicy,
+    skillResultRenderer: chatTurnRuntime.skillResultRenderer,
     metricsRegistry: input.metricsRegistry,
     logger: input.logger,
   });

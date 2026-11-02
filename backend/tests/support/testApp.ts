@@ -2220,18 +2220,20 @@ export const createTestDependencies = (overrides: {
       };
     },
   };
+  const chatTurnRuntime = buildChatTurnRuntime({
+    chatGateway,
+    fallbackReplyComposer,
+    skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
+    metrics: metricsRegistry,
+    logger,
+  });
   const chatService = new ChatService({
     conversationRepository,
     messageRepository,
     retrievalTurn: new RetrievalTurnController(retrievalPipeline),
     chatGateway,
     auditService,
-    turnRuntime: buildChatTurnRuntime({
-      chatGateway,
-      fallbackReplyComposer,
-      skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
-      metrics: metricsRegistry,
-    }),
+    turnRuntime: chatTurnRuntime,
     productAnalyticsService,
     workspaceRepository,
     bootstrapGreetingCacheRepository,
@@ -2261,6 +2263,7 @@ export const createTestDependencies = (overrides: {
       agentSkills: agentSkillRepository,
       executorRegistry: skillExecutorRegistry,
       capabilityPolicy,
+      skillResultRenderer: chatTurnRuntime.skillResultRenderer,
     }),
     conversationTurnRegistry: new InMemoryConversationTurnRegistry(
       new LoggingConversationTurnInterruptionObserver(logger, metricsRegistry),

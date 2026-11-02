@@ -99,7 +99,7 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `processTurn`, which records the `routine_yield` stage without asking the routine
   again when the yield's session and input event match the turn;
   `conversationEngineChatTurn.ts` drops it from the session once `processTurn` answers.
-  The grounded, grounded-miss, and direct composers end their prompt with
+  The grounded, grounded-miss, direct, and skill-result composers end their prompt with
   `appendRoutineLeadBack` (`shared/infra/prompts/steeringPromptRenderer.ts`) so the reply
   closes by asking for what the pending step still needs. On an agent that hands
   retrieval misses to a person, `retrievalTurnSkill.ts` gives a composed decline no
@@ -622,9 +622,9 @@ imports from `services/`.
   visitor message whose turn is still running never reaches the summary. Rows FK-cascade
   with their conversation (content, unlike the structural `routine_states`/`directive_states`).
   Injected via
-  `services/summary/conversationSummarySection.ts` into four prompts — turn
+  `services/summary/conversationSummarySection.ts` into five prompts — turn
   interpretation (`conversationTurnInterpreter.ts`), grounded answer
-  (`groundedAnswerPromptComposer.ts`), and the direct answer
+  (`groundedAnswerPromptComposer.ts`), the direct answer and the skill-result answer
   (`assistantReplyPromptBuilder.ts`), plus fused turn planning
   (`turnPlanService.ts`); an absent/empty summary renders nothing.
   Bounds and TTL are composition-owned in `CHAT_BEHAVIOR.conversationSummary`
@@ -848,6 +848,27 @@ imports from `services/`.
   Tests: `tests/unit/conversation-engine-chat-turn.test.ts`,
   `tests/unit/turn-skill-selector.test.ts`, and
   `tests/unit/turn-skill-fallback-steering.test.ts`.
+  A directive-bound agent skill that completes with answer text is rendered by
+  `skillResultTurnRenderer.ts`, selected by outcome kind, never by skill name:
+  `AGENT_SKILL_OUTCOME_KIND` (`agent_skill`, exported from `composition.ts`) tags every
+  outcome the composition-side `RepositoryAgentSkillTurnSkillProvider` builds, and that
+  provider renders through the `skillResultRenderer` it takes from `ChatTurnRuntime`. The
+  agent's own model writes the reply through `AssistantReplyComposer` with
+  `SKILL_RESULT_REPLY_CONFIG`: `prompts/chat/skill-result-answer.md` frames the skill's
+  text as data in a `<skill_findings>` block (a tag forged inside it is broken up, the
+  rest of its characters kept) beside the same answer instructions, visitor context,
+  summary, history, steering, and lead-back the direct prompt carries. The skill's text
+  is capped at `CHAT_BEHAVIOR.skillResult.maxFindingsCodePoints` Unicode code points
+  before it enters that block, so an oversized tool result cannot overflow the model's
+  input and fail the turn after the tool has already run; a cut logs one
+  `chat.skill_result.findings_truncated` line with ids and sizes only. The reply is
+  composed under usage attempt `skill_result`, or streamed under `stream_skill_result`
+  (`_miss` for either's blank decline), and its presentation carries the bound skill's
+  name and status, so the reply row records the bound skill. A failed, suppressed, or
+  empty outcome falls through to `GenericTurnOutcomeRenderer`. Tests:
+  `tests/unit/skill-result-turn-renderer.test.ts`,
+  `tests/unit/skill-result-reply-prompt.test.ts`, and the directive-bound cases in
+  `tests/integration/chat.integration.test.ts`.
 
 ## Tests
 

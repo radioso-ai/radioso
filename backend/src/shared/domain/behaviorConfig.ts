@@ -226,6 +226,20 @@ export const CHAT_BEHAVIOR = {
     // never settle. Composition-owned; never tuned per phrase.
     disconnectAbortCeilingMs: 120_000,
   },
+  // A directive-bound skill's result rides into the skill-result-answer prompt as
+  // findings text; an oversized MCP result put in whole could overflow the model's
+  // input and fail the turn after the tool has already run.
+  skillResult: {
+    // Cap on the skill's returned text, in Unicode code points, before it enters the
+    // prompt. Sized to the same order of magnitude as the grounded-context budget a
+    // retrieval answer prompt already carries (RETRIEVAL_BEHAVIOR.promptContextTokenBudget:
+    // 4,800 tokens, ~19,200 chars at the repo-standard ~4 chars/token estimate), since this
+    // reply carries a tool's grounding text into the same answer-prompt budget. Comfortably
+    // under LLM_DEFAULTS.textGenerationMaxInputTokens (32,000 tokens) once the rest of the
+    // prompt (answer instructions, history, summary, steering) is added. Composition-owned;
+    // never tuned per phrase.
+    maxFindingsCodePoints: 20_000,
+  },
 } as const;
 
 export const RETRIEVAL_BEHAVIOR = {

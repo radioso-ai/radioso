@@ -7,10 +7,11 @@ import {
 } from "./chatAnswerPresenter.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
 import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
-import type { TurnSkill } from "./turnOutcome.js";
+import type { TurnOutcomeRenderer, TurnSkill } from "./turnOutcome.js";
 import { AssistantReplyComposer } from "./assistantReplyComposer.js";
 import { RetrievalAnswerComposer, createRetrievalTurnSkill } from "./retrievalTurnSkill.js";
 import { DIRECT_REPLY_CONFIG, createDirectTurnSkill } from "./directTurnSkill.js";
+import { SKILL_RESULT_REPLY_CONFIG, createSkillResultTurnRenderer } from "./skillResultTurnRenderer.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -41,6 +42,12 @@ export interface ChatTurnRuntimeDependencies {
 export interface ChatTurnRuntime {
   chatAnswerPresenter: ChatAnswerPresenter;
   turnSkills: TurnSkill[];
+  /**
+   * Renders a directive-bound agent skill's completed result as the agent's own reply.
+   * Composition hands it to the agent-skill turn provider, whose turn skills render
+   * through it.
+   */
+  skillResultRenderer: TurnOutcomeRenderer;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
 }
 
@@ -75,9 +82,10 @@ const recordDirectiveAdherenceTally = (
  * Assembles the chat module's turn runtime. Composition supplies the external
  * collaborators (gateway, fallback composer, suggestion service, capability
  * provider); this factory owns which terminal-answer capabilities exist
- * (retrieval, direct) and how their composers are wired. Adding a
- * capability is a registration here, not a branch in the host's turn loop — the
- * host receives `turnSkills` and selects among them by route.
+ * (retrieval, direct), the renderer for a bound skill's result, and how their
+ * composers are wired. Adding a capability is a registration here, not a branch
+ * in the host's turn loop — the host receives `turnSkills` and selects among them
+ * by route.
  */
 export const buildChatTurnRuntime = (
   deps: ChatTurnRuntimeDependencies,
@@ -123,9 +131,20 @@ export const buildChatTurnRuntime = (
       },
     ),
   ];
+  const skillResultRenderer = createSkillResultTurnRenderer(
+    new AssistantReplyComposer(
+      answerSupport,
+      deps.chatGateway,
+      chatAnswerPresenter,
+      deps.fallbackReplyComposer,
+      SKILL_RESULT_REPLY_CONFIG,
+    ),
+    { logger: deps.logger },
+  );
   return {
     chatAnswerPresenter,
     turnSkills,
+    skillResultRenderer,
     metrics: deps.metrics,
   };
 };

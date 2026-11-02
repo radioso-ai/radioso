@@ -1715,6 +1715,9 @@ Primary internals:
 - `backend/src/modules/chat/services/clarification/` (host adapter for pending
   clarification resolution, deferred commit, and metrics)
 - `backend/src/modules/chat/services/directTurnSkill.ts`
+- `backend/src/modules/chat/services/skillResultTurnRenderer.ts` (the agent
+  writes the reply from a directive-bound skill's result;
+  `prompts/chat/skill-result-answer.md`)
 - `backend/src/modules/chat/services/turnPlanService.ts` and
   `turnPlanCoordinator.ts` (fused turn planning), with `turnPlanQuickReply.ts`
   (when the direct answer is the planner's own quick reply)

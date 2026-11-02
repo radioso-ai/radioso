@@ -544,7 +544,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     "UpdateTimeZoneSettingsRequest",
     updateTimeZoneSettingsSchema.extend({
       timeZone: updateTimeZoneSettingsSchema.shape.timeZone.openapi({
-        description: "An IANA zone name, stored by its canonical name, or null to read today in UTC.",
+        description: "An IANA zone name, stored as given in the case the server's zone data spells it, or null to read today in UTC.",
         example: "America/Los_Angeles",
       }),
     }),

@@ -69,6 +69,22 @@ describe("workspace time zone settings contract", () => {
     expect(cleared.body).toEqual({ timeZone: null });
   });
 
+  it("reads back the zone name it was given, even where ICU knows the zone by an older name", async () => {
+    const { app } = createApp();
+    const session = await issueTestSession(app, "tz-alias@example.com");
+
+    for (const timeZone of ["Asia/Kolkata", "Europe/Kyiv"]) {
+      const saved = await request(app)
+        .put("/api/v1/settings/time-zone")
+        .set(adminSessionHeaders(session))
+        .send({ timeZone });
+      const read = await request(app).get("/api/v1/settings/time-zone").set(adminSessionHeaders(session));
+
+      expect(saved.body).toEqual({ timeZone });
+      expect(read.body).toEqual({ timeZone });
+    }
+  });
+
   it("refuses a zone that is not an IANA zone name", async () => {
     const { app } = createApp();
     const session = await issueTestSession(app, "tz-invalid@example.com");

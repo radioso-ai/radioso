@@ -363,7 +363,7 @@ export const registerSettingsPaths = (
       body: { required: true, content: { "application/json": { schema: schemas.UpdateTimeZoneSettingsRequestSchema } } },
     },
     responses: {
-      200: { description: "The saved time zone, by its canonical name", content: { "application/json": { schema: schemas.TimeZoneSettingsSchema } } },
+      200: { description: "The saved time zone, as it was given", content: { "application/json": { schema: schemas.TimeZoneSettingsSchema } } },
       400: { description: "Request validation failed: the zone is not an IANA time zone name, or null", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       403: { description: "Caller lacks workspace.settings.manage", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },

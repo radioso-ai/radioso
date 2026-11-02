@@ -12,7 +12,7 @@ export const copilotTimeZoneSettingChangeSchema = z.object({
   rationale: z.string().trim().min(1).max(1_000).optional(),
 }).strict();
 
-/** What is stored on the proposal: the zone the apply writes, by its canonical name. */
+/** What is stored on the proposal: the zone the apply writes, as the settings service stores it. */
 export const copilotTimeZoneSettingPayloadSchema = z.object({
   /** The card's label; the workspace has one time zone. */
   name: z.literal("Time zone"),

@@ -1,7 +1,7 @@
 import type { AuditEventInput } from "../../audit/contracts/index.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import { fieldProposalVersion } from "../../../shared/domain/fieldProposalVersion.js";
-import { canonicalTimeZone } from "../../../shared/domain/referenceTimeZone.js";
+import { chosenTimeZoneName } from "../../../shared/domain/referenceTimeZone.js";
 
 export interface TimeZoneSettings {
   /**
@@ -33,10 +33,10 @@ type TimeZoneSettingsProposalApplyOutcome =
 
 const fields = ["timeZone"] as const;
 
-/** The stored form: a zone's canonical IANA name, or null. Refuses anything `Intl` does not know. */
+/** The stored form: the IANA name the operator chose, in its IANA case, or null. Refuses anything `Intl` does not know. */
 const normalize = (settings: TimeZoneSettings): TimeZoneSettings => {
   if (settings.timeZone === null) return { timeZone: null };
-  const timeZone = canonicalTimeZone(settings.timeZone);
+  const timeZone = chosenTimeZoneName(settings.timeZone);
   if (!timeZone) throw badRequest("timeZone must be an IANA time zone name, such as Europe/Rome, or null to read today in UTC");
   return { timeZone };
 };

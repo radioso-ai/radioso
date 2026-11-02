@@ -54,6 +54,18 @@ describe("TimeZoneSettingsService", () => {
     });
   });
 
+  it("stores the zone the operator chose, not ICU's older name for it", async () => {
+    const { service, store, audit } = createService();
+
+    await expect(service.update(WORKSPACE, { timeZone: "Asia/Kolkata" }, { userId: "user-1" }))
+      .resolves.toEqual({ timeZone: "Asia/Kolkata" });
+
+    expect(store.current()).toEqual({ timeZone: "Asia/Kolkata" });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: { actorUserId: "user-1", timeZone: { from: null, to: "Asia/Kolkata" } },
+    }));
+  });
+
   it("clears the zone back to UTC", async () => {
     const { service, store } = createService({ timeZone: "Europe/Rome" });
 

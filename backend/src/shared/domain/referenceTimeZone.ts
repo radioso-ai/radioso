@@ -15,8 +15,11 @@ export type { ReferenceTimeZone };
 const UTC_OFFSET_FORM = /^[+-]/;
 
 /**
- * The canonical IANA name of `value`, or null when `value` is not a zone `Intl` knows. Never
- * throws, so a client can send anything and the turn falls back to the next source.
+ * ICU's canonical name for `value`, or null when `value` is not a zone `Intl` knows. Never
+ * throws, so a client can send anything and the turn falls back to the next source. ICU keeps
+ * some older names as canonical (`Asia/Kolkata` resolves to `Asia/Calcutta`), which is fine for
+ * reading today's date and keeps the zones a turn reads to a bounded set; a name to store and show
+ * back is {@link chosenTimeZoneName}.
  */
 export const canonicalTimeZone = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
@@ -28,6 +31,29 @@ export const canonicalTimeZone = (value: unknown): string | null => {
   } catch {
     return null;
   }
+};
+
+// The zones `Intl` lists, keyed by lower case, so a listed name written in another case is stored
+// in its listed spelling. Read once: the runtime's zone data is fixed for the life of the process.
+let listedTimeZones: ReadonlyMap<string, string> | undefined;
+
+const listedSpelling = (name: string): string | undefined => {
+  listedTimeZones ??= new Map(Intl.supportedValuesOf("timeZone").map((zone) => [zone.toLowerCase(), zone]));
+  return listedTimeZones.get(name.toLowerCase());
+};
+
+/**
+ * The name to store for a zone an operator chose: their own name for it, in the case `Intl`
+ * spells it, or null when `Intl` does not know the zone. `america/los_angeles` is stored as
+ * `America/Los_Angeles`, and `Asia/Kolkata` as `Asia/Kolkata`, though ICU resolves it to
+ * `Asia/Calcutta`; so what the operator saved is what they read back.
+ */
+export const chosenTimeZoneName = (value: unknown): string | null => {
+  const resolved = canonicalTimeZone(value);
+  if (resolved === null || typeof value !== "string") return null;
+  const chosen = value.trim();
+  if (resolved.toLowerCase() === chosen.toLowerCase()) return resolved;
+  return listedSpelling(chosen) ?? chosen;
 };
 
 /**

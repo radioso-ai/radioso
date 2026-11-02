@@ -220,9 +220,9 @@ PUT /api/v1/settings/time-zone
 { "timeZone": "America/Los_Angeles" }
 ```
 
-`timeZone` is an IANA zone name; Radioso stores it by its canonical name, so `america/los_angeles` comes back as `America/Los_Angeles`. `null`, the default, reads today in UTC. A name the server's zone data does not know, or a fixed offset such as `+05:00`, answers `400`. `GET /api/v1/settings/time-zone` reads it back. Reading needs `workspace.settings.read` and setting it needs `workspace.settings.manage`; each change records a `workspace.time_zone_settings.updated` audit event with the zones it moved between.
+`timeZone` is an IANA zone name, and `GET /api/v1/settings/time-zone` reads back the name you saved: `Asia/Kolkata` stays `Asia/Kolkata`, though the server's zone data also knows that zone as `Asia/Calcutta`. A name the zone data lists comes back in its listed case, so `america/los_angeles` reads back as `America/Los_Angeles`. `null`, the default, reads today in UTC. A name the server's zone data does not know, or a fixed offset such as `+05:00`, answers `400`. Reading needs `workspace.settings.read` and setting it needs `workspace.settings.manage`; each change records a `workspace.time_zone_settings.updated` audit event with the zones it moved between.
 
-The zone decides every "today" a turn reads: the query rewrite that turns "this weekend" into dates, the answer and rerank prompts, the upcoming-events lookup, and the `today()` token in metadata rules. A visitor's own zone takes precedence for their turns: the website embed and the hosted chat page send the browser's zone, and the chat APIs take `userTimeZone` (see [Chat and history](/api/chat-and-history)). An unknown visitor zone is ignored and the workspace zone applies.
+The zone decides every "today" a turn reads: the query rewrite that turns "this weekend" into dates, the answer and rerank prompts, the upcoming-events lookup, the `today()` token in metadata rules, and a routine's date slots and lookups. A visitor's own zone takes precedence for their turns: the website embed and the hosted chat page send the browser's zone, and the chat APIs take `userTimeZone` (see [Chat and history](/api/chat-and-history)). An unknown visitor zone is ignored and the workspace zone applies.
 
 ## Provider credentials
 

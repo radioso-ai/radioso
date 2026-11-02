@@ -5878,7 +5878,7 @@ export interface components {
         };
         UpdateTimeZoneSettingsRequest: {
             /**
-             * @description An IANA zone name, stored by its canonical name, or null to read today in UTC.
+             * @description An IANA zone name, stored as given in the case the server's zone data spells it, or null to read today in UTC.
              * @example America/Los_Angeles
              */
             timeZone: string | null;
@@ -16215,7 +16215,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The saved time zone, by its canonical name */
+            /** @description The saved time zone, as it was given */
             200: {
                 headers: {
                     [name: string]: unknown;

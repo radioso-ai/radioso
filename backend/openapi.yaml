@@ -2357,7 +2357,7 @@ components:
             - "null"
           minLength: 1
           maxLength: 64
-          description: An IANA zone name, stored by its canonical name, or null to read today in UTC.
+          description: An IANA zone name, stored as given in the case the server's zone data spells it, or null to read today in UTC.
           example: America/Los_Angeles
       required:
         - timeZone
@@ -24498,7 +24498,7 @@ paths:
               $ref: "#/components/schemas/UpdateTimeZoneSettingsRequest"
       responses:
         "200":
-          description: The saved time zone, by its canonical name
+          description: The saved time zone, as it was given
           content:
             application/json:
               schema:

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   canonicalTimeZone,
+  chosenTimeZoneName,
   resolveReferenceTimeZone,
 } from "../../../src/shared/domain/referenceTimeZone.js";
 
@@ -24,6 +25,24 @@ describe("canonicalTimeZone", () => {
     expect(canonicalTimeZone(null)).toBeNull();
     expect(canonicalTimeZone(undefined)).toBeNull();
     expect(canonicalTimeZone(42)).toBeNull();
+  });
+});
+
+describe("chosenTimeZoneName", () => {
+  it("keeps the name the operator chose, in its IANA case, rather than ICU's older name for it", () => {
+    expect(chosenTimeZoneName("Asia/Kolkata")).toBe("Asia/Kolkata");
+    expect(chosenTimeZoneName("Europe/Kyiv")).toBe("Europe/Kyiv");
+    expect(chosenTimeZoneName(" Asia/Ho_Chi_Minh ")).toBe("Asia/Ho_Chi_Minh");
+    expect(chosenTimeZoneName("Asia/Calcutta")).toBe("Asia/Calcutta");
+    expect(chosenTimeZoneName("america/los_angeles")).toBe("America/Los_Angeles");
+    expect(chosenTimeZoneName("utc")).toBe("UTC");
+  });
+
+  it("refuses what canonicalTimeZone refuses", () => {
+    expect(chosenTimeZoneName("Mars/Olympus_Mons")).toBeNull();
+    expect(chosenTimeZoneName("+05:00")).toBeNull();
+    expect(chosenTimeZoneName("")).toBeNull();
+    expect(chosenTimeZoneName(42)).toBeNull();
   });
 });
 

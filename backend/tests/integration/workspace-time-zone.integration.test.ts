@@ -56,6 +56,16 @@ describeIntegration("workspace time zone (Postgres)", () => {
     await expect(store.read(workspace.id)).resolves.toMatchObject({ settings: { timeZone: "America/Los_Angeles" } });
   });
 
+  it("reads the zone a turn resolves today from, null when unset or the workspace is gone", async () => {
+    const workspace = await seedWorkspace();
+    await expect(store.readWorkspaceTimeZone(workspace.id)).resolves.toBeNull();
+
+    await store.write({ workspaceId: workspace.id, settings: { timeZone: "Asia/Kolkata" } });
+
+    await expect(store.readWorkspaceTimeZone(workspace.id)).resolves.toBe("Asia/Kolkata");
+    await expect(store.readWorkspaceTimeZone(randomUUID())).resolves.toBeNull();
+  });
+
   it("writes only while the stored zone still equals the expected one", async () => {
     const workspace = await seedWorkspace();
     await store.write({ workspaceId: workspace.id, settings: { timeZone: "Europe/Rome" } });

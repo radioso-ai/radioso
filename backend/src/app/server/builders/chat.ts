@@ -132,7 +132,7 @@ import {
 import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
 import { createRoutineTurnProvider, type RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
 import type { FacetExtractionJobStore } from "../../../modules/facets/contracts.js";
-import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
+import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver, WorkspaceTimeZoneReader } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import { Database } from "../../../shared/infra/database.js";
@@ -253,6 +253,7 @@ export const buildChatServices = (input: {
   agentRetrievalScope?: AgentRetrievalScopePort;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
+  workspaceTimeZones: WorkspaceTimeZoneReader;
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
   errorReporter: ErrorReporter;
   ingestionSettingsService: IngestionSettingsService;
@@ -827,6 +828,7 @@ export const buildChatServices = (input: {
     turnRuntime: chatTurnRuntime,
     productAnalyticsService: input.productAnalyticsService,
     workspaceRepository: input.workspaceRepository,
+    workspaceTimeZones: input.workspaceTimeZones,
     bootstrapGreetingCacheRepository: input.bootstrapGreetingCacheRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
@@ -1006,6 +1008,7 @@ export const buildChatServices = (input: {
     coverageHeadRecorder: new AnswerCoverageHeadRecorder(),
     logger: input.logger,
     streamMetrics: input.metricsRegistry,
+    workspaceTimeZones: input.workspaceTimeZones,
   });
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database.kysely),

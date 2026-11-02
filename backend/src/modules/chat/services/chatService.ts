@@ -124,6 +124,7 @@ import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseRe
 import { createTurnLanguageReport, withTurnLanguageReport, type TurnLanguageReport } from "./turnLanguageReport.js";
 import {
   type RetrievalSenseDetectorPort,
+  type WorkspaceTimeZoneReader,
 } from "../../retrieval/public.js";
 import {
   contextualDirectiveCandidates,
@@ -203,6 +204,8 @@ export interface ChatServiceOptions {
   turnRuntime: ChatTurnRuntime;
   productAnalyticsService?: ProductAnalyticsPort;
   workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">;
+  /** The zone a turn reads today in when its visitor reports none; UTC when absent. */
+  workspaceTimeZones?: WorkspaceTimeZoneReader;
   bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
@@ -438,6 +441,7 @@ export class ChatService {
       turnRuntime,
       productAnalyticsService = new NoopProductAnalyticsService(),
       workspaceRepository,
+      workspaceTimeZones,
       bootstrapGreetingCacheRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
@@ -546,6 +550,7 @@ export class ChatService {
       visitorResolver,
       turnRuntime.metrics,
       routineStore,
+      workspaceTimeZones,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,

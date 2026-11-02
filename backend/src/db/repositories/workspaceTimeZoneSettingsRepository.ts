@@ -1,12 +1,25 @@
 import type { Kysely } from "kysely";
 
+import type { WorkspaceTimeZoneReader } from "../../modules/retrieval/public.js";
 import type { TimeZoneSettings, TimeZoneSettingsStore } from "../../modules/settings/public.js";
 import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
 
-/** A workspace's time zone setting, kept on its `workspaces` row. */
-export class WorkspaceTimeZoneSettingsRepository implements TimeZoneSettingsStore {
+/**
+ * A workspace's time zone setting, kept on its `workspaces` row: the settings service's store, and
+ * the reader chat and retrieval resolve a turn's "today" from.
+ */
+export class WorkspaceTimeZoneSettingsRepository implements TimeZoneSettingsStore, WorkspaceTimeZoneReader {
   constructor(private readonly db: Kysely<DB>) {}
+
+  async readWorkspaceTimeZone(workspaceId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("workspaces")
+      .select("time_zone")
+      .where("id", "=", workspaceId)
+      .executeTakeFirst();
+    return row?.time_zone ?? null;
+  }
 
   async read(workspaceId: string): Promise<{ accountId: string; settings: TimeZoneSettings } | null> {
     const row = await this.db

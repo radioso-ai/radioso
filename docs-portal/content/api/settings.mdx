@@ -210,7 +210,7 @@ These rotation endpoints accept the signed-in dashboard session. Personal and se
 
 ## Time zone
 
-A question like "what's on tomorrow?" is answered against today's date, and today depends on where the visitor is: at 18:00 in Los Angeles it is already tomorrow in UTC. The workspace time zone is the zone Radioso reads today's date in for a turn whose visitor reports no zone of their own. Email, Slack and voice conversations, Retrieval API and MCP calls, and website visitors whose browser reports no zone all use it.
+A question like "what's on tomorrow?" is answered against today's date, and today depends on where the visitor is: at 18:00 in Los Angeles it is already tomorrow in UTC. The workspace time zone is the zone Radioso reads today's date in for a turn whose visitor reports no zone of their own. Email, Slack and voice conversations, Test Chat and evals, Retrieval API and MCP calls, and website visitors whose browser reports no zone all use it.
 
 ```text
 PUT /api/v1/settings/time-zone

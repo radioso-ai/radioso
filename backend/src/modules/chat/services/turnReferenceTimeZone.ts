@@ -1,4 +1,4 @@
-import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { WorkspaceTimeZoneReader } from "../../retrieval/public.js";
 import {
   canonicalTimeZone,
   resolveReferenceTimeZone,
@@ -8,14 +8,14 @@ import {
 /**
  * The zone a chat turn reads "today" in, resolved once before planning so the planner, the
  * rewrite, retrieval and the answer all share it. A valid visitor zone decides on its own, so
- * the workspace row is read only when the visitor's client reports none.
+ * the workspace's zone is read only when the visitor's client reports none.
  */
 export const resolveTurnReferenceTimeZone = async (
-  workspaces: Pick<WorkspaceRepositoryPort, "findById"> | undefined,
+  workspaceTimeZones: WorkspaceTimeZoneReader | undefined,
   input: { workspaceId: string; visitorTimeZone?: string | null },
 ): Promise<ReferenceTimeZone> => {
   const workspaceTimeZone = canonicalTimeZone(input.visitorTimeZone)
     ? null
-    : (await workspaces?.findById(input.workspaceId))?.timeZone;
+    : await workspaceTimeZones?.readWorkspaceTimeZone(input.workspaceId);
   return resolveReferenceTimeZone({ visitorTimeZone: input.visitorTimeZone, workspaceTimeZone });
 };

@@ -1530,6 +1530,11 @@ export const createTestDependencies = (overrides: {
     await drainDocumentProcessingQueue();
     return result;
   };
+  // Chat and retrieval read the workspace's zone off its in-memory record, as composition reads
+  // the Postgres column through `WorkspaceTimeZoneSettingsRepository`.
+  const workspaceTimeZones = {
+    readWorkspaceTimeZone: async (workspaceId: string) => (await workspaceRepository.findById(workspaceId))?.timeZone ?? null,
+  };
   const retrievalPipeline = new RetrievalPipelineService(
     createSystemRetrievalDefaultsProvider(),
     queryEmbeddings,
@@ -1545,7 +1550,7 @@ export const createTestDependencies = (overrides: {
     createRetrievalSkillSettingsResolver(),
     chunkHydrator,
     undefined,
-    { readWorkspaceTimeZone: async (workspaceId) => (await workspaceRepository.findById(workspaceId))?.timeZone ?? null },
+    workspaceTimeZones,
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -2259,6 +2264,7 @@ export const createTestDependencies = (overrides: {
     turnRuntime: chatTurnRuntime,
     productAnalyticsService,
     workspaceRepository,
+    workspaceTimeZones,
     bootstrapGreetingCacheRepository,
     usageLimitPolicy,
     agentService,

@@ -319,6 +319,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspace,
     workspaceLlmCapabilitySettingsService,
     workspaceModelAvailability,
+    workspaceTimeZones,
   } = documentRetrievalGraph;
   // Field suggestions for metadata rules are the catalog's declarations unioned
   // with the keys already observed on document metadata; the advisory reference
@@ -410,6 +411,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     workspaceRepository: repositories.workspaceRepository,
+    workspaceTimeZones,
     assertPublicWebsiteUrl,
     errorReporter: infrastructure.errorReportingService,
     ingestionSettingsService: settings.ingestionSettingsService,

@@ -1212,7 +1212,7 @@ Public surfaces and key files:
 - `backend/src/modules/chat/services/turnReferenceTimeZone.ts` (a chat turn's zone)
 - `packages/conversation-contract/index.d.ts` (`ReferenceTimeZone` on `TurnContext` and the engine inputs)
 - `packages/conversation-defaults/src/localDate.ts` (a turn's local date for the routine selector and skill input resolver)
-- `backend/src/modules/retrieval/domain/workspaceTimeZoneReader.ts` (retrieval's fallback port)
+- `backend/src/modules/retrieval/domain/workspaceTimeZoneReader.ts` (the workspace-zone port chat and retrieval read; `WorkspaceTimeZoneSettingsRepository` implements it)
 - `backend/src/modules/settings/services/timeZoneSettingsService.ts` (the setting, validation and audit)
 - `backend/src/db/repositories/workspaceTimeZoneSettingsRepository.ts` (setting store)
 - `backend/src/app/http/routes/settingsRoutes.ts` (`GET`/`PUT /api/v1/settings/time-zone`)

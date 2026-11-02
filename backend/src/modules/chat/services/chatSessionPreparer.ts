@@ -36,6 +36,7 @@ import type {
   RetrievalPipelineService,
   RewriteContinuityState,
   StructuredRewriteResult,
+  WorkspaceTimeZoneReader,
 } from "../../retrieval/public.js";
 import { projectVisitorRequestFacts, resolveContextForTurn } from "../../context-variables/public.js";
 import type {
@@ -432,6 +433,8 @@ export class ChatSessionPreparer {
     private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
     /** Optional: when wired, a message answering a sensitive routine field is marked as it is created (#1543). */
     private readonly routineStates?: { loadActive(input: { sessionId: string }): Promise<RoutineState | null> },
+    /** Optional: when wired, a turn whose visitor reports no zone reads today in the workspace's; else UTC. */
+    private readonly workspaceTimeZones?: WorkspaceTimeZoneReader,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -504,7 +507,7 @@ export class ChatSessionPreparer {
         : conversation
           ? loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger)
           : Promise.resolve(undefined),
-      timed("referenceTimeZone", () => resolveTurnReferenceTimeZone(this.workspaceRepository, input)),
+      timed("referenceTimeZone", () => resolveTurnReferenceTimeZone(this.workspaceTimeZones, input)),
     ]);
     const newConversationVisitorId = conversation
       ? null

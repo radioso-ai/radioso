@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { WorkspaceRecord } from "../../src/db/repositories/workspaceRepository.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
@@ -59,14 +58,14 @@ const setup = async (workspaceTimeZone: string | null) => {
       return retrievalResult(input.interpreted.request);
     },
   };
-  const findById = vi.fn(async (id: string) => ({ id, timeZone: workspaceTimeZone }) as WorkspaceRecord);
+  const readWorkspaceTimeZone = vi.fn(async () => workspaceTimeZone);
   const agent = await new InMemoryAgentRepository().create("ws-1", { name: "Bot" });
   const preparer = new ChatSessionPreparer(
     new InMemoryConversationRepository(),
     new InMemoryMessageRepository(),
     retrievalTurn,
     createAuditService(),
-    { findById },
+    undefined,
     { async resolve() { return agent; } },
     undefined,
     undefined,
@@ -75,6 +74,10 @@ const setup = async (workspaceTimeZone: string | null) => {
     undefined,
     undefined,
     publishedRevisionResolverFixture(),
+    undefined,
+    undefined,
+    undefined,
+    { readWorkspaceTimeZone },
   );
   const prepare = (visitorTimeZone?: string | null) => preparer.prepare({
     workspaceId: "ws-1",
@@ -83,19 +86,19 @@ const setup = async (workspaceTimeZone: string | null) => {
     chatSessionId: "anon-session-tz",
     ...(visitorTimeZone === undefined ? {} : { visitorTimeZone }),
   });
-  return { prepare, interpreted, findById };
+  return { prepare, interpreted, readWorkspaceTimeZone };
 };
 
 describe("ChatSessionPreparer reference time zone", () => {
   it("reads today in the visitor's zone and hands that zone to retrieval", async () => {
-    const { prepare, interpreted, findById } = await setup("Europe/Rome");
+    const { prepare, interpreted, readWorkspaceTimeZone } = await setup("Europe/Rome");
 
     const session = await prepare("America/Los_Angeles");
 
     expect(session.referenceTimeZone).toEqual({ timeZone: "America/Los_Angeles", source: "visitor" });
     expect(interpreted.at(-1)?.referenceTimeZone).toEqual({ timeZone: "America/Los_Angeles", source: "visitor" });
-    // A valid visitor zone decides on its own, so the turn does not read the workspace row for it.
-    expect(findById).not.toHaveBeenCalled();
+    // A valid visitor zone decides on its own, so the turn does not read the workspace's.
+    expect(readWorkspaceTimeZone).not.toHaveBeenCalled();
   });
 
   it("uses the workspace's zone when the visitor's client reports none", async () => {

@@ -21,10 +21,10 @@ const LEGACY_PROVENANCE_KEY = "enrichment";
 
 /**
  * Connectors rewrite a document's metadata from their upstream system on every
- * sync, so a date one writes — WordPress's publish day, for instance — is a
- * default the upstream derived rather than a date someone chose for this
- * document. Every other source holds documents an operator or an API client
- * filed, whose dates are theirs.
+ * sync, so a date one writes — WordPress's publish day on a post, for
+ * instance — is a default the upstream derived rather than a date someone
+ * chose for this document. Every other source holds documents an operator or
+ * an API client filed, whose dates are theirs.
  */
 const DATE_SYNCING_SOURCE_KINDS: ReadonlySet<string> = new Set(["connector"]);
 

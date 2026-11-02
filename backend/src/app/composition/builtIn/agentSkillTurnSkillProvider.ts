@@ -5,8 +5,9 @@ import type { AgentSkillRepositoryPort } from "../../../modules/agentSkills/publ
 import type { AgentSkillKind, AgentSkillSpine } from "../../../modules/agentSkills/public.js";
 import type { FinalPromptContext } from "../../../modules/retrieval/public.js";
 import {
+  AGENT_SKILL_OUTCOME_KIND,
   buildPreparedTurnOutcome,
-  GenericTurnOutcomeRenderer,
+  hasAnswerText,
   toConversationAgentConfig,
   toConversationInputEvent,
   toConversationMessages,
@@ -14,6 +15,7 @@ import {
   type AgentSkillTurnSkillProvider,
   type PreparedSession,
   type TurnOutcome,
+  type TurnOutcomeRenderer,
   type TurnSkill,
 } from "../../../modules/chat/composition.js";
 import {
@@ -55,19 +57,22 @@ interface RepositoryAgentSkillTurnSkillProviderOptions {
   agentSkills: Pick<AgentSkillRepositoryPort, "listByAgent">;
   executorRegistry: SkillExecutorRegistry;
   capabilityPolicy: CapabilityPolicy;
+  /**
+   * Chat's renderer for a completed skill result (`ChatTurnRuntime.skillResultRenderer`):
+   * the agent's model writes the visitor's reply from the text the bound skill returned.
+   */
+  skillResultRenderer: TurnOutcomeRenderer;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   logger?: Pick<AppLogger, "warn">;
 }
 
-const AGENT_SKILL_OUTCOME_KIND = "agent_skill";
-
 /**
  * Skill kinds a directive binding may claim a chat turn with. Only `external_mcp`
- * executors settle with user-facing answer text; `retrieve` deliberately returns
- * raw contexts (the chat turn loop owns answer composition — routing it through
- * the retrieval composer is the route-steering follow-up), and the action kinds
- * (webhook, slack, email, notify) settle with outputs only, which would render a
- * blank reply through the generic outcome renderer.
+ * executors settle with answer text the agent's reply can be written from;
+ * `retrieve` deliberately returns raw contexts (the chat turn loop owns answer
+ * composition — routing it through the retrieval composer is the route-steering
+ * follow-up), and the action kinds (webhook, slack, email, notify) settle with
+ * outputs only, which leave the reply nothing to be written from.
  */
 const TURN_BINDABLE_KINDS: ReadonlySet<AgentSkillKind> = new Set(["external_mcp"]);
 const AGENTIC_STAGEABLE_KINDS: ReadonlySet<AgentSkillKind> = new Set(["retrieve"]);
@@ -159,8 +164,6 @@ const settledFailure = (session: PreparedSession, skillName: string, reason: str
     outputs: { skill: skillName, reason },
     error: { code: reason, message: `Agent skill "${skillName}" did not answer the turn (${reason}).` },
   });
-
-const hasAnswerText = (answer: string | undefined): boolean => typeof answer === "string" && answer.trim().length > 0;
 
 /**
  * Records one directive-bound dispatch that failed for a reason this provider decided. An
@@ -373,9 +376,9 @@ const turnSkillForAgentSkill = (
   conversationDurability: ConversationDurability | undefined,
   recordSuppression: RecordSkillEffectSuppression,
   reportFailure: ReportDispatchFailure,
+  renderer: TurnOutcomeRenderer,
 ): TurnSkill => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
-  const renderer = new GenericTurnOutcomeRenderer();
   return {
     definition: { name: agentSkill.skillName, outcomeKinds: [AGENT_SKILL_OUTCOME_KIND] },
     selects: () => false,
@@ -436,7 +439,7 @@ const turnSkillForAgentSkill = (
       if (result.outcome.status !== "completed") {
         return outcomeFor(session, agentSkill.skillName, result.outcome);
       }
-      // A terminal turn skill answers the visitor; structured content alone renders a blank reply.
+      // The visitor's reply is written from the skill's text; structured content alone leaves it nothing.
       if (!hasAnswerText(result.outcome.answer)) {
         return fail("empty_answer");
       }
@@ -617,6 +620,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
           session.conversationDurability,
           recordSuppression,
           reportFailure,
+          this.options.skillResultRenderer,
         ));
       }
       if (!capabilityDenied && stagingCapable) {

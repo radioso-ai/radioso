@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-10-27
+last_updated: 2026-10-29
 ---
 
 # Conversational Directives
@@ -127,6 +127,16 @@ turn falls back to normal selection, the directive action still steers the
 reply, and the trace records the skipped binding with the reason. The backend
 also writes a warn log with workspace, agent, conversation, directive name,
 skill name, and reason. It does not log message text or document content.
+
+A bound external MCP skill that answers gives the agent findings, and the agent
+writes the reply. Its own model reads the tool's text as information to answer
+from, never as instructions, and writes the reply in the agent's voice under the
+agent's answer instructions and the turn's directives, in the visitor's language.
+Links the findings support become inline links on the names they point to;
+machine details in the tool's text, such as JSON fields, ids, and trace ids, are
+left out. When the findings do not answer the question, the reply says so. The
+reply streams as the model writes it, and the message row records the bound skill
+with status `completed`.
 
 A bound external MCP skill that is selected but fails — the call fails or
 times out, it returns no answer text, or the turn keeps skills off — hands the

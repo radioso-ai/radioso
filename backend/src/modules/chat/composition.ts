@@ -26,9 +26,11 @@ export { replyLanguageTagOf, reviewedDraftWriter } from "./services/reviewDraft.
 export type { ChatRoutineProvider } from "./contracts/routineProvider.js";
 export { ChatTurnAssemblyFactory } from "./services/chatTurnAssembly.js";
 export type { PreparedSession } from "./services/chatSessionPreparer.js";
-export type {
-  AgentSkillTurnRuntime,
-  AgentSkillTurnSkillProvider,
+export {
+  AGENT_SKILL_OUTCOME_KIND,
+  hasAnswerText,
+  type AgentSkillTurnRuntime,
+  type AgentSkillTurnSkillProvider,
 } from "./services/agentSkillTurnSkillProvider.js";
 export {
   WorkbenchReplayRunner,
@@ -82,10 +84,10 @@ export {
   CONTACT_INTENT_NAME,
 } from "./services/routines/contactRoutine.js";
 export { buildChatTurnRuntime } from "./services/chatTurnRuntime.js";
-export {
-  GenericTurnOutcomeRenderer,
-  type TurnOutcome,
-  type TurnSkill,
+export type {
+  TurnOutcome,
+  TurnOutcomeRenderer,
+  TurnSkill,
 } from "./services/turnOutcome.js";
 export { buildPreparedTurnOutcome } from "./services/preparedTurnOutcome.js";
 export {

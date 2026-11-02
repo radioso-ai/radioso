@@ -162,7 +162,11 @@ Most directives do not need a skill. The instruction is the rule. If a matching
 reply needs an MCP tool or an extra pass over your knowledge, type `#` in the
 **Instruction** field and select an enabled, agent-selectable skill. A directive
 can have one such binding: it makes the skill available for the reply when the
-directive matches. If the skill can't run or fails on a turn, the agent answers
+directive matches. When an MCP tool answers, the agent writes the reply from what
+the tool returned, in its own voice and the visitor's language, with your
+directives applied and links placed on the names they point to. The visitor reads
+the agent's answer; the tool's text is the evidence it is written from. If the
+skill can't run or fails on a turn, the agent answers
 from its other sources without claiming the tool's results, and the turn's trace
 shows why.
 

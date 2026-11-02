@@ -4,25 +4,35 @@ import { isBlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
-import { buildAssistantReplyPrompt } from "./assistantReplyPromptBuilder.js";
+import { buildAssistantReplyPrompt, type AssistantReplyPromptInput } from "./assistantReplyPromptBuilder.js";
 import type { TurnStreamResult } from "./turnOutcome.js";
 
 /**
- * Identity of an assistant-voice (non-retrieval) reply capability. The skill name
- * and outcome kind tag the presented answer; the outcome kind also seeds the usage
- * attempt keys (`<kind>`, `<kind>_miss`, `stream_<kind>`, `stream_<kind>_miss`).
+ * Writes one capability's reply prompt from the turn the composer reads and, for a reply
+ * written from a skill's result, the text that skill returned.
+ */
+type AssistantReplyPromptBuilder = (turn: AssistantReplyPromptInput, skillFindings?: string) => string;
+
+/**
+ * Identity of an assistant-voice (non-retrieval) reply capability, and the prompt it
+ * writes from. The skill name and outcome kind tag the presented answer; the outcome
+ * kind also seeds the usage attempt keys (`<kind>`, `<kind>_miss`, `stream_<kind>`,
+ * `stream_<kind>_miss`).
  */
 export interface AssistantReplyConfig {
   skillName: string;
   outcomeKind: string;
+  /** The capability's prompt; the direct reply's prompt when absent. */
+  buildPrompt?: AssistantReplyPromptBuilder;
 }
 
 /**
  * Composes a reply in the assistant's own voice, without retrieval — the shared
- * body behind the social-only and assistant-identity capabilities. On a blank
- * model reply it falls back to a plain no-answer reply rather than borrowing the
- * grounded chain. Only the capability identity varies, via {@link AssistantReplyConfig};
- * behavior is identical, so there is one implementation, not one per voice.
+ * body behind the direct reply and the reply written from a directive-bound
+ * skill's result. On a blank model reply it falls back to a plain no-answer reply
+ * rather than borrowing the grounded chain. Only the capability identity and its
+ * prompt vary, via {@link AssistantReplyConfig}; generation, streaming, and the
+ * blank fallback are identical, so there is one implementation, not one per voice.
  */
 export class AssistantReplyComposer {
   constructor(
@@ -33,9 +43,10 @@ export class AssistantReplyComposer {
     private readonly config: AssistantReplyConfig,
   ) {}
 
-  /** Builds the reply prompt (the assistant's own voice, no retrieval). */
-  private buildPrompt(session: PreparedSession, query: string): string {
-    return buildAssistantReplyPrompt({
+  /** Builds the capability's reply prompt (the assistant's own voice, no retrieval). */
+  private buildPrompt(session: PreparedSession, query: string, skillFindings: string | undefined): string {
+    const buildPrompt = this.config.buildPrompt ?? buildAssistantReplyPrompt;
+    return buildPrompt({
       route: session.turnRoute,
       responseIdentity: session.retrieval.responseIdentity,
       history: session.history,
@@ -47,7 +58,7 @@ export class AssistantReplyComposer {
       conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
       pendingRoutineStep: session.routineYield?.pendingStep,
-    });
+    }, skillFindings);
   }
 
   private presentReply(answer: string): ChatPresentedAnswer {
@@ -58,18 +69,23 @@ export class AssistantReplyComposer {
     });
   }
 
-  /** Generates the reply in one shot (non-streaming), or `null` when blank. */
+  /**
+   * Generates the reply in one shot (non-streaming), or `null` when blank.
+   * `skillFindings` is the text a bound skill returned, for a capability whose prompt
+   * writes the reply from it.
+   */
   async tryComposeAnswer(
     session: PreparedSession,
     query: string,
     accountId: string | undefined,
+    skillFindings?: string,
   ): Promise<ChatPresentedAnswer | null> {
     let answer: string;
     try {
       answer = (await this.chatGateway.answer({
         query,
         history: session.history,
-        prompt: this.buildPrompt(session, query),
+        prompt: this.buildPrompt(session, query, skillFindings),
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, this.config.outcomeKind),
       })).trim();
@@ -90,8 +106,9 @@ export class AssistantReplyComposer {
     query: string,
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
+    skillFindings?: string,
   ): Promise<ChatPresentedAnswer> {
-    const reply = await this.tryComposeAnswer(session, query, accountId);
+    const reply = await this.tryComposeAnswer(session, query, accountId, skillFindings);
     if (reply) {
       return reply;
     }
@@ -123,12 +140,13 @@ export class AssistantReplyComposer {
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
     signal?: AbortSignal,
+    skillFindings?: string,
   ): AsyncGenerator<string, TurnStreamResult> {
     let streamedAnswer = "";
     for await (const text of this.chatGateway.streamAnswer({
       query,
       history: session.history,
-      prompt: this.buildPrompt(session, query),
+      prompt: this.buildPrompt(session, query, skillFindings),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}`),
       signal,

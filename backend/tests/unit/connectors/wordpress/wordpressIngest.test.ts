@@ -68,8 +68,8 @@ describe("mapWebhookPostToIngestInput", () => {
     expect(metadata).not.toHaveProperty("url");
   });
 
-  it("captures the publish date so the post is findable and filterable by date", () => {
-    const { metadata } = mapWebhookPostToIngestInput("ws-1", baseWebhookPost);
+  it("dates a post by its publish day, the period a dated entry covers", () => {
+    const { metadata } = mapWebhookPostToIngestInput("ws-1", { ...baseWebhookPost, type: "post" });
     // Raw timestamp for provenance/display, plus the platform date-metadata key
     // (ISO day) so retrieval search text and metadata date rules pick it up.
     expect(metadata).toMatchObject({
@@ -78,8 +78,21 @@ describe("mapWebhookPostToIngestInput", () => {
     });
   });
 
+  it.each(["page", "product", "tribe_events"])(
+    "keeps a %s's publish timestamp without dating its content by it",
+    (type) => {
+      const { metadata } = mapWebhookPostToIngestInput("ws-1", { ...baseWebhookPost, type });
+      expect(metadata).toMatchObject({ published_at: "2026-05-10T08:30:00" });
+      expect(metadata).not.toHaveProperty("dateFrom");
+    },
+  );
+
   it("omits publish-date metadata when the post has no publish date", () => {
-    const { metadata } = mapWebhookPostToIngestInput("ws-1", { ...baseWebhookPost, date_gmt: undefined });
+    const { metadata } = mapWebhookPostToIngestInput("ws-1", {
+      ...baseWebhookPost,
+      type: "post",
+      date_gmt: undefined,
+    });
     expect(metadata).not.toHaveProperty("published_at");
     expect(metadata).not.toHaveProperty("dateFrom");
   });
@@ -158,6 +171,12 @@ describe("mapRestPostToIngestInput", () => {
       published_at: "2026-05-07T14:00:00",
       dateFrom: "2026-05-07",
     });
+  });
+
+  it("keeps a REST page's publish timestamp without dating its content by it", () => {
+    const { metadata } = mapRestPostToIngestInput("ws-1", { ...restPost, type: "page" });
+    expect(metadata).toMatchObject({ published_at: "2026-05-07T14:00:00" });
+    expect(metadata).not.toHaveProperty("dateFrom");
   });
 
   it("omits publish-date metadata when the REST post has no publish date", () => {

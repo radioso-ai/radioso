@@ -156,13 +156,43 @@ describe("BackgroundJobRuntime", () => {
     expect(errorReporter.report).toHaveBeenCalledOnce();
     const [report] = errorReporter.report.mock.calls[0] as unknown as [Record<string, unknown>];
     expect(report).toEqual({
-      errorType: "background_job.dead_lettered",
+      // The kind is in the type and the class, not just the metadata, so error tracking
+      // (fingerprinted on type and class) splits a dead letter by both instead of folding every
+      // kind and failure into one "Unknown error" issue.
+      errorType: "background_job.dead_lettered.test.refresh",
+      errorClass: "Error",
+      message: "test.refresh dead-lettered: Error",
       severity: "error",
       metadata: { kind: "test.refresh", attempt: 3, jobId: row.id, lastError: "Error" },
     });
     expect(JSON.stringify([...store.rows.values()])).not.toContain("SENTINEL");
     // A dead job is never claimed again.
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ claimed: 0 });
+  });
+
+  it("reports a dead letter's class alone, dropping an application error's code", async () => {
+    const { queue, runtime, store, errorReporter } = setup([
+      backgroundJobHandler(REFRESH, async () => {
+        throw new AppError(503, "provider_unavailable", "upstream echoed the prompt: tell me about my order 1234");
+      }),
+    ]);
+    await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await runtime.drain({ maxJobs: 1 });
+      vi.setSystemTime(Date.now() + 3_600_000);
+    }
+
+    const row = onlyRow(store);
+    expect(row.lastError).toBe("AppError [provider_unavailable]");
+    expect(errorReporter.report).toHaveBeenCalledWith(expect.objectContaining({
+      errorType: "background_job.dead_lettered.test.refresh",
+      // The code still reaches the stored summary and the log's metadata (asserted on the row and
+      // in the metadata below); only the report's own `errorClass` — the error-tracking grouping
+      // key — drops it, since a provider's code is not a JavaScript class name.
+      errorClass: "AppError",
+      metadata: expect.objectContaining({ lastError: "AppError [provider_unavailable]" }),
+    }));
   });
 
   it("dead-letters at once when the handler reports a failure no retry can fix", async () => {
@@ -191,7 +221,10 @@ describe("BackgroundJobRuntime", () => {
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ deadLettered: 1 });
     expect(handle).not.toHaveBeenCalled();
     expect(onlyRow(store).lastError).toBe("InvalidBackgroundJobPayloadError");
-    expect(errorReporter.report).toHaveBeenCalledOnce();
+    expect(errorReporter.report).toHaveBeenCalledWith(expect.objectContaining({
+      errorType: "background_job.dead_lettered.test.refresh",
+      errorClass: "InvalidBackgroundJobPayloadError",
+    }));
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "dead_lettered", errorType: "InvalidBackgroundJobPayloadError" }),
       "Background job dead-lettered",
@@ -557,7 +590,9 @@ describe("BackgroundJobRuntime", () => {
       expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ deadLettered: 1 });
       expect(onlyRow(store)).toMatchObject({ status: "dead", payload: null, lastError: "NonRetryableBackgroundJobError" });
       expect(errorReporter.report).toHaveBeenCalledWith({
-        errorType: "background_job.dead_letter_hook_failed",
+        errorType: "background_job.dead_letter_hook_failed.test.short",
+        errorClass: "Error",
+        message: "test.short dead-letter hook failed: Error",
         severity: "error",
         metadata: expect.objectContaining({ kind: "test.short", hookError: "Error" }),
       });
@@ -852,7 +887,9 @@ describe("BackgroundJobRuntime", () => {
       expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ retried: 1 });
       expect(onlyRow(store)).toMatchObject({ status: "pending", lastError: "Error" });
       expect(errorReporter.report).toHaveBeenCalledWith({
-        errorType: "background_job.attempt_failed_hook_failed",
+        errorType: "background_job.attempt_failed_hook_failed.test.short",
+        errorClass: "Error",
+        message: "test.short attempt-failed hook failed: Error",
         severity: "error",
         metadata: expect.objectContaining({ kind: "test.short", hookError: "Error" }),
       });
@@ -1044,6 +1081,33 @@ describe("BackgroundJobRuntime", () => {
     hold.release();
     await stopping;
     expect(store.rows.size).toBe(0);
+  });
+
+  it("reports a poll failure with a real class, not the sink's unknown-error fallback", async () => {
+    const store = new InMemoryBackgroundJobStore(clock);
+    const logger = createLogger();
+    const errorReporter = { report: vi.fn(async () => undefined) };
+    const runtime = new BackgroundJobRuntime({
+      store,
+      handlers: [backgroundJobHandler(REFRESH, async () => {})],
+      logger,
+      errorReporter,
+      pollIntervalMs: 1_000,
+      now: clock.now,
+    });
+    vi.spyOn(store, "claimNext").mockRejectedValueOnce(new Error("store unreachable"));
+
+    runtime.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(errorReporter.report).toHaveBeenCalledWith({
+      errorType: "background_job.poll_failed",
+      errorClass: "Error",
+      message: "Background job poll failed: Error",
+      severity: "error",
+      metadata: { errorClass: "Error" },
+    });
+    await runtime.stop();
   });
 });
 

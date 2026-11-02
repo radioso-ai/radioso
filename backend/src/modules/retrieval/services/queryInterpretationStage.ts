@@ -2,10 +2,11 @@ import type { ParsedQueryInterpretation } from "../domain/queryConstraintTypes.j
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
-import type {
-  QueryInterpretationStage as QueryInterpretationStageContract,
-  QueryInterpretationStageResult,
-  RetrievalContextStageResult,
+import {
+  runTimeZone,
+  type QueryInterpretationStage as QueryInterpretationStageContract,
+  type QueryInterpretationStageResult,
+  type RetrievalContextStageResult,
 } from "./retrievalPipelineStages.js";
 
 const fallbackUsageContext = (workspaceId: string): Omit<ModelCallUsageContext, "operation"> => ({
@@ -65,7 +66,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
           lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
           workspaceContext,
           usageContext: { ...usageContext, operation: "query_interpretation", attemptKey: "rewrite" },
-          timeZone: input.request.referenceTimeZone?.timeZone,
+          timeZone: runTimeZone(input.request),
         });
     const activeQuery = rewrittenQuery.retrievalEligible ? rewrittenQuery.effectiveQuery : input.request.query;
     const activeParsedQuery: ParsedQueryInterpretation = rewrittenQuery.retrievalEligible

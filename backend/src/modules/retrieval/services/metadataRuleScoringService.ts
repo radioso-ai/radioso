@@ -14,8 +14,8 @@ export class MetadataRuleScoringService {
   apply(input: {
     candidates: RetrievedCandidate[];
     metadataRules: RetrievalMetadataRule[];
-    /** The turn's local date that `today()` resolves to; the UTC date when absent. */
-    today?: string;
+    /** The run's local date, `YYYY-MM-DD`, that `today()` resolves to. */
+    today: string;
   }): {
     candidates: RetrievedCandidate[];
     appliedRules: AppliedConstraint[];
@@ -68,7 +68,7 @@ export class MetadataRuleScoringService {
     };
   }
 
-  private matchesRule(candidate: RetrievedCandidate, rule: RetrievalMetadataRule, today: string | undefined): boolean {
+  private matchesRule(candidate: RetrievedCandidate, rule: RetrievalMetadataRule, today: string): boolean {
     const conditions = getNormalizedMetadataConditions(rule);
     const matches = conditions.map((condition) => {
       const metadataValue = getValueAtPath(candidate.metadata ?? {}, condition.field);
@@ -119,7 +119,7 @@ const normalizeString = (value: string | number | boolean | null): string => Str
 const normalizeBoolean = (value: string | boolean): boolean =>
   typeof value === "boolean" ? value : value.trim().toLowerCase() === "true";
 const normalizeNumber = (value: string | number): number => (typeof value === "number" ? value : Number(value.trim()));
-const normalizeDate = (value: string | number, today: string | undefined): number =>
+const normalizeDate = (value: string | number, today: string): number =>
   typeof value === "number"
     ? value
     : isDynamicDateToken(String(value))
@@ -135,7 +135,7 @@ const evaluateMetadataRule = (
   valueType: MetadataValueType,
   operator: MetadataRuleOperator,
   ruleValue: string,
-  today: string | undefined,
+  today: string,
 ): boolean => {
   if (!isScalarMetadataValue(candidateValue)) {
     return false;

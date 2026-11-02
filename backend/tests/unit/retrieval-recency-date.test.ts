@@ -83,6 +83,7 @@ describe("rerank recency date", () => {
     const service = new RerankService(gateway, undefined, fixedClock("2026-06-02T10:00:00Z"));
 
     await service.rerank({
+      timeZone: "UTC",
       query: "what events are coming up",
       contexts: [candidate()],
       enabled: true,
@@ -121,6 +122,7 @@ describe("answer prompt recency date", () => {
     const builder = new PromptBuilder(new SharedAnswerInstructionBuilder(), fixedClock("2026-06-02T10:00:00Z"));
 
     const result = builder.build({
+      timeZone: "UTC",
       query: "what events are coming up",
       history: [],
       contexts: [],

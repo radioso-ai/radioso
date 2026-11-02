@@ -8,10 +8,11 @@ import {
   toTemporalCandidate,
 } from "./temporal/temporalCandidateMergeService.js";
 import { applyUpcomingEventBoost } from "./temporal/upcomingBoostService.js";
-import type {
-  CandidatePreparationStage as CandidatePreparationStageContract,
-  CandidatePreparationStageResult,
-  CandidateRetrievalStageResult,
+import {
+  runTimeZone,
+  type CandidatePreparationStage as CandidatePreparationStageContract,
+  type CandidatePreparationStageResult,
+  type CandidateRetrievalStageResult,
 } from "./retrievalPipelineStages.js";
 import type { RetrievedCandidate, TriggerBackoffDecision } from "../domain/retrievalPipelineTypes.js";
 import { isSomeTermsLexicalMatch, type RetrievedChunk } from "../domain/vectorSearch.js";
@@ -42,7 +43,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       : preparedCandidates;
     const minimumUsefulCandidateCount = RETRIEVAL_BEHAVIOR.hybrid.minimumUsefulCandidateCount;
     // One "today" for the turn, in its zone: the `today()` rule token and the upcoming boost.
-    const today = formatIsoDate(this.clock(), input.request.referenceTimeZone?.timeZone);
+    const today = formatIsoDate(this.clock(), runTimeZone(input.request));
     const alwaysOnRules = (input.settings.metadataRules ?? []).filter(
       (rule) => rule.enabled && rule.triggerMode !== "match_turn",
     );

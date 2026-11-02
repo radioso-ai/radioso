@@ -1,5 +1,3 @@
-import { formatIsoDate } from "../../../shared/domain/clock.js";
-
 const TODAY_DATE_TOKEN = "today()";
 
 const normalizeDynamicDateToken = (value: string): string => value.trim().toLowerCase();
@@ -7,10 +5,11 @@ const normalizeDynamicDateToken = (value: string): string => value.trim().toLowe
 export const isDynamicDateToken = (value: string): boolean => normalizeDynamicDateToken(value) === TODAY_DATE_TOKEN;
 
 /**
- * `today` is the turn's local calendar date (`YYYY-MM-DD`), read in the conversation's zone; the
- * token resolves to its start, on the same UTC-midnight scale `Date.parse` gives a date value.
+ * `today` is the run's local calendar date (`YYYY-MM-DD`), read in the conversation's zone. The
+ * token resolves to that date at 00:00 UTC, the scale `Date.parse` gives a date value, so date
+ * values compare day for day.
  */
-export const resolveDynamicDateTokenToEpochMs = (value: string, today: string = formatIsoDate(new Date())): number =>
+export const resolveDynamicDateTokenToEpochMs = (value: string, today: string): number =>
   Date.parse(isDynamicDateToken(value) ? today : value.trim());
 
 export const normalizeDateRuleValue = (value: string): string =>

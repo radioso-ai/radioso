@@ -11,7 +11,7 @@ import type {
   RetrievalPipelinePort,
   RetrievalPipelineResult,
 } from "./retrievalPipelineService.js";
-import type { RetrievalPipelineRequest } from "./retrievalPipelineStages.js";
+import { runTimeZone, type RetrievalPipelineRequest } from "./retrievalPipelineStages.js";
 
 const APPROX_TOKEN_BYTES = 4;
 const AGENT_RETRIEVAL_SOURCE: RetrievalSource = "semantic_rewritten";
@@ -70,7 +70,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       similarityThreshold: settings.similarityThreshold,
       usageContext: input.request.usageContext,
       agenticToolFactories: input.request.agenticToolFactories,
-      timeZone: input.request.referenceTimeZone?.timeZone,
+      timeZone: runTimeZone(input.request),
     });
 
     const contexts: FinalPromptContext[] = runResult.selectedChunks.map(toFinalPromptContext);
@@ -82,7 +82,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       ...(rewrittenQuery.structuredResult?.requestedDateRange
         ? { requestedDateRange: rewrittenQuery.structuredResult.requestedDateRange }
         : {}),
-      timeZone: input.request.referenceTimeZone?.timeZone,
+      timeZone: runTimeZone(input.request),
       settings: {
         responseIdentity: input.request.responseIdentity,
         customInstruction: responseBehavior?.customInstruction ?? settings.customInstruction,

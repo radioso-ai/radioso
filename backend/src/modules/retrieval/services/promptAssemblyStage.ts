@@ -1,5 +1,5 @@
 import { PromptBuilder } from "./promptBuilder.js";
-import type { ContextSelectionStageResult, PromptAssemblyStage as PromptAssemblyStageContract } from "./retrievalPipelineStages.js";
+import { runTimeZone, type ContextSelectionStageResult, type PromptAssemblyStage as PromptAssemblyStageContract } from "./retrievalPipelineStages.js";
 
 export class PromptAssemblyStageService implements PromptAssemblyStageContract {
   constructor(private readonly promptBuilder: PromptBuilder) {}
@@ -20,7 +20,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
       },
       contexts: input.contexts,
       ...(input.temporalDateRange ? { requestedDateRange: input.temporalDateRange } : {}),
-      timeZone: input.request.referenceTimeZone?.timeZone,
+      timeZone: runTimeZone(input.request),
     });
 
     return {

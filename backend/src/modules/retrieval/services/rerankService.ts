@@ -348,8 +348,8 @@ export class RerankService {
     topK: number;
     workspaceContext?: LlmCapabilityResolveInput;
     usageContext?: Omit<ModelCallUsageContext, "operation">;
-    /** The zone "today" is read in; UTC when absent. */
-    timeZone?: string;
+    /** The zone "today" is read in. */
+    timeZone: string;
   }): Promise<{ contexts: RerankedCandidate[]; status: RerankStatus }> {
     if (!input.enabled) {
       return {

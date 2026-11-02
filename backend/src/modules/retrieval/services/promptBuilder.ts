@@ -27,8 +27,8 @@ export class PromptBuilder {
     contexts: FinalPromptContext[];
     /** The period the question asks about, when the rewrite resolved one. */
     requestedDateRange?: RequestedDateRange;
-    /** The zone today's date is read in; UTC when absent. */
-    timeZone?: string;
+    /** The zone today's date is read in. */
+    timeZone: string;
     settings: {
       responseIdentity?: ResponseIdentity | null;
       customInstruction?: string;

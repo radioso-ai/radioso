@@ -470,11 +470,6 @@ export interface CopilotWorkspaceSettingProposalAdapter extends CopilotProposalA
 }
 
 /**
- * A privacy settings change, such as the conversation retention window, is supplied by Ray from
- * settings it read. `validatePayload` merges it against the stored settings and states whether the
- * change lets the retention sweep erase conversations sooner.
- */
-/**
  * The workspace's time zone, supplied by Ray from settings it read. `validatePayload` checks the
  * zone against the runtime's IANA zone data and the stored zone it replaces.
  */
@@ -484,6 +479,11 @@ export interface CopilotTimeZoneSettingProposalAdapter extends CopilotProposalAd
   validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
 
+/**
+ * A privacy settings change, such as the conversation retention window, is supplied by Ray from
+ * settings it read. `validatePayload` merges it against the stored settings and states whether the
+ * change lets the retention sweep erase conversations sooner.
+ */
 export interface CopilotPrivacySettingProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "privacy_setting";
   /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */

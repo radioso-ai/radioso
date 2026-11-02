@@ -529,7 +529,11 @@ imports from `services/`.
   the session for a turn the routine keeps. When the step the claim renders references
   the page, the commit comes as the reply starts (undone if the reply fails or is
   abandoned), so that step's grounded reply reads the page from the session; for any
-  other step it comes once the reply exists, as for a resumed turn. A routine asks the
+  other step it comes once the reply exists, as for a resumed turn. The runner reports what
+  it committed (`committedPageRead`), the routine result carries it as `pageRead`, and
+  `ChatService` and Test Chat persist the turn from `withCommittedPageRead(session, pageRead)`,
+  so a copy of the session made between the claim and the reply's end still records the
+  read. A routine asks the
   gate for the page as `context` (`services/pageRead/pageReadDecision.ts`), which the
   gate serves at the richest operation the channel supports.
 - Routine endings: `services/routineEndingEffects.ts` is the one place every chat

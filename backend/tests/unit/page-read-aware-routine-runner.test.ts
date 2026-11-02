@@ -9,7 +9,11 @@ import type {
 } from "@radioso/conversation-contract";
 
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
-import { pageReadAwareRoutineRunner } from "../../src/modules/chat/services/routines/pageReadAwareRoutineRunner.js";
+import { pageReadRecordOf } from "../../src/modules/chat/services/pageRead/pageReadSessionOutcome.js";
+import {
+  pageReadAwareRoutineRunner,
+  withCommittedPageRead,
+} from "../../src/modules/chat/services/routines/pageReadAwareRoutineRunner.js";
 
 const routine: Routine = {
   id: "booking",
@@ -177,5 +181,76 @@ describe("pageReadAwareRoutineRunner", () => {
 
     expect(target.pageReadOutcome).toBeUndefined();
     expect(target.resolvedContext).toBe(preparedResolvedContext);
+  });
+
+  describe("the page read it reports for the caller to apply", () => {
+    const streamable = (): PendingRenderableTurn => ({
+      render: async () => turn,
+      stream: async function* () {
+        yield "Which ";
+        yield "date?";
+        return turn;
+      },
+    });
+    const drain = async (reply: PendingRenderableTurn): Promise<void> => {
+      const stream = reply.stream!();
+      let step = await stream.next();
+      while (!step.done) {
+        step = await stream.next();
+      }
+    };
+
+    it.each([
+      { delivery: "rendered whole", step: "confirm", generate: (reply: PendingRenderableTurn) => reply.render() },
+      { delivery: "streamed", step: "confirm", generate: drain },
+      { delivery: "rendered whole", step: "answer", generate: (reply: PendingRenderableTurn) => reply.render() },
+      { delivery: "streamed", step: "answer", generate: drain },
+    ])(
+      "records the page read on a copy of the session made between claim and reply end ($delivery, landing on $step)",
+      async ({ step, generate }) => {
+        const target = session();
+        const runner = runnerFor(target, streamable(), step);
+        const reply = await claimReply(runner);
+        const copy: PreparedSession = { ...target, responseLanguage: "de" };
+
+        await generate(reply);
+        const persisted = withCommittedPageRead(copy, runner.committedPageRead());
+
+        expect(persisted.responseLanguage).toBe("de");
+        expect(pageReadRecordOf(persisted.pageReadOutcome!)).toMatchObject({
+          decision: { required: true, operation: "context" },
+          winnerSource: { kind: "routine", routineId: "booking" },
+          gateOutcome: "capture",
+        });
+        expect(persisted.resolvedContext.snapshot).toEqual({ page_context: { committed: true } });
+        expect(persisted.stagedContext).toEqual([{ kind: "context_variable", id: "page_context", data: {} }]);
+      },
+    );
+
+    it("reports nothing before the reply has been generated", async () => {
+      const runner = runnerFor(session(), streamable(), "answer");
+      await claimReply(runner);
+
+      expect(runner.committedPageRead()).toBeUndefined();
+    });
+
+    it("reports nothing once a failed reply undid the commit", async () => {
+      const runner = runnerFor(session(), {
+        render: async () => {
+          throw new Error("model unavailable");
+        },
+      });
+      const reply = await claimReply(runner);
+
+      await expect(reply.render()).rejects.toThrow("model unavailable");
+
+      expect(runner.committedPageRead()).toBeUndefined();
+    });
+
+    it("leaves a session untouched when nothing was committed", () => {
+      const target = session();
+
+      expect(withCommittedPageRead(target, undefined)).toBe(target);
+    });
   });
 });

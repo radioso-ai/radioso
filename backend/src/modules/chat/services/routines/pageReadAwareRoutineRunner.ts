@@ -8,7 +8,30 @@ import type {
 
 import type { ChatSessionPreparer, PreparedSession } from "../chatSessionPreparer.js";
 import { pageReadRoutineCandidates, stepReadsPageContext } from "../pageRead/pageReadRoutineCandidates.js";
-import { freezePageReadOutcome } from "../pageRead/pageReadSessionOutcome.js";
+import { freezePageReadOutcome, type PageReadOutcome } from "../pageRead/pageReadSessionOutcome.js";
+
+/** The session fields a routine turn's page read sets once the routine keeps the turn. */
+export interface CommittedPageRead {
+  pageReadOutcome: PageReadOutcome;
+  resolvedContext: PreparedSession["resolvedContext"];
+  stagedContext: PreparedSession["stagedContext"];
+}
+
+/** A routine runner that also reports the page read its kept turn committed. */
+export interface PageReadAwareRoutineRunner extends ConversationRoutineRunner {
+  /** What the commit set, once the reply has been generated; undefined before that, or when nothing was kept. */
+  committedPageRead(): CommittedPageRead | undefined;
+}
+
+/**
+ * `session` carrying the page read a routine turn committed. The commit lands on the session the
+ * routine claimed the turn with; a caller persists the turn from this, so a copy of the session
+ * made anywhere between the claim and the end of the reply still records the read.
+ */
+export const withCommittedPageRead = (
+  session: PreparedSession,
+  pageRead: CommittedPageRead | undefined,
+): PreparedSession => (pageRead ? { ...session, ...pageRead } : session);
 
 /** The reply, with `commit` run once it has been generated, whole or streamed — never when generating it failed. */
 const replyThenCommit = (reply: PendingRenderableTurn, commit: () => unknown): PendingRenderableTurn => {
@@ -76,15 +99,17 @@ const replyAfterCommit = (reply: PendingRenderableTurn, commit: () => () => void
  * reads the page, the commit comes as that reply starts, so a reply written from the session
  * (a grounded answer) reads the page its step references. Any other reply is written from the
  * session as the routine found it, and the capture is committed once it has been generated —
- * as it is for a resumed turn, whose runner generates as it walks.
+ * as it is for a resumed turn, whose runner generates as it walks. Either way the runner reports
+ * what it committed (`committedPageRead`) for the caller to apply to the session it persists.
  */
 export const pageReadAwareRoutineRunner = (input: {
   session: PreparedSession;
   routines?: readonly Routine[];
   runner: ConversationRoutineRunner;
   chatSessionPreparer: Pick<ChatSessionPreparer, "stagedPageContextFor" | "applyFrozenPageReadOutcome">;
-}): ConversationRoutineRunner => {
+}): PageReadAwareRoutineRunner => {
   const { session, runner, chatSessionPreparer } = input;
+  let committed: CommittedPageRead | undefined;
   const scopedToPageRead = async (runnerInput: ConversationRoutineResumeInput) => {
     const planned = session.turnPlan
       ? await session.turnPlan.resolve(null)
@@ -110,19 +135,27 @@ export const pageReadAwareRoutineRunner = (input: {
           stagedContext: chatSessionPreparer.stagedPageContextFor(session, candidate),
         },
       },
-      /** Commits the capture to the session; returns what puts the session back. */
+      /** Commits the capture to the session and records what it set; returns what puts both back. */
       commit: () => {
         const { pageReadOutcome, resolvedContext, stagedContext } = session;
         session.pageReadOutcome ??= candidate;
+        const outcome = session.pageReadOutcome;
         chatSessionPreparer.applyFrozenPageReadOutcome(session);
+        committed = {
+          pageReadOutcome: outcome,
+          resolvedContext: session.resolvedContext,
+          stagedContext: session.stagedContext,
+        };
         return () => {
           Object.assign(session, { pageReadOutcome, resolvedContext, stagedContext });
+          committed = undefined;
         };
       },
     };
   };
   const claim = runner.claim?.bind(runner);
   return {
+    committedPageRead: () => committed,
     resume: async (resumeInput) => {
       const scoped = await scopedToPageRead(resumeInput);
       const result = await runner.resume(scoped.input);

@@ -57,7 +57,7 @@ import type {
   ConversationTurnInterpretationResult,
 } from "./conversationTurnInterpreter.js";
 import { RoutineChatModelGateway, type RoutineChatGateway } from "./routines/routineChatModelGateway.js";
-import { pageReadAwareRoutineRunner } from "./routines/pageReadAwareRoutineRunner.js";
+import { pageReadAwareRoutineRunner, type CommittedPageRead } from "./routines/pageReadAwareRoutineRunner.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import {
   createRoutineGroundedAnswerRenderer,
@@ -264,6 +264,12 @@ export interface ChatTurnAssemblyRoutineResult {
   commitRoutineState: () => Promise<void>;
   commitClarificationState?: () => Promise<void>;
   commitCoverageReactions?: () => Promise<void>;
+  /**
+   * The page read the routine committed to the session it claimed the turn with. The caller
+   * persists the turn from a session carrying it (`withCommittedPageRead`), whatever copies of
+   * the session it made meanwhile.
+   */
+  pageRead?: CommittedPageRead;
 }
 
 interface ChatTurnAssemblyRoutineTurnInput {
@@ -514,6 +520,12 @@ export class ChatTurnAssembly {
     const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
+    const routineRunner = pageReadAwareRoutineRunner({
+      session,
+      routines: routineTurnPorts.routines,
+      runner: routineTurnPorts.runner,
+      chatSessionPreparer: this.options.chatSessionPreparer,
+    });
     const claim = await claimRoutineTurnWithConversationEngine({
       engine: this.options.conversationEngine,
       session,
@@ -521,12 +533,7 @@ export class ChatTurnAssembly {
       directiveRuntime: this.options.directiveRuntime,
       directiveStateStore: this.options.directiveStateStore,
       routineStore: deferredStore,
-      routineRunner: pageReadAwareRoutineRunner({
-        session,
-        routines: routineTurnPorts.routines,
-        runner: routineTurnPorts.runner,
-        chatSessionPreparer: this.options.chatSessionPreparer,
-      }),
+      routineRunner,
       routineActivator: activator,
       routineSlotCorrection: routineTurnPorts.slotCorrection,
       routineReentryGate: routineTurnPorts.reentryGate,
@@ -568,6 +575,7 @@ export class ChatTurnAssembly {
         routineStateTransition,
         actions: outcome.result.actions,
       });
+      const pageRead = routineRunner.committedPageRead();
       return {
         presentation: outcome.presentation,
         engineTrace: outcome.result.trace,
@@ -583,6 +591,7 @@ export class ChatTurnAssembly {
         commitClarificationState: deferredClarificationStore
           ? () => deferredClarificationStore.commit()
           : undefined,
+        ...(pageRead ? { pageRead } : {}),
       };
     };
     const stream = claim.reply.stream?.bind(claim.reply);

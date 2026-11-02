@@ -36,7 +36,7 @@ export interface WebhookPostPayload {
   fields?: Record<string, ConnectorIndexedFieldValue>;
 }
 
-export interface IngestInput {
+interface IngestInput {
   workspaceId: string;
   title: string;
   content: string;
@@ -75,20 +75,29 @@ const extractRestAuthorName = (post: WordpressRestPost): string | undefined => {
 
 const ISO_DAY_PREFIX = /^(\d{4}-\d{2}-\d{2})/;
 
+// `post` is WordPress's chronological type, the one its date archives and feeds
+// file by day, so its publish day is the period the entry covers. A page, a
+// product, or a type a plugin registers is filed some other way: its publish day
+// says when it went up, and the dates its content is about come from enrichment.
+const DATED_POST_TYPE = "post";
+
 // The publish date is theme-rendered chrome (a byline/date line the post body
-// never contains) so we surface it as metadata. We keep the raw WordPress GMT
-// timestamp under `published_at` for provenance/display and derive the ISO day
-// into `dateFrom` — the platform's date-metadata key that retrieval search text
-// and operator date rules already understand.
-const buildPublishDateMetadata = (dateGmt: string | undefined): Record<string, string> => {
+// never contains) so we surface it as metadata. Every post keeps the raw
+// WordPress GMT timestamp under `published_at` for provenance/display. A dated
+// post also carries the ISO day as `dateFrom`, the platform's content-date key
+// that search text, range answers, and operator date rules read.
+const buildPublishDateMetadata = (
+  postType: string,
+  dateGmt: string | undefined,
+): Record<string, string> => {
   const raw = dateGmt?.trim();
   if (!raw) {
     return {};
   }
-  const isoDay = ISO_DAY_PREFIX.exec(raw)?.[1];
+  const contentDay = postType === DATED_POST_TYPE ? ISO_DAY_PREFIX.exec(raw)?.[1] : undefined;
   return {
     published_at: raw,
-    ...(isoDay ? { dateFrom: isoDay } : {}),
+    ...(contentDay ? { dateFrom: contentDay } : {}),
   };
 };
 
@@ -114,7 +123,7 @@ export const mapWebhookPostToIngestInput = (
       wp_slug: post.slug,
       sourceUrl: post.link,
       modified_at: post.modified_gmt,
-      ...buildPublishDateMetadata(post.date_gmt),
+      ...buildPublishDateMetadata(post.type, post.date_gmt),
       ...(post.author?.name ? { author: post.author.name } : {}),
     },
     ...(hasIndexedFields ? { indexedFields: post.fields } : {}),
@@ -140,7 +149,7 @@ export const mapRestPostToIngestInput = (
       wp_slug: post.slug,
       sourceUrl: post.link,
       modified_at: post.modified_gmt,
-      ...buildPublishDateMetadata(post.date_gmt),
+      ...buildPublishDateMetadata(post.type, post.date_gmt),
       ...(authorName ? { author: authorName } : {}),
     },
   };

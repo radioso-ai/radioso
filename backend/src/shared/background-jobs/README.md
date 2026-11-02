@@ -164,8 +164,12 @@ rather than discovering in an incident:
   plus an `AppError` code when there is one, for example
   `AppError [provider_unavailable]`. Never the message or stack, which can
   carry provider responses, conversation text, or credentials. The error
-  reporter gets the same shape (kind, attempt, job id, that summary) and never
-  the error itself. Expected permanent failures (`NonRetryableBackgroundJobError`,
+  reporter gets that summary, plus the kind, attempt, and job id, in its
+  metadata; it also gets the kind folded into the report's type (for example
+  `background_job.dead_lettered.document.process`) and the bare class alone
+  in `errorClass`, so error tracking fingerprints a report on both instead of
+  folding every kind and failure into one sink-default "unknown error" issue.
+  Never the error itself. Expected permanent failures (`NonRetryableBackgroundJobError`,
   distinct from unparseable payloads) log at `warn` level and record metrics,
   but send no error report. Dead-letters from retries running out, timeouts,
   crashes, or unparseable payloads (`InvalidBackgroundJobPayloadError`)

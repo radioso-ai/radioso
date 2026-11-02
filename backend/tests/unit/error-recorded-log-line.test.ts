@@ -151,19 +151,26 @@ describe("error_recorded log line", () => {
     expect(line().metadata).toEqual({ notification: "visitor_push", messageId, attempt: 2, retried: true });
   });
 
-  it("keeps a dead-lettered job's kind and error summary", async () => {
-    const { service, line } = captureErrorLog();
+  it("keeps a dead-lettered job's kind, class and error summary", async () => {
+    const { service, line, raw } = captureErrorLog();
     const jobId = randomUUID();
 
     await service.report({
-      errorType: "background_job.dead_lettered",
+      // The runtime folds the kind into the type and reports the bare class alongside it
+      // (backgroundJobRuntime.ts), so error tracking splits a dead letter by both instead of
+      // grouping every kind and failure into one issue.
+      errorType: "background_job.dead_lettered.document.process",
+      errorClass: "AppError",
+      message: "document.process dead-lettered: AppError [document_not_found]",
       metadata: { kind: "document.process", attempt: 5, jobId, lastError: "AppError [document_not_found]", hookError: "AppError [conflict]" },
     });
     await service.report({
       errorType: "background_job.poll_failed",
+      errorClass: `not a class name: ${visitorWords}`,
       metadata: { errorClass: `TypeError: ${visitorWords}`, lastError: visitorWords, kind: visitorWords },
     });
 
+    expect(line().errorEvent).toMatchObject({ errorType: "background_job.dead_lettered.document.process", errorClass: "AppError" });
     expect(line().metadata).toEqual({
       kind: "document.process",
       attempt: 5,
@@ -171,6 +178,9 @@ describe("error_recorded log line", () => {
       lastError: "AppError [document_not_found]",
       hookError: "AppError [conflict]",
     });
+    // A top-level errorClass that is not a class-name shape (the second report above) never
+    // reaches a log line at all, visitor words included.
+    expect(raw()).not.toContain(visitorWords);
   });
 
   it("drops correlation values that are not ids", async () => {

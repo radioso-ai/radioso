@@ -19,11 +19,25 @@ const hasVariable = (variables: Record<string, unknown>, key: string): boolean =
  */
 export const foldStepEntry = (start: RoutineTraceStepEntry, walked: RoutineTraceStepEntry): RoutineTraceStepEntry => {
   const capturedSlotKeys = [...new Set([...(start.capturedSlotKeys ?? []), ...(walked.capturedSlotKeys ?? [])])];
-  const replacedSlotKeys = [...new Set([...(start.replacedSlotKeys ?? []), ...(walked.replacedSlotKeys ?? [])])];
+  // A key the start read captured (it held nothing before the turn) and the walk's re-read
+  // of the same step later judged "replaced" (against the value the start read just gave it,
+  // not against anything held before the turn) is still captured only, as `runSlotKeyFields`
+  // treats it at the turn level.
+  const replacedSlotKeys = [...new Set([...(start.replacedSlotKeys ?? []), ...(walked.replacedSlotKeys ?? [])])]
+    .filter((key) => !capturedSlotKeys.includes(key));
   const rejectedSlots = [...(start.rejectedSlots ?? []), ...(walked.rejectedSlots ?? [])];
+  // Drop each entry's own slot-key fields before spreading: the computed, filtered lists
+  // below are the source of truth, and a value shrunk to empty (the filter above) must
+  // disappear from the folded entry rather than survive from `start` or `walked`.
+  const {
+    capturedSlotKeys: _startCaptured, replacedSlotKeys: _startReplaced, rejectedSlots: _startRejected, ...startRest
+  } = start;
+  const {
+    capturedSlotKeys: _walkedCaptured, replacedSlotKeys: _walkedReplaced, rejectedSlots: _walkedRejected, ...walkedRest
+  } = walked;
   return {
-    ...start,
-    ...walked,
+    ...startRest,
+    ...walkedRest,
     event: walked.event === "rendered" ? start.event : walked.event,
     ...(capturedSlotKeys.length > 0 ? { capturedSlotKeys } : {}),
     ...(replacedSlotKeys.length > 0 ? { replacedSlotKeys } : {}),
@@ -45,6 +59,21 @@ export const stepSlotKeyFields = (changes: { captured: string[]; replaced: strin
   ...(changes.captured.length > 0 ? { capturedSlotKeys: changes.captured } : {}),
   ...(changes.replaced.length > 0 ? { replacedSlotKeys: changes.replaced } : {}),
 });
+
+/**
+ * The step the turn started on's slot keys, with `replaced` dropped on the routine's first
+ * turn (a fresh activation or a completed-routine reentry): there, `changes` was computed
+ * against `state.variables`, which is this very turn's own starting point — the activator's
+ * extraction from the opening message, or a reentered run's carried-over values — never a
+ * value a reply to a rendered step held before. A difference the selector's own re-read of
+ * that same message turns up for it is not a replacement of anything held before the turn
+ * (#1670 review, finding 2).
+ */
+export const startStepSlotKeyFields = (
+  changes: { captured: string[]; replaced: string[] },
+  activationTurn: boolean | undefined,
+): Pick<RoutineTraceStepEntry, "capturedSlotKeys" | "replacedSlotKeys"> =>
+  stepSlotKeyFields(activationTurn ? { captured: changes.captured, replaced: [] } : changes);
 
 /**
  * The turn's slot keys, from its steps. A slot captured this turn and changed again later in it

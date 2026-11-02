@@ -637,7 +637,8 @@ from that turn's message. A returned key lands in `capturedSlotKeys` when it
 filled an empty slot, and in `replacedSlotKeys` when the slot already held a value
 and the turn stored a different one, as when the visitor accepts a corrected date
 the reply offered. Both lists sit on the step that stored the value and, merged, on
-the turn. A returned key in neither list restated the value the slot already held.
+the turn. A returned key in neither list either restated the value the slot already
+held, or failed the slot's declared type and landed in `rejectedSlots` instead.
 An `off_topic` outcome captures nothing
 that turn, even when `returnedSlotKeys` is non-empty — those keys show what the
 model read from the message, not what the routine kept.

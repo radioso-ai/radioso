@@ -35,7 +35,7 @@ import {
   runSlotKeyFields,
   slotKeyChangesFor,
   slotValuesTraceFields,
-  stepSlotKeyFields,
+  startStepSlotKeyFields, stepSlotKeyFields,
 } from "./routineTraceSlots.js";
 import {
   collectedSlotsForStep,
@@ -930,7 +930,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           stepId: currentStep.id,
           kind: currentStep.kind,
           event: stayed ? (input.activationTurn ? "rendered" : "reasked") : "advanced",
-          ...stepSlotKeyFields(slotKeyChanges(state.variables, decision)),
+          ...startStepSlotKeyFields(slotKeyChanges(state.variables, decision), input.activationTurn),
           ...(tracedRejected.length > 0 ? { rejectedSlots: tracedRejected } : {}),
           viaSelector: mainSelectorRan,
           ...(mainSelection ? { selection: mainSelection } : {}),

@@ -83,27 +83,32 @@ const growthProfile: TierProfile = {
 
 type ConversationSpendFixture = {
   periodStart: string;
+  repliesPerConversation: number;
   meteredConversations: number;
   spendEur: number;
   averageEurPerConversation: number | null;
   flagAboveEurPerConversation: number;
-  flagged: boolean;
+  flag: "above" | "below" | "undetermined" | "none";
   unpricedCalls: number;
 };
 
 const conversationSpend = (overrides: Partial<ConversationSpendFixture> = {}): ConversationSpendFixture => ({
   periodStart: "2026-06-01",
+  repliesPerConversation: 10,
   meteredConversations: 60,
   spendEur: 1.26,
   averageEurPerConversation: 0.021,
   flagAboveEurPerConversation: 0.04,
-  flagged: false,
+  flag: "below",
   unpricedCalls: 0,
   ...overrides,
 });
 
 /** An account whose conversations run long: about eight replies each. */
-const longConversationSpend = conversationSpend({ spendEur: 3.09, averageEurPerConversation: 0.0515, flagged: true });
+const longConversationSpend = conversationSpend({ spendEur: 3.09, averageEurPerConversation: 0.0515, flag: "above" });
+
+/** An account whose priced calls average under the flag, with some calls on a model the catalog has no price for. */
+const undeterminedConversationSpend = conversationSpend({ unpricedCalls: 14, flag: "undetermined" });
 
 const usage = (profile: TierProfile = starterProfile) => ({
   accountId,
@@ -317,6 +322,21 @@ test("the directory and detail page flag an account whose conversations cost mor
   await expect(page.getByText("Model spend per conversation")).toBeVisible();
   await expect(page.getByText("Warn only: above the €0.040 per conversation flag.")).toBeVisible();
   await expect(page.getByText("41 metered conversations")).toBeVisible();
+  await expect(page.getByText(/counted at the tier's current 10 replies per conversation, so changing it re-counts both/)).toBeVisible();
+});
+
+test("a figure missing calls on unpriced models reads as undetermined, not as a pass", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "support_read", cometProfile, undeterminedConversationSpend);
+
+  await page.goto("/operator/organizations");
+
+  const row = page.getByRole("row").filter({ hasText: "Alpha Research" });
+  await expect(row).toContainText("≥ €0.021 / conv (undetermined)");
+  await expect(row.getByRole("img", { name: /per conversation flag/ })).toHaveCount(0);
+
+  await page.getByLabel("Open Alpha Research").click();
+
+  await expect(page.getByText("Undetermined: 14 calls on models with no list price are left out, so this month may be above the €0.040 flag.")).toBeVisible();
 });
 
 test("the directory shows spend per conversation without a flag for a typical account", async ({ page }) => {

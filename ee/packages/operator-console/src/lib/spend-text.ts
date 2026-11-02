@@ -11,11 +11,21 @@ const eurPerConversation = new Intl.NumberFormat("en-US", {
 
 export const formatEurPerConversation = (value: number): string => eurPerConversation.format(value);
 
-/** The directory's spend column: the month's average, marked partial when unpriced calls are left out. */
+/** The month's average, as a floor (`≥`) when calls on unpriced models are missing from it. */
+export const averageText = (spend: ConversationSpend): string => {
+  if (spend.averageEurPerConversation === null) {
+    return "—";
+  }
+  const average = formatEurPerConversation(spend.averageEurPerConversation);
+  return spend.unpricedCalls > 0 ? `≥ ${average}` : average;
+};
+
+/** The directory's spend column. An average under the flag with unpriced calls missing could be
+ *  over it, so it reads as undetermined rather than as a clean pass. */
 export const conversationSpendText = (spend: ConversationSpend | null): string => {
   if (!spend || spend.averageEurPerConversation === null) {
     return "—";
   }
-  const average = `${formatEurPerConversation(spend.averageEurPerConversation)} / conv`;
-  return spend.unpricedCalls > 0 ? `${average} (partial)` : average;
+  const text = `${averageText(spend)} / conv`;
+  return spend.flag === "undetermined" ? `${text} (undetermined)` : text;
 };

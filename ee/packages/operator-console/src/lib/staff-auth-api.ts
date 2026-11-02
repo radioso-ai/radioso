@@ -55,16 +55,22 @@ export interface AccountUsageSummary {
   } | null;
 }
 
+/** `above`: over the flag on priced calls alone. `undetermined`: under it, but calls on unpriced
+ *  models are missing. `below`: every call priced and under it. `none`: nothing metered. */
+export type ConversationSpendFlag = "above" | "below" | "undetermined" | "none";
+
 /** An account's estimated model spend on its metered customer conversations for one UTC month,
  *  at list price with cached input charged in full. */
 export interface ConversationSpend {
   periodStart: string;
+  /** The tier's replies per conversation as set now; every month shown is counted at it. */
+  repliesPerConversation: number;
   meteredConversations: number;
   spendEur: number;
   /** Null when the month metered no conversation. */
   averageEurPerConversation: number | null;
   flagAboveEurPerConversation: number;
-  flagged: boolean;
+  flag: ConversationSpendFlag;
   /** Calls on a model with no list price; their spend is missing from the average. */
   unpricedCalls: number;
 }

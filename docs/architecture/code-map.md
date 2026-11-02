@@ -2572,9 +2572,13 @@ Primary paths:
 - `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
   top-up, managed service, the managed-plan model set, whether prices include
-  VAT, model list prices, the conversation spend flag). Entry point `src/index.ts`
-  (`PLAN_CATALOG`, `findPlan`, `findModelListPrice`, `formatPrice`); data in
-  `src/plans.json`; focused test `ee/packages/plan-catalog/tests/planCatalog.test.ts`.
+  VAT). Entry point `src/index.ts` (`PLAN_CATALOG`, `findPlan`, `formatPrice`);
+  data in `src/plans.json`, all of it public through `GET /api/v1/plans`. The
+  staff-only model spend estimate (list prices, `eurPerUsd`, the conversation
+  spend flag) is a separate export, `MODEL_SPEND_ESTIMATE` and
+  `findModelListPrice` from `src/modelSpend.ts`, data in `src/modelSpend.json`.
+  Focused test `ee/packages/plan-catalog/tests/planCatalog.test.ts`; the public
+  field set is pinned in `backend-module/src/billing/plansRoutes.test.ts`.
 - `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
   HTTP and runs self-serve Stripe checkout, the customer portal, and the
   Stripe webhook. Entry point `applicationModule.ts`
@@ -2635,11 +2639,11 @@ Primary paths:
 - `ee/packages/backend-module/src/conversationSpend/` — model spend per
   metered customer conversation, per account and UTC month, for the console's
   directory and organization pages. `conversationSpend.ts` is the pure pricing
-  (`priceConversationSpend`: catalog list prices, `eurPerUsd`, and the
-  `conversationSpendFlagEur` threshold); `conversationSpendService.ts`
-  (`ConversationSpendService`) reads metered conversations from
-  `ee_usage_limit_conversation_replies` and their token counts from
-  `usage_events` on read. Focused tests: `conversationSpend.test.ts` and
+  (`priceConversationSpend`: the block count at the tier's current replies per
+  conversation, `MODEL_SPEND_ESTIMATE` prices and rate, and the four-state flag);
+  `conversationSpendService.ts` (`ConversationSpendService`) reads metered
+  conversations from `ee_usage_limit_conversation_replies` and their billed token
+  counts from `usage_events` on read. Focused tests: `conversationSpend.test.ts` and
   `conversationSpendService.integration.test.ts`.
 - `ee/packages/backend-module/src/managedModels/` — the Enterprise
   `ManagedModelPolicy`: workspace → account → assigned plan → the catalog's

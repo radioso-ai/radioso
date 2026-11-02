@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findModelListPrice, findPlan, formatPrice, PLAN_CATALOG } from "../src/index.js";
+import { findModelListPrice, findPlan, formatPrice, MODEL_SPEND_ESTIMATE, PLAN_CATALOG } from "../src/index.js";
 
 describe("findPlan", () => {
   it("returns the plan for a known id", () => {
@@ -164,7 +164,14 @@ describe("findModelListPrice", () => {
   });
 });
 
-describe("model list prices and the conversation spend flag", () => {
+describe("model spend estimate (staff-only, never part of the public PLAN_CATALOG)", () => {
+  it("keeps list prices, the exchange rate, and the flag out of PLAN_CATALOG, which GET /api/v1/plans serves", () => {
+    const publicKeys = Object.keys(PLAN_CATALOG);
+    for (const staffKey of [...Object.keys(MODEL_SPEND_ESTIMATE), "modelListPrices"]) {
+      expect(publicKeys).not.toContain(staffKey);
+    }
+  });
+
   it("prices both managed model slots, so a managed workspace's spend is never left unpriced", () => {
     for (const slot of ["chat", "default"] as const) {
       const { provider, model } = PLAN_CATALOG.managedModels[slot];
@@ -173,9 +180,9 @@ describe("model list prices and the conversation spend flag", () => {
   });
 
   it("lists each provider/model pair once, with non-negative prices and an input price on every model", () => {
-    const pairs = PLAN_CATALOG.modelListPrices.usdPerMillionTokens.map((price) => `${price.provider}/${price.model}`);
+    const pairs = MODEL_SPEND_ESTIMATE.usdPerMillionTokens.map((price) => `${price.provider}/${price.model}`);
     expect(new Set(pairs).size).toBe(pairs.length);
-    for (const price of PLAN_CATALOG.modelListPrices.usdPerMillionTokens) {
+    for (const price of MODEL_SPEND_ESTIMATE.usdPerMillionTokens) {
       expect(price.input).toBeGreaterThan(0);
       expect(price.output).toBeGreaterThanOrEqual(0);
     }
@@ -183,18 +190,18 @@ describe("model list prices and the conversation spend flag", () => {
 
   it("keeps every priced provider inside the set of providers the backend can resolve (the JSON import is cast, not checked)", () => {
     const providers = new Set<string>(["openai", "openai-compatible", "gemini", "claude"]);
-    for (const price of PLAN_CATALOG.modelListPrices.usdPerMillionTokens) {
+    for (const price of MODEL_SPEND_ESTIMATE.usdPerMillionTokens) {
       expect(providers.has(price.provider)).toBe(true);
     }
   });
 
   it("converts USD list prices into the catalog currency, which eurPerUsd assumes is EUR", () => {
     expect(PLAN_CATALOG.currency).toBe("EUR");
-    expect(PLAN_CATALOG.modelListPrices.eurPerUsd).toBe(0.9);
+    expect(MODEL_SPEND_ESTIMATE.eurPerUsd).toBe(0.9);
   });
 
   it("flags an account above €0.04 of model spend per metered conversation, where Planet at full quota drops below 50% gross margin (#1569)", () => {
-    expect(PLAN_CATALOG.conversationSpendFlagEur).toBe(0.04);
+    expect(MODEL_SPEND_ESTIMATE.conversationSpendFlagEur).toBe(0.04);
   });
 });
 

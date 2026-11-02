@@ -286,20 +286,21 @@ const sampleOrganizationRows = {
 
 const sampleConversationSpend = (overrides: Partial<ConversationSpend> = {}): ConversationSpend => ({
   periodStart: "2026-06-01",
+  repliesPerConversation: 10,
   meteredConversations: 0,
   spendEur: 0,
   averageEurPerConversation: null,
   flagAboveEurPerConversation: 0.04,
-  flagged: false,
+  flag: "none",
   unpricedCalls: 0,
   ...overrides,
 });
 
 const flaggedConversationSpend = sampleConversationSpend({
   meteredConversations: 2,
-  spendEur: 0.103079,
-  averageEurPerConversation: 0.051539,
-  flagged: true,
+  spendEur: 0.104159,
+  averageEurPerConversation: 0.052079,
+  flag: "above",
 });
 
 const sampleUsageSummary: AccountUsageSummary = {

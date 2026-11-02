@@ -275,6 +275,7 @@ interface EeUsageEventsTable {
   input_tokens: string;
   output_tokens: string;
   status: string;
+  usage_quality: string;
   occurred_at: Date;
 }
 

@@ -101,7 +101,7 @@ export function OrganizationsPage() {
                 <td className="px-4 py-3 text-zinc-300">
                   <span className="inline-flex items-center gap-2">
                     {conversationSpendText(row.conversationSpend)}
-                    {row.conversationSpend?.flagged ? <SpendFlag above={row.conversationSpend.flagAboveEurPerConversation} /> : null}
+                    {row.conversationSpend?.flag === "above" ? <SpendFlag above={row.conversationSpend.flagAboveEurPerConversation} /> : null}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-zinc-300">{directoryMeterText(row)}</td>

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { usageLimitMigrator } from "../usageLimits/usageLimitMigrator.js";
+import { EnterpriseUsageLimitService } from "../usageLimits/usageLimitService.js";
 import { ConversationSpendService } from "./conversationSpendService.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -36,8 +37,8 @@ class PgDatabase implements UsageLimitDatabasePort {
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-// The OSS tables the migrator references plus the two this read joins: the column subset is the
-// one `usage_events` and `conversations` carry in backend/src/db/schema.sql.
+// The OSS tables the migrator and the meter reference, plus the two the spend read joins: each
+// column subset is the one backend/src/db/schema.sql carries.
 const createMinimalBaseSchema = async (database: UsageLimitDatabasePort): Promise<void> => {
   await database.query(`CREATE TABLE users (id UUID PRIMARY KEY, email TEXT NOT NULL UNIQUE)`);
   await database.query(`
@@ -51,6 +52,23 @@ const createMinimalBaseSchema = async (database: UsageLimitDatabasePort): Promis
     CREATE TABLE workspaces (
       id UUID PRIMARY KEY,
       account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
+    )
+  `);
+  await database.query(`
+    CREATE TABLE documents (
+      id UUID PRIMARY KEY,
+      workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      content_size_bytes BIGINT,
+      external_document_id TEXT,
+      source_kind TEXT
+    )
+  `);
+  await database.query(`
+    CREATE TABLE messages (
+      id UUID PRIMARY KEY,
+      workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
   await database.query(`
@@ -73,10 +91,16 @@ const createMinimalBaseSchema = async (database: UsageLimitDatabasePort): Promis
       output_tokens BIGINT NOT NULL DEFAULT 0,
       cached_input_tokens BIGINT,
       status TEXT NOT NULL,
+      usage_quality TEXT NOT NULL,
       occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 };
+
+interface SeededAccount {
+  accountId: string;
+  workspaceId: string;
+}
 
 interface SeededEvent {
   conversationId: string | null;
@@ -87,6 +111,7 @@ interface SeededEvent {
   outputTokens: number;
   cachedInputTokens?: number;
   status?: "succeeded" | "failed";
+  usageQuality?: "actual" | "estimated";
   occurredAt?: string;
 }
 
@@ -95,6 +120,7 @@ describeIfDatabase("conversation spend service", () => {
   let database: PgDatabase;
   const schema = `ee_test_${randomUUID().replace(/-/g, "")}`;
   const juneMidMonth = "2026-06-15T12:00:00.000Z";
+  const mayMidMonth = "2026-05-15T12:00:00.000Z";
 
   beforeAll(async () => {
     const admin = new pg.Pool({ connectionString: integrationDatabaseUrl! });
@@ -123,7 +149,11 @@ describeIfDatabase("conversation spend service", () => {
     }
   });
 
-  const seedAccount = async (profileKey: string | null): Promise<{ accountId: string; workspaceId: string }> => {
+  // The real conversation meter, pinned to a month, so meter rows are the ones production writes.
+  const meterAt = (instant: string) => new EnterpriseUsageLimitService(database, () => new Date(instant));
+  const juneMeter = () => meterAt(juneMidMonth);
+
+  const seedAccount = async (profileKey: string | null): Promise<SeededAccount> => {
     const accountId = randomUUID();
     const workspaceId = randomUUID();
     await database.query(`INSERT INTO accounts (id) VALUES ($1)`, [accountId]);
@@ -137,30 +167,42 @@ describeIfDatabase("conversation spend service", () => {
     return { accountId, workspaceId };
   };
 
-  const seedConversation = async (
-    account: { accountId: string; workspaceId: string },
-    meteredReplies: number | null,
-    periodStart = "2026-06-01",
-  ): Promise<string> => {
+  const seedConversation = async (account: SeededAccount): Promise<string> => {
     const conversationId = randomUUID();
     await database.query(`INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)`, [conversationId, account.workspaceId]);
-    if (meteredReplies !== null) {
-      await database.query(
-        `INSERT INTO ee_usage_limit_conversation_replies (account_id, period_start, conversation_id, reply_count)
-         VALUES ($1, $2::date, $3, $4)`,
-        [account.accountId, periodStart, conversationId, meteredReplies],
-      );
-    }
     return conversationId;
   };
 
-  const seedEvents = async (account: { accountId: string; workspaceId: string }, events: readonly SeededEvent[]) => {
+  /** Reserves `replies` turns through the meter, the way chatService does for a customer channel. */
+  const meterReplies = async (
+    meter: EnterpriseUsageLimitService,
+    account: SeededAccount,
+    conversationId: string,
+    replies: number,
+    usage: "conversation_reply" | "test_run" = "conversation_reply",
+  ): Promise<void> => {
+    for (let reply = 0; reply < replies; reply += 1) {
+      const reservation = await meter.reserveAnswer({
+        accountId: account.accountId,
+        workspaceId: account.workspaceId,
+        surface: usage === "test_run" ? "test_chat" : "website_embed",
+        usage,
+        conversationId,
+      });
+      await reservation.commit();
+    }
+  };
+
+  const meteredConversationUnits = async (account: SeededAccount, meter = juneMeter()): Promise<number | undefined> =>
+    (await meter.getAccountUsage(account.accountId)).monthlyConversations?.byKind.conversation;
+
+  const seedEvents = async (account: SeededAccount, events: readonly SeededEvent[]) => {
     for (const event of events) {
       await database.query(
         `INSERT INTO usage_events (
            id, account_id, workspace_id, conversation_id, surface, operation, provider, model,
-           input_tokens, output_tokens, cached_input_tokens, status, occurred_at
-         ) VALUES ($1, $2, $3, $4, 'website_embed', $5, $6, $7, $8, $9, $10, $11, $12)`,
+           input_tokens, output_tokens, cached_input_tokens, status, usage_quality, occurred_at
+         ) VALUES ($1, $2, $3, $4, 'website_embed', $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           randomUUID(),
           account.accountId,
@@ -173,6 +215,7 @@ describeIfDatabase("conversation spend service", () => {
           event.outputTokens,
           event.cachedInputTokens ?? null,
           event.status ?? "succeeded",
+          event.usageQuality ?? "actual",
           event.occurredAt ?? juneMidMonth,
         ],
       );
@@ -199,9 +242,19 @@ describeIfDatabase("conversation spend service", () => {
     inputTokens: 3_000,
     outputTokens: 200,
   });
+  // A plain gpt-5.4-mini answer: 1,000 in → $0.00075, 100 out → $0.00045, $0.0012.
+  const smallAnswer = (conversationId: string, occurredAt = juneMidMonth): SeededEvent => ({
+    conversationId,
+    operation: "grounded_answer",
+    model: "gpt-5.4-mini",
+    inputTokens: 1_000,
+    outputTokens: 100,
+    occurredAt,
+  });
 
-  const seedRepliedConversation = async (account: { accountId: string; workspaceId: string }, replies: number) => {
-    const conversationId = await seedConversation(account, replies);
+  const seedRepliedConversation = async (account: SeededAccount, replies: number) => {
+    const conversationId = await seedConversation(account);
+    await meterReplies(juneMeter(), account, conversationId, replies);
     const events = Array.from({ length: replies }, () => replyEvents(conversationId)).flat();
     await seedEvents(account, [...events, summaryEvent(conversationId)]);
     return conversationId;
@@ -215,19 +268,23 @@ describeIfDatabase("conversation spend service", () => {
     // Two conversations of 8 replies: 16 × $0.0067645 + 2 × $0.00315 = $0.114532
     const longConversation = await seedRepliedConversation(longAccount, 8);
     await seedRepliedConversation(longAccount, 8);
-    // Rows that must not count, each in a metered conversation or the same account:
     await seedEvents(longAccount, [
-      // a failed call, whose tokens are an estimate the provider never billed
-      { conversationId: longConversation, operation: "grounded_answer", model: "gpt-5.4-mini", inputTokens: 50_000, outputTokens: 0, status: "failed" },
-      // a call from the same conversation recorded in May, outside the period
-      { conversationId: longConversation, operation: "grounded_answer", model: "gpt-5.4-mini", inputTokens: 50_000, outputTokens: 5_000, occurredAt: "2026-05-31T23:59:59.000Z" },
-      // work attributed to no conversation (Ray, document enrichment)
+      // Counted: a reply stream the visitor interrupted, recorded `failed` with the tokens the
+      // provider reported and billed. +$0.0012
+      { ...smallAnswer(longConversation), status: "failed", usageQuality: "actual" },
+      // Not counted: a failed call with no provider-reported usage, whose tokens are an estimate
+      // from the request size
+      { conversationId: longConversation, operation: "grounded_answer", model: "gpt-5.4-mini", inputTokens: 50_000, outputTokens: 0, status: "failed", usageQuality: "estimated" },
+      // Not counted: the same conversation in May, outside the period
+      { ...smallAnswer(longConversation, "2026-05-31T23:59:59.000Z"), inputTokens: 50_000 },
+      // Not counted: work attributed to no conversation (Ray, document enrichment)
       { conversationId: null, operation: "document_enrichment", model: "gpt-5.4-mini", inputTokens: 50_000, outputTokens: 5_000 },
-      // a model the catalog has no list price for: counted, not priced
+      // Counted, not priced: a model the catalog has no list price for
       { conversationId: longConversation, operation: "grounded_answer", provider: "claude", model: "claude-sonnet-5", inputTokens: 50_000, outputTokens: 5_000 },
     ]);
-    // A Test Chat conversation: metered as a test run, so it has no reply row.
-    const testChatConversation = await seedConversation(longAccount, null);
+    // A Test Chat conversation meters as a test run, so the conversation meter never sees it.
+    const testChatConversation = await seedConversation(longAccount);
+    await meterReplies(juneMeter(), longAccount, testChatConversation, 2, "test_run");
     await seedEvents(longAccount, replyEvents(testChatConversation));
 
     // Three conversations of 2, 3 and 4 replies: 9 × $0.0067645 + 3 × $0.00315 = $0.0703305
@@ -238,56 +295,58 @@ describeIfDatabase("conversation spend service", () => {
     const service = new ConversationSpendService(database, { now: () => new Date(juneMidMonth) });
     const spend = await service.listForAccounts([longAccount.accountId, shortAccount.accountId, unmeteredAccount.accountId]);
 
-    // $0.114532 × €0.90 = €0.1030788; / 2 = €0.0515394 → above €0.04
+    // $0.115732 × €0.90 = €0.1041588; / 2 = €0.0520794 → above €0.04. The unpriced call can only
+    // add to that, so the flag is settled.
     expect(spend.get(longAccount.accountId)).toEqual({
       periodStart: "2026-06-01",
+      repliesPerConversation: 10,
       meteredConversations: 2,
-      spendEur: 0.103079,
-      averageEurPerConversation: 0.051539,
+      spendEur: 0.104159,
+      averageEurPerConversation: 0.052079,
       flagAboveEurPerConversation: 0.04,
-      flagged: true,
+      flag: "above",
       unpricedCalls: 1,
     });
     // $0.0703305 × €0.90 = €0.06329745; / 3 = €0.02109915 → under €0.04
     expect(spend.get(shortAccount.accountId)).toEqual({
       periodStart: "2026-06-01",
+      repliesPerConversation: 10,
       meteredConversations: 3,
       spendEur: 0.063297,
       averageEurPerConversation: 0.021099,
       flagAboveEurPerConversation: 0.04,
-      flagged: false,
+      flag: "below",
       unpricedCalls: 0,
     });
     expect(spend.get(unmeteredAccount.accountId)).toMatchObject({
       meteredConversations: 0,
       spendEur: 0,
       averageEurPerConversation: null,
-      flagged: false,
+      flag: "none",
     });
+    // With the tier unchanged all month, the denominator is what the meter charged.
+    expect(await meteredConversationUnits(longAccount)).toBe(2);
+    expect(await meteredConversationUnits(shortAccount)).toBe(3);
   });
 
   it("counts one metered conversation per block of the tier's replies, and drops a conversation that was erased", async () => {
     const account = await seedAccount("satellite");
-    // 12 replies on a 10-reply tier: replies 1 and 11 each open a block, so two metered conversations.
-    const conversationId = await seedConversation(account, 12);
-    // 12 × (1,000 in → $0.00075, 100 out → $0.00045) = $0.0144 → €0.01296
-    await seedEvents(account, Array.from({ length: 12 }, () => ({
-      conversationId,
-      operation: "grounded_answer",
-      model: "gpt-5.4-mini",
-      inputTokens: 1_000,
-      outputTokens: 100,
-    })));
-    // An erased conversation keeps its meter row but loses its spend (usage_events.conversation_id
-    // is set null), so it leaves the denominator as well as the numerator.
-    const erasedConversation = await seedConversation(account, 5);
+    // 12 replies on a 10-reply tier: the meter charges replies 1 and 11, so two conversations.
+    const conversationId = await seedConversation(account);
+    await meterReplies(juneMeter(), account, conversationId, 12);
+    // 12 × $0.0012 = $0.0144 → €0.01296
+    await seedEvents(account, Array.from({ length: 12 }, () => smallAnswer(conversationId)));
+    expect(await meteredConversationUnits(account)).toBe(2);
+
+    // An erased conversation keeps its meter row and its charge, but its ledger rows lose their
+    // conversation link, so it leaves the denominator along with its spend.
+    const erasedConversation = await seedConversation(account);
+    await meterReplies(juneMeter(), account, erasedConversation, 5);
     await database.query(`DELETE FROM conversations WHERE id = $1`, [erasedConversation]);
-    // Last month's meter row for the same conversation belongs to last month.
-    await database.query(
-      `INSERT INTO ee_usage_limit_conversation_replies (account_id, period_start, conversation_id, reply_count)
-       VALUES ($1, '2026-05-01', $2, 9)`,
-      [account.accountId, conversationId],
-    );
+    expect(await meteredConversationUnits(account)).toBe(3);
+
+    // The same conversation's May replies are May's meter row, not June's.
+    await meterReplies(meterAt(mayMidMonth), account, conversationId, 9);
 
     const service = new ConversationSpendService(database, { now: () => new Date(juneMidMonth) });
     const spend = await service.listForAccounts([account.accountId]);
@@ -296,27 +355,46 @@ describeIfDatabase("conversation spend service", () => {
       meteredConversations: 2,
       spendEur: 0.01296,
       averageEurPerConversation: 0.00648,
-      flagged: false,
+      flag: "below",
     });
   });
 
-  it("reads this month and last month for one account", async () => {
-    const account = await seedAccount("satellite");
-    const mayConversation = await seedConversation(account, 1, "2026-05-01");
-    // 10,000 in → $0.0075, 1,000 out → $0.0045: $0.012 → €0.0108
-    await seedEvents(account, [{
-      conversationId: mayConversation,
-      operation: "grounded_answer",
-      model: "gpt-5.4-mini",
-      inputTokens: 10_000,
-      outputTokens: 1_000,
-      occurredAt: "2026-05-20T08:00:00.000Z",
-    }]);
+  it("counts both months at the tier's current replies per conversation, so changing it re-bases last month too", async () => {
+    const tierKey = "spend_test_tier";
+    await juneMeter().upsertProfile({
+      key: tierKey,
+      displayName: "Spend test tier",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+      monthlyConversationLimit: 1000,
+      repliesPerConversation: 10,
+    });
+    const account = await seedAccount(tierKey);
+    // One 8-reply conversation in each month, each reply a $0.0012 answer: $0.0096 → €0.00864.
+    const mayConversation = await seedConversation(account);
+    await meterReplies(meterAt(mayMidMonth), account, mayConversation, 8);
+    await seedEvents(account, Array.from({ length: 8 }, () => smallAnswer(mayConversation, mayMidMonth)));
+    const juneConversation = await seedConversation(account);
+    await meterReplies(juneMeter(), account, juneConversation, 8);
+    await seedEvents(account, Array.from({ length: 8 }, () => smallAnswer(juneConversation)));
 
     const service = new ConversationSpendService(database, { now: () => new Date(juneMidMonth) });
-    const months = await service.getRecentMonths(account.accountId);
+    const before = await service.getRecentMonths(account.accountId);
+    expect(before.current).toMatchObject({ periodStart: "2026-06-01", repliesPerConversation: 10, meteredConversations: 1, averageEurPerConversation: 0.00864 });
+    expect(before.previous).toMatchObject({ periodStart: "2026-05-01", repliesPerConversation: 10, meteredConversations: 1, averageEurPerConversation: 0.00864 });
 
-    expect(months.current).toMatchObject({ periodStart: "2026-06-01", meteredConversations: 0, averageEurPerConversation: null });
-    expect(months.previous).toMatchObject({ periodStart: "2026-05-01", meteredConversations: 1, averageEurPerConversation: 0.0108 });
+    // Staff lower the tier to 6 replies per conversation. The meter charged each 8-reply
+    // conversation once, under 10, but both months now read at 6: two each, half the average.
+    await juneMeter().upsertProfile({
+      key: tierKey,
+      displayName: "Spend test tier",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+      repliesPerConversation: 6,
+    });
+    const after = await service.getRecentMonths(account.accountId);
+    expect(after.current).toMatchObject({ repliesPerConversation: 6, meteredConversations: 2, averageEurPerConversation: 0.00432 });
+    expect(after.previous).toMatchObject({ repliesPerConversation: 6, meteredConversations: 2, averageEurPerConversation: 0.00432 });
+    expect(await meteredConversationUnits(account)).toBe(1);
   });
 });

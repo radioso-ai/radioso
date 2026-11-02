@@ -1,8 +1,9 @@
-import { AGENT_SKILL_OUTCOME_KIND } from "./agentSkillTurnSkillProvider.js";
+import { AGENT_SKILL_OUTCOME_KIND, hasAnswerText } from "./agentSkillTurnSkillProvider.js";
 import type { AssistantReplyComposer, AssistantReplyConfig } from "./assistantReplyComposer.js";
 import { buildSkillResultReplyPrompt } from "./assistantReplyPromptBuilder.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { estimateTextGenerationInputTokens } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TurnOutcome, TurnOutcomeRenderer, TurnRenderContext, TurnStreamResult } from "./turnOutcome.js";
 
@@ -18,22 +19,22 @@ export const SKILL_RESULT_REPLY_CONFIG: AssistantReplyConfig = {
   buildPrompt: buildSkillResultReplyPrompt,
 };
 
-const hasFindings = (answer: string | undefined): answer is string =>
-  typeof answer === "string" && answer.trim().length > 0;
-
 /**
  * The bound skill's name and settled status: the identity the turn records, so Quality and
  * the skill columns read a skill-result reply the way they read any bound skill's turn.
+ * `answerOutcome` stays unset, as it was when bound skills rendered verbatim: the composer
+ * tags `non_retrieval_response`, which connector grounding would read as "not applicable".
  */
 const presentedAsBoundSkill = (outcome: TurnOutcome, presentation: ChatPresentedAnswer): ChatPresentedAnswer => ({
   ...presentation,
   skillName: outcome.skillName,
   skillOutcome: outcome.outcome.status,
   skillStatus: outcome.outcome.status,
+  answerOutcome: undefined,
 });
 
 interface SkillResultTurnRendererOptions {
-  logger?: Pick<AppLogger, "debug">;
+  logger?: Pick<AppLogger, "warn">;
 }
 
 interface SkillResultFindingsIds {
@@ -43,35 +44,53 @@ interface SkillResultFindingsIds {
 }
 
 /**
- * Caps a directive-bound skill's returned text before it enters the reply prompt
- * (`CHAT_BEHAVIOR.skillResult.maxFindingsCodePoints`). Put in whole, a huge MCP result could
- * overflow the model's input and fail the turn after the tool has already run. Cut on a
- * Unicode code-point boundary — `Array.from` iterates a string by code point, so a surrogate
- * pair is never split — never by UTF-16 code unit. A cut emits one structured log line with
- * ids and sizes only; the findings text never reaches the log.
+ * Bounds a directive-bound skill's returned text before it enters the reply prompt, in the
+ * input-token estimate the pre-call budget guard uses, so findings in any script cannot
+ * overflow the model's input after the tool has already run. A UTF-16 length within the
+ * budget always estimates within it, so ordinary results skip the walk; an over-budget one is
+ * cut on a code-point boundary to the longest prefix that fits. A cut logs ids and sizes only.
  */
 export const cappedSkillFindings = (
   findings: string,
   ids: SkillResultFindingsIds,
-  logger?: Pick<AppLogger, "debug">,
+  logger?: Pick<AppLogger, "warn">,
 ): string => {
-  const cap = CHAT_BEHAVIOR.skillResult.maxFindingsCodePoints;
-  const codePoints = Array.from(findings);
-  if (codePoints.length <= cap) {
+  const maxInputTokens = CHAT_BEHAVIOR.skillResult.maxFindingsInputTokens;
+  if (findings.length <= maxInputTokens) {
     return findings;
   }
-  logger?.debug(
+  if (estimateTextGenerationInputTokens({ prompt: findings }) <= maxInputTokens) {
+    return findings;
+  }
+
+  const codePoints = Array.from(findings);
+  const fitsWithin = (count: number): boolean =>
+    estimateTextGenerationInputTokens({ prompt: codePoints.slice(0, count).join("") }) <= maxInputTokens;
+
+  let lower = 0;
+  let upper = codePoints.length;
+  while (lower < upper) {
+    const middle = Math.ceil((lower + upper) / 2);
+    if (fitsWithin(middle)) {
+      lower = middle;
+    } else {
+      upper = middle - 1;
+    }
+  }
+  const truncated = codePoints.slice(0, lower).join("");
+  logger?.warn(
     {
       event: "chat.skill_result.findings_truncated",
       skillName: ids.skillName,
       workspaceId: ids.workspaceId,
       conversationId: ids.conversationId,
       originalCodePoints: codePoints.length,
-      cap,
+      truncatedCodePoints: lower,
+      maxInputTokens,
     },
     "Skill result findings truncated before entering the reply prompt",
   );
-  return codePoints.slice(0, cap).join("");
+  return truncated;
 };
 
 /**
@@ -100,7 +119,7 @@ export const createSkillResultTurnRenderer = (
     supports: (outcome) =>
       outcome.kind === AGENT_SKILL_OUTCOME_KIND
       && outcome.outcome.status === "completed"
-      && hasFindings(outcome.outcome.answer),
+      && hasAnswerText(outcome.outcome.answer),
     render: async (outcome, ctx) => presentedAsBoundSkill(
       outcome,
       await composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, findingsFor(outcome, ctx)),

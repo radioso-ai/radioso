@@ -7,6 +7,7 @@ import type { FinalPromptContext } from "../../../modules/retrieval/public.js";
 import {
   AGENT_SKILL_OUTCOME_KIND,
   buildPreparedTurnOutcome,
+  hasAnswerText,
   toConversationAgentConfig,
   toConversationInputEvent,
   toConversationMessages,
@@ -163,8 +164,6 @@ const settledFailure = (session: PreparedSession, skillName: string, reason: str
     outputs: { skill: skillName, reason },
     error: { code: reason, message: `Agent skill "${skillName}" did not answer the turn (${reason}).` },
   });
-
-const hasAnswerText = (answer: string | undefined): boolean => typeof answer === "string" && answer.trim().length > 0;
 
 /**
  * Records one directive-bound dispatch that failed for a reason this provider decided. An

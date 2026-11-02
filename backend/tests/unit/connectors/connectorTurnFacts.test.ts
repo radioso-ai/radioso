@@ -198,6 +198,28 @@ describe("connectorTurnFacts on review turns completed by the lifecycle", () => 
     expect(draftFacts(result)).toMatchObject({ outcome: "answered", grounding: "not_applicable", coverage: "not_assessed" });
   });
 
+  it("maps a directive-bound skill's reply with grounding unknown, not conversational", async () => {
+    // Regression for the skill-result renderer (skillResultTurnRenderer.ts): a bound
+    // external MCP skill's reply must not read back as a conversational chat turn just
+    // because the assistant-voice composer it shares always tags `answerOutcome:
+    // non_retrieval_response`. The renderer drops that field, so this falls back exactly
+    // like the generic renderer's bound-skill turns always did: `answerOutcome` absent,
+    // `skillName`/`skillOutcome` the actual bound skill's identity, and
+    // `legacyAnswerOutcomeForSkillTurnOutcome` matching neither "retrieval.answer" nor
+    // "assistant.chat" — so grounding stays `unknown`, not `not_applicable`.
+    const result = await reviewedTurnFixture({
+      presentation: {
+        answer: "We publish Autobiografia di uno Yogi.",
+        skillName: "ananda_edizioni",
+        skillOutcome: "completed",
+        skillStatus: "completed",
+        answerOutcome: undefined,
+      },
+    });
+
+    expect(draftFacts(result)).toMatchObject({ outcome: "answered", grounding: "unknown" });
+  });
+
   it("maps an unavailable turn to no draft that asks for a person", async () => {
     const result = await reviewedTurnFixture({
       presentation: { answer: "I can't respond right now.", skillOutcome: "unavailable", skillStatus: "failed", answerOutcome: "coverage_unavailable" },

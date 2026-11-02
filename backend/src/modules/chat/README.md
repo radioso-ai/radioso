@@ -858,13 +858,20 @@ imports from `services/`.
   text as data in a `<skill_findings>` block (a tag forged inside it is broken up, the
   rest of its characters kept) beside the same answer instructions, visitor context,
   summary, history, steering, and lead-back the direct prompt carries. The skill's text
-  is capped at `CHAT_BEHAVIOR.skillResult.maxFindingsCodePoints` Unicode code points
-  before it enters that block, so an oversized tool result cannot overflow the model's
-  input and fail the turn after the tool has already run; a cut logs one
-  `chat.skill_result.findings_truncated` line with ids and sizes only. The reply is
-  composed under usage attempt `skill_result`, or streamed under `stream_skill_result`
-  (`_miss` for either's blank decline), and its presentation carries the bound skill's
-  name and status, so the reply row records the bound skill. A failed, suppressed, or
+  is capped at `CHAT_BEHAVIOR.skillResult.maxFindingsInputTokens` *estimated input tokens*
+  (via `estimateTextGenerationInputTokens`, the same estimator
+  `ModelInferencePipeline.enforceInputBudget` checks the whole prompt against) before it
+  enters that block — never a Unicode code-point count, which would undercount a
+  non-ASCII (Cyrillic, CJK, …) result's real cost against the model's input budget — so
+  an oversized or non-ASCII-heavy tool result cannot overflow the model's input and fail
+  the turn after the tool has already run; a cut logs one
+  `chat.skill_result.findings_truncated` line at `warn` with ids and sizes only. The
+  reply is composed under usage attempt `skill_result`, or streamed under
+  `stream_skill_result` (`_miss` for either's blank decline), and its presentation
+  carries the bound skill's name and status — but never `answerOutcome`, so a reader of
+  that field alone (e.g. `connectorTurnFacts.ts`'s `grounding()`) does not read a bound
+  skill's turn as a conversational reply — so the reply row records the bound skill. A
+  failed, suppressed, or
   empty outcome falls through to `GenericTurnOutcomeRenderer`. Tests:
   `tests/unit/skill-result-turn-renderer.test.ts`,
   `tests/unit/skill-result-reply-prompt.test.ts`, and the directive-bound cases in

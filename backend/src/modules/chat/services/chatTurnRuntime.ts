@@ -26,7 +26,7 @@ export interface ChatTurnRuntimeDependencies {
   chatActionSuggestionService?: ChatActionSuggestionService;
   skillOutcomeCapabilities: SkillOutcomeCapabilityProvider;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
-  logger?: Pick<AppLogger, "debug">;
+  logger?: Pick<AppLogger, "debug" | "warn">;
   /** Composition's quick-reply kill switch (default true): false, every direct turn is composed. */
   quickReplyLaneEnabled?: boolean;
 }

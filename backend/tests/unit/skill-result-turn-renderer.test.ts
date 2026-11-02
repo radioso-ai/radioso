@@ -118,6 +118,21 @@ describe("skill result turn renderer", () => {
     });
   });
 
+  it("drops answerOutcome, so a bound skill's turn is not read back as a conversational reply", async () => {
+    // The assistant-voice composer this renderer sits on always presents through
+    // `presentNonRetrievalAnswer`, which tags every reply `answerOutcome:
+    // NON_RETRIEVAL_RESPONSE`. Correct for the direct/social capability it was written
+    // for; wrong for a bound external MCP skill, which is not a conversational reply. A
+    // consumer that reads `answerOutcome` on its own (outside the skill columns above),
+    // e.g. connectorTurnFacts.ts's grounding(), must see the same `undefined` the generic
+    // renderer a bound skill fell through to before this renderer existed always left it.
+    const { renderer, ctx } = harness();
+
+    const presentation = await renderer.render(agentSkillOutcome(), ctx);
+
+    expect(presentation.answerOutcome).toBeUndefined();
+  });
+
   it("streams the reply as the agent's model writes it", async () => {
     const { calls, renderer, ctx } = harness();
 
@@ -134,6 +149,7 @@ describe("skill result turn renderer", () => {
         skillName: "ananda_edizioni",
         skillOutcome: "completed",
         skillStatus: "completed",
+        answerOutcome: undefined,
       },
     });
   });
@@ -187,77 +203,119 @@ describe("skill result turn renderer", () => {
 
 describe("skill result findings cap", () => {
   const ids = { skillName: "ananda_edizioni", workspaceId: "workspace-1", conversationId: "conversation-1" };
-  const cap = CHAT_BEHAVIOR.skillResult.maxFindingsCodePoints;
+  const cap = CHAT_BEHAVIOR.skillResult.maxFindingsInputTokens;
+  // A non-ASCII character (as in a Cyrillic/CJK MCP result): under the budget guard's
+  // language-aware estimator it is one code point and one token, the same way an ASCII
+  // character sat at the old code-point cap — so a run of `cap` of these sits exactly at
+  // the token budget.
+  const nonAsciiChar = "д";
 
   it("leaves findings under the cap unchanged and logs nothing", () => {
-    const findings = "a".repeat(cap - 1);
-    const logger = { debug: vi.fn() };
+    const findings = nonAsciiChar.repeat(cap - 1);
+    const logger = { warn: vi.fn() };
 
     const result = cappedSkillFindings(findings, ids, logger);
 
     expect(result).toBe(findings);
-    expect(logger.debug).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("leaves findings exactly at the cap unchanged and logs nothing", () => {
-    const findings = "a".repeat(cap);
-    const logger = { debug: vi.fn() };
+    const findings = nonAsciiChar.repeat(cap);
+    const logger = { warn: vi.fn() };
 
     const result = cappedSkillFindings(findings, ids, logger);
 
     expect(result).toBe(findings);
-    expect(logger.debug).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it("truncates findings over the cap to exactly the cap in code points, logging ids and sizes only", () => {
-    const findings = "a".repeat(cap + 500);
-    const logger = { debug: vi.fn() };
+  it("truncates non-ASCII findings over the cap to the token budget, logging ids and sizes only, at warn level", () => {
+    const findings = nonAsciiChar.repeat(cap + 500);
+    const logger = { warn: vi.fn() };
 
     const result = cappedSkillFindings(findings, ids, logger);
+    const truncatedCodePoints = Array.from(result).length;
 
-    expect(Array.from(result)).toHaveLength(cap);
-    expect(result).toBe("a".repeat(cap));
-    expect(logger.debug).toHaveBeenCalledTimes(1);
-    const [fields, message] = logger.debug.mock.calls[0] as [Record<string, unknown>, string];
+    // The shared estimator this reuses (`estimateTextGenerationInputTokens`) always
+    // measures a systemPrompt+prompt pair joined by a newline; measuring the findings
+    // alone still pays for that joining character, a fraction of a token. So the
+    // achieved length can land a token or so under the nominal cap rather than exactly
+    // at it — comfortably within budget either way, never over it.
+    expect(truncatedCodePoints).toBeLessThanOrEqual(cap);
+    expect(truncatedCodePoints).toBeGreaterThan(cap - 5);
+    expect(result).toBe(nonAsciiChar.repeat(truncatedCodePoints));
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const [fields, message] = logger.warn.mock.calls[0] as [Record<string, unknown>, string];
     expect(fields).toEqual({
       event: "chat.skill_result.findings_truncated",
       skillName: ids.skillName,
       workspaceId: ids.workspaceId,
       conversationId: ids.conversationId,
       originalCodePoints: cap + 500,
-      cap,
+      truncatedCodePoints,
+      maxInputTokens: cap,
     });
     expect(typeof message).toBe("string");
     // Never the findings text itself.
-    expect(JSON.stringify(fields)).not.toContain("aaaa");
+    expect(JSON.stringify(fields)).not.toContain(nonAsciiChar.repeat(4));
   });
 
-  it("never splits a surrogate pair at the cap boundary", () => {
-    const findings = `${"a".repeat(cap - 1)}\u{1F600}extra`;
+  it("keeps far more ASCII text than non-ASCII text under the same token budget", () => {
+    // The bug this guards against: a code-point cap sized for ASCII became a much bigger
+    // token cost for non-ASCII findings, because the budget guard charges a non-ASCII code
+    // point a full token but an ASCII character only a quarter. This many ASCII characters
+    // (comfortably under four times `cap` code points, clear of the estimator's own
+    // newline-joining overhead) still passes through untouched.
+    const asciiFindings = "a".repeat(cap * 4 - 100);
+
+    const result = cappedSkillFindings(asciiFindings, ids);
+
+    expect(result).toBe(asciiFindings);
+  });
+
+  it("truncates a huge non-ASCII result to a small fraction of the old code-point cap", () => {
+    // Regression for the original bug: 20,000 non-ASCII code points, the old cap, cost
+    // 20,000 tokens against the model's 32,000-token input budget — not "comfortably under"
+    // it once instructions, history, and the rest of the prompt are added. Bounding findings
+    // in tokens caps the same script far below the old 20,000 code points.
+    const findings = nonAsciiChar.repeat(20_000);
 
     const result = cappedSkillFindings(findings, ids);
 
-    expect(Array.from(result)).toHaveLength(cap);
-    expect(result.endsWith("\u{1F600}")).toBe(true);
-    // No lone surrogate at the very end of the truncated string.
+    expect(Array.from(result).length).toBeLessThanOrEqual(cap);
+    expect(Array.from(result).length).toBeGreaterThan(cap - 5);
+    expect(cap).toBeLessThan(20_000);
+  });
+
+  it("never splits a surrogate pair, wherever in an over-budget result it falls", () => {
+    const findings = `${nonAsciiChar.repeat(cap)}\u{1F600}${nonAsciiChar.repeat(10)}`;
+
+    const result = cappedSkillFindings(findings, ids);
+
+    expect(Array.from(result).length).toBeLessThanOrEqual(cap);
+    // No lone surrogate at the very end of the truncated string — Array.from-based
+    // slicing lands the cut on a code-point boundary, never inside a surrogate pair.
     expect(/[\uD800-\uDBFF]$/.test(result)).toBe(false);
   });
 
   it("works when no logger is supplied", () => {
-    const findings = "a".repeat(cap + 1);
+    const findings = nonAsciiChar.repeat(cap + 1);
 
     expect(() => cappedSkillFindings(findings, ids)).not.toThrow();
   });
 
   it("caps the skill's findings before they enter the reply prompt", async () => {
-    const longFindings = "a".repeat(cap + 500);
-    const logger = { debug: vi.fn() };
+    const longFindings = nonAsciiChar.repeat(cap + 500);
+    const logger = { debug: vi.fn(), warn: vi.fn() };
     const { calls, renderer, ctx } = harness(MODEL_REPLY, { logger });
 
     await renderer.render(agentSkillOutcome({ answer: longFindings }), ctx);
 
     const match = calls[0]?.prompt.match(/<skill_findings>\n([\s\S]*)\n<\/skill_findings>/);
-    expect(match?.[1]).toHaveLength(cap);
-    expect(logger.debug).toHaveBeenCalledTimes(1);
+    const truncatedCodePoints = Array.from(match?.[1] ?? "").length;
+    expect(truncatedCodePoints).toBeLessThanOrEqual(cap);
+    expect(truncatedCodePoints).toBeGreaterThan(cap - 5);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 });

@@ -230,15 +230,12 @@ export const CHAT_BEHAVIOR = {
   // findings text; an oversized MCP result put in whole could overflow the model's
   // input and fail the turn after the tool has already run.
   skillResult: {
-    // Cap on the skill's returned text, in Unicode code points, before it enters the
-    // prompt. Sized to the same order of magnitude as the grounded-context budget a
-    // retrieval answer prompt already carries (RETRIEVAL_BEHAVIOR.promptContextTokenBudget:
-    // 4,800 tokens, ~19,200 chars at the repo-standard ~4 chars/token estimate), since this
-    // reply carries a tool's grounding text into the same answer-prompt budget. Comfortably
-    // under LLM_DEFAULTS.textGenerationMaxInputTokens (32,000 tokens) once the rest of the
-    // prompt (answer instructions, history, summary, steering) is added. Composition-owned;
-    // never tuned per phrase.
-    maxFindingsCodePoints: 20_000,
+    // Cap on the skill's returned text, in the pre-call guard's input-token estimate
+    // (a non-ASCII code point costs a full token, so a character cap would not hold for
+    // every script). Matches the grounded-context budget a retrieval answer carries
+    // (RETRIEVAL_BEHAVIOR.promptContextTokenBudget) and leaves 32,000 - 4,096 output - 4,800
+    // = 23,104 tokens for the rest of the prompt.
+    maxFindingsInputTokens: 4_800,
   },
 } as const;
 

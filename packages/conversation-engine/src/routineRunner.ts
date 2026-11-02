@@ -1024,6 +1024,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
     }
     let stagedContext = turn.stagedContext;
+    // The turn as this walk has staged it: a skill step's output joins the context every
+    // later step this turn dispatches, steers, or replies from.
+    const turnWithStagedContext = (): TurnContext =>
+      stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext };
 
     // Skip slot-collection steps that are already satisfied, so an intake never re-asks
     // for a value the routine already holds. A satisfied step leaves by its structure — a
@@ -1307,7 +1311,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const skillResult: RoutineSkillResult = await this.skillDispatcher.dispatch({
         skillName: step.skillName,
         state: skillStateAtStep,
-        turn: stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext },
+        turn: turnWithStagedContext(),
         ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
         ...(sensitiveKeys.length > 0 ? { sensitiveSlotKeys: sensitiveKeys } : {}),
         stepId: step.id,
@@ -1403,14 +1407,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       const nextState: RoutineState = { ...stateWithoutReaskCount, path, variables, attempts, status: "suspended" };
       const rendered = stepForReply(step, variables, stagedContext, this.options.contextRenderer);
+      const replyTurn = turnWithStagedContext();
       const baseSteering = projectStep(rendered.step);
       const steering = input.steeringResolver
-        ? await input.steeringResolver.resolve({ step, baseSteering, turn })
+        ? await input.steeringResolver.resolve({ step, baseSteering, turn: replyTurn })
         : baseSteering;
       const reply = this.prepareReply({
         ...rendered,
         steering,
-        turn,
+        turn: replyTurn,
       });
       traceSteps.push({ stepId: step.id, kind: step.kind, event: "suspended" });
       const trace: RoutineRunTrace = {
@@ -1454,12 +1459,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // before it reaches the renderer, so "{{slot.phone}}" renders the real value and
     // "{{context.page_context}}" the host's rendering of the visitor's page.
     const rendered = stepForReply(step, variables, stagedContext, this.options.contextRenderer);
-    const turnWithStagedContext: TurnContext = stagedContext === turn.stagedContext
-      ? turn
-      : { ...turn, stagedContext };
+    const replyTurn = turnWithStagedContext();
     const baseSteering = projectStep(rendered.step);
     const steering = input.steeringResolver
-      ? await input.steeringResolver.resolve({ step, baseSteering, turn: turnWithStagedContext })
+      ? await input.steeringResolver.resolve({ step, baseSteering, turn: replyTurn })
       : baseSteering;
 
     // Rendering the chat step the user was answering means their reply did not satisfy
@@ -1476,7 +1479,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     const reply = this.prepareReply({
       ...rendered,
       steering,
-      turn: turnWithStagedContext,
+      turn: replyTurn,
       ...(reask ? { reask } : {}),
     });
 

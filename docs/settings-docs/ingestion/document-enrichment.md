@@ -1,7 +1,7 @@
 ---
 title: "Metadata Extraction"
 description: "How metadata extraction classifies documents against your document type catalog and writes the fields you define as structured tags."
-last_updated: 2026-10-25
+last_updated: 2026-11-02
 ---
 
 # Metadata Extraction
@@ -76,7 +76,7 @@ A successful run replaces the previous run's generated tags in one step: the old
 
 The built-in `dateFrom` and `dateTo` tags follow the same rule, as a pair. Dates you type, send through the API, or set in a source's document tags stay on every passage through each reprocess and every run, whatever the model reads, and the run counts each date it would have written as a collision. Dates extraction wrote are extraction's to refresh; change either one by hand and both become yours.
 
-Dates a connector syncs are defaults: WordPress writes each post's publish day as `dateFrom`, and a run that reads the event's own dates replaces it. The publish day stays when extraction is off, fails, or reads no dates. A date you edit by hand on a synced document lasts until the connector's next sync or the next run that reads dates.
+Dates a connector syncs are defaults: WordPress writes the publish day of each entry of its `post` type as `dateFrom`, and a run that reads the event's own dates replaces it. The publish day stays when extraction is off, fails, or reads no dates. A date you edit by hand on a synced document lasts until the connector's next sync or the next run that reads dates.
 
 ### Control Levels
 

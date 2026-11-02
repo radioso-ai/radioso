@@ -856,14 +856,22 @@ tool step resolves to `failed`.
 
 The next-step selector
 (`packages/conversation-defaults/src/routineNextStepSelector.ts` with
-`backend/prompts/chat/routine-next-step.md`) extracts slot values and picks an
-exit, retrying its own model call once when a completion comes back unreadable.
-The step renderer (`routineStepRenderer.ts` with
-`backend/prompts/chat/routine-step-reply.md`, plus
-`routine-step-reask-exhausted.md` past the re-ask limit) writes the reply. A
-routine turn therefore makes two or three model calls, all on the workspace
-chat model at reasoning effort `none`, so small wording and layout changes
-move their behavior a lot. Each rule below exists because breaking it
+`backend/prompts/chat/routine-next-step.md`, and `routine-next-step-slots.md`,
+`routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` for
+the declared slots and the rules for filling them) extracts slot values and
+picks an exit, retrying its own model call once when a completion comes back
+unreadable. The step renderer (`routineStepRenderer.ts` with
+`backend/prompts/chat/routine-step-reply.md`, `routine-step-progress.md` on a
+chat step, `routine-step-context-evidence.md` around the visitor's page, and
+`routine-step-reask.md` with its `-gap`, `-exhausted-gap`, `-missing-slots`, and
+`-exhausted` pieces on a re-ask) writes the reply. A routine turn therefore
+makes two or three model calls, all on the workspace chat model at reasoning
+effort `none`, so small wording and layout changes move their behavior a lot.
+Each template reaches the selector or renderer as a template option, so a host
+can replace one, and
+`packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the
+exact model input both send: a change to any of these files shows up there as
+a snapshot diff to review. Each rule below exists because breaking it
 produced a measured failure on gpt-5.4-mini:
 
 | Rule | What breaking it did |

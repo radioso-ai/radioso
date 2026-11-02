@@ -452,6 +452,9 @@ export const createRoutineTurnProvider = (
       routines,
       new RoutineNextStepSelector(modelGateway, {
         promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
+        slotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-slots.md"),
+        filledSlotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-filled-slots.md"),
+        dateRulePromptTemplate: loadPromptTemplate("chat/routine-next-step-date-rule.md"),
         // Ids, the reason, and the completion's stop reason and sizes; never prompt or completion text.
         onUnreadable: ({ routineId, stepId, sessionId, reason, attempt, stopReason, outputChars, promptChars }) => {
           dependencies.logger.warn(
@@ -464,8 +467,14 @@ export const createRoutineTurnProvider = (
         promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
         terminalHandoffWithMessagePromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-with-message.md"),
         terminalHandoffDefaultPromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-default.md"),
+        reaskPromptTemplate: loadPromptTemplate("chat/routine-step-reask.md"),
+        reaskGapPromptTemplate: loadPromptTemplate("chat/routine-step-reask-gap.md"),
+        reaskExhaustedGapPromptTemplate: loadPromptTemplate("chat/routine-step-reask-exhausted-gap.md"),
+        reaskMissingSlotsPromptTemplate: loadPromptTemplate("chat/routine-step-reask-missing-slots.md"),
         reaskExhaustedPromptTemplate: loadPromptTemplate("chat/routine-step-reask-exhausted.md"),
         stuckHandoffPromptTemplate: loadPromptTemplate("chat/routine-step-stuck-handoff.md"),
+        stepProgressPromptTemplate: loadPromptTemplate("chat/routine-step-progress.md"),
+        contextEvidencePromptTemplate: loadPromptTemplate("chat/routine-step-context-evidence.md"),
         responseLanguage,
         groundedAnswerRenderer,
         steeringPromptTemplate: loadPromptTemplate("chat/routine-step-steering.md"),

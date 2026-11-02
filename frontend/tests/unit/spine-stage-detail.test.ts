@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildClarificationStageDetail,
-  buildRoutineRunTrace,
   directiveAdherenceStatus,
   readDirectiveAdherence,
 } from '@/components/dashboard/spine-stage-detail'
 import type { ConversationTraceStage } from '@/lib/api'
+import { buildRoutineRunTrace } from '@/lib/routine-run-trace'
 
 // #1575: the answer commits to each directive before it writes; the trace carries that commitment.
 describe('readDirectiveAdherence', () => {

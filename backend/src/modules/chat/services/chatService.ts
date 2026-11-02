@@ -1175,10 +1175,7 @@ export class ChatService {
           });
       this.checkTurnCancellation(coordination, "routing");
       if (routineTurn) {
-        session = withCommittedPageRead(
-          this.withResponseLanguage(session, await responseLanguagePromise),
-          routineTurn.pageRead,
-        );
+        session = withCommittedPageRead(this.withResponseLanguage(session, await responseLanguagePromise), routineTurn.pageRead);
         const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
           session,
           workspaceId: input.workspaceId,
@@ -1739,8 +1736,7 @@ export class ChatService {
         } else {
           routineTurn = routineReply.turn;
         }
-        // The turn's page read rides on its result; the copy still comes after the reply, which
-        // records an invocation's report on the session it was claimed with as it ends.
+        // After the reply: as it ends, it records an invocation's report on the session it was claimed with.
         session = withCommittedPageRead(this.withResponseLanguage(session, responseLanguage), routineTurn.pageRead);
         const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
           session,

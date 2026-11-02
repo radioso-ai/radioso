@@ -18,7 +18,7 @@ export interface CommittedPageRead {
 }
 
 /** A routine runner that also reports the page read its kept turn committed. */
-export interface PageReadAwareRoutineRunner extends ConversationRoutineRunner {
+interface PageReadAwareRoutineRunner extends ConversationRoutineRunner {
   /** What the commit set, once the reply has been generated; undefined before that, or when nothing was kept. */
   committedPageRead(): CommittedPageRead | undefined;
 }

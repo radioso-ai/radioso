@@ -264,11 +264,7 @@ export interface ChatTurnAssemblyRoutineResult {
   commitRoutineState: () => Promise<void>;
   commitClarificationState?: () => Promise<void>;
   commitCoverageReactions?: () => Promise<void>;
-  /**
-   * The page read the routine committed to the session it claimed the turn with. The caller
-   * persists the turn from a session carrying it (`withCommittedPageRead`), whatever copies of
-   * the session it made meanwhile.
-   */
+  /** The page read the routine committed; the caller persists the turn from `withCommittedPageRead(session, pageRead)`. */
   pageRead?: CommittedPageRead;
 }
 
@@ -295,21 +291,8 @@ export interface ChatTurnAssemblyRoutineClaim {
 
 type RoutineTurnOutcome = Awaited<ReturnType<RoutineTurnWithConversationEngineClaim["reply"]["render"]>>;
 
-interface CoverageRoutineEffects {
-  actions?: RoutineActionRequest[];
-  handoff?: RoutineHandoffEffect;
-  operatorNotice?: RoutineOperatorNoticeEffect;
-  /** Skills the coverage-activated routine ran that may have acted outside the conversation. */
-  skillsWithExternalEffects?: ProcessTurnResult["skillsWithExternalEffects"];
-  routineStateTransition?: CapturedRoutineTransition | null;
-  routineReporter?: ChatRoutineTurnReporter;
-  pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
-  suspended?: boolean;
-  commitRoutineState?: () => Promise<void>;
-  clarificationTransition?: CapturedClarificationTransition | null;
-  commitClarificationState?: () => Promise<void>;
-  commitCoverageReactions?: () => Promise<void>;
-}
+/** What a coverage-activated routine adds to the turn it takes over: a routine turn's effects, each optional. */
+type CoverageRoutineEffects = Partial<Omit<ChatTurnAssemblyRoutineResult, "presentation" | "engineTrace" | "pageRead">>;
 
 type PreparedChatStreamTurnEvent =
   | { type: "status"; stage: ChatStatusStage }
@@ -575,7 +558,6 @@ export class ChatTurnAssembly {
         routineStateTransition,
         actions: outcome.result.actions,
       });
-      const pageRead = routineRunner.committedPageRead();
       return {
         presentation: outcome.presentation,
         engineTrace: outcome.result.trace,
@@ -591,7 +573,7 @@ export class ChatTurnAssembly {
         commitClarificationState: deferredClarificationStore
           ? () => deferredClarificationStore.commit()
           : undefined,
-        ...(pageRead ? { pageRead } : {}),
+        pageRead: routineRunner.committedPageRead(),
       };
     };
     const stream = claim.reply.stream?.bind(claim.reply);

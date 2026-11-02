@@ -357,7 +357,7 @@ export const registerSettingsPaths = (
     summary: "Set the zone the workspace reads today's date in",
     operationId: "updateTimeZoneSettings",
     description:
-      "Sets the IANA zone relative dates resolve in: the query rewrite, the answer, the rerank, the date-range lookup, and the `today()` metadata rule token all read today's date in it. A visitor whose client reports a valid zone (the website embed sends the browser's; `userTimeZone` on a chat request) reads today in their own zone instead. Null, the default, reads today in UTC. Each change records a `workspace.time_zone_settings.updated` audit event. Requires workspace.settings.manage.",
+      "Sets the IANA zone relative dates resolve in: the query rewrite, the answer, the rerank, the date-range lookup, the `today()` metadata rule token, and a routine's date slots and lookups all read today's date in it. A visitor whose client reports a valid zone (the website embed sends the browser's; `userTimeZone` on a chat request) reads today in their own zone instead. Null, the default, reads today in UTC. Each change records a `workspace.time_zone_settings.updated` audit event. Requires workspace.settings.manage.",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
       body: { required: true, content: { "application/json": { schema: schemas.UpdateTimeZoneSettingsRequestSchema } } },

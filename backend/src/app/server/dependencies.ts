@@ -794,6 +794,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     store: new WorkspacePrivacySettingsRepository(infrastructure.database.kysely),
     audit: infrastructure.auditService,
   });
+  // One planner for reviewed document operations, shared by Ray's proposal adapter and tool catalog.
+  const documentReviewedOperations = new DocumentReviewedOperationService(
+    repositories.documentRepository,
+    documents.documentIngestionService,
+    documents.documentDeletionService,
+    infrastructure.documentCapacityReader,
+    documents.documentSourceReprocessService,
+    documents.workspaceIngestionReprocessService,
+  );
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
@@ -829,16 +838,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       documentDeletion: documents.documentDeletionService,
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
-    createDocumentReviewedOperationAdapter({
-      operations: new DocumentReviewedOperationService(
-        repositories.documentRepository,
-        documents.documentIngestionService,
-        documents.documentDeletionService,
-        infrastructure.documentCapacityReader,
-        documents.documentSourceReprocessService,
-        documents.workspaceIngestionReprocessService,
-      ),
-    }),
+    createDocumentReviewedOperationAdapter({ operations: documentReviewedOperations }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createPrivacySettingCopilotProposalAdapter({ privacySettings: privacySettingsService }),
@@ -1163,14 +1163,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettings: settings.ingestionSettingsService,
     directiveAuthor: directiveAuthorService,
     directives: authoredDirectiveService,
-    documents: new DocumentReviewedOperationService(
-      repositories.documentRepository,
-      documents.documentIngestionService,
-      documents.documentDeletionService,
-      infrastructure.documentCapacityReader,
-      documents.documentSourceReprocessService,
-      documents.workspaceIngestionReprocessService,
-    ),
+    documents: documentReviewedOperations,
     logger,
   });
   const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({

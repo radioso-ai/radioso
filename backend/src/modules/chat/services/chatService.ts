@@ -71,11 +71,11 @@ import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.j
 import {
   ChatTurnAssembly,
   type ChatTurnAssemblyFactory,
-  buildChatTurnContext,
   type ChatTurnAssemblyCoordinationHook,
   type ChatTurnAssemblyRoutineClaim,
   type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
+import { buildChatTurnContext } from "./conversationContractMappers.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import {
@@ -168,9 +168,11 @@ import {
 } from "./routines/routineReplyDelivery.js";
 import { routineReplyFor } from "./routines/routineReplyFor.js";
 import {
-  ChatTurnDisconnectAbortError,
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
+  isTurnCancellation,
+  leaseOptionsFor,
+  supersededBeforeEmission,
   type ConversationTurnLease,
   type ConversationTurnLeaseOptions,
   type ConversationTurnRegistry,
@@ -280,20 +282,6 @@ interface TurnCoordinationState {
   leaseOptions?: ConversationTurnLeaseOptions;
   disconnectSignal?: AbortSignal;
 }
-
-/** The registry mode a turn's supersession asks for: only `latest_input_wins` supersedes after emission. */
-const leaseOptionsFor = (supersession: ConversationTurnSupersession | undefined): ConversationTurnLeaseOptions | undefined =>
-  supersession === "latest_input_wins" ? { supersedeAfterEmission: true } : undefined;
-
-/**
- * The same supersession, for a turn the registry saw emitting (its reply was being stored) whose
- * reply never reached the client: the newer input replaces it whole.
- */
-const supersededBeforeEmission = (error: ChatTurnSupersededError): ChatTurnSupersededError =>
-  new ChatTurnSupersededError(error.conversationId, error.stage, { replacedByNewerInput: error.replacedByNewerInput });
-
-const isTurnCancellation = (error: unknown): boolean =>
-  error instanceof ChatTurnSupersededError || error instanceof ChatTurnDisconnectAbortError;
 
 interface ChatAnswerInput {
   workspaceId: string;

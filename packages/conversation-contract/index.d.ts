@@ -1,4 +1,5 @@
 import type { ConversationModelGateway } from "./modelGateway.js";
+import type { ReferenceTimeZone } from "./referenceTimeZone.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
@@ -354,57 +355,17 @@ export interface DirectiveMatchGateway {
   match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveClassification[]>;
 }
 
-export interface DirectiveCoherenceConflict {
-  directiveId?: string;
-  directiveName: string;
-  reason: string;
-}
-
-export interface DirectiveCoherenceVerdict {
-  coherent: boolean;
-  conflicts: DirectiveCoherenceConflict[];
-  rationale: string;
-}
-
-/**
- * The stable, structural shape of a rejection from a conversation-kit
- * directive-coherence check. Consumers identify it with the kit's
- * `isDirectiveCoherenceError` helper rather than a cross-package `instanceof`.
- */
-export interface DirectiveCoherenceError {
-  code: "conversation_kit_directive_coherence_conflict";
-  verdict: DirectiveCoherenceVerdict;
-}
-
-export interface DirectiveCoherenceInvocationContext {
-  workspaceId: string;
-  agentId: string;
-}
-
-export interface DirectiveCoherenceCheckInput {
-  agent: ConversationAgentConfig;
-  candidate: Directive;
-  existingDirectives: Directive[];
-  invocationContext?: DirectiveCoherenceInvocationContext;
-}
-
-export interface DirectiveCoherenceChecker {
-  check(input: DirectiveCoherenceCheckInput): Promise<DirectiveCoherenceVerdict>;
-}
-
-export type DirectiveCoherenceMode = "enforce";
-
-export interface DirectiveCoherenceGateOptions {
-  enabled?: boolean;
-  mode?: DirectiveCoherenceMode;
-  checker?: DirectiveCoherenceChecker;
-  promptTemplate?: string;
-}
-
-export interface DirectiveCoherenceGate {
-  mode: DirectiveCoherenceMode;
-  checker: DirectiveCoherenceChecker;
-}
+export type {
+  DirectiveCoherenceCheckInput,
+  DirectiveCoherenceChecker,
+  DirectiveCoherenceConflict,
+  DirectiveCoherenceError,
+  DirectiveCoherenceGate,
+  DirectiveCoherenceGateOptions,
+  DirectiveCoherenceInvocationContext,
+  DirectiveCoherenceMode,
+  DirectiveCoherenceVerdict,
+} from "./directiveCoherence.js";
 
 export interface DirectiveCatalogRegistryPort {
   list(): Directive[];
@@ -554,18 +515,7 @@ export interface StagedContext {
   metadata?: Record<string, unknown>;
 }
 
-/** Which input decided a turn's zone. Traces may record this; they never record the zone itself. */
-export type ReferenceTimeZoneSource = "visitor" | "workspace" | "default";
-
-/**
- * The zone a turn reads "today" in, so "tomorrow" means the visitor's tomorrow, and which input
- * decided it. The host validates `timeZone` before it rides on a turn.
- */
-export interface ReferenceTimeZone {
-  /** A canonical IANA zone name, such as `America/Los_Angeles`. */
-  timeZone: string;
-  source: ReferenceTimeZoneSource;
-}
+export type { ReferenceTimeZone, ReferenceTimeZoneSource } from "./referenceTimeZone.js";
 
 export interface TurnContext {
   agent: ConversationAgentConfig;

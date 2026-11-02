@@ -25,7 +25,7 @@ import type { RetrievalSourceScope } from "../domain/retrievalSourceFilter.js";
 
 /** Internal-adapter key the `retrieval.answer` skill declares in its execution descriptor. */
 export const RETRIEVAL_ANSWER_ADAPTER = "retrieval_answer";
-export const RETRIEVAL_CONTEXT_SKILL_NAME = "retrieval.context";
+const RETRIEVAL_CONTEXT_SKILL_NAME = "retrieval.context";
 
 // The rich RetrievalPipelineResult is not a model-visible answer/output — it is
 // loop-internal context the chat turn composes its response from. It therefore

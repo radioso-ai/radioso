@@ -6,6 +6,7 @@ import type {
   ConversationTraceStage,
   ReferenceTimeZone,
   StagedContext,
+  TurnContext,
 } from "@radioso/conversation-contract";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
@@ -62,6 +63,26 @@ export const toConversationAgentConfig = (agent: AgentRecord): ConversationAgent
     hasContactDestination: hasConfiguredContactDestination(agent.contactRequestDelivery),
     webhookExportsEnabled: agent.webhookExportsEnabled,
   },
+});
+
+/**
+ * The turn context for a chat turn's ports that run outside a full engine turn, such as the
+ * clarifier and an approval resume.
+ */
+export const buildChatTurnContext = (session: {
+  agent: AgentRecord;
+  conversation: { id: string };
+  userMessage: MessageRecord;
+  history: MessageRecord[];
+  referenceTimeZone?: ReferenceTimeZone;
+}): TurnContext => ({
+  agent: toConversationAgentConfig(session.agent),
+  sessionId: session.conversation.id,
+  inputEvent: toConversationInputEvent(session.userMessage),
+  history: toConversationMessages(session.history),
+  stagedContext: [],
+  steering: [],
+  ...turnReferenceTimeZone(session),
 });
 
 const fallbackConversationTrace = (): ConversationTrace => ({

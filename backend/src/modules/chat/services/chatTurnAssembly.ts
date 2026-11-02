@@ -18,7 +18,6 @@ import type {
   RoutineState,
   RoutineTurnEffects,
   ProcessTurnResult,
-  TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
 
@@ -87,12 +86,7 @@ import {
   type ClarificationMetricDecision,
   type ClarificationMetricReason,
 } from "./clarification/clarificationMetrics.js";
-import {
-  toConversationAgentConfig,
-  toConversationInputEvent,
-  toConversationMessages,
-  turnReferenceTimeZone,
-} from "./conversationContractMappers.js";
+import { buildChatTurnContext } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
@@ -211,16 +205,6 @@ export const alignOfferPendingCandidates = (
 ): Omit<PendingClarification, "askedEventId"> => ({
   ...pending,
   candidates: presentableSenseCandidates(offeredAlternatives),
-});
-
-export const buildChatTurnContext = (session: PreparedSession): TurnContext => ({
-  agent: toConversationAgentConfig(session.agent),
-  sessionId: session.conversation.id,
-  inputEvent: toConversationInputEvent(session.userMessage),
-  history: toConversationMessages(session.history),
-  stagedContext: [],
-  steering: [],
-  ...turnReferenceTimeZone(session),
 });
 
 export type ChatTurnAssemblyStage = "routing" | "rendering";

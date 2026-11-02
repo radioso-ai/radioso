@@ -15,7 +15,7 @@ import {
   createChatProcessTurnInput,
 } from "../../src/modules/chat/services/conversationProcessTurnInput.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
-import { buildChatTurnContext } from "../../src/modules/chat/services/chatTurnAssembly.js";
+import { buildChatTurnContext } from "../../src/modules/chat/services/conversationContractMappers.js";
 import {
   createRouteScopedDirectiveSteering,
   type RouteScopedDirectiveRuntime,

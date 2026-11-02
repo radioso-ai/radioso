@@ -20,6 +20,7 @@ import type {
 import { checkSlotValue } from "@radioso/conversation-engine";
 
 import { DEFAULT_ROUTINE_NEXT_STEP_PROMPT } from "./generated/defaultPrompts.js";
+import { localIsoDate, turnTimeZone, type LocalDate } from "./localDate.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
 export { DEFAULT_ROUTINE_NEXT_STEP_PROMPT } from "./generated/defaultPrompts.js";
@@ -71,11 +72,11 @@ const slotLine = (slot: RoutineSlotSchema): string => {
 // is stated as how to record the value, never as the slot's type: shown as the type, the
 // model read it as the format the user must type and re-asked a date it had already
 // captured, and parsed "11-14 Nov" as month 11, day 14.
-const dateRule = (today: Date): string =>
+const dateRule = (today: LocalDate): string =>
   [
     "The user may write a date in any form; a date they give for a date slot counts as provided.",
     'Record a date slot\'s value as YYYY-MM-DD, reading the day and month the way the user wrote them: "11-14 Nov" is 11 to 14 November.',
-    `Today is ${today.toISOString().slice(0, 10)} (UTC); a date given without a year is its next occurrence on or after today.`,
+    `Today is ${today.isoDate} (${today.timeZone}); a date given without a year is its next occurrence on or after today.`,
     'Leave a date slot out when the user names only an approximate time, such as "mid-November" or "in spring".',
   ].join(" ");
 
@@ -107,7 +108,7 @@ const slotAssignmentRules = [
   "Repeating back values the user already gave, as a summary or to confirm them, proposes nothing, even in the assistant's own words. Accepting such a recap gives no value: return a repeated slot only when the latest message changes it, so each slot keeps the user's own words.",
 ];
 
-const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, today: Date): string => {
+const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, today: LocalDate): string => {
   if (!routine.slots || routine.slots.length === 0) {
     return "";
   }
@@ -366,7 +367,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       currentStep: currentStepBlock(input.currentStep, input.skillResult),
       skillResult: skillResultBlock(input.skillResult),
       conditions,
-      slotSchema: slotSchemaBlock(input.routine, input.state.variables, this.clock()),
+      slotSchema: slotSchemaBlock(input.routine, input.state.variables, localIsoDate(this.clock(), turnTimeZone(input.turn))),
     });
 
     // A blank completion comes back as one, so it is read, retried and reported like any other

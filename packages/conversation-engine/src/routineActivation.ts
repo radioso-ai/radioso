@@ -331,6 +331,7 @@ const claimRoutineWithMode = async (
     history,
     stagedContext: [],
     steering: [],
+    ...(input.referenceTimeZone ? { referenceTimeZone: input.referenceTimeZone } : {}),
   };
   let state = resuming ? active : null;
   let activationClarificationStage: ConversationTraceStage | null = null;

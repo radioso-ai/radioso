@@ -91,6 +91,7 @@ import {
   toConversationAgentConfig,
   toConversationInputEvent,
   toConversationMessages,
+  turnReferenceTimeZone,
 } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
@@ -219,6 +220,7 @@ export const buildChatTurnContext = (session: PreparedSession): TurnContext => (
   history: toConversationMessages(session.history),
   stagedContext: [],
   steering: [],
+  ...turnReferenceTimeZone(session),
 });
 
 export type ChatTurnAssemblyStage = "routing" | "rendering";

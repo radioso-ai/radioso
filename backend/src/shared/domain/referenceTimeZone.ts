@@ -1,21 +1,14 @@
+import type { ReferenceTimeZone } from "@radioso/conversation-contract";
+
 /** The zone relative dates resolve in when neither the visitor nor the workspace names one. */
 export const DEFAULT_TIME_ZONE = "UTC";
 
 /** Longest zone name read from a client or a setting; IANA names run to about 32 characters. */
 export const TIME_ZONE_MAX_LENGTH = 64;
 
-/** Which input decided a turn's zone. Traces may record this; they never record the zone itself. */
-export type TimeZoneSource = "visitor" | "workspace" | "default";
-
-/**
- * The zone a turn reads "today" in, so "tomorrow" or "this weekend" means the visitor's
- * tomorrow, and which input decided it.
- */
-export interface ReferenceTimeZone {
-  /** A canonical IANA zone name. */
-  timeZone: string;
-  source: TimeZoneSource;
-}
+// The conversation contract owns the shape, so a chat turn hands its zone to the engine, routines
+// and skills unchanged.
+export type { ReferenceTimeZone };
 
 // IANA names never start with a sign; `Intl` also accepts fixed offsets such as "+05:00",
 // which carry no daylight-saving rules and which no browser reports as its zone.

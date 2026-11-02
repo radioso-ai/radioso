@@ -554,6 +554,19 @@ export interface StagedContext {
   metadata?: Record<string, unknown>;
 }
 
+/** Which input decided a turn's zone. Traces may record this; they never record the zone itself. */
+export type ReferenceTimeZoneSource = "visitor" | "workspace" | "default";
+
+/**
+ * The zone a turn reads "today" in, so "tomorrow" means the visitor's tomorrow, and which input
+ * decided it. The host validates `timeZone` before it rides on a turn.
+ */
+export interface ReferenceTimeZone {
+  /** A canonical IANA zone name, such as `America/Los_Angeles`. */
+  timeZone: string;
+  source: ReferenceTimeZoneSource;
+}
+
 export interface TurnContext {
   agent: ConversationAgentConfig;
   sessionId: string;
@@ -563,6 +576,8 @@ export interface TurnContext {
   steering: SteeringRule[];
   activeRoutineId?: string;
   activeStepId?: string;
+  /** The zone every "today" on this turn reads; a consumer reads UTC when it is absent. */
+  referenceTimeZone?: ReferenceTimeZone;
   metadata?: Record<string, unknown>;
 }
 
@@ -1880,6 +1895,8 @@ export interface ProcessTurnInput {
   agent: ConversationAgentConfig;
   sessionId: string;
   inputEvent: ConversationInputEvent;
+  /** Carried onto every turn context the engine builds for this turn. */
+  referenceTimeZone?: ReferenceTimeZone;
   skills: SkillDefinition[];
   directives: Directive[];
   stores: ConversationStores;
@@ -1964,6 +1981,8 @@ export interface AttemptRoutineInput {
   agent: ConversationAgentConfig;
   sessionId: string;
   inputEvent: ConversationInputEvent;
+  /** Carried onto the routine's turn context when the host supplies none. */
+  referenceTimeZone?: ReferenceTimeZone;
   stores: ConversationStores;
   /**
    * Optional host-prepared turn context. Post-evidence activation supplies this so

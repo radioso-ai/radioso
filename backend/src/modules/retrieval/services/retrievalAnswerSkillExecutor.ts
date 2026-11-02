@@ -203,6 +203,8 @@ const requestFromTurn = (
     query: boundQuery ?? turn.inputEvent.content,
     history: toRetrievalHistory(turn.history, workspaceId, turn.sessionId),
     ...(turn.inputEvent.locale ? { responseLanguage: turn.inputEvent.locale } : {}),
+    // A turn without a zone reads the workspace's, in `RetrievalPipelineService`.
+    ...(turn.referenceTimeZone ? { referenceTimeZone: turn.referenceTimeZone } : {}),
     ...(metadata?.skillSettings ? { agentSkillSettings: optionalRecord(metadata.skillSettings) } : {}),
   }, retrieveConfig ?? null);
 };

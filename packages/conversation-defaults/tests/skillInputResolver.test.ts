@@ -87,6 +87,23 @@ describe("createConversationSkillInputResolver", () => {
     expect(vi.mocked(model.complete).mock.calls[0][0].systemPrompt).toContain("Today is 2026-08-02 in UTC");
   });
 
+  it("states the date in the turn's zone over the resolver's own", async () => {
+    const model = gateway(JSON.stringify({ calendar_date: "2026-08-07" }));
+    const resolver = createConversationSkillInputResolver({
+      modelGateway: model,
+      clock: () => new Date("2026-08-02T23:30:00.000Z"),
+      timeZone: "America/Los_Angeles",
+    });
+
+    await resolver.resolve({
+      skill,
+      selected: { skillName: skill.name },
+      turn: turn({ referenceTimeZone: { timeZone: "Asia/Tokyo", source: "visitor" } }),
+    });
+
+    expect(vi.mocked(model.complete).mock.calls[0][0].systemPrompt).toContain("Today is 2026-08-03 in Asia/Tokyo");
+  });
+
   it("does not replace an invalid host value with a model value", async () => {
     const model = gateway(JSON.stringify({ calendar_date: "2026-08-07", haircut_style: "Short" }));
     const resolver = createConversationSkillInputResolver({ modelGateway: model });

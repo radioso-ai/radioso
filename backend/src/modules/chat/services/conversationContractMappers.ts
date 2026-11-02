@@ -4,6 +4,7 @@ import type {
   ConversationMessage,
   ConversationTrace,
   ConversationTraceStage,
+  ReferenceTimeZone,
   StagedContext,
 } from "@radioso/conversation-contract";
 
@@ -29,6 +30,15 @@ export const toConversationInputEvent = (message: MessageRecord): ConversationIn
   content: message.content,
   metadata: message.inputMetadata ? { ...message.inputMetadata } : undefined,
 });
+
+/**
+ * The zone the chat turn resolved before planning, for every turn context and engine input built
+ * from it, so a routine or skill on the turn reads the same "today" as the grounded answer.
+ */
+export const turnReferenceTimeZone = (session: {
+  referenceTimeZone?: ReferenceTimeZone;
+}): { referenceTimeZone?: ReferenceTimeZone } =>
+  session.referenceTimeZone ? { referenceTimeZone: session.referenceTimeZone } : {};
 
 export const toConversationAgentConfig = (agent: AgentRecord): ConversationAgentConfig => ({
   id: agent.id,

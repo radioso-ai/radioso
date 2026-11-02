@@ -735,6 +735,36 @@ describe("routine defaults", () => {
       expect(systemPrompt).toContain("a date they give for a date slot counts as provided");
     });
 
+    // 02:00 UTC on 3 November 2026 is 18:00 on 2 November in Los Angeles: a visitor's
+    // "tomorrow" there is the 3rd, the day the grounded answer listed.
+    it("dates the turn in the zone the turn reads today in", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw, { clock: () => new Date("2026-11-03T02:00:00Z") }).select({
+        routine: booking,
+        state,
+        currentStep,
+        transitions,
+        turn: { ...turn, referenceTimeZone: { timeZone: "America/Los_Angeles", source: "visitor" } },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain("Today is 2026-11-02 (America/Los_Angeles)");
+    });
+
+    it("dates the turn in UTC when the turn's zone is one Intl does not know", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw, { clock: () => new Date("2026-11-03T02:00:00Z") }).select({
+        routine: booking,
+        state,
+        currentStep,
+        transitions,
+        turn: { ...turn, referenceTimeZone: { timeZone: "Not/AZone", source: "visitor" } },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain("Today is 2026-11-03 (UTC)");
+    });
+
     // #1664: a bare date with two date slots went to either one, and a "yes" to dates the step
     // had just offered filled neither.
     it("fills a value only into the slot it is given for, and an accepted proposal into its slots", async () => {

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Routine, TurnContext } from "@radioso/conversation-contract";
+import { RoutineNextStepSelector } from "@radioso/conversation-defaults";
 import type { TemporalCandidateRetrievalInput, TemporalCandidateRetrievalPort } from "../../../src/modules/retrieval/domain/temporal/temporalCandidateRetrieval.js";
 import type { RetrievedChunk } from "../../../src/modules/retrieval/domain/vectorSearch.js";
 import { CandidatePreparationService } from "../../../src/modules/retrieval/services/candidatePreparationService.js";
@@ -10,7 +12,9 @@ import { ModelQueryRewriteGateway } from "../../../src/modules/retrieval/service
 import { QueryRewriteService } from "../../../src/modules/retrieval/services/queryRewriteService.js";
 import { RerankService, type RerankGateway } from "../../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalExecutionTelemetryService } from "../../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
-import { RetrievalPipelineService } from "../../../src/modules/retrieval/services/retrievalPipelineService.js";
+import { readRetrievalResult, RetrievalAnswerSkillExecutor } from "../../../src/modules/retrieval/services/retrievalAnswerSkillExecutor.js";
+import { RetrievalPipelineService, type RetrievalPipelineResult } from "../../../src/modules/retrieval/services/retrievalPipelineService.js";
+import { noopSkillEmitPort } from "../../../src/modules/skills/public.js";
 import type { ReferenceTimeZone } from "../../../src/shared/domain/referenceTimeZone.js";
 import type { ModelInferencePipeline } from "../../../src/shared/infra/llm/modelInferencePipeline.js";
 import { lexicalSearchStub } from "../../support/lexicalSearchStub.js";
@@ -86,10 +90,7 @@ const tomorrowResolvingInference = (prompts: string[]): ModelInferencePipeline =
   },
 }) as unknown as ModelInferencePipeline;
 
-const runTomorrowTurn = async (input: {
-  referenceTimeZone?: ReferenceTimeZone;
-  workspaceTimeZone?: string | null;
-}) => {
+const tomorrowPipeline = (input: { workspaceTimeZone?: string | null }) => {
   const rewritePrompts: string[] = [];
   const lookups: TemporalCandidateRetrievalInput[] = [];
   const rerankTodays: string[] = [];
@@ -124,15 +125,53 @@ const runTomorrowTurn = async (input: {
       ? undefined
       : { async readWorkspaceTimeZone() { return input.workspaceTimeZone ?? null; } },
   );
+  return { service, rewritePrompts, lookups, rerankTodays };
+};
 
+const requestedRange = (lookups: TemporalCandidateRetrievalInput[]) =>
+  lookups.find((lookup) => lookup.window.kind === "requested_range")?.window;
+
+const timeZoneSourceOf = (result: RetrievalPipelineResult) =>
+  result.trace.stages.find((stage) => stage.stageId === "context")?.inputs?.timeZoneSource;
+
+const runTomorrowTurn = async (input: {
+  referenceTimeZone?: ReferenceTimeZone;
+  workspaceTimeZone?: string | null;
+}) => {
+  const { service, rewritePrompts, lookups, rerankTodays } = tomorrowPipeline(input);
   const result = await service.run({
     workspaceId: "workspace-1",
     query: "What's on tomorrow?",
     history: [],
     ...(input.referenceTimeZone ? { referenceTimeZone: input.referenceTimeZone } : {}),
   });
-  const contextStage = result.trace.stages.find((stage) => stage.stageId === "context");
-  return { result, rewritePrompts, lookups, rerankTodays, timeZoneSource: contextStage?.inputs?.timeZoneSource };
+  return { result, rewritePrompts, lookups, rerankTodays, timeZoneSource: timeZoneSourceOf(result) };
+};
+
+const bookingRoutine: Routine = {
+  id: "booking",
+  rootStepId: "ask_day",
+  steps: [{ id: "ask_day", kind: "chat", action: "Ask which day they want to book." }],
+  transitions: [{ from: "ask_day", to: "confirm", condition: "the user gave a day" }],
+  slots: [{ id: "slot_day", key: "day", type: "date", required: true }],
+};
+
+/** The routine's next-step selector on this turn: the system prompt it would send, with its date line. */
+const selectorPromptFor = async (turn: TurnContext): Promise<string> => {
+  const prompts: string[] = [];
+  await new RoutineNextStepSelector({
+    async complete(request) {
+      prompts.push(request.systemPrompt ?? "");
+      return { text: '{"claimsAuthority": false, "condition": null, "variables": {}}' };
+    },
+  }).select({
+    routine: bookingRoutine,
+    state: { sessionId: turn.sessionId, routineId: "booking", path: ["ask_day"], variables: {}, status: "active" },
+    currentStep: bookingRoutine.steps[0],
+    transitions: bookingRoutine.transitions,
+    turn,
+  });
+  return prompts[0] ?? "";
 };
 
 describe("relative dates resolve in the turn's time zone", () => {
@@ -184,5 +223,63 @@ describe("relative dates resolve in the turn's time zone", () => {
 
     expect(turn.rewritePrompts[0]).toContain("Today's date: 2026-11-02 (Monday)");
     expect(turn.timeZoneSource).toBe("visitor");
+  });
+});
+
+// The booking case: the visitor sees tomorrow's list, then a routine takes their next message on
+// the same footing. Its date slots and its retrieval steps must read the same "today", or the
+// visitor books the day after the one they were shown.
+describe("a routine reads the chat turn's today", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(NOW));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("dates a Los Angeles visitor's routine slots and routine retrieval step as the grounded answer does", async () => {
+    const referenceTimeZone: ReferenceTimeZone = { timeZone: "America/Los_Angeles", source: "visitor" };
+    const turn: TurnContext = {
+      agent: { id: "agent-1", name: "Assistant" },
+      sessionId: "conversation-1",
+      inputEvent: { kind: "message", content: "What's on tomorrow?" },
+      history: [],
+      stagedContext: [],
+      steering: [],
+      referenceTimeZone,
+    };
+
+    const grounded = await runTomorrowTurn({ referenceTimeZone, workspaceTimeZone: "Europe/Rome" });
+    const step = tomorrowPipeline({ workspaceTimeZone: "Europe/Rome" });
+    const dispatched = await new RetrievalAnswerSkillExecutor(step.service).dispatch({
+      skill: { name: "retrieval.answer" },
+      collected: {},
+      context: { turn, workspaceId: "workspace-1" },
+      emit: noopSkillEmitPort,
+    });
+    const stepResult = dispatched.disposition === "settled" ? readRetrievalResult(dispatched.outcome) : null;
+    const selectorPrompt = await selectorPromptFor(turn);
+
+    expect(grounded.rewritePrompts[0]).toContain("Today's date: 2026-11-02 (Monday)");
+    expect(step.rewritePrompts[0]).toContain("Today's date: 2026-11-02 (Monday)");
+    expect(requestedRange(step.lookups)).toEqual(requestedRange(grounded.lookups));
+    expect(requestedRange(step.lookups)).toMatchObject({ range: { dateFrom: "2026-11-03", dateTo: "2026-11-03" } });
+    expect(stepResult && timeZoneSourceOf(stepResult)).toBe("visitor");
+    expect(selectorPrompt).toContain("Today is 2026-11-02 (America/Los_Angeles)");
+  });
+
+  it("dates a routine in UTC when the turn carries no zone, as a standalone host's does", async () => {
+    const selectorPrompt = await selectorPromptFor({
+      agent: { id: "agent-1", name: "Assistant" },
+      sessionId: "conversation-1",
+      inputEvent: { kind: "message", content: "Tomorrow, please." },
+      history: [],
+      stagedContext: [],
+      steering: [],
+    });
+
+    expect(selectorPrompt).toContain("Today is 2026-11-03 (UTC)");
   });
 });

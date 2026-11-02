@@ -81,6 +81,30 @@ const growthProfile: TierProfile = {
   updatedAt: "2026-06-01T00:00:00.000Z",
 };
 
+type ConversationSpendFixture = {
+  periodStart: string;
+  meteredConversations: number;
+  spendEur: number;
+  averageEurPerConversation: number | null;
+  flagAboveEurPerConversation: number;
+  flagged: boolean;
+  unpricedCalls: number;
+};
+
+const conversationSpend = (overrides: Partial<ConversationSpendFixture> = {}): ConversationSpendFixture => ({
+  periodStart: "2026-06-01",
+  meteredConversations: 60,
+  spendEur: 1.26,
+  averageEurPerConversation: 0.021,
+  flagAboveEurPerConversation: 0.04,
+  flagged: false,
+  unpricedCalls: 0,
+  ...overrides,
+});
+
+/** An account whose conversations run long: about eight replies each. */
+const longConversationSpend = conversationSpend({ spendEur: 3.09, averageEurPerConversation: 0.0515, flagged: true });
+
 const usage = (profile: TierProfile = starterProfile) => ({
   accountId,
   organizationName: "Alpha Research",
@@ -112,6 +136,13 @@ const usage = (profile: TierProfile = starterProfile) => ({
   },
 });
 
+const lastMonthSpend = conversationSpend({
+  periodStart: "2026-05-01",
+  meteredConversations: 41,
+  spendEur: 0.82,
+  averageEurPerConversation: 0.02,
+});
+
 const json = async (route: Route, body: unknown, status = 200) => {
   await route.fulfill({
     status,
@@ -124,6 +155,7 @@ const installOperatorConsoleMocks = async (
   page: Page,
   role: StaffRole = "owner",
   startingProfile: TierProfile = starterProfile,
+  spend: ConversationSpendFixture = conversationSpend(),
 ) => {
   const requestLog: string[] = [];
   let currentUsage = usage(startingProfile);
@@ -176,6 +208,7 @@ const installOperatorConsoleMocks = async (
                 limit: currentUsage.monthlyConversations.limit,
               }
               : null,
+            conversationSpend: spend,
           },
         ],
         pageInfo: { limit: 25, offset: Number(url.searchParams.get("offset") ?? 0), nextOffset: null, hasMore: false, total: 1 },
@@ -183,12 +216,13 @@ const installOperatorConsoleMocks = async (
       return;
     }
     if (path === `/organizations/${accountId}/usage` && route.request().method() === "GET") {
-      await json(route, currentUsage);
+      await json(route, { ...currentUsage, conversationSpend: { current: spend, previous: lastMonthSpend } });
       return;
     }
     if (path === `/organizations/${accountId}/tier` && route.request().method() === "PUT") {
       const body = route.request().postDataJSON() as { profileKey: string | null };
       currentUsage = usage(tiers.find((tier) => tier.key === body.profileKey) ?? starterProfile);
+      // The usage summary alone, as the backend answers a tier change: no spend.
       await json(route, currentUsage);
       return;
     }
@@ -269,6 +303,32 @@ test("the directory reads the conversation meter for a catalog tier", async ({ p
   await expect(row).toContainText("62 / 50 conv");
 });
 
+test("the directory and detail page flag an account whose conversations cost more than the plan can carry", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "support_read", cometProfile, longConversationSpend);
+
+  await page.goto("/operator/organizations");
+
+  const row = page.getByRole("row").filter({ hasText: "Alpha Research" });
+  await expect(row).toContainText("€0.052 / conv");
+  await expect(row.getByRole("img", { name: "Above the €0.040 per conversation flag" })).toBeVisible();
+
+  await page.getByLabel("Open Alpha Research").click();
+
+  await expect(page.getByText("Model spend per conversation")).toBeVisible();
+  await expect(page.getByText("Warn only: above the €0.040 per conversation flag.")).toBeVisible();
+  await expect(page.getByText("41 metered conversations")).toBeVisible();
+});
+
+test("the directory shows spend per conversation without a flag for a typical account", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "support_read", cometProfile);
+
+  await page.goto("/operator/organizations");
+
+  const row = page.getByRole("row").filter({ hasText: "Alpha Research" });
+  await expect(row).toContainText("€0.021 / conv");
+  await expect(row.getByRole("img", { name: /per conversation flag/ })).toHaveCount(0);
+});
+
 test("the tier preview warns when a catalog tier caps conversations below current usage", async ({ page }) => {
   await installOperatorConsoleMocks(page, "billing_write", planetProfile);
 
@@ -287,6 +347,8 @@ test("billing staff can change an organization's tier", async ({ page }) => {
   await page.getByRole("button", { name: "Change tier" }).click();
 
   await expect(page.getByText("Current: Growth")).toBeVisible();
+  // The tier change answers without spend; the card keeps the spend already read.
+  await expect(page.getByText("Model spend per conversation")).toBeVisible();
   expect(requests).toContain(`PUT /organizations/${accountId}/tier`);
 });
 

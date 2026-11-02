@@ -215,10 +215,10 @@ interface EeStaffSessionsTable {
 }
 
 /**
- * Shared (OSS-owned) tables this module only reads to resolve account scope and
- * to count stored documents / persisted assistant answers. EE neither migrates
- * nor writes these; the column subset here is just what the usage-limit reads
- * touch.
+ * Shared (OSS-owned) tables this module only reads to resolve account scope, to
+ * count stored documents / persisted assistant answers, and to estimate model
+ * spend from the usage ledger. EE neither migrates nor writes these; the column
+ * subset here is just what those reads touch.
  */
 interface EeWorkspacesTable {
   id: string;
@@ -261,6 +261,23 @@ interface EeUsersTable {
   email: string;
 }
 
+interface EeConversationsTable {
+  id: string;
+}
+
+/** The usage ledger's token counts, read to estimate model spend. Prompts and completions are
+ *  never stored here, so this read touches counts and model names only. */
+interface EeUsageEventsTable {
+  account_id: string | null;
+  conversation_id: string | null;
+  provider: string;
+  model: string;
+  input_tokens: string;
+  output_tokens: string;
+  status: string;
+  occurred_at: Date;
+}
+
 export interface EeDatabase {
   ee_usage_limit_profiles: EeUsageLimitProfilesTable;
   ee_usage_limit_account_assignments: EeUsageLimitAccountAssignmentsTable;
@@ -288,6 +305,8 @@ export interface EeDatabase {
   workspaces: EeWorkspacesTable;
   documents: EeDocumentsTable;
   messages: EeMessagesTable;
+  conversations: EeConversationsTable;
+  usage_events: EeUsageEventsTable;
 }
 
 export type EeDb = Kysely<EeDatabase> | Transaction<EeDatabase>;

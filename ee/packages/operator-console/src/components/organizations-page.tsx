@@ -3,13 +3,23 @@
 import { Button } from "@radioso/ui/button";
 import { DashboardPagination } from "@radioso/ui/dashboard-pagination";
 import { Input } from "@radioso/ui/input";
-import { ArrowRight, Search } from "lucide-react";
+import { AlertTriangle, ArrowRight, Search } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 import { staffAuthApi, type OrganizationDirectoryPage } from "../lib/staff-auth-api";
 import { directoryMeterText, formatMeterNumber } from "../lib/meter-text";
+import { conversationSpendText, formatEurPerConversation } from "../lib/spend-text";
 import { EmptyState, ErrorBanner, StaffLayout } from "./staff-layout";
+
+function SpendFlag({ above }: { above: number }) {
+  const label = `Above the ${formatEurPerConversation(above)} per conversation flag`;
+  return (
+    <span role="img" aria-label={label} title={label} className="inline-flex">
+      <AlertTriangle className="size-4 text-amber-300" />
+    </span>
+  );
+}
 
 export function OrganizationsPage() {
   const [page, setPage] = useState<OrganizationDirectoryPage | null>(null);
@@ -56,7 +66,7 @@ export function OrganizationsPage() {
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-normal">Organizations</h1>
-          <p className="mt-1 text-sm text-zinc-400">Customer accounts, owner emails, tiers, and monthly usage.</p>
+          <p className="mt-1 text-sm text-zinc-400">Customer accounts, owner emails, tiers, monthly usage, and model spend per conversation.</p>
         </div>
         <form onSubmit={submitSearch} className="flex w-full gap-2 md:w-96">
           <Input name="search" placeholder="Search org or owner" className="border-zinc-700 bg-zinc-900 text-zinc-100" />
@@ -68,12 +78,13 @@ export function OrganizationsPage() {
       </div>
       {error ? <ErrorBanner message={error} /> : null}
       <div className="overflow-hidden rounded-md border border-zinc-800 bg-zinc-900">
-        <table className="w-full min-w-[760px] border-collapse text-sm">
+        <table className="w-full min-w-[880px] border-collapse text-sm">
           <thead className="bg-zinc-900 text-left text-xs uppercase tracking-normal text-zinc-500">
             <tr>
               <th className="px-4 py-3 font-medium">Organization</th>
               <th className="px-4 py-3 font-medium">Owner</th>
               <th className="px-4 py-3 font-medium">Tier</th>
+              <th className="px-4 py-3 font-medium">Spend / conversation</th>
               <th className="px-4 py-3 font-medium">Monthly usage</th>
               <th className="px-4 py-3 font-medium">Open</th>
             </tr>
@@ -87,6 +98,12 @@ export function OrganizationsPage() {
                   {row.ownerCount > 1 ? <span className="ml-2 text-xs text-zinc-500">+{row.ownerCount - 1}</span> : null}
                 </td>
                 <td className="px-4 py-3 text-zinc-300">{row.profileDisplayName ?? "no tier"}</td>
+                <td className="px-4 py-3 text-zinc-300">
+                  <span className="inline-flex items-center gap-2">
+                    {conversationSpendText(row.conversationSpend)}
+                    {row.conversationSpend?.flagged ? <SpendFlag above={row.conversationSpend.flagAboveEurPerConversation} /> : null}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-zinc-300">{directoryMeterText(row)}</td>
                 <td className="px-4 py-3">
                   <Button asChild variant="ghost" size="sm">

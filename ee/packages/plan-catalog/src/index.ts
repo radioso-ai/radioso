@@ -82,6 +82,26 @@ export interface PlanManagedModels {
   readonly default: ManagedModelSelection;
 }
 
+/** One model's published list price, in US dollars per million tokens. */
+export interface ModelListPrice {
+  readonly provider: ManagedModelProvider;
+  readonly model: string;
+  readonly input: number;
+  readonly output: number;
+}
+
+/**
+ * Provider list prices for the models Radioso Cloud runs, used to estimate model spend from the
+ * token counts in the usage ledger. Prices stay in USD as providers publish them; `eurPerUsd`
+ * converts them into the catalog currency. Cached input is priced at the full input rate, so an
+ * estimate is an upper bound on what the provider bills. A model missing here is unpriced, and
+ * whoever reports spend says how many calls that left out.
+ */
+export interface PlanModelListPrices {
+  readonly eurPerUsd: number;
+  readonly usdPerMillionTokens: readonly ModelListPrice[];
+}
+
 export type UsageCountKind = "conversation" | "copilot" | "test_run" | "pulse_report" | "other";
 
 export type PlanUsageWeights = Readonly<Record<UsageCountKind, number>>;
@@ -110,6 +130,13 @@ export interface PlanCatalog {
   readonly topUp: PlanTopUp;
   readonly autoTopUp: PlanAutoTopUp;
   readonly managedModels: PlanManagedModels;
+  readonly modelListPrices: PlanModelListPrices;
+  /**
+   * The monthly average model spend per metered customer conversation, in euros, above which the
+   * staff console flags an account. €0.04 is where Planet at full quota drops below a 50% gross
+   * margin; the levers for a flagged account are in `ee/readme.md` ("Conversation spend").
+   */
+  readonly conversationSpendFlagEur: number;
 }
 
 // `resolveJsonModule` infers widened primitive types (string, number) for JSON literals, not the
@@ -120,6 +147,10 @@ export const PLAN_CATALOG: PlanCatalog = plansJson as PlanCatalog;
 
 export const findPlan = (id: string): Plan | undefined =>
   PLAN_CATALOG.plans.find((plan) => plan.id === id);
+
+/** Exact match on the provider and model names the usage ledger records. */
+export const findModelListPrice = (provider: string, model: string): ModelListPrice | undefined =>
+  PLAN_CATALOG.modelListPrices.usdPerMillionTokens.find((price) => price.provider === provider && price.model === model);
 
 export const formatPrice = (cents: number, currency: string = PLAN_CATALOG.currency): string => {
   const isWhole = cents % 100 === 0;

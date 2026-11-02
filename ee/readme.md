@@ -203,9 +203,60 @@ PUT    /api/v1/ee/operator-console/staff/:staffId/status
 ```
 
 The organization directory derives the owner email from `account_memberships`
-(role `owner`), not from `accounts.email`. Tier changes and staff changes are
-recorded as `staff.*` audit events. The console pages are served under
+(role `owner`), not from `accounts.email`. Each directory row carries
+`conversationSpend` for the current month, and the organization usage read
+carries `conversationSpend.current` and `conversationSpend.previous`; both are
+described under [Conversation spend](#conversation-spend). Tier changes and
+staff changes are recorded as `staff.*` audit events. The console pages are served under
 `/operator` when Enterprise frontend routes are enabled.
+
+### Conversation spend
+
+Each organization row also shows what the account's customer conversations
+cost in model spend this month, on average: `€0.021 / conv`. The organization
+page shows this month and last month side by side, since a month only two days
+old averages over a handful of conversations. An average above €0.04 gets the
+console's amber warning in both places. €0.04 is where Planet, at full quota,
+drops below a 50% gross margin, so a flagged account is one whose conversations
+run long enough to eat into the plan.
+
+The average divides spend by metered conversations, and both sides come from
+data the platform already records:
+
+- Metered conversations are the ones the conversation meter charged:
+  customer-channel replies, counted once per block of the tier's replies per
+  conversation (10 on the catalog plans), so an 8-reply conversation is one and
+  a 12-reply conversation is two. Test Chat, Ray, Pulse reports, and one-shot
+  retrieval answers sit outside it.
+- Spend is every succeeded model and embedding call the usage ledger
+  (`usage_events`) attributes to those conversations in the same UTC month:
+  planning, answers, rerank, extraction, embeddings, and summaries. Failed calls
+  are left out, since a request the provider rejected was never billed.
+- Tokens are priced at list price from `modelListPrices` in
+  `@radioso/plan-catalog`, with cached input charged at the full input rate, so
+  the figure is an upper bound on the provider bill. Prices are in USD and
+  converted at the catalog's `eurPerUsd` (0.90). The flag threshold is the
+  catalog's `conversationSpendFlagEur`. Changing a price, the rate, or the
+  threshold is an edit to `ee/packages/plan-catalog/src/plans.json`.
+- A call on a model the catalog has no price for is counted rather than priced.
+  The directory marks that average `(partial)`, and the organization page says
+  how many calls it left out.
+- Every call is priced, including calls an account makes on its own provider
+  key. For a bring-your-own-key account the figure is what its conversations
+  would cost on the platform's keys.
+
+The computation reads token counts and model names from the ledger; prompt and
+completion text is never part of it.
+
+The flag is a prompt to look, not an automatic action. If a flagged account's
+conversations stay long month after month, there are two levers. Lower that
+plan's replies per conversation from 10 to 6 on the Tiers page, which makes a
+long conversation count as more than one. Or give the account a tier of its own
+with its own replies per conversation, so one customer's conversation
+definition changes without touching everyone else on the plan. Metering by
+spend instead of by conversation stays out unless the measured mix changes: it
+makes bills unpredictable for customers, ties them to internal prompt and model
+changes, and charges token-heavy languages more for the same conversation.
 
 ### Known limits
 

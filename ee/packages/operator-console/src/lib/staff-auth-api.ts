@@ -55,6 +55,27 @@ export interface AccountUsageSummary {
   } | null;
 }
 
+/** An account's estimated model spend on its metered customer conversations for one UTC month,
+ *  at list price with cached input charged in full. */
+export interface ConversationSpend {
+  periodStart: string;
+  meteredConversations: number;
+  spendEur: number;
+  /** Null when the month metered no conversation. */
+  averageEurPerConversation: number | null;
+  flagAboveEurPerConversation: number;
+  flagged: boolean;
+  /** Calls on a model with no list price; their spend is missing from the average. */
+  unpricedCalls: number;
+}
+
+export interface OrganizationUsage extends AccountUsageSummary {
+  conversationSpend: {
+    current: ConversationSpend;
+    previous: ConversationSpend;
+  };
+}
+
 export interface OrganizationDirectoryRow {
   accountId: string;
   name: string;
@@ -71,6 +92,7 @@ export interface OrganizationDirectoryRow {
     used: number;
     limit: number;
   } | null;
+  conversationSpend: ConversationSpend | null;
 }
 
 export interface OrganizationDirectoryPage {
@@ -178,7 +200,7 @@ export const staffAuthApi = {
     return operatorFetch<OrganizationDirectoryPage>(`/organizations${query ? `?${query}` : ""}`);
   },
   getOrganizationUsage: (accountId: string) =>
-    operatorFetch<AccountUsageSummary>(`/organizations/${encodeURIComponent(accountId)}/usage`),
+    operatorFetch<OrganizationUsage>(`/organizations/${encodeURIComponent(accountId)}/usage`),
   changeOrganizationTier: (accountId: string, profileKey: string | null) =>
     operatorFetch<AccountUsageSummary>(`/organizations/${encodeURIComponent(accountId)}/tier`, {
       method: "PUT",

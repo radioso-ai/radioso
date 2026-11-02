@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findPlan, formatPrice, PLAN_CATALOG } from "../src/index.js";
+import { findModelListPrice, findPlan, formatPrice, PLAN_CATALOG } from "../src/index.js";
 
 describe("findPlan", () => {
   it("returns the plan for a known id", () => {
@@ -145,6 +145,56 @@ describe("catalog invariants", () => {
     expect(defaultMaxPacksPerMonth).toBeGreaterThanOrEqual(1);
     expect(defaultMaxPacksPerMonth).toBeLessThanOrEqual(maxPacksPerMonthLimit);
     expect(maxPacksPerMonthLimit).toBeLessThanOrEqual(50);
+  });
+});
+
+describe("findModelListPrice", () => {
+  it("returns the list price for a priced provider/model pair", () => {
+    expect(findModelListPrice("openai", "gpt-5.4-mini")).toEqual({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      input: 0.75,
+      output: 4.5,
+    });
+  });
+
+  it("returns undefined for a model the table does not price, or the right model under another provider", () => {
+    expect(findModelListPrice("openai", "gpt-unknown")).toBeUndefined();
+    expect(findModelListPrice("openai-compatible", "gpt-5.4-mini")).toBeUndefined();
+  });
+});
+
+describe("model list prices and the conversation spend flag", () => {
+  it("prices both managed model slots, so a managed workspace's spend is never left unpriced", () => {
+    for (const slot of ["chat", "default"] as const) {
+      const { provider, model } = PLAN_CATALOG.managedModels[slot];
+      expect(findModelListPrice(provider, model)).toBeDefined();
+    }
+  });
+
+  it("lists each provider/model pair once, with non-negative prices and an input price on every model", () => {
+    const pairs = PLAN_CATALOG.modelListPrices.usdPerMillionTokens.map((price) => `${price.provider}/${price.model}`);
+    expect(new Set(pairs).size).toBe(pairs.length);
+    for (const price of PLAN_CATALOG.modelListPrices.usdPerMillionTokens) {
+      expect(price.input).toBeGreaterThan(0);
+      expect(price.output).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("keeps every priced provider inside the set of providers the backend can resolve (the JSON import is cast, not checked)", () => {
+    const providers = new Set<string>(["openai", "openai-compatible", "gemini", "claude"]);
+    for (const price of PLAN_CATALOG.modelListPrices.usdPerMillionTokens) {
+      expect(providers.has(price.provider)).toBe(true);
+    }
+  });
+
+  it("converts USD list prices into the catalog currency, which eurPerUsd assumes is EUR", () => {
+    expect(PLAN_CATALOG.currency).toBe("EUR");
+    expect(PLAN_CATALOG.modelListPrices.eurPerUsd).toBe(0.9);
+  });
+
+  it("flags an account above €0.04 of model spend per metered conversation, where Planet at full quota drops below 50% gross margin (#1569)", () => {
+    expect(PLAN_CATALOG.conversationSpendFlagEur).toBe(0.04);
   });
 });
 

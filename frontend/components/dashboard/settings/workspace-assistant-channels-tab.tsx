@@ -61,7 +61,7 @@ import {
   type RetrievalDefaults,
 } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
-import { registerAgentDraftSaver } from '@/lib/agent-draft-save-port'
+import { AGENT_DRAFT_SAVED_EVENT, registerAgentDraftSaver } from '@/lib/agent-draft-save-port'
 import { readCachedOrganizationName, writeCachedOrganizationName } from '@/lib/organization-name-cache'
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
@@ -168,7 +168,7 @@ export function WorkspaceAssistantChannelsTab({
   const [isAssistantLogoSaving, setIsAssistantLogoSaving] = useState(false)
   const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
   const dispatchDraftSaved = useCallback(() => {
-    if (agentId) window.dispatchEvent(new CustomEvent('radioso:agent-draft-saved', { detail: { agentId } }))
+    if (agentId) window.dispatchEvent(new CustomEvent(AGENT_DRAFT_SAVED_EVENT, { detail: { agentId } }))
   }, [agentId])
   const handleRevisionSaveStateChange = useCallback((next: SaveState) => {
     onSaveStateChange?.(next)
@@ -585,7 +585,7 @@ export function WorkspaceAssistantChannelsTab({
         setAssistantBehaviorSettings((current) => current ? { ...updated, ...current } : updated)
         setAssistantSettingsError(null)
         setSaveState('saved')
-        window.dispatchEvent(new CustomEvent('radioso:agent-draft-saved', { detail: { agentId } }))
+        window.dispatchEvent(new CustomEvent(AGENT_DRAFT_SAVED_EVENT, { detail: { agentId } }))
       } catch (error) {
         if (privateInstructionSaveRef.current === saveId) {
           setAssistantSettingsError(getApiErrorMessage(error, 'Failed to save draft changes.'))

@@ -182,16 +182,23 @@ describe("AgentRevisionService", () => {
     expect(heard).toHaveBeenCalledWith({ workspaceId, agentId });
   });
 
-  it("publishes even when a first-publication listener fails", async () => {
+  it("publishes even when a first-publication listener fails, and logs which agent's listener failed and how, never what it said", async () => {
+    class CdnDownError extends Error {}
     const repository = new InMemoryRevisionRepository();
     repository.publishedRevisionId = null;
-    const service = new AgentRevisionService(repository, () => "candidate-1");
-    service.onFirstPublication(async () => { throw new Error("cdn down"); });
+    const logger = { warn: vi.fn() };
+    const service = new AgentRevisionService(repository, () => "candidate-1", undefined, logger);
+    service.onFirstPublication(async () => { throw new CdnDownError("cdn down: secret detail"); });
     await service.createCandidate(workspaceId, agentId, 2);
 
     await expect(service.publish(workspaceId, agentId, null, {
       revisionId: "candidate-1", expectedDraftGeneration: 2, expectedPublishedRevisionId: null, idempotencyKey: "publish-1",
     })).resolves.toMatchObject({ revisionId: "candidate-1", idempotentReplay: false });
+    await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, agentId, errorClass: "CdnDownError" },
+      "Agent first-publication listener failed",
+    ));
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret detail");
   });
 
   it("replays an older successful publication without revalidating its historical routine dependencies", async () => {

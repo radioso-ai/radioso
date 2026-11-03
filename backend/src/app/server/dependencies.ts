@@ -582,7 +582,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     // this resolves the workspace-scoped skill/context-variable state once for the whole release
     // check instead of once per routine (item 8 of the routine-lifecycle-collapse review).
     validateManyForServing: routineDefinitionService.validateManyForServing.bind(routineDefinitionService),
-  });
+  }, logger);
   const testExecutionService = new TestExecutionService({
     revisions: repositories.testExecutionRepository,
     // The agents module owns which revision a test runs when the caller names none.

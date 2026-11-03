@@ -511,6 +511,18 @@ variable "ops_event_webhook_queue_limit" {
   default     = 500
 }
 
+variable "public_voice_session_start_rate_limit_max_attempts" {
+  description = "Optional override for PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: voice call starts allowed per visitor session and request source, per window. Leave unset to keep the app default (3)."
+  type        = number
+  default     = null
+}
+
+variable "public_voice_session_start_source_rate_limit_max_attempts" {
+  description = "Optional override for PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: voice call starts allowed per request source, across every public session it holds, per window. Leave unset to keep the app default (3)."
+  type        = number
+  default     = null
+}
+
 variable "google_login_client_id" {
   description = "Google OAuth web client ID for Enterprise 'Sign in with Google' in live."
   type        = string

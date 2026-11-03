@@ -107,3 +107,20 @@ test("renders the agent-unavailable message in the visitor's locale", async ({ p
     page.getByText("Cet assistant n'est pas disponible pour le moment. Veuillez réessayer plus tard."),
   ).toBeVisible();
 });
+
+test("tells a visitor the agent isn't available, not that the link is gone, when nobody has published the agent yet", async ({ page }) => {
+  await page.route(`**/backend/api/v1/public/chat/${publicToken}/sessions`, async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "agent_not_published", message: "Agent is not published" } }),
+    });
+  });
+
+  await page.goto(`/chat/${publicToken}`);
+
+  await expect(page.getByText("This assistant isn't available right now. Please try again later.")).toBeVisible();
+  await expect(page.getByText("This chat link is no longer active. Please contact the workspace administrator for access.")).toHaveCount(0);
+  // Refused before the visitor could type: there is no composer to type into.
+  await expect(page.getByPlaceholder("Ask a question...")).toHaveCount(0);
+});

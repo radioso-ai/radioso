@@ -20,7 +20,7 @@ import { sendAssistantLogo } from "../shared/assistantIdentity.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationTailQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../shared/domain/websiteEmbed.js";
-import { getWebsiteEmbedSurfaceSettings, resolveAgentDisplayName } from "../../../modules/agents/public.js";
+import { agentNotPublished, getWebsiteEmbedSurfaceSettings, resolveAgentDisplayName } from "../../../modules/agents/public.js";
 import { verifySignedIdentity } from "../../../modules/context-variables/public.js";
 import {
   issuePublicChatResumeToken,
@@ -51,6 +51,7 @@ import type { PublicVoiceSessionRateLimiterDependencies } from "../middleware/pu
 type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & PublicVoiceSessionRateLimiterDependencies & Pick<
   AppDependencies,
   | "env"
+  | "agentPublication"
   | "agentRepository"
   | "agentService"
   | "agentSurfaceExtensions"
@@ -213,6 +214,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
 
     return input.resume.publicSessionId;
   };
+  // Every turn runs on the agent's published release, so a session for an agent nobody published
+  // could get no answer: the exchange refuses it with its own code, before the visitor types.
+  const isPublished = (input: { workspaceId: string; agentId: string }) => dependencies.agentPublication.isPublished(input);
   /**
    * Spec 1277 decision 6: `visitorKey` is an unauthenticated, client-persisted
    * grouping id — deliberately never usable to key or continue a *session* (that
@@ -279,7 +283,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         // Whether the embed shows a Talk button: the operator offers calls here and the agent's
         // voice is ready. It names neither the vendor nor its agent.
         const voiceAvailable = websiteEmbed.voiceCallsOffered
-          && await dependencies.voiceSessionAvailability.isAvailable({ workspaceId: agent.workspaceId, voice: agent.voice });
+          && await dependencies.voiceSessionAvailability.isAvailable({ workspaceId: agent.workspaceId, agentId: agent.id, voice: agent.voice });
         res.setHeader("Vary", "Origin");
         res.setHeader("Cache-Control", "public, max-age=300");
         res.status(200).json({
@@ -397,6 +401,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           });
           return;
         }
+        if (!(await isPublished({ workspaceId: workspace.id, agentId: agent.id }))) throw agentNotPublished();
 
         const publicSessionId = resolveResumedSessionId({
           resume,
@@ -557,6 +562,16 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           },
         });
         return;
+      }
+
+      if (!(await isPublished({ workspaceId: workspace.id, agentId: agent.id }))) {
+        await dependencies.auditService.record(websiteEmbedLaunchDeniedAuditEvent({
+          accountId: workspace.accountId,
+          workspaceId: workspace.id,
+          origin,
+          reason: "agent_not_published",
+        }));
+        throw agentNotPublished();
       }
 
       await dependencies.auditService.record(websiteEmbedLaunchAllowedAuditEvent({

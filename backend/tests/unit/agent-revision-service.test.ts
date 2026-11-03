@@ -49,7 +49,7 @@ const rejectingValidator = (): RoutineServingValidator => ({
 
 class InMemoryRevisionRepository implements AgentRevisionRepositoryPort {
   draft = { generation: 2, basePublishedRevisionId: "published-1", snapshot: snapshot("draft v1"), updatedAt: new Date("2026-09-08T00:00:00.000Z") };
-  publishedRevisionId = "published-1";
+  publishedRevisionId: string | null = "published-1";
   readonly revisions = new Map<string, AgentRevisionSnapshot>([["published-1", snapshot("published v1")]]);
   readonly publications: Array<{ revisionId: string; idempotencyKey: string }> = [];
 
@@ -162,6 +162,43 @@ describe("AgentRevisionService", () => {
     await service.publish(workspaceId, agentId, null, input);
     await expect(service.publish(workspaceId, agentId, null, input)).resolves.toMatchObject({ revisionId: "candidate-1", idempotentReplay: true });
     expect(repository.publications).toHaveLength(1);
+  });
+
+  it("tells its listeners about an agent's first publication alone: not a later one, a replay, or a refused one", async () => {
+    const repository = new InMemoryRevisionRepository();
+    repository.publishedRevisionId = null;
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+    const heard = vi.fn(async () => undefined);
+    service.onFirstPublication(heard);
+    await service.createCandidate(workspaceId, agentId, 2);
+    const first = { revisionId: "candidate-1", expectedDraftGeneration: 2, expectedPublishedRevisionId: null, idempotencyKey: "publish-1" };
+
+    await expect(service.publish(workspaceId, agentId, null, { ...first, idempotencyKey: "stale", expectedDraftGeneration: 1 })).rejects.toMatchObject({ code: "revision_conflict" });
+    await service.publish(workspaceId, agentId, null, first);
+    await service.publish(workspaceId, agentId, null, first);
+    await service.publish(workspaceId, agentId, null, { ...first, expectedPublishedRevisionId: "candidate-1", idempotencyKey: "publish-2" });
+
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(1));
+    expect(heard).toHaveBeenCalledWith({ workspaceId, agentId });
+  });
+
+  it("publishes even when a first-publication listener fails, and logs which agent's listener failed and how, never what it said", async () => {
+    class CdnDownError extends Error {}
+    const repository = new InMemoryRevisionRepository();
+    repository.publishedRevisionId = null;
+    const logger = { warn: vi.fn() };
+    const service = new AgentRevisionService(repository, () => "candidate-1", undefined, logger);
+    service.onFirstPublication(async () => { throw new CdnDownError("cdn down: secret detail"); });
+    await service.createCandidate(workspaceId, agentId, 2);
+
+    await expect(service.publish(workspaceId, agentId, null, {
+      revisionId: "candidate-1", expectedDraftGeneration: 2, expectedPublishedRevisionId: null, idempotencyKey: "publish-1",
+    })).resolves.toMatchObject({ revisionId: "candidate-1", idempotentReplay: false });
+    await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, agentId, errorClass: "CdnDownError" },
+      "Agent first-publication listener failed",
+    ));
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret detail");
   });
 
   it("replays an older successful publication without revalidating its historical routine dependencies", async () => {

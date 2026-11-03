@@ -56,7 +56,7 @@ describe('voice settings form', () => {
     expect(voiceSettingsUpdateFromForm(voiceSettingsFormFromAgent(voice, mechanicsReplies))).toEqual({ voice, mechanicsReplies })
   })
 
-  it('trims lines, drops blank ones, and leaves a language out of a block it has nothing in', () => {
+  it('trims lines, drops blank ones, and leaves a language out of a block it has nothing in, unless it has nothing anywhere', () => {
     const update = voiceSettingsUpdateFromForm({
       enabled: false,
       runtime: unbound,
@@ -77,13 +77,32 @@ describe('voice settings form', () => {
     expect(update).toEqual({
       voice: {
         enabled: false,
-        bridgeLines: { en: { acknowledge: [], check: ['Let me check that for you, it only takes a moment.'] } },
+        bridgeLines: {
+          en: { acknowledge: [], check: ['Let me check that for you, it only takes a moment.'] },
+          // A language with no lines at all is kept as one with no bridge lines, which the voice channel skips.
+          de: { acknowledge: [], check: [] },
+        },
         fallbackLine: { it: 'Scusa, ci sto mettendo troppo.' },
         runtime: null,
         languageSwitching: false,
       },
       mechanicsReplies: { en: { greeting: ['Hi!'], thanks: [], farewell: [], acknowledgement: [] } },
     })
+  })
+
+  it('keeps a language with no lines at all through a save and a reload, since every line is optional', () => {
+    const form = {
+      enabled: true,
+      runtime: unbound,
+      languageSwitching: false,
+      languages: [emptyVoiceLanguageLines('de'), { ...emptyVoiceLanguageLines('en'), fallbackLine: 'Sorry, could you ask me that again?' }],
+    }
+
+    const saved = voiceSettingsUpdateFromForm(form)
+    const reloaded = voiceSettingsFormFromAgent(saved.voice, saved.mechanicsReplies)
+
+    expect(reloaded.languages).toEqual(form.languages)
+    expect(saved.mechanicsReplies).toEqual({})
   })
 
   it('writes each language\'s trimmed recording notice, and no notices at all when every one is blank', () => {

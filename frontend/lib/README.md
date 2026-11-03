@@ -37,7 +37,8 @@ constructing ad hoc fetches.
   teammate (`operatorLabel`) on operator surfaces, only the signature
   (`operatorDisplayName`) on visitor surfaces.
 - `agent-draft-save-port.ts`: the agent-scoped async bridge that lets Test Chat
-  await the mounted editor's real private draft save before execution.
+  await the mounted editor's real private draft save before execution, and
+  `AGENT_DRAFT_SAVED_EVENT`, the window event a draft save or a publication sends.
 - `agent-revision-test-chat-session.ts`: the in-memory Test Chat session store,
   keyed by workspace and agent, that keeps selected revisions, sample values,
   composer text, transcripts, and in-flight updates available while dashboard

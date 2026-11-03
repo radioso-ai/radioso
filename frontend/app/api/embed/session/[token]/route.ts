@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { publicChatUnavailableReasonOf } from '../../../../../lib/public-chat-unavailable'
 import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
 import { relayRateLimitResponseHeaders } from '../../../../../lib/server/rate-limit-headers'
 
@@ -38,6 +39,21 @@ const resolveOrigin = (value: string | null) => {
     return new URL(value).origin
   } catch {
     return null
+  }
+}
+
+/**
+ * Whether the page may read a refused launch: only one refused because the agent has never been
+ * published, which the backend answers after it admitted the page's origin, so the widget can say
+ * the agent is not available yet. Every other refusal stays opaque to the page.
+ */
+const isReadableRefusal = (body: string): boolean => {
+  try {
+    const parsed = JSON.parse(body) as { error?: { code?: unknown } } | null
+    const code = parsed?.error?.code
+    return typeof code === 'string' && publicChatUnavailableReasonOf(code) === 'agent_unavailable'
+  } catch {
+    return false
   }
 }
 
@@ -116,13 +132,14 @@ export async function POST(
       'Cache-Control': 'no-store',
     })
     relayRateLimitResponseHeaders(upstream.headers, responseHeaders)
+    const body = upstream.ok ? upstream.body : await upstream.text()
 
-    return new Response(upstream.body, {
+    return new Response(body, {
       status: upstream.status,
       headers: withCorsHeaders(
         requestOrigin,
         responseHeaders,
-        { allowOrigin: upstream.ok },
+        { allowOrigin: upstream.ok || (typeof body === 'string' && isReadableRefusal(body)) },
       ),
     })
   } catch (error) {

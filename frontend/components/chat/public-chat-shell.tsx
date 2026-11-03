@@ -38,6 +38,7 @@ import { VoiceCallBar, VoiceCallNotice, VoiceTalkButton } from '@/components/cha
 import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { useElementHeight } from '@/hooks/use-element-height'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
+import { publicChatUnavailableMessage, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
 import { useCanAskForMicrophone, useVoiceSession } from '@/lib/use-voice-session'
 import { interleaveVoiceTranscript } from '@/lib/voice-session'
@@ -186,12 +187,8 @@ function useWebsiteEmbedViewportLayout() {
   return layout
 }
 
-function ChatUnavailable({
-  localeOverride,
-  avatarUrl,
-  copyOverrides,
-  themeOverrides,
-}: {
+function ChatUnavailable({ reason, localeOverride, avatarUrl, copyOverrides, themeOverrides }: {
+  reason: PublicChatUnavailableReason
   localeOverride?: string | null
   avatarUrl?: string | null
   copyOverrides?: WebsiteEmbedCopyOverrides | null
@@ -207,7 +204,7 @@ function ChatUnavailable({
       </div>
       <h1 className="text-lg font-medium">{copy.publicChatUnavailableTitle}</h1>
       <p className="mt-1 max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
-        {copy.publicChatUnavailableMessage}
+        {publicChatUnavailableMessage(reason, copy)}
       </p>
     </div>
   )
@@ -607,7 +604,7 @@ function PublicChatContent({
     isLoading,
     isHydrating,
     isLoadingOlderMessages,
-    isUnavailable,
+    unavailable,
     hasOlderMessages,
     rateLimitError,
     retryAfterSeconds,
@@ -643,6 +640,7 @@ function PublicChatContent({
   const contactAvailable =
     intakeActions.some((action) => action.skillName === HUMAN_CONTACT_SKILL_NAME)
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
+  const isUnavailable = unavailable !== null
   // A turn that failed before producing any text renders the localized failure copy —
   // the cause-specific one when the agent is out of conversation quota, the generic one
   // otherwise. Resolving it here (rather than in the chat context) keeps the string on
@@ -916,9 +914,10 @@ function PublicChatContent({
     )
   }
 
-  if (isUnavailable) {
+  if (unavailable) {
     return (
       <ChatUnavailable
+        reason={unavailable}
         localeOverride={localeOverride}
         avatarUrl={resolvedAvatarUrl}
         copyOverrides={copyOverrides}

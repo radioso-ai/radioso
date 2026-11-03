@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { agentsApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { onVoiceCallReadinessChange, voiceCallReadinessHint } from '@/lib/voice-call-readiness'
 import {
   AGENT_VOICE_SAVED_EVENT,
   ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS,
@@ -128,20 +129,34 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null)
   // While Connect or Disconnect runs, a save would send the binding it is about to replace.
   const [runtimeBusy, setRuntimeBusy] = useState(false)
+  // The one gap in voice readiness the card has no control for: the switch and the connection show the others.
+  const [unpublished, setUnpublished] = useState(false)
   const { saveState, saveError, beginSave, isCurrentSave, markSaved, markError, resetSaveState } = useSettingsSaveStatus()
 
   useEffect(() => {
     let active = true
     agentsApi.getAgent(agentId).then(
       (agent) => {
-        if (active) setForm(voiceSettingsFormFromAgent(agent.voice, agent.mechanicsReplies))
+        if (!active) return
+        setForm(voiceSettingsFormFromAgent(agent.voice, agent.mechanicsReplies))
+        setUnpublished(agent.voiceCallReadiness?.missing === 'publication')
       },
       (error: unknown) => {
         if (active) setLoadError(getApiErrorMessage(error, 'Failed to load voice settings.'))
       },
     )
+    // Reads readiness alone again, so a publication made elsewhere never resets the form.
+    const stopReading = onVoiceCallReadinessChange(agentId, () => {
+      agentsApi.getAgent(agentId).then(
+        (agent) => {
+          if (active) setUnpublished(agent.voiceCallReadiness?.missing === 'publication')
+        },
+        () => undefined,
+      )
+    })
     return () => {
       active = false
+      stopReading()
     }
   }, [agentId])
 
@@ -176,12 +191,22 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
         <div className="space-y-5">
           {/* Edits typed while a save is in flight would be replaced by its response, so the editors wait for it. */}
           <fieldset disabled={saveState === 'saving'} className="min-w-0 space-y-5">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <Label htmlFor="voiceEnabled" className="text-foreground">Voice channel</Label>
-              <p id="voiceEnabledHint" className="text-xs text-muted-foreground">Lets pages start calls, and calls hear the lines below.</p>
+          <VoiceRuntimeConnection
+            agentId={agentId}
+            disabled={saveState === 'saving'}
+            // The binding is already stored; the form takes it over so its next save keeps it.
+            onRuntimeChange={(runtime) => setForm((current) => (current ? { ...current, runtime } : current))}
+            onBusyChange={setRuntimeBusy}
+          />
+          <div className="rounded-xl border border-border bg-background/60 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="voiceEnabled" className="text-foreground">Voice channel</Label>
+                <p id="voiceEnabledHint" className="text-xs text-muted-foreground">Required for calls: pages can start one only while it is on.</p>
+              </div>
+              <Switch id="voiceEnabled" aria-describedby="voiceEnabledHint" checked={form.enabled} onCheckedChange={(enabled) => edit({ ...form, enabled })} />
             </div>
-            <Switch id="voiceEnabled" aria-describedby="voiceEnabledHint" checked={form.enabled} onCheckedChange={(enabled) => edit({ ...form, enabled })} />
+            {unpublished ? <p className="mt-2 text-xs text-muted-foreground">{voiceCallReadinessHint('publication', 'vendor')}</p> : null}
           </div>
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
@@ -197,13 +222,9 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
               onCheckedChange={(languageSwitching) => edit({ ...form, languageSwitching })}
             />
           </div>
-          <VoiceRuntimeConnection
-            agentId={agentId}
-            disabled={saveState === 'saving'}
-            // The binding is already stored; the form takes it over so its next save keeps it.
-            onRuntimeChange={(runtime) => setForm((current) => (current ? { ...current, runtime } : current))}
-            onBusyChange={setRuntimeBusy}
-          />
+          <p className="text-xs text-muted-foreground">
+            Every line below is optional. Without them, the agent still answers, in its own words.
+          </p>
           {form.languages.map((language, index) => (
             <VoiceLanguageEditor
               key={language.locale}

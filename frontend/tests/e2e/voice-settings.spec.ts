@@ -69,7 +69,7 @@ test("an operator connects ElevenLabs, writes voice lines in two languages, trim
   const german = await addLanguage(card, "German");
 
   await save(card);
-  // A language with nothing in it is not stored, and stays on the card until it is removed.
+  // Every line is optional: a language with nothing in it is kept, and stays on the card until it is removed.
   await expect(german).toBeVisible();
 
   await english.getByRole("button", { name: "Remove check line 2" }).click();
@@ -87,6 +87,7 @@ test("an operator connects ElevenLabs, writes voice lines in two languages, trim
         bridgeLines: {
           en: { acknowledge: [SHORT_ACKNOWLEDGEMENT], check: [BRIDGE_LINE, SECOND_BRIDGE_LINE] },
           it: { acknowledge: [], check: [ITALIAN_BRIDGE_LINE] },
+          de: { check: [], acknowledge: [] },
         },
         fallbackLine: {},
         runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
@@ -265,6 +266,15 @@ test("an operator without a stored key is sent to Settings → Providers before 
   await expect(card.getByText("Add your ElevenLabs API key, with the Agents permission, under")).toBeVisible();
   await expect(card.getByRole("link", { name: "Settings → Providers" })).toHaveAttribute("href", /\/settings\?tab=providers/);
   expect(voiceConnectionRequests).toEqual([]);
+});
+
+test("an operator whose agent was never published is told on the Voice card that it takes no calls until it is", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { voiceCallReadiness: { ready: false, missing: "publication" } });
+
+  const card = await openVoiceCard(page);
+
+  await expect(card.getByText("Publish the agent first: until it is published, it answers no chats or calls.")).toBeVisible();
 });
 
 test("an operator hands an ElevenLabs agent set up by hand over to Radioso, and a save afterwards keeps the new binding", async ({ page }) => {

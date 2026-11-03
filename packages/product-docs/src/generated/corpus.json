@@ -3000,7 +3000,7 @@
       "title": "Embed on your website",
       "description": "Launch the Radioso embed flow against a local test site, then adapt it for production.",
       "section": "Quickstarts",
-      "lastUpdated": "2026-10-27",
+      "lastUpdated": "2026-11-03",
       "intro": "This walks you through putting the hosted Radioso website widget on a public site and proving it's locked to the site you meant. Holding the embed token isn't enough on its own — by default the launch also has to come from an origin you've approved, which is what most of this page is about.",
       "sections": [
         {
@@ -3011,7 +3011,7 @@
         {
           "id": "what-the-embed-flow-does",
           "heading": "What the embed flow does",
-          "body": "The embed script launches a widget, asks the frontend for an embed session, and the frontend forwards that bootstrap request to the backend. The backend then checks three things:\n\n1. the workspace embed token exists\n2. website embed is enabled for that workspace\n3. the origin setting admits the browser origin\n\nThe origin setting is a single list. An explicit list admits only matching origins. A `*` entry admits any browser origin that has the install code. An empty list admits no origins. If the checks pass, Radioso issues a short-lived embed session token tied to the workspace, anonymous session, and source origin."
+          "body": "The embed script launches a widget, asks the frontend for an embed session, and the frontend forwards that bootstrap request to the backend. The backend then checks four things:\n\n1. the workspace embed token exists\n2. website embed is enabled for that workspace\n3. the origin setting admits the browser origin\n4. the agent behind the token has been published, since every answer runs on its published release\n\nThe origin setting is a single list. An explicit list admits only matching origins. A `*` entry admits any browser origin that has the install code. An empty list admits no origins. If the checks pass, Radioso issues a short-lived embed session token tied to the workspace, anonymous session, and source origin."
         },
         {
           "id": "what-you-re-trying-to-prove",
@@ -3041,7 +3041,7 @@
         {
           "id": "talking-to-the-agent",
           "heading": "Talking to the agent",
-          "body": "When you offer calls on the website, the widget's composer shows a microphone button, **Talk**, beside Send. A visitor presses it, allows the microphone, and talks to the agent out loud: a call bar shows **Listening** and **Speaking**, the visitor can talk over a reply, and what both of them say appears in the panel marked **Spoken**. **End call** or closing the panel ends the call, and the Inbox lists it as a voice conversation next to that visitor's chats.\n\nOffering calls is your choice and starts off. Turn on **Offer calls on the website** under **Website widget** on the agent's **Web chat** page. You can turn it on once the agent's voice is ready: an ElevenLabs key under **Settings → Providers → Voice runtime keys**, ElevenLabs connected on the agent's **Voice** card (**Connect ElevenLabs**), and the **Voice channel** on; until then the switch names what is missing. The snippet stays the same. The button shows only on pages served over https, because browsers give no microphone to plain http pages. If your site sends a `Permissions-Policy` header that denies the microphone, allow it for your Radioso app host, or the widget shows no Talk button. Each call spends one voice session start, which has its own small budget per visitor; see [Voice session start rate limits](https://docs.radioso.ai/operators/deployment#voice-session-start-rate-limits). A visitor past it, or a call Radioso cannot start, reads \"Talking isn't available right now. Try again later.\""
+          "body": "When you offer calls on the website, the widget's composer shows a microphone button, **Talk**, beside Send. A visitor presses it, allows the microphone, and talks to the agent out loud: a call bar shows **Listening** and **Speaking**, the visitor can talk over a reply, and what both of them say appears in the panel marked **Spoken**. **End call** or closing the panel ends the call, and the Inbox lists it as a voice conversation next to that visitor's chats.\n\nOffering calls is your choice and starts off. Turn on **Offer calls on the website** under **Website widget** on the agent's **Web chat** page. You can turn it on once the agent's voice is ready: the agent published, an ElevenLabs key under **Settings → Providers → Voice runtime keys**, ElevenLabs connected on the agent's **Voice** card (**Connect ElevenLabs**), and the **Voice channel** on; until then the switch names what is missing. The snippet stays the same. The button shows only on pages served over https, because browsers give no microphone to plain http pages. If your site sends a `Permissions-Policy` header that denies the microphone, allow it for your Radioso app host, or the widget shows no Talk button. Each call spends one voice session start, which has its own small budget per visitor; see [Voice session start rate limits](https://docs.radioso.ai/operators/deployment#voice-session-start-rate-limits). A visitor past it, or a call Radioso cannot start, reads \"Talking isn't available right now. Try again later.\""
         },
         {
           "id": "recommended-launch-sequence",
@@ -3066,7 +3066,7 @@
         {
           "id": "common-failure-modes",
           "heading": "Common failure modes",
-          "body": "* Allowlist mismatches are usually exact-origin problems. Include the full origin, including port.\n* If the widget loads but can't chat, website embed may be enabled while anonymous chat is still missing or disabled.\n* If local embed works from one host but not another, that's usually the system behaving correctly.\n\nTreat the allowed-origin list as part of the security boundary, not as a cosmetic setting. Do not use broad host assumptions when the exact origin is what the backend enforces."
+          "body": "* Allowlist mismatches are usually exact-origin problems. Include the full origin, including port.\n* If the widget loads but can't chat, website embed may be enabled while anonymous chat is still missing or disabled.\n* If the widget opens on \"This assistant isn't available right now. Please try again later.\" before anyone types, nobody has published the agent yet. The session request answers `404` with `error.code` `agent_not_published`; publish the agent and open the widget again. The public chat link says the same; a public link that is switched off or gone reads \"This chat link is no longer active\" instead.\n* If local embed works from one host but not another, that's usually the system behaving correctly.\n\nTreat the allowed-origin list as part of the security boundary, not as a cosmetic setting. Do not use broad host assumptions when the exact origin is what the backend enforces."
         },
         {
           "id": "what-success-looks-like",

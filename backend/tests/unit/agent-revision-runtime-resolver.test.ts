@@ -75,6 +75,8 @@ describe("AgentRevisionRuntimeResolver", () => {
     const resolver = new AgentRevisionRuntimeResolver(reader);
 
     await expect(resolver.resolveNew({ workspaceId, agent: liveAgent })).rejects.toThrow("Agent is not published");
+    // Typed, so a channel can tell an agent nobody published from a link that is gone.
+    await expect(resolver.resolveNew({ workspaceId, agent: liveAgent })).rejects.toMatchObject({ statusCode: 404, code: "agent_not_published" });
     await expect(resolver.resolvePinned({ workspaceId, agent: liveAgent, revisionId })).rejects.toThrow("Agent revision is unavailable");
   });
 

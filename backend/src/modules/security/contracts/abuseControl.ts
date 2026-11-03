@@ -13,6 +13,10 @@ export interface AbuseControlEntry {
   attemptCount: number;
   /** What the window before this one counted, once it has expired; 0 when nothing overlaps. */
   previousAttemptCount: number;
+  /**
+   * Start of the running window. Windows sit end to end, so a window that follows an expired one
+   * starts where that one ended, which can be up to a window before the attempt that opened it.
+   */
   windowStartedAt: Date;
   blockedUntil: Date | null;
   createdAt: Date;

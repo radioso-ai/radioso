@@ -1961,6 +1961,7 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
   /**
    * Mirrors the sliding window `consumeAbuseControlEntry` runs in Postgres: the expiring window's
    * count is carried while it still overlaps, and admission weighs it against the running window.
+   * Windows sit end to end, so the expired one weighs by the share of it still inside the last window.
    */
   async consume(input: AbuseControlConsumptionInput): Promise<AbuseControlConsumption> {
     const existing = await this.find(input.scope, input.subjectKey);
@@ -1968,13 +1969,18 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
     const activeBlock = Boolean(existing?.blockedUntil && existing.blockedUntil > input.now);
     const activeWindow = Boolean(existing && elapsedMs < input.windowMs);
     const held = activeBlock || activeWindow;
+    const carried = !held && existing !== null && elapsedMs < 2 * input.windowMs;
     const attemptCount = activeBlock ? existing!.attemptCount : activeWindow ? existing!.attemptCount + 1 : 1;
     const previousAttemptCount = held
       ? existing?.previousAttemptCount ?? 0
-      : existing && elapsedMs < 2 * input.windowMs
+      : carried
         ? existing.attemptCount
         : 0;
-    const windowStartedAt = held ? existing!.windowStartedAt : input.now;
+    const windowStartedAt = held
+      ? existing!.windowStartedAt
+      : carried
+        ? new Date(existing.windowStartedAt.getTime() + input.windowMs)
+        : input.now;
     const overlap = Math.max(0, 1 - (input.now.getTime() - windowStartedAt.getTime()) / input.windowMs);
     const weightedAttemptCount = previousAttemptCount * overlap + attemptCount;
     const blockedUntil = activeBlock

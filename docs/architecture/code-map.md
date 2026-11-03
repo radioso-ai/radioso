@@ -243,12 +243,20 @@ Public surfaces and key files:
 - `backend/src/modules/security/services/abuseControlService.ts`
 - `backend/src/modules/security/infrastructure/redisAbuseControlRepository.ts`,
   `fallbackAbuseControlRepository.ts`
+- `backend/src/modules/security/domain/slidingWindowReadmission.ts` (when a
+  refused caller is admitted again, which a `429` reports)
 - `backend/src/modules/security/credentials/services/workspaceProviderCredentialsService.ts`
+
+The sliding window itself runs in three places that must agree:
+`consumeAbuseControlEntry` in `backend/src/shared/infra/kysely/sqlHelpers.ts`,
+the Redis consume script, and `InMemoryAbuseControlRepository` in
+`backend/tests/support/fakes.ts`.
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/abuse-control-service.test.ts tests/unit/abuse-control-composition.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/abuse-controls.integration.test.ts tests/integration/redis-abuse-control-repository.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/abuse-controls.integration.test.ts tests/integration/abuse-control-repository.integration.test.ts tests/integration/redis-abuse-control-repository.integration.test.ts`
+  (the Redis suite needs `ABUSE_CONTROL_TEST_REDIS_URL`)
 
 ## Machine Access
 

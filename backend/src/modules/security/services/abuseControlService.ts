@@ -7,6 +7,7 @@ import type {
   AbuseControlRepositoryPort,
 } from "../contracts/abuseControl.js";
 import type { AbuseControlBatchPort, AbuseControlPolicy, AbuseControlPort } from "../contracts/abuseControl.js";
+import { earliestReadmissionAtMs } from "../domain/slidingWindowReadmission.js";
 
 export class AbuseControlService implements AbuseControlPort, AbuseControlBatchPort {
   constructor(private readonly repository: AbuseControlRepositoryPort) {}
@@ -71,17 +72,24 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
    * The same decision on both paths, so an admitted caller learns what is left and a rejected one
    * learns when to return. The rejected decision rides in the 429 body, which is where the HTTP
    * layer picks it up again.
+   *
+   * A rejected caller is told the later of the block's end and the moment the window admits one
+   * more attempt, so a retry at the stated reset is admitted rather than refused and blocked anew.
    */
   private decide(consumption: AbuseControlConsumption, input: AbuseControlConsumptionInput): AbuseControlDecision {
     const { blockedUntil, windowStartedAt } = consumption.entry;
     const evaluatedAt = consumption.evaluatedAt;
     if (consumption.blocked && blockedUntil) {
+      const resetAt = new Date(Math.max(
+        blockedUntil.getTime(),
+        earliestReadmissionAtMs(consumption.entry, input) ?? blockedUntil.getTime(),
+      ));
       throw tooManyRequests("Rate limit exceeded. Please wait before trying again.", {
         limit: input.limit,
         remaining: 0,
-        resetAtMs: blockedUntil.getTime(),
-        resetAfterSeconds: this.resetAfterSeconds(blockedUntil, evaluatedAt),
-        retryAfterSeconds: this.retryAfterSeconds(blockedUntil, evaluatedAt),
+        resetAtMs: resetAt.getTime(),
+        resetAfterSeconds: this.resetAfterSeconds(resetAt, evaluatedAt),
+        retryAfterSeconds: this.retryAfterSeconds(resetAt, evaluatedAt),
       } satisfies AbuseControlDecision);
     }
     return {

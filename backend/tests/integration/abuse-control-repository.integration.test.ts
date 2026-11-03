@@ -198,6 +198,57 @@ describeIntegration("AbuseControlRepository (Postgres)", () => {
       });
     });
 
+    it("admits a start a full window after the last accepted one through the batch a voice start spends", async () => {
+      const at = clockOn(6);
+      const voiceBatch = (now: Date) => [
+        { ...voicePolicy, scope: `${scope}.gap.batch.session`, subjectKey: "workspace:session:source", now },
+        { ...voicePolicy, scope: `${scope}.gap.batch.source`, subjectKey: "workspace:source", now },
+        { scope: `${scope}.gap.batch.workspace`, subjectKey: "workspace:global", limit: 30, windowMs: 60_000, now },
+      ];
+      const visitorEntries = () => Promise.all([
+        repository.find(`${scope}.gap.batch.session`, "workspace:session:source"),
+        repository.find(`${scope}.gap.batch.source`, "workspace:source"),
+      ]);
+      for (const seconds of [0, 1, 31]) {
+        await expect(service.enforceBatch(voiceBatch(at(seconds)))).resolves.toHaveLength(3);
+      }
+
+      await expect(service.enforceBatch(voiceBatch(at(546)))).rejects.toMatchObject({
+        statusCode: 429,
+        details: { resetAtMs: at(1_146).getTime() },
+      });
+      // The refused batch rolled back: both visitor budgets hold only the three accepted starts.
+      for (const entry of await visitorEntries()) {
+        expect(entry).toMatchObject({ attemptCount: 3, previousAttemptCount: 0, blockedUntil: null, windowStartedAt: at(0) });
+      }
+
+      await expect(service.enforceBatch(voiceBatch(at(1_156)))).resolves.toHaveLength(3);
+      for (const entry of await visitorEntries()) {
+        expect(entry).toMatchObject({ attemptCount: 1, previousAttemptCount: 3, windowStartedAt: at(600) });
+      }
+    });
+
+    it("holds a refused limit-of-one caller until two windows have passed, past a shorter block", async () => {
+      const at = clockOn(7);
+      const policy = { scope: `${scope}.gap.limit-one`, subjectKey: "source", limit: 1, windowMs: 60_000, blockMs: 30_000 };
+      const twin = { ...policy, subjectKey: "twin" };
+      for (const subject of [policy, twin]) {
+        await expect(service.enforce({ ...subject, now: at(0) })).resolves.toMatchObject({
+          remaining: 0,
+          resetAtMs: at(120).getTime() + 1,
+        });
+        await expect(service.enforce({ ...subject, now: at(10) })).rejects.toMatchObject({
+          statusCode: 429,
+          details: { resetAtMs: at(120).getTime() + 1, retryAfterSeconds: 111 },
+        });
+      }
+
+      await expect(service.enforce({ ...twin, now: at(40) })).rejects.toMatchObject({ statusCode: 429 });
+      await expect(
+        service.enforce({ ...policy, now: new Date(at(120).getTime() + 1) }),
+      ).resolves.toMatchObject({ remaining: 0 });
+    });
+
     it("keeps weighing a refused caller's history once its block ends", async () => {
       const at = clockOn(5);
       const policy = { ...voicePolicy, scope: `${scope}.gap.after-block`, subjectKey: "source", blockMs: 60_000 };

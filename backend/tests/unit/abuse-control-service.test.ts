@@ -140,6 +140,31 @@ describe("AbuseControlService", () => {
     });
   });
 
+  it("holds a refused limit-of-one caller until two windows have passed, past a shorter block", async () => {
+    const service = new AbuseControlService(new InMemoryAbuseControlRepository());
+    const policy = { scope: "auth.login", subjectKey: "one@example.com", limit: 1, windowMs: 60_000, blockMs: 30_000 };
+    const twin = { ...policy, subjectKey: "one-twin@example.com" };
+    const start = new Date("2026-03-30T10:00:00.000Z").getTime();
+    const at = (seconds: number): Date => new Date(start + seconds * 1_000);
+    for (const subject of [policy, twin]) {
+      // Its one attempt weighs on anything before the window after next.
+      await expect(service.enforce({ ...subject, now: at(0) })).resolves.toEqual({
+        limit: 1,
+        remaining: 0,
+        resetAtMs: start + 120_001,
+        resetAfterSeconds: 121,
+      });
+      // Blocked to 40 s, but the two attempts it now counts keep weighing until 120 s.
+      await expect(service.enforce({ ...subject, now: at(10) })).rejects.toMatchObject({
+        statusCode: 429,
+        details: { resetAtMs: start + 120_001, retryAfterSeconds: 111 },
+      });
+    }
+
+    await expect(service.enforce({ ...twin, now: at(40) })).rejects.toMatchObject({ statusCode: 429 });
+    await expect(service.enforce({ ...policy, now: new Date(start + 120_001) })).resolves.toMatchObject({ remaining: 0 });
+  });
+
   describe("across a gap after a spent window", () => {
     const windowStart = new Date("2026-11-02T16:35:03.000Z");
     const at = (seconds: number): Date => new Date(windowStart.getTime() + seconds * 1_000);

@@ -23,11 +23,18 @@ export interface RateLimitBatchAbuseControlPort {
   }[]): Promise<AbuseControlDecision[]>;
 }
 
-/** The budget the caller is closest to spending is the one worth advertising. */
+/**
+ * The budget the caller is closest to spending is the one worth advertising. Between budgets
+ * equally spent, the one that refills last, so the reset never names a time another still refuses.
+ */
 const tightest = (decisions: readonly AbuseControlDecision[]): AbuseControlDecision | null =>
   decisions.reduce<AbuseControlDecision | null>(
     (tightestSoFar, decision) =>
-      tightestSoFar === null || decision.remaining < tightestSoFar.remaining ? decision : tightestSoFar,
+      tightestSoFar === null
+        || decision.remaining < tightestSoFar.remaining
+        || (decision.remaining === tightestSoFar.remaining && decision.resetAtMs > tightestSoFar.resetAtMs)
+        ? decision
+        : tightestSoFar,
     null,
   );
 

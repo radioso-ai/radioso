@@ -192,6 +192,45 @@ describeRedis("RedisAbuseControlRepository", () => {
       });
     });
 
+    it("writes nothing for a refused voice batch and admits one a full window after the last accepted start", async () => {
+      const visitorScopes = [`${scope}.gap.batch.session`, `${scope}.gap.batch.source`];
+      const voiceBatch = [
+        ...visitorScopes.map((visitorScope) => ({ ...voicePolicy, scope: visitorScope, subjectKey: "source" })),
+        { scope: `${scope}.gap.batch.workspace`, subjectKey: "source", limit: 30, windowMs: 60_000 },
+      ];
+      const visitorEntries = () =>
+        Promise.all(visitorScopes.map((visitorScope) => repository.find(visitorScope, "source")));
+
+      // Three starts from 0-31 s; this batch is the fourth, at 546 s.
+      const startedAtMs: number[] = [];
+      for (const visitorScope of visitorScopes) {
+        startedAtMs.push(await seedSpentWindow({ scope: visitorScope, attemptCount: 3, startedSecondsAgo: 546 }));
+      }
+      await expect(service.enforceBatch(voiceBatch)).rejects.toMatchObject({ statusCode: 429 });
+      (await visitorEntries()).forEach((entry, index) => {
+        expect(entry).toMatchObject({
+          attemptCount: 3,
+          previousAttemptCount: 0,
+          blockedUntil: null,
+          windowStartedAt: new Date(startedAtMs[index]),
+        });
+      });
+
+      // What the refused batch left, seen at 1,156 s.
+      startedAtMs.length = 0;
+      for (const visitorScope of visitorScopes) {
+        startedAtMs.push(await seedSpentWindow({ scope: visitorScope, attemptCount: 3, startedSecondsAgo: 1_156 }));
+      }
+      await expect(service.enforceBatch(voiceBatch)).resolves.toHaveLength(3);
+      (await visitorEntries()).forEach((entry, index) => {
+        expect(entry).toMatchObject({
+          attemptCount: 1,
+          previousAttemptCount: 3,
+          windowStartedAt: new Date(startedAtMs[index] + 600_000),
+        });
+      });
+    });
+
     it("weighs the expired window by the share of it still inside the last window", async () => {
       const policy = { ...voicePolicy, scope: `${scope}.gap.overlap`, subjectKey: "source" };
       const windowStartedAtMs = await seedSpentWindow({ scope: policy.scope, attemptCount: 3, startedSecondsAgo: 1_010 });

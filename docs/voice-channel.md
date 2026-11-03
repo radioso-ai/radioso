@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, and the period's call numbers on the Quality page."
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 ---
 
 # Voice Channel
@@ -318,7 +318,9 @@ Operators tune them with `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS`,
 `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS`,
 `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS` and
 `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS`. Visitors behind
-one office network share an address, and so share its budget.
+one office network share an address, and so share its budget. On a
+Terraform-managed stack, the per-visitor attempt limits are also GitHub
+environment variables — see [Voice session start rate limits](../docs-portal/content/operators/deployment.mdx#voice-session-start-rate-limits).
 
 | Status | `error.code` | What it means |
 |---|---|---|

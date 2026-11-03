@@ -134,6 +134,9 @@ module "radioso" {
   ops_event_webhook_min_error_severity      = var.ops_event_webhook_min_error_severity
   ops_event_webhook_queue_limit             = var.ops_event_webhook_queue_limit
 
+  public_voice_session_start_rate_limit_max_attempts        = var.public_voice_session_start_rate_limit_max_attempts
+  public_voice_session_start_source_rate_limit_max_attempts = var.public_voice_session_start_source_rate_limit_max_attempts
+
   # Email channel. The queue name follows the per-environment worker queues.
   email_channel_provider                       = var.email_channel_provider
   email_channel_inbound_domain                 = var.email_channel_inbound_domain

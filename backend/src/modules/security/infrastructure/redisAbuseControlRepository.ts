@@ -2,15 +2,15 @@ import { createHash } from "node:crypto";
 
 import { createClient, type RedisClientType } from "redis";
 
-import type {
-  AbuseControlBatchConsumption,
-  AbuseControlConsumption,
-  AbuseControlConsumptionInput,
-  AbuseControlEntry,
-  AbuseControlRepositoryPort,
+import {
+  ABUSE_CONTROL_ENTRY_RETENTION_MS,
+  type AbuseControlBatchConsumption,
+  type AbuseControlConsumption,
+  type AbuseControlConsumptionInput,
+  type AbuseControlEntry,
+  type AbuseControlRepositoryPort,
 } from "../contracts/abuseControl.js";
 
-const ENTRY_TTL_MS = 24 * 60 * 60 * 1_000;
 const KEY_PREFIX = "radioso:abuse-control:v1";
 
 const findScript = String.raw`
@@ -58,6 +58,9 @@ return cjson.encode({
  * One script owns both single and batch consumption. Batch rejection leaves every key untouched,
  * matching the Postgres transaction; single rejection persists its block. Redis serializes the
  * script, so concurrent replicas cannot observe the same remaining slot.
+ *
+ * The sliding window matches `consumeAbuseControlEntry` in Postgres, including windows that sit
+ * end to end so the expired one weighs only by the share of it still inside the last window.
  */
 const consumeScript = String.raw`
 local redisTime = redis.call('TIME')
@@ -110,14 +113,17 @@ for index = 1, count do
     attemptCount = 1
   end
   local previousAttemptCount
+  local windowStartedAtMs
   if held then
     previousAttemptCount = existing and existing.previousAttemptCount or 0
+    windowStartedAtMs = existing.windowStartedAtMs
   elseif existing and elapsedMs < 2 * windowMs then
     previousAttemptCount = existing.attemptCount
+    windowStartedAtMs = existing.windowStartedAtMs + windowMs
   else
     previousAttemptCount = 0
+    windowStartedAtMs = nowMs
   end
-  local windowStartedAtMs = held and existing.windowStartedAtMs or nowMs
   local overlap = math.max(0, 1 - ((nowMs - windowStartedAtMs) / windowMs))
   local weightedAttemptCount = previousAttemptCount * overlap + attemptCount
   local blockedUntilMs
@@ -282,7 +288,7 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
       String(input.attemptCount),
       String(input.windowStartedAt.getTime()),
       String(input.blockedUntil?.getTime() ?? 0),
-      String(ENTRY_TTL_MS),
+      String(ABUSE_CONTROL_ENTRY_RETENTION_MS),
     ]);
     return mapEntry(input.scope, input.subjectKey, parseStoredEntryReply(reply));
   }
@@ -330,7 +336,7 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
         String(input.blockMs),
       );
     }
-    arguments_.push(String(ENTRY_TTL_MS));
+    arguments_.push(String(ABUSE_CONTROL_ENTRY_RETENTION_MS));
     return parseConsumeReply(await this.eval(
       consumeScript,
       inputs.map((input) => entryKey(input.scope, input.subjectKey)),

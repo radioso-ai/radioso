@@ -137,6 +137,11 @@ describeRedis("RedisAbuseControlRepository", () => {
   const scope = `test.abuse-control.${randomUUID()}`;
   const rawRedis = createClient({ url: redisUrl ?? "redis://127.0.0.1:6379" });
 
+  const readRedisNowMs = async (): Promise<number> => {
+    const redisTime = await rawRedis.time();
+    return Number(redisTime[0]) * 1_000 + Math.floor(Number(redisTime[1]) / 1_000);
+  };
+
   beforeAll(async () => {
     rawRedis.on("error", () => undefined);
     await rawRedis.connect();
@@ -144,6 +149,122 @@ describeRedis("RedisAbuseControlRepository", () => {
   afterAll(async () => {
     await repository.close();
     await rawRedis.close();
+  });
+
+  describe("across a gap after a spent window", () => {
+    const voicePolicy = { limit: 3, windowMs: 600_000 };
+    // Redis decides on its own clock, so each case writes the entry an earlier history would have
+    // left, dated back from Redis TIME, and then spends against it.
+    const seedSpentWindow = async (input: {
+      scope: string;
+      attemptCount: number;
+      startedSecondsAgo: number;
+      blockedUntilSecondsAfterStart?: number;
+    }): Promise<number> => {
+      const windowStartedAtMs = await readRedisNowMs() - input.startedSecondsAgo * 1_000;
+      await repository.save({
+        scope: input.scope,
+        subjectKey: "source",
+        attemptCount: input.attemptCount,
+        windowStartedAt: new Date(windowStartedAtMs),
+        blockedUntil: input.blockedUntilSecondsAfterStart === undefined
+          ? null
+          : new Date(windowStartedAtMs + input.blockedUntilSecondsAfterStart * 1_000),
+      });
+      return windowStartedAtMs;
+    };
+
+    it("admits a start a full window after the last accepted one", async () => {
+      // Three starts at 0-31 s and a refusal at 546 s, blocked to 1,146 s; the next start at 1,156 s.
+      const policy = { ...voicePolicy, scope: `${scope}.gap.timeline`, subjectKey: "source" };
+      const windowStartedAtMs = await seedSpentWindow({
+        scope: policy.scope,
+        attemptCount: 4,
+        startedSecondsAgo: 1_156,
+        blockedUntilSecondsAfterStart: 1_146,
+      });
+
+      await expect(service.enforce(policy)).resolves.toMatchObject({ remaining: 1 });
+      expect(await repository.find(policy.scope, policy.subjectKey)).toMatchObject({
+        attemptCount: 1,
+        previousAttemptCount: 4,
+        windowStartedAt: new Date(windowStartedAtMs + 600_000),
+      });
+    });
+
+    it("writes nothing for a refused voice batch and admits one a full window after the last accepted start", async () => {
+      const visitorScopes = [`${scope}.gap.batch.session`, `${scope}.gap.batch.source`];
+      const voiceBatch = [
+        ...visitorScopes.map((visitorScope) => ({ ...voicePolicy, scope: visitorScope, subjectKey: "source" })),
+        { scope: `${scope}.gap.batch.workspace`, subjectKey: "source", limit: 30, windowMs: 60_000 },
+      ];
+      const visitorEntries = () =>
+        Promise.all(visitorScopes.map((visitorScope) => repository.find(visitorScope, "source")));
+
+      // Three starts from 0-31 s; this batch is the fourth, at 546 s.
+      const startedAtMs: number[] = [];
+      for (const visitorScope of visitorScopes) {
+        startedAtMs.push(await seedSpentWindow({ scope: visitorScope, attemptCount: 3, startedSecondsAgo: 546 }));
+      }
+      await expect(service.enforceBatch(voiceBatch)).rejects.toMatchObject({ statusCode: 429 });
+      (await visitorEntries()).forEach((entry, index) => {
+        expect(entry).toMatchObject({
+          attemptCount: 3,
+          previousAttemptCount: 0,
+          blockedUntil: null,
+          windowStartedAt: new Date(startedAtMs[index]),
+        });
+      });
+
+      // What the refused batch left, seen at 1,156 s.
+      startedAtMs.length = 0;
+      for (const visitorScope of visitorScopes) {
+        startedAtMs.push(await seedSpentWindow({ scope: visitorScope, attemptCount: 3, startedSecondsAgo: 1_156 }));
+      }
+      await expect(service.enforceBatch(voiceBatch)).resolves.toHaveLength(3);
+      (await visitorEntries()).forEach((entry, index) => {
+        expect(entry).toMatchObject({
+          attemptCount: 1,
+          previousAttemptCount: 3,
+          windowStartedAt: new Date(startedAtMs[index] + 600_000),
+        });
+      });
+    });
+
+    it("weighs the expired window by the share of it still inside the last window", async () => {
+      const policy = { ...voicePolicy, scope: `${scope}.gap.overlap`, subjectKey: "source" };
+      const windowStartedAtMs = await seedSpentWindow({ scope: policy.scope, attemptCount: 3, startedSecondsAgo: 1_010 });
+
+      await expect(service.enforce(policy)).resolves.toMatchObject({ remaining: 1 });
+      await expect(service.enforce(policy)).resolves.toMatchObject({ remaining: 0 });
+      await expect(service.enforce(policy)).rejects.toMatchObject({ statusCode: 429 });
+      expect(await repository.find(policy.scope, policy.subjectKey)).toMatchObject({
+        previousAttemptCount: 3,
+        windowStartedAt: new Date(windowStartedAtMs + 600_000),
+      });
+    });
+
+    it("carries nothing once two windows have passed since the spent one began", async () => {
+      const policy = { ...voicePolicy, scope: `${scope}.gap.clear`, subjectKey: "source" };
+      await seedSpentWindow({ scope: policy.scope, attemptCount: 3, startedSecondsAgo: 1_200 });
+
+      const result = await repository.consume({ ...policy, blockMs: policy.windowMs, now: new Date() });
+      expect(result).toMatchObject({
+        blocked: false,
+        weightedAttemptCount: 1,
+        entry: { attemptCount: 1, previousAttemptCount: 0, windowStartedAt: result.evaluatedAt },
+      });
+    });
+
+    it("tells a refused caller a reset at which its retry is admitted, even past the block", async () => {
+      const policy = { ...voicePolicy, scope: `${scope}.gap.bunched`, subjectKey: "source" };
+      const windowStartedAtMs = await seedSpentWindow({ scope: policy.scope, attemptCount: 3, startedSecondsAgo: 10 });
+
+      await expect(service.enforce(policy)).rejects.toMatchObject({
+        statusCode: 429,
+        details: { resetAtMs: windowStartedAtMs + 900_001 },
+      });
+    });
   });
 
   it("save upserts one keyed entry and find maps it back", async () => {
@@ -234,27 +355,28 @@ describeRedis("RedisAbuseControlRepository", () => {
   it("preserves blockMs and rolls back an atomically rejected batch", async () => {
     const now = new Date("2000-01-01T00:00:00.000Z");
     const blockedScope = `${scope}.batch`;
+    // A block longer than the two windows the refused attempt keeps weighing, so it sets the reset.
+    const windowMs = 6_000;
     await service.enforce({
       scope: blockedScope,
       subjectKey: "workspace",
       limit: 1,
-      windowMs: 60_000,
+      windowMs,
       blockMs: 15_000,
       now,
     });
 
-    const redisTime = await rawRedis.time();
-    const redisNowMs = Number(redisTime[0]) * 1_000 + Math.floor(Number(redisTime[1]) / 1_000);
+    const redisNowMs = await readRedisNowMs();
     const rejected = await repository.consumeBatch([
-      { scope: blockedScope, subjectKey: "preflight-grant", limit: 3, windowMs: 60_000, blockMs: 15_000, now },
-      { scope: blockedScope, subjectKey: "workspace", limit: 1, windowMs: 60_000, blockMs: 15_000, now },
+      { scope: blockedScope, subjectKey: "preflight-grant", limit: 3, windowMs, blockMs: 15_000, now },
+      { scope: blockedScope, subjectKey: "workspace", limit: 1, windowMs, blockMs: 15_000, now },
     ]);
     expect(rejected.rejected?.evaluatedAt.getTime()).toBeGreaterThanOrEqual(redisNowMs);
     expect(rejected.rejected?.evaluatedAt.getTime()).toBeLessThan(redisNowMs + 5_000);
 
     await expect(service.enforceBatch([
-      { scope: blockedScope, subjectKey: "grant", limit: 3, windowMs: 60_000, blockMs: 15_000, now },
-      { scope: blockedScope, subjectKey: "workspace", limit: 1, windowMs: 60_000, blockMs: 15_000, now },
+      { scope: blockedScope, subjectKey: "grant", limit: 3, windowMs, blockMs: 15_000, now },
+      { scope: blockedScope, subjectKey: "workspace", limit: 1, windowMs, blockMs: 15_000, now },
     ])).rejects.toMatchObject({
       statusCode: 429,
       details: {
@@ -410,6 +532,33 @@ describeRedisIntegration("Redis abuse-control failover and semantic parity", () 
     } finally {
       await redis.close();
       await stalledRedis.close();
+    }
+  });
+
+  it("still weighs a refused subject once its block ends, in both stores", async () => {
+    const postgresService = new AbuseControlService(postgres);
+    const redis = new RedisAbuseControlRepository({ redisUrl: redisUrl!, commandTimeoutMs: 1_000 });
+    const redisService = new AbuseControlService(redis);
+    const policy = { scope: `${scope}.after-block`, subjectKey: "same-subject", limit: 2, windowMs: 10_000, blockMs: 50 };
+    const outcome = (service: AbuseControlService): Promise<string> =>
+      service.enforce({ ...policy, now: new Date() }).then(
+        () => "admitted",
+        (error: unknown) => {
+          if ((error as { statusCode?: number }).statusCode === 429) return "refused";
+          throw error;
+        },
+      );
+    try {
+      for (const service of [postgresService, redisService]) {
+        expect([await outcome(service), await outcome(service), await outcome(service)])
+          .toEqual(["admitted", "admitted", "refused"]);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await postgres.deleteExpired(new Date());
+
+      expect([await outcome(postgresService), await outcome(redisService)]).toEqual(["refused", "refused"]);
+    } finally {
+      await redis.close();
     }
   });
 

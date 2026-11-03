@@ -1,11 +1,12 @@
 import { consumeAbuseControlEntry, currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
-import type {
-  AbuseControlBatchConsumption,
-  AbuseControlConsumption,
-  AbuseControlConsumptionInput,
-  AbuseControlEntry,
-  AbuseControlRepositoryPort,
+import {
+  ABUSE_CONTROL_ENTRY_RETENTION_MS,
+  type AbuseControlBatchConsumption,
+  type AbuseControlConsumption,
+  type AbuseControlConsumptionInput,
+  type AbuseControlEntry,
+  type AbuseControlRepositoryPort,
 } from "../../modules/security/contracts/abuseControl.js";
 
 interface AbuseControlEntryRow {
@@ -133,14 +134,20 @@ export class AbuseControlRepository implements AbuseControlRepositoryPort {
     }
   }
 
+  /**
+   * Forgets an entry only once it can no longer change an admission: its block has ended and its
+   * window began a full retention period ago. A window keeps weighing until two windows after it
+   * began, so a block ending is not enough; dropping the entry then would hand a refused caller a
+   * fresh budget. The period matches the Redis key TTL, so both stores admit alike.
+   */
   async deleteExpired(now: Date): Promise<void> {
-    const windowCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const retentionCutoff = new Date(now.getTime() - ABUSE_CONTROL_ENTRY_RETENTION_MS);
     await this.db
       .deleteFrom("abuse_control_entries")
       .where((eb) =>
-        eb.or([
-          eb.and([eb("blocked_until", "is not", null), eb("blocked_until", "<=", now)]),
-          eb.and([eb("blocked_until", "is", null), eb("window_started_at", "<=", windowCutoff)]),
+        eb.and([
+          eb.or([eb("blocked_until", "is", null), eb("blocked_until", "<=", now)]),
+          eb("window_started_at", "<=", retentionCutoff),
         ]),
       )
       .execute();

@@ -6,9 +6,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { formatHumanBytes } from "../lib/byte-units";
-import { canWriteTiers, staffAuthApi, type AccountUsageSummary, type UsageLimitProfile, type StaffUser } from "../lib/staff-auth-api";
+import {
+  canWriteTiers,
+  staffAuthApi,
+  type AccountUsageSummary,
+  type OrganizationUsage,
+  type UsageLimitProfile,
+  type StaffUser,
+} from "../lib/staff-auth-api";
 import { formatMeterNumber, limitText } from "../lib/meter-text";
 import { overLimitResources } from "../lib/tier-change";
+import { ConversationSpendCard } from "./conversation-spend-card";
 import { ErrorBanner, StaffLayout } from "./staff-layout";
 
 const resourceLabels = {
@@ -32,6 +40,9 @@ const resourceUsedText = (key: ResourceKey, used: number) =>
 export function OrganizationDetailPage({ accountId }: { accountId: string }) {
   const [staff, setStaff] = useState<StaffUser | null>(null);
   const [usage, setUsage] = useState<AccountUsageSummary | null>(null);
+  // Held apart from `usage`: a tier change answers with the usage summary alone, and the spend
+  // already read is still this account's spend.
+  const [spend, setSpend] = useState<OrganizationUsage["conversationSpend"] | null>(null);
   const [tiers, setTiers] = useState<UsageLimitProfile[]>([]);
   const [targetTier, setTargetTier] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +61,7 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
         }
         setStaff(me.staff);
         setUsage(usageResult);
+        setSpend(usageResult.conversationSpend);
         setTargetTier(usageResult.profile?.key ?? "");
         setTiers(tierResult.tiers);
       })
@@ -128,6 +140,7 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
                   : null}
               </div>
             ) : null}
+            {spend ? <ConversationSpendCard spend={spend} /> : null}
             {resourceKeys
               .filter((key) => key !== "monthlyAnswers" || !usage.monthlyConversations)
               .map((key) => {

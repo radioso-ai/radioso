@@ -1,0 +1,9 @@
+{
+  "eurPerUsd": 0.9,
+  "usdPerMillionTokens": [
+    { "provider": "openai", "model": "gpt-5.4-mini",           "input": 0.75, "output": 4.5 },
+    { "provider": "openai", "model": "gpt-5.4-nano",           "input": 0.2,  "output": 1.25 },
+    { "provider": "openai", "model": "text-embedding-3-small", "input": 0.02, "output": 0 }
+  ],
+  "conversationSpendFlagEur": 0.04
+}

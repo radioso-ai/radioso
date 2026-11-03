@@ -203,9 +203,74 @@ PUT    /api/v1/ee/operator-console/staff/:staffId/status
 ```
 
 The organization directory derives the owner email from `account_memberships`
-(role `owner`), not from `accounts.email`. Tier changes and staff changes are
-recorded as `staff.*` audit events. The console pages are served under
+(role `owner`), not from `accounts.email`. Each directory row carries
+`conversationSpend` for the current month, and the organization usage read
+carries `conversationSpend.current` and `conversationSpend.previous`; both are
+described under [Conversation spend](#conversation-spend). Tier changes and
+staff changes are recorded as `staff.*` audit events. The console pages are served under
 `/operator` when Enterprise frontend routes are enabled.
+
+### Conversation spend
+
+Each organization row also shows what the account's customer conversations
+cost in model spend this month, on average: `€0.021 / conv`. The organization
+page shows this month and last month side by side, since a month only two days
+old averages over a handful of conversations. An average above €0.04 gets the
+console's amber warning in both places. €0.04 is where Planet, at full quota,
+drops below a 50% gross margin, so a flagged account is one whose conversations
+run long enough to eat into the plan.
+
+The average divides spend by metered conversations, and both sides come from
+data the platform already records:
+
+- Metered conversations are the customer conversations the conversation meter
+  recorded replies for: customer-channel replies only, so Test Chat, Ray, Pulse
+  reports, and one-shot retrieval answers sit outside it. Each conversation
+  counts once per block of the tier's replies per conversation, so on the
+  catalog plans' 10 an 8-reply conversation is one and a 12-reply conversation
+  is two.
+- The block size is the tier's replies per conversation as set now, for both
+  months shown. The meter charges each reply under the setting in force at the
+  time, and that setting is not recorded per reply, so changing it re-counts
+  both months. The organization page states the value it counted at.
+- Spend is every call the usage ledger (`usage_events`) attributes to those
+  conversations in the same UTC month that the provider billed: planning,
+  answers, rerank, extraction, embeddings, and summaries. That includes a reply
+  stream the visitor interrupted or replaced, which records the tokens the
+  provider reported. A failed call with no provider-reported usage is left out:
+  its token count is an estimate from the request size, and a request the
+  provider rejected was never billed. An interrupted call that never got a usage
+  report is therefore missing too.
+- Tokens are priced at list price, with cached input charged at the full input
+  rate. Prices are in USD and converted at a fixed `eurPerUsd` (0.90). The
+  prices, the rate, and the €0.04 threshold are `MODEL_SPEND_ESTIMATE` in
+  `@radioso/plan-catalog` (`src/modelSpend.json`), a staff-only export kept
+  apart from the public `PLAN_CATALOG` that `GET /api/v1/plans` serves.
+- A call on a model the catalog has no price for is counted rather than priced,
+  and the average becomes a floor: `≥ €0.021 / conv`. A floor under €0.04 could
+  still be over it, so the directory reads it as `(undetermined)` and the
+  organization page says how many calls it left out. A floor already over €0.04
+  is flagged.
+- Every call is priced, including calls an account makes on its own provider
+  key. For a bring-your-own-key account the figure is what its conversations
+  would cost on the platform's keys.
+
+The computation reads token counts and model names from the ledger; prompt and
+completion text is never part of it.
+
+The flag is a prompt to look, not an automatic action. If a flagged account's
+conversations stay long month after month, there are two levers. Lower that
+plan's replies per conversation from 10 to 6 on the Tiers page, which makes a
+long conversation count as more than one. Or give the account a tier of its own
+with its own replies per conversation, so one customer's conversation
+definition changes without touching everyone else on the plan. Either lever
+re-counts both months shown at the new value, last month included, even though
+last month was charged under the old one. So read the month after the change to
+see what the lever does, and keep in mind that lowering a plan's value lowers
+every account's figure on that plan at once. Metering by spend instead of by
+conversation stays out unless the measured mix changes: it makes bills
+unpredictable for customers, ties them to internal prompt and model changes, and
+charges token-heavy languages more for the same conversation.
 
 ### Known limits
 

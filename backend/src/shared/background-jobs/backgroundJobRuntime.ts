@@ -70,11 +70,15 @@ interface RuntimeMetrics {
 
 /**
  * The runtime reports by shape only: an error's message or stack can echo a provider response or
- * customer content, so the reporter never receives the error itself.
+ * customer content, so the reporter never receives the error itself. `errorClass` and `message`
+ * are built from the same validated shapes `errorSummary` already produces (a class name, and a
+ * class name plus kind), never from the error's own text.
  */
 interface RuntimeErrorReporter {
   report(input: {
     errorType: string;
+    errorClass?: string;
+    message?: string;
     severity?: "info" | "warn" | "error" | "fatal";
     metadata?: Record<string, unknown>;
   }): Promise<unknown>;
@@ -112,6 +116,14 @@ const errorSummary = (error: unknown): string => {
   const name = error instanceof Error && ERROR_NAME_PATTERN.test(error.name) ? error.name : "Error";
   return error instanceof AppError && ERROR_CODE_PATTERN.test(error.code) ? `${name} [${error.code}]` : name;
 };
+
+/**
+ * The bare class name from an `errorSummary` string (`"AppError [code]"` -> `"AppError"`), the
+ * shape a report's top-level `errorClass` needs: error tracking fingerprints a report on its type
+ * and class, so a provider's code — safe in the stored summary — would read as a stray class name
+ * there instead of folding like codes for the same class should.
+ */
+const errorClassFromSummary = (summary: string): string => summary.split(" [", 1)[0];
 
 const isBackgroundJobSkipped = (result: BackgroundJobSkipped | void): result is BackgroundJobSkipped =>
   typeof result === "object" && result !== null && "skipped" in result;
@@ -227,7 +239,13 @@ export class BackgroundJobRuntime {
           const summary = errorSummary(error);
           this.options.logger.error({ errorType: summary }, "Background job poll failed");
           void this.options.errorReporter
-            ?.report({ errorType: "background_job.poll_failed", severity: "error", metadata: { errorClass: summary } })
+            ?.report({
+              errorType: "background_job.poll_failed",
+              errorClass: errorClassFromSummary(summary),
+              message: `Background job poll failed: ${summary}`,
+              severity: "error",
+              metadata: { errorClass: summary },
+            })
             .catch(() => undefined);
         },
       )
@@ -394,7 +412,13 @@ export class BackgroundJobRuntime {
         { kind: claim.kind, jobId: claim.id, attempt: claim.attempt, errorType: hookError },
         "Background job per-attempt failure hook failed; the retry is scheduled without it",
       );
-      this.report("background_job.attempt_failed_hook_failed", { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, hookError });
+      this.report(
+        "background_job.attempt_failed_hook_failed",
+        claim,
+        hookError,
+        `${claim.kind} attempt-failed hook failed: ${hookError}`,
+        { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, hookError },
+      );
       return this.options.store.retry(claim, { error: summary, delaySeconds });
     }
   }
@@ -414,7 +438,13 @@ export class BackgroundJobRuntime {
       rawError instanceof NonRetryableBackgroundJobError &&
       !(rawError instanceof InvalidBackgroundJobPayloadError);
     if (!isExpectedPermanent) {
-      this.report("background_job.dead_lettered", { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, lastError: summary });
+      this.report(
+        "background_job.dead_lettered",
+        claim,
+        summary,
+        `${claim.kind} dead-lettered: ${summary}`,
+        { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, lastError: summary },
+      );
     }
     return this.record(claim, "dead_lettered", startedAt, summary, { expectedPermanent: isExpectedPermanent });
   }
@@ -460,13 +490,32 @@ export class BackgroundJobRuntime {
         { kind: claim.kind, jobId: claim.id, attempt: claim.attempt, errorType: hookError },
         "Background job dead-letter hook failed; the job is parked without it",
       );
-      this.report("background_job.dead_letter_hook_failed", { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, hookError });
+      this.report(
+        "background_job.dead_letter_hook_failed",
+        claim,
+        hookError,
+        `${claim.kind} dead-letter hook failed: ${hookError}`,
+        { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, hookError },
+      );
       return this.options.store.deadLetter(claim, { error: summary });
     }
   }
 
-  private report(errorType: string, metadata: Record<string, unknown>): void {
-    void this.options.errorReporter?.report({ errorType, severity: "error", metadata }).catch(() => undefined);
+  /**
+   * Reports a job-kind failure under its own fingerprint: the kind in the type, and the failure's
+   * bare class in `errorClass`, so error tracking splits a report by both instead of folding
+   * every kind and failure into one sink-default "unknown error" issue.
+   */
+  private report(errorType: string, claim: BackgroundJobClaim, summary: string, message: string, metadata: Record<string, unknown>): void {
+    void this.options.errorReporter
+      ?.report({
+        errorType: `${errorType}.${claim.kind}`,
+        errorClass: errorClassFromSummary(summary),
+        message,
+        severity: "error",
+        metadata,
+      })
+      .catch(() => undefined);
   }
 
   /** Best-effort: the sweep still finds a job whose wake was lost. */

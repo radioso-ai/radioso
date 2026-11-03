@@ -5,6 +5,7 @@ import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AGENT_DRAFT_SAVED_EVENT } from '@/lib/agent-draft-save-port'
 import { agentRevisionsApi, type AgentRevisionDetail, type AgentRevisionState, type PublishRevisionCommand } from '@/lib/api-agent-revisions'
 import { contextVariablesApi } from '@/lib/api-context-variables'
 import type { ContextVariable } from '@/lib/api-types'
@@ -101,8 +102,8 @@ export function AgentRevisionHeader({
     const refresh = (event: Event) => {
       if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId === agentId) void loadState()
     }
-    window.addEventListener('radioso:agent-draft-saved', refresh)
-    return () => window.removeEventListener('radioso:agent-draft-saved', refresh)
+    window.addEventListener(AGENT_DRAFT_SAVED_EVENT, refresh)
+    return () => window.removeEventListener(AGENT_DRAFT_SAVED_EVENT, refresh)
   }, [agentId, loadState])
 
   const review = async () => {
@@ -138,7 +139,7 @@ export function AgentRevisionHeader({
       setState(result.state)
       setDetail(null)
       setPublicationCommand(null)
-      window.dispatchEvent(new CustomEvent('radioso:agent-draft-saved', { detail: { agentId } }))
+      window.dispatchEvent(new CustomEvent(AGENT_DRAFT_SAVED_EVENT, { detail: { agentId } }))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Publication failed. Retry this same publication or cancel the review.')
     }

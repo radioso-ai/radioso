@@ -951,6 +951,85 @@ describe("public chat session contract", () => {
       .expect(404);
   });
 
+  describe("an agent nobody has published yet", () => {
+    /**
+     * A second agent of the workspace with its own website embed and public link. Nobody has
+     * published it, so no turn could run on it.
+     */
+    const unpublishedAgent = async (app: any, email: string) => {
+      const session = await issueTestToken(app, email);
+      const headers = adminSessionHeaders(session);
+      const created = await request(app).post("/api/v1/agents").set("Authorization", `Bearer ${session.token}`).send({ name: "Draft agent" }).expect(201);
+      const agentId = created.body.id as string;
+      await request(app)
+        .put(`/api/v1/agents/${agentId}`)
+        .set(headers)
+        .send({ surfaceSettings: { websiteEmbed: { enabled: true, allowedOrigins: ["https://example.com"] }, anonymousChat: { enabled: true } } })
+        .expect(200);
+      const embed = await request(app).post(`/api/v1/agents/${agentId}/website-embed-token/rotate`).set(headers).expect(200);
+      const link = await request(app).post(`/api/v1/agents/${agentId}/anonymous-chat-token/rotate`).set(headers).expect(200);
+      return {
+        workspaceId: session.workspaceId,
+        agentId,
+        embedToken: embed.body.surfaceSettings.websiteEmbed.token as string,
+        linkToken: link.body.surfaceSettings.anonymousChat.token as string,
+      };
+    };
+
+    it("refuses a website embed launch with a code that says the agent is not published, not that the link is gone, and records why", async () => {
+      const { app, dependencies } = createTestApp();
+      const agent = await unpublishedAgent(app, "public-embed-unpublished@example.com");
+
+      const response = await createWebsiteEmbedPublicSession(app, agent.embedToken).expect(404);
+
+      expect(response.body.error.code).toBe("agent_not_published");
+      expect(response.body).not.toHaveProperty("publicSessionToken");
+      const auditEvents = (dependencies.auditService as unknown as {
+        events: Array<{ eventType: string; metadata?: Record<string, unknown> }>;
+      }).events;
+      expect(auditEvents).toContainEqual(expect.objectContaining({
+        eventType: "website_embed.launch_denied",
+        metadata: { origin: "https://example.com", reason: "agent_not_published" },
+      }));
+      expect(auditEvents.filter((event) => event.eventType === "website_embed.launch_allowed")).toEqual([]);
+
+      await publishTestAgentBaseline(app, { workspaceId: agent.workspaceId, agentId: agent.agentId });
+      await createWebsiteEmbedPublicSession(app, agent.embedToken).expect(200);
+    });
+
+    it("refuses a public link session the same way", async () => {
+      const { app } = createTestApp();
+      const agent = await unpublishedAgent(app, "public-link-unpublished@example.com");
+      const exchange = () => request(app).post(`/api/v1/public/chat/${agent.linkToken}/sessions`).send({ channel: "anonymous_link" });
+
+      expect((await exchange().expect(404)).body.error.code).toBe("agent_not_published");
+
+      await publishTestAgentBaseline(app, { workspaceId: agent.workspaceId, agentId: agent.agentId });
+      await exchange().expect(200);
+    });
+
+    it("answers a message on a session minted before publication with the same code", async () => {
+      const { app } = createTestApp();
+      const agent = await unpublishedAgent(app, "public-turn-unpublished@example.com");
+      const publicSession = issuePublicChatSession("00112233445566778899aabbccddeeff", {
+        workspaceId: agent.workspaceId,
+        agentId: agent.agentId,
+        publicChatToken: agent.linkToken,
+        publicSessionId: randomUUID(),
+        sourceChannel: "anonymous",
+        sourceOrigin: null,
+      });
+
+      const response = await request(app)
+        .post(`/api/v1/public/chat/${agent.linkToken}`)
+        .set("x-radioso-public-session", publicSession.token)
+        .send({ message: "Are you there?", stream: false })
+        .expect(404);
+
+      expect(response.body.error.code).toBe("agent_not_published");
+    });
+  });
+
   it("records an audit event when launch is denied because embed is disabled", async () => {
     const { app, dependencies } = createTestApp();
     const session = await issueTestSession(app, "public-embed-disabled-audit@example.com");

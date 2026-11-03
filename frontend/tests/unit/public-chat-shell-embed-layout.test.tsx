@@ -28,7 +28,7 @@ const createChatState = (overrides: Record<string, unknown> = {}) => ({
   isLoading: false,
   isHydrating: false,
   isLoadingOlderMessages: false,
-  isUnavailable: false,
+  unavailable: null,
   hasOlderMessages: false,
   rateLimitError: null,
   retryAfterSeconds: null,

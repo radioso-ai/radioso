@@ -16,6 +16,16 @@ the mutable draft directly. `AgentRevisionService.resolveDefaultTestRevision`
 decides which revision a test runs when the operator names none. Writer modules continue to own their resource
 validation and use the shared draft-mutation boundary.
 
+An agent nobody has published answers nothing: `AgentRevisionRuntimeResolver.resolveNew`
+refuses its turn with `agentNotPublished()`, a `404` whose code is `agent_not_published`,
+so a channel can tell it apart from a link that is gone. `AgentPublicationReader`
+(`isPublished`, implemented by `AgentRevisionRuntimeRepository` over the same join the
+resolver reads) lets a channel ask first: the public chat session exchange refuses such an
+agent with the same code, and the voice channel names it as the `publication` readiness
+gap. `AgentRevisionService.onFirstPublication` tells listeners when an agent is published
+for the first time (not awaited; a failing listener never fails the publication);
+composition drops the cached embed configs then.
+
 Agents also store and serve the `voice` settings block (`voiceSettings.ts`):
 its schema, the voice-off default, and a tolerant reader for stored blocks (a
 stored block without `runtime` reads as bound to no vendor agent). `runtime`

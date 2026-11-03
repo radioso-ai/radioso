@@ -2734,6 +2734,7 @@ components:
             - string
             - "null"
           enum:
+            - publication
             - voice_channel
             - runtime
             - vendor_key
@@ -2742,7 +2743,7 @@ components:
       required:
         - ready
         - missing
-      description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it."
+      description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the agent's publication (an agent that has never been published answers no chats or calls), the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it."
     AgentPrivacyNotices:
       type: object
       additionalProperties:
@@ -18806,7 +18807,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Public chat not found
+          description: "Public chat not found; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this."
           content:
             application/json:
               schema:
@@ -25267,7 +25268,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Routine tool is not in the agent's catalog
+          description: "Routine tool is not in the agent's catalog; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this."
           content:
             application/json:
               schema:
@@ -41024,7 +41025,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Public chat link not found
+          description: "Public chat link not found; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this."
           content:
             application/json:
               schema:
@@ -41137,7 +41138,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: "Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound"
+          description: "Public session not found or not a website embed session, or the agent takes no voice sessions: it has never been published, voice is off, or no vendor agent is bound"
           content:
             application/json:
               schema:

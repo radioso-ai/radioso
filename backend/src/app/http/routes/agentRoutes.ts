@@ -307,7 +307,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       // leaves readiness out rather than failing the agent's page.
       const voiceCallReadiness = isMachinePrincipal(authPrincipal)
         ? null
-        : await dependencies.voiceSessionAvailability.readiness({ workspaceId, voice: agent.voice }).catch((error: unknown) => {
+        : await dependencies.voiceSessionAvailability.readiness({ workspaceId, agentId: agent.id, voice: agent.voice }).catch((error: unknown) => {
           dependencies.logger.warn(
             { workspaceId, agentId: parsed.agentId, errorClass: errorClassOf(error) },
             "Voice call readiness could not be read",

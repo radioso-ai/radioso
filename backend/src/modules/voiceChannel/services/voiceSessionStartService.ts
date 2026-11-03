@@ -3,12 +3,13 @@ import type { VoiceVendor } from "../../../shared/domain/voiceVendor.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import type { AgentVoiceSettings } from "../../agents/public.js";
+import type { AgentPublicationReader, AgentVoiceSettings } from "../../agents/public.js";
 import {
   VoiceVendorRequestError,
   type VoiceCallReadiness,
   type VoiceCallReadinessGap,
   type VoiceGreetingSource,
+  type VoiceReadinessSubject,
   type VoiceRuntimeConnectionStore,
   type VoiceSessionAvailabilityPort,
   type VoiceSessionLanguageSource,
@@ -45,7 +46,7 @@ interface VoiceRuntimeProfileSource {
   } | null>;
 }
 
-type VoiceSessionUnavailableOutcome = "agent_not_found" | "voice_off" | "no_runtime";
+type VoiceSessionUnavailableOutcome = "agent_not_found" | "not_published" | "voice_off" | "no_runtime";
 
 type VoiceSessionFailedOutcome =
   | "credential_missing"
@@ -58,6 +59,8 @@ type VoiceSessionStartOutcome = "started" | VoiceSessionUnavailableOutcome | Voi
 
 interface VoiceSessionStartServiceDependencies {
   agents: VoiceRuntimeProfileSource;
+  /** Whether the agent has a published release: every turn runs on it, so an agent with none takes no calls. */
+  publication: AgentPublicationReader;
   credentials: VoiceVendorCredentialReader;
   starters: Readonly<Record<VoiceVendor, VoiceSessionStarter>>;
   starts: VoiceSessionStartRegistry;
@@ -82,7 +85,11 @@ const vendorErrorFields = (error: unknown) => ({
   ...(error instanceof VoiceVendorRequestError && error.vendorStatus !== undefined ? { vendorStatus: error.vendorStatus } : {}),
 });
 
-const READINESS_GAP_OF_OUTCOME = { voice_off: "voice_channel", no_runtime: "runtime" } as const satisfies Record<string, VoiceCallReadinessGap>;
+const READINESS_GAP_OF_OUTCOME = {
+  not_published: "publication",
+  voice_off: "voice_channel",
+  no_runtime: "runtime",
+} as const satisfies Record<string, VoiceCallReadinessGap>;
 const READINESS_GAP_OF_PRESENCE = { missing: "vendor_key", unreadable: "encryption" } as const satisfies Record<string, VoiceCallReadinessGap>;
 
 const FAILED_OUTCOME_OF_READING: Record<Exclude<VoiceVendorCredentialReading["kind"], "present">, VoiceSessionFailedOutcome> = {
@@ -90,12 +97,16 @@ const FAILED_OUTCOME_OF_READING: Record<Exclude<VoiceVendorCredentialReading["ki
   unreadable: "credential_unreadable",
 };
 
-/** The runtime an agent takes sessions on, or why it takes none. Start and availability share it. */
-const sessionRuntimeOf = <Runtime>(voice: { enabled: boolean; runtime: Runtime | null }):
+/**
+ * The runtime an agent takes sessions on, or why it takes none, first reason first: an agent nobody
+ * published, then voice off, then no vendor agent bound. Start and availability share it.
+ */
+const sessionRuntimeOf = <Runtime>(agent: { published: boolean; voice: { enabled: boolean; runtime: Runtime | null } }):
   | { kind: "bound"; runtime: Runtime }
-  | { kind: "unavailable"; outcome: "voice_off" | "no_runtime" } => {
-  if (!voice.enabled) return { kind: "unavailable", outcome: "voice_off" };
-  return voice.runtime ? { kind: "bound", runtime: voice.runtime } : { kind: "unavailable", outcome: "no_runtime" };
+  | { kind: "unavailable"; outcome: keyof typeof READINESS_GAP_OF_OUTCOME } => {
+  if (!agent.published) return { kind: "unavailable", outcome: "not_published" };
+  if (!agent.voice.enabled) return { kind: "unavailable", outcome: "voice_off" };
+  return agent.voice.runtime ? { kind: "bound", runtime: agent.voice.runtime } : { kind: "unavailable", outcome: "no_runtime" };
 };
 
 /**
@@ -115,8 +126,10 @@ const sessionRuntimeOf = <Runtime>(voice: { enabled: boolean; runtime: Runtime |
  * start in the vendor agent's own language.
  *
  * It also says whether a page should offer sessions at all, by the same gate a start passes plus
- * the key's presence. A stored key that cannot be decrypted still counts as present: the start
- * then fails as `credential_unreadable`, which the operator can see and fix.
+ * the key's presence. An agent that has never been published takes no sessions: its first turn
+ * would be refused, so a start gives the page no URL for a call that could say nothing. A stored
+ * key that cannot be decrypted still counts as present: the start then fails as
+ * `credential_unreadable`, which the operator can see and fix.
  */
 export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSessionAvailabilityPort {
   private readonly preparationWaitMs: number;
@@ -125,14 +138,15 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     this.preparationWaitMs = dependencies.preparationWaitMs ?? VOICE_BEHAVIOR.sessionPreparationWaitMs;
   }
 
-  async readiness(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<VoiceCallReadiness> {
-    const binding = sessionRuntimeOf(input.voice);
+  async readiness(input: VoiceReadinessSubject): Promise<VoiceCallReadiness> {
+    const published = await this.dependencies.publication.isPublished({ workspaceId: input.workspaceId, agentId: input.agentId });
+    const binding = sessionRuntimeOf({ published, voice: input.voice });
     if (binding.kind === "unavailable") return { ready: false, missing: READINESS_GAP_OF_OUTCOME[binding.outcome] };
     const presence = await this.dependencies.credentials.presence({ workspaceId: input.workspaceId, vendor: binding.runtime.vendor });
     return presence === "stored" ? { ready: true, missing: null } : { ready: false, missing: READINESS_GAP_OF_PRESENCE[presence] };
   }
 
-  async isAvailable(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<boolean> {
+  async isAvailable(input: VoiceReadinessSubject): Promise<boolean> {
     try {
       return (await this.readiness(input)).ready;
     } catch (error) {
@@ -145,9 +159,12 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
 
   async start(input: { workspaceId: string; agentId: string; visitor: VoiceSessionVisitor; locale?: string }): Promise<VoiceSessionStartResult> {
     const { workspaceId, agentId } = input;
-    const profile = await this.dependencies.agents.findVoiceProfile({ workspaceId, agentId });
+    const [profile, published] = await Promise.all([
+      this.dependencies.agents.findVoiceProfile({ workspaceId, agentId }),
+      this.dependencies.publication.isPublished({ workspaceId, agentId }),
+    ]);
     if (!profile) return this.unavailable("agent_not_found");
-    const binding = sessionRuntimeOf(profile.voice);
+    const binding = sessionRuntimeOf({ published, voice: profile.voice });
     if (binding.kind === "unavailable") return this.unavailable(binding.outcome);
     const { runtime } = binding;
     const { vendor } = runtime;

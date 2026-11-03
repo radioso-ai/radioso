@@ -15,6 +15,7 @@ import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/
 import { createClientId } from '@/lib/client-id'
 import { contrastRatio, mixHex, mixHexRgba, pickForeground, relativeLuminance } from '@/lib/color'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
+import { publicChatUnavailableReasonOf, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import { isHumanAuthoredSource } from '@/lib/reply-attribution'
 
 const MIN_LEGIBLE_CONTRAST = 3
@@ -131,7 +132,8 @@ interface AnonymousChatContextValue {
   isLoading: boolean
   isHydrating: boolean
   isLoadingOlderMessages: boolean
-  isUnavailable: boolean
+  /** Why the chat cannot go on (the link is gone, or the agent is not published yet); null while it can. */
+  unavailable: PublicChatUnavailableReason | null
   hasOlderMessages: boolean
   rateLimitError: string | null
   retryAfterSeconds: number | null
@@ -361,7 +363,7 @@ export function AnonymousChatProvider({
   const [isLoading, setIsLoading] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false)
-  const [isUnavailable, setIsUnavailable] = useState(false)
+  const [unavailable, setUnavailable] = useState<PublicChatUnavailableReason | null>(null)
   const [hasOlderMessages, setHasOlderMessages] = useState(false)
   const [nextMessageCursor, setNextMessageCursor] = useState<string | null>(null)
   const [rateLimitError, setRateLimitError] = useState<string | null>(null)
@@ -535,7 +537,7 @@ export function AnonymousChatProvider({
     const runId = ++hydrationRunIdRef.current
     pendingGreetingRef.current = null
     setIsHydrating(true)
-    setIsUnavailable(false)
+    setUnavailable(null)
     setMessages([])
     setWorkspaceName(null)
     setAssistantAvatarUrl(null)
@@ -589,10 +591,7 @@ export function AnonymousChatProvider({
       setNextMessageCursor(detail.nextCursor)
       tailCursorRef.current = detail.tailCursor
     } catch (error) {
-      const structuredError = getErrorResponse(error)
-      if (structuredError?.code === 'not_found') {
-        setIsUnavailable(true)
-      }
+      setUnavailable(publicChatUnavailableReasonOf(getErrorResponse(error)?.code))
     } finally {
       setIsHydrating(false)
     }
@@ -657,7 +656,7 @@ export function AnonymousChatProvider({
   }, [appendHumanReplies, withPublicSessionRetry])
 
   useEffect(() => {
-    if (!conversationId || isHydrating || isUnavailable) {
+    if (!conversationId || isHydrating || unavailable) {
       tailCursorRef.current = null
       return
     }
@@ -673,14 +672,14 @@ export function AnonymousChatProvider({
         return
       }
       if (getErrorResponse(error)?.code === 'not_found') {
-        setIsUnavailable(true)
+        setUnavailable('link_inactive')
         return
       }
       reconnectTimer = window.setTimeout(connect, PUBLIC_CHAT_EVENT_RECONNECT_DELAY_MS)
     }
     const handleRefreshFailure = (error: unknown) => {
       if (!cancelled && getErrorResponse(error)?.code === 'not_found') {
-        setIsUnavailable(true)
+        setUnavailable('link_inactive')
       }
     }
 
@@ -751,7 +750,7 @@ export function AnonymousChatProvider({
   }, [
     conversationId,
     isHydrating,
-    isUnavailable,
+    unavailable,
     refreshConversationTail,
     syncConversationSnapshot,
     withPublicSessionRetry,
@@ -854,7 +853,7 @@ export function AnonymousChatProvider({
   const sendMessage = useCallback(
     async (content: string, inputMetadata?: ChatUserInputMetadata) => {
       const query = content.trim()
-      if (!query || isLoading || isHydrating || isUnavailable || sendInFlightRef.current) return
+      if (!query || isLoading || isHydrating || unavailable || sendInFlightRef.current) return
       sendInFlightRef.current = true
 
       try {
@@ -1137,7 +1136,8 @@ export function AnonymousChatProvider({
             return
           }
 
-          if (structuredError?.code === 'not_found') {
+          const unavailableReason = publicChatUnavailableReasonOf(structuredError?.code)
+          if (structuredError && unavailableReason) {
             onAnalyticsEvent?.({
               event: 'chat.failed',
               subjectType: resolvedConversationId ? 'conversation' : undefined,
@@ -1148,7 +1148,7 @@ export function AnonymousChatProvider({
                 rateLimited: false,
               },
             })
-            setIsUnavailable(true)
+            setUnavailable(unavailableReason)
             setMessages(previousMessages)
             setIsLoading(false)
             return
@@ -1190,7 +1190,7 @@ export function AnonymousChatProvider({
         sendInFlightRef.current = false
       }
     },
-    [applyCompletion, bootstrapGreetingId, clientContextCapabilities, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, resolveSignedIdentity, withPublicSessionRetry],
+    [applyCompletion, bootstrapGreetingId, clientContextCapabilities, conversationId, isHydrating, isLoading, unavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, resolveSignedIdentity, withPublicSessionRetry],
   )
 
   const loadOlderMessages = useCallback(async () => {
@@ -1260,7 +1260,7 @@ export function AnonymousChatProvider({
       isLoading,
       isHydrating,
       isLoadingOlderMessages,
-      isUnavailable,
+      unavailable,
       hasOlderMessages,
       rateLimitError,
       retryAfterSeconds,
@@ -1286,7 +1286,7 @@ export function AnonymousChatProvider({
       isLoading,
       isHydrating,
       isLoadingOlderMessages,
-      isUnavailable,
+      unavailable,
       hasOlderMessages,
       rateLimitError,
       retryAfterSeconds,

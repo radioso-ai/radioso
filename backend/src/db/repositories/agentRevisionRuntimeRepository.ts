@@ -1,5 +1,6 @@
 import {
   parseAgentRevisionSnapshot,
+  type AgentPublicationReader,
   type AgentRevision,
   type AgentRevisionRuntimeReaderPort,
 } from "../../modules/agents/public.js";
@@ -24,17 +25,28 @@ const mapRevision = (row: {
 });
 
 /** Postgres adapter for the narrow immutable runtime reader. */
-export class AgentRevisionRuntimeRepository implements AgentRevisionRuntimeReaderPort {
+export class AgentRevisionRuntimeRepository implements AgentRevisionRuntimeReaderPort, AgentPublicationReader {
   constructor(private readonly db: Db) {}
 
-  async findCurrentPublished(input: { workspaceId: string; agentId: string }): Promise<AgentRevision | null> {
-    const row = await this.db
+  /** The agent's current published release, joined the one way both reads below take it. */
+  private currentRelease(input: { workspaceId: string; agentId: string }) {
+    return this.db
       .selectFrom("agents as a")
       .innerJoin("agent_revisions as r", (join) =>
         join.onRef("r.id", "=", "a.published_revision_id")
           .onRef("r.agent_id", "=", "a.id")
           .onRef("r.workspace_id", "=", "a.workspace_id"),
       )
+      .where("a.workspace_id", "=", input.workspaceId)
+      .where("a.id", "=", input.agentId);
+  }
+
+  async isPublished(input: { workspaceId: string; agentId: string }): Promise<boolean> {
+    return (await this.currentRelease(input).select("r.id").executeTakeFirst()) !== undefined;
+  }
+
+  async findCurrentPublished(input: { workspaceId: string; agentId: string }): Promise<AgentRevision | null> {
+    const row = await this.currentRelease(input)
       .select([
         "r.id as id",
         "r.snapshot as snapshot",
@@ -44,8 +56,6 @@ export class AgentRevisionRuntimeRepository implements AgentRevisionRuntimeReade
         "r.published_at as published_at",
         "r.published_version as published_version",
       ])
-      .where("a.workspace_id", "=", input.workspaceId)
-      .where("a.id", "=", input.agentId)
       .executeTakeFirst();
     return row ? mapRevision(row) : null;
   }

@@ -8,8 +8,7 @@ import { agentsApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { providerDisplayName } from '@/lib/api-llm-providers'
 import type { VoiceCallReadiness } from '@/lib/api-types'
-import { voiceCallReadinessHint } from '@/lib/voice-call-readiness'
-import { AGENT_VOICE_SAVED_EVENT } from '@/lib/voice-settings-form'
+import { onVoiceCallReadinessChange, voiceCallReadinessHint } from '@/lib/voice-call-readiness'
 
 /** `readiness` is the backend's; absent, the page treats voice as not ready and names every piece. */
 type Loaded = { offered: boolean; readiness: VoiceCallReadiness | null; vendorName: string }
@@ -18,8 +17,8 @@ type Loaded = { offered: boolean; readiness: VoiceCallReadiness | null; vendorNa
  * The website widget's switch for voice calls: on, the embed shows Talk while the agent's voice is
  * ready. It saves on its own, so it never rides the widget's debounced settings save. It can be
  * switched on only once voice is ready, and always switched off. Readiness is read again when the
- * Voice card saves this agent and when the window regains focus, since the missing piece is often
- * set up elsewhere (the vendor key lives under Settings → Providers).
+ * Voice card saves this agent, when the agent is published, and when the window regains focus,
+ * since the missing piece is often set up elsewhere (the vendor key lives under Settings → Providers).
  */
 export function WebsiteVoiceCallsSetting({ agentId }: { agentId: string }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null)
@@ -47,16 +46,11 @@ export function WebsiteVoiceCallsSetting({ agentId }: { agentId: string }) {
         firstLoad = false
       })
     }
-    const refreshForAgent = (event: Event) => {
-      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId === agentId) load()
-    }
     load()
-    window.addEventListener('focus', load)
-    window.addEventListener(AGENT_VOICE_SAVED_EVENT, refreshForAgent)
+    const stopReading = onVoiceCallReadinessChange(agentId, load)
     return () => {
       active = false
-      window.removeEventListener('focus', load)
-      window.removeEventListener(AGENT_VOICE_SAVED_EVENT, refreshForAgent)
+      stopReading()
     }
   }, [agentId])
 

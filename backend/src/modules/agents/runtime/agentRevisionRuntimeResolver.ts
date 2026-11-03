@@ -1,4 +1,4 @@
-import { notFound } from "../../../shared/domain/errors.js";
+import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { AgentRecord } from "../public.js";
 import type { AgentRevision, AgentRevisionSnapshot } from "../agentRevision.js";
 import type { AgentSkillSpine } from "../../agentSkills/public.js";
@@ -11,6 +11,24 @@ export interface AgentRevisionRuntimeReaderPort {
   findCurrentPublished(input: { workspaceId: string; agentId: string }): Promise<AgentRevision | null>;
   findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null>;
 }
+
+/**
+ * Whether an agent has a published release, which every new conversation runs on. An agent that
+ * has never been published can answer nothing, so a channel that offers it to a visitor asks
+ * first, rather than learning it from the first turn.
+ */
+export interface AgentPublicationReader {
+  isPublished(input: { workspaceId: string; agentId: string }): Promise<boolean>;
+}
+
+/**
+ * The error code of a turn, or a public chat session, refused because the agent has never been
+ * published: a 404 like a gone link, with its own code, so a channel can tell the visitor the
+ * agent is not available yet rather than that the link is dead.
+ */
+const AGENT_NOT_PUBLISHED_ERROR_CODE = "agent_not_published";
+
+export const agentNotPublished = (): AppError => new AppError(404, AGENT_NOT_PUBLISHED_ERROR_CODE, "Agent is not published");
 
 interface ResolvedAgentRevision {
   revisionId: string;
@@ -52,7 +70,7 @@ export class AgentRevisionRuntimeResolver {
       agentId: input.agent.id,
     });
     if (!revision) {
-      throw notFound("Agent is not published");
+      throw agentNotPublished();
     }
     return {
       revisionId: revision.id,

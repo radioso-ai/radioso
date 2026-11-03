@@ -511,6 +511,26 @@ describe('backend proxy route', () => {
     expect(response.headers.get('x-upstream-private')).toBeNull()
   })
 
+  it.each([
+    ['lets the page read an embed launch refused because the agent is not published, so the widget can say why', 'agent_not_published', 'https://embed.example.com'],
+    ['keeps every other refused embed launch unreadable to the page', 'forbidden', null],
+  ])('%s', async (_case, code, allowedOrigin) => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const refusal = { error: { code, message: 'Refused' } }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(refusal), { status: 404, headers: { 'Content-Type': 'application/json' } })))
+
+    const { POST } = await import('@/app/api/embed/session/[token]/route')
+    const response = await POST(new Request('https://frontend.example.com/api/embed/session/token-1', {
+      method: 'POST',
+      headers: { Origin: 'https://embed.example.com', 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }), { params: Promise.resolve({ token: 'token-1' }) })
+
+    expect(response.status).toBe(404)
+    expect(response.headers.get('access-control-allow-origin')).toBe(allowedOrigin)
+    expect(await response.json()).toEqual(refusal)
+  })
+
   it('answers the preflight for a page starting a voice session with its public session header', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 

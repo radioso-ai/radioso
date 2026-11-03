@@ -100,7 +100,7 @@ import {
   compareSelectionRepeatsRevision,
   describeCandidateRefusal,
 } from "@/lib/agent-revision-testable-revisions";
-import { isAgentDraftDirty, saveAgentDraft } from "@/lib/agent-draft-save-port";
+import { AGENT_DRAFT_SAVED_EVENT, isAgentDraftDirty, saveAgentDraft } from "@/lib/agent-draft-save-port";
 import { DEFAULT_WEBSITE_EMBED_COPY } from "@/lib/embed-widget";
 import {
   agentRevisionTestChatSessionKey,
@@ -606,7 +606,7 @@ export function AgentRevisionTestChat({
       if (loadRequestGeneration.current === requestGeneration) {
         // Do not clear `state` here. This catch fires for the first, explicit load same as
         // for a background refresh the operator never asked for (stale-draft check on mount,
-        // the `radioso:agent-draft-saved` listener) — and this component remounts fresh per
+        // the `AGENT_DRAFT_SAVED_EVENT` listener) — and this component remounts fresh per
         // agent (see the `key={selectedAgentId}` at the call site), so `state` starts at null
         // and only this call's own success below ever populates it. Leaving it alone therefore
         // already does the right thing either way: a first-load failure stays failed closed
@@ -696,9 +696,9 @@ export function AgentRevisionTestChat({
       if (detail?.agentId === agentId && !savingDraftForSend.current)
         refreshForSavedDraft();
     };
-    window.addEventListener("radioso:agent-draft-saved", onDraftSaved);
+    window.addEventListener(AGENT_DRAFT_SAVED_EVENT, onDraftSaved);
     return () =>
-      window.removeEventListener("radioso:agent-draft-saved", onDraftSaved);
+      window.removeEventListener(AGENT_DRAFT_SAVED_EVENT, onDraftSaved);
   }, [agentId, refreshForSavedDraft]);
   useEffect(() => {
     Object.entries(threadScrollContainers.current).forEach(([key, container]) => {

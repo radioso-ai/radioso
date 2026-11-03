@@ -47,7 +47,7 @@ import type { EmailVerificationService } from "../../modules/auth/services/email
 import type { AuthFunnelService } from "../../modules/auth/services/authFunnelService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
-import type { AgentRevisionService } from "../../modules/agents/public.js";
+import type { AgentPublicationReader, AgentRevisionService } from "../../modules/agents/public.js";
 import type { AccessGrantService } from "../../modules/accessGrants/services/accessGrantService.js";
 import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import type { AuditService } from "../../modules/audit/composition.js";
@@ -415,6 +415,8 @@ export interface AppDependencies {
   notificationRecipientSuppressions: NotificationSuppressionStore;
   agentService: AgentService;
   agentRevisionService: AgentRevisionService;
+  /** Whether an agent has a published release; a public chat session for one that has none is refused. */
+  agentPublication: AgentPublicationReader;
   agentBundleExportService: AgentBundleExportService;
   agentBundleImportService: AgentBundleImportService;
   agentBundleImportCleanupWorker: AgentBundleImportCleanupWorker;

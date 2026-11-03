@@ -496,6 +496,33 @@ describeRedisIntegration("Redis abuse-control failover and semantic parity", () 
     }
   });
 
+  it("still weighs a refused subject once its block ends, in both stores", async () => {
+    const postgresService = new AbuseControlService(postgres);
+    const redis = new RedisAbuseControlRepository({ redisUrl: redisUrl!, commandTimeoutMs: 1_000 });
+    const redisService = new AbuseControlService(redis);
+    const policy = { scope: `${scope}.after-block`, subjectKey: "same-subject", limit: 2, windowMs: 10_000, blockMs: 50 };
+    const outcome = (service: AbuseControlService): Promise<string> =>
+      service.enforce({ ...policy, now: new Date() }).then(
+        () => "admitted",
+        (error: unknown) => {
+          if ((error as { statusCode?: number }).statusCode === 429) return "refused";
+          throw error;
+        },
+      );
+    try {
+      for (const service of [postgresService, redisService]) {
+        expect([await outcome(service), await outcome(service), await outcome(service)])
+          .toEqual(["admitted", "admitted", "refused"]);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await postgres.deleteExpired(new Date());
+
+      expect([await outcome(postgresService), await outcome(redisService)]).toEqual(["refused", "refused"]);
+    } finally {
+      await redis.close();
+    }
+  });
+
   it("returns equivalent admission decisions for the same single and batch vectors", async () => {
     const postgresService = new AbuseControlService(postgres);
     const redis = new RedisAbuseControlRepository({ redisUrl: redisUrl!, commandTimeoutMs: 1_000 });

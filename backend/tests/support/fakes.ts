@@ -94,13 +94,14 @@ import type {
   BootstrapGreetingCacheRecord,
   BootstrapGreetingCacheRepositoryPort,
 } from "../../src/db/repositories/bootstrapGreetingCacheRepository.js";
-import type {
-  AbuseControlBatchConsumption,
-  AbuseControlConsumption,
-  AbuseControlConsumptionInput,
-  AbuseControlDecision,
-  AbuseControlEntry,
-  AbuseControlRepositoryPort,
+import {
+  ABUSE_CONTROL_ENTRY_RETENTION_MS,
+  type AbuseControlBatchConsumption,
+  type AbuseControlConsumption,
+  type AbuseControlConsumptionInput,
+  type AbuseControlDecision,
+  type AbuseControlEntry,
+  type AbuseControlRepositoryPort,
 } from "../../src/modules/security/contracts/abuseControl.js";
 import type {
   WorkspaceCredentialProvider,
@@ -2044,13 +2045,11 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
     return { entries, rejected: null };
   }
 
+  /** Mirrors the Postgres sweep: an entry goes once its block has ended and its retention has run out. */
   async deleteExpired(now: Date): Promise<void> {
     for (const [key, entry] of this.items.entries()) {
-      if (entry.blockedUntil && entry.blockedUntil <= now) {
-        this.items.delete(key);
-        continue;
-      }
-      if (!entry.blockedUntil && now.getTime() - entry.windowStartedAt.getTime() > 24 * 60 * 60 * 1000) {
+      const blockEnded = !entry.blockedUntil || entry.blockedUntil <= now;
+      if (blockEnded && now.getTime() - entry.windowStartedAt.getTime() >= ABUSE_CONTROL_ENTRY_RETENTION_MS) {
         this.items.delete(key);
       }
     }

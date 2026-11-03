@@ -187,13 +187,15 @@ Admission weighs two windows that sit end to end. The window that just expired s
 
 The attempt that trips a block counts too, though attempts made during the block do not. So the wait a `429` gives is the longer of the block period and the time the weighted count takes to fall far enough to admit one more attempt. Three starts at 16:35:00 and a refused fourth at 16:35:10 are blocked until 16:45:10, but those four attempts keep the count above the limit until just after 16:50:00, and that is the wait the `429` states. A client that retries when it is told to is admitted.
 
+Both stores keep a subject's entry for at least a day after its window starts, and for as long as it is blocked, so its attempts keep counting once a block ends. A window keeps weighing for two windows after it starts, so the day covers every window up to 12 hours. Every built-in window is an hour or shorter; a `*_RATE_LIMIT_WINDOW_MS` setting above 12 hours lets an entry go while it would still count.
+
 Responses carry the budget as headers, so a client can pace itself instead of discovering the limit by being refused:
 
 | Header | On | Meaning |
 |---|---|---|
 | `RateLimit-Limit` | every rate-limited response | attempts the scope allows per window |
 | `RateLimit-Remaining` | every rate-limited response | attempts left before the next one is refused |
-| `RateLimit-Reset` | every rate-limited response | seconds until the window rolls; on a `429`, the same wait as `Retry-After` |
+| `RateLimit-Reset` | every rate-limited response | seconds until the window rolls while attempts remain; once `RateLimit-Remaining` is `0`, seconds until one more attempt is admitted; on a `429`, the same wait as `Retry-After` |
 | `Retry-After` | `429` only | seconds until a retry is admitted |
 
 A client should honour `Retry-After` on a `429` and back off before `RateLimit-Remaining` reaches zero. The same wait is in the body as `error.details.retryAfterSeconds`, alongside the limit, what remains, and the reset instant, so a client that reads the JSON needs nothing else.

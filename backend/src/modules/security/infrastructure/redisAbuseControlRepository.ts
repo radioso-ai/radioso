@@ -2,15 +2,15 @@ import { createHash } from "node:crypto";
 
 import { createClient, type RedisClientType } from "redis";
 
-import type {
-  AbuseControlBatchConsumption,
-  AbuseControlConsumption,
-  AbuseControlConsumptionInput,
-  AbuseControlEntry,
-  AbuseControlRepositoryPort,
+import {
+  ABUSE_CONTROL_ENTRY_RETENTION_MS,
+  type AbuseControlBatchConsumption,
+  type AbuseControlConsumption,
+  type AbuseControlConsumptionInput,
+  type AbuseControlEntry,
+  type AbuseControlRepositoryPort,
 } from "../contracts/abuseControl.js";
 
-const ENTRY_TTL_MS = 24 * 60 * 60 * 1_000;
 const KEY_PREFIX = "radioso:abuse-control:v1";
 
 const findScript = String.raw`
@@ -288,7 +288,7 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
       String(input.attemptCount),
       String(input.windowStartedAt.getTime()),
       String(input.blockedUntil?.getTime() ?? 0),
-      String(ENTRY_TTL_MS),
+      String(ABUSE_CONTROL_ENTRY_RETENTION_MS),
     ]);
     return mapEntry(input.scope, input.subjectKey, parseStoredEntryReply(reply));
   }
@@ -336,7 +336,7 @@ export class RedisAbuseControlRepository implements AbuseControlRepositoryPort {
         String(input.blockMs),
       );
     }
-    arguments_.push(String(ENTRY_TTL_MS));
+    arguments_.push(String(ABUSE_CONTROL_ENTRY_RETENTION_MS));
     return parseConsumeReply(await this.eval(
       consumeScript,
       inputs.map((input) => entryKey(input.scope, input.subjectKey)),

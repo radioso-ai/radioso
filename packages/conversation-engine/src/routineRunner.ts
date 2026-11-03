@@ -23,14 +23,20 @@ import type {
   RoutineStepReask,
   RoutineStepReplyInput,
   RoutineTraceRejectedSlot,
-  RoutineTraceSlotValue,
   RoutineTraceStepEntry,
   RoutineTransition,
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { REDACTED_VALUE, redactSensitiveValues } from "@radioso/conversation-contract";
+import { redactSensitiveValues } from "@radioso/conversation-contract";
 
+import {
+  foldStepEntry,
+  runSlotKeyFields,
+  slotKeyChangesFor,
+  slotValuesTraceFields,
+  startStepSlotKeyFields, stepSlotKeyFields,
+} from "./routineTraceSlots.js";
 import {
   collectedSlotsForStep,
   isSlotCollectionStepSatisfied,
@@ -252,24 +258,6 @@ const reaskFor = (
 };
 
 /**
- * One trace entry for a step recorded twice in a turn: once when the turn started on it, again
- * when the walk that follows reached it. The walk's outcome is what happened to the step, so it
- * replaces the start's label, except a render: the walk rendering the step the turn stayed on
- * keeps the start's label, a re-ask or the routine's first ask (#1450).
- */
-const foldStepEntry = (start: RoutineTraceStepEntry, walked: RoutineTraceStepEntry): RoutineTraceStepEntry => {
-  const capturedSlotKeys = [...new Set([...(start.capturedSlotKeys ?? []), ...(walked.capturedSlotKeys ?? [])])];
-  const rejectedSlots = [...(start.rejectedSlots ?? []), ...(walked.rejectedSlots ?? [])];
-  return {
-    ...start,
-    ...walked,
-    event: walked.event === "rendered" ? start.event : walked.event,
-    ...(capturedSlotKeys.length > 0 ? { capturedSlotKeys } : {}),
-    ...(rejectedSlots.length > 0 ? { rejectedSlots } : {}),
-  };
-};
-
-/**
  * Consecutive no-progress re-asks of one step before the reply is told to ask differently
  * (#1376).
  */
@@ -384,62 +372,6 @@ const declaredSlotVariables = (
         .map((key) => [key, variables[key]]),
     ),
   );
-
-/** Per-value character bound for a traced slot value (including the ellipsis), matching the host's output-bounding magnitude. */
-const MAX_TRACE_SLOT_VALUE_CHARS = 500;
-
-/** Filled-slot count bound for one turn's traced slot values. */
-const MAX_TRACE_SLOT_VALUES = 50;
-
-/** Narrows a captured slot value to the scalar shape a trace can carry, and caps its length. */
-const traceableSlotValue = (value: unknown): { value: string | number | boolean; truncated?: boolean } => {
-  const scalar = typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-    ? value
-    : JSON.stringify(value) ?? String(value);
-  if (typeof scalar === "string" && scalar.length > MAX_TRACE_SLOT_VALUE_CHARS) {
-    // The ellipsis counts toward the bound, so the kept slice is one character short of it.
-    return { value: `${scalar.slice(0, MAX_TRACE_SLOT_VALUE_CHARS - 1)}…`, truncated: true };
-  }
-  return { value: scalar };
-};
-
-/**
- * Every filled declared slot's value after this turn, self-described by its declared
- * type, capped to `MAX_TRACE_SLOT_VALUES` entries with each value capped to
- * `MAX_TRACE_SLOT_VALUE_CHARS`. Called only when the runner's `includeSlotValues`
- * construction option is set — this is the one place the trace carries slot *values*
- * rather than just keys, and it never runs otherwise.
- */
-const declaredSlotTraceValues = (
-  routine: Routine,
-  variables: Record<string, unknown>,
-): { slotValues: RoutineTraceSlotValue[]; omittedSlotCount: number } => {
-  const filled = (routine.slots ?? []).filter((slot) => hasVariable(variables, slot.key));
-  const kept = filled.slice(0, MAX_TRACE_SLOT_VALUES);
-  return {
-    slotValues: kept.map((slot) => {
-      if (slot.sensitivity === "sensitive") {
-        return { key: slot.key, type: slot.type, value: REDACTED_VALUE };
-      }
-      const { value, truncated } = traceableSlotValue(variables[slot.key]);
-      return { key: slot.key, type: slot.type, value, ...(truncated ? { truncated: true } : {}) };
-    }),
-    omittedSlotCount: filled.length - kept.length,
-  };
-};
-
-/** The `slotValues`/`omittedSlotCount` fields to spread onto a trace, present only when requested. */
-const slotValuesTraceFields = (
-  routine: Routine,
-  variables: Record<string, unknown>,
-  includeSlotValues: boolean | undefined,
-): Pick<RoutineRunTrace, "slotValues" | "omittedSlotCount"> => {
-  if (!includeSlotValues) {
-    return {};
-  }
-  const { slotValues, omittedSlotCount } = declaredSlotTraceValues(routine, variables);
-  return { slotValues, ...(omittedSlotCount > 0 ? { omittedSlotCount } : {}) };
-};
 
 /**
  * Runner-local gate on top of the shared `isSlotCollectionStepSatisfied` rule: only a
@@ -688,17 +620,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // Slot KEYS only — never the captured values (which may be PII).
     const declaredSlotKeys = new Set((routine.slots ?? []).map((slot) => slot.key));
     const traceSteps: RoutineTraceStepEntry[] = [];
-    const capturedKeysFrom = (
-      before: Record<string, unknown>,
-      decision?: { variables?: Record<string, unknown> },
-    ): string[] => {
-      if (!decision?.variables) {
-        return [];
-      }
-      return Object.keys(decision.variables).filter(
-        (key) => !hasVariable(before, key) && (declaredSlotKeys.size === 0 || declaredSlotKeys.has(key)),
-      );
-    };
+    const slotKeyChanges = (before: Record<string, unknown>, decision?: { variables?: Record<string, unknown> }) =>
+      slotKeyChangesFor(declaredSlotKeys, before, decision);
     // Set by `selectNext` each call: whether it consulted the LLM selector (vs taking a
     // default/structured-guard edge), and what the selector reported its model returned.
     // Read immediately after each awaited call.
@@ -1002,13 +925,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // routine's first turn the step read the opening message and was never asked, so
       // staying on it is its first ask, not a re-ask (#1450).
       {
-        const captured = capturedKeysFrom(state.variables, decision);
         const stayed = step.id === currentStepId;
         startEntry = {
           stepId: currentStep.id,
           kind: currentStep.kind,
           event: stayed ? (input.activationTurn ? "rendered" : "reasked") : "advanced",
-          ...(captured.length > 0 ? { capturedSlotKeys: captured } : {}),
+          ...startStepSlotKeyFields(slotKeyChanges(state.variables, decision), input.activationTurn),
           ...(tracedRejected.length > 0 ? { rejectedSlots: tracedRejected } : {}),
           viaSelector: mainSelectorRan,
           ...(mainSelection ? { selection: mainSelection } : {}),
@@ -1024,6 +946,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
     }
     let stagedContext = turn.stagedContext;
+    // The turn as this walk has staged it: a skill step's output joins the context every
+    // later step this turn dispatches, steers, or replies from.
+    const turnWithStagedContext = (): TurnContext =>
+      stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext };
 
     // Skip slot-collection steps that are already satisfied, so an intake never re-asks
     // for a value the routine already holds. A satisfied step leaves by its structure — a
@@ -1053,10 +979,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (lastSelection) {
         entry.selection = lastSelection;
       }
-      const captured = capturedKeysFrom(before, decision);
-      if (captured.length > 0) {
-        entry.capturedSlotKeys = captured;
-      }
+      Object.assign(entry, stepSlotKeyFields(slotKeyChanges(before, decision)));
       if (lastRejectedSlots.length > 0) {
         entry.rejectedSlots = lastRejectedSlots;
       }
@@ -1239,7 +1162,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
             startStepId: currentStepId,
             landedStepId: currentStep.id,
             terminalKind: "stuck",
-            capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+            ...runSlotKeyFields(traceSteps),
             filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
             ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
             steps: traceSteps,
@@ -1307,7 +1230,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const skillResult: RoutineSkillResult = await this.skillDispatcher.dispatch({
         skillName: step.skillName,
         state: skillStateAtStep,
-        turn: stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext },
+        turn: turnWithStagedContext(),
         ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
         ...(sensitiveKeys.length > 0 ? { sensitiveSlotKeys: sensitiveKeys } : {}),
         stepId: step.id,
@@ -1364,10 +1287,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         if (lastSelection) {
           skillEntry.selection = lastSelection;
         }
-        const capturedAtSkill = capturedKeysFrom(beforeSkill, skillDecision);
-        if (capturedAtSkill.length > 0) {
-          skillEntry.capturedSlotKeys = capturedAtSkill;
-        }
+        Object.assign(skillEntry, stepSlotKeyFields(slotKeyChanges(beforeSkill, skillDecision)));
         if (lastRejectedSlots.length > 0) {
           skillEntry.rejectedSlots = [...(skillEntry.rejectedSlots ?? []), ...lastRejectedSlots];
         }
@@ -1403,21 +1323,22 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       const nextState: RoutineState = { ...stateWithoutReaskCount, path, variables, attempts, status: "suspended" };
       const rendered = stepForReply(step, variables, stagedContext, this.options.contextRenderer);
+      const replyTurn = turnWithStagedContext();
       const baseSteering = projectStep(rendered.step);
       const steering = input.steeringResolver
-        ? await input.steeringResolver.resolve({ step, baseSteering, turn })
+        ? await input.steeringResolver.resolve({ step, baseSteering, turn: replyTurn })
         : baseSteering;
       const reply = this.prepareReply({
         ...rendered,
         steering,
-        turn,
+        turn: replyTurn,
       });
       traceSteps.push({ stepId: step.id, kind: step.kind, event: "suspended" });
       const trace: RoutineRunTrace = {
         routineId: routine.id,
         startStepId: currentStepId,
         landedStepId: step.id,
-        capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+        ...runSlotKeyFields(traceSteps),
         filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
         ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
         steps: traceSteps,
@@ -1454,12 +1375,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // before it reaches the renderer, so "{{slot.phone}}" renders the real value and
     // "{{context.page_context}}" the host's rendering of the visitor's page.
     const rendered = stepForReply(step, variables, stagedContext, this.options.contextRenderer);
-    const turnWithStagedContext: TurnContext = stagedContext === turn.stagedContext
-      ? turn
-      : { ...turn, stagedContext };
+    const replyTurn = turnWithStagedContext();
     const baseSteering = projectStep(rendered.step);
     const steering = input.steeringResolver
-      ? await input.steeringResolver.resolve({ step, baseSteering, turn: turnWithStagedContext })
+      ? await input.steeringResolver.resolve({ step, baseSteering, turn: replyTurn })
       : baseSteering;
 
     // Rendering the chat step the user was answering means their reply did not satisfy
@@ -1476,7 +1395,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     const reply = this.prepareReply({
       ...rendered,
       steering,
-      turn: turnWithStagedContext,
+      turn: replyTurn,
       ...(reask ? { reask } : {}),
     });
 
@@ -1497,7 +1416,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       startStepId: currentStepId,
       landedStepId: step.id,
       ...(terminalKind ? { terminalKind } : {}),
-      capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+      ...runSlotKeyFields(traceSteps),
       filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
       ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
       steps: traceSteps,

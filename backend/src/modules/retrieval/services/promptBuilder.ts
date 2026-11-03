@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import { type Clock, formatPromptDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatPromptDate, systemClock } from "../../../shared/domain/clock.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
@@ -27,6 +27,8 @@ export class PromptBuilder {
     contexts: FinalPromptContext[];
     /** The period the question asks about, when the rewrite resolved one. */
     requestedDateRange?: RequestedDateRange;
+    /** The zone today's date is read in. */
+    timeZone: string;
     settings: {
       responseIdentity?: ResponseIdentity | null;
       customInstruction?: string;
@@ -71,7 +73,7 @@ export class PromptBuilder {
           : "",
         conversation_mode_instruction_block: "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
-        today: formatPromptDateUtc(this.clock()),
+        today: formatPromptDate(this.clock(), input.timeZone),
         // The grounded answer prompt answers or declines inline; it carries only the
         // compact guard-case essentials. The full decline ruleset stays scoped to the
         // dedicated focused-miss path (#863 split-by-turn-type).
@@ -102,8 +104,9 @@ export class PromptBuilder {
   }
 }
 
-// "2026-10-24 (Saturday) to 2026-10-25 (Sunday)", or the one day for a single-day period.
+// "2026-10-24 (Saturday) to 2026-10-25 (Sunday)", or the one day for a single-day period. The
+// range's dates are calendar dates already, so each is read at its own UTC midnight.
 const formatRequestedPeriod = (range: RequestedDateRange): string => {
-  const day = (date: string) => formatPromptDateUtc(new Date(`${date}T00:00:00.000Z`));
+  const day = (date: string) => formatPromptDate(new Date(`${date}T00:00:00.000Z`));
   return range.dateFrom === range.dateTo ? day(range.dateFrom) : `${day(range.dateFrom)} to ${day(range.dateTo)}`;
 };

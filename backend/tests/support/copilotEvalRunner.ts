@@ -28,6 +28,8 @@ import { OperatorCopilotService } from "../../src/modules/operatorCopilot/public
 import { copilotProposalTargetTypes } from "../../src/modules/operatorCopilot/contracts.js";
 import { createPrivacySettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/privacySettingProposalAdapter.js";
 import { PrivacySettingsService } from "../../src/modules/privacy/public.js";
+import { createTimeZoneSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/timeZoneSettingProposalAdapter.js";
+import { TimeZoneSettingsService } from "../../src/modules/settings/public.js";
 import type {
   CopilotProposal,
   CopilotProposalDraft,
@@ -499,6 +501,7 @@ callerKind: "human" as const,
       listLlmModels: async () => [],
       getManagedLlmModels: async () => ({ chat: null, rewrite: null, rerank: null }),
       getPrivacySettings: async () => ({ conversationRetentionDays: null }),
+      getTimeZoneSettings: async () => ({ timeZone: null }),
       getProviderCredentialHealth: async () => ({
         encryptionConfigured: false,
         credentials: [],
@@ -640,7 +643,7 @@ callerKind: "human" as const,
         updatedAt: evalDate(REFERENCE_NOW),
       }),
     },
-    proposalAdapters: [...copilotProposalTargetTypes.filter((targetType) => targetType !== "privacy_setting").map((targetType) => ({
+    proposalAdapters: [...copilotProposalTargetTypes.filter((targetType) => targetType !== "privacy_setting" && targetType !== "time_zone_setting").map((targetType) => ({
       targetType,
       draft: async (_workspaceId: string, _targetRef: unknown, input: unknown) => {
         const intent = typeof input === "string"
@@ -677,6 +680,17 @@ callerKind: "human" as const,
         store: {
           read: async () => ({ accountId: "eval-account", settings: { conversationRetentionDays: null } }),
           write: async () => ({ status: "written" as const, accountId: "eval-account", previous: { conversationRetentionDays: null } }),
+        },
+        audit: { record: async () => undefined },
+      }),
+    }),
+    // The real adapter over a workspace that reads today in UTC, so a drafted zone is validated
+    // against the runtime's zone data the way production drafts it.
+    createTimeZoneSettingCopilotProposalAdapter({
+      timeZoneSettings: new TimeZoneSettingsService({
+        store: {
+          read: async () => ({ accountId: "eval-account", settings: { timeZone: null } }),
+          write: async () => ({ status: "written" as const, accountId: "eval-account", previous: { timeZone: null } }),
         },
         audit: { record: async () => undefined },
       }),

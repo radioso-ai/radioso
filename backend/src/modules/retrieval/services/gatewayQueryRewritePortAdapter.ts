@@ -44,6 +44,7 @@ export class GatewayQueryRewritePortAdapter implements QueryRewritePort {
         query: original,
         contextMessages: [],
         workspaceContext: input.workspaceContext,
+        timeZone: input.timeZone,
         usageContext: { ...resolveUsageContext(input), operation: "query_interpretation" },
       });
       return {

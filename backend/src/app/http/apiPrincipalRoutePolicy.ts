@@ -223,9 +223,9 @@ const declarations: readonly PolicyDeclaration[] = [
   allow("PATCH", "/api/v1/evals/cases/:id", "workspace.retrieval.query"),
   allow("DELETE", "/api/v1/evals/cases/:id", "workspace.retrieval.query"),
 
-  ...["/retrieval-defaults", "/ingestion", "/ingestion/embedding-coverage", "/document-types", "/privacy"]
+  ...["/retrieval-defaults", "/ingestion", "/ingestion/embedding-coverage", "/document-types", "/privacy", "/time-zone"]
     .map((path) => allow("GET", `/api/v1/settings${path}`, "workspace.settings.read")),
-  ...["/ingestion", "/document-types"]
+  ...["/ingestion", "/document-types", "/time-zone"]
     .map((path) => allow("PUT", `/api/v1/settings${path}`, "workspace.settings.manage")),
   // The route also requires workspace.settings.manage; deleting history is the stronger of the two.
   allow("PUT", "/api/v1/settings/privacy", "workspace.history.delete"),

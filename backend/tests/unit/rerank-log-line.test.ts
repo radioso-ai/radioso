@@ -40,8 +40,8 @@ describe("rerank log lines", () => {
     const failing = new RerankService({ rerank: async () => { throw new Error(`provider rejected "${visitorQuery}"`); } }, logger);
     const empty = new RerankService({ rerank: async () => [] }, logger);
 
-    await expect(failing.rerank({ query: visitorQuery, contexts, enabled: true, topK: 1 })).resolves.toMatchObject({ status: "fallback" });
-    await expect(empty.rerank({ query: visitorQuery, contexts, enabled: true, topK: 1 })).resolves.toMatchObject({ status: "fallback" });
+    await expect(failing.rerank({ timeZone: "UTC", query: visitorQuery, contexts, enabled: true, topK: 1 })).resolves.toMatchObject({ status: "fallback" });
+    await expect(empty.rerank({ timeZone: "UTC", query: visitorQuery, contexts, enabled: true, topK: 1 })).resolves.toMatchObject({ status: "fallback" });
 
     expect(raw()).toContain("Rerank request failed");
     expect(raw()).toContain("Rerank returned no valid scores");

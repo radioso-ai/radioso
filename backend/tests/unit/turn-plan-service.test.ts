@@ -971,6 +971,14 @@ describe("TurnPlanService", () => {
     expect(client.complete.mock.calls[0]?.[0].prompt).toContain("Today's date: 2026-10-21 (Wednesday)");
   });
 
+  it("dates the planner request in the turn's zone, so a visitor west of UTC plans from their own today", async () => {
+    const client = { complete: vi.fn(async (_request: { prompt: string }) => ({ text: validPlanJson() })) };
+    await new TurnPlanService(factory(client), { clock: () => new Date("2026-11-03T02:00:00.000Z") })
+      .plan({ ...request(), timeZone: "America/Los_Angeles" });
+
+    expect(client.complete.mock.calls[0]?.[0].prompt).toContain("Today's date: 2026-11-02 (Monday)");
+  });
+
   it("sends standing rules as a reusable system prefix and the visitor's turn as the request", async () => {
     const client = {
       complete: vi.fn(async (_request: {

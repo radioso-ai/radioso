@@ -2337,6 +2337,31 @@ components:
       required:
         - conversationRetentionDays
       additionalProperties: false
+    TimeZoneSettings:
+      type: object
+      properties:
+        timeZone:
+          type:
+            - string
+            - "null"
+          description: "The IANA zone the workspace reads today's date in, such as Europe/Rome, for a turn whose visitor reports no zone of their own: relative dates in a question (today, tomorrow, this weekend) resolve in it. Null, the default, reads today in UTC."
+          example: Europe/Rome
+      required:
+        - timeZone
+    UpdateTimeZoneSettingsRequest:
+      type: object
+      properties:
+        timeZone:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 64
+          description: An IANA zone name, stored as given in the case the server's zone data spells it, or null to read today in UTC.
+          example: America/Los_Angeles
+      required:
+        - timeZone
+      additionalProperties: false
     Agent:
       type: object
       properties:
@@ -3660,6 +3685,10 @@ components:
         userExpectedLocale:
           type: string
           maxLength: 35
+        userTimeZone:
+          type: string
+          maxLength: 64
+          description: The visitor's IANA time zone, such as America/Los_Angeles. Relative dates in the question (today, tomorrow, this weekend) resolve in it. An unknown zone is ignored and the workspace's time zone applies.
       additionalProperties: false
     AuthoredDirectiveCondition:
       oneOf:
@@ -6356,6 +6385,10 @@ components:
                 - string
                 - "null"
               maxLength: 35
+            browserTimeZone:
+              type:
+                - string
+                - "null"
             content:
               type:
                 - string
@@ -10803,6 +10836,10 @@ components:
         userExpectedLocale:
           type: string
           maxLength: 35
+        userTimeZone:
+          type: string
+          maxLength: 64
+          description: The visitor's IANA time zone, such as America/Los_Angeles. Relative dates in the question (today, tomorrow, this weekend) resolve in it. An unknown zone is ignored and the workspace's time zone applies.
         inputMetadata:
           type: object
           properties:
@@ -10898,6 +10935,10 @@ components:
                 - string
                 - "null"
               maxLength: 35
+            browserTimeZone:
+              type:
+                - string
+                - "null"
             content:
               type:
                 - string
@@ -24413,6 +24454,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/time-zone:
+    get:
+      tags:
+        - Settings
+      summary: Read the workspace's time zone
+      operationId: getTimeZoneSettings
+      description: The zone the workspace reads today's date in when a visitor's client reports none. Requires workspace.settings.read.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The workspace's time zone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeZoneSettings"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace.settings.read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags:
+        - Settings
+      summary: Set the zone the workspace reads today's date in
+      operationId: updateTimeZoneSettings
+      description: "Sets the IANA zone relative dates resolve in: the query rewrite, the answer, the rerank, the date-range lookup, the `today()` metadata rule token, and a routine's date slots and lookups all read today's date in it. A visitor whose client reports a valid zone (the website embed sends the browser's; `userTimeZone` on a chat request) reads today in their own zone instead. Null, the default, reads today in UTC. Each change records a `workspace.time_zone_settings.updated` audit event. Requires workspace.settings.manage."
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTimeZoneSettingsRequest"
+      responses:
+        "200":
+          description: The saved time zone, as it was given
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeZoneSettings"
+        "400":
+          description: "Request validation failed: the zone is not an IANA time zone name, or null"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace.settings.manage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/settings/document-types:
     get:
       tags:
@@ -37909,6 +38017,7 @@ paths:
                         - agent_publication
                         - agent_greeting
                         - privacy_setting
+                        - time_zone_setting
                 required:
                   - available
                   - reason
@@ -38085,6 +38194,7 @@ paths:
                                       - agent_publication
                                       - agent_greeting
                                       - privacy_setting
+                                      - time_zone_setting
                                   targetLabel:
                                     type: string
                                   summary:
@@ -38317,6 +38427,7 @@ paths:
                       - agent_publication
                       - agent_greeting
                       - privacy_setting
+                      - time_zone_setting
                   targetRef: {}
                   target:
                     type: object
@@ -38338,6 +38449,7 @@ paths:
                           - agent_publication
                           - agent_greeting
                           - privacy_setting
+                          - time_zone_setting
                       ref: {}
                     required:
                       - type

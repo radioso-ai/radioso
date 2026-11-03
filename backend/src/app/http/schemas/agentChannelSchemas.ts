@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { routineInvocationRequestSchema } from "./routineInvocationSchemas.js";
 import { chatMessageSchema } from "./textInputLimits.js";
+import { userTimeZoneSchema } from "./timeZoneSchemas.js";
 
 const labelControlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
 
@@ -48,6 +49,7 @@ export const agentChannelChatSchema = z.object({
   startConversation: z.boolean().optional().default(false),
   stream: z.boolean().optional().default(false),
   userExpectedLocale: z.string().trim().max(35).optional(),
+  userTimeZone: userTimeZoneSchema.optional(),
 }).strict().superRefine((value, ctx) => {
   // One turn input per request: a message or a tool call. A bootstrap greeting needs neither;
   // it tolerates a message (ignored, as before the routine body existed) but not a tool call,

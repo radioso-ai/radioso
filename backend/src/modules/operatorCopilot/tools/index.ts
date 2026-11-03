@@ -33,6 +33,7 @@ import { createDirectiveReviewedPreparationTool } from "./directiveReviewedPrepa
 import type { DirectiveReviewedPreparationDependencies } from "./directiveReviewedPreparation.js";
 import { createWorkspaceSettingProposalCopilotTools } from "./workspaceSettingProposals.js";
 import { createPrivacySettingProposalCopilotTools } from "./privacySettingProposals.js";
+import { createTimeZoneSettingProposalCopilotTools } from "./timeZoneSettingProposals.js";
 import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
 import type { EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
 import { createRetrievalProbeCopilotTools } from "./retrievalProbe.js";
@@ -160,6 +161,7 @@ export const createCopilotToolDescriptors = (
   createDirectiveReviewedPreparationTool(deps),
   ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createPrivacySettingProposalCopilotTools(deps),
+  ...createTimeZoneSettingProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),
   createRoutineStructuralPreparationTool(deps),
   ...createAgentPublicationCopilotTools(deps),

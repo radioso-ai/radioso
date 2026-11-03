@@ -54,6 +54,8 @@ export interface AssistantChatRequest {
   startConversation?: boolean;
   stream: boolean;
   userExpectedLocale?: string | null;
+  /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
+  visitorTimeZone?: string | null;
   inputMetadata?: import("../../../db/repositories/messageRepository.js").UserMessageInputMetadata;
   sourceContext?: AssistantSourceContext;
   metadataFilter?: Record<string, unknown>;

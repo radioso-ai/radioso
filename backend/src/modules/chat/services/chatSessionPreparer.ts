@@ -9,7 +9,13 @@ import type {
   StagedContext,
 } from "@radioso/conversation-contract";
 
-import { AppError, notFound } from "../../../shared/domain/errors.js";
+import { notFound } from "../../../shared/domain/errors.js";
+import {
+  agentRevisionCandidateRequiresTrustedRunner,
+  agentRevisionRuntimeNotConfigured,
+  conversationRevisionBindingUnavailable,
+  conversationRevisionUnavailable,
+} from "./agentRevisionErrors.js";
 import { primaryLanguageTag } from "../../../shared/domain/acceptLanguage.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { toConversationTrace, toPreparedStagedContext } from "./conversationContractMappers.js";
@@ -36,6 +42,7 @@ import type {
   RetrievalPipelineService,
   RewriteContinuityState,
   StructuredRewriteResult,
+  WorkspaceTimeZoneReader,
 } from "../../retrieval/public.js";
 import { projectVisitorRequestFacts, resolveContextForTurn } from "../../context-variables/public.js";
 import type {
@@ -56,8 +63,10 @@ import type {
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { sensitiveSlotsAwaited } from "../../routines/public.js";
 import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
-import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, defaultAgentVoiceSettings, isAgentRetrievalEnabled, isPrivacyNoticeVersionOf, unpublishedAgentPublicIdentity } from "../../agents/public.js";
-import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
+import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/public.js";
+import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
+import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
+import type { ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
 import { admitsPageEvidence, capturedPageContext, type PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
@@ -88,40 +97,6 @@ interface ChatAnswerAuditMetadata {
 const defaultTurnFraming = (): TurnRouting["framing"] => ({
   isIdentityQuestion: false,
 });
-
-// Runtime-revision failure vocabulary. Every case here is either an operator-
-// recoverable data state (an unbindable legacy conversation) or a deployment
-// wiring gap (a resolver/repository capability that isn't configured) — never
-// a caller bug, so none of these should surface as an unhandled 500. Codes
-// stay stable and machine-readable; the errorHandler classifies AppError by
-// `statusCode` and reports it without the unhandled-crash path.
-const conversationRevisionBindingUnavailable = (): AppError =>
-  new AppError(
-    503,
-    "conversation_revision_binding_unavailable",
-    "This deployment's conversation store cannot bind an agent revision to a conversation. Revision-aware chat is not fully configured here; contact support.",
-  );
-
-const agentRevisionCandidateRequiresTrustedRunner = (): AppError =>
-  new AppError(
-    403,
-    "agent_revision_candidate_requires_trusted_runner",
-    "A candidate agent revision may only be supplied by a trusted safe-test runner.",
-  );
-
-const agentRevisionRuntimeNotConfigured = (): AppError =>
-  new AppError(
-    503,
-    "agent_revision_runtime_not_configured",
-    "Agent revision resolution is not configured for this deployment.",
-  );
-
-const conversationRevisionUnavailable = (): AppError =>
-  new AppError(
-    409,
-    "conversation_revision_unavailable",
-    "This conversation predates revision tracking and could not be bound to a rollout baseline automatically. An operator needs to review it before it can continue.",
-  );
 
 /**
  * The same eligibility rule Audience Pulse reads history with
@@ -164,6 +139,8 @@ export interface PreparedSession {
   priorRewriteContinuityState?: RewriteContinuityState;
   /** Shared per-turn response language label detected from the user message and history. */
   responseLanguage?: string;
+  /** The zone this turn reads "today" in, resolved once at prepare from the visitor and the workspace. */
+  referenceTimeZone?: ReferenceTimeZone;
   routineStartMessageId?: string;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
@@ -275,6 +252,8 @@ export interface PrepareChatSessionInput {
   documentScope?: string[];
   pageContext?: AssistantPageContext | null;
   pageReadCapability?: PageReadCapability | null;
+  /** The IANA zone the visitor's client reports; an invalid one is ignored and the workspace's zone applies. */
+  visitorTimeZone?: string | null;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
   chatSessionId?: string | null;
@@ -426,6 +405,8 @@ export class ChatSessionPreparer {
     private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
     /** Optional: when wired, a message answering a sensitive routine field is marked as it is created (#1543). */
     private readonly routineStates?: { loadActive(input: { sessionId: string }): Promise<RoutineState | null> },
+    /** Optional: when wired, a turn whose visitor reports no zone reads today in the workspace's; else UTC. */
+    private readonly workspaceTimeZones?: WorkspaceTimeZoneReader,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -489,7 +470,7 @@ export class ChatSessionPreparer {
       }));
     const agent = revisionResolved.agent;
     const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
-    const [rewriteContinuityState, conversationSummary] = await Promise.all([
+    const [rewriteContinuityState, conversationSummary, referenceTimeZone] = await Promise.all([
       conversation
         ? this.loadRewriteContinuityState(input.workspaceId, conversation.id)
         : Promise.resolve(undefined),
@@ -498,6 +479,7 @@ export class ChatSessionPreparer {
         : conversation
           ? loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger)
           : Promise.resolve(undefined),
+      timed("referenceTimeZone", () => resolveTurnReferenceTimeZone(this.workspaceTimeZones, input)),
     ]);
     const newConversationVisitorId = conversation
       ? null
@@ -612,7 +594,7 @@ export class ChatSessionPreparer {
     // recompute with the real gate decision.
     const requestFacts = this.resolveVisitorRequestFacts(conversationForTurn, false);
     const directOnlyTurn = this.prepareDirectOnlyTurn(
-      this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
+      this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage, { referenceTimeZone }),
       agent,
     );
     const { retrieval, turnRoute } = options.skipRetrieval
@@ -628,6 +610,7 @@ export class ChatSessionPreparer {
           effectiveQuery: input.query,
           pageContext: input.pageContext ?? null,
           pageReadCapability: input.pageReadCapability ?? null,
+          referenceTimeZone,
           priorRewriteContinuityState: rewriteContinuityState,
           conversationSummary,
           usageAttribution: input.usageAttribution,
@@ -648,6 +631,7 @@ export class ChatSessionPreparer {
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       pageReadCapability: input.pageReadCapability ?? null,
+      referenceTimeZone,
       priorRewriteContinuityState: rewriteContinuityState,
       conversationSummary,
       usageAttribution: input.usageAttribution,
@@ -1049,7 +1033,7 @@ export class ChatSessionPreparer {
       session.history,
       session.conversation,
       session.userMessage,
-      session.responseLanguage,
+      session,
     );
     const { retrieval, turnRoute } = isAgentRetrievalEnabled(session.agent)
       ? await this.prepareRetrievalEnabledTurn(pipelineInput)
@@ -1096,7 +1080,7 @@ export class ChatSessionPreparer {
         session.history,
         session.conversation,
         session.userMessage,
-        session.responseLanguage,
+        session,
       ),
       retrievalSettingsOverride: { queryRewriteEnabled: false },
     };
@@ -1140,7 +1124,7 @@ export class ChatSessionPreparer {
     history: MessageRecord[],
     conversation?: ConversationRecord,
     userMessage?: MessageRecord,
-    responseLanguage?: string,
+    turn: Pick<PreparedSession, "responseLanguage" | "referenceTimeZone"> = {},
   ): RetrievalPipelineRequest {
     return {
       workspaceId: input.workspaceId,
@@ -1151,7 +1135,8 @@ export class ChatSessionPreparer {
         customInstruction: agent.customInstruction,
         citationDisplayEnabled: agent.citationDisplayEnabled,
       },
-      responseLanguage,
+      responseLanguage: turn.responseLanguage,
+      referenceTimeZone: turn.referenceTimeZone,
       responseBehaviorEnabled: true,
       agentSkillSettings: agent.skillSettings,
       agenticToolFactories: input.agenticToolFactories,
@@ -1277,113 +1262,14 @@ export class ChatSessionPreparer {
 
   private async resolveLegacyAgent(workspaceId: string): Promise<AgentRecord> {
     if (!this.workspaceRepository) {
-      const now = new Date();
-      return {
-        id: workspaceId,
-        workspaceId,
-        name: "",
-        customInstruction: "",
-        suggestedQuestionsEnabled: true,
-        assistantLinkUtmEnabled: true,
-        citationDisplayEnabled: true,
-        contactRequestsEnabled: false,
-        webhookExportsEnabled: false,
-        contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
-        retrievalEnabled: true,
-        sourceScope: { mode: "all" },
-        skillSettings: {},
-        logo: null,
-        // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
-        theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
-        branding: defaultAgentBrandingSettings(),
-        greetingInstruction: "",
-        assistantDefaultLocale: null,
-        proactiveGreetingEnabled: false,
-        voice: defaultAgentVoiceSettings(),
-        mechanicsReplies: {},
-        chatModelOverride: null,
-        surfaceSettings: {
-          authenticatedChat: {
-            enabled: true,
-          },
-          anonymousChat: {
-            enabled: false,
-            token: null,
-          },
-          websiteEmbed: {
-            enabled: false,
-            token: null,
-            allowedOrigins: [],
-            launcherLabel: "Chat with us",
-            launcherPosition: "bottom-right",
-            // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
-            theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
-            copy: {},
-            expertOverrides: {},
-            voiceCallsOffered: false,
-          },
-          extensions: {},
-        },
-        ...unpublishedAgentPublicIdentity(),
-        createdAt: now,
-        updatedAt: now,
-      };
+      return legacyAgentWithoutWorkspace(workspaceId, new Date());
     }
 
     const workspace = await this.workspaceRepository.findById(workspaceId);
     if (!workspace) {
       throw notFound("Workspace not found");
     }
-    return {
-      id: workspace.defaultAgentId ?? workspace.id,
-      workspaceId,
-      name: workspace.assistantName,
-      customInstruction: "",
-      suggestedQuestionsEnabled: true,
-      assistantLinkUtmEnabled: true,
-      citationDisplayEnabled: true,
-      contactRequestsEnabled: false,
-      webhookExportsEnabled: false,
-      contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
-      retrievalEnabled: true,
-      sourceScope: { mode: "all" },
-      skillSettings: {},
-      logo: null,
-      // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
-      theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
-      branding: defaultAgentBrandingSettings(),
-      greetingInstruction: workspace.greetingInstruction,
-      assistantDefaultLocale: workspace.assistantDefaultLocale,
-      proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
-      voice: defaultAgentVoiceSettings(),
-      mechanicsReplies: {},
-      chatModelOverride: null,
-      surfaceSettings: {
-        authenticatedChat: {
-          enabled: true,
-        },
-        anonymousChat: {
-          enabled: workspace.anonymousChatEnabled,
-          token: workspace.anonymousChatToken,
-        },
-        websiteEmbed: {
-          enabled: workspace.websiteEmbedEnabled,
-          token: workspace.websiteEmbedToken,
-          allowedOrigins: workspace.websiteEmbedAllowedOrigins,
-          launcherLabel: workspace.websiteEmbedLauncherLabel,
-          launcherPosition: workspace.websiteEmbedLauncherPosition,
-          // Workspace rows predate agent-owned identity; use defaults until an agent record exists.
-          theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
-          copy: {},
-          expertOverrides: {},
-          voiceCallsOffered: false,
-        },
-        extensions: {},
-      },
-      ...unpublishedAgentPublicIdentity(),
-      createdAt: workspace.createdAt,
-      updatedAt: workspace.updatedAt,
-    };
+    return legacyAgentForWorkspace(workspaceId, workspace);
   }
 
   private async ensureConversation(conversationId: string, workspaceId: string, chatSessionId?: string | null) {

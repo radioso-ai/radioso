@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { CONVERSATION_RETENTION_DAYS_RANGE } from "../../../modules/privacy/public.js";
+import { TIME_ZONE_MAX_LENGTH } from "../../../shared/domain/referenceTimeZone.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import { documentTypeFieldValueTypes } from "../../../modules/documentTypes/contracts/documentTypeCatalog.js";
 import {
@@ -180,4 +181,12 @@ const conversationRetentionDaysSchema = z.number().int()
 
 export const updatePrivacySettingsSchema = z.object({
   conversationRetentionDays: conversationRetentionDaysSchema,
+}).strict();
+
+/**
+ * The zone the workspace reads "today" in, or null for UTC. The service validates the name
+ * against the runtime's IANA zone data and stores its canonical form.
+ */
+export const updateTimeZoneSettingsSchema = z.object({
+  timeZone: z.string().trim().min(1).max(TIME_ZONE_MAX_LENGTH).nullable(),
 }).strict();

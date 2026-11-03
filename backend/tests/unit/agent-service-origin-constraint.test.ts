@@ -127,6 +127,7 @@ const createService = (agentSkills?: ConstructorParameters<typeof AgentService>[
               anonymousChatEnabled: false,
               anonymousChatToken: null,
               anonymousRateLimit: 10,
+              timeZone: null,
               websiteEmbedEnabled: false,
               websiteEmbedToken: null,
               websiteEmbedAllowedOrigins: [],

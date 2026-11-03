@@ -16,7 +16,6 @@ import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatAnswerPresenter } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
-import { buildChatTurnContext } from "./chatTurnAssembly.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { routineEndingEffectsForTurn } from "./routineEndingEffects.js";
@@ -28,6 +27,7 @@ import {
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import {
+  buildChatTurnContext,
   toConversationAgentConfig,
   toPreparedStagedContext,
 } from "./conversationContractMappers.js";

@@ -1,5 +1,6 @@
 import type { MessageRecord } from "../../db/repositories/messageRepository.js";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
+import type { ReferenceTimeZone } from "../../shared/domain/referenceTimeZone.js";
 import type { AgenticRetrievalToolFactory } from "./services/agenticRetrievalRunner.js";
 import type { ResponseIdentity } from "../../shared/domain/responseIdentity.js";
 import type { RetrievalSettingsRecord } from "../settings/contracts/retrieval.js";
@@ -38,6 +39,7 @@ export type {
 export * from "./copilotPrimitiveRegistry.js";
 export { resolveAgentRetrievalScope } from "./domain/agentRetrievalScope.js";
 export type { AgentRetrievalScopePort } from "./domain/agentRetrievalScope.js";
+export type { WorkspaceTimeZoneReader } from "./domain/workspaceTimeZoneReader.js";
 export { normalizeVectorMetadataFilter } from "./domain/vectorFilter.js";
 export {
   normalizeRetrievalSkillSettingsOverride,
@@ -94,6 +96,7 @@ export {
   ModelTriggerAnalysisGateway,
 } from "./services/queryRewriteService.js";
 export { parseStructuredRewrite } from "./services/queryRewriteParser.js";
+export { formatConversationContext } from "./services/queryRewritePromptBuilder.js";
 export type { RerankGateway, RerankGatewayInput } from "./services/rerankService.js";
 export {
   ModelRerankGateway,
@@ -144,6 +147,8 @@ export interface RetrievalPipelineRequest {
   // any write to settings storage. Intended for eval replay and never for
   // production assistant traffic.
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
+  /** The zone "today" is read in; when absent, the workspace's setting, else UTC. */
+  referenceTimeZone?: ReferenceTimeZone;
 }
 
 export interface RetrievalPipelineResult {

@@ -742,6 +742,7 @@ describe("chat retrieval domain", () => {
     });
 
     const result = await service.rerank({
+      timeZone: "UTC",
       query: "test page",
       enabled: true,
       topK: 1,
@@ -799,6 +800,7 @@ describe("chat retrieval domain", () => {
     }));
 
     const result = await service.rerank({
+      timeZone: "UTC",
       query: "target",
       enabled: true,
       topK: 1,
@@ -1179,6 +1181,7 @@ describe("chat retrieval domain", () => {
     });
 
     const result = await service.rerank({
+      timeZone: "UTC",
       query: "rate limit",
       enabled: true,
       topK: 2,

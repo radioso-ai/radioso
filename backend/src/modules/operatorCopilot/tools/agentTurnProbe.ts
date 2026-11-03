@@ -8,6 +8,7 @@ import type {
 } from "../contracts/agentTurnProbe.js";
 export type { CopilotAgentTurnProbePort } from "../contracts/agentTurnProbe.js";
 import { describeNamedAgent, requiredCopilotConversation, requiredPageAgent, type CopilotAgentLookupPort } from "./shared.js";
+import { TIME_ZONE_MAX_LENGTH } from "../../../shared/domain/referenceTimeZone.js";
 
 const idSchema = z.string().uuid();
 const boundedIdSchema = z.string().min(1).max(160);
@@ -66,6 +67,8 @@ const agentTurnProbeInputSchema = z.object({
   message: z.string().trim().min(1).max(8_000),
   previewRoutineIds: z.array(idSchema).max(20).optional(),
   userExpectedLocale: z.string().trim().max(35).optional(),
+  /** Tests the turn as a visitor in this IANA zone: relative dates resolve against their today. */
+  userTimeZone: z.string().trim().min(1).max(TIME_ZONE_MAX_LENGTH).optional(),
   inputMetadata: userInputMetadataSchema.optional(),
   pageContext: assistantPageContextSchema.optional(),
   clientContextCapabilities: clientContextCapabilitiesSchema.optional(),
@@ -154,12 +157,12 @@ export const createAgentTurnProbeCopilotTools = (
     "workspace.history.read",
     "workspace.agents.manage",
   ],
-  description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing the agent's current draft (directives, skills, and routines) rather than its published revision. This does not publish changes or produce version-bound evidence for a draft.",
+  description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing the agent's current draft (directives, skills, and routines) rather than its published revision. Name userTimeZone (an IANA zone such as America/Los_Angeles) to test the turn as a visitor there, whose today, tomorrow and this weekend resolve in that zone; without it the turn reads today in the workspace's time zone. This does not publish changes or produce version-bound evidence for a draft.",
   inputSchema: agentTurnProbeInputSchema,
   outputSchema: agentTurnProbeOutputSchema,
   createTool: (context) => ({
     name: "test_agent_turn",
-    description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing the agent's current draft (directives, skills, and routines) rather than its published revision. This does not publish changes or produce version-bound evidence for a draft.",
+    description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing the agent's current draft (directives, skills, and routines) rather than its published revision. Name userTimeZone (an IANA zone such as America/Los_Angeles) to test the turn as a visitor there, whose today, tomorrow and this weekend resolve in that zone; without it the turn reads today in the workspace's time zone. This does not publish changes or produce version-bound evidence for a draft.",
     inputSchema: agentTurnProbeInputSchema,
     outputSchema: agentTurnProbeOutputSchema,
     invoke: async (input) => {
@@ -174,6 +177,7 @@ export const createAgentTurnProbeCopilotTools = (
         ...(input.conversationId ? { conversationId: input.conversationId } : {}),
         ...(input.previewRoutineIds ? { previewRoutineIds: input.previewRoutineIds } : {}),
         ...(input.userExpectedLocale ? { userExpectedLocale: input.userExpectedLocale } : {}),
+        ...(input.userTimeZone ? { userTimeZone: input.userTimeZone } : {}),
         ...(input.inputMetadata ? { inputMetadata: input.inputMetadata } : {}),
         ...(input.pageContext ? { pageContext: input.pageContext } : {}),
         ...(input.clientContextCapabilities ? { clientContextCapabilities: input.clientContextCapabilities } : {}),

@@ -162,6 +162,8 @@ export interface TurnPlanInputs {
   standingInstructions?: TurnPlanStandingInstructions;
   /** The answering agent, for diagnostics only. */
   agentId?: string;
+  /** The zone the turn reads today's date in; UTC when absent. */
+  timeZone?: string;
   workspaceContext: LlmCapabilityResolveInput;
   usageContext: ModelCallUsageContext;
   signal?: AbortSignal;
@@ -229,6 +231,7 @@ export class TurnPlanCoordinator {
       routineCandidates: prepared ? prepared.candidates : [],
       directiveCandidates: input.directiveCandidates,
       visitorContext: input.visitorContext,
+      timeZone: input.timeZone,
       workspaceContext: input.workspaceContext,
       usageContext: input.usageContext,
       signal: input.signal,

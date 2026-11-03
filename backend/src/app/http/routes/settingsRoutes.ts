@@ -19,6 +19,7 @@ import {
   updateIngestionSettingsSchema,
   updatePlatformSettingsSchema,
   updatePrivacySettingsSchema,
+  updateTimeZoneSettingsSchema,
 } from "./settingsRouteSchemas.js";
 import {
   anonymousChatTokenRotationPatch,
@@ -47,6 +48,7 @@ type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "documentStorage"
   | "retrievalDefaultsProvider"
   | "privacySettingsService"
+  | "timeZoneSettingsService"
   | "logger"
 >;
 
@@ -157,6 +159,36 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
           ?? (authPrincipal?.type === "personal_api_credential" && typeof authPrincipal.userId === "string" ? authPrincipal.userId : null);
         const settings = await dependencies.privacySettingsService.update(workspaceId, req.body, { userId: actorUserId });
         res.status(200).json(settings);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get("/time-zone", workspaceSession, settingsRead, async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      res.status(200).json(await dependencies.timeZoneSettingsService.get(workspaceId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put(
+    "/time-zone",
+    workspaceSession,
+    requireWorkspacePermission(dependencies, "workspace.settings.manage"),
+    validateBody(updateTimeZoneSettingsSchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId, userId, authPrincipal } = res.locals as {
+          workspaceId: string;
+          userId?: string;
+          authPrincipal?: { type: string; userId?: unknown };
+        };
+        const actorUserId = userId
+          ?? (authPrincipal?.type === "personal_api_credential" && typeof authPrincipal.userId === "string" ? authPrincipal.userId : null);
+        res.status(200).json(await dependencies.timeZoneSettingsService.update(workspaceId, req.body, { userId: actorUserId }));
       } catch (error) {
         next(error);
       }

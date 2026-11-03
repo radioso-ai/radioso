@@ -724,6 +724,32 @@ describe("chat service fused turn planning", () => {
     expect(planner.prompts()[1]).toContain("The buyer already returned the item last week.");
   });
 
+  it("plans from the visitor's own today when their client reports a zone", async () => {
+    // 02:00 UTC on Tuesday 3 November is 18:00 on Monday 2 November in Los Angeles.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-03T02:00:00.000Z"));
+    try {
+      const planner = plannerFactory({ completions: [planJson({ route: "retrieval" })] });
+      const service = buildService({
+        planner,
+        pipeline: retrievalPipeline([]),
+        chatGateway: pipelineChatGateway("Grounded [[1]]."),
+        staged: countingStagedPorts(),
+      });
+
+      await service.answer({
+        workspaceId: "workspace-1",
+        query: "What's on tomorrow?",
+        stream: false,
+        visitorTimeZone: "America/Los_Angeles",
+      });
+
+      expect(planner.prompts()[0]).toContain("Today's date: 2026-11-02 (Monday)");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("passes the legacy-derived content capability to the live planner", async () => {
     const staged = countingStagedPorts();
     const planner = plannerFactory({ completions: [

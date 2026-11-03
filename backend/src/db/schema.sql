@@ -2246,7 +2246,7 @@ CREATE TABLE public.copilot_proposals (
     CONSTRAINT copilot_proposals_message_requires_conversation_check CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_reviewed_requirement_check CHECK (((review_digest IS NULL) OR (confirmation_requirement IS NOT NULL))),
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
-    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'document_operation'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text, 'agent_greeting'::text, 'privacy_setting'::text])))
+    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'document_operation'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text, 'agent_greeting'::text, 'privacy_setting'::text, 'time_zone_setting'::text])))
 );
 
 
@@ -4331,7 +4331,9 @@ CREATE TABLE public.workspaces (
     default_agent_id uuid,
     conversation_retention_days integer,
     conversation_retention_swept_at timestamp with time zone,
-    CONSTRAINT workspaces_conversation_retention_days_check CHECK (((conversation_retention_days IS NULL) OR ((conversation_retention_days >= 7) AND (conversation_retention_days <= 3650))))
+    time_zone text,
+    CONSTRAINT workspaces_conversation_retention_days_check CHECK (((conversation_retention_days IS NULL) OR ((conversation_retention_days >= 7) AND (conversation_retention_days <= 3650)))),
+    CONSTRAINT workspaces_time_zone_check CHECK (((time_zone IS NULL) OR ((length(time_zone) >= 1) AND (length(time_zone) <= 64))))
 );
 
 

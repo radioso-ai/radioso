@@ -94,13 +94,14 @@ import type {
   BootstrapGreetingCacheRecord,
   BootstrapGreetingCacheRepositoryPort,
 } from "../../src/db/repositories/bootstrapGreetingCacheRepository.js";
-import type {
-  AbuseControlBatchConsumption,
-  AbuseControlConsumption,
-  AbuseControlConsumptionInput,
-  AbuseControlDecision,
-  AbuseControlEntry,
-  AbuseControlRepositoryPort,
+import {
+  ABUSE_CONTROL_ENTRY_RETENTION_MS,
+  type AbuseControlBatchConsumption,
+  type AbuseControlConsumption,
+  type AbuseControlConsumptionInput,
+  type AbuseControlDecision,
+  type AbuseControlEntry,
+  type AbuseControlRepositoryPort,
 } from "../../src/modules/security/contracts/abuseControl.js";
 import type {
   WorkspaceCredentialProvider,
@@ -1967,6 +1968,7 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
   /**
    * Mirrors the sliding window `consumeAbuseControlEntry` runs in Postgres: the expiring window's
    * count is carried while it still overlaps, and admission weighs it against the running window.
+   * Windows sit end to end, so the expired one weighs by the share of it still inside the last window.
    */
   async consume(input: AbuseControlConsumptionInput): Promise<AbuseControlConsumption> {
     const existing = await this.find(input.scope, input.subjectKey);
@@ -1974,13 +1976,18 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
     const activeBlock = Boolean(existing?.blockedUntil && existing.blockedUntil > input.now);
     const activeWindow = Boolean(existing && elapsedMs < input.windowMs);
     const held = activeBlock || activeWindow;
+    const carried = !held && existing !== null && elapsedMs < 2 * input.windowMs;
     const attemptCount = activeBlock ? existing!.attemptCount : activeWindow ? existing!.attemptCount + 1 : 1;
     const previousAttemptCount = held
       ? existing?.previousAttemptCount ?? 0
-      : existing && elapsedMs < 2 * input.windowMs
+      : carried
         ? existing.attemptCount
         : 0;
-    const windowStartedAt = held ? existing!.windowStartedAt : input.now;
+    const windowStartedAt = held
+      ? existing!.windowStartedAt
+      : carried
+        ? new Date(existing.windowStartedAt.getTime() + input.windowMs)
+        : input.now;
     const overlap = Math.max(0, 1 - (input.now.getTime() - windowStartedAt.getTime()) / input.windowMs);
     const weightedAttemptCount = previousAttemptCount * overlap + attemptCount;
     const blockedUntil = activeBlock
@@ -2038,13 +2045,11 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
     return { entries, rejected: null };
   }
 
+  /** Mirrors the Postgres sweep: an entry goes once its block has ended and its retention has run out. */
   async deleteExpired(now: Date): Promise<void> {
     for (const [key, entry] of this.items.entries()) {
-      if (entry.blockedUntil && entry.blockedUntil <= now) {
-        this.items.delete(key);
-        continue;
-      }
-      if (!entry.blockedUntil && now.getTime() - entry.windowStartedAt.getTime() > 24 * 60 * 60 * 1000) {
+      const blockEnded = !entry.blockedUntil || entry.blockedUntil <= now;
+      if (blockEnded && now.getTime() - entry.windowStartedAt.getTime() >= ABUSE_CONTROL_ENTRY_RETENTION_MS) {
         this.items.delete(key);
       }
     }

@@ -13,6 +13,10 @@ export interface AbuseControlEntry {
   attemptCount: number;
   /** What the window before this one counted, once it has expired; 0 when nothing overlaps. */
   previousAttemptCount: number;
+  /**
+   * Start of the running window. Windows sit end to end, so a window that follows an expired one
+   * starts where that one ended, which can be up to a window before the attempt that opened it.
+   */
   windowStartedAt: Date;
   blockedUntil: Date | null;
   createdAt: Date;
@@ -41,6 +45,13 @@ export interface AbuseControlBatchConsumption {
   entries: AbuseControlConsumption[];
   rejected: AbuseControlConsumption | null;
 }
+
+/**
+ * How long a store keeps an entry after its window began, and at least until its block ends. A
+ * window weighs on admission until two windows after it began, so this covers every window up to
+ * half of it; dropping an entry sooner would hand a refused caller a fresh budget.
+ */
+export const ABUSE_CONTROL_ENTRY_RETENTION_MS = 24 * 60 * 60 * 1_000;
 
 /** Persistence contract owned by security; infrastructure implements it structurally. */
 export interface AbuseControlRepositoryPort {

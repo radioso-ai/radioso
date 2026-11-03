@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-10-24
+last_updated: 2026-11-03
 ---
 
 # Monitoring And Alerts
@@ -183,7 +183,11 @@ If a Redis check errors or reaches its command deadline, that check runs against
 
 Fallback keeps the limiter available; it does not make Redis and Postgres one authoritative budget. During a rolling cutover or Redis outage, a subject can spend each store's independent counter and be admitted up to roughly twice the limit for one window. A block recorded in one store is not visible in the other. Restore Redis promptly and treat the fallback metric as an operational alert, not as proof of exact cross-store enforcement.
 
-Admission weighs two windows. The window that just expired still counts, in proportion to how much of it the running window overlaps: `previous × overlap + current`, where `overlap` falls from 1 to 0 as the running window advances. A caller that spends a whole budget in the last second of one window is therefore still over the limit in the first second of the next, which a plain per-window counter would wave through at twice the intended rate.
+Admission weighs two windows that sit end to end. The window that just expired still counts in proportion to how much of it lies inside the last window's worth of time: `previous × overlap + current`, where `overlap` falls from 1 to 0 over the following window. A caller that spends a whole budget in the last second of one window is therefore still over the limit in the first second of the next, which a plain per-window counter would wave through at twice the intended rate. A caller returning after a quiet spell finds the old window counting for little: with 3 voice starts per 10 minutes, three starts from 16:35 fill a window that ends at 16:45, count as 1.5 at 16:50, and count for nothing from 16:55.
+
+The attempt that trips a block counts too, though attempts made during the block do not. So the wait a `429` gives is the longer of the block period and the time the weighted count takes to fall far enough to admit one more attempt. Three starts at 16:35:00 and a refused fourth at 16:35:10 are blocked until 16:45:10, but those four attempts keep the count above the limit until just after 16:50:00, and that is the wait the `429` states. A client that retries when it is told to is admitted.
+
+Both stores keep a subject's entry for at least a day after its window starts, and for as long as it is blocked, so its attempts keep counting once a block ends. A window keeps weighing for two windows after it starts, so the day covers every window up to 12 hours. Every built-in window is an hour or shorter; a `*_RATE_LIMIT_WINDOW_MS` setting above 12 hours lets an entry go while it would still count.
 
 Responses carry the budget as headers, so a client can pace itself instead of discovering the limit by being refused:
 
@@ -191,8 +195,8 @@ Responses carry the budget as headers, so a client can pace itself instead of di
 |---|---|---|
 | `RateLimit-Limit` | every rate-limited response | attempts the scope allows per window |
 | `RateLimit-Remaining` | every rate-limited response | attempts left before the next one is refused |
-| `RateLimit-Reset` | every rate-limited response | seconds until the window rolls |
-| `Retry-After` | `429` only | seconds to wait before retrying |
+| `RateLimit-Reset` | every rate-limited response | seconds until the window rolls while attempts remain; once `RateLimit-Remaining` is `0`, seconds until one more attempt is admitted; on a `429`, the same wait as `Retry-After` |
+| `Retry-After` | `429` only | seconds until a retry is admitted |
 
 A client should honour `Retry-After` on a `429` and back off before `RateLimit-Remaining` reaches zero. The same wait is in the body as `error.details.retryAfterSeconds`, alongside the limit, what remains, and the reset instant, so a client that reads the JSON needs nothing else.
 

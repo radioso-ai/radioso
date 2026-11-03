@@ -2094,6 +2094,138 @@ describe("DefaultRoutineRunner trace", () => {
     expect(JSON.stringify(result.trace)).not.toContain("a@b.c");
   });
 
+  describe("a slot the turn gives a new value for while it already holds one", () => {
+    const selecting = (variables: Record<string, unknown>, nextStepId = "ask_message") =>
+      new DefaultRoutineRunner(
+        [slotRoutine],
+        { select: vi.fn(async () => ({ nextStepId, variables })) },
+        { render: vi.fn(echoRenderer.render) },
+      );
+
+    it("records the slot as replaced, by key only, and not as captured", async () => {
+      const result = await selecting({ email: "new@example.com" }).resume({
+        turn,
+        state: state(["ask_email"], { email: "old@example.com" }),
+      });
+
+      expect(result.trace).toMatchObject({ capturedSlotKeys: [], replacedSlotKeys: ["email"], filledSlotKeys: ["email"] });
+      expect(result.trace?.steps[0]).toEqual({
+        stepId: "ask_email",
+        kind: "chat",
+        event: "advanced",
+        replacedSlotKeys: ["email"],
+        viaSelector: true,
+      });
+      expect(JSON.stringify(result.trace)).not.toContain("new@example.com");
+      expect(JSON.stringify(result.trace)).not.toContain("old@example.com");
+    });
+
+    it("tells a replaced slot from one captured beside it", async () => {
+      const result = await selecting({ email: "new@example.com", message: "Call me back" }, "done").resume({
+        turn,
+        state: state(["ask_email", "ask_message"], { email: "old@example.com" }),
+      });
+
+      expect(result.trace).toMatchObject({ capturedSlotKeys: ["message"], replacedSlotKeys: ["email"] });
+      expect(result.trace?.steps[0]).toMatchObject({ capturedSlotKeys: ["message"], replacedSlotKeys: ["email"] });
+    });
+
+    it("records nothing replaced when the turn returns the value the slot already holds", async () => {
+      const result = await selecting({ email: "old@example.com" }).resume({
+        turn,
+        state: state(["ask_email"], { email: "old@example.com" }),
+      });
+
+      expect(result.trace).not.toHaveProperty("replacedSlotKeys");
+      expect(result.trace?.steps[0]).not.toHaveProperty("replacedSlotKeys");
+    });
+
+    it("records a slot replaced while fast-forwarding past a satisfied step", async () => {
+      const forwardRoutine: Routine = {
+        ...slotRoutine,
+        transitions: [
+          { from: "ask_email", to: "ask_message", condition: "The user provided {{slot.email}}." },
+          { from: "ask_message", to: "done", condition: "The user provided {{slot.message}}." },
+        ],
+      };
+      const select = vi.fn()
+        .mockResolvedValueOnce({ nextStepId: "ask_message", variables: { message: "Call me back" } })
+        .mockResolvedValueOnce({ nextStepId: "ask_message", variables: { email: "new@example.com" } });
+      const runner = new DefaultRoutineRunner([forwardRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+      const result = await runner.resume({
+        turn,
+        state: state(["ask_email"], { email: "old@example.com", message: "Hello" }),
+      });
+
+      expect(result.trace?.replacedSlotKeys).toEqual(expect.arrayContaining(["message", "email"]));
+      expect(result.trace?.capturedSlotKeys).toEqual([]);
+    });
+
+    it("never lists a step's own key as both captured and replaced when the walk re-reads it", async () => {
+      const datesRoutine: Routine = {
+        id: "dates",
+        rootStepId: "ask_dates",
+        slots: [
+          { id: "slot_arrival", key: "arrival", type: "text", required: true },
+          { id: "slot_departure", key: "departure", type: "text", required: true },
+        ],
+        steps: [
+          { id: "ask_dates", kind: "chat", action: "Ask for dates.", metadata: { collectsSlots: ["arrival", "departure"] } },
+          { id: "done", kind: "terminal", action: "Confirmed." },
+        ],
+        // An unmarked AI-decides edge, so a satisfied `ask_dates` still asks its selector
+        // once more before it can leave — the second read this test exercises.
+        transitions: [{ from: "ask_dates", to: "done", condition: "The user confirmed the dates." }],
+      };
+      // First call: the step's own resume, capturing `arrival` (held nothing before the turn).
+      // Second call: the now-satisfied step's selector reads the same message again and
+      // stays, returning a differently worded `arrival` — judged against the value the
+      // first call just captured, so it looks "replaced" to that second read alone.
+      const select = vi.fn()
+        .mockResolvedValueOnce({ nextStepId: "ask_dates", variables: { arrival: "Oct 30" } })
+        .mockResolvedValueOnce({ nextStepId: "ask_dates", variables: { arrival: "October 30th" } });
+      const runner = new DefaultRoutineRunner([datesRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+      const result = await runner.resume({
+        turn,
+        state: { ...state(["ask_dates"], { departure: "Nov 5" }), routineId: "dates" },
+      });
+
+      expect(result.trace?.steps[0]).toMatchObject({ stepId: "ask_dates", capturedSlotKeys: ["arrival"] });
+      expect(result.trace?.steps[0]).not.toHaveProperty("replacedSlotKeys");
+    });
+  });
+
+  describe("the activation turn's own extraction (#1670 review, finding 2)", () => {
+    it("does not treat a value the activator already extracted from this message as replaced when the selector re-reads it", async () => {
+      const programRoutine: Routine = {
+        id: "program_pick",
+        rootStepId: "ask_program",
+        slots: [{ id: "slot_program", key: "program", type: "text", required: true }],
+        steps: [
+          { id: "ask_program", kind: "chat", action: "Ask for program.", metadata: { collectsSlots: ["program"] } },
+          { id: "done", kind: "terminal", action: "Confirmed." },
+        ],
+        transitions: [{ from: "ask_program", to: "done", condition: "a program was chosen", origin: "compiler_slot_gate" }],
+      };
+      // The activator already extracted `program` from the opening message before this call
+      // (it seeds `state.variables`); the selector reads the very same message again and
+      // returns a differently worded value for it. Nothing was held before this turn.
+      const select = vi.fn(async () => ({ nextStepId: "ask_program", variables: { program: "the autumn one" } }));
+      const runner = new DefaultRoutineRunner([programRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+      const result = await runner.resume({
+        turn,
+        state: { ...state([], { program: "autumn retreat" }), routineId: "program_pick" },
+        activationTurn: true,
+      });
+
+      expect(result.trace).not.toHaveProperty("replacedSlotKeys");
+      expect(result.trace?.steps[0]).not.toHaveProperty("replacedSlotKeys");
+    });
+  });
+
   describe("the routine's first turn (#1450)", () => {
     it("records a first step the opening message did not satisfy as asked for the first time, not re-asked", async () => {
       const runner = new DefaultRoutineRunner(

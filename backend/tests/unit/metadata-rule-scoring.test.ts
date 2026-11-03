@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { MetadataRuleScoringService } from "../../src/modules/retrieval/services/metadataRuleScoringService.js";
 import type { RetrievedCandidate } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
@@ -19,14 +19,11 @@ const candidate = (overrides: Partial<RetrievedCandidate> = {}): RetrievedCandid
 });
 
 describe("metadata rule scoring", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it("filters candidates by exact metadata match", () => {
     const service = new MetadataRuleScoringService();
 
     const result = service.apply({
+      today: "2026-06-01",
       candidates: [
         candidate({ metadata: { language: "en" } }),
         candidate({ chunkId: "chunk-2", documentId: "doc-2", metadata: { language: "et" } }),
@@ -53,6 +50,7 @@ describe("metadata rule scoring", () => {
     const service = new MetadataRuleScoringService();
 
     const result = service.apply({
+      today: "2026-06-01",
       candidates: [
         candidate({ chunkId: "chunk-1", documentId: "doc-1", metadata: { parsedData: { url: "https://example.com/a" } } }),
         candidate({ chunkId: "chunk-2", documentId: "doc-2", similarity: 0.55, metadata: { parsedData: { url: "https://other.test/b" } } }),
@@ -82,13 +80,11 @@ describe("metadata rule scoring", () => {
     });
   });
 
-  it("evaluates today() dynamically for date comparisons", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
-
+  it("evaluates today() as the run's date for date comparisons", () => {
     const service = new MetadataRuleScoringService();
 
     const result = service.apply({
+      today: "2026-06-01",
       candidates: [
         candidate({ chunkId: "future", documentId: "future-doc", metadata: { dateFrom: "2026-06-15" } }),
         candidate({ chunkId: "past", documentId: "past-doc", metadata: { dateFrom: "2026-05-15" } }),
@@ -117,10 +113,31 @@ describe("metadata rule scoring", () => {
     });
   });
 
+  it("resolves today() to the date the run reads today as", () => {
+    // 02:00 UTC on 3 November is still 2 November in Los Angeles: an event dated that day is not past.
+    const rule = {
+      id: "upcoming-filter",
+      field: "dateFrom",
+      valueType: "date" as const,
+      operator: "gte" as const,
+      value: "today()",
+      effect: "filter" as const,
+      enabled: true,
+      triggerMode: "always_on" as const,
+    };
+    const candidates = [candidate({ chunkId: "local-today", documentId: "local-today-doc", metadata: { dateFrom: "2026-11-02" } })];
+    const service = new MetadataRuleScoringService();
+
+    expect(service.apply({ candidates, metadataRules: [rule], today: "2026-11-02" }).candidates.map((entry) => entry.chunkId))
+      .toEqual(["local-today"]);
+    expect(service.apply({ candidates, metadataRules: [rule], today: "2026-11-03" }).candidates).toHaveLength(0);
+  });
+
   it("supports grouped OR conditions within a single rule", () => {
     const service = new MetadataRuleScoringService();
 
     const result = service.apply({
+      today: "2026-06-01",
       candidates: [
         candidate({ chunkId: "events", metadata: { category: "event", language: "et" } }),
         candidate({ chunkId: "english", metadata: { category: "article", language: "en" } }),

@@ -85,6 +85,7 @@ import {
   AgentConverseAudit,
   AgentConverseService,
   CONTACT_SEND_ACTION_TYPE,
+  type PreparedSession,
 } from "../../../modules/chat/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
 import { createDefaultActionDrainDispatcher } from "../../composition/defaultComposition.js";
@@ -132,7 +133,7 @@ import {
 import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
 import { createRoutineTurnProvider, type RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
 import type { FacetExtractionJobStore } from "../../../modules/facets/contracts.js";
-import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
+import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver, WorkspaceTimeZoneReader } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import { Database } from "../../../shared/infra/database.js";
@@ -253,6 +254,7 @@ export const buildChatServices = (input: {
   agentRetrievalScope?: AgentRetrievalScopePort;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
+  workspaceTimeZones: WorkspaceTimeZoneReader;
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
   errorReporter: ErrorReporter;
   ingestionSettingsService: IngestionSettingsService;
@@ -786,6 +788,22 @@ export const buildChatServices = (input: {
     askMargin: retrievalSenseAnswerFirstAskMargin,
     maxOptions: retrievalSensePolicy.maxOptions,
   };
+  // Live chat and replay phrase and map clarifications the same way.
+  const clarifierFactory = ({ session, accountId }: { session: PreparedSession; accountId?: string }) => new DefaultClarifier(
+    new RoutineChatModelGateway(chatGateway, {
+      workspaceContext: chatAnswerSupport.buildChatWorkspaceContext(session),
+      usageContext: {
+        ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"),
+        operation: "clarification",
+      },
+    }),
+    {
+      questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
+      replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
+      offerReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-offer-reply-map.md"),
+      steeringPromptTemplate: loadPromptTemplate("chat/steering-clarification.md"),
+    },
+  );
   const clarificationDecisionRecorder = input.metricsRegistry
     ? (decision: Parameters<typeof recordClarificationDecision>[1]) =>
         recordClarificationDecision(input.metricsRegistry!, decision)
@@ -827,6 +845,7 @@ export const buildChatServices = (input: {
     turnRuntime: chatTurnRuntime,
     productAnalyticsService: input.productAnalyticsService,
     workspaceRepository: input.workspaceRepository,
+    workspaceTimeZones: input.workspaceTimeZones,
     bootstrapGreetingCacheRepository: input.bootstrapGreetingCacheRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
@@ -881,21 +900,7 @@ export const buildChatServices = (input: {
     backgroundJobs: input.backgroundJobs,
     conversationOwnershipReader: input.conversationOwnershipRepository,
     routineProvider,
-    clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
-      new RoutineChatModelGateway(chatGateway, {
-        workspaceContext: chatAnswerSupport.buildChatWorkspaceContext(session),
-        usageContext: {
-          ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"),
-          operation: "clarification",
-        },
-      }),
-      {
-        questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
-        replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
-        offerReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-offer-reply-map.md"),
-        steeringPromptTemplate: loadPromptTemplate("chat/steering-clarification.md"),
-      },
-    ),
+    clarifierFactory,
     clarificationStore,
     retrievalSenseDetector,
     retrievalSenseClarificationPolicy: turnClarificationPolicy,
@@ -974,21 +979,7 @@ export const buildChatServices = (input: {
     routineProvider,
     chatGateway,
     chatAnswerPresenter: chatTurnRuntime.chatAnswerPresenter,
-    clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
-      new RoutineChatModelGateway(chatGateway, {
-        workspaceContext: chatAnswerSupport.buildChatWorkspaceContext(session),
-        usageContext: {
-          ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"),
-          operation: "clarification",
-        },
-      }),
-      {
-        questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
-        replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
-        offerReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-offer-reply-map.md"),
-        steeringPromptTemplate: loadPromptTemplate("chat/steering-clarification.md"),
-      },
-    ),
+    clarifierFactory,
     retrievalSenseDetector,
     retrievalSenseClarificationPolicy: turnClarificationPolicy,
     recordClarificationDecision: clarificationDecisionRecorder,
@@ -1006,6 +997,7 @@ export const buildChatServices = (input: {
     coverageHeadRecorder: new AnswerCoverageHeadRecorder(),
     logger: input.logger,
     streamMetrics: input.metricsRegistry,
+    workspaceTimeZones: input.workspaceTimeZones,
   });
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database.kysely),

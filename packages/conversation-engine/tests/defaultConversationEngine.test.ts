@@ -727,6 +727,18 @@ describe("DefaultConversationEngine", () => {
     ]);
   });
 
+  it("carries the zone the turn reads today in to selection, dispatch and composition", async () => {
+    const referenceTimeZone = { timeZone: "America/Los_Angeles", source: "visitor" as const };
+    const input = createInput({ referenceTimeZone });
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    const withZone = expect.objectContaining({ turn: expect.objectContaining({ referenceTimeZone }) });
+    expect(input.selector.select).toHaveBeenCalledWith(withZone);
+    expect(input.dispatcher.dispatch).toHaveBeenCalledWith(withZone);
+    expect(input.composer.compose).toHaveBeenCalledWith(withZone);
+  });
+
   it("forwards compose adherence to the spine and links directives to compose", async () => {
     const input = createInput({
       composer: {
@@ -1664,6 +1676,20 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       "routine_resume",
       "directive_steering",
     ]);
+  });
+
+  it("hands a resumed routine the zone the turn reads today in", async () => {
+    const referenceTimeZone = { timeZone: "America/Los_Angeles", source: "visitor" as const };
+    const input: ProcessTurnInput = {
+      ...withRoutine({ resume: vi.fn(async () => ({ response: { answer: "When do you arrive?" }, nextState: activeState })) }),
+      referenceTimeZone,
+    };
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineRunner!.resume).toHaveBeenCalledWith(expect.objectContaining({
+      turn: expect.objectContaining({ referenceTimeZone }),
+    }));
   });
 
   it("saves a completed marker when the routine completes (null next state)", async () => {

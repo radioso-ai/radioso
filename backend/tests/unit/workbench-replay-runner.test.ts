@@ -487,6 +487,33 @@ describe("WorkbenchReplayRunner", () => {
     }));
   });
 
+  // Replay and live must read the same "today", or a "what's on tomorrow?" case flips with the
+  // time of day in any workspace west of UTC.
+  it("reads today in the workspace's zone, as the live turn does", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const readWorkspaceTimeZone = vi.fn(async () => "America/Los_Angeles");
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(capturedRequests),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      workspaceTimeZones: { readWorkspaceTimeZone },
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "What's on tomorrow?",
+      history: [],
+    });
+
+    expect(readWorkspaceTimeZone).toHaveBeenCalledWith("ws-1");
+    expect(capturedRequests[0]?.referenceTimeZone).toEqual({ timeZone: "America/Los_Angeles", source: "workspace" });
+  });
+
   it("shares live turn interpretation, rewrite, response-language, and retrieval override assembly", async () => {
     const capturedRequests: RetrievalPipelineRequest[] = [];
     const rewriteProposal = {

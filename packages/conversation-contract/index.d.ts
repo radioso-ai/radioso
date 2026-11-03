@@ -1,4 +1,6 @@
 import type { ConversationModelGateway } from "./modelGateway.js";
+import type { ReferenceTimeZone } from "./referenceTimeZone.js";
+import type { RoutineRunTrace } from "./routineTrace.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
@@ -354,57 +356,17 @@ export interface DirectiveMatchGateway {
   match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveClassification[]>;
 }
 
-export interface DirectiveCoherenceConflict {
-  directiveId?: string;
-  directiveName: string;
-  reason: string;
-}
-
-export interface DirectiveCoherenceVerdict {
-  coherent: boolean;
-  conflicts: DirectiveCoherenceConflict[];
-  rationale: string;
-}
-
-/**
- * The stable, structural shape of a rejection from a conversation-kit
- * directive-coherence check. Consumers identify it with the kit's
- * `isDirectiveCoherenceError` helper rather than a cross-package `instanceof`.
- */
-export interface DirectiveCoherenceError {
-  code: "conversation_kit_directive_coherence_conflict";
-  verdict: DirectiveCoherenceVerdict;
-}
-
-export interface DirectiveCoherenceInvocationContext {
-  workspaceId: string;
-  agentId: string;
-}
-
-export interface DirectiveCoherenceCheckInput {
-  agent: ConversationAgentConfig;
-  candidate: Directive;
-  existingDirectives: Directive[];
-  invocationContext?: DirectiveCoherenceInvocationContext;
-}
-
-export interface DirectiveCoherenceChecker {
-  check(input: DirectiveCoherenceCheckInput): Promise<DirectiveCoherenceVerdict>;
-}
-
-export type DirectiveCoherenceMode = "enforce";
-
-export interface DirectiveCoherenceGateOptions {
-  enabled?: boolean;
-  mode?: DirectiveCoherenceMode;
-  checker?: DirectiveCoherenceChecker;
-  promptTemplate?: string;
-}
-
-export interface DirectiveCoherenceGate {
-  mode: DirectiveCoherenceMode;
-  checker: DirectiveCoherenceChecker;
-}
+export type {
+  DirectiveCoherenceCheckInput,
+  DirectiveCoherenceChecker,
+  DirectiveCoherenceConflict,
+  DirectiveCoherenceError,
+  DirectiveCoherenceGate,
+  DirectiveCoherenceGateOptions,
+  DirectiveCoherenceInvocationContext,
+  DirectiveCoherenceMode,
+  DirectiveCoherenceVerdict,
+} from "./directiveCoherence.js";
 
 export interface DirectiveCatalogRegistryPort {
   list(): Directive[];
@@ -554,6 +516,8 @@ export interface StagedContext {
   metadata?: Record<string, unknown>;
 }
 
+export type { ReferenceTimeZone, ReferenceTimeZoneSource } from "./referenceTimeZone.js";
+
 export interface TurnContext {
   agent: ConversationAgentConfig;
   sessionId: string;
@@ -563,6 +527,8 @@ export interface TurnContext {
   steering: SteeringRule[];
   activeRoutineId?: string;
   activeStepId?: string;
+  /** The zone every "today" on this turn reads; a consumer reads UTC when it is absent. */
+  referenceTimeZone?: ReferenceTimeZone;
   metadata?: Record<string, unknown>;
 }
 
@@ -1556,116 +1522,12 @@ export interface RoutineDecisionInput {
   idempotencyKey?: string;
 }
 
-/**
- * What happened to one step as the runner walked the graph this turn. A debug-only
- * record: it carries slot *keys*, never captured *values* (which may be PII).
- */
-export interface RoutineTraceStepEntry {
-  stepId: string;
-  kind: RoutineStep["kind"];
-  /**
-   * - `resumed`: the step the turn started on.
-   * - `advanced`: moved onto this step from the previous one.
-   * - `reasked`: stayed on the step because it isn't satisfied yet (a re-ask). On the routine's
-   *   first turn the step was never asked, so staying on it is `rendered` instead.
-   * - `fast_forwarded`: a satisfied slot-collection step skipped without re-asking.
-   * - `skill_dispatched`: a skill (tool) step ran.
-   * - `action_emitted`: an action step emitted a fire-and-forget request.
-   * - `rendered`: the step whose reply the turn rendered.
-   * - `reask_limit_reached`: the step was asked again more times in a row than the re-ask
-   *   limit allows, so its reply was told to ask differently. The routine stays on the step.
-   * - `reask_limit_handoff`: the step was still not answered on the turn after it asked
-   *   differently, and the routine has a hand-off end, so the run ended `stuck` on this step
-   *   and the conversation goes to a person (#1384).
-   */
-  event:
-    | "resumed"
-    | "advanced"
-    | "reasked"
-    | "fast_forwarded"
-    | "skill_dispatched"
-    | "action_emitted"
-    | "rendered"
-    | "suspended"
-    | "decision_notified"
-    | "decision_applied"
-    | "reask_limit_reached"
-    | "reask_limit_handoff";
-  /** Declared slot keys captured at this step this turn (names only — never values). */
-  capturedSlotKeys?: string[];
-  /** Declared slots whose returned value was not stored because it does not fit the slot's type (keys only). */
-  rejectedSlots?: RoutineTraceRejectedSlot[];
-  /** On `reask_limit_reached` and `reask_limit_handoff`: how many times in a row the step has now been asked again. */
-  reaskCount?: number;
-  /** Whether the LLM next-step selector ran for this step's edges. */
-  viaSelector?: boolean;
-  /** What the selector's model returned for this step's edges, when it ran and reported. */
-  selection?: RoutineSelectionTrace;
-  skillName?: string;
-  skillStatus?: string;
-  /** Host-private failure reason for a failed skill dispatch (e.g. mcp_timeout, suppressed_for_safe_test). */
-  skillReason?: string;
-  /** On the routine's first turn, this step read the opening message before it was asked (#1370). */
-  readOpeningMessage?: boolean;
-}
-
-/**
- * A value the runner did not store (#1374, #1388). Key and reason only — never the value,
- * which may be personal data or an injection attempt.
- * - `not_scalar`: an object or array, which fits no slot type.
- * - `type_mismatch`: a scalar that does not fit the slot's declared type (an email that is
- *   not shaped like one, a date that is not a `YYYY-MM-DD` calendar date).
- * - `undeclared`: the key names no slot the routine declares. Reported only on a routine
- *   that declares a slot schema — one with none keeps every key, as it always has.
- */
-export interface RoutineTraceRejectedSlot {
-  key: string;
-  reason: "not_scalar" | "type_mismatch" | "undeclared";
-}
-
-/**
- * One declared slot's value in a {@link RoutineRunTrace}, self-describing by the slot's
- * declared type. A concrete {@link ConversationRoutineRunner} produces this only when the
- * caller that constructed it opted in (e.g. the engine's own `DefaultRoutineRunner` takes
- * an `includeSlotValues` construction option) — a live customer conversation never opts
- * in, so a value never reaches that trace in the first place.
- */
-export interface RoutineTraceSlotValue {
-  key: string;
-  type: RoutineSlotType;
-  /** A sensitive slot's value reads as {@link REDACTED_VALUE}. */
-  value: string | number | boolean;
-  /** True when `value` was cut to the per-value bound; the stored value ends in "…". */
-  truncated?: boolean;
-}
-
-/**
- * A step-by-step record of one routine turn's traversal, surfaced to the debug panel
- * as a {@link CapabilitySubTrace} (`namespace: "routine"`). Per-step entries carry slot
- * *keys* only, never values. `slotValues` is present only when the caller that resumed
- * the routine asked for it — see {@link RoutineTraceSlotValue} — which is how a private
- * test surface can show them while an ordinary trace never carries one at all.
- */
-export interface RoutineRunTrace {
-  routineId: string;
-  /** Step the turn resumed on. */
-  startStepId: string;
-  /** Step the turn ultimately rendered; on a `stuck` ending, the step the routine was stuck on. */
-  landedStepId: string;
-  terminalKind?: RoutineTerminalKind;
-  /** Declared slot keys newly captured this turn (names only). */
-  capturedSlotKeys: string[];
-  /** Declared slot keys filled after this turn (names only). */
-  filledSlotKeys: string[];
-  /**
-   * Every filled declared slot's value after this turn, in the routine's declared order,
-   * capped to a bounded count — present only when the caller opted in.
-   */
-  slotValues?: RoutineTraceSlotValue[];
-  /** Present alongside `slotValues` when the filled-slot count exceeded the bound. */
-  omittedSlotCount?: number;
-  steps: RoutineTraceStepEntry[];
-}
+export type {
+  RoutineRunTrace,
+  RoutineTraceRejectedSlot,
+  RoutineTraceSlotValue,
+  RoutineTraceStepEntry,
+} from "./routineTrace.js";
 
 export interface ConversationRoutineResumeResult {
   response: RenderableTurn;
@@ -1880,6 +1742,8 @@ export interface ProcessTurnInput {
   agent: ConversationAgentConfig;
   sessionId: string;
   inputEvent: ConversationInputEvent;
+  /** Carried onto every turn context the engine builds for this turn. */
+  referenceTimeZone?: ReferenceTimeZone;
   skills: SkillDefinition[];
   directives: Directive[];
   stores: ConversationStores;
@@ -1964,6 +1828,8 @@ export interface AttemptRoutineInput {
   agent: ConversationAgentConfig;
   sessionId: string;
   inputEvent: ConversationInputEvent;
+  /** Carried onto the routine's turn context when the host supplies none. */
+  referenceTimeZone?: ReferenceTimeZone;
   stores: ConversationStores;
   /**
    * Optional host-prepared turn context. Post-evidence activation supplies this so

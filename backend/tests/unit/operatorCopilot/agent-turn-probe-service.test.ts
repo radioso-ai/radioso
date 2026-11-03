@@ -167,6 +167,14 @@ describe("AgentTurnProbeService", () => {
     expect(turnRunner.run).not.toHaveBeenCalled();
   });
 
+  it("runs the turn as a visitor in the zone the probe names", async () => {
+    const { service, runTurn } = harness({ existingConversation: conversation() });
+
+    await service.testTurn(input({ conversationId: ids.conversation, userTimeZone: "America/Los_Angeles" }));
+
+    expect(runTurn).toHaveBeenCalledWith(expect.objectContaining({ visitorTimeZone: "America/Los_Angeles" }));
+  });
+
   it("fails closed before effects when a preview routine is not found", async () => {
     const { service, routineReader, abuseControl, turnRunner } = harness();
     routineReader.findPreviewRoutine.mockResolvedValue(null);

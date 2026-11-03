@@ -36,8 +36,44 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT",
   },
   {
+    source: "routine-step-reask.md",
+    exportName: "DEFAULT_ROUTINE_STEP_REASK_PROMPT",
+  },
+  {
+    source: "routine-step-reask-gap.md",
+    exportName: "DEFAULT_ROUTINE_STEP_REASK_GAP_PROMPT",
+  },
+  {
+    source: "routine-step-reask-exhausted-gap.md",
+    exportName: "DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_GAP_PROMPT",
+  },
+  {
+    source: "routine-step-reask-missing-slots.md",
+    exportName: "DEFAULT_ROUTINE_STEP_REASK_MISSING_SLOTS_PROMPT",
+  },
+  {
+    source: "routine-step-progress.md",
+    exportName: "DEFAULT_ROUTINE_STEP_PROGRESS_PROMPT",
+  },
+  {
+    source: "routine-step-context-evidence.md",
+    exportName: "DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT",
+  },
+  {
     source: "routine-next-step.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_PROMPT",
+  },
+  {
+    source: "routine-next-step-slots.md",
+    exportName: "DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT",
+  },
+  {
+    source: "routine-next-step-filled-slots.md",
+    exportName: "DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT",
+  },
+  {
+    source: "routine-next-step-date-rule.md",
+    exportName: "DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT",
   },
   {
     source: "directive-match.md",

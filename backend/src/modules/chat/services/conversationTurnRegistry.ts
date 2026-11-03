@@ -1,7 +1,7 @@
 import { AppError } from "../../../shared/domain/errors.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import type { ConversationTurnStage } from "../contracts/interruption.js";
+import type { ConversationTurnStage, ConversationTurnSupersession } from "../contracts/interruption.js";
 
 export type { ConversationTurnStage } from "../contracts/interruption.js";
 
@@ -72,6 +72,16 @@ export class ChatTurnDisconnectAbortError extends AppError {
   }
 }
 
+/**
+ * The same supersession, for a turn the registry saw emitting (its reply was being stored) whose
+ * reply never reached the client: the newer input replaces it whole.
+ */
+export const supersededBeforeEmission = (error: ChatTurnSupersededError): ChatTurnSupersededError =>
+  new ChatTurnSupersededError(error.conversationId, error.stage, { replacedByNewerInput: error.replacedByNewerInput });
+
+export const isTurnCancellation = (error: unknown): boolean =>
+  error instanceof ChatTurnSupersededError || error instanceof ChatTurnDisconnectAbortError;
+
 export interface ConversationTurnLease {
   readonly conversationId: string;
   readonly signal: AbortSignal;
@@ -97,6 +107,10 @@ export interface ConversationTurnLease {
    */
   cancelAfterDisconnect(): void;
 }
+
+/** The registry mode a turn's supersession asks for: only `latest_input_wins` supersedes after emission. */
+export const leaseOptionsFor = (supersession: ConversationTurnSupersession | undefined): ConversationTurnLeaseOptions | undefined =>
+  supersession === "latest_input_wins" ? { supersedeAfterEmission: true } : undefined;
 
 export interface ConversationTurnLeaseOptions {
   /**

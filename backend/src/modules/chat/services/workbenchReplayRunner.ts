@@ -33,6 +33,7 @@ import { detectTurnResponseLanguage } from "./turnResponseLanguage.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   RetrievalSenseDetectorPort,
+  WorkspaceTimeZoneReader,
 } from "../../retrieval/public.js";
 import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
@@ -58,6 +59,7 @@ import {
 } from "./chatTurnAssembly.js";
 import { withRoutineReplyDelivery } from "./routines/routineReplyDelivery.js";
 import { routineReplyFor } from "./routines/routineReplyFor.js";
+import { withCommittedPageRead } from "./routines/pageReadAwareRoutineRunner.js";
 import {
   createEphemeralChatTurnEffectProfile,
   type EphemeralChatTurnEffectProfile,
@@ -204,6 +206,8 @@ interface WorkbenchReplayRunnerOptions {
   logger?: Pick<AppLogger, "warn" | "info">;
   /** Records a streamed replay's time to its first answer chunk; latency only, never content. */
   streamMetrics?: Pick<MetricsRegistry, "observeHistogram"> | null;
+  /** The workspace's zone, so a replayed turn reads the same today as the live one; UTC when absent. */
+  workspaceTimeZones?: WorkspaceTimeZoneReader;
 }
 
 /**
@@ -384,6 +388,18 @@ export class WorkbenchReplayRunner {
       effects.auditService,
       undefined,
       undefined,
+      // Replay leaves the preparer's other optional ports unwired; it reads only the workspace's zone.
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      this.options.workspaceTimeZones,
     );
     const prepareInput: PrepareChatSessionInput = {
       workspaceId: input.workspaceId,
@@ -605,7 +621,7 @@ export class WorkbenchReplayRunner {
     return this.presentResult({
       input: turn.input,
       agent: turn.agent,
-      session: turn.session,
+      session: withCommittedPageRead(turn.session, routineResult.pageRead),
       presentation: routineResult.presentation,
       engineTrace: delivery.reply
         ? withRoutineReplyDelivery(routineResult.engineTrace, delivery.reply)
@@ -696,6 +712,7 @@ export class WorkbenchReplayRunner {
         }),
         agentId: session.agent.id,
         visitorContext: visitorMatchContext(session).context,
+        timeZone: session.referenceTimeZone?.timeZone,
         workspaceContext: buildAgentChatWorkspaceContext(session.agent),
         usageContext: {
           accountId: input.accountId ?? undefined,

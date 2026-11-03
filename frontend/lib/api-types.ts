@@ -216,6 +216,7 @@ export type RetrievalMetadataCondition = NonNullable<RetrievalMetadataRule['cond
 
 export type IngestionSettings = ApiSchemas['IngestionSettings']
 export type PrivacySettings = ApiSchemas['PrivacySettings']
+export type TimeZoneSettings = ApiSchemas['TimeZoneSettings']
 export type DocumentTypeCatalog = ApiSchemas['DocumentTypeCatalog']
 export type DocumentTypeDefinition = ApiSchemas['DocumentTypeDefinition']
 export type DocumentTypeField = ApiSchemas['DocumentTypeField']

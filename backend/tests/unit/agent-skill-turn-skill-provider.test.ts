@@ -311,6 +311,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       skillResultRenderer,
     });
     const session = sessionWithBinding("order_lookup");
+    session.referenceTimeZone = { timeZone: "America/Los_Angeles", source: "visitor" };
 
     const runtime = await provider.forSession(session);
     const selector = new ChatTurnSkillSelector(
@@ -343,6 +344,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
         sessionId: conversationId,
         conversationId,
         conversationDurability: "durable",
+        turn: { referenceTimeZone: { timeZone: "America/Los_Angeles", source: "visitor" } },
       },
     });
     expect((invocation?.skill as { requiredCapabilities?: string[] }).requiredCapabilities).toEqual(["external_skills.invoke"]);
@@ -485,6 +487,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       skillResultRenderer,
     });
     const session = sessionWithBinding("grounded_search");
+    session.referenceTimeZone = { timeZone: "America/Los_Angeles", source: "visitor" };
 
     const runtime = await provider.forSession(session);
     const chunkRegistry = {
@@ -505,6 +508,8 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({
       query: "What is the refund policy?",
       workspaceId,
+      // The skill's own retrieval reads the turn's today, not the workspace's.
+      referenceTimeZone: { timeZone: "America/Los_Angeles", source: "visitor" },
     }));
     expect(chunkRegistry.record).toHaveBeenCalledWith([
       expect.objectContaining({

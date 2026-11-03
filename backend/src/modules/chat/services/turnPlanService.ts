@@ -10,7 +10,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import {
   type Clock,
-  formatPromptDateUtc,
+  formatPromptDate,
   PROMPT_DATE_BUDGET_STAND_IN,
   systemClock,
 } from "../../../shared/domain/clock.js";
@@ -31,7 +31,7 @@ import {
 } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import { withTimeout } from "./turnPlanTimeout.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import { parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
+import { formatConversationContext, parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
 import {
   PAGE_READ_INTENTS,
   parsePageReadDecision,
@@ -164,6 +164,8 @@ export interface TurnPlanRequest {
    */
   visitorContext?: Record<string, unknown>;
   quickReplyLane?: TurnPlanQuickReplyLane;
+  /** The zone the planner reads today's date in, so a named period resolves in it; UTC when absent. */
+  timeZone?: string;
   workspaceContext: LlmCapabilityResolveInput;
   usageContext: ModelCallUsageContext;
   signal?: AbortSignal;
@@ -176,15 +178,6 @@ export interface TurnPlanRequest {
  * parsing, and validation.
  */
 export type { TurnPlanGatewayFactory } from "../../../shared/infra/llm/turnPlanGateway.js";
-
-const formatConversationContext = (messages: MessageRecord[]): string =>
-  messages
-    .map((message) =>
-      `${message.role.toUpperCase()}: ${message.content}${
-        message.role === "user" ? " [authoritative for grounding]" : " [non-authoritative context]"
-      }`,
-    )
-    .join("\n");
 
 // Routine candidates are rendered and scored under a positional alias, never their
 // real id: the embedding prefilter returns a different subset and order from turn
@@ -331,9 +324,9 @@ interface TurnPlanningPrompt {
 
 /**
  * Canonical prompt renderer shared by execution and the eligibility budget. `today` is the
- * UTC date line `formatPromptDateUtc` renders, which the rewrite resolves a named period
- * against; it renders in the request, so the reusable system prefix stays the same from day
- * to day.
+ * date line `formatPromptDate` renders in the turn's zone, which the rewrite resolves a named
+ * period against; it renders in the request, so the reusable system prefix stays the same from
+ * day to day.
  */
 export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput & { today: string }): TurnPlanningPrompt => {
   const hasRoutineCandidates = input.routineCandidates.length > 0;
@@ -1015,7 +1008,7 @@ export class TurnPlanService {
       const directiveNames = request.directiveCandidates.map((candidate) => candidate.name);
       const { systemPrompt, reusableInputBoundary, prompt } = buildTurnPlanningPrompt({
         ...request,
-        today: formatPromptDateUtc((this.options.clock ?? systemClock)()),
+        today: formatPromptDate((this.options.clock ?? systemClock)(), request.timeZone),
       });
       const { text } = await client.complete({
         systemPrompt,

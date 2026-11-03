@@ -1,7 +1,7 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { type Clock, formatPromptDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatPromptDate, systemClock } from "../../../shared/domain/clock.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
@@ -42,6 +42,8 @@ export interface QueryRewriteGatewayInput {
   lexicalRewriteInstructions?: string;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ModelCallUsageContext;
+  /** The zone the rewrite reads today's date in; UTC when absent. */
+  timeZone?: string;
 }
 
 export interface QueryRewriteGateway {
@@ -86,7 +88,7 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         query: input.query,
-        today: formatPromptDateUtc(this.clock()),
+        today: formatPromptDate(this.clock(), input.timeZone),
       }),
       reasoningEffort: RETRIEVAL_BEHAVIOR.queryInterpretation.reasoningEffort,
     });
@@ -116,6 +118,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
     contextMessages: MessageRecord[];
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
+    timeZone?: string;
   }): Promise<StructuredRewriteResult> {
     const response = await this.client.chat.completions.create({
       model: this.model,
@@ -127,7 +130,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
             semanticRewriteInstructions: input.semanticRewriteInstructions,
             lexicalRewriteInstructions: input.lexicalRewriteInstructions,
             query: input.query,
-            today: formatPromptDateUtc(this.clock()),
+            today: formatPromptDate(this.clock(), input.timeZone),
           }),
         },
       ],

@@ -90,6 +90,7 @@ export const registerAgentChannelChatRoute = (
           startConversation: req.body.startConversation,
           stream: req.body.stream,
           userExpectedLocale: req.body.userExpectedLocale,
+          visitorTimeZone: req.body.userTimeZone,
           sourceChannel: "agent_api",
           sourceOrigin: null,
           requestContext,

@@ -65,12 +65,13 @@ import {
   type EmbeddingModelTransitionPort,
 } from "../../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../../modules/settings/contracts/ingestion.js";
+import { TimeZoneSettingsService, type TimeZoneSettingsStore } from "../../../modules/settings/public.js";
 import { WebsiteCrawlJobService } from "../../../modules/websiteCrawler/jobService.js";
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 import { RadiosoCrawlerProvider } from "../../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../../modules/websiteCrawler/worker.js";
 import { createWebsiteCrawlerIngestionPort } from "../../composition/websiteCrawlerIngestionPort.js";
-import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
+import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver, WorkspaceTimeZoneReader } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import { Database } from "../../../shared/infra/database.js";
@@ -87,6 +88,7 @@ export const buildSettingsServices = (input: {
   documentTypeCatalogRepository: DocumentTypeCatalogRepository;
   supportedEmbeddingModels?: readonly EmbeddingModelId[];
   embeddingTransitions?: EmbeddingModelTransitionPort;
+  timeZoneSettingsStore: TimeZoneSettingsStore;
 }) => {
   const ingestionSettingsService = new IngestionSettingsService(
     input.ingestionSettingsRepository,
@@ -102,6 +104,7 @@ export const buildSettingsServices = (input: {
   return {
     ingestionSettingsService,
     documentTypeCatalogService,
+    timeZoneSettingsService: new TimeZoneSettingsService({ store: input.timeZoneSettingsStore, audit: input.auditService }),
   };
 };
 
@@ -340,6 +343,7 @@ export const buildRetrievalServices = (input: {
   retrievalDefaultsProvider: RetrievalDefaultsProvider;
   skillSettingsResolver?: SkillSettingsResolver;
   agentRetrievalScope?: AgentRetrievalScopePort;
+  workspaceTimeZones?: WorkspaceTimeZoneReader;
   telemetryService: TelemetryService;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;

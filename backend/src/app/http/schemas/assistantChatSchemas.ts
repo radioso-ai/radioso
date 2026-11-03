@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { metadataFilterSchema } from "./metadataFilterSchema.js";
 import { chatMessageSchema } from "./textInputLimits.js";
+import { userTimeZoneSchema } from "./timeZoneSchemas.js";
 
 const localeHintSchema = z.string().trim().max(35);
 
@@ -43,6 +44,7 @@ export const assistantChatSchema = z.object({
   stream: z.boolean().default(false),
   includeDebug: z.boolean().optional().default(false),
   userExpectedLocale: localeHintSchema.optional(),
+  userTimeZone: userTimeZoneSchema.optional(),
   inputMetadata: userInputMetadataSchema.optional(),
   sourceContext: sourceContextSchema,
   metadataFilter: metadataFilterSchema,

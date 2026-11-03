@@ -35,6 +35,7 @@ import {
   type ChatStreamEvent,
 } from "../../src/modules/chat/services/chatService.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
+import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { sendChatSse } from "../../src/app/http/presenters/chatPresenter.js";
 import type { AssistantTurnPersistencePort } from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import { InMemoryConversationTurnRegistry } from "../../src/modules/chat/services/conversationTurnRegistry.js";
@@ -418,6 +419,19 @@ const claimingRoutine = (
     }),
   };
   return { routineProvider, claim };
+};
+
+/**
+ * Hands every routine claim a copy of the session `ChatService` holds, so the session the turn
+ * is persisted from is not the object the routine commits its page read to: the fork any copy
+ * of the session made between the claim and the end of its reply leaves.
+ */
+const claimRoutinesOnASessionCopy = (service: ChatService): void => {
+  const assembly = (service as unknown as {
+    chatTurnAssembly: { claimRoutineTurn: (session: PreparedSession, input: unknown) => Promise<unknown> };
+  }).chatTurnAssembly;
+  const claimRoutineTurn = assembly.claimRoutineTurn.bind(assembly);
+  assembly.claimRoutineTurn = (session, input) => claimRoutineTurn({ ...session }, input);
 };
 
 /** A reply that streams `deltas` (awaiting `hold` before the delta at `holdAt`) and renders their join whole. */
@@ -1421,6 +1435,72 @@ describe("ChatService streams a routine reply that reports no completed action",
         operation: served,
         outcome: "context_ready",
         resolved: true,
+      });
+    },
+  );
+
+  it.each([
+    { stream: true, landing: "ask_email" },
+    { stream: false, landing: "ask_email" },
+    { stream: true, landing: "ask_name" },
+    { stream: false, landing: "ask_name" },
+  ])(
+    "records the page read when the turn is persisted from another copy of the session than the routine committed to (streamed: $stream, landing on $landing)",
+    async ({ stream, landing }) => {
+      const pageRoutine: Routine = {
+        id: "contact.request",
+        rootStepId: "ask_email",
+        steps: [
+          {
+            id: "ask_email",
+            kind: "chat",
+            action: "Name the course on {{context.page_context}} and ask for the visitor's email.",
+            metadata: { contextRefs: ["page_context"] },
+          },
+          { id: "ask_name", kind: "chat", action: "Ask for the visitor's name." },
+        ],
+        transitions: [{ from: "ask_email", to: "ask_name", condition: "an email was given" }],
+      };
+      const { routineProvider } = claimingRoutine(
+        [{
+          reply: streamingReply(["Which email ", "can we use?"]),
+          effects: {
+            nextState: { sessionId: "session", routineId: "contact.request", path: [landing], variables: {}, status: "active" },
+            trace: {
+              routineId: "contact.request",
+              startStepId: "ask_email",
+              landedStepId: landing,
+              capturedSlotKeys: [],
+              filledSlotKeys: [],
+              steps: [],
+            },
+          },
+        }],
+        [pageRoutine],
+      );
+      const observed: Observed = { order: [], events: [] };
+      const harness = await chatService({ routineProvider, chatGateway: unusedGateway, order: observed.order });
+      claimRoutinesOnASessionCopy(harness.service);
+      const turn = {
+        ...request("book this edition"),
+        stream,
+        pageContext: { pageUrl: "https://example.test/courses/autumn", content: "Autumn retreat, 30 Oct to 2 Nov." },
+      };
+
+      if (stream) {
+        expect(await drainTurn(harness.service.streamAnswer(turn), observed)).toBeUndefined();
+      } else {
+        await harness.service.answer(turn);
+      }
+
+      const assistant = vi.mocked(harness.messageRepository.create).mock.calls
+        .map(([message]) => message)
+        .find((message) => message.role === "assistant");
+      expect(assistant?.metadata?.pageRead).toEqual({
+        decision: { required: true, operation: "context", resolvedRequest: "book this edition" },
+        winnerSource: { kind: "routine", routineId: "contact.request" },
+        gateOutcome: "capture",
+        servedOperation: "lookup",
       });
     },
   );

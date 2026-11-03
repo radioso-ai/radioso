@@ -54,6 +54,11 @@ ElevenLabs key and press **Connect**, and Radioso creates the ElevenLabs
 agent in your account, gives it a credential, keeps it set up, and opens each
 session for the page, so the key never leaves the workspace.
 
+A call runs on the agent's published release, like every chat, so publish the
+agent before you offer calls. Until it is published, the Voice card and the
+website widget's **Offer calls on the website** switch both say so, and
+Radioso starts no session for it.
+
 ### Connect ElevenLabs
 
 1. In ElevenLabs, create an API key that may read and write agents: the key's
@@ -66,12 +71,12 @@ session for the page, so the key never leaves the workspace.
    and admins can set and remove it; `PUT` and `DELETE`
    `/api/v1/settings/credentials/elevenlabs` do the same from the dashboard
    session.
-3. On the agent's **Voice** card (**Channels → API**), turn on **Voice
-   channel** and select **Connect ElevenLabs**. The card then reads
-   **Connected to ElevenLabs · recordings stay in the European Union**, or
-   whichever region your account keeps its data in. Connect takes effect at
-   once; the **Voice channel** switch and the lines below it take effect when
-   you select **Save voice settings**.
+3. On the agent's **Voice** card (**Channels → API**), select **Connect
+   ElevenLabs** and turn on **Voice channel**, the one setting a call needs
+   on this card. The card then reads **Connected to ElevenLabs · recordings
+   stay in the European Union**, or whichever region your account keeps its
+   data in. Connect takes effect at once; the **Voice channel** switch and the
+   lines below it take effect when you select **Save voice settings**.
 
 Connect does four things:
 
@@ -324,7 +329,7 @@ environment variables — see [Voice session start rate limits](../docs-portal/c
 
 | Status | `error.code` | What it means |
 |---|---|---|
-| `404` | `not_found` | The public session is missing, is not a website embed session, or is not valid from this origin; or the **Voice channel** is off for the agent, or no runtime is bound. |
+| `404` | `not_found` | The public session is missing, is not a website embed session, or is not valid from this origin; or the agent has never been published, the **Voice channel** is off for the agent, or no runtime is bound. |
 | `429` | `rate_limit_exceeded` | The visitor session or the workspace used up its session-start budget. |
 | `503` | `voice_unavailable` | The session could not be started. |
 
@@ -339,7 +344,9 @@ describes, or enter the ElevenLabs key again), `credential_read_failed` or `regi
 (Radioso could not reach its database), or `vendor_failed` (ElevenLabs refused
 the start or did not answer within 5 seconds; `vendorStatus: 401` means the
 stored key is wrong). The `voice_session_start_total` metric counts the same
-outcomes.
+outcomes, and counts each `404` start with no log line, as `agent_not_found`,
+`not_published` (nobody has published the agent), `voice_off` or
+`no_runtime`.
 
 ### Use an ElevenLabs agent you set up yourself
 
@@ -438,9 +445,9 @@ Radioso maintains, and leaves yours alone too.
 The website embed is a ready-made page for voice calls. Offering them is your
 choice, and it starts off:
 
-1. Get the agent's voice ready: an ElevenLabs key under **Voice runtime
-   keys**, ElevenLabs connected under **Voice provider**, and the **Voice channel**
-   on, as above.
+1. Get the agent's voice ready: the agent published, an ElevenLabs key under
+   **Voice runtime keys**, ElevenLabs connected under **Voice provider**, and
+   the **Voice channel** on, as above.
 2. On the agent's **Web chat** page, under **Website widget**, turn on
    **Offer calls on the website**. You can turn it on once voice is ready;
    until then it names the piece still missing. You can turn it off at any
@@ -454,9 +461,9 @@ give a microphone only to pages served over https (or from `localhost`), so a
 page served over plain http shows no button. The embed snippet stays the same.
 The embed learns about the switch from its config, which a browser keeps for a
 minute. Radioso Cloud's CDN keeps it for up to five, and Radioso drops the
-CDN's copy whenever the agent's settings change or the workspace stores or
-removes its ElevenLabs key, so the button appears or disappears within about a
-minute of a change.
+CDN's copy whenever the agent's settings change, the agent is published for the
+first time, or the workspace stores or removes its ElevenLabs key, so the
+button appears or disappears within about a minute of a change.
 
 Ray can draft the agent's `voice` block, but it leaves this switch to you: it
 decides whether every visitor to your live site sees **Talk** and a microphone
@@ -466,8 +473,10 @@ recorded in the audit log as `website_embed.voice_calls_offered.changed`. An
 agent bundle always exports it as `false`, so an imported agent offers no calls
 until you turn them on. For a dashboard session, `GET /api/v1/agents/:agentId`
 also returns `voiceCallReadiness`: `{ "ready": true, "missing": null }`, or the
-first missing piece as `voice_channel`, `runtime`, `vendor_key` or
-`encryption` (a key is stored but `CONNECTOR_ENCRYPTION_KEY` is not set).
+first missing piece as `publication` (nobody has published the agent, so it
+answers no chats or calls; it comes first for that reason), `voice_channel`,
+`runtime`, `vendor_key` or `encryption` (a key is stored but
+`CONNECTOR_ENCRYPTION_KEY` is not set).
 
 When a visitor presses **Talk**:
 
@@ -585,6 +594,12 @@ You write them in the **Voice** card, below the Agent API card on the agent's
 4. Write the **Fallback line**, which the caller hears when nothing is ready
    at 10 seconds.
 5. Select **Save voice settings**.
+
+Every line is optional. Without bridge lines the caller hears silence while
+the agent works, and without a fallback line a slow turn keeps them waiting
+for the answer; the agent still answers either way. A language you add stays
+on the card after a save even before it holds a line, stored as a language with
+no bridge lines, which a call skips.
 
 On the `elevenlabs` dialect, bridge and fallback lines follow the
 [first-sentence length rule](#elevenlabs-first-sentence-length). The card
@@ -1759,7 +1774,16 @@ phone number, records no notice.
   message with text, the utterance is longer than 4,000 characters, or the
   dialect found no session key. Check that the runtime sends the field the
   dialect table names.
-- `404` means the dialect in the path is not one of the dialects above.
+- `404` means the dialect in the path is not one of the dialects above, or,
+  with `error.code` `agent_not_published`, that nobody has published the agent:
+  every turn runs on its published release. ElevenLabs retries the turn and
+  then ends the call with `custom_llm_error`. Radioso starts no session for an
+  unpublished agent, so you meet this only on a session your own page or
+  runtime started; publish the agent and call again.
+- A turn that fails logs `Voice turn failed` at warn with `errorClass`, and,
+  when the failure is one of Radioso's own refusals, its `errorCode` and HTTP
+  `statusCode`, such as `agent_not_published` and `404`. The line never
+  carries the error's message.
 - Whether a turn gets a bridge line and the 10-second limit depends on who owns
   the conversation when the turn starts, and the voice channel reads that a few
   milliseconds before the agent does. A hand-off or takeover that lands in

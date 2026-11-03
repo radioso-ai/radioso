@@ -6005,11 +6005,11 @@ export interface components {
                 acknowledgement: string[];
             };
         };
-        /** @description Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it. */
+        /** @description Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the agent's publication (an agent that has never been published answers no chats or calls), the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it. */
         VoiceCallReadiness: {
             ready: boolean;
             /** @enum {string|null} */
-            missing: "voice_channel" | "runtime" | "vendor_key" | "encryption" | null;
+            missing: "publication" | "voice_channel" | "runtime" | "vendor_key" | "encryption" | null;
         };
         /** @description The agent's privacy notice, keyed by language tag (at most 10): one line (`text`, 1 to 200 characters) and a link to the operator's policy (`url`, http or https, at most 500 characters). Chat surfaces show it before the visitor's first message, the first reply of an email conversation carries it, and a voice session start hands it to the call. `version` is derived from the language, line and link: the same notice keeps its version, a changed one gets a new one. Empty until the operator writes one. */
         AgentPrivacyNotices: {
@@ -11682,7 +11682,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Public chat not found */
+            /** @description Public chat not found; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17147,7 +17147,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Routine tool is not in the agent's catalog */
+            /** @description Routine tool is not in the agent's catalog; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31751,7 +31751,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Public chat link not found */
+            /** @description Public chat link not found; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31822,7 +31822,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound */
+            /** @description Public session not found or not a website embed session, or the agent takes no voice sessions: it has never been published, voice is off, or no vendor agent is bound */
             404: {
                 headers: {
                     [name: string]: unknown;

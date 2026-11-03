@@ -572,9 +572,9 @@ export interface VoiceSessionLanguageSource {
 /**
  * How a session start ended. `started` carries what the page needs to open the session: the
  * vendor's URL, the session key the voice runtime sends back on every turn, and the caller's
- * language. `unavailable`: the agent takes no voice sessions (it is gone, voice is off, or no vendor
- * agent is bound). `failed`: the agent takes them, and this one could not be started; why is the
- * service's to log and count, never the visitor's to read.
+ * language. `unavailable`: the agent takes no voice sessions (it is gone, it has never been
+ * published, voice is off, or no vendor agent is bound). `failed`: the agent takes them, and this
+ * one could not be started; why is the service's to log and count, never the visitor's to read.
  */
 export type VoiceSessionStartResult =
   | {
@@ -604,11 +604,13 @@ export type VoiceSessionStartResult =
   | { kind: "failed" };
 
 /**
- * What can keep an agent's voice from being ready, in the order an operator sets them up: the voice
- * channel, the runtime binding, the vendor key, then the backend's master key to read it. The API
- * contract's `VoiceCallReadiness.missing` is this list.
+ * What can keep an agent's voice from being ready, first missing first: the agent's publication,
+ * since every turn runs on its published release and an agent nobody published answers nothing,
+ * then in the order an operator sets voice up: the voice channel, the runtime binding, the vendor
+ * key, then the backend's master key to read it. The API contract's `VoiceCallReadiness.missing`
+ * is this list.
  */
-export const VOICE_CALL_READINESS_GAPS = ["voice_channel", "runtime", "vendor_key", "encryption"] as const;
+export const VOICE_CALL_READINESS_GAPS = ["publication", "voice_channel", "runtime", "vendor_key", "encryption"] as const;
 
 export type VoiceCallReadinessGap = (typeof VOICE_CALL_READINESS_GAPS)[number];
 
@@ -617,17 +619,24 @@ export type VoiceCallReadiness =
   | { ready: true; missing: null }
   | { ready: false; missing: VoiceCallReadinessGap };
 
+/** The agent whose voice readiness is asked: its own `voice` block, which the caller already holds. */
+export interface VoiceReadinessSubject {
+  workspaceId: string;
+  agentId: string;
+  voice: Pick<AgentVoiceSettings, "enabled" | "runtime">;
+}
+
 /**
  * Whether an agent's voice is ready for sessions. It reads the agent's own `voice` block, which its
- * caller already holds, and only the key's presence. `readiness` says what is missing, for the
- * operator's dashboard; `isAvailable` is the yes or no a page may learn, and names nothing about
- * the vendor or the key.
+ * caller already holds, whether the agent is published, and only the key's presence. `readiness`
+ * says what is missing, for the operator's dashboard; `isAvailable` is the yes or no a page may
+ * learn, and names nothing about the vendor or the key.
  */
 export interface VoiceSessionAvailabilityPort {
-  /** Rejects when the credential store cannot be read. */
-  readiness(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<VoiceCallReadiness>;
-  /** Never rejects: a store that cannot be read reads as not ready, and is logged. */
-  isAvailable(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<boolean>;
+  /** Rejects when the agent's publication or the credential store cannot be read. */
+  readiness(input: VoiceReadinessSubject): Promise<VoiceCallReadiness>;
+  /** Never rejects: what cannot be read reads as not ready, and is logged. */
+  isAvailable(input: VoiceReadinessSubject): Promise<boolean>;
 }
 
 export interface VoiceSessionStartPort {

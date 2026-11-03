@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
-import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken, publishTestAgentBaseline } from "../support/testApp.js";
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { signVisitorIdentity } from "../../src/modules/context-variables/public.js";
@@ -831,6 +831,7 @@ describe("public chat contract", () => {
       .set("X-Workspace-Id", session.workspaceId)
       .expect(200);
     const chatToken = tokenResponse.body.surfaceSettings.anonymousChat.token as string;
+    await publishTestAgentBaseline(app, { workspaceId: session.workspaceId, agentId: agent.body.id });
     const publicSession = await createPublicSession(app, chatToken);
     const conversation = await repositories.conversationRepository.create({
       workspaceId: session.workspaceId,

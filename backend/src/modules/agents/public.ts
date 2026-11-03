@@ -140,7 +140,9 @@ export {
 } from "./agentRevision.js";
 export {
   AgentRevisionRuntimeResolver,
+  agentNotPublished,
   applyAgentRevisionSnapshot,
+  type AgentPublicationReader,
   type AgentRevisionRuntimeReaderPort,
 } from "./runtime/agentRevisionRuntimeResolver.js";
 export {

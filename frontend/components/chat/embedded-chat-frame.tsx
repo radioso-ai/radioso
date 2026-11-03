@@ -21,6 +21,7 @@ import {
   type WebsiteEmbedPageContext,
 } from '@/lib/api'
 import { postWebsiteEmbedAnalyticsEvent, type WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
+import { publicChatUnavailableMessage, publicChatUnavailableReasonOf, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 
 function EmbeddedChatUnavailable({
   localeOverride,
@@ -52,7 +53,8 @@ function EmbeddedChatUnavailable({
 
 type BootstrapState =
   | { status: 'bootstrapping'; workspaceName?: string | null }
-  | { status: 'error'; message: string }
+  /** `reason`: why the launcher's launch was refused, when the API said so with its error code. */
+  | { status: 'error'; message: string; reason?: PublicChatUnavailableReason | null }
   | {
       status: 'ready'
       publicChatToken: string
@@ -406,6 +408,7 @@ export function EmbeddedChatFrame({
             typeof event.data.message === 'string'
               ? event.data.message
               : 'Embedded chat could not be started from this website.',
+          reason: publicChatUnavailableReasonOf(typeof event.data.code === 'string' ? event.data.code : null),
         })
       }
     }
@@ -469,7 +472,8 @@ export function EmbeddedChatFrame({
     return (
       <EmbeddedChatUnavailable
         localeOverride={localeOverride}
-        message={state.message}
+        // An agent nobody has published reads as not available yet, in the visitor's language.
+        message={state.reason === 'agent_unavailable' ? publicChatUnavailableMessage(state.reason, copy) : state.message}
         copyOverrides={copyOverrides}
         themeOverrides={themeOverrides}
       />

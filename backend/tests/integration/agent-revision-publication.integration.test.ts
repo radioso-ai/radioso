@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentRevisionRepository } from "../../src/db/repositories/agentRevisionRepository.js";
+import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicationProposalAdapter } from "../../src/modules/operatorCopilot/agentPublicationProposalAdapter.js";
 import { AgentRevisionService } from "../../src/modules/agents/agentRevision.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -57,6 +58,24 @@ describeDb("agent revision publication concurrency", () => {
     await database.query("INSERT INTO agent_revisions (id,agent_id,workspace_id,snapshot,source_draft_generation,source_base_published_revision_id) VALUES ($1,$2,$3,$4::jsonb,$5,$6)", [currentCandidateId, cleanAgentId, workspaceId, currentSnapshot, 2, null]);
     await expect(repository.publish({ workspaceId, agentId: cleanAgentId, actorAccountId: null, revisionId: currentCandidateId, expectedDraftGeneration: 2, expectedPublishedRevisionId: null, idempotencyKey: "current" })).resolves.toMatchObject({ idempotentReplay: false });
     await expect(repository.readState(workspaceId, cleanAgentId)).resolves.toMatchObject({ status: "draft_clean", draft: { basePublishedRevisionId: currentCandidateId } });
+  });
+
+  it("reads an agent as published, through the runtime reader, only once it has a published release of its own", async () => {
+    const runtime = new AgentRevisionRuntimeRepository(database.kysely);
+    const freshAgentId = randomUUID();
+    const freshSnapshot = JSON.stringify({ customInstruction: "fresh", directives: [], routines: [], contextVariableEnablements: [] });
+    await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [freshAgentId, workspaceId, "never published"]);
+    await database.query("INSERT INTO agent_drafts (agent_id,workspace_id,generation,snapshot) VALUES ($1,$2,1,$3::jsonb)", [freshAgentId, workspaceId, freshSnapshot]);
+
+    await expect(runtime.isPublished({ workspaceId, agentId: freshAgentId })).resolves.toBe(false);
+
+    const candidate = await repository.createCandidate(workspaceId, freshAgentId, { id: randomUUID(), expectedDraftGeneration: 1 });
+    if (candidate === "conflict") throw new Error("candidate creation conflicted");
+    await expect(runtime.isPublished({ workspaceId, agentId: freshAgentId })).resolves.toBe(false);
+    await repository.publish({ workspaceId, agentId: freshAgentId, actorAccountId: null, revisionId: candidate.id, expectedDraftGeneration: 1, expectedPublishedRevisionId: null, idempotencyKey: "fresh" });
+
+    await expect(runtime.isPublished({ workspaceId, agentId: freshAgentId })).resolves.toBe(true);
+    await expect(runtime.isPublished({ workspaceId: randomUUID(), agentId: freshAgentId })).resolves.toBe(false);
   });
 
   it("reuses the same immutable candidate for the exact saved draft generation", async () => {

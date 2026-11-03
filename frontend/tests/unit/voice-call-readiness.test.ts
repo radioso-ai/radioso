@@ -4,6 +4,7 @@ import { voiceCallReadinessHint } from '@/lib/voice-call-readiness'
 
 describe('the calls switch hint', () => {
   it('names the piece the backend says is missing', () => {
+    expect(voiceCallReadinessHint('publication', 'ElevenLabs')).toBe('Publish the agent first: until it is published, it answers no chats or calls.')
     expect(voiceCallReadinessHint('voice_channel', 'ElevenLabs')).toBe('Turn on the voice channel on the API page first.')
     expect(voiceCallReadinessHint('runtime', 'ElevenLabs')).toBe('Connect a voice runtime on the Voice card first.')
     expect(voiceCallReadinessHint('vendor_key', 'ElevenLabs')).toBe('Store the ElevenLabs key under Settings → Providers first.')

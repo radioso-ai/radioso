@@ -6,7 +6,7 @@ import { createAgentPublicProfileComposition } from "../composition/agentDiscove
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import {
   createVoiceChannelComposition,
-  refreshEmbedConfigsOnVoiceVendorKeyChange,
+  refreshEmbedConfigsOnVoiceReadinessChange,
   wireVoiceRecordings,
   wireVoiceRuntimeConnections,
 } from "../composition/voiceChannel.js";
@@ -1220,13 +1220,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     externalSkillDefinitionRepository,
     modelAvailability: workspaceModelAvailability,
   });
-  // Shared by the agent-facing catalog route and the public discovery documents, which
-  // describe the same published release and must not drift apart.
-  const agentDiscoveryRevisionReader = new AgentRevisionRuntimeRepository(infrastructure.database.kysely);
-  const agentToolCatalog = createAgentToolCatalogComposition({
-    agentRepository: repositories.agentRepository,
-    agentRevisionReader: agentDiscoveryRevisionReader,
-  });
+  // One reader of each agent's published release, so the catalog, discovery, voice and public chat never disagree.
+  const publishedRevisionReader = new AgentRevisionRuntimeRepository(infrastructure.database.kysely);
+  const agentToolCatalog = createAgentToolCatalogComposition({ agentRepository: repositories.agentRepository, agentRevisionReader: publishedRevisionReader });
   // Composition-owned adapters for `registerPeriodicTask` contributions (e.g. EE's usage-alert
   // sweep): a notice-mail sender and an account-administrator directory, neither of which a
   // contributing module may build itself without reaching into OSS internals. Built once here —
@@ -1315,9 +1311,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       logger,
     }),
   ]);
-  refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
+  refreshEmbedConfigsOnVoiceReadinessChange({ credentials: workspaceProviderCredentialsService, publications: agentRevisionService, embedConfigs: agentService });
   const { voiceSessionStarts, voiceRuntimeConnections } = wireVoiceRuntimeConnections({
     database: infrastructure.database,
+    publication: publishedRevisionReader,
     starts: voiceSessions,
     greetings: chat.chatBootstrapService,
     agentRepository: repositories.agentRepository,
@@ -1439,7 +1436,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentToolCatalog,
     agentPublicProfile: createAgentPublicProfileComposition({
       agentRepository: repositories.agentRepository,
-      agentRevisionReader: agentDiscoveryRevisionReader,
+      agentRevisionReader: publishedRevisionReader,
       agentToolCatalog,
       mcpBaseUrl: env.PUBLIC_MCP_CONVERSE_URL,
     }),
@@ -1491,6 +1488,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     platformSettingsService,
     agentService,
     agentRevisionService,
+    agentPublication: publishedRevisionReader,
     authoredDirectiveService,
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,

@@ -5,6 +5,7 @@ import {
   defaultAgentVoiceSettings,
   type AgentVoiceSettings,
 } from "../../src/modules/agents/public.js";
+import { AppError } from "../../src/shared/domain/errors.js";
 import { VoiceTurnIncompleteError, type VoiceTurnEvent, type VoiceTurnInput } from "../../src/modules/voiceChannel/domain.js";
 import {
   VoiceTurnService,
@@ -440,6 +441,29 @@ describe("VoiceTurnService", () => {
     expect(logger.warn).toHaveBeenCalledTimes(1);
     const [fields] = logger.warn.mock.calls[0];
     expect(fields).toMatchObject({ result: "failed", conversationId, errorClass: "ProviderDownError" });
+    expect(fields).not.toHaveProperty("errorCode");
+    expect(fields).not.toHaveProperty("statusCode");
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret detail");
+  });
+
+  it("logs a refused turn's error code and status, so the log alone says why a call fails, and never its message", async () => {
+    const logger = fakeLogger();
+    const service = new VoiceTurnService({ ...voiceOff,
+      sessions: fakeSessions(null),
+      chat: {
+        // Chat refuses before it opens a conversation, as it does for an agent with no published release.
+        streamTurn: () => (async function* (): AsyncGenerator<ChatStreamEvent> {
+          throw new AppError(404, "agent_not_published", "Agent is not published: secret detail");
+        })(),
+      },
+      logger,
+    });
+
+    await expect(collect(service.runTurn(input(), new AbortController().signal))).rejects.toThrow("Agent is not published");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ result: "failed", errorClass: "AppError", errorCode: "agent_not_published", statusCode: 404 }),
+      "Voice turn failed",
+    );
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret detail");
   });
 

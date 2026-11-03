@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../../src/app/config/env.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
 import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
+import { issuePublicChatSession } from "../../src/modules/settings/contracts/publicChatSession.js";
 import { VOICE_CALL_READINESS_GAPS } from "../../src/modules/voiceChannel/public.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
@@ -455,6 +456,85 @@ describe("public voice session start contract", () => {
 
       expect(await readReadiness(app, dashboard, agentId)).toEqual({ ready: false, missing: "encryption" });
       expect((await embedConfig()).body.voice).toEqual({ available: false });
+    });
+  });
+
+  describe("an agent nobody has published yet", () => {
+    /**
+     * A second agent of the workspace, set up for calls like the default one, with its own website
+     * embed that offers them. Nobody has published it, so no turn could run on it.
+     */
+    const unpublishedVoiceAgent = async (envOverrides?: Partial<Env>) => {
+      const fixture = await embedWorkspace({ vendorFetch: vendorAnswering(200, { signed_url: SIGNED_URL }), envOverrides });
+      const { app, dashboard } = fixture;
+      const created = await request(app).post("/api/v1/agents").set(dashboard).send({ name: "Draft agent" }).expect(201);
+      const agentId = created.body.id as string;
+      await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({
+        voice: boundVoice,
+        surfaceSettings: { websiteEmbed: { enabled: true, allowedOrigins: [SITE], voiceCallsOffered: true } },
+      }).expect(200);
+      const rotated = await request(app).post(`/api/v1/agents/${agentId}/website-embed-token/rotate`).set(dashboard).expect(200);
+      return { ...fixture, draftAgentId: agentId, draftLaunchToken: rotated.body.surfaceSettings.websiteEmbed.token as string };
+    };
+
+    it("names the publication as what its voice is missing, and offers no calls on its website embed", async () => {
+      const { app, dashboard, draftAgentId, draftLaunchToken } = await unpublishedVoiceAgent();
+
+      const agent = await request(app).get(`/api/v1/agents/${draftAgentId}`).set(dashboard).expect(200);
+      const config = await request(app).get(`/api/v1/public/chat/${draftLaunchToken}/embed-config`).set("Origin", SITE).expect(200);
+
+      expect(agent.body.voiceCallReadiness).toEqual({ ready: false, missing: "publication" });
+      expect(config.body.voice).toEqual({ available: false });
+    });
+
+    it("starts no voice session for it, asks the vendor nothing, and counts why", async () => {
+      const { app, operator, dependencies, draftAgentId, draftLaunchToken } = await unpublishedVoiceAgent({ METRICS_ENABLED: true, METRICS_AUTH_TOKEN: "metrics-test-token" });
+      // A session minted outside the exchange, which refuses an unpublished agent itself.
+      const publicSession = issuePublicChatSession("00112233445566778899aabbccddeeff", {
+        workspaceId: operator.workspaceId,
+        agentId: draftAgentId,
+        publicChatToken: draftLaunchToken,
+        publicSessionId: randomUUID(),
+        sourceChannel: "website_embed",
+        sourceOrigin: SITE,
+      });
+
+      const response = await request(app)
+        .post(`/api/v1/public/chat/${draftLaunchToken}/voice/sessions`)
+        .set({ Origin: SITE, "x-radioso-public-session": publicSession.token })
+        .send({})
+        .expect(404);
+
+      expect(JSON.stringify(response.body)).not.toContain("wss://");
+      expect(startOutcomes(dependencies.metricsRegistry?.renderPrometheus() ?? "")).toEqual([
+        expect.stringContaining('outcome="not_published"'),
+      ]);
+    });
+
+    it("drops the CDN-cached embed config when the agent is first published, so the Talk button follows at once", async () => {
+      const invalidateForToken = vi.fn(async () => undefined);
+      const { app, dashboard } = await embedWorkspace({ embedConfigCacheInvalidator: { invalidateForToken } });
+      const created = await request(app).post("/api/v1/agents").set(dashboard).send({ name: "Draft agent" }).expect(201);
+      const agentId = created.body.id as string;
+      await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({
+        surfaceSettings: { websiteEmbed: { enabled: true, allowedOrigins: [SITE] } },
+      }).expect(200);
+      const rotated = await request(app).post(`/api/v1/agents/${agentId}/website-embed-token/rotate`).set(dashboard).expect(200);
+      const state = await request(app).get(`/api/v1/agents/${agentId}/revision-state`).set(dashboard).expect(200);
+      const candidate = await request(app)
+        .post(`/api/v1/agents/${agentId}/revisions/candidates`)
+        .set(dashboard)
+        .send({ expectedDraftGeneration: state.body.draft.generation })
+        .expect(201);
+      invalidateForToken.mockClear();
+
+      await request(app).post(`/api/v1/agents/${agentId}/revisions/${candidate.body.candidate.id}/publish`).set(dashboard).send({
+        expectedDraftGeneration: state.body.draft.generation,
+        expectedPublishedRevisionId: null,
+        idempotencyKey: randomUUID(),
+      }).expect(200);
+
+      await vi.waitFor(() => expect(invalidateForToken).toHaveBeenCalledWith(rotated.body.surfaceSettings.websiteEmbed.token));
     });
   });
 

@@ -55,6 +55,8 @@ const serviceWith = (overrides: {
   language?: VoiceSessionLanguageSource["languageFor"];
   /** The service's clock; a fixed instant unless a case moves it. */
   clock?: () => number;
+  /** Whether the agent has a published release; published unless a case says otherwise. */
+  published?: boolean | Error;
 } = {}) => {
   const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn() };
@@ -77,11 +79,17 @@ const serviceWith = (overrides: {
   });
   const greetingFor = vi.fn<VoiceGreetingSource["greetingFor"]>(overrides.greeting ?? (async () => null));
   const languageFor = vi.fn<VoiceSessionLanguageSource["languageFor"]>(overrides.language ?? (async () => ({ outcome: "unsupported" })));
+  const isPublished = vi.fn(async (): Promise<boolean> => {
+    const published = overrides.published ?? true;
+    if (published instanceof Error) throw published;
+    return published;
+  });
   const voice = overrides.voice === undefined ? boundVoice : overrides.voice;
   const service = new VoiceSessionStartService({
     agents: {
       findVoiceProfile: async () => (voice ? { voice, defaultLocale: overrides.defaultLocale ?? null } : null),
     },
+    publication: { isPublished },
     credentials: { read, presence },
     starters: { elevenlabs: { startSession } },
     starts: { register },
@@ -94,7 +102,7 @@ const serviceWith = (overrides: {
     metrics,
     logger,
   });
-  return { service, logger, metrics, startSession, read, presence, register, findConnection, greetingFor, languageFor };
+  return { service, logger, metrics, startSession, read, presence, register, findConnection, greetingFor, languageFor, isPublished };
 };
 
 const greetingOutcomes = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) =>
@@ -161,6 +169,9 @@ describe("voice session start", () => {
     ["the agent no longer exists", { voice: null }, "agent_not_found", "none"],
     ["voice is off for the agent", { voice: { ...boundVoice, enabled: false } }, "voice_off", "none"],
     ["the agent is bound to no vendor agent", { voice: { ...boundVoice, runtime: null } }, "no_runtime", "none"],
+    // Every turn runs on the agent's published release, so a call to an agent nobody published could say nothing.
+    ["the agent has never been published", { published: false }, "not_published", "none"],
+    ["the agent has never been published, whatever its voice still needs", { published: false, voice: { ...boundVoice, enabled: false } }, "not_published", "none"],
   ] as const)("starts nothing when %s", async (_case, overrides, outcome, vendor) => {
     const { service, startSession, read, register, metrics } = serviceWith(overrides);
 
@@ -646,8 +657,8 @@ describe("voice session availability", () => {
   it("is ready when voice is on, a vendor agent is bound and the workspace holds a key it can read", async () => {
     const { service, presence, read } = serviceWith();
 
-    expect(await service.readiness({ workspaceId, voice: boundVoice })).toEqual({ ready: true, missing: null });
-    expect(await service.isAvailable({ workspaceId, voice: boundVoice })).toBe(true);
+    expect(await service.readiness({ workspaceId, agentId, voice: boundVoice })).toEqual({ ready: true, missing: null });
+    expect(await service.isAvailable({ workspaceId, agentId, voice: boundVoice })).toBe(true);
     expect(presence).toHaveBeenCalledWith({ workspaceId, vendor: "elevenlabs" });
     expect(read).not.toHaveBeenCalled();
   });
@@ -658,34 +669,57 @@ describe("voice session availability", () => {
   ] as const)("names what is missing and reads no key when %s", async (_case, voice, missing) => {
     const { service, presence } = serviceWith();
 
-    expect(await service.readiness({ workspaceId, voice })).toEqual({ ready: false, missing });
-    expect(await service.isAvailable({ workspaceId, voice })).toBe(false);
+    expect(await service.readiness({ workspaceId, agentId, voice })).toEqual({ ready: false, missing });
+    expect(await service.isAvailable({ workspaceId, agentId, voice })).toBe(false);
     expect(presence).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["voice is ready otherwise", boundVoice],
+    ["voice is off too", { ...boundVoice, enabled: false }],
+  ] as const)("names the publication first, and reads no key, for an agent that has never been published when %s", async (_case, voice) => {
+    const { service, presence, isPublished } = serviceWith({ published: false });
+
+    expect(await service.readiness({ workspaceId, agentId, voice })).toEqual({ ready: false, missing: "publication" });
+    expect(await service.isAvailable({ workspaceId, agentId, voice })).toBe(false);
+    expect(isPublished).toHaveBeenCalledWith({ workspaceId, agentId });
+    expect(presence).not.toHaveBeenCalled();
+  });
+
+  it("offers none, and logs it, when the agent's publication cannot be read; readiness rejects", async () => {
+    const { service, logger } = serviceWith({ published: new Error("connection refused") });
+
+    expect(await service.isAvailable({ workspaceId, agentId, voice: boundVoice })).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, vendor: "elevenlabs", errorClass: "Error" },
+      "Voice availability check failed",
+    );
+    await expect(service.readiness({ workspaceId, agentId, voice: boundVoice })).rejects.toThrow("connection refused");
   });
 
   it("names the vendor key when the workspace holds none for the bound vendor", async () => {
     const { service } = serviceWith({ stored: "missing" });
 
-    expect(await service.readiness({ workspaceId, voice: boundVoice })).toEqual({ ready: false, missing: "vendor_key" });
-    expect(await service.isAvailable({ workspaceId, voice: boundVoice })).toBe(false);
+    expect(await service.readiness({ workspaceId, agentId, voice: boundVoice })).toEqual({ ready: false, missing: "vendor_key" });
+    expect(await service.isAvailable({ workspaceId, agentId, voice: boundVoice })).toBe(false);
   });
 
   it("names the encryption when a key is stored but the backend has no master key to read it", async () => {
     const { service } = serviceWith({ stored: "unreadable" });
 
-    expect(await service.readiness({ workspaceId, voice: boundVoice })).toEqual({ ready: false, missing: "encryption" });
-    expect(await service.isAvailable({ workspaceId, voice: boundVoice })).toBe(false);
+    expect(await service.readiness({ workspaceId, agentId, voice: boundVoice })).toEqual({ ready: false, missing: "encryption" });
+    expect(await service.isAvailable({ workspaceId, agentId, voice: boundVoice })).toBe(false);
   });
 
   it("offers none, and logs it, when the credential store cannot be read; readiness rejects", async () => {
     const { service, logger, metrics } = serviceWith({ stored: new Error("connection refused") });
 
-    expect(await service.isAvailable({ workspaceId, voice: boundVoice })).toBe(false);
+    expect(await service.isAvailable({ workspaceId, agentId, voice: boundVoice })).toBe(false);
     expect(logger.warn).toHaveBeenCalledWith(
       { workspaceId, vendor: "elevenlabs", errorClass: "Error" },
       "Voice availability check failed",
     );
     expect(startOutcomes(metrics)).toEqual([]);
-    await expect(service.readiness({ workspaceId, voice: boundVoice })).rejects.toThrow("connection refused");
+    await expect(service.readiness({ workspaceId, agentId, voice: boundVoice })).rejects.toThrow("connection refused");
   });
 });

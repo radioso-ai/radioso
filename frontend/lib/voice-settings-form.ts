@@ -97,6 +97,8 @@ const authoredLinesOf = <Kind extends string>(kinds: readonly Kind[], source: Re
 /**
  * The whole `voice` and `mechanicsReplies` blocks the form describes, as an agent update replaces
  * them. Blank lines are dropped, and a language with nothing in a block is left out of that block.
+ * Every line is optional, so a language with no lines at all is kept, as one with no bridge lines:
+ * the voice channel skips a language without lines, and the card shows it again after a reload.
  */
 export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: AgentVoiceSettings; mechanicsReplies: AgentMechanicsReplies } => {
   const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {}, runtime: form.runtime, languageSwitching: form.languageSwitching }
@@ -111,6 +113,7 @@ export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: A
     if (notice) recordingNotice[language.locale] = notice
     const replies = authoredLinesOf(MECHANICS_REPLY_KINDS, language.mechanicsReplies)
     if (replies) mechanicsReplies[language.locale] = replies
+    if (!bridgeLines && !fallbackLine && !notice && !replies) voice.bridgeLines[language.locale] = linesOf(VOICE_BRIDGE_STYLES)
   }
   // The block is replaced whole, so leaving the notices out removes every one.
   if (Object.keys(recordingNotice).length > 0) voice.recordingNotice = recordingNotice
@@ -119,8 +122,7 @@ export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: A
 
 /**
  * The form once a save returns: `enabled`, the runtime and every language's lines as the server stored them,
- * with the form's own language list kept, so a language added with nothing in it yet stays until
- * the operator removes it.
+ * in the form's own language order, then any language only the server has.
  */
 export const voiceSettingsFormAfterSave = (form: VoiceSettingsForm, voice: AgentVoiceSettings, mechanicsReplies: AgentMechanicsReplies): VoiceSettingsForm => {
   const saved = voiceSettingsFormFromAgent(voice, mechanicsReplies)

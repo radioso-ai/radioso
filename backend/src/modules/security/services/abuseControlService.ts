@@ -75,6 +75,8 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
    *
    * A rejected caller is told the later of the block's end and the moment the window admits one
    * more attempt, so a retry at the stated reset is admitted rather than refused and blocked anew.
+   * An admitted caller with budget left is told when the running window rolls; one with nothing
+   * left is told when one more attempt gets in, which the window's end alone does not promise.
    */
   private decide(consumption: AbuseControlConsumption, input: AbuseControlConsumptionInput): AbuseControlDecision {
     const { blockedUntil, windowStartedAt } = consumption.entry;
@@ -92,11 +94,16 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
         retryAfterSeconds: this.retryAfterSeconds(resetAt, evaluatedAt),
       } satisfies AbuseControlDecision);
     }
+    const remaining = Math.max(0, Math.floor(input.limit - consumption.weightedAttemptCount));
+    const windowEndsAtMs = windowStartedAt.getTime() + input.windowMs;
+    const resetAt = new Date(remaining > 0
+      ? windowEndsAtMs
+      : earliestReadmissionAtMs(consumption.entry, input) ?? windowEndsAtMs);
     return {
       limit: input.limit,
-      remaining: Math.max(0, Math.floor(input.limit - consumption.weightedAttemptCount)),
-      resetAtMs: windowStartedAt.getTime() + input.windowMs,
-      resetAfterSeconds: this.resetAfterSeconds(new Date(windowStartedAt.getTime() + input.windowMs), evaluatedAt),
+      remaining,
+      resetAtMs: resetAt.getTime(),
+      resetAfterSeconds: this.resetAfterSeconds(resetAt, evaluatedAt),
     };
   }
 

@@ -188,17 +188,10 @@ describe("AbuseControlService", () => {
       });
     });
 
-    // A caller and its twin live in separate stores: the service sweeps entries whose block has
-    // ended after every call, and a sweep run on the twin's clock would erase the caller's history,
-    // admitting its retry without weighing anything.
-    const separateStores = (): [AbuseControlService, AbuseControlService] => [
-      new AbuseControlService(new InMemoryAbuseControlRepository()),
-      new AbuseControlService(new InMemoryAbuseControlRepository()),
-    ];
-
     it("tells a refused caller a reset at which its retry is admitted, even past the block", async () => {
+      const service = new AbuseControlService(new InMemoryAbuseControlRepository());
       const policy = { ...voicePolicy, subjectKey: "source:bunched" };
-      const [caller, twin] = separateStores();
+      const twin = { ...policy, subjectKey: "source:bunched-twin" };
       // Four counted in the first window still outweigh the limit when the block ends at 610 s;
       // the weighted count first admits one more just after 900 s.
       const expectedReset = {
@@ -206,43 +199,85 @@ describe("AbuseControlService", () => {
         resetAfterSeconds: 891,
         retryAfterSeconds: 891,
       };
-      for (const service of [caller, twin]) {
+      for (const subject of [policy, twin]) {
         for (const seconds of [0, 1, 2]) {
-          await service.enforce({ ...policy, now: at(seconds) });
+          await service.enforce({ ...subject, now: at(seconds) });
         }
-        await expect(service.enforce({ ...policy, now: at(10) })).rejects.toMatchObject({
+        await expect(service.enforce({ ...subject, now: at(10) })).rejects.toMatchObject({
           statusCode: 429,
           details: expectedReset,
         });
       }
 
-      await expect(caller.enforce({ ...policy, now: at(300) })).rejects.toMatchObject({
+      await expect(service.enforce({ ...policy, now: at(300) })).rejects.toMatchObject({
         statusCode: 429,
         details: { resetAtMs: expectedReset.resetAtMs },
       });
-      await expect(twin.enforce({ ...policy, now: at(610) })).rejects.toMatchObject({ statusCode: 429 });
+      await expect(service.enforce({ ...twin, now: at(610) })).rejects.toMatchObject({ statusCode: 429 });
       await expect(
-        caller.enforce({ ...policy, now: new Date(expectedReset.resetAtMs) }),
+        service.enforce({ ...policy, now: new Date(expectedReset.resetAtMs) }),
       ).resolves.toMatchObject({ remaining: 0 });
     });
 
     it("tells a caller refused while the window before still weighs when that weight has faded enough", async () => {
+      const service = new AbuseControlService(new InMemoryAbuseControlRepository());
       const policy = { scope: "public.chat.session", subjectKey: "visitor:straddle", limit: 5, windowMs: 60_000, blockMs: 5_000 };
-      const [caller, twin] = separateStores();
+      const twin = { ...policy, subjectKey: "visitor:straddle-twin" };
       const start = new Date("2026-03-30T10:00:00.000Z").getTime();
-      for (const service of [caller, twin]) {
+      for (const subject of [policy, twin]) {
         for (const offsetMs of [0, 59_000, 59_100, 59_200, 59_300]) {
-          await service.enforce({ ...policy, now: new Date(start + offsetMs) });
+          await service.enforce({ ...subject, now: new Date(start + offsetMs) });
         }
         // Five from the spent window weigh 5 x 59/60 one second into the next, plus this attempt.
-        await expect(service.enforce({ ...policy, now: new Date(start + 61_000) })).rejects.toMatchObject({
+        await expect(service.enforce({ ...subject, now: new Date(start + 61_000) })).rejects.toMatchObject({
           statusCode: 429,
           details: { resetAtMs: start + 84_001, retryAfterSeconds: 24 },
         });
       }
 
-      await expect(twin.enforce({ ...policy, now: new Date(start + 83_000) })).rejects.toMatchObject({ statusCode: 429 });
-      await expect(caller.enforce({ ...policy, now: new Date(start + 84_001) })).resolves.toMatchObject({ remaining: 0 });
+      await expect(service.enforce({ ...twin, now: new Date(start + 83_000) })).rejects.toMatchObject({ statusCode: 429 });
+      await expect(service.enforce({ ...policy, now: new Date(start + 84_001) })).resolves.toMatchObject({ remaining: 0 });
+    });
+
+    it("keeps weighing a refused caller's history once its block ends", async () => {
+      const repository = new InMemoryAbuseControlRepository();
+      const service = new AbuseControlService(repository);
+      const policy = { ...voicePolicy, subjectKey: "source:after-block", blockMs: 60_000 };
+      for (const seconds of [0, 1, 2]) {
+        await service.enforce({ ...policy, now: at(seconds) });
+      }
+      await expect(service.enforce({ ...policy, now: at(10) })).rejects.toMatchObject({ statusCode: 429 });
+
+      await repository.deleteExpired(at(80));
+
+      expect(await repository.find(policy.scope, policy.subjectKey)).toMatchObject({ attemptCount: 4 });
+      // Past the block, this attempt counts as a fifth, which holds readmission until 960 s.
+      await expect(service.enforce({ ...policy, now: at(80) })).rejects.toMatchObject({
+        statusCode: 429,
+        details: { resetAtMs: at(960).getTime() + 1 },
+      });
+    });
+
+    it("tells an admitted caller with nothing left when one more attempt gets in", async () => {
+      const service = new AbuseControlService(new InMemoryAbuseControlRepository());
+      const policy = { ...voicePolicy, subjectKey: "source:last-slot" };
+      const twin = { ...policy, subjectKey: "source:last-slot-twin" };
+      for (const subject of [policy, twin]) {
+        await service.enforce({ ...subject, now: at(0) });
+        await service.enforce({ ...subject, now: at(1) });
+        // The window rolls at 600 s, but its three starts keep weighing until just after 800 s.
+        await expect(service.enforce({ ...subject, now: at(2) })).resolves.toEqual({
+          limit: 3,
+          remaining: 0,
+          resetAtMs: at(800).getTime() + 1,
+          resetAfterSeconds: 799,
+        });
+      }
+
+      await expect(service.enforce({ ...twin, now: at(600) })).rejects.toMatchObject({ statusCode: 429 });
+      await expect(service.enforce({ ...policy, now: new Date(at(800).getTime() + 1) })).resolves.toMatchObject({
+        remaining: 0,
+      });
     });
 
     it("tells a refused batch a reset at which the same batch is admitted", async () => {

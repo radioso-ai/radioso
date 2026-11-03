@@ -19,7 +19,12 @@ import type {
 } from "@radioso/conversation-contract";
 import { checkSlotValue } from "@radioso/conversation-engine";
 
-import { DEFAULT_ROUTINE_NEXT_STEP_PROMPT } from "./generated/defaultPrompts.js";
+import {
+  DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
+  DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
+  DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
+  DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
+} from "./generated/defaultPrompts.js";
 import { localIsoDate, turnTimeZone, type LocalDate } from "./localDate.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
@@ -67,63 +72,65 @@ const slotLine = (slot: RoutineSlotSchema): string => {
   return `- ${slot.key} (${slot.type})${description ? `: ${description}` : ""}`;
 };
 
+/** The templates the selector's slot rules are written from (`chat/routine-next-step-*.md`). */
+interface SlotRuleTemplates {
+  slots: string;
+  filledSlots: string;
+  dateRule: string;
+}
+
 // A date slot without today's date left the model unsure how to write "11 novembre": it
 // dropped the value or stored it verbatim, so the hand-off received free text. The format
 // is stated as how to record the value, never as the slot's type: shown as the type, the
 // model read it as the format the user must type and re-asked a date it had already
 // captured, and parsed "11-14 Nov" as month 11, day 14.
-const dateRule = (today: LocalDate): string =>
-  [
-    "The user may write a date in any form; a date they give for a date slot counts as provided.",
-    'Record a date slot\'s value as YYYY-MM-DD, reading the day and month the way the user wrote them: "11-14 Nov" is 11 to 14 November.',
-    `Today is ${today.isoDate} (${today.timeZone}); a date given without a year is its next occurrence on or after today.`,
-    'Leave a date slot out when the user names only an approximate time, such as "mid-November" or "in spring".',
-  ].join(" ");
+const dateRule = (today: LocalDate, template: string): string =>
+  renderPromptTemplate("chat/routine-next-step-date-rule.md", template, {
+    today: today.isoDate,
+    time_zone: today.timeZone,
+  });
+
+// Keys only: whether a slot already holds a value is what a condition such as "the user
+// provided {{slot.arrival}}" turns on, and without it a value given on an earlier turn
+// looked missing, so the step re-asked for it.
+const filledSlotKeys = (routine: Routine, variables: Record<string, unknown>): string[] =>
+  (routine.slots ?? [])
+    .filter((slot) => Object.prototype.hasOwnProperty.call(variables, slot.key))
+    .map((slot) => slot.key);
 
 // One readable line per slot, not the raw schema JSON. With the JSON dump the model
 // returned no values at all whenever the current step's own question went unanswered,
 // dropping slots the message plainly gave (#1370: a first message stating two dates kept
 // them in 0 of 20 samples; with this block and the date rule, in 19–20 of 20).
-// Keys only: whether a slot already holds a value is what a condition such as "the user
-// provided {{slot.arrival}}" turns on, and without it a value given on an earlier turn
-// looked missing, so the step re-asked for it.
-const filledSlotsLine = (routine: Routine, variables: Record<string, unknown>): string[] => {
-  const filled = (routine.slots ?? []).filter((slot) => Object.prototype.hasOwnProperty.call(variables, slot.key));
-  return filled.length > 0 ? [`Slots that already have a value from earlier turns: ${filled.map((slot) => slot.key).join(", ")}.`] : [];
-};
-
-// Without these (#1664), a bare "30 ottobre" with an arrival and a departure slot landed in
-// either one, and a "yes" to dates the step had just offered filled neither, since the
-// message itself states no value. Framing the whole message as a reply to the last question
-// went too far: answers were mapped onto whatever was asked ("1 novembre" filled the course
-// after "which course?"), and a date the opening message gave for another slot was dropped.
-// Acceptance covers only what the assistant proposed: a step that reads held values back and
-// asks to confirm also runs the selector (through its AI-decided exit), and read as a
-// proposal, the "yes" replaced the user's own words with the assistant's paraphrase.
-// The proposer is named as "the assistant", never "you": the selector is told it never
-// writes to the user (#1665).
-const slotAssignmentRules = [
-  "A value that could fill more than one slot goes in none of them unless the message or the conversation before it makes clear which one it is for. One value goes into two slots only when the message gives it for both.",
-  "When the assistant's last message proposed values for slots and the latest message accepts them, in any words, those values are given this turn. A proposed value is one the user has not given, or one different from what they gave, such as a date the assistant offered instead. Return each proposed value for its slot, replacing any value the slot already holds. A value the user changes while accepting is the one to keep.",
-  "Repeating back values the user already gave, as a summary or to confirm them, proposes nothing, even in the assistant's own words. Accepting such a recap gives no value: return a repeated slot only when the latest message changes it, so each slot keeps the user's own words.",
-];
-
-const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, today: LocalDate): string => {
+// The value-assignment rules (#1664): without them, a bare "30 ottobre" with an arrival and
+// a departure slot landed in either one, and a "yes" to dates the step had just offered
+// filled neither, since the message itself states no value. Framing the whole message as a
+// reply to the last question went too far: answers were mapped onto whatever was asked
+// ("1 novembre" filled the course after "which course?"), and a date the opening message
+// gave for another slot was dropped. Acceptance covers only what the assistant proposed: a
+// step that reads held values back and asks to confirm also runs the selector (through its
+// AI-decided exit), and read as a proposal, the "yes" replaced the user's own words with the
+// assistant's paraphrase. The proposer is named as "the assistant", never "you": the
+// selector is told it never writes to the user (#1665).
+const slotSchemaBlock = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+  today: LocalDate,
+  templates: SlotRuleTemplates,
+): string => {
   if (!routine.slots || routine.slots.length === 0) {
     return "";
   }
-  return [
-    "Declared slots (key, type, and what each one holds):",
-    ...routine.slots.map(slotLine),
-    ...filledSlotsLine(routine, variables),
-    "",
-    "Extract every declared slot that the latest user message gives, or accepts as described below, in one pass, whether or not the current step asks for it.",
-    "Judge each slot on its own: a slot's description applies only to that slot and never stops you from extracting another.",
-    ...slotAssignmentRules,
-    "A condition that refers to a slot as {{slot.<key>}} holds only when that slot has a value, given in the latest message or earlier in the conversation; when you return a value for every slot such a condition refers to, it holds.",
-    ...(routine.slots.some((slot) => slot.type === "date") ? [dateRule(today)] : []),
-    'Return extracted values in "variables" keyed by each slot\'s key; omit slots not provided or accepted this turn.',
-  ].join("\n");
+  const filled = filledSlotKeys(routine, variables);
+  return renderPromptTemplate("chat/routine-next-step-slots.md", templates.slots, {
+    slot_lines: routine.slots.map(slotLine).join("\n"),
+    filled_slots: filled.length > 0
+      ? `\n${renderPromptTemplate("chat/routine-next-step-filled-slots.md", templates.filledSlots, {
+        slot_keys: filled.join(", "),
+      })}`
+      : "",
+    date_rule: routine.slots.some((slot) => slot.type === "date") ? `\n${dateRule(today, templates.dateRule)}` : "",
+  });
 };
 
 /**
@@ -334,15 +341,31 @@ const selectionTrace = (
  */
 export class RoutineNextStepSelector implements ConversationRoutineNextStepSelector {
   private readonly promptTemplate: string;
+  private readonly slotRuleTemplates: SlotRuleTemplates;
   private readonly clock: () => Date;
   private readonly onUnreadable: RoutineUnreadableObserver;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
     /** `clock` dates the turn so a date slot given without a year resolves; defaults to the wall clock. */
-    options: { promptTemplate?: string; clock?: () => Date; onUnreadable?: RoutineUnreadableObserver } = {},
+    options: {
+      promptTemplate?: string;
+      /** The declared slots and the rules for filling them (`{{slot_lines}}`, `{{filled_slots}}`, `{{date_rule}}`). */
+      slotsPromptTemplate?: string;
+      /** The slots that already hold a value (`{{slot_keys}}`). */
+      filledSlotsPromptTemplate?: string;
+      /** How a date slot's value is read and recorded (`{{today}}`, `{{time_zone}}`). */
+      dateRulePromptTemplate?: string;
+      clock?: () => Date;
+      onUnreadable?: RoutineUnreadableObserver;
+    } = {},
   ) {
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_PROMPT;
+    this.slotRuleTemplates = {
+      slots: options.slotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
+      filledSlots: options.filledSlotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
+      dateRule: options.dateRulePromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
+    };
     this.clock = options.clock ?? (() => new Date());
     this.onUnreadable = options.onUnreadable ?? ignoreUnreadable;
   }
@@ -367,7 +390,12 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       currentStep: currentStepBlock(input.currentStep, input.skillResult),
       skillResult: skillResultBlock(input.skillResult),
       conditions,
-      slotSchema: slotSchemaBlock(input.routine, input.state.variables, localIsoDate(this.clock(), turnTimeZone(input.turn))),
+      slotSchema: slotSchemaBlock(
+        input.routine,
+        input.state.variables,
+        localIsoDate(this.clock(), turnTimeZone(input.turn)),
+        this.slotRuleTemplates,
+      ),
     });
 
     // A blank completion comes back as one, so it is read, retried and reported like any other

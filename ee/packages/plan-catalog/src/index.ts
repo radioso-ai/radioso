@@ -112,6 +112,9 @@ export interface PlanCatalog {
   readonly managedModels: PlanManagedModels;
 }
 
+// Everything in PLAN_CATALOG is public: `GET /api/v1/plans` serves it unauthenticated. Numbers
+// staff alone may see (model list prices, the margin flag) live in `MODEL_SPEND_ESTIMATE`.
+//
 // `resolveJsonModule` infers widened primitive types (string, number) for JSON literals, not the
 // literal-union types plan ids and enum-like fields carry here, so the JSON import cannot satisfy
 // `PlanCatalog` by direct assignment. The catalog invariants suite is the compile-time check's
@@ -130,3 +133,5 @@ export const formatPrice = (cents: number, currency: string = PLAN_CATALOG.curre
     maximumFractionDigits: isWhole ? 0 : 2,
   }).format(cents / 100);
 };
+
+export { findModelListPrice, MODEL_SPEND_ESTIMATE, type ModelListPrice, type ModelSpendEstimate } from "./modelSpend.js";

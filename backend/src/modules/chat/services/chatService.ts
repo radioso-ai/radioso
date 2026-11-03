@@ -167,6 +167,7 @@ import {
   withRoutineReplyDelivery,
 } from "./routines/routineReplyDelivery.js";
 import { routineReplyFor } from "./routines/routineReplyFor.js";
+import { withCommittedPageRead } from "./routines/pageReadAwareRoutineRunner.js";
 import {
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
@@ -1146,7 +1147,7 @@ export class ChatService {
           });
       this.checkTurnCancellation(coordination, "routing");
       if (routineTurn) {
-        session = this.withResponseLanguage(session, await responseLanguagePromise);
+        session = withCommittedPageRead(this.withResponseLanguage(session, await responseLanguagePromise), routineTurn.pageRead);
         const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
           session,
           workspaceId: input.workspaceId,
@@ -1711,9 +1712,8 @@ export class ChatService {
         } else {
           routineTurn = routineReply.turn;
         }
-        // Copied only once the reply is generated: the routine commits its page-read decision
-        // onto the session it was claimed with as the reply starts, and the copy must carry it.
-        session = this.withResponseLanguage(session, responseLanguage);
+        // After the reply: as it ends, it records an invocation's report on the session it was claimed with.
+        session = withCommittedPageRead(this.withResponseLanguage(session, responseLanguage), routineTurn.pageRead);
         const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
           session,
           workspaceId: input.workspaceId,

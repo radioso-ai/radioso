@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-29
+last_updated: 2026-11-02
 ---
 
 # Conversational Routines
@@ -635,9 +635,13 @@ filtering of its own. The trace carries slot names only —
 never captured values, which may be personal data — so it is safe to show in the
 debug surface. This is the first place to look when a routine "isn't filling
 slots": a step with an empty `returnedSlotKeys` means the model extracted nothing
-from that turn's message, while a key in `returnedSlotKeys` that is missing from
-`capturedSlotKeys` was returned but did not newly fill a slot (for example, it
-restated a value the slot already held). An `off_topic` outcome captures nothing
+from that turn's message. A returned key lands in `capturedSlotKeys` when it
+filled an empty slot, and in `replacedSlotKeys` when the slot already held a value
+and the turn stored a different one, as when the visitor accepts a corrected date
+the reply offered. Both lists sit on the step that stored the value and, merged, on
+the turn. A returned key in neither list either restated the value the slot already
+held, or failed the slot's declared type and landed in `rejectedSlots` instead.
+An `off_topic` outcome captures nothing
 that turn, even when `returnedSlotKeys` is non-empty — those keys show what the
 model read from the message, not what the routine kept.
 
@@ -855,14 +859,22 @@ tool step resolves to `failed`.
 
 The next-step selector
 (`packages/conversation-defaults/src/routineNextStepSelector.ts` with
-`backend/prompts/chat/routine-next-step.md`) extracts slot values and picks an
-exit, retrying its own model call once when a completion comes back unreadable.
-The step renderer (`routineStepRenderer.ts` with
-`backend/prompts/chat/routine-step-reply.md`, plus
-`routine-step-reask-exhausted.md` past the re-ask limit) writes the reply. A
-routine turn therefore makes two or three model calls, all on the workspace
-chat model at reasoning effort `none`, so small wording and layout changes
-move their behavior a lot. Each rule below exists because breaking it
+`backend/prompts/chat/routine-next-step.md`, and `routine-next-step-slots.md`,
+`routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` for
+the declared slots and the rules for filling them) extracts slot values and
+picks an exit, retrying its own model call once when a completion comes back
+unreadable. The step renderer (`routineStepRenderer.ts` with
+`backend/prompts/chat/routine-step-reply.md`, `routine-step-progress.md` on a
+chat step, `routine-step-context-evidence.md` around the visitor's page, and
+`routine-step-reask.md` with its `-gap`, `-exhausted-gap`, `-missing-slots`, and
+`-exhausted` pieces on a re-ask) writes the reply. A routine turn therefore
+makes two or three model calls, all on the workspace chat model at reasoning
+effort `none`, so small wording and layout changes move their behavior a lot.
+Each template reaches the selector or renderer as a template option, so a host
+can replace one, and
+`packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the
+exact model input both send: a change to any of these files shows up there as
+a snapshot diff to review. Each rule below exists because breaking it
 produced a measured failure on gpt-5.4-mini:
 
 | Rule | What breaking it did |

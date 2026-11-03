@@ -59,6 +59,7 @@ import {
 } from "./chatTurnAssembly.js";
 import { withRoutineReplyDelivery } from "./routines/routineReplyDelivery.js";
 import { routineReplyFor } from "./routines/routineReplyFor.js";
+import { withCommittedPageRead } from "./routines/pageReadAwareRoutineRunner.js";
 import {
   createEphemeralChatTurnEffectProfile,
   type EphemeralChatTurnEffectProfile,
@@ -620,7 +621,7 @@ export class WorkbenchReplayRunner {
     return this.presentResult({
       input: turn.input,
       agent: turn.agent,
-      session: turn.session,
+      session: withCommittedPageRead(turn.session, routineResult.pageRead),
       presentation: routineResult.presentation,
       engineTrace: delivery.reply
         ? withRoutineReplyDelivery(routineResult.engineTrace, delivery.reply)

@@ -3,7 +3,13 @@
 import type { ConversationTraceStage } from '@/lib/api'
 import { normalizeAnswerCoverageCore, normalizeAnswerCoverageHeadStageFields } from '@/lib/answer-coverage'
 import { spineStageLabel, spineStageTelemetry } from '@/lib/turn-trace'
-import { skillDispatchOutcome, skillOutcomeLabel } from '@/lib/skill-dispatch-outcome'
+import { skillDispatchOutcome } from '@/lib/skill-dispatch-outcome'
+import {
+  buildRoutineRunTrace,
+  type RoutineRunTraceView,
+  type RoutineStepSelectionOutcome,
+  type RoutineTraceStepView,
+} from '@/lib/routine-run-trace'
 import { AnswerCoverageSection } from './turn-inspector/answer-coverage-section'
 
 /**
@@ -872,119 +878,6 @@ function ComposeStageDetail({
   )
 }
 
-const ROUTINE_SELECTION_OUTCOMES = ['transition', 'stay', 'off_topic', 'unreadable', 'authority_claim'] as const
-type RoutineStepSelectionOutcome = (typeof ROUTINE_SELECTION_OUTCOMES)[number]
-
-const asRoutineSelectionOutcome = (value: unknown): RoutineStepSelectionOutcome | undefined =>
-  typeof value === 'string' &&
-  (ROUTINE_SELECTION_OUTCOMES as readonly string[]).includes(value)
-    ? (value as RoutineStepSelectionOutcome)
-    : undefined
-
-/**
- * The next-step selector's own reading of one step, so an operator can tell "the
- * model returned nothing" from "the model returned a value that was not captured"
- * (#1370). Slot keys and counts only, mirroring the wire shape's own privacy rule.
- */
-interface RoutineStepSelectionView {
-  outcome: RoutineStepSelectionOutcome
-  returnedSlotKeys: string[]
-  undeclaredKeyCount?: number
-}
-
-const buildRoutineStepSelection = (value: unknown): RoutineStepSelectionView | undefined => {
-  if (!isRecord(value)) return undefined
-  const outcome = asRoutineSelectionOutcome(value.outcome)
-  if (!outcome) return undefined
-  const undeclaredKeyCount = asNumber(value.undeclaredKeyCount)
-  return {
-    outcome,
-    returnedSlotKeys: asStringArray(value.returnedSlotKeys),
-    ...(typeof undeclaredKeyCount === 'number' && undeclaredKeyCount > 0 ? { undeclaredKeyCount } : {}),
-  }
-}
-
-/** One step's outcome as the runner walked the routine graph this turn. */
-interface RoutineTraceStepView {
-  stepId: string
-  kind: string
-  event: string
-  capturedSlotKeys: string[]
-  viaSelector: boolean
-  skillName?: string
-  skillStatus?: string
-  /** Failure reason for a failed tool step, e.g. `suppressed_for_safe_test`, `mcp_timeout`. */
-  skillReason?: string
-  /** How the tool call ended, in the words the skill dispatch stage uses too. */
-  skillOutcome?: string
-  /** The next-step selector's own reading of this turn, when a model call ran here. */
-  selection?: RoutineStepSelectionView
-  /** Slot keys whose returned value did not fit the slot's type and was not stored (#1374). */
-  rejectedSlotKeys?: string[]
-  /** On the routine's first turn, this step read the opening message before it was asked (#1370). */
-  readOpeningMessage?: boolean
-}
-
-// Keys only: the runner never puts a rejected value on the trace, and this ignores one if present.
-const rejectedSlotKeysOf = (value: unknown): string[] =>
-  asArray(value).flatMap((entry) => {
-    const key = isRecord(entry) ? asString(entry.key) : undefined
-    return key ? [key] : []
-  })
-
-interface RoutineRunTraceView {
-  startStepId?: string
-  landedStepId?: string
-  terminalKind?: string
-  capturedSlotKeys: string[]
-  filledSlotKeys: string[]
-  steps: RoutineTraceStepView[]
-}
-
-/**
- * Parse the routine stage's `routine` sub-trace into a renderable, metadata-safe
- * step-by-step view. Carries slot *keys* only — the runner never puts captured
- * values on the trace, and this defensively ignores anything else on the payload.
- * Returns undefined when the stage has no routine sub-trace.
- */
-export const buildRoutineRunTrace = (
-  stage: ConversationTraceStage,
-): RoutineRunTraceView | undefined => {
-  const subTrace = stage.subTrace
-  if (!subTrace || subTrace.namespace !== 'routine' || !isRecord(subTrace.payload)) {
-    return undefined
-  }
-  const payload = subTrace.payload
-  const steps = asArray(payload.steps)
-    .filter(isRecord)
-    .map((entry): RoutineTraceStepView => {
-      const selection = buildRoutineStepSelection(entry.selection)
-      const rejectedSlotKeys = rejectedSlotKeysOf(entry.rejectedSlots)
-      return {
-        stepId: asString(entry.stepId) ?? '',
-        kind: asString(entry.kind) ?? 'chat',
-        event: asString(entry.event) ?? '',
-        capturedSlotKeys: asStringArray(entry.capturedSlotKeys),
-        viaSelector: entry.viaSelector === true,
-        ...(asString(entry.skillName) ? { skillName: asString(entry.skillName) } : {}),
-        ...(asString(entry.skillStatus) ? { skillStatus: asString(entry.skillStatus) } : {}),
-        ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
-        skillOutcome: skillOutcomeLabel({ status: asString(entry.skillStatus), reason: asString(entry.skillReason) }),
-        ...(selection ? { selection } : {}),
-        ...(rejectedSlotKeys.length > 0 ? { rejectedSlotKeys } : {}),
-        ...(entry.readOpeningMessage === true ? { readOpeningMessage: true } : {}),
-      }
-    })
-  return {
-    startStepId: asString(payload.startStepId),
-    landedStepId: asString(payload.landedStepId),
-    terminalKind: asString(payload.terminalKind),
-    capturedSlotKeys: asStringArray(payload.capturedSlotKeys),
-    filledSlotKeys: asStringArray(payload.filledSlotKeys),
-    steps,
-  }
-}
-
 const ROUTINE_EVENT_LABELS: Record<string, string> = {
   resumed: 'Resumed',
   advanced: 'Advanced',
@@ -1121,6 +1014,17 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
                   <SlotKeyChips keys={step.capturedSlotKeys} tone="bg-emerald-500/10 text-emerald-600" />
                 </div>
               ) : null}
+              {step.replacedSlotKeys ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                    title="The slot already held a value, and this step stored a different one in its place."
+                  >
+                    replaced
+                  </span>
+                  <SlotKeyChips keys={step.replacedSlotKeys} tone="bg-sky-500/10 text-sky-600" />
+                </div>
+              ) : null}
               {step.rejectedSlotKeys ? (
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span
@@ -1154,6 +1058,7 @@ function RoutineStageDetail({
   const completed = typeof outputs.completed === 'boolean' ? outputs.completed : undefined
   const trace = buildRoutineRunTrace(stage)
   const capturedThisTurn = new Set(trace?.capturedSlotKeys ?? [])
+  const replacedThisTurn = new Set(trace?.replacedSlotKeys ?? [])
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
@@ -1181,11 +1086,14 @@ function RoutineStageDetail({
                   className={`rounded-full px-2 py-0.5 font-mono text-[11px] ${
                     capturedThisTurn.has(key)
                       ? 'bg-emerald-500/10 text-emerald-600'
-                      : 'bg-muted text-muted-foreground'
+                      : replacedThisTurn.has(key)
+                        ? 'bg-sky-500/10 text-sky-600'
+                        : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   {key}
                   {capturedThisTurn.has(key) ? <span className="ml-1 not-italic">• new</span> : null}
+                  {replacedThisTurn.has(key) ? <span className="ml-1 not-italic">• replaced</span> : null}
                 </li>
               ))}
             </ul>

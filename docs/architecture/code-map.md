@@ -1470,6 +1470,7 @@ Public surfaces and contracts:
 
 - `packages/conversation-contract/index.d.ts`
 - `packages/conversation-contract/modelGateway.d.ts` (the model port a host implements: request, completion with its stop reason, and `ConversationModelGateway`; re-exported from `index.d.ts`)
+- `packages/conversation-contract/routineTrace.d.ts` (the routine sub-trace: per-step entries, captured and replaced slot keys, opt-in slot values; re-exported from `index.d.ts`)
 - `packages/conversation-contract/index.js` (runtime values of the `declare const` code lists; change the two together)
 
 Useful searches:
@@ -1926,11 +1927,12 @@ Primary internals:
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit; `claim` decides the turn before the reply exists, `resume` claims and renders)
+- `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector
 - `packages/conversation-engine/src/stepReferences.ts` (fills `{{slot.<key>}}` and `{{context.<name>}}` into a step instruction, and collects the `contextEvidence` the referenced context variables carry to the step reply; the host renders both in `backend/src/modules/context-variables/routineContextRenderer.ts`)
 - `packages/conversation-engine/src/routineActivation.ts` and `routineResume.ts` (`claimRoutine` → the host renders or streams the reply → `settle`; `attemptRoutine` is that sequence rendered whole)
 - `backend/src/modules/chat/services/routines/routineReplyDelivery.ts` (the delivery rule: a claimed reply streams when its turn only moves the routine to its next step, and is persisted first and shown whole when a skill acted outside the conversation, the turn queued an action, or ended the routine; `skillActsOutsideConversation` in `backend/src/modules/retrieval/public.ts` is the one rule for which skills act outside, shared with safe-test suppression), consulted through `routineReplyFor.ts` by both live streaming chat (`ChatService`) and streamed Test Chat replay (`WorkbenchReplayRunner.stream`)
 - `packages/conversation-engine/src/slotValue.ts` (the one per-type check every stored slot value passes)
-- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-reask-exhausted.md` (a step asked past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Before editing `routine-next-step.md` or `routine-step-reply.md` (or the fragments built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
+- `backend/prompts/chat/routine-next-step.md` with `routine-next-step-slots.md`, `routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` (the selector's declared slots and the rules for filling them), `routine-step-reply.md` with `routine-step-progress.md` (a chat step's reply ends on its question), `routine-step-context-evidence.md` (frames the visitor's page as evidence), and `routine-step-reask.md` with `routine-step-reask-gap.md`, `routine-step-reask-exhausted-gap.md`, `routine-step-reask-missing-slots.md`, and `routine-step-reask-exhausted.md` (a step asked again, and past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Every one of these but `routine-ranked-activation.md` and `routine-step-answer-steering.md` reaches `RoutineNextStepSelector` or `RoutineStepRenderer` as a template option from `backend/src/modules/routines/turnProvider.ts`, and `pnpm run generate:prompts` copies each into `packages/conversation-defaults/src/generated/defaultPrompts.ts` as the package default. `routine-ranked-activation.md` reaches the routine activator instead, as a `turnProvider.ts`-loaded option on its ranked-activation registry; `routine-step-answer-steering.md` is loaded directly by `backend/src/shared/infra/prompts/steeringPromptRenderer.ts`, outside the generator's manifest. `packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the exact model input both send. Before editing any of them (or the fragments still built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 - `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
 - `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)
@@ -2611,9 +2613,13 @@ Primary paths:
 - `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
   top-up, managed service, the managed-plan model set, whether prices include
-  VAT). Entry point `src/index.ts`
-  (`PLAN_CATALOG`, `findPlan`, `formatPrice`); data in `src/plans.json`; focused
-  test `ee/packages/plan-catalog/tests/planCatalog.test.ts`.
+  VAT). Entry point `src/index.ts` (`PLAN_CATALOG`, `findPlan`, `formatPrice`);
+  data in `src/plans.json`, all of it public through `GET /api/v1/plans`. The
+  staff-only model spend estimate (list prices, `eurPerUsd`, the conversation
+  spend flag) is a separate export, `MODEL_SPEND_ESTIMATE` and
+  `findModelListPrice` from `src/modelSpend.ts`, data in `src/modelSpend.json`.
+  Focused test `ee/packages/plan-catalog/tests/planCatalog.test.ts`; the public
+  field set is pinned in `backend-module/src/billing/plansRoutes.test.ts`.
 - `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
   HTTP and runs self-serve Stripe checkout, the customer portal, and the
   Stripe webhook. Entry point `applicationModule.ts`
@@ -2660,6 +2666,26 @@ Primary paths:
   `.sessionId`; anything mounted under a `RouteDependencies`-shaped context
   that needs "logged-in account, not a specific workspace" reuses this rather
   than a third copy.
+- `ee/packages/backend-module/src/staffConsole/` and
+  `ee/packages/operator-console/` — the staff Operator Console: routes in
+  `staffConsoleRoutes.ts` (`createStaffConsoleRoutes`, mounted at
+  `/api/v1/ee/operator-console`), the directory read in
+  `organizationDirectoryService.ts`, and the Next.js pages and API client under
+  `operator-console/src`. Its routes sit outside the OSS OpenAPI document the
+  copilot coverage map is keyed on, and Ray serves workspace operators rather
+  than staff, so the console carries no copilot descriptor. Focused tests:
+  `staffConsoleRoutes.test.ts`, `organizationDirectoryService.integration.test.ts`,
+  `operator-console/src/__tests__/`, and `frontend/tests/e2e/operator-console.spec.ts`
+  (enterprise edition only).
+- `ee/packages/backend-module/src/conversationSpend/` — model spend per
+  metered customer conversation, per account and UTC month, for the console's
+  directory and organization pages. `conversationSpend.ts` is the pure pricing
+  (`priceConversationSpend`: the block count at the tier's current replies per
+  conversation, `MODEL_SPEND_ESTIMATE` prices and rate, and the four-state flag);
+  `conversationSpendService.ts` (`ConversationSpendService`) reads metered
+  conversations from `ee_usage_limit_conversation_replies` and their billed token
+  counts from `usage_events` on read. Focused tests: `conversationSpend.test.ts` and
+  `conversationSpendService.integration.test.ts`.
 - `ee/packages/backend-module/src/managedModels/` — the Enterprise
   `ManagedModelPolicy`: workspace → account → assigned plan → the catalog's
   `managedModels`. Entry point `managedModelPolicy.ts`

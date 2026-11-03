@@ -35,10 +35,18 @@ Radioso ingests the post's rendered content, so the document reads the way the p
 Three things travel alongside the body as document metadata:
 
 - **The author's display name**, under `author`, so an agent can find and identify an author even when the theme keeps the byline out of the post body. On pages and posts this is the WordPress account that wrote the post.
-- **The publish date**, as the raw timestamp under `published_at` and its day under `dateFrom`, which makes posts searchable by date and usable in date metadata rules.
+- **The publish date**, as the raw GMT timestamp under `published_at`. On the `post` type its day is also the post's date, under `dateFrom` — [publish dates and content dates](#publish-dates-and-content-dates) explains why only there.
 - **A facts block** appended to the content: every public taxonomy term on the post, labelled with the taxonomy's own singular name. Categories, tags, and site-specific taxonomies all come through, in the language the site is authored in.
 
 Existing documents pick up the author, publish date, and facts block on their next sync.
+
+### Publish dates and content dates
+
+`dateFrom` and `dateTo` hold the period a document is about. Search text and answers to a question about a period ("what's on in December?") read them, and so does any date metadata rule written against them. WordPress files its `post` type by day, in date archives and feeds, so a post's publish day is the period it covers: a "this week at the centre" post published on 7 December belongs in that week's answers.
+
+Every other type keeps its publish date under `published_at` alone. A page with prices, the venue, or what to bring is as true in December as on the day it went up, so a question about December draws on it as general context beside that month's events. Products and the types a plugin registers, such as an events calendar's, work the same way. When their content names its own dates — a course page listing its sessions — [metadata extraction](/guides/document-metadata) reads them into `dateFrom` and `dateTo`, as it does for any other source. On a post, the dates extraction reads replace the publish day; when it reads none, the publish day stays.
+
+Date metadata rules address a key literally. A rule on `dateFrom` matches posts by publish day and every other type by the dates extraction read from its content. To filter or boost on when something went up, whatever its type, write the rule against `published_at`. That value carries a time of day, so compare it with `lt`, `lte`, `gt`, or `gte`; `equals` against a bare day never matches.
 
 ### Catalogues that record authorship in a taxonomy
 
@@ -105,7 +113,7 @@ Any site can publish its own values the same way. The webhook payload accepts a 
 - Keys matching `^[A-Za-z][A-Za-z0-9_]{0,63}$`.
 - Strings up to 256 characters.
 
-A key that collides with one Radioso derives, such as `author` or `dateFrom`, keeps Radioso's value. A payload outside these bounds is rejected whole, so a client that builds the map itself should drop a field it cannot fit rather than send it.
+A key that collides with one Radioso writes, such as `author` or a post's `dateFrom`, keeps Radioso's value. A payload outside these bounds is rejected whole, so a client that builds the map itself should drop a field it cannot fit rather than send it.
 
 In WordPress, the `radioso_sync_product_fields` filter is where you add yours. The plugin drops anything outside the shape above before it sends, so a field that does not fit costs you that field rather than the whole push.
 
@@ -136,6 +144,7 @@ A workspace WordPress connector accepts one configured site. Companion-plugin we
 - **Nothing arrives after a save.** Confirm the connector is enabled in Radioso, that the shared secret in WordPress matches exactly, and that the post's type is in **Post types to sync**.
 - **A backfill stops advancing.** Check the resync status and activity log for cron, scheduling, or dispatch errors, then use **Run next batch now**. WordPress's **Tools → Site Health** reports loopback and scheduled-event failures behind an overdue or missing batch.
 - **A manual sync fails while pushes work.** The site is blocking Radioso's REST calls. Use **Resync all content** in the plugin instead — it goes out from WordPress.
+- **A date rule skips pages and products.** A rule on `dateFrom` matches them only by the dates their content names. Write it against `published_at` to match on when they went up.
 - **A product's own field never shows up in the rules editor.** It fell outside the 32-field, key-pattern, or 256-character bounds and the plugin dropped it before sending.
 - **Prices in answers lag the shop.** Read the document's metadata: if `price` matches the shop and the answer does not, the agent is reading a stale facts block from a document that has not re-synced.
 - **The shop page shows a discount the agent never mentions.** Check the product in WooCommerce: if its price and sale fields hold the list price, the discount comes from a pricing plugin that computes it at render time. Supply it through `radioso_sync_product_pricing`.

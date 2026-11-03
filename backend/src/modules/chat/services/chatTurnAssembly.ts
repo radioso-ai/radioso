@@ -56,7 +56,7 @@ import type {
   ConversationTurnInterpretationResult,
 } from "./conversationTurnInterpreter.js";
 import { RoutineChatModelGateway, type RoutineChatGateway } from "./routines/routineChatModelGateway.js";
-import { pageReadAwareRoutineRunner } from "./routines/pageReadAwareRoutineRunner.js";
+import { pageReadAwareRoutineRunner, type CommittedPageRead } from "./routines/pageReadAwareRoutineRunner.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import {
   createRoutineGroundedAnswerRenderer,
@@ -236,6 +236,8 @@ export interface ChatTurnAssemblyRoutineResult {
   commitRoutineState: () => Promise<void>;
   commitClarificationState?: () => Promise<void>;
   commitCoverageReactions?: () => Promise<void>;
+  /** The page read the routine committed; the caller persists the turn from `withCommittedPageRead(session, pageRead)`. */
+  pageRead?: CommittedPageRead;
 }
 
 interface ChatTurnAssemblyRoutineTurnInput {
@@ -261,21 +263,8 @@ export interface ChatTurnAssemblyRoutineClaim {
 
 type RoutineTurnOutcome = Awaited<ReturnType<RoutineTurnWithConversationEngineClaim["reply"]["render"]>>;
 
-interface CoverageRoutineEffects {
-  actions?: RoutineActionRequest[];
-  handoff?: RoutineHandoffEffect;
-  operatorNotice?: RoutineOperatorNoticeEffect;
-  /** Skills the coverage-activated routine ran that may have acted outside the conversation. */
-  skillsWithExternalEffects?: ProcessTurnResult["skillsWithExternalEffects"];
-  routineStateTransition?: CapturedRoutineTransition | null;
-  routineReporter?: ChatRoutineTurnReporter;
-  pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
-  suspended?: boolean;
-  commitRoutineState?: () => Promise<void>;
-  clarificationTransition?: CapturedClarificationTransition | null;
-  commitClarificationState?: () => Promise<void>;
-  commitCoverageReactions?: () => Promise<void>;
-}
+/** What a coverage-activated routine adds to the turn it takes over: a routine turn's effects, each optional. */
+type CoverageRoutineEffects = Partial<Omit<ChatTurnAssemblyRoutineResult, "presentation" | "engineTrace" | "pageRead">>;
 
 type PreparedChatStreamTurnEvent =
   | { type: "status"; stage: ChatStatusStage }
@@ -486,6 +475,12 @@ export class ChatTurnAssembly {
     const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
+    const routineRunner = pageReadAwareRoutineRunner({
+      session,
+      routines: routineTurnPorts.routines,
+      runner: routineTurnPorts.runner,
+      chatSessionPreparer: this.options.chatSessionPreparer,
+    });
     const claim = await claimRoutineTurnWithConversationEngine({
       engine: this.options.conversationEngine,
       session,
@@ -493,12 +488,7 @@ export class ChatTurnAssembly {
       directiveRuntime: this.options.directiveRuntime,
       directiveStateStore: this.options.directiveStateStore,
       routineStore: deferredStore,
-      routineRunner: pageReadAwareRoutineRunner({
-        session,
-        routines: routineTurnPorts.routines,
-        runner: routineTurnPorts.runner,
-        chatSessionPreparer: this.options.chatSessionPreparer,
-      }),
+      routineRunner,
       routineActivator: activator,
       routineSlotCorrection: routineTurnPorts.slotCorrection,
       routineReentryGate: routineTurnPorts.reentryGate,
@@ -555,6 +545,7 @@ export class ChatTurnAssembly {
         commitClarificationState: deferredClarificationStore
           ? () => deferredClarificationStore.commit()
           : undefined,
+        pageRead: routineRunner.committedPageRead(),
       };
     };
     const stream = claim.reply.stream?.bind(claim.reply);

@@ -56,6 +56,13 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-staging/radioso-staging/fro
 # ops_event_webhook_events = "account.registered,chat.failed"
 # ops_event_webhook_queue_limit = 500
 
+# --- Public voice session start rate limits ---
+# Raise these only when the default (3 call starts per 10-minute window, per visitor
+# session and per request source) is too tight for a shared NAT, such as a trade-show
+# booth. Leave unset to keep the app defaults.
+# public_voice_session_start_rate_limit_max_attempts        = 10
+# public_voice_session_start_source_rate_limit_max_attempts = 10
+
 # --- Email channel ---
 # Unset email_channel_provider leaves the channel off. Supply secrets through TF_VAR_* in CI.
 # email_channel_provider                = "resend"   # or "lettermint"

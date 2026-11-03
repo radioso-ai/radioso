@@ -712,6 +712,23 @@ resource "google_cloud_run_v2_service" "backend" {
           }
         }
       }
+      # A shared NAT (a trade-show booth, an office) can exhaust the app's default public
+      # voice call start budgets for every visitor behind it; these raise them per stack
+      # without changing the per-workspace budget.
+      dynamic "env" {
+        for_each = var.public_voice_session_start_rate_limit_max_attempts == null ? [] : [var.public_voice_session_start_rate_limit_max_attempts]
+        content {
+          name  = "PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS"
+          value = tostring(env.value)
+        }
+      }
+      dynamic "env" {
+        for_each = var.public_voice_session_start_source_rate_limit_max_attempts == null ? [] : [var.public_voice_session_start_source_rate_limit_max_attempts]
+        content {
+          name  = "PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS"
+          value = tostring(env.value)
+        }
+      }
     }
   }
 

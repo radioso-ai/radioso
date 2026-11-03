@@ -1038,3 +1038,31 @@ variable "ops_event_webhook_queue_limit" {
     error_message = "ops_event_webhook_queue_limit must be a positive integer."
   }
 }
+
+# --- Public voice session start rate limits ---
+# Default budgets (3 call starts per 10-minute window, per visitor session and per request
+# source) assume one visitor per source. A shared NAT in front of many visitors, such as a
+# trade-show booth, exhausts them for everyone behind it; these raise the stack's budget
+# without touching the per-workspace cap.
+
+variable "public_voice_session_start_rate_limit_max_attempts" {
+  description = "Optional override for PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: voice call starts allowed per visitor session and request source, per window. Leave unset to keep the app default (3)."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.public_voice_session_start_rate_limit_max_attempts == null || (var.public_voice_session_start_rate_limit_max_attempts > 0 && floor(var.public_voice_session_start_rate_limit_max_attempts) == var.public_voice_session_start_rate_limit_max_attempts)
+    error_message = "public_voice_session_start_rate_limit_max_attempts must be a positive integer when set."
+  }
+}
+
+variable "public_voice_session_start_source_rate_limit_max_attempts" {
+  description = "Optional override for PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: voice call starts allowed per request source, across every public session it holds, per window. Leave unset to keep the app default (3)."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.public_voice_session_start_source_rate_limit_max_attempts == null || (var.public_voice_session_start_source_rate_limit_max_attempts > 0 && floor(var.public_voice_session_start_source_rate_limit_max_attempts) == var.public_voice_session_start_source_rate_limit_max_attempts)
+    error_message = "public_voice_session_start_source_rate_limit_max_attempts must be a positive integer when set."
+  }
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findPlan, formatPrice, PLAN_CATALOG } from "../src/index.js";
+import { findModelListPrice, findPlan, formatPrice, MODEL_SPEND_ESTIMATE, PLAN_CATALOG } from "../src/index.js";
 
 describe("findPlan", () => {
   it("returns the plan for a known id", () => {
@@ -145,6 +145,63 @@ describe("catalog invariants", () => {
     expect(defaultMaxPacksPerMonth).toBeGreaterThanOrEqual(1);
     expect(defaultMaxPacksPerMonth).toBeLessThanOrEqual(maxPacksPerMonthLimit);
     expect(maxPacksPerMonthLimit).toBeLessThanOrEqual(50);
+  });
+});
+
+describe("findModelListPrice", () => {
+  it("returns the list price for a priced provider/model pair", () => {
+    expect(findModelListPrice("openai", "gpt-5.4-mini")).toEqual({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      input: 0.75,
+      output: 4.5,
+    });
+  });
+
+  it("returns undefined for a model the table does not price, or the right model under another provider", () => {
+    expect(findModelListPrice("openai", "gpt-unknown")).toBeUndefined();
+    expect(findModelListPrice("openai-compatible", "gpt-5.4-mini")).toBeUndefined();
+  });
+});
+
+describe("model spend estimate (staff-only, never part of the public PLAN_CATALOG)", () => {
+  it("keeps list prices, the exchange rate, and the flag out of PLAN_CATALOG, which GET /api/v1/plans serves", () => {
+    const publicKeys = Object.keys(PLAN_CATALOG);
+    for (const staffKey of [...Object.keys(MODEL_SPEND_ESTIMATE), "modelListPrices"]) {
+      expect(publicKeys).not.toContain(staffKey);
+    }
+  });
+
+  it("prices both managed model slots, so a managed workspace's spend is never left unpriced", () => {
+    for (const slot of ["chat", "default"] as const) {
+      const { provider, model } = PLAN_CATALOG.managedModels[slot];
+      expect(findModelListPrice(provider, model)).toBeDefined();
+    }
+  });
+
+  it("lists each provider/model pair once, with non-negative prices and an input price on every model", () => {
+    const pairs = MODEL_SPEND_ESTIMATE.usdPerMillionTokens.map((price) => `${price.provider}/${price.model}`);
+    expect(new Set(pairs).size).toBe(pairs.length);
+    for (const price of MODEL_SPEND_ESTIMATE.usdPerMillionTokens) {
+      expect(price.input).toBeGreaterThan(0);
+      expect(price.output).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("keeps every priced provider inside the set of providers the backend can resolve (the JSON import is cast, not checked)", () => {
+    const providers = new Set<string>(["openai", "openai-compatible", "gemini", "claude"]);
+    for (const price of MODEL_SPEND_ESTIMATE.usdPerMillionTokens) {
+      expect(providers.has(price.provider)).toBe(true);
+    }
+  });
+
+  it("converts USD list prices into the catalog currency, which eurPerUsd assumes is EUR", () => {
+    expect(PLAN_CATALOG.currency).toBe("EUR");
+    expect(MODEL_SPEND_ESTIMATE.eurPerUsd).toBe(0.9);
+  });
+
+  it("flags an account above €0.04 of model spend per metered conversation, where Planet at full quota drops below 50% gross margin (#1569)", () => {
+    expect(MODEL_SPEND_ESTIMATE.conversationSpendFlagEur).toBe(0.04);
   });
 });
 

@@ -3,6 +3,8 @@ import pg from "pg";
 import request from "supertest";
 import { describe, expect, it, vi, afterEach } from "vitest";
 
+import type { ConversationSpend } from "../conversationSpend/conversationSpend.js";
+import type { RecentConversationSpend } from "../conversationSpend/conversationSpendService.js";
 import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import type { AccountUsageSummary, UsageLimitProfile } from "../usageLimits/usageLimitService.js";
 import { hashStaffPassword } from "./staffCrypto.js";
@@ -54,6 +56,10 @@ const createApp = (dependencies: RouteDependencies, repositories: {
   users: StaffUserRepository;
   sessions: StaffSessionRepository;
   organizationDirectoryService?: OrganizationDirectoryService;
+  conversationSpendService?: {
+    listForAccounts(accountIds: readonly string[]): Promise<Map<string, ConversationSpend>>;
+    getRecentMonths(accountId: string): Promise<RecentConversationSpend>;
+  };
   usageLimitService?: {
     getAccountUsage(accountId: string): Promise<AccountUsageSummary>;
     listProfiles(): Promise<UsageLimitProfile[]>;
@@ -278,6 +284,25 @@ const sampleOrganizationRows = {
   },
 };
 
+const sampleConversationSpend = (overrides: Partial<ConversationSpend> = {}): ConversationSpend => ({
+  periodStart: "2026-06-01",
+  repliesPerConversation: 10,
+  meteredConversations: 0,
+  spendEur: 0,
+  averageEurPerConversation: null,
+  flagAboveEurPerConversation: 0.04,
+  flag: "none",
+  unpricedCalls: 0,
+  ...overrides,
+});
+
+const flaggedConversationSpend = sampleConversationSpend({
+  meteredConversations: 2,
+  spendEur: 0.104159,
+  averageEurPerConversation: 0.052079,
+  flag: "above",
+});
+
 const sampleUsageSummary: AccountUsageSummary = {
   accountId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
   profile: {
@@ -386,6 +411,16 @@ const createReadServiceMocks = () => ({
     listOrganizations: vi.fn(async () => sampleOrganizationRows),
     getOrganizationName: vi.fn(async () => "Alpha Research"),
   } as unknown as OrganizationDirectoryService,
+  conversationSpendService: {
+    listForAccounts: vi.fn(async () => new Map([
+      ["aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", sampleConversationSpend()],
+      ["bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb", flaggedConversationSpend],
+    ])),
+    getRecentMonths: vi.fn(async () => ({
+      current: flaggedConversationSpend,
+      previous: sampleConversationSpend({ periodStart: "2026-05-01" }),
+    })),
+  },
   usageLimitService: {
     getAccountUsage: vi.fn(async () => sampleUsageSummary),
     listProfiles: vi.fn(async () => sampleProfiles),
@@ -668,12 +703,23 @@ describe("staff console routes and guards", () => {
       .set("Cookie", login.headers["set-cookie"][0])
       .expect(200);
 
-    expect(response.body).toEqual(sampleOrganizationRows);
+    // Each row carries its account's conversation spend for the month, next to its tier.
+    expect(response.body).toEqual({
+      ...sampleOrganizationRows,
+      rows: [
+        { ...sampleOrganizationRows.rows[0], conversationSpend: sampleConversationSpend() },
+        { ...sampleOrganizationRows.rows[1], conversationSpend: flaggedConversationSpend },
+      ],
+    });
     expect(readServices.organizationDirectoryService.listOrganizations).toHaveBeenCalledWith({
       limit: 25,
       offset: 0,
       search: "Alpha",
     });
+    expect(readServices.conversationSpendService.listForAccounts).toHaveBeenCalledWith([
+      "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+      "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb",
+    ]);
   });
 
   it("returns per-organization full usage for any staff role and requires a staff session", async () => {
@@ -698,8 +744,18 @@ describe("staff console routes and guards", () => {
       .set("Cookie", login.headers["set-cookie"][0])
       .expect(200);
 
-    expect(response.body).toEqual({ ...sampleUsageSummary, organizationName: "Alpha Research" });
+    expect(response.body).toEqual({
+      ...sampleUsageSummary,
+      organizationName: "Alpha Research",
+      conversationSpend: {
+        current: flaggedConversationSpend,
+        previous: sampleConversationSpend({ periodStart: "2026-05-01" }),
+      },
+    });
     expect(readServices.usageLimitService.getAccountUsage).toHaveBeenCalledWith(
+      "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+    );
+    expect(readServices.conversationSpendService.getRecentMonths).toHaveBeenCalledWith(
       "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
     );
   });

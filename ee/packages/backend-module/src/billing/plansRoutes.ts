@@ -4,7 +4,8 @@ import { PLAN_CATALOG } from "@radioso/plan-catalog";
 
 /**
  * Serves the Radioso Cloud plan catalog. Public and unauthenticated on purpose: the website
- * pricing page and unauthenticated signup flows read it before an account exists.
+ * pricing page and unauthenticated signup flows read it before an account exists. Staff-only
+ * numbers (`MODEL_SPEND_ESTIMATE`) are a separate export and never pass through here.
  */
 export const createPlansRoutes = (): Router => {
   const router = Router();

@@ -1,6 +1,8 @@
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
+import type { ConversationSpend } from "../conversationSpend/conversationSpend.js";
+import { ConversationSpendService } from "../conversationSpend/conversationSpendService.js";
 import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
 import { HttpError } from "../shared/httpError.js";
 import { createRateLimitMiddleware } from "../shared/rateLimit.js";
@@ -156,10 +158,17 @@ type StaffConsoleLogger = Partial<NonNullable<RouteDependencies["logger"]>>;
 
 const resolveLogger = (dependencies: RouteDependencies): StaffConsoleLogger => dependencies.logger ?? {};
 
+/** Puts each account's conversation spend for the month on its directory row, next to its tier. */
+const withConversationSpend = (page: OrganizationDirectoryPage, spend: ReadonlyMap<string, ConversationSpend>) => ({
+  ...page,
+  rows: page.rows.map((row) => ({ ...row, conversationSpend: spend.get(row.accountId) ?? null })),
+});
+
 interface StaffConsoleRouteRepositories {
   users?: StaffUserRepository;
   sessions?: StaffSessionRepository;
   organizationDirectoryService?: Pick<OrganizationDirectoryService, "listOrganizations" | "getOrganizationName">;
+  conversationSpendService?: Pick<ConversationSpendService, "listForAccounts" | "getRecentMonths">;
   usageLimitService?: Pick<
     EnterpriseUsageLimitService,
     "getAccountUsage" | "listProfiles" | "assignProfile" | "upsertProfile"
@@ -181,6 +190,8 @@ export const createStaffConsoleRoutes = (
     repositories.organizationDirectoryService ?? new OrganizationDirectoryService(dependencies.connectorDb);
   const usageLimitService =
     repositories.usageLimitService ?? new EnterpriseUsageLimitService(dependencies.connectorDb);
+  const conversationSpendService =
+    repositories.conversationSpendService ?? new ConversationSpendService(dependencies.connectorDb);
   const logger = resolveLogger(dependencies);
 
   // The login endpoint has no session yet, so it is the one route in this router throttled
@@ -341,7 +352,8 @@ export const createStaffConsoleRoutes = (
           cursor: query.cursor,
           search: query.search,
         });
-        res.status(200).json(page);
+        const spend = await conversationSpendService.listForAccounts(page.rows.map((row) => row.accountId));
+        res.status(200).json(withConversationSpend(page, spend));
       } catch (error) {
         next(error);
       }
@@ -357,11 +369,12 @@ export const createStaffConsoleRoutes = (
     async (req, res, next) => {
       try {
         const { accountId } = parseRequest(accountIdParamsSchema, req.params, "Invalid organization identifier");
-        const [usage, organizationName] = await Promise.all([
+        const [usage, organizationName, conversationSpend] = await Promise.all([
           usageLimitService.getAccountUsage(accountId),
           organizationDirectoryService.getOrganizationName(accountId),
+          conversationSpendService.getRecentMonths(accountId),
         ]);
-        res.status(200).json({ ...usage, organizationName });
+        res.status(200).json({ ...usage, organizationName, conversationSpend });
       } catch (error) {
         next(error);
       }

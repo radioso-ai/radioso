@@ -2572,9 +2572,13 @@ Primary paths:
 - `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
   top-up, managed service, the managed-plan model set, whether prices include
-  VAT). Entry point `src/index.ts`
-  (`PLAN_CATALOG`, `findPlan`, `formatPrice`); data in `src/plans.json`; focused
-  test `ee/packages/plan-catalog/tests/planCatalog.test.ts`.
+  VAT). Entry point `src/index.ts` (`PLAN_CATALOG`, `findPlan`, `formatPrice`);
+  data in `src/plans.json`, all of it public through `GET /api/v1/plans`. The
+  staff-only model spend estimate (list prices, `eurPerUsd`, the conversation
+  spend flag) is a separate export, `MODEL_SPEND_ESTIMATE` and
+  `findModelListPrice` from `src/modelSpend.ts`, data in `src/modelSpend.json`.
+  Focused test `ee/packages/plan-catalog/tests/planCatalog.test.ts`; the public
+  field set is pinned in `backend-module/src/billing/plansRoutes.test.ts`.
 - `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
   HTTP and runs self-serve Stripe checkout, the customer portal, and the
   Stripe webhook. Entry point `applicationModule.ts`
@@ -2621,6 +2625,26 @@ Primary paths:
   `.sessionId`; anything mounted under a `RouteDependencies`-shaped context
   that needs "logged-in account, not a specific workspace" reuses this rather
   than a third copy.
+- `ee/packages/backend-module/src/staffConsole/` and
+  `ee/packages/operator-console/` — the staff Operator Console: routes in
+  `staffConsoleRoutes.ts` (`createStaffConsoleRoutes`, mounted at
+  `/api/v1/ee/operator-console`), the directory read in
+  `organizationDirectoryService.ts`, and the Next.js pages and API client under
+  `operator-console/src`. Its routes sit outside the OSS OpenAPI document the
+  copilot coverage map is keyed on, and Ray serves workspace operators rather
+  than staff, so the console carries no copilot descriptor. Focused tests:
+  `staffConsoleRoutes.test.ts`, `organizationDirectoryService.integration.test.ts`,
+  `operator-console/src/__tests__/`, and `frontend/tests/e2e/operator-console.spec.ts`
+  (enterprise edition only).
+- `ee/packages/backend-module/src/conversationSpend/` — model spend per
+  metered customer conversation, per account and UTC month, for the console's
+  directory and organization pages. `conversationSpend.ts` is the pure pricing
+  (`priceConversationSpend`: the block count at the tier's current replies per
+  conversation, `MODEL_SPEND_ESTIMATE` prices and rate, and the four-state flag);
+  `conversationSpendService.ts` (`ConversationSpendService`) reads metered
+  conversations from `ee_usage_limit_conversation_replies` and their billed token
+  counts from `usage_events` on read. Focused tests: `conversationSpend.test.ts` and
+  `conversationSpendService.integration.test.ts`.
 - `ee/packages/backend-module/src/managedModels/` — the Enterprise
   `ManagedModelPolicy`: workspace → account → assigned plan → the catalog's
   `managedModels`. Entry point `managedModelPolicy.ts`

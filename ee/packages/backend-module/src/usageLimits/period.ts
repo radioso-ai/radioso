@@ -11,3 +11,8 @@ export const nextPeriodStart = (periodStart: string): string => {
   const [year, month] = periodStart.split("-").map((part) => Number(part));
   return new Date(Date.UTC(year, month, 1)).toISOString();
 };
+
+export const previousPeriodStart = (periodStart: string): string => {
+  const [year, month] = periodStart.split("-").map((part) => Number(part));
+  return currentPeriodStart(new Date(Date.UTC(year, month - 2, 1)));
+};

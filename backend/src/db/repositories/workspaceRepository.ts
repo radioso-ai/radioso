@@ -25,6 +25,8 @@ export interface WorkspaceRecord extends AssistantBootstrapSettingsRecord, Websi
   anonymousChatEnabled: boolean;
   anonymousChatToken: string | null;
   anonymousRateLimit: number;
+  /** The IANA zone the workspace reads "today" in when a visitor's client reports none; null is UTC. */
+  timeZone: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,6 +50,7 @@ interface WorkspaceRow {
   website_embed_launcher_label: string | null;
   website_embed_launcher_icon: string | null;
   website_embed_launcher_position: string | null;
+  time_zone: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -80,6 +83,7 @@ const mapWorkspace = (row: WorkspaceRow): WorkspaceRecord => {
     anonymousChatEnabled: row.anonymous_chat_enabled ?? false,
     anonymousChatToken: row.anonymous_chat_token ?? null,
     anonymousRateLimit: row.anonymous_rate_limit ?? 10,
+    timeZone: row.time_zone ?? null,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -104,6 +108,7 @@ const workspaceColumns = [
   "website_embed_launcher_label",
   "website_embed_launcher_icon",
   "website_embed_launcher_position",
+  "time_zone",
   "created_at",
   "updated_at",
 ] as const;

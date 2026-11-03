@@ -36,6 +36,7 @@ import type { BackgroundJobRuntime } from "../../shared/background-jobs/index.js
 import type { IngestionSettingsService } from "../../modules/settings/composition.js";
 import type { DocumentTypeCatalogService } from "../../modules/documentTypes/composition.js";
 import type { PlatformSettingsService } from "../../modules/settings/composition.js";
+import type { TimeZoneSettingsService } from "../../modules/settings/public.js";
 import type { RetrievalAnswerService, RetrievalSearchService } from "../../modules/retrieval/composition.js";
 import type {
   MetadataRuleFieldReferencePort,
@@ -390,6 +391,8 @@ export interface AppDependencies {
   conversationErasure: ConversationErasure;
   /** How long the workspace keeps conversations; the retention sweep enforces it. */
   privacySettingsService: PrivacySettingsService;
+  /** The zone the workspace reads "today" in when a visitor's client reports none. */
+  timeZoneSettingsService: TimeZoneSettingsService;
   /** A data subject request: find a person across channels, export what is held about them, erase it. */
   dataSubjectAccess: DataSubjectAccess;
   retrievalSearchService: RetrievalSearchService;

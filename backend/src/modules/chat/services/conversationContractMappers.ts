@@ -4,7 +4,9 @@ import type {
   ConversationMessage,
   ConversationTrace,
   ConversationTraceStage,
+  ReferenceTimeZone,
   StagedContext,
+  TurnContext,
 } from "@radioso/conversation-contract";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
@@ -30,6 +32,15 @@ export const toConversationInputEvent = (message: MessageRecord): ConversationIn
   metadata: message.inputMetadata ? { ...message.inputMetadata } : undefined,
 });
 
+/**
+ * The zone the chat turn resolved before planning, for every turn context and engine input built
+ * from it, so a routine or skill on the turn reads the same "today" as the grounded answer.
+ */
+export const turnReferenceTimeZone = (session: {
+  referenceTimeZone?: ReferenceTimeZone;
+}): { referenceTimeZone?: ReferenceTimeZone } =>
+  session.referenceTimeZone ? { referenceTimeZone: session.referenceTimeZone } : {};
+
 export const toConversationAgentConfig = (agent: AgentRecord): ConversationAgentConfig => ({
   id: agent.id,
   name: agent.name,
@@ -52,6 +63,26 @@ export const toConversationAgentConfig = (agent: AgentRecord): ConversationAgent
     hasContactDestination: hasConfiguredContactDestination(agent.contactRequestDelivery),
     webhookExportsEnabled: agent.webhookExportsEnabled,
   },
+});
+
+/**
+ * The turn context for a chat turn's ports that run outside a full engine turn, such as the
+ * clarifier and an approval resume.
+ */
+export const buildChatTurnContext = (session: {
+  agent: AgentRecord;
+  conversation: { id: string };
+  userMessage: MessageRecord;
+  history: MessageRecord[];
+  referenceTimeZone?: ReferenceTimeZone;
+}): TurnContext => ({
+  agent: toConversationAgentConfig(session.agent),
+  sessionId: session.conversation.id,
+  inputEvent: toConversationInputEvent(session.userMessage),
+  history: toConversationMessages(session.history),
+  stagedContext: [],
+  steering: [],
+  ...turnReferenceTimeZone(session),
 });
 
 const fallbackConversationTrace = (): ConversationTrace => ({

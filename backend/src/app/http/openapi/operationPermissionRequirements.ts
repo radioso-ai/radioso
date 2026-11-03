@@ -40,6 +40,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   updateIngestionSettings: ["workspace.settings.manage"],
   updatePlatformSettings: ["workspace.settings.manage"],
   updatePrivacySettings: ["workspace.settings.manage", "workspace.history.delete"],
+  updateTimeZoneSettings: ["workspace.settings.manage"],
   crawlWebsiteDocuments: ["workspace.documents.manage"],
   getEmailChannel: ["workspace.settings.read"],
   getEmailMailbox: ["workspace.settings.read"],

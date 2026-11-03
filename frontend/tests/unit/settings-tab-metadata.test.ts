@@ -11,6 +11,7 @@ describe('settings tab metadata', () => {
     expect(settingsTabMetadata.workspace.sections.map((section) => section.id)).toEqual([
       'workspace-access',
       'data-retention',
+      'time-zone',
       'webhook-destinations',
     ])
 

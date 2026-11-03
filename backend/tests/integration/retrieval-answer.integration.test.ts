@@ -1,11 +1,11 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { formatIsoDateUtc } from "../../src/shared/domain/clock.js";
+import { formatIsoDate } from "../../src/shared/domain/clock.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 const isoDateFromToday = (offsetDays: number): string =>
-  formatIsoDateUtc(new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000));
+  formatIsoDate(new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000));
 
 describe("retrieval answer integration", () => {
   it("answers from retrieval without creating assistant conversation history", async () => {

@@ -59,6 +59,8 @@ const catalogToolCoverage = {
   updatePlatformSettings: "propose_workspace_setting",
   getPrivacySettings: "workspace_settings",
   updatePrivacySettings: "propose_privacy_setting",
+  getTimeZoneSettings: "workspace_settings",
+  updateTimeZoneSettings: "propose_time_zone_setting",
   getSettingsRetrievalDefaults: "workspace_settings",
   getIngestionSettings: "workspace_settings",
   getEmbeddingCoverage: "workspace_settings",

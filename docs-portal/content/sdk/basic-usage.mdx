@@ -1,7 +1,7 @@
 ---
 title: "Basic usage"
 description: "Documents, chat, settings, and error handling with the TypeScript SDK."
-last_updated: 2026-10-26
+last_updated: 2026-11-02
 ---
 
 # Basic usage
@@ -332,6 +332,16 @@ const response = await client.chat.create({
 })
 
 console.log(response.answer)
+```
+
+Pass `userTimeZone` when you know where the user is, so "today", "tomorrow" and "this weekend" in the question mean their own day. Without it the turn reads today in the workspace time zone.
+
+```ts
+const response = await client.chat.create({
+  message: "What's on tomorrow?",
+  stream: false,
+  userTimeZone: 'America/Los_Angeles',
+})
 ```
 
 ## Streaming chat

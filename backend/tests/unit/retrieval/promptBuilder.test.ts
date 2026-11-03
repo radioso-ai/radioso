@@ -24,6 +24,7 @@ const wordpressContext = (metadata: Record<string, unknown>): FinalPromptContext
 describe("PromptBuilder context metadata", () => {
   it("keeps a WordPress author and publish date available to the grounded answer", () => {
     const result = new PromptBuilder().build({
+      timeZone: "UTC",
       query: "Who wrote this article and when was it published?",
       history: [],
       contexts: [
@@ -47,6 +48,7 @@ describe("PromptBuilder context metadata", () => {
 
   it("does not let control-character metadata create new prompt lines", () => {
     const result = new PromptBuilder().build({
+      timeZone: "UTC",
       query: "What is this?",
       history: [],
       contexts: [
@@ -68,6 +70,7 @@ describe("PromptBuilder dates", () => {
   const wednesday = () => new Date("2026-10-21T23:30:00.000Z");
   const build = (requestedDateRange?: { dateFrom: string; dateTo: string }) =>
     new PromptBuilder(undefined, wednesday).build({
+      timeZone: "UTC",
       query: "What's on this weekend?",
       history: [],
       contexts: [wordpressContext({})],

@@ -18,7 +18,6 @@ import type {
   RoutineState,
   RoutineTurnEffects,
   ProcessTurnResult,
-  TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
 
@@ -57,7 +56,7 @@ import type {
   ConversationTurnInterpretationResult,
 } from "./conversationTurnInterpreter.js";
 import { RoutineChatModelGateway, type RoutineChatGateway } from "./routines/routineChatModelGateway.js";
-import { pageReadAwareRoutineRunner } from "./routines/pageReadAwareRoutineRunner.js";
+import { pageReadAwareRoutineRunner, type CommittedPageRead } from "./routines/pageReadAwareRoutineRunner.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import {
   createRoutineGroundedAnswerRenderer,
@@ -78,20 +77,16 @@ import {
   phraseRetrievalSenseAsk,
   presentableSenseCandidates,
   type AgenticRetrievalToolFactory,
-  type RetrievalExecutionDiagnostics,
   type RetrievalSenseDetectorPort,
   type StructuredRewriteResult,
 } from "../../retrieval/public.js";
+import { retrievalDiagnosticsMetadata } from "./retrievalDiagnosticsMetadata.js";
 import {
   clarificationDecisionMetric,
   type ClarificationMetricDecision,
   type ClarificationMetricReason,
 } from "./clarification/clarificationMetrics.js";
-import {
-  toConversationAgentConfig,
-  toConversationInputEvent,
-  toConversationMessages,
-} from "./conversationContractMappers.js";
+import { buildChatTurnContext } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
@@ -132,20 +127,6 @@ const clarificationTraceStage = (
   turn?.kind === "continue"
     ? turn.stage
     : turn?.engineTrace.stages.find((stage) => stage.kind === "clarification");
-
-const retrievalDiagnosticsMetadata = (
-  session: PreparedSession,
-): {
-  route: PreparedSession["turnRoute"];
-  contextCount: number;
-  rewriteStatus?: RetrievalExecutionDiagnostics["rewriteStatus"];
-  triggerStatus?: NonNullable<RetrievalExecutionDiagnostics["triggerAnalysis"]>["status"];
-} => ({
-  route: session.turnRoute,
-  contextCount: session.retrieval.contexts.length,
-  rewriteStatus: session.retrieval.diagnostics.rewriteStatus,
-  triggerStatus: session.retrieval.diagnostics.triggerAnalysis?.status,
-});
 
 export const applyCoverageAssessment = (
   session: Pick<PreparedSession, "answerCoverage" | "answerCoverageDebug" | "answerCoverageInteractionTrace" | "effectiveQuery" | "userMessage">,
@@ -226,15 +207,6 @@ export const alignOfferPendingCandidates = (
   candidates: presentableSenseCandidates(offeredAlternatives),
 });
 
-export const buildChatTurnContext = (session: PreparedSession): TurnContext => ({
-  agent: toConversationAgentConfig(session.agent),
-  sessionId: session.conversation.id,
-  inputEvent: toConversationInputEvent(session.userMessage),
-  history: toConversationMessages(session.history),
-  stagedContext: [],
-  steering: [],
-});
-
 export type ChatTurnAssemblyStage = "routing" | "rendering";
 
 export interface ChatTurnAssemblyCoordinationHook {
@@ -264,6 +236,8 @@ export interface ChatTurnAssemblyRoutineResult {
   commitRoutineState: () => Promise<void>;
   commitClarificationState?: () => Promise<void>;
   commitCoverageReactions?: () => Promise<void>;
+  /** The page read the routine committed; the caller persists the turn from `withCommittedPageRead(session, pageRead)`. */
+  pageRead?: CommittedPageRead;
 }
 
 interface ChatTurnAssemblyRoutineTurnInput {
@@ -289,21 +263,8 @@ export interface ChatTurnAssemblyRoutineClaim {
 
 type RoutineTurnOutcome = Awaited<ReturnType<RoutineTurnWithConversationEngineClaim["reply"]["render"]>>;
 
-interface CoverageRoutineEffects {
-  actions?: RoutineActionRequest[];
-  handoff?: RoutineHandoffEffect;
-  operatorNotice?: RoutineOperatorNoticeEffect;
-  /** Skills the coverage-activated routine ran that may have acted outside the conversation. */
-  skillsWithExternalEffects?: ProcessTurnResult["skillsWithExternalEffects"];
-  routineStateTransition?: CapturedRoutineTransition | null;
-  routineReporter?: ChatRoutineTurnReporter;
-  pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
-  suspended?: boolean;
-  commitRoutineState?: () => Promise<void>;
-  clarificationTransition?: CapturedClarificationTransition | null;
-  commitClarificationState?: () => Promise<void>;
-  commitCoverageReactions?: () => Promise<void>;
-}
+/** What a coverage-activated routine adds to the turn it takes over: a routine turn's effects, each optional. */
+type CoverageRoutineEffects = Partial<Omit<ChatTurnAssemblyRoutineResult, "presentation" | "engineTrace" | "pageRead">>;
 
 type PreparedChatStreamTurnEvent =
   | { type: "status"; stage: ChatStatusStage }
@@ -514,6 +475,12 @@ export class ChatTurnAssembly {
     const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
+    const routineRunner = pageReadAwareRoutineRunner({
+      session,
+      routines: routineTurnPorts.routines,
+      runner: routineTurnPorts.runner,
+      chatSessionPreparer: this.options.chatSessionPreparer,
+    });
     const claim = await claimRoutineTurnWithConversationEngine({
       engine: this.options.conversationEngine,
       session,
@@ -521,12 +488,7 @@ export class ChatTurnAssembly {
       directiveRuntime: this.options.directiveRuntime,
       directiveStateStore: this.options.directiveStateStore,
       routineStore: deferredStore,
-      routineRunner: pageReadAwareRoutineRunner({
-        session,
-        routines: routineTurnPorts.routines,
-        runner: routineTurnPorts.runner,
-        chatSessionPreparer: this.options.chatSessionPreparer,
-      }),
+      routineRunner,
       routineActivator: activator,
       routineSlotCorrection: routineTurnPorts.slotCorrection,
       routineReentryGate: routineTurnPorts.reentryGate,
@@ -583,6 +545,7 @@ export class ChatTurnAssembly {
         commitClarificationState: deferredClarificationStore
           ? () => deferredClarificationStore.commit()
           : undefined,
+        pageRead: routineRunner.committedPageRead(),
       };
     };
     const stream = claim.reply.stream?.bind(claim.reply);
@@ -1257,6 +1220,7 @@ export class ChatTurnAssembly {
         usageAttribution: input.session.usageAttribution,
         conversationSummary: input.session.conversationSummary,
         pageReadCapability: input.session.pageReadCapability,
+        timeZone: input.session.referenceTimeZone?.timeZone,
       })
       : await this.routeTurn(input.request, input.session));
     const resolved = input.resolvedRetrievalSense

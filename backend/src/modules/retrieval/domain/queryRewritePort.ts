@@ -5,6 +5,8 @@ export interface QueryRewritePortRequest {
   readonly query: string;
   readonly workspaceContext?: LlmCapabilityResolveInput;
   readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
+  /** The zone the rewrite reads today's date in; UTC when absent. */
+  readonly timeZone?: string;
 }
 
 export interface QueryRewritePortResult {

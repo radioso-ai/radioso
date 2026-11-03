@@ -18,6 +18,8 @@ export interface CopilotAgentTurnProbeInput {
   conversationId?: string;
   previewRoutineIds?: string[];
   userExpectedLocale?: string | null;
+  /** The IANA zone the probe's visitor reads today's date in; the workspace's zone when absent. */
+  userTimeZone?: string;
   inputMetadata?: UserMessageInputMetadata;
   pageContext?: AssistantPageContext | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;
@@ -48,6 +50,7 @@ export interface AgentTurnProbeRunnerInput {
   conversationId?: string;
   query: string;
   userExpectedLocale?: string | null;
+  visitorTimeZone?: string | null;
   inputMetadata?: UserMessageInputMetadata;
   pageContext?: AssistantPageContext | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;

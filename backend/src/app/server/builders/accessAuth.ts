@@ -196,6 +196,24 @@ export const buildWorkspaceProviderCredentialsService = (input: {
   return service;
 };
 
+/**
+ * Ray's view of the workspace's provider credentials: whether keys can be stored, which providers
+ * have one, and which the deployment's environment already provides. Never a key or a ciphertext.
+ */
+export const readProviderCredentialHealth = (
+  credentials: Pick<WorkspaceProviderCredentialsService, "isEncryptionConfigured" | "listConfigured">,
+  env: Pick<Env, "OPENAI_API_KEY" | "OPENAI_COMPATIBLE_API_KEY" | "GEMINI_API_KEY" | "ANTHROPIC_API_KEY">,
+) => async (workspaceId: string) => ({
+  encryptionConfigured: credentials.isEncryptionConfigured(),
+  credentials: await credentials.listConfigured(workspaceId),
+  envProviderAvailability: {
+    openai: Boolean(env.OPENAI_API_KEY),
+    "openai-compatible": Boolean(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY),
+    gemini: Boolean(env.GEMINI_API_KEY),
+    claude: Boolean(env.ANTHROPIC_API_KEY),
+  },
+});
+
 export const buildWorkspaceServices = (input: {
   accountMembershipRepository: AccountMembershipRepository;
   auditService: AuditService;

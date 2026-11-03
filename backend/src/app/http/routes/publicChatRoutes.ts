@@ -699,6 +699,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           bootstrapGreetingId: req.body.bootstrapGreetingId,
           inputMetadata: req.body.inputMetadata,
           pageContext: req.body.pageContext,
+          visitorTimeZone: req.body.pageContext?.browserTimeZone,
           clientContextCapabilities: req.body.clientContextCapabilities,
           sourceChannel,
           chatSessionId,

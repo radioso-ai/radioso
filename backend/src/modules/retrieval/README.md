@@ -119,7 +119,13 @@ imports from `services/` or `infra/`.
   bounds what reaches the answer.
 - Date questions: the rewrite returns `temporalQueryMode` and an optional
   `requestedDateRange` (`domain/temporal/requestedDateRange.ts` validates it and
-  places dated items against it). `candidateRetrievalStage.ts` runs the
+  places dated items against it). Every "today" a run reads (the rewrite,
+  rerank and answer prompts, the upcoming lookup, the upcoming boost and order,
+  and the `today()` rule token) is `formatIsoDate`/`formatPromptDate` in
+  `request.referenceTimeZone`. A chat turn resolves that zone before planning
+  (`chat/services/turnReferenceTimeZone.ts`); any other run gets the workspace's
+  zone from `domain/workspaceTimeZoneReader.ts` in `RetrievalPipelineService.interpret`,
+  else UTC (`shared/domain/referenceTimeZone.ts` holds the one rule). `candidateRetrievalStage.ts` runs the
   structured lookup through `domain/temporal/temporalCandidateRetrieval.ts`:
   any question with a requested range gets the range, ranked by similarity to
   the question's embedding (an exact sort in `infra/temporalCandidateRepository.ts`),

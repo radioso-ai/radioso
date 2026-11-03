@@ -39,6 +39,7 @@ import {
   toConversationAgentConfig,
   toConversationInputEvent,
   toConversationMessages,
+  turnReferenceTimeZone,
 } from "./conversationContractMappers.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { visitorMatchContext } from "./visitorMatchContext.js";
@@ -298,6 +299,7 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     agent: toConversationAgentConfig(readSession().agent),
     sessionId: readSession().conversation.id,
     inputEvent: effectiveInputEventForSession(readSession()),
+    ...turnReferenceTimeZone(readSession()),
     skills: options.skills ?? [],
     directives: directiveWiring.directives,
     ...(options.coverageReactionRecorder ? { coverageReactionRecorder: options.coverageReactionRecorder } : {}),
@@ -369,6 +371,7 @@ export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): 
     agent: toConversationAgentConfig(options.session.agent),
     sessionId: options.session.conversation.id,
     inputEvent: effectiveInputEventForSession(options.session),
+    ...turnReferenceTimeZone(options.session),
     stores: {
       async loadHistory() {
         return toConversationMessages(options.session.history);

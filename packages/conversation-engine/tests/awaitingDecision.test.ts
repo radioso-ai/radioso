@@ -352,4 +352,50 @@ describe("DefaultRoutineRunner await suspension", () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(selector.select).not.toHaveBeenCalled();
   });
+
+  it("gives the await reply and its steering the output a skill staged this turn, as a chat step gets", async () => {
+    const lookupThenGate: Routine = {
+      id: "refund_flow",
+      rootStepId: "look_up_order",
+      steps: [
+        { id: "look_up_order", kind: "skill", skillName: "orders.lookup" },
+        {
+          id: "gate",
+          kind: "await",
+          action: "Tell the customer their request is awaiting review.",
+          decision: { captureKey: "approval_decision", options: [{ id: "approve", label: "Approve" }] },
+        },
+      ],
+      transitions: [
+        { from: "look_up_order", to: "gate", condition: "the order was found", guard: { kind: "default" } },
+      ],
+    };
+    const dispatch: ConversationRoutineSkillDispatcher["dispatch"] = vi.fn(async () => ({
+      status: "completed",
+      outputs: { order_status: "delivered" },
+    }));
+    const render = vi.fn(renderer.render);
+    const resolve = vi.fn(async ({ baseSteering }: { baseSteering: TurnContext["steering"] }) => baseSteering);
+    const runner = new DefaultRoutineRunner([lookupThenGate], throwingSelector(), { render }, { dispatch });
+
+    await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "refund_flow", path: [], variables: {}, status: "active" },
+      steeringResolver: { resolve },
+    });
+
+    const stagedSkillOutput = expect.objectContaining({
+      kind: "skill_result",
+      source: "orders.lookup",
+      data: expect.objectContaining({ order_status: "delivered" }),
+    });
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "gate" }),
+      turn: expect.objectContaining({ stagedContext: [stagedSkillOutput] }),
+    }));
+    expect(render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "gate" }),
+      turn: expect.objectContaining({ stagedContext: [stagedSkillOutput] }),
+    }));
+  });
 });

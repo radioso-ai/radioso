@@ -42,6 +42,7 @@ export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
       conversationId: input.conversationId,
       query,
       userExpectedLocale: input.userExpectedLocale,
+      visitorTimeZone: input.userTimeZone,
       inputMetadata: input.inputMetadata,
       pageContext: input.pageContext,
       clientContextCapabilities: input.clientContextCapabilities,

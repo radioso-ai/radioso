@@ -204,6 +204,30 @@ describe("ConversationTurnInterpreter", () => {
     expect(prompts[0]).toContain("Today's date: 2026-10-21 (Wednesday)");
   });
 
+  it("dates the staged gateway's prompt in the turn's zone", async () => {
+    const prompts: string[] = [];
+    const inference = {
+      async complete(request: { prompt: string }) {
+        prompts.push(request.prompt);
+        return { text: directInterpretation() };
+      },
+    } as unknown as ModelInferencePipeline;
+
+    await new ModelTurnInterpretationGateway(inference, () => new Date("2026-11-03T02:00:00.000Z")).interpret({
+      query: "What's on tomorrow?",
+      contextMessages: [],
+      timeZone: "America/Los_Angeles",
+      usageContext: {
+        workspaceId: "workspace-1",
+        surface: "assistant",
+        operation: "turn_interpretation",
+        attemptKey: "turn_interpretation",
+      },
+    });
+
+    expect(prompts[0]).toContain("Today's date: 2026-11-02 (Monday)");
+  });
+
   it("carries a staged rewrite's requested date range into the proposal", () => {
     const parsed = parseTurnInterpretation(directInterpretation({
       route: "retrieval",

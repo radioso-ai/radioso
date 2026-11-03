@@ -78,6 +78,7 @@ describe("edge cases", () => {
   it("builds a prompt safely when no context is retrieved", () => {
     const builder = new PromptBuilder();
     const result = builder.build({
+      timeZone: "UTC",
       query: "What happened?",
       history: [],
       settings: {
@@ -91,6 +92,7 @@ describe("edge cases", () => {
   it("includes stable response identity in the retrieval prompt", () => {
     const builder = new PromptBuilder();
     const result = builder.build({
+      timeZone: "UTC",
       query: "What is your name?",
       history: [],
       settings: {
@@ -108,6 +110,7 @@ describe("edge cases", () => {
   it("encodes the team-voice role boundary in the retrieval system prompt", () => {
     const builder = new PromptBuilder();
     const result = builder.build({
+      timeZone: "UTC",
       query: "Draft a follow-up email",
       history: [],
       settings: {},
@@ -244,6 +247,7 @@ describe("edge cases", () => {
     });
 
     const result = await service.rerank({
+      timeZone: "UTC",
       query: "rate limit",
       enabled: true,
       topK: 1,

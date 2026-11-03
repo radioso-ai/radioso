@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-29
+last_updated: 2026-11-02
 ---
 
 # Code Map
@@ -1187,6 +1187,45 @@ Related docs:
 
 - [Data retention](../../docs-portal/content/operators/data-retention.mdx)
 
+## Workspace Time Zone
+
+Owns the zone a turn reads "today" in (#1600), so "tomorrow" and "this weekend"
+mean the visitor's day. `shared/domain/referenceTimeZone.ts` holds the one rule:
+the visitor's IANA zone when their client reports a valid one, else the
+workspace's (`workspaces.time_zone`, null for UTC), else UTC, validated with
+`Intl` and never throwing. The website embed and hosted chat page send the
+browser's zone as `pageContext.browserTimeZone`; the chat APIs and Ray's
+`test_agent_turn` take `userTimeZone`. A chat turn resolves the zone once in the
+session preparer and hands it to the planner, the turn interpreter, the
+retrieval request, and the conversation engine as `referenceTimeZone`, which
+rides on every `TurnContext` of the turn, so a routine's date slots
+(`RoutineNextStepSelector`) and its retrieval steps read the same day; any other
+retrieval run reads the workspace zone in `RetrievalPipelineService.interpret`,
+and a turn without a zone reads UTC in the packages. Every "today" downstream is
+`formatIsoDate`/`formatPromptDate` (`shared/domain/clock.ts`) in that zone. The
+trace's context stage records `timeZoneSource` (`visitor`, `workspace`,
+`default`), never the zone.
+
+Public surfaces and key files:
+
+- `backend/src/shared/domain/referenceTimeZone.ts`, `backend/src/shared/domain/clock.ts`
+- `backend/src/modules/chat/services/turnReferenceTimeZone.ts` (a chat turn's zone)
+- `packages/conversation-contract/index.d.ts` (`ReferenceTimeZone` on `TurnContext` and the engine inputs)
+- `packages/conversation-defaults/src/localDate.ts` (a turn's local date for the routine selector and skill input resolver)
+- `backend/src/modules/retrieval/domain/workspaceTimeZoneReader.ts` (the workspace-zone port chat and retrieval read; `WorkspaceTimeZoneSettingsRepository` implements it)
+- `backend/src/modules/settings/services/timeZoneSettingsService.ts` (the setting, validation and audit)
+- `backend/src/db/repositories/workspaceTimeZoneSettingsRepository.ts` (setting store)
+- `backend/src/app/http/routes/settingsRoutes.ts` (`GET`/`PUT /api/v1/settings/time-zone`)
+- `backend/src/modules/operatorCopilot/tools/timeZoneSettingProposals.ts` (`propose_time_zone_setting`)
+- `frontend/lib/browser-time-zone.ts` (the browser's zone on public chat messages)
+- `frontend/components/dashboard/settings/time-zone-card.tsx` (Settings → Workspace → Time zone)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/shared/referenceTimeZone.test.ts tests/unit/retrieval/relativeDatesTimeZone.test.ts tests/unit/chat-session-preparer-time-zone.test.ts tests/unit/time-zone-settings-service.test.ts tests/contract/settings-time-zone.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/workspace-time-zone.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec vitest run tests/unit/public-chat-browser-time-zone.test.ts tests/unit/time-zone-options.test.ts`
+
 ## Data Subject Requests
 
 Owns finding one person across channels and exporting or erasing what Radioso
@@ -1431,6 +1470,7 @@ Public surfaces and contracts:
 
 - `packages/conversation-contract/index.d.ts`
 - `packages/conversation-contract/modelGateway.d.ts` (the model port a host implements: request, completion with its stop reason, and `ConversationModelGateway`; re-exported from `index.d.ts`)
+- `packages/conversation-contract/routineTrace.d.ts` (the routine sub-trace: per-step entries, captured and replaced slot keys, opt-in slot values; re-exported from `index.d.ts`)
 - `packages/conversation-contract/index.js` (runtime values of the `declare const` code lists; change the two together)
 
 Useful searches:
@@ -1887,11 +1927,12 @@ Primary internals:
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit; `claim` decides the turn before the reply exists, `resume` claims and renders)
+- `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector
 - `packages/conversation-engine/src/stepReferences.ts` (fills `{{slot.<key>}}` and `{{context.<name>}}` into a step instruction, and collects the `contextEvidence` the referenced context variables carry to the step reply; the host renders both in `backend/src/modules/context-variables/routineContextRenderer.ts`)
 - `packages/conversation-engine/src/routineActivation.ts` and `routineResume.ts` (`claimRoutine` → the host renders or streams the reply → `settle`; `attemptRoutine` is that sequence rendered whole)
 - `backend/src/modules/chat/services/routines/routineReplyDelivery.ts` (the delivery rule: a claimed reply streams when its turn only moves the routine to its next step, and is persisted first and shown whole when a skill acted outside the conversation, the turn queued an action, or ended the routine; `skillActsOutsideConversation` in `backend/src/modules/retrieval/public.ts` is the one rule for which skills act outside, shared with safe-test suppression), consulted through `routineReplyFor.ts` by both live streaming chat (`ChatService`) and streamed Test Chat replay (`WorkbenchReplayRunner.stream`)
 - `packages/conversation-engine/src/slotValue.ts` (the one per-type check every stored slot value passes)
-- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-reask-exhausted.md` (a step asked past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Before editing `routine-next-step.md` or `routine-step-reply.md` (or the fragments built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
+- `backend/prompts/chat/routine-next-step.md` with `routine-next-step-slots.md`, `routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` (the selector's declared slots and the rules for filling them), `routine-step-reply.md` with `routine-step-progress.md` (a chat step's reply ends on its question), `routine-step-context-evidence.md` (frames the visitor's page as evidence), and `routine-step-reask.md` with `routine-step-reask-gap.md`, `routine-step-reask-exhausted-gap.md`, `routine-step-reask-missing-slots.md`, and `routine-step-reask-exhausted.md` (a step asked again, and past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Every one of these but `routine-ranked-activation.md` and `routine-step-answer-steering.md` reaches `RoutineNextStepSelector` or `RoutineStepRenderer` as a template option from `backend/src/modules/routines/turnProvider.ts`, and `pnpm run generate:prompts` copies each into `packages/conversation-defaults/src/generated/defaultPrompts.ts` as the package default. `routine-ranked-activation.md` reaches the routine activator instead, as a `turnProvider.ts`-loaded option on its ranked-activation registry; `routine-step-answer-steering.md` is loaded directly by `backend/src/shared/infra/prompts/steeringPromptRenderer.ts`, outside the generator's manifest. `packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the exact model input both send. Before editing any of them (or the fragments still built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 - `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
 - `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)

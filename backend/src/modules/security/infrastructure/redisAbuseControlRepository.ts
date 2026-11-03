@@ -58,6 +58,9 @@ return cjson.encode({
  * One script owns both single and batch consumption. Batch rejection leaves every key untouched,
  * matching the Postgres transaction; single rejection persists its block. Redis serializes the
  * script, so concurrent replicas cannot observe the same remaining slot.
+ *
+ * The sliding window matches `consumeAbuseControlEntry` in Postgres, including windows that sit
+ * end to end so the expired one weighs only by the share of it still inside the last window.
  */
 const consumeScript = String.raw`
 local redisTime = redis.call('TIME')
@@ -110,14 +113,17 @@ for index = 1, count do
     attemptCount = 1
   end
   local previousAttemptCount
+  local windowStartedAtMs
   if held then
     previousAttemptCount = existing and existing.previousAttemptCount or 0
+    windowStartedAtMs = existing.windowStartedAtMs
   elseif existing and elapsedMs < 2 * windowMs then
     previousAttemptCount = existing.attemptCount
+    windowStartedAtMs = existing.windowStartedAtMs + windowMs
   else
     previousAttemptCount = 0
+    windowStartedAtMs = nowMs
   end
-  local windowStartedAtMs = held and existing.windowStartedAtMs or nowMs
   local overlap = math.max(0, 1 - ((nowMs - windowStartedAtMs) / windowMs))
   local weightedAttemptCount = previousAttemptCount * overlap + attemptCount
   local blockedUntilMs

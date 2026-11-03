@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { AbuseControlRepository } from "../../src/db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
@@ -109,6 +109,90 @@ describeIntegration("AbuseControlRepository (Postgres)", () => {
     });
 
     expect(afterGap.remaining).toBe(4);
+  });
+
+  describe("across a gap after a spent window", () => {
+    const service = new AbuseControlService(repository);
+    const voicePolicy = { limit: 3, windowMs: 600_000 };
+    // Each case runs on its own future day, so the expiry sweep a previous case fired with its
+    // own clock cannot delete this case's rows mid-run.
+    const clockOn = (day: number) => (seconds: number): Date =>
+      new Date(Date.UTC(2030, 0, day) + seconds * 1_000);
+
+    it("admits a start a full window after the last accepted one", async () => {
+      const at = clockOn(1);
+      const policy = { ...voicePolicy, scope: `${scope}.gap.timeline`, subjectKey: "source" };
+      for (const seconds of [0, 1, 31]) {
+        await service.enforce({ ...policy, now: at(seconds) });
+      }
+      await expect(service.enforce({ ...policy, now: at(546) })).rejects.toMatchObject({
+        statusCode: 429,
+        details: { resetAtMs: at(1_146).getTime() },
+      });
+
+      await expect(service.enforce({ ...policy, now: at(1_156) })).resolves.toMatchObject({ remaining: 1 });
+      expect(await repository.find(policy.scope, policy.subjectKey)).toMatchObject({
+        attemptCount: 1,
+        previousAttemptCount: 4,
+        windowStartedAt: at(600),
+      });
+    });
+
+    it("weighs the expired window by the share of it still inside the last window", async () => {
+      const at = clockOn(2);
+      const policy = { ...voicePolicy, scope: `${scope}.gap.overlap`, subjectKey: "source" };
+      for (const seconds of [0, 1, 2]) {
+        await service.enforce({ ...policy, now: at(seconds) });
+      }
+
+      await expect(service.enforce({ ...policy, now: at(1_010) })).resolves.toMatchObject({ remaining: 1 });
+      await expect(service.enforce({ ...policy, now: at(1_010) })).resolves.toMatchObject({ remaining: 0 });
+      await expect(service.enforce({ ...policy, now: at(1_010) })).rejects.toMatchObject({ statusCode: 429 });
+      expect(await repository.find(policy.scope, policy.subjectKey)).toMatchObject({
+        previousAttemptCount: 3,
+        windowStartedAt: at(600),
+      });
+    });
+
+    it("carries nothing once two windows have passed since the spent one began", async () => {
+      const at = clockOn(3);
+      const policy = { ...voicePolicy, scope: `${scope}.gap.clear`, subjectKey: "source" };
+      for (const seconds of [0, 1, 2]) {
+        await service.enforce({ ...policy, now: at(seconds) });
+      }
+
+      await expect(service.enforce({ ...policy, now: at(1_200) })).resolves.toMatchObject({ remaining: 2 });
+      expect(await repository.find(policy.scope, policy.subjectKey)).toMatchObject({
+        attemptCount: 1,
+        previousAttemptCount: 0,
+        windowStartedAt: at(1_200),
+      });
+    });
+
+    it("tells a refused caller a reset at which its retry is admitted, even past the block", async () => {
+      const at = clockOn(4);
+      const policy = { ...voicePolicy, scope: `${scope}.gap.bunched`, subjectKey: "source" };
+      const twin = { ...policy, subjectKey: "twin" };
+      for (const subject of [policy, twin]) {
+        for (const seconds of [0, 1, 2]) {
+          await service.enforce({ ...subject, now: at(seconds) });
+        }
+        await expect(service.enforce({ ...subject, now: at(10) })).rejects.toMatchObject({
+          statusCode: 429,
+          details: { resetAtMs: at(900).getTime() + 1, retryAfterSeconds: 891 },
+        });
+      }
+
+      // The repository directly, because the service's expiry sweep forgets a row whose block has
+      // ended, which would admit the retry without weighing anything.
+      const retry = { ...policy, blockMs: policy.windowMs };
+      await expect(repository.consume({ ...retry, ...twin, now: at(610) })).resolves.toMatchObject({ blocked: true });
+      const atReset = await repository.consume({ ...retry, now: new Date(at(900).getTime() + 1) });
+      expect(atReset).toMatchObject({
+        blocked: false,
+        entry: { attemptCount: 1, previousAttemptCount: 4, windowStartedAt: at(600) },
+      });
+    });
   });
 
   it("rolls back the grant consumption when the workspace budget is unavailable", async () => {

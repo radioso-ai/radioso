@@ -99,6 +99,11 @@ export const isForeignKeyViolation = (error: unknown): boolean => pgErrorMeta(er
  * where `overlap` falls from 1 to 0 as the current window advances. A caller that spends the
  * whole budget at the end of one window is therefore still over the limit at the start of the
  * next, which a plain per-window counter would admit.
+ *
+ * Windows sit end to end: the window after an expired one starts where it ended, not at the
+ * attempt that opens it, so `overlap` is the share of the expired window still inside the last
+ * `windowMs`. Two windows or more after the last one started, nothing overlaps and the next
+ * window starts at the attempt.
  */
 export const consumeAbuseControlEntry = (input: {
   scope: string;
@@ -136,6 +141,8 @@ export const consumeAbuseControlEntry = (input: {
   const nextWindowStartedAt = sql`case
     when abuse_control_entries.blocked_until > ${now} then abuse_control_entries.window_started_at
     when abuse_control_entries.window_started_at > ${windowCutoff} then abuse_control_entries.window_started_at
+    when abuse_control_entries.window_started_at > ${previousWindowCutoff}
+      then abuse_control_entries.window_started_at + (${input.windowMs} * interval '1 millisecond')
     else ${now}
   end`;
   const weightedAttemptCount = (

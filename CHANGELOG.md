@@ -9,6 +9,36 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.27.0] - 2026-11-03
+
+### Added
+
+- **infra:** let a stack raise the public voice call start limits ([#1687](https://github.com/radioso-ai/radioso/pull/1687))
+- **retrieval:** resolve relative dates in the visitor's or the workspace's time zone ([#1684](https://github.com/radioso-ai/radioso/pull/1684))
+- **billing:** flag accounts whose average conversation costs more than the plan can carry ([#1682](https://github.com/radioso-ai/radioso/pull/1682))
+- **voice:** start a Radioso-managed ElevenLabs call in the session's language ([#1676](https://github.com/radioso-ai/radioso/pull/1676))
+
+### Fixed
+
+- **voice:** say an agent needs publishing before it can take calls or chats ([#1690](https://github.com/radioso-ai/radioso/pull/1690))
+- **security:** weigh the previous rate-limit window by its real overlap ([#1688](https://github.com/radioso-ai/radioso/pull/1688))
+- **routines:** close the routine engine review follow-ups on approval-wait replies, page-read records, replaced slots, and step prompts ([#1683](https://github.com/radioso-ai/radioso/pull/1683))
+- **wordpress:** date only posts by their publish day, not evergreen pages ([#1681](https://github.com/radioso-ai/radioso/pull/1681))
+- **background-jobs:** split dead-letter error reports by job kind and class ([#1680](https://github.com/radioso-ai/radioso/pull/1680))
+- **chat:** write a directive-bound skill's reply from its result instead of showing it verbatim ([#1679](https://github.com/radioso-ai/radioso/pull/1679))
+- **retrieval:** keep passages dated in another period out of a range answer's reserved slots ([#1671](https://github.com/radioso-ai/radioso/pull/1671))
+- **email-channel:** settle sends after a provider 5xx by their own Message-ID ([#1675](https://github.com/radioso-ai/radioso/pull/1675))
+- **routines:** give a routine step the page in metadata mode and on the grounded path ([#1674](https://github.com/radioso-ai/radioso/pull/1674))
+- **routines:** stop the next-step selector answering the visitor on the opening turn ([#1673](https://github.com/radioso-ai/radioso/pull/1673))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `250_workspace_time_zone.sql`
+
+[1.27.0]: https://github.com/radioso-ai/radioso/compare/v1.26.1...v1.27.0
+
 ## [1.26.1] - 2026-10-28
 
 ### Fixed

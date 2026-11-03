@@ -1187,6 +1187,45 @@ Related docs:
 
 - [Data retention](../../docs-portal/content/operators/data-retention.mdx)
 
+## Workspace Time Zone
+
+Owns the zone a turn reads "today" in (#1600), so "tomorrow" and "this weekend"
+mean the visitor's day. `shared/domain/referenceTimeZone.ts` holds the one rule:
+the visitor's IANA zone when their client reports a valid one, else the
+workspace's (`workspaces.time_zone`, null for UTC), else UTC, validated with
+`Intl` and never throwing. The website embed and hosted chat page send the
+browser's zone as `pageContext.browserTimeZone`; the chat APIs and Ray's
+`test_agent_turn` take `userTimeZone`. A chat turn resolves the zone once in the
+session preparer and hands it to the planner, the turn interpreter, the
+retrieval request, and the conversation engine as `referenceTimeZone`, which
+rides on every `TurnContext` of the turn, so a routine's date slots
+(`RoutineNextStepSelector`) and its retrieval steps read the same day; any other
+retrieval run reads the workspace zone in `RetrievalPipelineService.interpret`,
+and a turn without a zone reads UTC in the packages. Every "today" downstream is
+`formatIsoDate`/`formatPromptDate` (`shared/domain/clock.ts`) in that zone. The
+trace's context stage records `timeZoneSource` (`visitor`, `workspace`,
+`default`), never the zone.
+
+Public surfaces and key files:
+
+- `backend/src/shared/domain/referenceTimeZone.ts`, `backend/src/shared/domain/clock.ts`
+- `backend/src/modules/chat/services/turnReferenceTimeZone.ts` (a chat turn's zone)
+- `packages/conversation-contract/index.d.ts` (`ReferenceTimeZone` on `TurnContext` and the engine inputs)
+- `packages/conversation-defaults/src/localDate.ts` (a turn's local date for the routine selector and skill input resolver)
+- `backend/src/modules/retrieval/domain/workspaceTimeZoneReader.ts` (the workspace-zone port chat and retrieval read; `WorkspaceTimeZoneSettingsRepository` implements it)
+- `backend/src/modules/settings/services/timeZoneSettingsService.ts` (the setting, validation and audit)
+- `backend/src/db/repositories/workspaceTimeZoneSettingsRepository.ts` (setting store)
+- `backend/src/app/http/routes/settingsRoutes.ts` (`GET`/`PUT /api/v1/settings/time-zone`)
+- `backend/src/modules/operatorCopilot/tools/timeZoneSettingProposals.ts` (`propose_time_zone_setting`)
+- `frontend/lib/browser-time-zone.ts` (the browser's zone on public chat messages)
+- `frontend/components/dashboard/settings/time-zone-card.tsx` (Settings → Workspace → Time zone)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/shared/referenceTimeZone.test.ts tests/unit/retrieval/relativeDatesTimeZone.test.ts tests/unit/chat-session-preparer-time-zone.test.ts tests/unit/time-zone-settings-service.test.ts tests/contract/settings-time-zone.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/workspace-time-zone.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec vitest run tests/unit/public-chat-browser-time-zone.test.ts tests/unit/time-zone-options.test.ts`
+
 ## Data Subject Requests
 
 Owns finding one person across channels and exporting or erasing what Radioso

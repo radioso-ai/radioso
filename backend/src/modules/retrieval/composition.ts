@@ -25,6 +25,7 @@ import { RetrievalSearchService } from "./services/retrievalSearchService.js";
 import { RequestedDateRangeSearchService } from "./services/requestedDateRangeSearchService.js";
 import type { SkillSettingsResolver } from "./services/retrievalContextStage.js";
 import type { AgentRetrievalScopePort } from "./domain/agentRetrievalScope.js";
+import type { WorkspaceTimeZoneReader } from "./domain/workspaceTimeZoneReader.js";
 
 export { ChunkingStrategyRegistry } from "./domain/chunking/chunkingStrategyRegistry.js";
 export {
@@ -85,6 +86,7 @@ export const createDefaultRetrievalServices = (input: {
   usageEventRecorder?: UsageEventRecorder;
   skillSettingsResolver?: SkillSettingsResolver;
   agentRetrievalScope?: AgentRetrievalScopePort;
+  workspaceTimeZones?: WorkspaceTimeZoneReader;
 }) => {
   const temporalCandidateRetrieval = new PgTemporalCandidateRepository(input.database);
   const retrievalPipeline = new RetrievalPipelineService(
@@ -105,6 +107,7 @@ export const createDefaultRetrievalServices = (input: {
     input.skillSettingsResolver,
     input.chunkHydrator,
     temporalCandidateRetrieval,
+    input.workspaceTimeZones,
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, input.agentRetrievalScope);
   const requestedDateRangeSearch = new RequestedDateRangeSearchService(

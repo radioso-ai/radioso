@@ -33,7 +33,7 @@ export interface ActivityTraceSourceStages {
   diagnostics: MeasuredStage<RetrievalExecutionDiagnostics>;
 }
 
-export interface NonActivityTraceSourceStages {
+interface NonActivityTraceSourceStages {
   request: RetrievalPipelineRequest;
   traceStartedAtMs: number;
   context: MeasuredStage<RetrievalContextStageResult>;
@@ -140,6 +140,7 @@ export class RetrievalPipelineActivityTraceBuilder {
             query: stages.request.query,
             historyMessageCount: stages.request.history.length,
             metadataFilterKeys: Object.keys(stages.request.metadataFilter ?? {}),
+            timeZoneSource: stages.request.referenceTimeZone?.source ?? "default",
           },
           outputs: {
             selectedHistoryCount: stages.context.result.contextWindow.selectedMessages.length,

@@ -25,6 +25,7 @@ import {
   DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
 } from "./generated/defaultPrompts.js";
+import { localIsoDate, turnTimeZone, type LocalDate } from "./localDate.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
 export { DEFAULT_ROUTINE_NEXT_STEP_PROMPT } from "./generated/defaultPrompts.js";
@@ -83,8 +84,11 @@ interface SlotRuleTemplates {
 // is stated as how to record the value, never as the slot's type: shown as the type, the
 // model read it as the format the user must type and re-asked a date it had already
 // captured, and parsed "11-14 Nov" as month 11, day 14.
-const dateRule = (today: Date, template: string): string =>
-  renderPromptTemplate("chat/routine-next-step-date-rule.md", template, { today: today.toISOString().slice(0, 10) });
+const dateRule = (today: LocalDate, template: string): string =>
+  renderPromptTemplate("chat/routine-next-step-date-rule.md", template, {
+    today: today.isoDate,
+    time_zone: today.timeZone,
+  });
 
 // Keys only: whether a slot already holds a value is what a condition such as "the user
 // provided {{slot.arrival}}" turns on, and without it a value given on an earlier turn
@@ -111,7 +115,7 @@ const filledSlotKeys = (routine: Routine, variables: Record<string, unknown>): s
 const slotSchemaBlock = (
   routine: Routine,
   variables: Record<string, unknown>,
-  today: Date,
+  today: LocalDate,
   templates: SlotRuleTemplates,
 ): string => {
   if (!routine.slots || routine.slots.length === 0) {
@@ -350,7 +354,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       slotsPromptTemplate?: string;
       /** The slots that already hold a value (`{{slot_keys}}`). */
       filledSlotsPromptTemplate?: string;
-      /** How a date slot's value is read and recorded (`{{today}}`). */
+      /** How a date slot's value is read and recorded (`{{today}}`, `{{time_zone}}`). */
       dateRulePromptTemplate?: string;
       clock?: () => Date;
       onUnreadable?: RoutineUnreadableObserver;
@@ -386,7 +390,12 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       currentStep: currentStepBlock(input.currentStep, input.skillResult),
       skillResult: skillResultBlock(input.skillResult),
       conditions,
-      slotSchema: slotSchemaBlock(input.routine, input.state.variables, this.clock(), this.slotRuleTemplates),
+      slotSchema: slotSchemaBlock(
+        input.routine,
+        input.state.variables,
+        localIsoDate(this.clock(), turnTimeZone(input.turn)),
+        this.slotRuleTemplates,
+      ),
     });
 
     // A blank completion comes back as one, so it is read, retried and reported like any other

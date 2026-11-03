@@ -245,6 +245,8 @@ export class ActivityTraceAssembler {
           query: prompt.request.query,
           historyMessageCount: prompt.request.history.length,
           metadataFilterKeys: Object.keys(prompt.request.metadataFilter ?? {}),
+          // Which input decided the zone "today" is read in; never the zone itself.
+          timeZoneSource: prompt.request.referenceTimeZone?.source ?? "default",
         },
         outputs: {
           selectedHistoryCount: prompt.contextWindow.selectedMessages.length,

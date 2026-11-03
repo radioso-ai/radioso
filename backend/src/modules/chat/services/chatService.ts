@@ -61,22 +61,21 @@ import {
 } from "../../../shared/analytics/productAnalyticsService.js";
 import {
   NoopUsageLimitPolicy,
-  type AnswerUsageKind,
   type UsageLimitPolicy,
   type UsageLimitReservation,
 } from "../../../shared/domain/usageLimitPolicy.js";
-import { WORKBENCH_TEST_SOURCE_CHANNELS } from "../../../shared/domain/conversationSource.js";
+import { chatAnswerUsageKind, chatTurnTraceAttributes } from "./chatTurnAttributes.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import type { ConversationSummaryStore } from "../contracts/conversationSummary.js";
 import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 import {
   ChatTurnAssembly,
   type ChatTurnAssemblyFactory,
-  buildChatTurnContext,
   type ChatTurnAssemblyCoordinationHook,
   type ChatTurnAssemblyRoutineClaim,
   type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
+import { buildChatTurnContext } from "./conversationContractMappers.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import {
@@ -125,6 +124,7 @@ import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseRe
 import { createTurnLanguageReport, withTurnLanguageReport, type TurnLanguageReport } from "./turnLanguageReport.js";
 import {
   type RetrievalSenseDetectorPort,
+  type WorkspaceTimeZoneReader,
 } from "../../retrieval/public.js";
 import {
   contextualDirectiveCandidates,
@@ -169,9 +169,11 @@ import {
 import { routineReplyFor } from "./routines/routineReplyFor.js";
 import { withCommittedPageRead } from "./routines/pageReadAwareRoutineRunner.js";
 import {
-  ChatTurnDisconnectAbortError,
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
+  isTurnCancellation,
+  leaseOptionsFor,
+  supersededBeforeEmission,
   type ConversationTurnLease,
   type ConversationTurnLeaseOptions,
   type ConversationTurnRegistry,
@@ -191,29 +193,6 @@ export { ModelChatGateway } from "./chatGateways.js";
 export type { SuspendedRoutineReader } from "./approvalResumeTurn.js";
 export { ChatTurnSupersededError, ChatTurnDisconnectAbortError } from "./conversationTurnRegistry.js";
 
-/** Operator-driven workbench/test-chat traffic metering as a cheaper `test_run`; every
- *  other channel is a real customer conversation reply. */
-const chatAnswerUsageKind = (sourceChannel?: string | null): AnswerUsageKind =>
-  sourceChannel != null && (WORKBENCH_TEST_SOURCE_CHANNELS as readonly string[]).includes(sourceChannel)
-    ? "test_run"
-    : "conversation_reply";
-
-const chatTurnTraceAttributes = (input: {
-  accountId?: string;
-  conversationId?: string;
-  sourceChannel?: string | null;
-  stream: boolean;
-  workspaceId: string;
-  executionMode?: TurnExecutionMode;
-}): Record<string, unknown> => ({
-  "radioso.account_id": input.accountId,
-  "radioso.conversation_id": input.conversationId,
-  "radioso.workspace_id": input.workspaceId,
-  "chat.source_channel": input.sourceChannel ?? "assistant",
-  "chat.stream": input.stream,
-  "chat.execution_mode": input.executionMode ?? "live",
-});
-
 /**
  * Everything ChatService needs to run a turn. The turn runtime (presenter +
  * registered skills) is assembled by composition via {@link buildChatTurnRuntime}
@@ -228,6 +207,8 @@ export interface ChatServiceOptions {
   turnRuntime: ChatTurnRuntime;
   productAnalyticsService?: ProductAnalyticsPort;
   workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">;
+  /** The zone a turn reads today in when its visitor reports none; UTC when absent. */
+  workspaceTimeZones?: WorkspaceTimeZoneReader;
   bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
@@ -303,20 +284,6 @@ interface TurnCoordinationState {
   disconnectSignal?: AbortSignal;
 }
 
-/** The registry mode a turn's supersession asks for: only `latest_input_wins` supersedes after emission. */
-const leaseOptionsFor = (supersession: ConversationTurnSupersession | undefined): ConversationTurnLeaseOptions | undefined =>
-  supersession === "latest_input_wins" ? { supersedeAfterEmission: true } : undefined;
-
-/**
- * The same supersession, for a turn the registry saw emitting (its reply was being stored) whose
- * reply never reached the client: the newer input replaces it whole.
- */
-const supersededBeforeEmission = (error: ChatTurnSupersededError): ChatTurnSupersededError =>
-  new ChatTurnSupersededError(error.conversationId, error.stage, { replacedByNewerInput: error.replacedByNewerInput });
-
-const isTurnCancellation = (error: unknown): boolean =>
-  error instanceof ChatTurnSupersededError || error instanceof ChatTurnDisconnectAbortError;
-
 interface ChatAnswerInput {
   workspaceId: string;
   agentId?: string | null;
@@ -329,6 +296,8 @@ interface ChatAnswerInput {
   inputMetadata?: UserMessageInputMetadata;
   metadataFilter?: Record<string, unknown>;
   pageContext?: AssistantPageContext | null;
+  /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
+  visitorTimeZone?: string | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
@@ -461,6 +430,7 @@ export class ChatService {
       turnRuntime,
       productAnalyticsService = new NoopProductAnalyticsService(),
       workspaceRepository,
+      workspaceTimeZones,
       bootstrapGreetingCacheRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
@@ -569,6 +539,7 @@ export class ChatService {
       visitorResolver,
       turnRuntime.metrics,
       routineStore,
+      workspaceTimeZones,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,
@@ -926,6 +897,7 @@ export class ChatService {
         ...this.buildTurnPlanDirectiveInputs(session, input.accountId),
         visitorContext: this.planVisitorContext(session),
         agentId: session.agent.id,
+        timeZone: session.referenceTimeZone?.timeZone,
         workspaceContext: buildAgentChatWorkspaceContext(session.agent),
         usageContext: {
           accountId: input.accountId,
@@ -1441,6 +1413,8 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+    /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
+    visitorTimeZone?: string | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
@@ -1534,6 +1508,8 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+    /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
+    visitorTimeZone?: string | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */

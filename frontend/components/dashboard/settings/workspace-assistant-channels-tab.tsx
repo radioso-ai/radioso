@@ -13,6 +13,7 @@ import { AssistantRoutinesSection } from '@/components/dashboard/settings/assist
 import { ChatChannelSection } from '@/components/dashboard/settings/chat-channel-section'
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { ConversationRetentionCard } from '@/components/dashboard/settings/conversation-retention-card'
+import { TimeZoneCard } from '@/components/dashboard/settings/time-zone-card'
 import { EmailChannelCard } from '@/components/dashboard/settings/email-channel-card'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-card'
@@ -61,25 +62,7 @@ import {
 } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 import { registerAgentDraftSaver } from '@/lib/agent-draft-save-port'
-
-const getOrganizationNameCacheKey = (accountId: string) => `radioso.organizationName:${accountId}`
-
-const readCachedOrganizationName = (accountId: string) => {
-  if (typeof window === 'undefined') {
-    return ''
-  }
-
-  const cachedValue = window.localStorage.getItem(getOrganizationNameCacheKey(accountId))
-  return typeof cachedValue === 'string' ? cachedValue : ''
-}
-
-const writeCachedOrganizationName = (accountId: string, organizationName: string) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  window.localStorage.setItem(getOrganizationNameCacheKey(accountId), organizationName)
-}
+import { readCachedOrganizationName, writeCachedOrganizationName } from '@/lib/organization-name-cache'
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
@@ -903,6 +886,8 @@ export function WorkspaceAssistantChannelsTab({
             </SettingsCard>
 
             <ConversationRetentionCard id="data-retention" />
+
+            <TimeZoneCard id="time-zone" />
 
             <WebhookDestinationsPanel onSaveStateChange={onSaveStateChange} />
 

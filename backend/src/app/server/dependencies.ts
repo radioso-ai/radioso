@@ -73,6 +73,7 @@ import {
   buildEmailVerificationService,
   buildPasswordResetService,
   buildWorkspaceProviderCredentialsService,
+  readProviderCredentialHealth,
 } from "./builders/accessAuth.js";
 import { buildChatServices } from "./builders/chat.js";
 import { buildConnectorRegistry, buildSlackInboundJobComposition } from "./builders/integrations.js";
@@ -125,6 +126,7 @@ import {
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createPrivacySettingCopilotProposalAdapter } from "../../modules/operatorCopilot/privacySettingProposalAdapter.js";
+import { createTimeZoneSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/timeZoneSettingProposalAdapter.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import { createAgentCopilotProposalAdapter } from "../../modules/operatorCopilot/agentProposalAdapter.js";
 import { WebsiteAnalysisProbeService } from "../../modules/operatorCopilot/services/websiteAnalysisProbeService.js";
@@ -317,6 +319,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspace,
     workspaceLlmCapabilitySettingsService,
     workspaceModelAvailability,
+    workspaceTimeZones,
   } = documentRetrievalGraph;
   // Field suggestions for metadata rules are the catalog's declarations unioned
   // with the keys already observed on document metadata; the advisory reference
@@ -408,6 +411,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     workspaceRepository: repositories.workspaceRepository,
+    workspaceTimeZones,
     assertPublicWebsiteUrl,
     errorReporter: infrastructure.errorReportingService,
     ingestionSettingsService: settings.ingestionSettingsService,
@@ -790,6 +794,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     store: new WorkspacePrivacySettingsRepository(infrastructure.database.kysely),
     audit: infrastructure.auditService,
   });
+  // One planner for reviewed document operations, shared by Ray's proposal adapter and tool catalog.
+  const documentReviewedOperations = new DocumentReviewedOperationService(
+    repositories.documentRepository,
+    documents.documentIngestionService,
+    documents.documentDeletionService,
+    infrastructure.documentCapacityReader,
+    documents.documentSourceReprocessService,
+    documents.workspaceIngestionReprocessService,
+  );
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
@@ -825,19 +838,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       documentDeletion: documents.documentDeletionService,
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
-    createDocumentReviewedOperationAdapter({
-      operations: new DocumentReviewedOperationService(
-        repositories.documentRepository,
-        documents.documentIngestionService,
-        documents.documentDeletionService,
-        infrastructure.documentCapacityReader,
-        documents.documentSourceReprocessService,
-        documents.workspaceIngestionReprocessService,
-      ),
-    }),
+    createDocumentReviewedOperationAdapter({ operations: documentReviewedOperations }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createPrivacySettingCopilotProposalAdapter({ privacySettings: privacySettingsService }),
+    createTimeZoneSettingCopilotProposalAdapter({ timeZoneSettings: settings.timeZoneSettingsService }),
     createWebsiteCrawlCopilotProposalAdapter({
       websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, normalizeCrawlUrl: normalizeBaseUrl, enqueue: documents.websiteCrawlJobService.enqueue.bind(documents.websiteCrawlJobService) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
@@ -1105,23 +1110,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       async getManagedLlmModels(workspaceId) {
         return resolveWorkspaceManagedLlmModels(llmCapabilityResolver, workspaceId);
       },
-      async getProviderCredentialHealth(workspaceId) {
-        return {
-          encryptionConfigured: workspaceProviderCredentialsService.isEncryptionConfigured(),
-          credentials: await workspaceProviderCredentialsService.listConfigured(workspaceId),
-          envProviderAvailability: {
-            openai: Boolean(env.OPENAI_API_KEY),
-            "openai-compatible": Boolean(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY),
-            gemini: Boolean(env.GEMINI_API_KEY),
-            claude: Boolean(env.ANTHROPIC_API_KEY),
-          },
-        };
-      },
+      getProviderCredentialHealth: readProviderCredentialHealth(workspaceProviderCredentialsService, env),
       async getGeneralSettings(workspaceId) {
         const { settings, agentId } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
         return { ...settings, agentId };
       },
       getPrivacySettings: (workspaceId) => privacySettingsService.get(workspaceId),
+      getTimeZoneSettings: (workspaceId) => settings.timeZoneSettingsService.get(workspaceId),
     },
     proposalRepository: repositories.copilotRepository,
     proposalRecovery: repositories.copilotRepository,
@@ -1168,14 +1163,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettings: settings.ingestionSettingsService,
     directiveAuthor: directiveAuthorService,
     directives: authoredDirectiveService,
-    documents: new DocumentReviewedOperationService(
-      repositories.documentRepository,
-      documents.documentIngestionService,
-      documents.documentDeletionService,
-      infrastructure.documentCapacityReader,
-      documents.documentSourceReprocessService,
-      documents.workspaceIngestionReprocessService,
-    ),
+    documents: documentReviewedOperations,
     logger,
   });
   const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
@@ -1476,6 +1464,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,
     privacySettingsService,
+    timeZoneSettingsService: settings.timeZoneSettingsService,
     dataSubjectAccess: new DataSubjectAccessService({
       reads: createPostgresDataSubjectReadUnitOfWork({ db: infrastructure.database.kysely }),
       erasure: conversationErasure,

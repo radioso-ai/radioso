@@ -4,6 +4,7 @@ import { isLocaleTag } from "../../../shared/domain/locale.js";
 import { PRIVACY_NOTICE_VERSION_MAX_LENGTH } from "../../../modules/agents/public.js";
 
 import { chatMessageSchema } from "../schemas/textInputLimits.js";
+import { browserTimeZoneSchema } from "../schemas/timeZoneSchemas.js";
 
 const localeHintSchema = z.string().trim().max(35);
 
@@ -22,6 +23,7 @@ export const pageContextSchema = z.object({
   pageTitle: z.string().trim().max(180).nullable().optional(),
   pageLocale: z.string().trim().max(35).nullable().optional(),
   browserLocale: z.string().trim().max(35).nullable().optional(),
+  browserTimeZone: browserTimeZoneSchema,
   content: z.string().trim().max(6000).nullable().optional(),
   // Capped by truncation (not `.max()`, which would reject the whole message over an
   // inconsequential metadata field) before the http(s) check, since a truncated string

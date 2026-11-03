@@ -15,6 +15,7 @@ import type {
   GeneralSettings,
   IngestionSettings,
   PrivacySettings,
+  TimeZoneSettings,
   UpdateDocumentTypeCatalogRequest,
   PlatformSettings,
   RetrievalDefaults,
@@ -70,6 +71,19 @@ export const settingsApi = {
     return request<PrivacySettings>("/settings/privacy", {
       method: "PUT",
       body: JSON.stringify({ conversationRetentionDays: data.conversationRetentionDays }),
+    }, { withSession: true })
+  },
+
+  async getTimeZoneSettings(): Promise<TimeZoneSettings> {
+    return request<TimeZoneSettings>("/settings/time-zone", {
+      method: "GET",
+    }, { withSession: true })
+  },
+
+  async updateTimeZoneSettings(data: TimeZoneSettings): Promise<TimeZoneSettings> {
+    return request<TimeZoneSettings>("/settings/time-zone", {
+      method: "PUT",
+      body: JSON.stringify({ timeZone: data.timeZone }),
     }, { withSession: true })
   },
 

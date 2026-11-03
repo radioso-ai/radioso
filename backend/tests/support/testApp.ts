@@ -245,7 +245,9 @@ import { createDocumentCopilotProposalAdapter } from "../../src/modules/operator
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createPrivacySettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/privacySettingProposalAdapter.js";
+import { createTimeZoneSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/timeZoneSettingProposalAdapter.js";
 import { PrivacySettingsService, type PrivacySettings } from "../../src/modules/privacy/public.js";
+import { TimeZoneSettingsService } from "../../src/modules/settings/public.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import type { CopilotHeldReplyQueuePort } from "../../src/modules/operatorCopilot/tools/escalationSources.js";
 import { assertPublicWebsiteUrl, normalizeBaseUrl } from "../../src/modules/websiteCrawler/public.js";
@@ -1066,6 +1068,25 @@ export const createTestDependencies = (overrides: {
     },
     audit: auditService,
   });
+  // The time zone lives on the in-memory workspace record, where chat and retrieval read it; the
+  // Postgres store is covered by tests/integration/workspace-time-zone.integration.test.ts.
+  const timeZoneSettingsService = new TimeZoneSettingsService({
+    store: {
+      async read(workspaceId) {
+        const workspace = await workspaceRepository.findById(workspaceId);
+        return workspace ? { accountId: workspace.accountId, settings: { timeZone: workspace.timeZone } } : null;
+      },
+      async write({ workspaceId, settings, expected }) {
+        const workspace = await workspaceRepository.findById(workspaceId);
+        if (!workspace) return { status: "not_found" };
+        const previous = { timeZone: workspace.timeZone };
+        if (expected && expected.timeZone !== previous.timeZone) return { status: "changed" };
+        workspaceRepository.setTimeZone(workspaceId, settings.timeZone);
+        return { status: "written", accountId: workspace.accountId, previous };
+      },
+    },
+    audit: auditService,
+  });
   const accountAccessService = new AccountAccessService(
     accountMembershipRepository,
     auditService,
@@ -1509,6 +1530,11 @@ export const createTestDependencies = (overrides: {
     await drainDocumentProcessingQueue();
     return result;
   };
+  // Chat and retrieval read the workspace's zone off its in-memory record, as composition reads
+  // the Postgres column through `WorkspaceTimeZoneSettingsRepository`.
+  const workspaceTimeZones = {
+    readWorkspaceTimeZone: async (workspaceId: string) => (await workspaceRepository.findById(workspaceId))?.timeZone ?? null,
+  };
   const retrievalPipeline = new RetrievalPipelineService(
     createSystemRetrievalDefaultsProvider(),
     queryEmbeddings,
@@ -1523,6 +1549,8 @@ export const createTestDependencies = (overrides: {
     new RetrievalExecutionTelemetryService(telemetryService),
     createRetrievalSkillSettingsResolver(),
     chunkHydrator,
+    undefined,
+    workspaceTimeZones,
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -2236,6 +2264,7 @@ export const createTestDependencies = (overrides: {
     turnRuntime: chatTurnRuntime,
     productAnalyticsService,
     workspaceRepository,
+    workspaceTimeZones,
     bootstrapGreetingCacheRepository,
     usageLimitPolicy,
     agentService,
@@ -2554,6 +2583,7 @@ export const createTestDependencies = (overrides: {
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: ingestionSettingsService }),
     createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createPrivacySettingCopilotProposalAdapter({ privacySettings: privacySettingsService }),
+    createTimeZoneSettingCopilotProposalAdapter({ timeZoneSettings: timeZoneSettingsService }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
@@ -2719,6 +2749,7 @@ export const createTestDependencies = (overrides: {
         };
       },
       getPrivacySettings: (workspaceId) => privacySettingsService.get(workspaceId),
+      getTimeZoneSettings: (workspaceId) => timeZoneSettingsService.get(workspaceId),
       async getGeneralSettings(workspaceId) {
         const { settings, agentId } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
         return { ...settings, agentId };
@@ -3176,6 +3207,7 @@ export const createTestDependencies = (overrides: {
       eraseVisitor: async () => { throw notFound("Visitor not found"); },
     },
     privacySettingsService,
+    timeZoneSettingsService,
     dataSubjectAccess: overrides.dataSubjectAccess ?? {
       // The Postgres reads are covered by tests/integration/data-subject-access.integration.test.ts.
       lookup: async () => [],

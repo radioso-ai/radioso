@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { ModelCallUsageContext } from "../../../../shared/domain/modelCallUsageContext.js";
-import { type Clock, formatPromptDateUtc, systemClock } from "../../../../shared/domain/clock.js";
+import { type Clock, formatPromptDate, systemClock } from "../../../../shared/domain/clock.js";
 import type { AgentTool } from "../../../../shared/agent-runtime/index.js";
 import type { LlmCapabilityResolveInput } from "../../../../shared/infra/llm/workspaceContext.js";
 import type { RetrievalSource, RetrievedCandidate } from "../../domain/retrievalPipelineTypes.js";
@@ -14,6 +14,8 @@ interface RerankToolDeps {
   readonly workspaceContext?: LlmCapabilityResolveInput;
   readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
   readonly clock?: Clock;
+  /** The zone the rerank reads today's date in; UTC when absent. */
+  readonly timeZone?: string;
 }
 
 const inputSchema = z.object({
@@ -71,7 +73,7 @@ export const createRerankTool = (deps: RerankToolDeps): AgentTool<RerankInput, R
     const scores = await deps.rerankGateway.rerank({
       query: input.query,
       contexts: candidates,
-      today: formatPromptDateUtc((deps.clock ?? systemClock)()),
+      today: formatPromptDate((deps.clock ?? systemClock)(), deps.timeZone),
       workspaceContext: deps.workspaceContext,
       usageContext: deps.usageContext
         ? {

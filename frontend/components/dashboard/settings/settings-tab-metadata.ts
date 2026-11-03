@@ -30,6 +30,11 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
         summary: 'How long conversations are kept.',
       },
       {
+        id: 'time-zone',
+        label: 'Time zone',
+        summary: 'The day today and tomorrow mean in answers.',
+      },
+      {
         id: 'webhook-destinations',
         label: 'Webhook destinations',
         summary: 'Reusable signed endpoints that routines can export completion data to.',

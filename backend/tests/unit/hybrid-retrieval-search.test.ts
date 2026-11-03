@@ -254,6 +254,7 @@ describe("hybrid retrieval search", () => {
     });
 
     const result = await rerank.rerank({
+      timeZone: "UTC",
       query: "evidence",
       contexts: candidates,
       enabled: true,

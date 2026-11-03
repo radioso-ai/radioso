@@ -1304,6 +1304,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
       },
       websiteEmbedCopy: {},
       websiteEmbedExpertOverrides: {},
+      timeZone: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -1313,6 +1314,11 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
 
   async findById(id: string): Promise<WorkspaceRecord | null> {
     return this.items.get(id) ?? null;
+  }
+
+  setTimeZone(id: string, timeZone: string | null): void {
+    const record = this.items.get(id);
+    if (record) this.items.set(id, { ...record, timeZone });
   }
 
   /** Test-harness seeding only: mirrors the persisted default-agent pointer. */

@@ -57,6 +57,7 @@ const workspaceSettingsPort = () => ({
     { capability: "rerank" as const, provider: "claude", model: "claude-sonnet-4-5", token: "llm-token" },
   ]),
   getPrivacySettings: vi.fn(async () => ({ conversationRetentionDays: 365 })),
+  getTimeZoneSettings: vi.fn(async () => ({ timeZone: "Europe/Rome" })),
   getManagedLlmModels: vi.fn(async () => ({
     chat: { provider: "claude", model: "claude-sonnet-5", apiKey: "sk-managed-secret" },
     rewrite: null,
@@ -144,6 +145,7 @@ describe("workspace settings copilot reader", () => {
     expect(workspaceSettings.getPrivacySettings).toHaveBeenCalledWith("workspace-1");
     expect(result).toMatchObject({
       privacy: { conversationRetentionDays: 365 },
+      timeZone: { timeZone: "Europe/Rome" },
       retrieval: {
         vectorTopK: 20,
         similarityThreshold: 0.42,

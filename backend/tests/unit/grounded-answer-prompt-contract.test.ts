@@ -17,6 +17,7 @@ const conversationIntentSnapshot = {
 describe("grounded answer prompt contract", () => {
   it("shows searchable author metadata to the answer model", () => {
     const result = new PromptBuilder().build({
+      timeZone: "UTC",
       query: "Who is Mario Liguori?",
       history: [],
       contexts: [
@@ -170,6 +171,7 @@ describe("grounded answer prompt contract", () => {
   it("keeps the reusable prefix the same whether or not the question names a period", () => {
     const answerPrompt = (requestedDateRange?: { dateFrom: string; dateTo: string }) =>
       new PromptBuilder(undefined, () => new Date("2026-10-21T08:00:00.000Z")).build({
+        timeZone: "UTC",
         query: "What's on this weekend?",
         history: [],
         contexts: [],
@@ -413,6 +415,7 @@ describe("grounded answer prompt contract", () => {
 
   it("scopes decline rules by turn type: compact inline guard on grounded, full rules on focused miss", () => {
     const main = new PromptBuilder().build({
+      timeZone: "UTC",
       query: "What?",
       history: [],
       contexts: [],

@@ -34,7 +34,7 @@ import {
 
 const DEFAULT_FALLBACK_CHUNK_LIMIT = 8;
 
-export interface AgenticRetrievalRunnerDeps {
+interface AgenticRetrievalRunnerDeps {
   readonly capabilityRunner: AgenticCapabilityRunner;
   readonly queryEmbeddings: QueryEmbeddingPort;
   readonly vectorSearch: VectorCandidateSearchPort;
@@ -44,7 +44,7 @@ export interface AgenticRetrievalRunnerDeps {
   readonly rerankGateway: RerankGateway;
 }
 
-export interface AgenticRetrievalRunInput {
+interface AgenticRetrievalRunInput {
   readonly workspaceId: string;
   readonly query: string;
   readonly systemPrompt: string;
@@ -64,6 +64,8 @@ export interface AgenticRetrievalRunInput {
   readonly agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   readonly signal?: AbortSignal;
   readonly now?: () => number;
+  /** The zone the rewrite and rerank tools read today's date in; UTC when absent. */
+  readonly timeZone?: string;
 }
 
 export interface AgenticRetrievalToolFactoryContext {
@@ -131,12 +133,14 @@ export class AgenticRetrievalRunner {
         queryRewrite: this.deps.queryRewrite,
         workspaceContext: input.workspaceContext,
         usageContext: input.usageContext,
+        timeZone: input.timeZone,
       }),
       createRerankTool({
         rerankGateway: this.deps.rerankGateway,
         registry,
         workspaceContext: input.workspaceContext,
         usageContext: input.usageContext,
+        timeZone: input.timeZone,
       }),
       createFetchChunkTool({ registry }),
       ...stagedTools,

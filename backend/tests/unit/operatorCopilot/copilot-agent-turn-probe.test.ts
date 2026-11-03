@@ -110,6 +110,7 @@ describe("test_agent_turn", () => {
       message: "I need help",
       previewRoutineIds: ["11111111-1111-4111-8111-111111111111"],
       userExpectedLocale: "it-IT",
+      userTimeZone: "America/Los_Angeles",
       inputMetadata: { method: "typed" },
       pageContext: { pageUrl: "https://example.com/help", pageTitle: "Help" },
       clientContextCapabilities: {
@@ -126,6 +127,7 @@ describe("test_agent_turn", () => {
       message: "I need help",
       previewRoutineIds: ["11111111-1111-4111-8111-111111111111"],
       userExpectedLocale: "it-IT",
+      userTimeZone: "America/Los_Angeles",
       inputMetadata: { method: "typed" },
       pageContext: { pageUrl: "https://example.com/help", pageTitle: "Help" },
       clientContextCapabilities: {

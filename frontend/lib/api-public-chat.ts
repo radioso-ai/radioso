@@ -10,6 +10,7 @@ import {
 } from './api-client'
 import { parseSseEvent, streamChatEvents } from './api-chat-stream'
 import { buildQueryString } from './api-query'
+import { withBrowserTimeZone } from './browser-time-zone'
 import type {
   ChatConversationDetail,
   PublicChatConversationTail,
@@ -106,7 +107,7 @@ export const publicChatApi = {
         'Content-Type': 'application/json',
         'X-Forwarded-Prefix': '/backend',
       }),
-      body: JSON.stringify(data),
+      body: JSON.stringify(withBrowserTimeZone(data)),
     })
 
     if (!response.ok) {
@@ -129,7 +130,7 @@ export const publicChatApi = {
       headers: attachAnonymousSessionHeader(token, {
         'Content-Type': 'application/json',
       }),
-      body: JSON.stringify(data),
+      body: JSON.stringify(withBrowserTimeZone(data)),
     })
 
     if (!response.ok) {

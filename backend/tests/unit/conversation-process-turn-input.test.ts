@@ -15,6 +15,7 @@ import {
   createChatProcessTurnInput,
 } from "../../src/modules/chat/services/conversationProcessTurnInput.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
+import { buildChatTurnContext } from "../../src/modules/chat/services/conversationContractMappers.js";
 import {
   createRouteScopedDirectiveSteering,
   type RouteScopedDirectiveRuntime,
@@ -776,6 +777,16 @@ describe("createChatProcessTurnInput", () => {
     expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toEqual(routineYield);
   });
 
+  it("hands the engine the zone the chat turn resolved, so routines and skills read the same today", () => {
+    const session = preparedSession();
+
+    expect(createChatProcessTurnInput({ session, dispatcher, selector, composer })).not.toHaveProperty("referenceTimeZone");
+    session.referenceTimeZone = { timeZone: "America/Los_Angeles", source: "visitor" };
+    expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).referenceTimeZone)
+      .toEqual({ timeZone: "America/Los_Angeles", source: "visitor" });
+    expect(buildChatTurnContext(session).referenceTimeZone).toEqual({ timeZone: "America/Los_Angeles", source: "visitor" });
+  });
+
   it("gives the turn's routine passes no way to overwrite the yield the answer leads back to (#1377)", () => {
     // The coverage-gated pass that runs after the evidence reuses this input. Only the
     // pre-evidence attempt (`createAttemptRoutineInput`) records a yield on the session.
@@ -812,6 +823,14 @@ describe("createAttemptRoutineInput", () => {
 
     expect(session.routineYield).toEqual(routineYield);
     expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toEqual(routineYield);
+  });
+
+  it("hands the routine attempt the zone the chat turn resolved", () => {
+    const session = preparedSession();
+    session.referenceTimeZone = { timeZone: "America/Los_Angeles", source: "visitor" };
+
+    expect(createAttemptRoutineInput({ session }).referenceTimeZone)
+      .toEqual({ timeZone: "America/Los_Angeles", source: "visitor" });
   });
 
   it("wires directive candidates and matcher through the routine turn input", async () => {

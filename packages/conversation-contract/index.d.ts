@@ -1,4 +1,5 @@
 import type { ConversationModelGateway } from "./modelGateway.js";
+import type { ReferenceTimeZone } from "./referenceTimeZone.js";
 import type { RoutineRunTrace } from "./routineTrace.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
@@ -355,57 +356,17 @@ export interface DirectiveMatchGateway {
   match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveClassification[]>;
 }
 
-export interface DirectiveCoherenceConflict {
-  directiveId?: string;
-  directiveName: string;
-  reason: string;
-}
-
-export interface DirectiveCoherenceVerdict {
-  coherent: boolean;
-  conflicts: DirectiveCoherenceConflict[];
-  rationale: string;
-}
-
-/**
- * The stable, structural shape of a rejection from a conversation-kit
- * directive-coherence check. Consumers identify it with the kit's
- * `isDirectiveCoherenceError` helper rather than a cross-package `instanceof`.
- */
-export interface DirectiveCoherenceError {
-  code: "conversation_kit_directive_coherence_conflict";
-  verdict: DirectiveCoherenceVerdict;
-}
-
-export interface DirectiveCoherenceInvocationContext {
-  workspaceId: string;
-  agentId: string;
-}
-
-export interface DirectiveCoherenceCheckInput {
-  agent: ConversationAgentConfig;
-  candidate: Directive;
-  existingDirectives: Directive[];
-  invocationContext?: DirectiveCoherenceInvocationContext;
-}
-
-export interface DirectiveCoherenceChecker {
-  check(input: DirectiveCoherenceCheckInput): Promise<DirectiveCoherenceVerdict>;
-}
-
-export type DirectiveCoherenceMode = "enforce";
-
-export interface DirectiveCoherenceGateOptions {
-  enabled?: boolean;
-  mode?: DirectiveCoherenceMode;
-  checker?: DirectiveCoherenceChecker;
-  promptTemplate?: string;
-}
-
-export interface DirectiveCoherenceGate {
-  mode: DirectiveCoherenceMode;
-  checker: DirectiveCoherenceChecker;
-}
+export type {
+  DirectiveCoherenceCheckInput,
+  DirectiveCoherenceChecker,
+  DirectiveCoherenceConflict,
+  DirectiveCoherenceError,
+  DirectiveCoherenceGate,
+  DirectiveCoherenceGateOptions,
+  DirectiveCoherenceInvocationContext,
+  DirectiveCoherenceMode,
+  DirectiveCoherenceVerdict,
+} from "./directiveCoherence.js";
 
 export interface DirectiveCatalogRegistryPort {
   list(): Directive[];
@@ -555,6 +516,8 @@ export interface StagedContext {
   metadata?: Record<string, unknown>;
 }
 
+export type { ReferenceTimeZone, ReferenceTimeZoneSource } from "./referenceTimeZone.js";
+
 export interface TurnContext {
   agent: ConversationAgentConfig;
   sessionId: string;
@@ -564,6 +527,8 @@ export interface TurnContext {
   steering: SteeringRule[];
   activeRoutineId?: string;
   activeStepId?: string;
+  /** The zone every "today" on this turn reads; a consumer reads UTC when it is absent. */
+  referenceTimeZone?: ReferenceTimeZone;
   metadata?: Record<string, unknown>;
 }
 
@@ -1777,6 +1742,8 @@ export interface ProcessTurnInput {
   agent: ConversationAgentConfig;
   sessionId: string;
   inputEvent: ConversationInputEvent;
+  /** Carried onto every turn context the engine builds for this turn. */
+  referenceTimeZone?: ReferenceTimeZone;
   skills: SkillDefinition[];
   directives: Directive[];
   stores: ConversationStores;
@@ -1861,6 +1828,8 @@ export interface AttemptRoutineInput {
   agent: ConversationAgentConfig;
   sessionId: string;
   inputEvent: ConversationInputEvent;
+  /** Carried onto the routine's turn context when the host supplies none. */
+  referenceTimeZone?: ReferenceTimeZone;
   stores: ConversationStores;
   /**
    * Optional host-prepared turn context. Post-evidence activation supplies this so

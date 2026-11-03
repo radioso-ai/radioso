@@ -2,6 +2,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import { DEFAULT_TIME_ZONE, type ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
 import type { AgenticRetrievalToolFactory } from "./agenticRetrievalRunner.js";
 import type { RetrievalResponseBehavior } from "../public.js";
 import type {
@@ -42,7 +43,20 @@ export interface RetrievalPipelineRequest {
   agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   precomputedRewriteProposal?: StructuredRewriteResult;
+  /**
+   * The zone "today" is read in for this run. A chat turn supplies the one it resolved; when
+   * absent, the pipeline reads the workspace's setting, else UTC.
+   */
+  referenceTimeZone?: ReferenceTimeZone;
 }
+
+/**
+ * The zone a run reads today in, for a stage to hand on to the services that print or compare a
+ * date, which require one. `interpret` resolves it on every run; a stage input assembled without
+ * one reads UTC.
+ */
+export const runTimeZone = (request: RetrievalPipelineRequest): string =>
+  request.referenceTimeZone?.timeZone ?? DEFAULT_TIME_ZONE;
 
 export interface RetrievalContextStageResult {
   request: RetrievalPipelineRequest;

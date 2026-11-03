@@ -1056,6 +1056,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/time-zone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the workspace's time zone
+         * @description The zone the workspace reads today's date in when a visitor's client reports none. Requires workspace.settings.read.
+         */
+        get: operations["getTimeZoneSettings"];
+        /**
+         * Set the zone the workspace reads today's date in
+         * @description Sets the IANA zone relative dates resolve in: the query rewrite, the answer, the rerank, the date-range lookup, the `today()` metadata rule token, and a routine's date slots and lookups all read today's date in it. A visitor whose client reports a valid zone (the website embed sends the browser's; `userTimeZone` on a chat request) reads today in their own zone instead. Null, the default, reads today in UTC. Each change records a `workspace.time_zone_settings.updated` audit event. Requires workspace.settings.manage.
+         */
+        put: operations["updateTimeZoneSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/document-types": {
         parameters: {
             query?: never;
@@ -5845,6 +5869,20 @@ export interface components {
              */
             conversationRetentionDays: number | null;
         };
+        TimeZoneSettings: {
+            /**
+             * @description The IANA zone the workspace reads today's date in, such as Europe/Rome, for a turn whose visitor reports no zone of their own: relative dates in a question (today, tomorrow, this weekend) resolve in it. Null, the default, reads today in UTC.
+             * @example Europe/Rome
+             */
+            timeZone: string | null;
+        };
+        UpdateTimeZoneSettingsRequest: {
+            /**
+             * @description An IANA zone name, stored as given in the case the server's zone data spells it, or null to read today in UTC.
+             * @example America/Los_Angeles
+             */
+            timeZone: string | null;
+        };
         Agent: {
             /** Format: uuid */
             id: string;
@@ -6334,6 +6372,8 @@ export interface components {
             /** @default false */
             stream: boolean;
             userExpectedLocale?: string;
+            /** @description The visitor's IANA time zone, such as America/Los_Angeles. Relative dates in the question (today, tomorrow, this weekend) resolve in it. An unknown zone is ignored and the workspace's time zone applies. */
+            userTimeZone?: string;
         };
         AuthoredDirectiveCondition: {
             /** @enum {string} */
@@ -7061,6 +7101,7 @@ export interface components {
                 pageTitle?: string | null;
                 pageLocale?: string | null;
                 browserLocale?: string | null;
+                browserTimeZone?: string | null;
                 content?: string | null;
                 referrer?: string | null;
             };
@@ -8677,6 +8718,8 @@ export interface components {
             /** @default false */
             includeDebug: boolean;
             userExpectedLocale?: string;
+            /** @description The visitor's IANA time zone, such as America/Los_Angeles. Relative dates in the question (today, tomorrow, this weekend) resolve in it. An unknown zone is ignored and the workspace's time zone applies. */
+            userTimeZone?: string;
             inputMetadata?: {
                 /** @enum {string} */
                 method: "typed" | "suggestion_click" | "intent_click";
@@ -8713,6 +8756,7 @@ export interface components {
                 pageTitle?: string | null;
                 pageLocale?: string | null;
                 browserLocale?: string | null;
+                browserTimeZone?: string | null;
                 content?: string | null;
                 referrer?: string | null;
             };
@@ -16110,6 +16154,95 @@ export interface operations {
                 };
             };
             /** @description Caller lacks workspace.settings.manage or workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getTimeZoneSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The workspace's time zone */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimeZoneSettings"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.settings.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateTimeZoneSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTimeZoneSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description The saved time zone, as it was given */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimeZoneSettings"];
+                };
+            };
+            /** @description Request validation failed: the zone is not an IANA time zone name, or null */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.settings.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29154,7 +29287,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
-                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting")[];
+                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting")[];
                     };
                 };
             };
@@ -29249,7 +29382,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting";
+                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -29395,11 +29528,11 @@ export interface operations {
                         /** Format: uuid */
                         workspaceId: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting";
+                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting";
+                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                             ref?: unknown;
                         };
                         targetLabel: string;

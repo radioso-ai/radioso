@@ -291,6 +291,20 @@ describe('CopilotProposalCard', () => {
     })
   })
 
+  it('links a time zone proposal at the workspace settings where the time zone lives', () => {
+    const proposal: CopilotProposalSummary = {
+      id: 'proposal-time-zone-setting',
+      targetType: 'time_zone_setting',
+      targetLabel: 'Time zone',
+      summary: "Read today's date in America/Los_Angeles for visitors whose client reports no time zone.",
+      status: 'applied',
+    }
+
+    expect(targetReference(proposal, null, { workspaceId: 'workspace-1' })).toEqual({
+      entity: { type: 'workspace_settings' },
+    })
+  })
+
   it('renders a directive enablement proposal as a reversible update with a single enabled-field preview', async () => {
     const proposal: CopilotProposalSummary = {
       id: 'proposal-disable-directive',

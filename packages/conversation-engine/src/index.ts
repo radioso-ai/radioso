@@ -181,6 +181,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       history,
       stagedContext: [],
       steering: [],
+      ...(input.referenceTimeZone ? { referenceTimeZone: input.referenceTimeZone } : {}),
     };
     // Record a structural reference to the input event so the debug UI can
     // resolve the actual text from the chat message record. The content itself

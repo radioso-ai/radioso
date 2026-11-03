@@ -4,6 +4,7 @@ import type {
   QueryEmbeddingPort,
 } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
+import { resolveReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 import { CandidatePreparationService } from "./candidatePreparationService.js";
@@ -19,6 +20,7 @@ import type { VectorCandidateSearchPort } from "../domain/vectorAdapter.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
 import type { TemporalCandidateRetrievalPort } from "../domain/temporal/temporalCandidateRetrieval.js";
+import type { WorkspaceTimeZoneReader } from "../domain/workspaceTimeZoneReader.js";
 import { PromptBuilder } from "./promptBuilder.js";
 import { CandidateRetrievalStageService } from "./candidateRetrievalStage.js";
 import { CandidatePreparationStageService } from "./candidatePreparationStage.js";
@@ -135,6 +137,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
     skillSettingsResolver: SkillSettingsResolver | undefined,
     chunkHydrator: ChunkCandidateHydratorPort,
     temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
+    private readonly workspaceTimeZones?: WorkspaceTimeZoneReader,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
       retrievalDefaultsProvider,
@@ -166,7 +169,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
   }
 
   async interpret(input: RetrievalPipelineRequest): Promise<RetrievalPipelineInterpretationResult> {
-    const request = this.resolveRequest(input);
+    const request = await this.withReferenceTimeZone(this.resolveRequest(input));
     return traceActiveSpan(RETRIEVAL_TRACE_SPAN_NAMES.pipelineInterpret, buildRetrievalPipelineTraceAttributes(request), async () => {
       const traceStartedAtMs = Date.now();
       const context = await this.measureTraced(
@@ -381,6 +384,14 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
         attemptKey: input.execution?.path ?? "pipeline",
       },
     };
+  }
+
+  // A chat turn resolved its zone from the visitor and workspace before planning; any other run
+  // reads the workspace's setting here, once, so every stage shares the run's one "today".
+  private async withReferenceTimeZone(request: RetrievalPipelineRequest): Promise<RetrievalPipelineRequest> {
+    if (request.referenceTimeZone) return request;
+    const workspaceTimeZone = await this.workspaceTimeZones?.readWorkspaceTimeZone(request.workspaceId);
+    return { ...request, referenceTimeZone: resolveReferenceTimeZone({ workspaceTimeZone }) };
   }
 
   private shouldSelectRetrievalAnswerShape(input: RetrievalPipelineRequest): boolean {

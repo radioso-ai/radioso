@@ -148,7 +148,7 @@ Return extracted values in "variables" keyed by each slot's key; omit slots not 
 
 export const DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT = `Slots that already have a value from earlier turns: {{slot_keys}}.`;
 
-export const DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT = `The user may write a date in any form; a date they give for a date slot counts as provided. Record a date slot's value as YYYY-MM-DD, reading the day and month the way the user wrote them: "11-14 Nov" is 11 to 14 November. Today is {{today}} (UTC); a date given without a year is its next occurrence on or after today. Leave a date slot out when the user names only an approximate time, such as "mid-November" or "in spring".`;
+export const DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT = `The user may write a date in any form; a date they give for a date slot counts as provided. Record a date slot's value as YYYY-MM-DD, reading the day and month the way the user wrote them: "11-14 Nov" is 11 to 14 November. Today is {{today}} ({{time_zone}}); a date given without a year is its next occurrence on or after today. Leave a date slot out when the user names only an approximate time, such as "mid-November" or "in spring".`;
 
 export const DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT = `You decide which behavioral directives apply to the current conversation turn.
 

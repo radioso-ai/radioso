@@ -2093,6 +2093,7 @@ export interface Workspaces {
   name: string;
   proactive_greeting_enabled: Generated<boolean>;
   public_route_key: string;
+  time_zone: string | null;
   updated_at: Generated<Timestamp>;
   website_embed_allowed_origins: Generated<string[]>;
   website_embed_enabled: Generated<boolean>;

@@ -14,6 +14,8 @@ export class MetadataRuleScoringService {
   apply(input: {
     candidates: RetrievedCandidate[];
     metadataRules: RetrievalMetadataRule[];
+    /** The run's local date, `YYYY-MM-DD`, that `today()` resolves to. */
+    today: string;
   }): {
     candidates: RetrievedCandidate[];
     appliedRules: AppliedConstraint[];
@@ -31,7 +33,7 @@ export class MetadataRuleScoringService {
 
       const matchingCandidates = candidates.map((candidate) => ({
         ...candidate,
-        matchesRule: this.matchesRule(candidate, rule),
+        matchesRule: this.matchesRule(candidate, rule, input.today),
       }));
 
       candidates =
@@ -66,11 +68,11 @@ export class MetadataRuleScoringService {
     };
   }
 
-  private matchesRule(candidate: RetrievedCandidate, rule: RetrievalMetadataRule): boolean {
+  private matchesRule(candidate: RetrievedCandidate, rule: RetrievalMetadataRule, today: string): boolean {
     const conditions = getNormalizedMetadataConditions(rule);
     const matches = conditions.map((condition) => {
       const metadataValue = getValueAtPath(candidate.metadata ?? {}, condition.field);
-      return evaluateMetadataRule(metadataValue, condition.valueType, condition.operator, condition.value);
+      return evaluateMetadataRule(metadataValue, condition.valueType, condition.operator, condition.value, today);
     });
 
     return (rule.combinator ?? "and") === "or" ? matches.some(Boolean) : matches.every(Boolean);
@@ -117,11 +119,11 @@ const normalizeString = (value: string | number | boolean | null): string => Str
 const normalizeBoolean = (value: string | boolean): boolean =>
   typeof value === "boolean" ? value : value.trim().toLowerCase() === "true";
 const normalizeNumber = (value: string | number): number => (typeof value === "number" ? value : Number(value.trim()));
-const normalizeDate = (value: string | number): number =>
+const normalizeDate = (value: string | number, today: string): number =>
   typeof value === "number"
     ? value
     : isDynamicDateToken(String(value))
-      ? resolveDynamicDateTokenToEpochMs(String(value))
+      ? resolveDynamicDateTokenToEpochMs(String(value), today)
       : Date.parse(String(value).trim());
 const isStringBooleanValue = (value: string | number | boolean | null): value is string | boolean =>
   typeof value === "string" || typeof value === "boolean";
@@ -133,6 +135,7 @@ const evaluateMetadataRule = (
   valueType: MetadataValueType,
   operator: MetadataRuleOperator,
   ruleValue: string,
+  today: string,
 ): boolean => {
   if (!isScalarMetadataValue(candidateValue)) {
     return false;
@@ -174,8 +177,8 @@ const evaluateMetadataRule = (
   }
 
   const left =
-    valueType === "number" ? normalizeNumber(candidateValue) : normalizeDate(candidateValue);
-  const right = valueType === "number" ? normalizeNumber(ruleValue) : normalizeDate(ruleValue);
+    valueType === "number" ? normalizeNumber(candidateValue) : normalizeDate(candidateValue, today);
+  const right = valueType === "number" ? normalizeNumber(ruleValue) : normalizeDate(ruleValue, today);
 
   if (operator === "equals") return left === right;
   if (operator === "not_equals") return left !== right;

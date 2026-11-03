@@ -11,7 +11,7 @@ import {
   markReasoningEffortUnsupported,
 } from "../../../shared/infra/llm/samplingParamSupport.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { type Clock, formatPromptDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatPromptDate, systemClock } from "../../../shared/domain/clock.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { recordModelCallTrace } from "../../../shared/observability/tracing/modelCallTraceContext.js";
@@ -21,7 +21,7 @@ import { getCandidateFusedScore } from "./candidateScoring.js";
 export interface RerankGatewayInput {
   query: string;
   contexts: RetrievedCandidate[];
-  /** Today's UTC date line from `formatPromptDateUtc`, the model's reference for event recency. */
+  /** Today's date line from `formatPromptDate`, in the turn's zone: the model's reference for event recency. */
   today: string;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext?: ModelCallUsageContext;
@@ -348,6 +348,8 @@ export class RerankService {
     topK: number;
     workspaceContext?: LlmCapabilityResolveInput;
     usageContext?: Omit<ModelCallUsageContext, "operation">;
+    /** The zone "today" is read in. */
+    timeZone: string;
   }): Promise<{ contexts: RerankedCandidate[]; status: RerankStatus }> {
     if (!input.enabled) {
       return {
@@ -357,7 +359,7 @@ export class RerankService {
     }
 
     try {
-      const today = formatPromptDateUtc(this.clock());
+      const today = formatPromptDate(this.clock(), input.timeZone);
       const rerankBatches = chunkContexts(input.contexts, RETRIEVAL_BEHAVIOR.rerank.maxBatchSize);
       const batchScores = await Promise.all(
         rerankBatches.map((contexts, batchIndex) =>

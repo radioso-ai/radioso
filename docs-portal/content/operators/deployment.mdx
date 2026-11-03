@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 ---
 
 import { Callout } from 'nextra/components'
@@ -161,6 +161,8 @@ A voice session start opens a session on the workspace's own voice vendor accoun
 - `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS` defaults to 10 minutes and applies to both visitor budgets.
 - `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 30 starts per workspace and window.
 - `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds.
+
+On a Terraform-managed deployment, set the GitHub environment variables `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS` and `PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` to raise the two per-visitor budgets for this environment; they map to the Terraform variables `public_voice_session_start_rate_limit_max_attempts` and `public_voice_session_start_source_rate_limit_max_attempts` on the backend API service, and an unset value keeps the app default. Raise them when one address serves many callers, such as a trade-show booth on a shared network, so the default budget for one visitor does not run out for everyone behind it. The window and the per-workspace budget take a plain environment variable on the service; they have no Terraform variable.
 
 Workspaces should also set their vendor agent's own concurrency and daily limits, which bound what a started session can cost at the vendor.
 

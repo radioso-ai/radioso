@@ -179,6 +179,8 @@ jobs:
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
           PRODUCT_ANALYTICS_SINKS: ${{ vars.PRODUCT_ANALYTICS_SINKS }}
+          PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: ${{ vars.PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS }}
+          PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: ${{ vars.PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS }}
         run: |
           # GitHub environment values are strings; monitoring_notification_emails and
           # monitoring_extra_notification_channel_ids are list(string). Accept a
@@ -280,6 +282,17 @@ jobs:
 
             if [ -n "${OTEL_LOGS_MIN_LEVEL}" ]; then
               echo "TF_VAR_otel_logs_min_level=${OTEL_LOGS_MIN_LEVEL}" >> "$GITHUB_ENV"
+            fi
+
+            # Numbers fail Terraform's validation outright on an empty string rather than
+            # falling back to the root default, so only export when the GitHub value is
+            # actually set. Whitespace-only counts as unset, matching the email channel step.
+            if [ -n "${PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS//[[:space:]]/}" ]; then
+              echo "TF_VAR_public_voice_session_start_rate_limit_max_attempts=${PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS}" >> "$GITHUB_ENV"
+            fi
+
+            if [ -n "${PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS//[[:space:]]/}" ]; then
+              echo "TF_VAR_public_voice_session_start_source_rate_limit_max_attempts=${PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS}" >> "$GITHUB_ENV"
             fi
           fi
 

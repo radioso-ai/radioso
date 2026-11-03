@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildClarificationStageDetail,
-  buildRoutineRunTrace,
   directiveAdherenceStatus,
   readDirectiveAdherence,
 } from '@/components/dashboard/spine-stage-detail'
 import type { ConversationTraceStage } from '@/lib/api'
+import { buildRoutineRunTrace } from '@/lib/routine-run-trace'
 
 // #1575: the answer commits to each directive before it writes; the trace carries that commitment.
 describe('readDirectiveAdherence', () => {
@@ -176,6 +176,36 @@ describe('buildRoutineRunTrace', () => {
         { stepId: 'ask_message', kind: 'chat', event: 'rendered', capturedSlotKeys: [], viaSelector: false },
       ],
     })
+  })
+
+  it('tells the slots a turn replaced from the ones it captured, by key', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        capturedSlotKeys: ['message'],
+        replacedSlotKeys: ['email', 42],
+        filledSlotKeys: ['email', 'message'],
+        steps: [{
+          stepId: 'ask_email',
+          kind: 'chat',
+          event: 'advanced',
+          capturedSlotKeys: ['message'],
+          replacedSlotKeys: ['email'],
+        }],
+      }),
+    )
+
+    expect(view?.capturedSlotKeys).toEqual(['message'])
+    expect(view?.replacedSlotKeys).toEqual(['email'])
+    expect(view?.steps[0]).toMatchObject({ capturedSlotKeys: ['message'], replacedSlotKeys: ['email'] })
+  })
+
+  it('carries no replaced keys when the turn replaced none', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({ steps: [{ stepId: 'ask_email', kind: 'chat', event: 'advanced' }] }),
+    )
+
+    expect(view).not.toHaveProperty('replacedSlotKeys')
+    expect(view?.steps[0]).not.toHaveProperty('replacedSlotKeys')
   })
 
   it('carries a valid selection trace for a step', () => {

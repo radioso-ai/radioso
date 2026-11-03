@@ -51,7 +51,7 @@ export const registerVoiceCallReadinessSchema = (registry: OpenAPIRegistry) =>
       ready: z.boolean(),
       missing: z.enum(VOICE_CALL_READINESS_GAPS).nullable(),
     }).openapi({
-      description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it.",
+      description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the agent's publication (an agent that has never been published answers no chats or calls), the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it.",
     }),
   );
 

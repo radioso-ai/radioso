@@ -8,7 +8,7 @@ import type {
   OperatorReplySpeechClaims,
   VoiceTurnFacts,
 } from "../../chat/contracts/index.js";
-import { errorClassOf } from "../../../shared/observability/errorClass.js";
+import { errorClassOf, failureFieldsOf } from "../../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { VOICE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
@@ -774,7 +774,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (failedWithSwitchedTurn) {
       logger.info(fields, "Voice language switch follow-up ended with its switched turn's failure");
     } else if (record.result === "failed") {
-      logger.warn({ ...fields, errorClass: errorClassOf(failure) }, "Voice turn failed");
+      logger.warn({ ...fields, ...failureFieldsOf(failure) }, "Voice turn failed");
     } else if (record.result === "abandoned") {
       // The runtime gave up on the request before the turn reached its outcome, whatever else the
       // turn reached: the caller heard no end to it.

@@ -1984,13 +1984,10 @@
             return
           }
 
-          activeContentWindow.postMessage(
-            {
-              type: ERROR_MESSAGE,
-              message: error instanceof Error ? error.message : 'Embedded chat could not be started from this website.',
-            },
-            scriptUrl.origin,
-          )
+          const message = error instanceof Error ? error.message : 'Embedded chat could not be started from this website.'
+          // The API's error code when it refused the launch with one, so the frame can say why.
+          const code = error && typeof error.code === 'string' ? error.code : undefined
+          activeContentWindow.postMessage({ type: ERROR_MESSAGE, message, code }, scriptUrl.origin)
         })
         .finally(() => {
           if (iframe === activeIframe) {

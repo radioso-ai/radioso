@@ -69,8 +69,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `voiceSessionMemory.ts` is the in-process memory of each session between its
   requests (the newest request, the last bridge, the last exchange);
   `voiceTurnMetrics.ts` names the turn's series;
-  `voiceSessionStartService.ts` starts a session: it reads the agent's
-  `voice.enabled` and `voice.runtime`, the workspace's key for that vendor
+  `voiceSessionStartService.ts` starts a session: it reads whether the agent
+  is published (the agents module's `AgentPublicationReader`, by a type-only
+  import from its `public.ts`: every turn runs on the published release, so an
+  agent nobody published takes no sessions), the agent's `voice.enabled` and
+  `voice.runtime`, the workspace's key for that vendor
   through `VoiceVendorCredentialReader`, asks that vendor's
   `VoiceSessionStarter` for the session, and mints the session key (a UUID).
   On a vendor agent Radioso maintains (`isMaintainedRuntime` over
@@ -86,16 +89,19 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   the same `sessionPreparationWaitMs`. A greeting or a language that
   is late or fails, or a connection that cannot be read, never fails the start.
   The same service is the `VoiceSessionAvailabilityPort`: by the gate a start
-  passes (`voice.enabled`, a bound `voice.runtime`) and the presence of that
-  vendor's key (`presence`, which decrypts nothing and reads `unreadable`
-  when the backend has no master key), `readiness` names the first missing
-  piece for the dashboard (`GET /api/v1/agents/:agentId` returns it as
-  `voiceCallReadiness` to dashboard sessions, and leaves it out when the
-  credential store cannot be read) and `isAvailable` is the yes or no the
-  embed config may carry. Composition's
-  `refreshEmbedConfigsOnVoiceVendorKeyChange` drops the workspace's
-  CDN-cached embed configs when a voice vendor key is stored or removed, so
-  that yes or no follows the key at once.
+  passes (a published agent, `voice.enabled`, a bound `voice.runtime`, in
+  that order) and the presence of that vendor's key (`presence`, which
+  decrypts nothing and reads `unreadable` when the backend has no master
+  key), `readiness` names the first missing piece for the dashboard
+  (`VOICE_CALL_READINESS_GAPS`, `publication` first; `GET
+  /api/v1/agents/:agentId` returns it as `voiceCallReadiness` to dashboard
+  sessions, and leaves it out when the publication or the credential store
+  cannot be read) and `isAvailable` is the yes or no the embed config may
+  carry. Composition's `refreshEmbedConfigsOnVoiceReadinessChange` drops the
+  workspace's CDN-cached embed configs when a voice vendor key is stored or
+  removed, or an agent is published for the first time
+  (`AgentRevisionService.onFirstPublication`), so that yes or no follows at
+  once.
   `voiceRuntimeConnectionService.ts` connects an agent's voice channel to a
   vendor agent Radioso creates and maintains (`VoiceRuntimeConnectionPort`).
   `connect`, `disconnect` and `syncPrimaryLanguage` each run holding the
@@ -399,8 +405,8 @@ helpers and the shared chat message limit from `app/http`
   redaction as the model provider keys, written through
   `PUT /api/v1/settings/credentials/elevenlabs`); composition adapts the
   store's `getApiKey`, and there is no deployment fallback. A start needs a
-  website embed public session, `voice.enabled` and a bound `voice.runtime`;
-  otherwise it is a 404. Every other failure (no key, an unreadable key, a
+  website embed public session, a published agent, `voice.enabled` and a bound
+  `voice.runtime`; otherwise it is a 404. Every other failure (no key, an unreadable key, a
   store or registry that cannot be reached, a vendor that refuses or does not
   answer) is one `503 voice_unavailable` with no detail, and the outcome label
   and the warn log say which. The vendor list is `VOICE_VENDORS` in
@@ -980,7 +986,10 @@ turns `voice_turn_language_source_total` counts), `reportedTurnLanguage` (the
 tag the request reported) on every turn that reports one, voice off
 included, and `languageReport` (`blocked`, `unreadable`) when the newest
 language switch the request carried was not taken: `Voice turn failed` at
-warn with `errorClass`; `Voice turn abandoned before it finished` at warn
+warn with `errorClass`, plus `errorCode` and `statusCode` for an
+`AppError`-shaped failure (`failureFieldsOf` in
+`shared/observability/errorClass.ts`; `agent_not_published` and `404` for an
+agent nobody published), never its message; `Voice turn abandoned before it finished` at warn
 (`result: "abandoned"`) when the runtime tore the request down before the turn
 reached any end of its own, whatever else the turn reached; `Voice turn
 reached the turn limit` at warn when the limit fired on a turn that ended;
@@ -1040,8 +1049,8 @@ message at all, and counts `failed`) and `errorClass`. Never the greeting, the
 notice or the first message. A start whose vendor call fails records none.
 
 A session start records `voice_session_start_total` (`vendor`: the bound
-vendor or `none`; `outcome`: `started`, `agent_not_found`, `voice_off`,
-`no_runtime`, `credential_missing`, `credential_unreadable`,
+vendor or `none`; `outcome`: `started`, `agent_not_found`, `not_published`,
+`voice_off`, `no_runtime`, `credential_missing`, `credential_unreadable`,
 `credential_read_failed`, `registration_failed`, `vendor_failed`). A start
 that fails logs `Voice session start failed` at warn with `workspaceId`,
 `agentId`, `vendor` and `outcome`, plus `errorClass` when something threw and

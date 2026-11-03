@@ -1146,7 +1146,11 @@ describe('radioso embed launcher', () => {
     // sessionIds lets a test observe a second, distinct publicSessionId on a
     // re-bootstrap (each call to the session endpoint consumes the next
     // entry, repeating the last one once exhausted).
-    const mountLauncher = async ({ sessionIds = ['public-session-id'] }: { sessionIds?: string[] } = {}) => {
+    const mountLauncher = async ({ sessionIds = ['public-session-id'], sessionRefusal }: {
+      sessionIds?: string[]
+      /** The session endpoint's answer when it refuses the launch; it starts a session unless a case names one. */
+      sessionRefusal?: { status: number; body: unknown }
+    } = {}) => {
       const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
       const script = new FakeElement('script')
       script.src = 'https://app.example.com/radioso-embed.js'
@@ -1170,6 +1174,9 @@ describe('radioso embed launcher', () => {
       const sessionUrl = (url: unknown) => String(url).includes('/api/embed/session/')
       let sessionCallCount = 0
       const fetch = vi.fn(async (url: unknown) => {
+        if (sessionUrl(url) && sessionRefusal) {
+          return { ok: false, status: sessionRefusal.status, json: async () => sessionRefusal.body }
+        }
         if (sessionUrl(url)) {
           const publicSessionId = sessionIds[Math.min(sessionCallCount, sessionIds.length - 1)]
           sessionCallCount += 1
@@ -1260,6 +1267,19 @@ describe('radioso embed launcher', () => {
         openWidget,
       }
     }
+
+    it('tells the frame the API error code a launch was refused with, so the frame can say why', async () => {
+      const { postMessage, openWidget } = await mountLauncher({
+        sessionRefusal: { status: 404, body: { error: { code: 'agent_not_published', message: 'Agent is not published' } } },
+      })
+
+      await openWidget()
+
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'radioso:embed:error', code: 'agent_not_published' }),
+        'https://app.example.com',
+      )
+    })
 
     it('posts a static string token with identityProvider: false', async () => {
       const { window, postMessage } = await mountLauncher()

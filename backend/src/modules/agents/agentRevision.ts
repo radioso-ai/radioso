@@ -299,7 +299,12 @@ export interface AgentRevisionRepositoryPort {
   publish(input: { workspaceId: string; agentId: string; actorAccountId: string | null; revisionId: string; expectedDraftGeneration: number; expectedPublishedRevisionId: string | null; idempotencyKey: string }): Promise<"conflict" | "idempotency_mismatch" | PublicationResult>;
 }
 
+/** An agent's first publication: from it on, new conversations can run on the agent. */
+interface AgentFirstPublication { workspaceId: string; agentId: string }
+
 export class AgentRevisionService {
+  private readonly firstPublicationListeners: Array<(publication: AgentFirstPublication) => Promise<void>> = [];
+
   constructor(
     private readonly repository: AgentRevisionRepositoryPort,
     private readonly createId: () => string,
@@ -310,6 +315,14 @@ export class AgentRevisionService {
      */
     private readonly routineServingValidator?: RoutineServingValidator,
   ) {}
+  /**
+   * Runs `listener` after each agent's first publication, which changes what a channel may offer
+   * for it (the website embed's calls, which wait for a published release). Not awaited: a
+   * listener that fails never fails the publication.
+   */
+  onFirstPublication(listener: (publication: AgentFirstPublication) => Promise<void>): void {
+    this.firstPublicationListeners.push(listener);
+  }
   initializeDraft(workspaceId: string, agentId: string, customInstruction: string): Promise<void> {
     return this.repository.initializeDraft(workspaceId, agentId, customInstruction);
   }
@@ -419,6 +432,10 @@ export class AgentRevisionService {
     const result = await this.repository.publish({ workspaceId, agentId, actorAccountId, ...input });
     if (result === "idempotency_mismatch") throw revisionConflict("This idempotency key was already used for another publication command.");
     if (result === "conflict") throw revisionConflict("The agent draft or published revision changed before publication.");
+    // The repository published only if no revision was published before, when that is what the command expected.
+    if (!result.idempotentReplay && input.expectedPublishedRevisionId === null) {
+      for (const listener of this.firstPublicationListeners) void Promise.resolve().then(() => listener({ workspaceId, agentId })).catch(() => undefined);
+    }
     return result;
   }
 }

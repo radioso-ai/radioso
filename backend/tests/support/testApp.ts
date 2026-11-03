@@ -11,7 +11,7 @@ import {
   createVoiceRuntimeProvisioners,
   createVoiceSessionStartComposition,
   keepVoiceRuntimesInStepWithAgents,
-  refreshEmbedConfigsOnVoiceVendorKeyChange,
+  refreshEmbedConfigsOnVoiceReadinessChange,
 } from "../../src/app/composition/voiceChannel.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
@@ -82,6 +82,7 @@ import {
   createRoutineScopedReferenceGuard,
   DirectiveAuthorService,
   serializeAuthoredDirectivesWithIds,
+  type AgentPublicationReader,
   type AgentRecord,
   type AgentRevision,
   type AgentRevisionRuntimeReaderPort,
@@ -532,7 +533,7 @@ const appRevisionFixtures = new WeakMap<object, PublishedTestAgentRevisionReader
  * a fixture explicitly records a baseline; this mirrors the production resolver's
  * selected-release reads without making chat fall back to mutable authoring rows.
  */
-class PublishedTestAgentRevisionReader implements AgentRevisionRuntimeReaderPort {
+class PublishedTestAgentRevisionReader implements AgentRevisionRuntimeReaderPort, AgentPublicationReader {
   /** The current release per agent; every earlier release stays readable by id, as in Postgres. */
   private readonly current = new Map<string, AgentRevision>();
   private readonly revisionsById = new Map<string, { agentKey: string; revision: AgentRevision }>();
@@ -567,6 +568,10 @@ class PublishedTestAgentRevisionReader implements AgentRevisionRuntimeReaderPort
 
   async findCurrentPublished(input: { workspaceId: string; agentId: string }): Promise<AgentRevision | null> {
     return this.current.get(this.key(input.workspaceId, input.agentId)) ?? null;
+  }
+
+  async isPublished(input: { workspaceId: string; agentId: string }): Promise<boolean> {
+    return this.current.has(this.key(input.workspaceId, input.agentId));
   }
 
   async findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null> {
@@ -1995,7 +2000,6 @@ export const createTestDependencies = (overrides: {
     undefined,
     workspaceModelAvailability,
   );
-  refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
   const publishedAgentRevisions = new PublishedTestAgentRevisionReader(contextVariableRepository);
   const testExecutionService = overrides.testExecutionService ?? {
     async start() { throw new Error("Test execution is not configured in this test app"); },
@@ -2061,6 +2065,7 @@ export const createTestDependencies = (overrides: {
   const agentRevisionService = new AgentRevisionService(agentRevisionRepository, randomUUID, {
     validateForServing: routineDefinitionService.validateForServing.bind(routineDefinitionService),
   });
+  refreshEmbedConfigsOnVoiceReadinessChange({ credentials: workspaceProviderCredentialsService, publications: agentRevisionService, embedConfigs: agentService });
   const chatInferencePipeline: AppDependencies["chatInferencePipeline"] = {
     metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
     complete: overrides.chatInferencePipelineComplete ?? (async () => textResult("")),
@@ -2920,6 +2925,7 @@ export const createTestDependencies = (overrides: {
   const voiceRuntimeProvisioners = createVoiceRuntimeProvisioners(voiceVendorFetch);
   const voiceSessionStarts = createVoiceSessionStartComposition({
     agentRepository,
+    publication: publishedAgentRevisions,
     starts: voiceSessions,
     connections: voiceRuntimeConnectionStore,
     greetings: chatBootstrapService,
@@ -3233,6 +3239,7 @@ export const createTestDependencies = (overrides: {
     platformSettingsService,
     agentService,
     agentRevisionService,
+    agentPublication: publishedAgentRevisions,
     authoredDirectiveService,
     routineDefinitionService,
     routineDraftAssistService,

@@ -49,7 +49,7 @@ import {
   VOICE_REPLY_INTERRUPTED_EVENT,
 } from "../../modules/voiceChannel/public.js";
 import type { AccessGrantService } from "../../modules/accessGrants/public.js";
-import type { AgentRecord, AgentService } from "../../modules/agents/public.js";
+import type { AgentPublicationReader, AgentRecord, AgentService } from "../../modules/agents/public.js";
 import type { AuditEventInput, AuditPort } from "../../modules/audit/contracts/index.js";
 import type { BackgroundJobHandlerRegistration, BackgroundJobQueue } from "../../shared/background-jobs/index.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
@@ -410,18 +410,20 @@ export const wireVoiceRecordings = (deps: {
 };
 
 /**
- * The embed config says whether the embed offers calls, which follows the voice vendor key's
- * presence, and a CDN may hold it for minutes: storing or removing a voice vendor key drops the
- * workspace's cached embed configs, so the Talk button follows at once. Model provider keys leave
- * them alone.
+ * The embed config says whether the embed offers calls, which follows the agent's voice readiness,
+ * and a CDN may hold it for minutes: storing or removing a voice vendor key, or an agent's first
+ * publication, drops the workspace's cached embed configs, so the Talk button follows at once.
+ * Model provider keys and later publications leave them alone.
  */
-export const refreshEmbedConfigsOnVoiceVendorKeyChange = (deps: {
+export const refreshEmbedConfigsOnVoiceReadinessChange = (deps: {
   credentials: { onChange(listener: (change: { workspaceId: string; provider: string }) => Promise<void>): void };
+  publications: { onFirstPublication(listener: (publication: { workspaceId: string }) => Promise<void>): void };
   embedConfigs: { invalidateEmbedConfigs(workspaceId: string): Promise<void> };
 }): void => {
   deps.credentials.onChange(async ({ workspaceId, provider }) => {
     if (isVoiceVendor(provider)) await deps.embedConfigs.invalidateEmbedConfigs(workspaceId);
   });
+  deps.publications.onFirstPublication(({ workspaceId }) => deps.embedConfigs.invalidateEmbedConfigs(workspaceId));
 };
 
 /**
@@ -452,11 +454,13 @@ export const createVoiceRuntimeProvisioners = (fetch: typeof globalThis.fetch): 
  * `AgentGreetingReader` (`ChatBootstrapService`), and the call's language, which each vendor's
  * `VoiceSessionLanguageSource` (the provisioner from `createVoiceRuntimeProvisioners`) reads off the
  * vendor agent it keeps. The same service tells a page
- * whether to offer sessions, from the key's presence alone (`hasCredentials` decrypts nothing) and
+ * whether to offer sessions, from the agent's publication (the agents module's
+ * `AgentPublicationReader`), the key's presence alone (`hasCredentials` decrypts nothing) and
  * whether the backend holds the master key to read it.
  */
 export const createVoiceSessionStartComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
+  publication: AgentPublicationReader;
   starts: VoiceSessionStartRegistry;
   connections: Pick<VoiceRuntimeConnectionStore, "find">;
   greetings: AgentGreetingReader;
@@ -468,6 +472,7 @@ export const createVoiceSessionStartComposition = (deps: {
 }): VoiceSessionStartPort & VoiceSessionAvailabilityPort =>
   new VoiceSessionStartService({
     agents: voiceProfileSource(deps.agentRepository),
+    publication: deps.publication,
     credentials: voiceVendorCredentialReader(deps.credentials),
     starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },
     starts: deps.starts,
@@ -607,6 +612,7 @@ export const keepVoiceRuntimesInStepWithAgents = (deps: {
  */
 export const wireVoiceRuntimeConnections = (deps: {
   database: PinnableDatabase;
+  publication: AgentPublicationReader;
   starts: VoiceSessionStartRegistry;
   greetings: AgentGreetingReader;
   agentRepository: AgentRuntimeProfileRepository;
@@ -624,6 +630,7 @@ export const wireVoiceRuntimeConnections = (deps: {
   const provisioners = createVoiceRuntimeProvisioners(deps.fetch);
   const voiceSessionStarts = createVoiceSessionStartComposition({
     agentRepository: deps.agentRepository,
+    publication: deps.publication,
     starts: deps.starts,
     connections: voiceRuntimeConnectionStore,
     greetings: deps.greetings,

@@ -67,7 +67,7 @@ export const registerAssistantSessionPaths = (
         },
       },
       404: {
-        description: "Public chat not found",
+        description: "Public chat not found; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -391,7 +391,7 @@ export const registerAssistantPublicChatPaths = (
         },
       },
       404: {
-        description: "Public chat link not found",
+        description: "Public chat link not found; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -470,7 +470,7 @@ export const registerAssistantPublicChatPaths = (
         },
       },
       404: {
-        description: "Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound",
+        description: "Public session not found or not a website embed session, or the agent takes no voice sessions: it has never been published, voice is off, or no vendor agent is bound",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

@@ -10,6 +10,8 @@ import { routineDefinitionSchema, toSafeRoutineValidationDiagnostic, validateExp
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
 import { canonicalContentHash } from "../../shared/domain/canonicalContentHash.js";
+import { errorClassOf } from "../../shared/observability/errorClass.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
 
 /**
  * How many changed items the publication approval page shows by name. Bounded and redacted like
@@ -314,11 +316,13 @@ export class AgentRevisionService {
      * repository's own structural + directive-scope check still runs.
      */
     private readonly routineServingValidator?: RoutineServingValidator,
+    /** Where a first-publication listener's failure is logged; absent in a test that needs no log. */
+    private readonly logger?: Pick<AppLogger, "warn">,
   ) {}
   /**
    * Runs `listener` after each agent's first publication, which changes what a channel may offer
    * for it (the website embed's calls, which wait for a published release). Not awaited: a
-   * listener that fails never fails the publication.
+   * listener that fails never fails the publication, and is logged with ids and its error class.
    */
   onFirstPublication(listener: (publication: AgentFirstPublication) => Promise<void>): void {
     this.firstPublicationListeners.push(listener);
@@ -434,7 +438,11 @@ export class AgentRevisionService {
     if (result === "conflict") throw revisionConflict("The agent draft or published revision changed before publication.");
     // The repository published only if no revision was published before, when that is what the command expected.
     if (!result.idempotentReplay && input.expectedPublishedRevisionId === null) {
-      for (const listener of this.firstPublicationListeners) void Promise.resolve().then(() => listener({ workspaceId, agentId })).catch(() => undefined);
+      for (const listener of this.firstPublicationListeners) {
+        void Promise.resolve().then(() => listener({ workspaceId, agentId })).catch((error: unknown) => {
+          this.logger?.warn({ workspaceId, agentId, errorClass: errorClassOf(error) }, "Agent first-publication listener failed");
+        });
+      }
     }
     return result;
   }

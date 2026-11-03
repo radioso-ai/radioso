@@ -1,3 +1,4 @@
+import { AGENT_DRAFT_SAVED_EVENT } from './agent-draft-save-port'
 import type { VoiceCallReadiness } from './api-types'
 import { AGENT_VOICE_SAVED_EVENT } from './voice-settings-form'
 
@@ -22,9 +23,6 @@ const HINTS: Record<VoiceCallReadinessGap, (vendorName: string) => string> = {
 export function voiceCallReadinessHint(missing: VoiceCallReadinessGap | null | undefined, vendorName: string): string {
   return missing ? HINTS[missing](vendorName) : 'Turn on the voice channel, store the vendor key and connect a runtime first.'
 }
-
-/** Sent on the window, with `{ agentId }`, after the agent's draft is saved or a revision of it is published. */
-const AGENT_DRAFT_SAVED_EVENT = 'radioso:agent-draft-saved'
 
 /**
  * Calls `read` whenever the agent's voice readiness may have changed: the Voice card saved it or

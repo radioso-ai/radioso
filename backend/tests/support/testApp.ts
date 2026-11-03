@@ -2064,7 +2064,7 @@ export const createTestDependencies = (overrides: {
   // cannot serve, on top of the repository's own structural (directive-scope) gate.
   const agentRevisionService = new AgentRevisionService(agentRevisionRepository, randomUUID, {
     validateForServing: routineDefinitionService.validateForServing.bind(routineDefinitionService),
-  });
+  }, logger);
   refreshEmbedConfigsOnVoiceReadinessChange({ credentials: workspaceProviderCredentialsService, publications: agentRevisionService, embedConfigs: agentService });
   const chatInferencePipeline: AppDependencies["chatInferencePipeline"] = {
     metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },

@@ -6,6 +6,12 @@
  * can only succeed when the mounted editor has registered its real async save
  * operation; it cannot manufacture a saved state by dispatching an event.
  */
+/**
+ * Sent on the window, with `{ agentId }`, after the agent's draft is saved or a revision of it is
+ * published, so what reads the draft or the publication reads it again.
+ */
+export const AGENT_DRAFT_SAVED_EVENT = 'radioso:agent-draft-saved'
+
 type AgentDraftSaver = {
   save: () => Promise<void>
   isDirty: () => boolean

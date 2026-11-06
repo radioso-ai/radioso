@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
  * first, so the hash commits to what actually gets serialized rather than to a type this function
  * would otherwise have to guess how to render.
  */
-const canonicalJson = (value: unknown): string => {
+export const canonicalJson = (value: unknown): string => {
   if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new TypeError("Canonical content hash accepts only finite numbers");

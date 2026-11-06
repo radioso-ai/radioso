@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-10-29
+last_updated: 2026-11-06
 ---
 
 # Agents and skills
@@ -23,11 +23,23 @@ agent permission:
 
 ```text
 GET  /api/v1/agents/{agentId}/revision-state
+GET  /api/v1/agents/{agentId}/greeting/draft
+PUT  /api/v1/agents/{agentId}/greeting/draft
 POST /api/v1/agents/{agentId}/revisions/candidates
 GET  /api/v1/agents/{agentId}/revisions?include=published
 GET  /api/v1/agents/{agentId}/revisions/{revisionId}
 POST /api/v1/agents/{agentId}/revisions/{revisionId}/publish
 ```
+
+The greeting wording is part of the draft. `GET .../greeting/draft` returns the
+greeting the draft holds as `{ "exactWordsEnabled": boolean, "exactContent": object | null }`;
+a draft that never had a greeting authored returns `exactWordsEnabled: false` and
+`exactContent: null`. `PUT .../greeting/draft` takes the same two fields and saves them
+to the draft. It returns `400 bad_request` with the field-level issues in
+`error.details.issues` when `exactWordsEnabled` is `true` and the content is invalid;
+with it `false`, the content is saved as written and the issues come back in the
+response's `validation` object. Like every draft write, a successful `PUT`
+advances the draft generation.
 
 `POST .../publish` requires the draft generation, the expected published
 revision, and an idempotency key. A stale request returns `409

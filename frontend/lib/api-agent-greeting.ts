@@ -8,6 +8,10 @@ import type { AgentGreetingDraft, AgentGreetingDraftResponse } from './api-types
  * 400 and `request()` throws an `ApiError` whose `error.details` carries the same issues.
  */
 export const agentGreetingApi = {
+  /** The greeting the agent's draft holds, which is what `saveDraft` writes. */
+  async getDraft(agentId: string): Promise<AgentGreetingDraft> {
+    return request<AgentGreetingDraft>(`/agents/${agentId}/greeting/draft`, { method: 'GET' })
+  },
   async saveDraft(agentId: string, data: AgentGreetingDraft): Promise<AgentGreetingDraftResponse> {
     return request<AgentGreetingDraftResponse>(`/agents/${agentId}/greeting/draft`, {
       method: 'PUT',

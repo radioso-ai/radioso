@@ -122,6 +122,42 @@ describe("AgentRevisionService default test revision", () => {
   });
 });
 
+describe("AgentRevisionService draft greeting read", () => {
+  const exactContent = { chips: [], variants: [{ locale: "en", body: "Welcome!", chipLabels: {} }] };
+
+  it("reads the greeting the draft holds, not the one the published revision holds", async () => {
+    const repository = new InMemoryRevisionRepository();
+    repository.draft = { ...repository.draft, snapshot: { ...snapshot("draft v1"), greeting: { exactWordsEnabled: true, exactContent } } };
+    repository.revisions.set("published-1", { ...snapshot("published v1"), greeting: { exactWordsEnabled: false, exactContent: null } });
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+
+    await expect(service.readDraftGreeting(workspaceId, agentId)).resolves.toEqual({ exactWordsEnabled: true, exactContent });
+  });
+
+  it("reads Automatic mode with no content from a draft that never authored a greeting", async () => {
+    const service = new AgentRevisionService(new InMemoryRevisionRepository(), () => "candidate-1");
+
+    await expect(service.readDraftGreeting(workspaceId, agentId)).resolves.toEqual({ exactWordsEnabled: false, exactContent: null });
+  });
+
+  it("is not found when the agent has no draft row, as the state read is", async () => {
+    // Agent creation and the revision migration both insert the draft row, so every agent has one.
+    const repository: AgentRevisionRepositoryPort = Object.assign(new InMemoryRevisionRepository(), { readDraft: async () => null });
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+
+    await expect(service.readDraftGreeting(workspaceId, agentId)).rejects.toMatchObject({ statusCode: 404, code: "not_found" });
+  });
+
+  it("does not bump the draft generation", async () => {
+    const repository = new InMemoryRevisionRepository();
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+
+    await service.readDraftGreeting(workspaceId, agentId);
+
+    expect(repository.draft.generation).toBe(2);
+  });
+});
+
 describe("AgentRevisionService", () => {
   it("publishes the immutable candidate selected from a saved draft, preserving later draft edits", async () => {
     const repository = new InMemoryRevisionRepository();
@@ -351,6 +387,20 @@ describe("AgentRevisionService", () => {
     }] });
     const service = new AgentRevisionService(repository, () => "candidate-1");
     await expect(service.describeCandidateRelease(workspaceId, agentId, "candidate-invalid")).rejects.toMatchObject({ code: "revision_invalid" });
+  });
+
+  it("reads the complete greeting of a greeting-only release, and only under the agent id", async () => {
+    const repository = new InMemoryRevisionRepository();
+    const authored = { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: "en", body: "Hello there", chipLabels: {} }] } };
+    repository.revisions.set("published-1", snapshot("base"));
+    repository.revisions.set("candidate-greeting", { ...snapshot("base"), greeting: authored });
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+    const read = (side: "before" | "after", id = "agent") =>
+      service.readCandidateReleaseChange(workspaceId, agentId, "candidate-greeting", { field: "greeting", id, side, offset: 0, limit: 2000 });
+
+    await expect(read("after")).resolves.toMatchObject({ text: JSON.stringify(authored), nextOffset: null });
+    await expect(read("before")).resolves.toMatchObject({ text: JSON.stringify({ exactWordsEnabled: false, exactContent: null }) });
+    await expect(read("after", "other")).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("chunks release resources, returns null for an absent side, and rejects unknown ids", async () => {

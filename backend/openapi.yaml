@@ -24968,6 +24968,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentRevisionState"
   /api/v1/agents/{agentId}/greeting/draft:
+    get:
+      tags:
+        - Agents
+      summary: Get the exact greeting content on the agent draft
+      operationId: getAgentGreetingDraft
+      security: *a4
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: The greeting the agent draft holds; Automatic mode with no content when the draft never authored one
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentGreetingDraft"
+        "404":
+          description: Agent draft not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     put:
       tags:
         - Agents

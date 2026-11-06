@@ -76,7 +76,10 @@ describe("operator copilot catalog coverage", () => {
   //   contract (closing the #1650 OpenAPI coverage gap), have no Ray reader yet: conversation_transcript
   //   reads the conversation a contact request came from, but not the request record (delivery
   //   status, attempts, final error) itself.
-  const maxDeferredCatalogExclusions = 114;
+  //   2026-11-06: 114 -> 115 getAgentGreetingDraft, the draft read behind the dashboard's greeting
+  //   editor. Ray's propose_greeting card shows only the proposed wording; it reads the wording
+  //   it replaces once its adapter adopts this read.
+  const maxDeferredCatalogExclusions = 115;
 
   it("keeps provider input-token caching outside Ray's operation catalog", () => {
     expect(internalRuntimeCoverageExclusions.providerInputTokenCaching).toMatchObject({

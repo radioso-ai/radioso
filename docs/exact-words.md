@@ -1,7 +1,7 @@
 ---
 title: "Exact Words Greetings"
 description: "Author greeting text verbatim with multilingual support and suggestion chips."
-last_updated: 2026-09-15
+last_updated: 2026-11-06
 ---
 
 # Exact Words Greetings
@@ -14,7 +14,7 @@ Choose Exact words when you want full control over the opening — to match a ma
 
 ## Set up exact words
 
-In your agent settings, turn on **Proactive Greeting** and choose **Exact words** as the wording. The editor takes your greeting text per language and optional suggestion chips. Edits land on the agent's draft; visitors see them after you publish.
+In your agent settings, turn on **Proactive Greeting** and choose **Exact words** as the wording. The editor takes your greeting text per language and optional suggestion chips. The wording is saved with the rest of the agent's draft: press **Save draft** at the top of the agent page and it saves together with your instructions. The editor always shows the wording your draft holds, and visitors see it after you publish.
 
 ## Languages
 

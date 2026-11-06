@@ -7,7 +7,7 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-test("configures Exact words with two languages and three chips, saves, and shows the publish affordance", async ({ page }) => {
+test("configures Exact words with two languages and three chips, saves with the page's Save draft, and reads the draft back after a reload", async ({ page }) => {
   await seedDashboardStorage(page);
 
   const greetingDraftRequests: Array<{ exactWordsEnabled: boolean; exactContent: unknown }> = [];
@@ -15,11 +15,14 @@ test("configures Exact words with two languages and three chips, saves, and show
 
   await installDashboardApiMocks(page);
 
+  // The shared mock keeps the saved greeting and hands it back on the draft read; this route only
+  // records what the page sent.
   await page.route(`**/backend/api/v1/agents/${defaultAgentId}/greeting/draft`, async (route) => {
-    const body = route.request().postDataJSON() as { exactWordsEnabled: boolean; exactContent: unknown };
-    greetingDraftRequests.push(body);
-    draftSaved = true;
-    await route.fulfill({ json: { greeting: body, validation: { ok: true } } });
+    if (route.request().method() === "PUT") {
+      greetingDraftRequests.push(route.request().postDataJSON() as { exactWordsEnabled: boolean; exactContent: unknown });
+      draftSaved = true;
+    }
+    await route.fallback();
   });
 
   // Registered after installDashboardApiMocks, so it wins for revision-state and can hand
@@ -73,7 +76,13 @@ test("configures Exact words with two languages and three chips, saves, and show
   await frenchChipInputs.nth(1).fill("Parler aux ventes");
   await frenchChipInputs.nth(2).fill("Lire la documentation");
 
-  await page.getByRole("button", { name: "Save greeting" }).click();
+  // The wording is part of the page draft: the header offers the same Save draft as for the
+  // instructions, and nothing is written until it is pressed.
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  expect(greetingDraftRequests).toHaveLength(0);
+  await expect(page.getByRole("button", { name: "Save greeting" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Save draft" }).click();
 
   await expect.poll(() => greetingDraftRequests.length).toBe(1);
   expect(greetingDraftRequests[0]).toMatchObject({
@@ -88,6 +97,67 @@ test("configures Exact words with two languages and three chips, saves, and show
   });
 
   await expect(page.getByRole("button", { name: "Review & publish", exact: true })).toBeVisible();
+  await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+
+  // After a reload the editor starts from the saved draft, not from the published revision,
+  // and a page that changed nothing writes nothing.
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Profile", level: 3 })).toBeVisible();
+  await expect(page.getByLabel("Greeting text (en-US)")).toHaveValue("Welcome to Acme! How can we help today?");
+  await expect(page.getByLabel("Greeting text (French)")).toHaveValue("Bienvenue chez Acme ! Comment pouvons-nous vous aider ?");
+  await expect(page.getByLabel(/Chip \d+ label/).first()).toHaveValue("Compare plans");
+  await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+  expect(greetingDraftRequests).toHaveLength(1);
+});
+
+test("saves an edited instruction without rewriting a greeting that did not change", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const greetingWrites: string[] = [];
+  const agentWrites: unknown[] = [];
+  await installDashboardApiMocks(page, { agentUpdates: agentWrites });
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/greeting/draft`, async (route) => {
+    if (route.request().method() === "PUT") greetingWrites.push(route.request().method());
+    await route.fallback();
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`);
+  await expect(page.getByRole("group", { name: "Greeting wording" })).toBeVisible();
+  await page.locator("#assistantAnswerInstruction").fill("Use the saved draft instruction.");
+  await page.getByRole("button", { name: "Save draft" }).click();
+
+  await expect.poll(() => agentWrites).toEqual(expect.arrayContaining([expect.objectContaining({ customInstruction: "Use the saved draft instruction." })]));
+  await expect(page.getByRole("button", { name: "Save draft" })).toBeHidden();
+  expect(greetingWrites).toHaveLength(0);
+});
+
+test("shows the greeting issues the draft refused and marks the page draft save as needing attention", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/greeting/draft`, async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 400,
+      json: {
+        error: {
+          code: "bad_request",
+          message: "Exact greeting content is invalid",
+          details: { issues: [{ path: "variants[0].body", code: "blank_body", message: "Greeting text must not be blank" }] },
+        },
+      },
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`);
+  await page.getByRole("group", { name: "Greeting wording" }).getByText("Exact words").click();
+  await page.getByRole("button", { name: "Save draft" }).click();
+
+  await expect(page.getByText("Draft save needs attention")).toBeVisible();
+  await expect(page.getByText("Greeting text must not be blank")).toBeVisible();
+  // The edit is kept, so the operator can fix the wording and save again.
+  await expect(page.getByRole("button", { name: "Save draft" })).toBeEnabled();
 });
 
 // No pre-existing Playwright spec exercises the public bootstrap-greeting page at all (it is

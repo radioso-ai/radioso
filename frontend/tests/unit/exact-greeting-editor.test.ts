@@ -17,6 +17,8 @@ import {
   moveChip,
   removeChip,
   removeVariant,
+  sameGreetingDraft,
+  toGreetingSavePayload,
   updateChipLabel,
   updateVariantBody,
 } from '@/lib/exact-greeting-editor'
@@ -196,5 +198,65 @@ describe('extractValidationIssuesFromError', () => {
     expect(extractValidationIssuesFromError(new Error('network down'))).toBeNull()
     expect(extractValidationIssuesFromError({ status: 500, error: { code: 'internal', message: 'oops' } })).toBeNull()
     expect(extractValidationIssuesFromError(null)).toBeNull()
+  })
+})
+
+describe('sameGreetingDraft', () => {
+  const content = (): ExactContentItem => ({
+    chips: ['chip-a', 'chip-b'],
+    variants: [
+      { locale: 'en', body: 'Welcome!', chipLabels: { 'chip-a': 'Plans', 'chip-b': 'Sales' } },
+      { locale: 'fr', body: 'Bienvenue !', chipLabels: { 'chip-a': 'Offres', 'chip-b': 'Ventes' } },
+    ],
+  })
+
+  it('treats a content copy whose label keys are listed in another order as the same greeting', () => {
+    const reordered = content()
+    reordered.variants[0].chipLabels = { 'chip-b': 'Sales', 'chip-a': 'Plans' }
+
+    expect(sameGreetingDraft(
+      { exactWordsEnabled: true, exactContent: content() },
+      { exactWordsEnabled: true, exactContent: reordered },
+    )).toBe(true)
+  })
+
+  it('tells apart each thing an operator can change', () => {
+    const base = { exactWordsEnabled: true, exactContent: content() }
+    const changed = (edit: (item: ExactContentItem) => void) => {
+      const item = content()
+      edit(item)
+      return { exactWordsEnabled: true, exactContent: item }
+    }
+
+    expect(sameGreetingDraft(base, { ...base, exactWordsEnabled: false })).toBe(false)
+    expect(sameGreetingDraft(base, { ...base, exactContent: null })).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.variants[1].body = 'Salut !' }))).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.variants[0].locale = 'en-US' }))).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.chips = ['chip-b', 'chip-a'] }))).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.variants[0].chipLabels['chip-a'] = 'Pricing' }))).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.variants.pop() }))).toBe(false)
+  })
+
+  it('treats two greetings with no content as the same', () => {
+    expect(sameGreetingDraft(
+      { exactWordsEnabled: false, exactContent: null },
+      { exactWordsEnabled: false, exactContent: null },
+    )).toBe(true)
+  })
+})
+
+describe('toGreetingSavePayload', () => {
+  it('sends the greeting as the operator holds it', () => {
+    const exactContent = { chips: [], variants: [{ locale: 'en', body: 'Welcome!', chipLabels: {} }] }
+
+    expect(toGreetingSavePayload({ exactWordsEnabled: true, exactContent }, 'en')).toEqual({ exactWordsEnabled: true, exactContent })
+    expect(toGreetingSavePayload({ exactWordsEnabled: false, exactContent: null }, 'en')).toEqual({ exactWordsEnabled: false, exactContent: null })
+  })
+
+  it('sends the blank default-language variant the editor shows when Exact words is on with nothing written yet, so the server flags the field the operator sees', () => {
+    expect(toGreetingSavePayload({ exactWordsEnabled: true, exactContent: null }, 'fr')).toEqual({
+      exactWordsEnabled: true,
+      exactContent: { chips: [], variants: [{ locale: 'fr', body: '', chipLabels: {} }] },
+    })
   })
 })

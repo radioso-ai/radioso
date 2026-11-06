@@ -122,6 +122,42 @@ describe("AgentRevisionService default test revision", () => {
   });
 });
 
+describe("AgentRevisionService draft greeting read", () => {
+  const exactContent = { chips: [], variants: [{ locale: "en", body: "Welcome!", chipLabels: {} }] };
+
+  it("reads the greeting the draft holds, not the one the published revision holds", async () => {
+    const repository = new InMemoryRevisionRepository();
+    repository.draft = { ...repository.draft, snapshot: { ...snapshot("draft v1"), greeting: { exactWordsEnabled: true, exactContent } } };
+    repository.revisions.set("published-1", { ...snapshot("published v1"), greeting: { exactWordsEnabled: false, exactContent: null } });
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+
+    await expect(service.readDraftGreeting(workspaceId, agentId)).resolves.toEqual({ exactWordsEnabled: true, exactContent });
+  });
+
+  it("reads Automatic mode with no content from a draft that never authored a greeting", async () => {
+    const service = new AgentRevisionService(new InMemoryRevisionRepository(), () => "candidate-1");
+
+    await expect(service.readDraftGreeting(workspaceId, agentId)).resolves.toEqual({ exactWordsEnabled: false, exactContent: null });
+  });
+
+  it("is not found when the agent has no draft row, as the state read is", async () => {
+    // Agent creation and the revision migration both insert the draft row, so every agent has one.
+    const repository: AgentRevisionRepositoryPort = Object.assign(new InMemoryRevisionRepository(), { readDraft: async () => null });
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+
+    await expect(service.readDraftGreeting(workspaceId, agentId)).rejects.toMatchObject({ statusCode: 404, code: "not_found" });
+  });
+
+  it("does not bump the draft generation", async () => {
+    const repository = new InMemoryRevisionRepository();
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+
+    await service.readDraftGreeting(workspaceId, agentId);
+
+    expect(repository.draft.generation).toBe(2);
+  });
+});
+
 describe("AgentRevisionService", () => {
   it("publishes the immutable candidate selected from a saved draft, preserving later draft edits", async () => {
     const repository = new InMemoryRevisionRepository();

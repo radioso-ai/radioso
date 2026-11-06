@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export type SettingsSaveState = 'idle' | 'saved' | 'saving' | 'error'
+type SettingsSaveState = 'idle' | 'saved' | 'saving' | 'error'
 
-export interface SettingsSaveStatus {
+interface SettingsSaveStatus {
   state: SettingsSaveState
   message?: string | null
 }

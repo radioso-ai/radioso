@@ -1155,6 +1155,7 @@ export const installDashboardApiMocks = async (
   let agentSettings = { ...buildDefaultAgentSettings(platformSettings), ...options.agentSettingsOverrides };
   const extraAgents = (options.extraAgents ?? []).map((extra) => ({ ...extra, current: { ...agentSettings, ...extra.settings } }));
   let agentRevisionState = baseAgentRevisionState();
+  let agentGreetingDraft: ApiSchemas["AgentGreetingDraft"] = { exactWordsEnabled: false, exactContent: null };
   let nextTestExecutionIndex = 1;
   const testExecutions = new Map<string, {
     id: string;
@@ -2179,6 +2180,17 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revision-state`) {
       await json(route, agentRevisionState);
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/greeting/draft`) {
+      await json(route, agentGreetingDraft);
+      return;
+    }
+
+    if (request.method() === "PUT" && path === `/agents/${defaultAgentId}/greeting/draft`) {
+      agentGreetingDraft = request.postDataJSON() as ApiSchemas["AgentGreetingDraft"];
+      await json(route, { greeting: agentGreetingDraft, validation: { ok: true } });
       return;
     }
 

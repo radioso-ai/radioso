@@ -73,8 +73,10 @@ describe("API principal route policy", () => {
   it("explicitly authorizes revision, private test, and frozen eval routes", () => {
     const routes = [
       ["GET", "/api/v1/agents/:agentId/revision-state", "/api/v1/agents/agent/revision-state", "workspace.agents.read"],
+      ["GET", "/api/v1/agents/:agentId/greeting/draft", "/api/v1/agents/agent/greeting/draft", "workspace.agents.read"],
+      ["PUT", "/api/v1/agents/:agentId/greeting/draft", "/api/v1/agents/agent/greeting/draft", "workspace.agents.manage"],
       ["POST", "/api/v1/agents/:agentId/revisions/candidates", "/api/v1/agents/agent/revisions/candidates", "workspace.agents.manage"],
-      ["GET", "/api/v1/agents/:agentId/revisions", "/api/v1/agents/agent/revisions", "workspace.agents.read"],
+      ["GET", "/api/v1/agents/:agentId/revisions","/api/v1/agents/agent/revisions", "workspace.agents.read"],
       ["GET", "/api/v1/agents/:agentId/revisions/:revisionId", "/api/v1/agents/agent/revisions/revision", "workspace.agents.read"],
       ["POST", "/api/v1/agents/:agentId/revisions/:revisionId/publish", "/api/v1/agents/agent/revisions/revision/publish", "workspace.agents.manage"],
       ["POST", "/api/v1/agents/:agentId/test-executions", "/api/v1/agents/agent/test-executions", "workspace.agents.manage"],

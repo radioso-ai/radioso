@@ -340,6 +340,17 @@ export class AgentRevisionService {
     if (!state) throw notFound("Agent draft not found");
     return state;
   }
+  /**
+   * The greeting the agent's draft holds, which is what the dashboard edits and what the next
+   * candidate freezes. Every agent has a draft row (creation and the revision migration both
+   * insert one), so a missing row is the same not-found as `state`; a draft that never authored a
+   * greeting reads as Automatic mode with no content.
+   */
+  async readDraftGreeting(workspaceId: string, agentId: string): Promise<AgentGreetingSnapshot> {
+    const draft = await this.repository.readDraft(workspaceId, agentId);
+    if (!draft) throw notFound("Agent draft not found");
+    return readAgentRevisionGreeting(draft.snapshot);
+  }
   async createCandidate(workspaceId: string, agentId: string, expectedDraftGeneration: number): Promise<AgentRevision> {
     // Checked against the current draft before the repository freezes it: a stale reference
     // (a deleted skill, a since-denied capability, a removed webhook destination) must not

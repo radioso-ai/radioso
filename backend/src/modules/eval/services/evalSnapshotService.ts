@@ -38,7 +38,7 @@ export interface EvalSnapshotCaptureInput {
 }
 
 export interface EvalSnapshotExternalSkillsPort {
-  connections: Pick<McpConnectionRepositoryPort, "listByAgent">;
+  connections: Pick<McpConnectionRepositoryPort, "listUsedByAgent">;
   skillDefinitions: Pick<ExternalSkillDefinitionRepositoryPort, "listByAgent">;
 }
 
@@ -434,7 +434,7 @@ export class EvalSnapshotService {
       ? await this.agents.findByIdAndWorkspaceId(conversation.agentId, input.workspaceId)
       : null;
     const externalSkills = agent && conversation.agentId
-      ? await this.loadExternalSkills(conversation.agentId)
+      ? await this.loadExternalSkills(input.workspaceId, conversation.agentId)
       : null;
     const agentConfig = agent
       ? projectInternalAgentConfig(agent, externalSkills ? { externalSkills } : {})
@@ -566,12 +566,15 @@ export class EvalSnapshotService {
     }
   }
 
-  private async loadExternalSkills(agentId: string): Promise<InternalAgentExternalSkillsConfig | null> {
+  private async loadExternalSkills(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<InternalAgentExternalSkillsConfig | null> {
     if (!this.externalSkills) {
       return null;
     }
     const [connections, skills] = await Promise.all([
-      this.externalSkills.connections.listByAgent(agentId),
+      this.externalSkills.connections.listUsedByAgent(workspaceId, agentId),
       this.externalSkills.skillDefinitions.listByAgent(agentId),
     ]);
     return projectInternalAgentExternalSkills({ connections, skills });

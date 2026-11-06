@@ -16,6 +16,7 @@ const connection: McpConnectionRecord = { id: "c1", serverUrl: "https://mock", a
 const record = (over: Partial<SkillDefinitionRecord> = {}): SkillDefinitionRecord => ({
   id: "s1",
   agentId: "a1",
+  workspaceId: "w1",
   skillName: "handoff_slack",
   connectionId: "c1",
   enabled: true,
@@ -33,7 +34,7 @@ const buildExecutor = async (definition: SkillDefinitionRecord | null, tools: Mo
         definition && definition.skillName === name && definition.enabled ? definition : null,
     },
     connections: {
-      findById: async (_agentId, id) => (id === connection.id ? connection : null),
+      findById: async (workspaceId, id) => (workspaceId === "w1" && id === connection.id ? connection : null),
     },
     toolServices: {
       create: () => new SdkMcpToolService({ transportFactory: () => clientTransport }),
@@ -62,6 +63,25 @@ describe("McpSkillExecutor", () => {
       expect(result.outcome.status).toBe("completed");
       expect(result.outcome.outputs).toMatchObject({ echoed: { channel: "#support", message: "hi" } });
     }
+  });
+
+  it("reaches a connection the workspace owns from whichever agent's skill runs", async () => {
+    const executor = await buildExecutor(record({ agentId: "a2" }), [
+      { name: "post_message", respond: () => ({ content: [{ type: "text", text: "posted" }] }) },
+    ]);
+
+    const result = await dispatch(executor, "handoff_slack", { message: "hi" }, "a2");
+    expect(result).toMatchObject({ disposition: "settled", outcome: { status: "completed" } });
+  });
+
+  it("fails safely when the connection is outside the skill's workspace", async () => {
+    const executor = await buildExecutor(record({ workspaceId: "w2" }), []);
+
+    const result = await dispatch(executor, "handoff_slack", { message: "hi" });
+    expect(result).toMatchObject({
+      disposition: "settled",
+      outcome: { status: "failed", error: { code: "connection_unavailable" } },
+    });
   });
 
   it("fails safely for an undefined skill (the model cannot invoke arbitrary tools)", async () => {

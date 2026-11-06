@@ -24,7 +24,7 @@ export interface McpConnectionRecord {
    * OAuth connections: resolves a fresh bearer token at call time (refreshing
    * transparently). Throws if the connection is not authorized / refresh fails,
    * which degrades the skill to its failure outcome. Built by the connection
-   * lookup so the agent-bound refresh/persist logic stays in composition.
+   * lookup so the refresh/persist logic stays in composition.
    */
   oauthAccessTokenProvider?: () => Promise<string>;
 }
@@ -33,6 +33,7 @@ export interface McpConnectionRecord {
 export interface SkillDefinitionRecord extends SkillBinding {
   id: string;
   agentId: string;
+  workspaceId: string;
   skillName: string;
   connectionId: string;
   enabled: boolean;
@@ -43,7 +44,7 @@ export interface SkillDefinitionLookup {
 }
 
 export interface ConnectionLookup {
-  findById(agentId: string, connectionId: string): Promise<McpConnectionRecord | null>;
+  findById(workspaceId: string, connectionId: string): Promise<McpConnectionRecord | null>;
 }
 
 /** Builds a ToolService (MCP client) for a given connection, including auth. */
@@ -115,7 +116,7 @@ export class McpSkillExecutor implements SkillExecutorPort {
       return settledFailure("skill_not_found", "External skill is not defined or not enabled");
     }
 
-    const connection = await this.deps.connections.findById(agentId, record.connectionId);
+    const connection = await this.deps.connections.findById(record.workspaceId, record.connectionId);
     if (!connection) {
       return settledFailure("connection_unavailable", "External skill connection is unavailable");
     }

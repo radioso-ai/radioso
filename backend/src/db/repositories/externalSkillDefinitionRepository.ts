@@ -7,6 +7,7 @@ import type { ExposedParamSpec } from "../../modules/externalSkills/skillDefinit
 export interface ExternalSkillDefinitionRecord {
   id: string;
   agentId: string;
+  workspaceId: string;
   connectionId: string;
   skillName: string;
   toolName: string;
@@ -20,6 +21,7 @@ export interface ExternalSkillDefinitionRecord {
 }
 
 export interface CreateExternalSkillDefinitionInput {
+  workspaceId: string;
   agentId: string;
   connectionId: string;
   skillName: string;
@@ -42,6 +44,7 @@ export interface UpdateExternalSkillDefinitionInput {
 interface ExternalSkillDefinitionRow {
   id: string;
   agent_id: string;
+  workspace_id: string;
   target_id: string;
   skill_name: string;
   config: {
@@ -59,6 +62,7 @@ interface ExternalSkillDefinitionRow {
 const mapRecord = (row: ExternalSkillDefinitionRow): ExternalSkillDefinitionRecord => ({
   id: row.id,
   agentId: row.agent_id,
+  workspaceId: row.workspace_id,
   connectionId: row.target_id,
   skillName: row.skill_name,
   toolName: row.config.toolName ?? "",
@@ -76,6 +80,7 @@ const mapRecord = (row: ExternalSkillDefinitionRow): ExternalSkillDefinitionReco
 const externalSkillColumns = [
   "id",
   "agent_id",
+  "workspace_id",
   "target_id",
   "skill_name",
   "config",
@@ -108,7 +113,8 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
       declaredOutcomes: input.declaredOutcomes ?? null,
       outcomeMap: input.outcomeMap ?? null,
     };
-    // INSERT ... SELECT FROM agents derives workspace_id from the agent.
+    // INSERT ... SELECT FROM agents takes workspace_id from the agent row, so a skill can't be
+    // created for an agent outside the given workspace.
     const row = await this.db
       .insertInto("agent_skills")
       .columns(["id", "agent_id", "workspace_id", "skill_name", "kind", "enabled", "target_type", "target_id", "config"])
@@ -126,7 +132,8 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
             eb.val(input.connectionId).as("target_id"),
             toJsonb(config).as("config"),
           ])
-          .where("a.id", "=", input.agentId),
+          .where("a.id", "=", input.agentId)
+          .where("a.workspace_id", "=", input.workspaceId),
       )
       .returning(externalSkillColumns)
       .executeTakeFirstOrThrow();

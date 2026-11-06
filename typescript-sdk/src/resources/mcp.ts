@@ -15,7 +15,7 @@ export type McpConnectionOauthCompleteResponse = OkResponseOf<"completeMcpConnec
 const connectionsBase = (agentId: string): string =>
   `/api/v1/agents/${encodeURIComponent(agentId)}/mcp-connections`;
 
-/** Agent-scoped external MCP server connections (for external/tool-backed skills). */
+/** The workspace's external MCP server connections (for external/tool-backed skills), reached through any of its agents. */
 export const createMcpConnectionsResource = (config: InternalClientConfig) => ({
   list: (agentId: string): Promise<McpConnectionListResponse> =>
     requestJson(config, { method: "GET", path: connectionsBase(agentId) }),
@@ -69,5 +69,3 @@ export const createMcpConnectionsResource = (config: InternalClientConfig) => ({
       body,
     }),
 });
-
-export type McpConnectionsResource = ReturnType<typeof createMcpConnectionsResource>;

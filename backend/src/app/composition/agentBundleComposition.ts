@@ -43,7 +43,7 @@ interface AgentBundleCompositionDependencies {
   agentRepository: {
     findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<ConversationAgent | null>;
   };
-  mcpConnectionRepository: { listByAgent(agentId: string): Promise<ExternalSkillSources["connections"]> };
+  mcpConnectionRepository: { listUsedByAgent(workspaceId: string, agentId: string): Promise<ExternalSkillSources["connections"]> };
   externalSkillDefinitionRepository: { listByAgent(agentId: string): Promise<ExternalSkillSources["skills"]> };
   modelAvailability: WorkspaceModelAvailability;
 }
@@ -55,9 +55,9 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
   };
 
   const externalSkills = {
-    load: async (_workspaceId: string, agentId: string) => {
+    load: async (workspaceId: string, agentId: string) => {
       const [connections, skills] = await Promise.all([
-        deps.mcpConnectionRepository.listByAgent(agentId),
+        deps.mcpConnectionRepository.listUsedByAgent(workspaceId, agentId),
         deps.externalSkillDefinitionRepository.listByAgent(agentId),
       ]);
       return projectInternalAgentExternalSkills({ connections, skills });

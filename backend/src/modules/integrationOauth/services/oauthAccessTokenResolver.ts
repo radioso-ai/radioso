@@ -37,6 +37,11 @@ export class OauthNotAuthorizedError extends Error {
 export interface ResolveFreshAccessTokenInput {
   subjectId: string;
   record: OauthCredentialRecord;
+  /**
+   * Reads the credential as stored now. A caller whose refresh token was already spent uses this to
+   * pick up the token the winner rotated in, instead of flagging a healthy connection.
+   */
+  reloadRecord?: () => Promise<OauthCredentialRecord | null>;
   repository: OauthTokenPersistencePort;
   encryptionKey: FieldEncryptionKeyRing;
   assertPublicUrl?: (url: string) => void | Promise<void>;
@@ -49,6 +54,29 @@ export interface ResolveFreshAccessTokenInput {
    */
   refreshCoordinator?: OauthRefreshCoordinator;
 }
+
+const findRotatedAccessToken = async (input: ResolveFreshAccessTokenInput): Promise<string | null> => {
+  try {
+    const current = await input.reloadRecord?.();
+    if (!current?.credentialCiphertext || current.credentialCiphertext === input.record.credentialCiphertext) {
+      return null;
+    }
+    const tokens = decryptOauthTokens(current.credentialCiphertext, input.encryptionKey);
+    return isAccessTokenExpired(tokens) ? null : tokens.accessToken;
+  } catch {
+    input.logger?.warn(
+      {
+        event: "integration.oauth",
+        phase: "rotation_check_failed",
+        subjectId: input.subjectId,
+        connectionId: input.record.id,
+        ...input.logContext,
+      },
+      "Could not re-read the OAuth credential after a rejected refresh",
+    );
+    return null;
+  }
+};
 
 export const resolveFreshAccessToken = async (input: ResolveFreshAccessTokenInput): Promise<string> => {
   const { subjectId, record, repository, encryptionKey } = input;
@@ -102,6 +130,14 @@ export const resolveFreshAccessToken = async (input: ResolveFreshAccessTokenInpu
           "OAuth token refresh failed transiently; leaving connection authorized for retry",
         );
         throw error;
+      }
+      const rotatedAccessToken = await findRotatedAccessToken(input);
+      if (rotatedAccessToken) {
+        input.logger?.info(
+          { event: "integration.oauth", phase: "refresh_superseded", subjectId, connectionId: record.id, ...input.logContext },
+          "OAuth refresh token was already spent; using the rotated token",
+        );
+        return rotatedAccessToken;
       }
       await repository.updateStatus(subjectId, record.id, "needs_reauth").catch(() => undefined);
       input.logger?.warn(

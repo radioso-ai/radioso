@@ -41,6 +41,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
       authMethod: "access_token",
       status: "authorized",
       hasCredential: true,
+      usedByAgents: [],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     }, {
@@ -50,6 +51,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
       authMethod: "access_token",
       status: "authorized",
       hasCredential: true,
+      usedByAgents: [],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     }],

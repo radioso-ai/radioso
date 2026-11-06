@@ -226,6 +226,13 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
                     </span>
                   </div>
                   <p className="truncate text-xs text-muted-foreground">{connection.serverUrl}</p>
+                  {connection.usedByAgents ? (
+                    <p className="text-xs text-muted-foreground">
+                      {connection.usedByAgents.length > 0
+                        ? `Used by ${connection.usedByAgents.map((agent) => agent.name).join(', ')}`
+                        : 'Not used by any skill yet'}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <Button

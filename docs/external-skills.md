@@ -1,7 +1,7 @@
 ---
 title: "External Skills via MCP"
 description: "Configuration of external MCP server connections and unified named skill definitions for agent routines with encrypted credential storage."
-last_updated: 2026-09-22
+last_updated: 2026-11-07
 ---
 
 # External Skills via MCP
@@ -15,15 +15,23 @@ model and transactional-mail boundary. See
 [Customer Email Connections](./customer-email-skills.md).
 
 In practice there are three things to set up, in order: a **connection**, one or
-more named **skills**, and a routine **step** that uses a skill. Connections are
-managed separately from skill authoring.
+more named **skills**, and a routine **step** that uses a skill. A connection
+belongs to the workspace, so you connect a server once and skills on any agent can
+use it. A skill belongs to one agent.
 
 ## 1. Connect an MCP server
 
-Open the agent's **Skills** tab and choose **Manage MCP connections** to add a connection
-in the side panel. You can also open the panel when adding an MCP skill.
-This connects the agent to external tools. **Channels → MCP** manages clients
-that talk to this agent.
+Open any agent's **Skills** tab and choose **Manage MCP connections** to add a connection
+in the side panel. You can also open the panel when adding an MCP skill. The panel
+shows the same connections from every agent in the workspace, and each one lists the
+agents whose skills use it.
+This connects your agents to external tools. **Channels → MCP** manages clients
+that talk to an agent.
+
+Every agent whose skills use a connection acts under its credential. Replacing a
+token or re-authorizing takes effect for all of them, and so does a token the server
+revokes. To keep one agent's access separate, add a second connection to the same
+server with its own credential.
 
 - **Display name** — a label for the connection.
 - **Server URL** — the MCP server's HTTPS endpoint. It must be `https://`, must
@@ -104,8 +112,9 @@ outcomes. Use **Advanced** to change invocation behavior.
 The skill is validated against the tool before it is saved: the tool must still
 exist, and the tool's required inputs must each be bound or exposed.
 
-A connection cannot be deleted while a skill still uses it. Remove the skills
-first.
+A connection cannot be deleted while a skill on any agent in the workspace still
+uses it. The error names those agents, so remove their skills first. Deleting an
+agent removes its skills and leaves the connection in place.
 
 ## 3. Use a skill in a routine
 
@@ -146,7 +155,7 @@ Four rules govern how credentials and calls are handled:
 
 An agent's external-skill setup travels with its exported configuration, the same
 way directives, branding, and skill settings do. The export includes the agent's
-MCP connections and skill definitions as data.
+skill definitions and the MCP connections those skills use, as data.
 
 Two things are handled with care:
 
@@ -155,16 +164,14 @@ Two things are handled with care:
   access and refresh tokens are not exported at all; after import, authorize the
   OAuth connection again. The non-secret OAuth client details, such as endpoints,
   client id, and scopes, stay in the bundle so re-authorization is possible.
-- **Skill-to-connection links are rebuilt on import.** A skill points to one
+- **Skill-to-connection links use a key inside the bundle.** A skill points to one
   connection. The export records this link by a within-bundle key, not by the
-  connection's database id. On import, Radioso recreates the connections first,
-  then re-binds each skill to its connection using that key.
+  connection's database id.
 
-In practice, an exported bundle round-trips: import recreates the connections
-(minus secrets) and the skill definitions, and re-links each skill to its
-connection. If a skill refers to a connection that is missing from the bundle,
-that skill is reported as unresolved and skipped — a skill cannot exist without
-its connection.
+Import reports each MCP connection and external skill in the bundle as unresolved
+and leaves it for you to set up, because a connection needs its credential entered
+or its OAuth flow run before it can serve. Add the connection under **Manage MCP
+connections**, or reuse one the workspace already has, then re-create the skill.
 
 ## Managing connections and skills
 

@@ -197,7 +197,7 @@ export interface InternalAgentConfig extends Omit<AgentConfig, InternalAgentConf
 
 /**
  * Extra non-agent data the serializer pulls in alongside the `ConversationAgent`.
- * External skills and MCP connections are agent-scoped but live in their own
+ * An agent's external skills and the MCP connections they use live in their own
  * tables, so the export caller supplies them here (defaults to empty).
  */
 interface AgentConfigSerializeContext {

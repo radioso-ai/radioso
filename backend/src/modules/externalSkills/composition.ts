@@ -75,8 +75,8 @@ export class LiveMcpConnectionLookup implements ConnectionLookup {
     private readonly options: LiveMcpConnectionLookupOptions = {},
   ) {}
 
-  async findById(agentId: string, connectionId: string): Promise<McpConnectionRecord | null> {
-    const record = await this.repository.findById(agentId, connectionId);
+  async findById(workspaceId: string, connectionId: string): Promise<McpConnectionRecord | null> {
+    const record = await this.repository.findById(workspaceId, connectionId);
     if (!record) {
       return null;
     }
@@ -87,14 +87,15 @@ export class LiveMcpConnectionLookup implements ConnectionLookup {
         authMethod: record.authMethod,
         oauthAccessTokenProvider: () =>
           resolveFreshAccessToken({
-            subjectId: agentId,
+            subjectId: workspaceId,
             record,
+            reloadRecord: () => this.repository.findById(workspaceId, connectionId),
             repository: this.repository,
             encryptionKey: this.encryptionKey,
             assertPublicUrl: this.options.assertPublicUrl,
             fetchImpl: this.options.fetchImpl,
             logger: this.options.logger,
-            logContext: { integration: "external_skill_mcp", agentId },
+            logContext: { integration: "external_skill_mcp", workspaceId },
           }),
       };
     }

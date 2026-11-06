@@ -75,6 +75,7 @@ export class CustomerEmailDeliveryService {
       accessToken = await resolveFreshAccessToken({
         subjectId: input.workspaceId,
         record: credential,
+        reloadRecord: () => this.options.oauthCredentials.findCredentialById(input.workspaceId, connection.oauthConnectionId),
         repository: this.options.oauthTokenRepository,
         encryptionKey: this.options.encryptionKey,
         assertPublicUrl: this.options.assertPublicUrl,

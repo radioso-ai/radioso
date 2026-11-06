@@ -173,6 +173,10 @@ const operatorFetch = async <T>(
     credentials: "include",
   });
   if (!response.ok) {
+    // A session can end mid-edit. At sign-in itself, a 401 means a wrong password.
+    if (response.status === 401 && path !== "/auth/login") {
+      window.location.href = "/operator/login";
+    }
     const error = await parseErrorBody(response);
     throw new StaffApiError(error.message, { status: response.status, code: error.code });
   }

@@ -8,6 +8,7 @@ import {
 } from "../../shared/domain/exactContent.js";
 import { routineDefinitionSchema, toSafeRoutineValidationDiagnostic, validateExposureAcrossSnapshot, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
+import { comparableGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
 import { canonicalContentHash } from "../../shared/domain/canonicalContentHash.js";
 import { errorClassOf } from "../../shared/observability/errorClass.js";
@@ -131,28 +132,7 @@ export type AgentRevisionSnapshot = z.infer<typeof agentRevisionSnapshotSchema>;
 export type AgentGreetingSnapshot = z.infer<typeof agentGreetingSnapshotSchema>;
 export const parseAgentRevisionSnapshot = (value: unknown): AgentRevisionSnapshot => agentRevisionSnapshotSchema.parse(value);
 
-/** Absent `greeting` (a draft/revision frozen before this field existed) reads back
- * identically to an authored-but-inactive one: Automatic mode, no content. */
-export const readAgentRevisionGreeting = (snapshot: AgentRevisionSnapshot): AgentGreetingSnapshot =>
-  snapshot.greeting ?? { exactWordsEnabled: false, exactContent: null };
-
-/**
- * The greeting as a fixed shape for a `JSON.stringify` comparison: a greeting absent from one
- * snapshot reads as the default (via `readAgentRevisionGreeting`), and a variant's chip labels,
- * a record whose key order depends on which writer or JSONB round trip produced it, are listed
- * by sorted key. Chip order and variant order are authored, so they stay as they are.
- */
-const projectGreeting = (greeting: AgentGreetingSnapshot) => ({
-  exactWordsEnabled: greeting.exactWordsEnabled,
-  exactContent: greeting.exactContent && {
-    chips: greeting.exactContent.chips,
-    variants: greeting.exactContent.variants.map((variant) => ({
-      locale: variant.locale,
-      body: variant.body,
-      chipLabels: Object.entries(variant.chipLabels).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
-    })),
-  },
-});
+export { readAgentRevisionGreeting };
 
 /**
  * The authorable release surface deliberately excludes cutover-only retained
@@ -167,7 +147,7 @@ const projectScopedAuthoringSnapshot = (snapshot: AgentRevisionSnapshot) => ({
     left.createdAt.getTime() - right.createdAt.getTime() ||
     left.id.localeCompare(right.id)),
   contextVariableEnablements: snapshot.contextVariableEnablements,
-  greeting: projectGreeting(readAgentRevisionGreeting(snapshot)),
+  greeting: comparableGreeting(snapshot),
 });
 
 export const equalScopedAuthoringSnapshots = (
@@ -430,18 +410,25 @@ export class AgentRevisionService {
       contentHash: canonicalContentHash(JSON.parse(JSON.stringify(candidate.snapshot)) as unknown),
     };
   }
-  async readCandidateReleaseChange(workspaceId: string, agentId: string, revisionId: string, input: { field: "customInstruction" | "directives" | "routines" | "contextVariableEnablements" | "agentSkills"; id: string; side: "before" | "after"; offset: number; limit: number }): Promise<{ text: string | null; nextOffset: number | null; totalLength: number }> {
+  async readCandidateReleaseChange(workspaceId: string, agentId: string, revisionId: string, input: { field: "customInstruction" | "greeting" | "directives" | "routines" | "contextVariableEnablements" | "agentSkills"; id: string; side: "before" | "after"; offset: number; limit: number }): Promise<{ text: string | null; nextOffset: number | null; totalLength: number }> {
     if (!Number.isInteger(input.offset) || input.offset < 0 || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 2000) throw new AppError(400, "invalid_release_review_chunk", "Invalid release review chunk range.");
     const candidate = await this.detail(workspaceId, agentId, revisionId);
     const base = candidate.sourceBasePublishedRevisionId ? await this.detail(workspaceId, agentId, candidate.sourceBasePublishedRevisionId) : null;
-    if (input.field === "customInstruction" && input.id !== "agent") throw new AppError(404, "release_review_change_not_found", "Release review change was not found.");
-    const beforeCollection = input.field === "customInstruction" ? [] : (base?.snapshot[input.field] as ReadonlyArray<{ id: string }> | undefined) ?? [];
-    const afterCollection = input.field === "customInstruction" ? [] : (candidate.snapshot[input.field] as ReadonlyArray<{ id: string }> | undefined) ?? [];
-    if (input.field !== "customInstruction" && !beforeCollection.some((entry) => entry.id === input.id) && !afterCollection.some((entry) => entry.id === input.id)) throw new AppError(404, "release_review_change_not_found", "Release review change was not found.");
+    // Instructions and the greeting are one value per agent; the other fields are collections of ids.
+    const { field } = input;
+    const isAgentLevel = field === "customInstruction" || field === "greeting";
+    if (isAgentLevel && input.id !== "agent") throw new AppError(404, "release_review_change_not_found", "Release review change was not found.");
+    const beforeCollection = isAgentLevel ? [] : (base?.snapshot[field] as ReadonlyArray<{ id: string }> | undefined) ?? [];
+    const afterCollection = isAgentLevel ? [] : (candidate.snapshot[field] as ReadonlyArray<{ id: string }> | undefined) ?? [];
+    if (!isAgentLevel && !beforeCollection.some((entry) => entry.id === input.id) && !afterCollection.some((entry) => entry.id === input.id)) throw new AppError(404, "release_review_change_not_found", "Release review change was not found.");
     const snapshot = input.side === "before" ? base?.snapshot : candidate.snapshot;
-    const value = input.field === "customInstruction" ? snapshot?.customInstruction ?? null : (input.side === "before" ? beforeCollection : afterCollection).find((entry) => entry.id === input.id) ?? null;
+    const value = field === "customInstruction"
+      ? snapshot?.customInstruction ?? null
+      : field === "greeting"
+        ? (snapshot ? readAgentRevisionGreeting(snapshot) : null)
+        : (input.side === "before" ? beforeCollection : afterCollection).find((entry) => entry.id === input.id) ?? null;
     if (value === null) return { text: null, nextOffset: null, totalLength: 0 };
-    const safeValue = input.field === "agentSkills" && typeof value === "object"
+    const safeValue = field === "agentSkills" && typeof value === "object"
       ? (() => { const { config: _config, ...metadata } = value as Record<string, unknown>; return metadata; })()
       : value;
     const full = typeof safeValue === "string" ? safeValue : JSON.stringify(safeValue);

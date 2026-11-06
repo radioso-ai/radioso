@@ -65,6 +65,57 @@ describe("external skills routes", () => {
     expect(skills.body.skills.some((s: { skillName: string }) => s.skillName === "handoff_slack")).toBe(true);
   });
 
+  it("shares a connection across the workspace's agents, and only that workspace's", async () => {
+    const { app, headers, agentId } = await setup();
+    const secondAgent = await request(app).post("/api/v1/agents").set(headers).send({ name: "Second" }).expect(201);
+    const secondAgentId = secondAgent.body.id as string;
+
+    const created = await request(app)
+      .post(`/api/v1/agents/${agentId}/mcp-connections`)
+      .set(headers)
+      .send({ displayName: "Slack", serverUrl: "https://mcp.example.com", authMethod: "access_token", accessToken: "tok" })
+      .expect(201);
+    const connectionId = created.body.id as string;
+
+    const listed = await request(app).get(`/api/v1/agents/${secondAgentId}/mcp-connections`).set(headers).expect(200);
+    expect(listed.body.connections.map((c: { id: string }) => c.id)).toEqual([connectionId]);
+    expect(listed.body.connections[0].usedByAgents).toEqual([]);
+
+    const skill = {
+      connectionId,
+      toolName: "post_message",
+      boundParams: { channel: "#support" },
+      exposedParams: { message: {} },
+    };
+    await request(app)
+      .post(`/api/v1/agents/${secondAgentId}/external-skills`)
+      .set(headers)
+      .send({ ...skill, skillName: "second_agent_handoff" })
+      .expect(201);
+
+    const fromFirstAgent = await request(app).get(`/api/v1/agents/${agentId}/mcp-connections`).set(headers).expect(200);
+    expect(fromFirstAgent.body.connections[0].usedByAgents).toEqual([{ id: secondAgentId, name: "Second" }]);
+
+    // The second agent's skill holds the connection, so the first agent's panel can't delete it, and
+    // says where to look.
+    const blocked = await request(app).delete(`/api/v1/agents/${agentId}/mcp-connections/${connectionId}`).set(headers).expect(409);
+    expect(blocked.body.error.message).toContain("Second");
+
+    const otherSession = await issueTestSession(app, `other-workspace-${Math.floor(performance.now())}@example.com`);
+    const otherHeaders = adminSessionHeaders(otherSession);
+    const otherAgent = await request(app).post("/api/v1/agents").set(otherHeaders).send({ name: "Other" }).expect(201);
+    const otherAgentId = otherAgent.body.id as string;
+
+    const otherList = await request(app).get(`/api/v1/agents/${otherAgentId}/mcp-connections`).set(otherHeaders).expect(200);
+    expect(otherList.body.connections).toEqual([]);
+    await request(app).get(`/api/v1/agents/${otherAgentId}/mcp-connections/${connectionId}`).set(otherHeaders).expect(404);
+    await request(app)
+      .post(`/api/v1/agents/${otherAgentId}/external-skills`)
+      .set(otherHeaders)
+      .send({ ...skill, skillName: "foreign_handoff" })
+      .expect(404);
+  });
+
   it("rejects an invalid connection body (non-https)", async () => {
     const { app, headers, agentId } = await setup();
     await request(app)

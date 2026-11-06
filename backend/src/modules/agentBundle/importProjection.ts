@@ -71,14 +71,14 @@ export const projectAgentConfigForImport = (config: AgentConfig): AgentConfigImp
     unresolved.push({
       kind: "mcp_connection_unbound",
       element: `mcpConnection:${connection.displayName}`,
-      detail: `Reconnect ${connection.displayName} (${connection.serverUrl}) under External skills; its credential is not part of the bundle.`,
+      detail: `Connect ${connection.displayName} (${connection.serverUrl}) under Manage MCP connections, or use a connection this workspace already has; its credential is not part of the bundle.`,
     });
   }
   for (const skill of config.externalSkills?.skills ?? []) {
     unresolved.push({
       kind: "mcp_connection_unbound",
       element: `externalSkill:${skill.skillName}`,
-      detail: `Re-create the external skill "${skill.skillName}" (tool ${skill.toolName}) once its MCP connection is reconnected.`,
+      detail: `Re-create the external skill "${skill.skillName}" (tool ${skill.toolName}) once this workspace has its MCP connection.`,
     });
   }
 

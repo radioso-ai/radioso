@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   CreateMcpConnectionInput,
+  McpConnectionAgentUsage,
   McpConnectionRecord,
   McpConnectionRepositoryPort,
   UpdateMcpConnectionInput,
@@ -19,17 +20,26 @@ import { connectMockMcpServer, type MockTool } from "./mockMcpServer.js";
 export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryPort {
   private readonly rows = new Map<string, McpConnectionRecord>();
   private referenceChecker?: (connectionId: string) => boolean;
+  private agentUsageLookup?: (workspaceId: string, connectionId?: string) => Promise<McpConnectionAgentUsage[]>;
 
   /** Model the real ON DELETE RESTRICT: throw 23503 if a skill references it. */
   setReferenceChecker(checker: (connectionId: string) => boolean): void {
     this.referenceChecker = checker;
   }
 
+  setAgentUsageLookup(lookup: (workspaceId: string, connectionId?: string) => Promise<McpConnectionAgentUsage[]>): void {
+    this.agentUsageLookup = lookup;
+  }
+
+  async listAgentUsage(workspaceId: string, connectionId?: string): Promise<McpConnectionAgentUsage[]> {
+    return (await this.agentUsageLookup?.(workspaceId, connectionId)) ?? [];
+  }
+
   async create(input: CreateMcpConnectionInput): Promise<McpConnectionRecord> {
     const now = new Date();
     const record: McpConnectionRecord = {
       id: randomUUID(),
-      agentId: input.agentId,
+      workspaceId: input.workspaceId,
       displayName: input.displayName,
       serverUrl: input.serverUrl,
       authMethod: input.authMethod,
@@ -44,18 +54,24 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
     return { ...record };
   }
 
-  async findById(agentId: string, id: string): Promise<McpConnectionRecord | null> {
+  async findById(workspaceId: string, id: string): Promise<McpConnectionRecord | null> {
     const record = this.rows.get(id);
-    return record && record.agentId === agentId ? { ...record } : null;
+    return record && record.workspaceId === workspaceId ? { ...record } : null;
   }
 
-  async listByAgent(agentId: string): Promise<McpConnectionRecord[]> {
-    return [...this.rows.values()].filter((row) => row.agentId === agentId).map((row) => ({ ...row }));
+  async listByWorkspace(workspaceId: string): Promise<McpConnectionRecord[]> {
+    return [...this.rows.values()].filter((row) => row.workspaceId === workspaceId).map((row) => ({ ...row }));
   }
 
-  async updateStatus(agentId: string, id: string, status: McpConnectionRecord["status"]): Promise<McpConnectionRecord | null> {
+  async listUsedByAgent(workspaceId: string, agentId: string): Promise<McpConnectionRecord[]> {
+    const usage = await this.listAgentUsage(workspaceId);
+    const used = new Set(usage.filter((row) => row.agentId === agentId).map((row) => row.connectionId));
+    return [...this.rows.values()].filter((row) => used.has(row.id)).map((row) => ({ ...row }));
+  }
+
+  async updateStatus(workspaceId: string, id: string, status: McpConnectionRecord["status"]): Promise<McpConnectionRecord | null> {
     const record = this.rows.get(id);
-    if (!record || record.agentId !== agentId) {
+    if (!record || record.workspaceId !== workspaceId) {
       return null;
     }
     record.status = status;
@@ -63,9 +79,9 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
     return { ...record };
   }
 
-  async update(agentId: string, id: string, input: UpdateMcpConnectionInput): Promise<McpConnectionRecord | null> {
+  async update(workspaceId: string, id: string, input: UpdateMcpConnectionInput): Promise<McpConnectionRecord | null> {
     const record = this.rows.get(id);
-    if (!record || record.agentId !== agentId) {
+    if (!record || record.workspaceId !== workspaceId) {
       return null;
     }
     if (input.displayName !== undefined) record.displayName = input.displayName;
@@ -75,9 +91,9 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
     return { ...record };
   }
 
-  async setOauthFlow(agentId: string, id: string, oauthFlowCiphertext: string): Promise<McpConnectionRecord | null> {
+  async setOauthFlow(workspaceId: string, id: string, oauthFlowCiphertext: string): Promise<McpConnectionRecord | null> {
     const record = this.rows.get(id);
-    if (!record || record.agentId !== agentId) {
+    if (!record || record.workspaceId !== workspaceId) {
       return null;
     }
     record.oauthFlowCiphertext = oauthFlowCiphertext;
@@ -86,12 +102,12 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
   }
 
   async setOauthTokens(
-    agentId: string,
+    workspaceId: string,
     id: string,
     credentialCiphertext: string,
   ): Promise<McpConnectionRecord | null> {
     const record = this.rows.get(id);
-    if (!record || record.agentId !== agentId) {
+    if (!record || record.workspaceId !== workspaceId) {
       return null;
     }
     record.credentialCiphertext = credentialCiphertext;
@@ -101,9 +117,9 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
     return { ...record };
   }
 
-  async remove(agentId: string, id: string): Promise<boolean> {
+  async remove(workspaceId: string, id: string): Promise<boolean> {
     const record = this.rows.get(id);
-    if (!record || record.agentId !== agentId) {
+    if (!record || record.workspaceId !== workspaceId) {
       return false;
     }
     if (this.referenceChecker?.(id)) {
@@ -121,6 +137,14 @@ export class InMemoryExternalSkillDefinitionRepository implements ExternalSkillD
     return [...this.rows.values()].some((row) => row.connectionId === connectionId);
   }
 
+  /** Each agent and connection pair in the workspace, once, however many skills join them. */
+  connectionUsage(workspaceId: string, connectionId?: string): Array<{ connectionId: string; agentId: string }> {
+    const pairs = [...this.rows.values()]
+      .filter((row) => row.workspaceId === workspaceId && (connectionId === undefined || row.connectionId === connectionId))
+      .map((row) => ({ connectionId: row.connectionId, agentId: row.agentId }));
+    return [...new Map(pairs.map((pair) => [`${pair.connectionId}:${pair.agentId}`, pair])).values()];
+  }
+
   async create(input: CreateExternalSkillDefinitionInput): Promise<ExternalSkillDefinitionRecord> {
     const duplicate = [...this.rows.values()].some(
       (row) => row.agentId === input.agentId && row.skillName === input.skillName,
@@ -132,6 +156,7 @@ export class InMemoryExternalSkillDefinitionRepository implements ExternalSkillD
     const record: ExternalSkillDefinitionRecord = {
       id: randomUUID(),
       agentId: input.agentId,
+      workspaceId: input.workspaceId,
       connectionId: input.connectionId,
       skillName: input.skillName,
       toolName: input.toolName,

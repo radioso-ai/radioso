@@ -13,7 +13,7 @@ export function McpServersPanel({ agentId, open, onOpenChange }: {
       <SheetContent className="w-full gap-0 sm:max-w-xl">
         <SheetHeader className="border-b border-border px-6 py-5 pr-12">
           <SheetTitle>MCP connections</SheetTitle>
-          <SheetDescription>Connect servers that provide tools for this agent’s skills.</SheetDescription>
+          <SheetDescription>Connect a server once, and skills on every agent in this workspace can use its tools.</SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
           <McpConnectionsSection key={agentId} agentId={agentId} />

@@ -22,6 +22,7 @@ import {
   type FetchLike,
 } from "../../integrationOauth/public.js";
 import type {
+  McpConnectionAgentUsage,
   McpConnectionRecord,
   McpConnectionRepositoryPort,
 } from "../../../db/repositories/mcpConnectionRepository.js";
@@ -42,6 +43,8 @@ interface McpConnectionSummary {
   authMethod: McpConnectionRecord["authMethod"];
   status: McpConnectionRecord["status"];
   hasCredential: boolean;
+  /** Every agent whose skills use this connection, so a change to it can be weighed first. */
+  usedByAgents: Array<{ id: string; name: string }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -52,13 +55,18 @@ interface DiscoveredTool {
   inputSchema?: unknown;
 }
 
-const toSummary = (record: McpConnectionRecord): McpConnectionSummary => ({
+const agentLabel = (usage: McpConnectionAgentUsage): string => usage.agentName || "Unnamed agent";
+
+const toSummary = (record: McpConnectionRecord, usage: McpConnectionAgentUsage[]): McpConnectionSummary => ({
   id: record.id,
   displayName: record.displayName,
   serverUrl: record.serverUrl,
   authMethod: record.authMethod,
   status: record.status,
   hasCredential: Boolean(record.credentialCiphertext),
+  usedByAgents: usage
+    .filter((row) => row.connectionId === record.id)
+    .map((row) => ({ id: row.agentId, name: agentLabel(row) })),
   createdAt: record.createdAt.toISOString(),
   updatedAt: record.updatedAt.toISOString(),
 });
@@ -119,7 +127,7 @@ export class McpConnectionService {
     return Boolean(this.options.encryptionKey);
   }
 
-  async create(agentId: string, input: McpConnectionInput): Promise<McpConnectionSummary> {
+  async create(workspaceId: string, input: McpConnectionInput): Promise<McpConnectionSummary> {
     // SSRF guard: reject loopback/private/internal targets before persisting.
     await this.options.assertPublicUrl?.(input.serverUrl);
 
@@ -154,7 +162,7 @@ export class McpConnectionService {
     }
 
     const record = await this.options.repository.create({
-      agentId,
+      workspaceId,
       displayName: input.displayName,
       serverUrl: input.serverUrl,
       authMethod: input.authMethod,
@@ -162,24 +170,32 @@ export class McpConnectionService {
       oauthClientCiphertext,
       status,
     });
-    return toSummary(record);
+    return toSummary(record, []);
   }
 
-  async list(agentId: string): Promise<McpConnectionSummary[]> {
-    return (await this.options.repository.listByAgent(agentId)).map(toSummary);
+  async list(workspaceId: string): Promise<McpConnectionSummary[]> {
+    const [records, usage] = await Promise.all([
+      this.options.repository.listByWorkspace(workspaceId),
+      this.options.repository.listAgentUsage(workspaceId),
+    ]);
+    return records.map((record) => toSummary(record, usage));
   }
 
-  async get(agentId: string, id: string): Promise<McpConnectionSummary> {
-    const record = await this.options.repository.findById(agentId, id);
+  async get(workspaceId: string, id: string): Promise<McpConnectionSummary> {
+    const record = await this.options.repository.findById(workspaceId, id);
     if (!record) {
       throw notFound("MCP connection not found");
     }
-    return toSummary(record);
+    return this.summarize(workspaceId, record);
+  }
+
+  private async summarize(workspaceId: string, record: McpConnectionRecord): Promise<McpConnectionSummary> {
+    return toSummary(record, await this.options.repository.listAgentUsage(workspaceId, record.id));
   }
 
   /** Rename a connection and/or rotate its access token (re-encrypted). */
-  async update(agentId: string, id: string, input: McpConnectionUpdateInput): Promise<McpConnectionSummary> {
-    const existing = await this.options.repository.findById(agentId, id);
+  async update(workspaceId: string, id: string, input: McpConnectionUpdateInput): Promise<McpConnectionSummary> {
+    const existing = await this.options.repository.findById(workspaceId, id);
     if (!existing) {
       throw notFound("MCP connection not found");
     }
@@ -197,7 +213,7 @@ export class McpConnectionService {
       status = "authorized";
     }
 
-    const updated = await this.options.repository.update(agentId, id, {
+    const updated = await this.options.repository.update(workspaceId, id, {
       displayName: input.displayName,
       credentialCiphertext,
       status,
@@ -205,16 +221,21 @@ export class McpConnectionService {
     if (!updated) {
       throw notFound("MCP connection not found");
     }
-    return toSummary(updated);
+    return this.summarize(workspaceId, updated);
   }
 
-  async remove(agentId: string, id: string): Promise<void> {
+  async remove(workspaceId: string, id: string): Promise<void> {
     let removed: boolean;
     try {
-      removed = await this.options.repository.remove(agentId, id);
+      removed = await this.options.repository.remove(workspaceId, id);
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "23503") {
-        throw conflict("Connection is still referenced by a skill definition");
+        const usage = await this.options.repository.listAgentUsage(workspaceId, id);
+        throw conflict(
+          usage.length > 0
+            ? `Connection is still used by a skill on ${usage.map(agentLabel).join(", ")}`
+            : "Connection is still used by a skill on an agent in this workspace",
+        );
       }
       throw error;
     }
@@ -224,8 +245,8 @@ export class McpConnectionService {
   }
 
   /** Live `tools/list` for the skill builder; requires a usable credential. */
-  async discoverTools(agentId: string, id: string): Promise<DiscoveredTool[]> {
-    const record = await this.options.repository.findById(agentId, id);
+  async discoverTools(workspaceId: string, id: string): Promise<DiscoveredTool[]> {
+    const record = await this.options.repository.findById(workspaceId, id);
     if (!record) {
       throw notFound("MCP connection not found");
     }
@@ -243,14 +264,15 @@ export class McpConnectionService {
       }
       oauthAccessTokenProvider = () =>
         resolveFreshAccessToken({
-          subjectId: agentId,
+          subjectId: workspaceId,
           record,
+          reloadRecord: () => this.options.repository.findById(workspaceId, record.id),
           repository: this.options.repository,
           encryptionKey: this.options.encryptionKey!,
           assertPublicUrl: this.options.assertPublicUrl,
           fetchImpl: this.options.fetchImpl,
           logger: this.options.logger,
-          logContext: { integration: "external_skill_mcp", agentId },
+          logContext: { integration: "external_skill_mcp", workspaceId },
         });
     }
 
@@ -275,9 +297,9 @@ export class McpConnectionService {
         throw serviceUnavailable("The OAuth provider is temporarily unavailable. Try again shortly.");
       }
       if (error instanceof McpCredentialsRejectedError) {
-        await this.options.repository.updateStatus(agentId, record.id, "needs_reauth").catch(() => undefined);
+        await this.options.repository.updateStatus(workspaceId, record.id, "needs_reauth").catch(() => undefined);
         this.options.logger?.warn(
-          { event: "external_skill.discovery", outcome: "credentials_rejected", upstreamStatus: error.status, agentId, connectionId: record.id },
+          { event: "external_skill.discovery", outcome: "credentials_rejected", upstreamStatus: error.status, workspaceId, connectionId: record.id },
           "MCP server rejected the connection's credentials",
         );
         throw conflict(record.authMethod === "oauth"
@@ -286,7 +308,7 @@ export class McpConnectionService {
       }
       if (error instanceof McpServerUnavailableError) {
         this.options.logger?.warn(
-          { event: "external_skill.discovery", outcome: "server_unavailable", agentId, connectionId: record.id },
+          { event: "external_skill.discovery", outcome: "server_unavailable", workspaceId, connectionId: record.id },
           "MCP server did not complete tool discovery",
         );
         throw new AppError(502, "bad_gateway", "The MCP server did not complete tool discovery. Check that it is reachable, then try again.");
@@ -325,9 +347,9 @@ export class McpConnectionService {
    * Start the one-time consent flow: generate PKCE + state, persist the in-flight
    * flow, and return the provider authorization URL for the author's browser.
    */
-  async startOauthAuthorization(agentId: string, id: string): Promise<{ authorizationUrl: string }> {
+  async startOauthAuthorization(workspaceId: string, id: string): Promise<{ authorizationUrl: string }> {
     const { record, config, key } = this.requireOauthConnection(
-      await this.options.repository.findById(agentId, id),
+      await this.options.repository.findById(workspaceId, id),
     );
     const redirectUri = this.options.oauthRedirectUri;
     if (!redirectUri) {
@@ -344,13 +366,13 @@ export class McpConnectionService {
     const { codeVerifier, codeChallenge } = createPkcePair();
     const state = createOauthState();
     await this.options.repository.setOauthFlow(
-      agentId,
+      workspaceId,
       id,
       encryptOauthFlow({ state, codeVerifier, redirectUri }, key),
     );
     const authorizationUrl = buildAuthorizationUrl({ config, redirectUri, state, codeChallenge });
     this.options.logger?.info(
-      { event: "external_skill.oauth", phase: "authorize_started", agentId, connectionId: record.id },
+      { event: "external_skill.oauth", phase: "authorize_started", workspaceId, connectionId: record.id },
       "MCP OAuth authorization started",
     );
     return { authorizationUrl };
@@ -362,13 +384,13 @@ export class McpConnectionService {
    * provider error text or secret reaches the caller.
    */
   async completeOauthAuthorization(
-    agentId: string,
+    workspaceId: string,
     id: string,
     code: string,
     state: string,
   ): Promise<McpConnectionSummary> {
     const { record, config, key } = this.requireOauthConnection(
-      await this.options.repository.findById(agentId, id),
+      await this.options.repository.findById(workspaceId, id),
     );
     if (!record.oauthFlowCiphertext) {
       throw badRequest("No pending authorization for this connection");
@@ -394,7 +416,7 @@ export class McpConnectionService {
     }
 
     const updated = await this.options.repository.setOauthTokens(
-      agentId,
+      workspaceId,
       id,
       encryptOauthTokens(tokens, key),
     );
@@ -402,9 +424,9 @@ export class McpConnectionService {
       throw notFound("MCP connection not found");
     }
     this.options.logger?.info(
-      { event: "external_skill.oauth", phase: "authorized", agentId, connectionId: record.id },
+      { event: "external_skill.oauth", phase: "authorized", workspaceId, connectionId: record.id },
       "MCP OAuth connection authorized",
     );
-    return toSummary(updated);
+    return this.summarize(workspaceId, updated);
   }
 }

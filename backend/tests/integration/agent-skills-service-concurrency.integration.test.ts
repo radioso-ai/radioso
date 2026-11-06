@@ -131,7 +131,7 @@ describeIfDatabase("AgentSkillsService.update concurrency (Kysely/Postgres)", ()
     // transaction does the real, current base get re-read: whichever patch's transaction runs
     // second sees the first's already-committed change, and its merge composes an invalid config.
     const connection = await mcpConnectionRepository.create({
-      agentId,
+      workspaceId,
       displayName: "Test MCP connection",
       serverUrl: "https://mcp.example.com/rpc",
       authMethod: "access_token",

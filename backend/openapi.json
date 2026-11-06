@@ -40351,7 +40351,7 @@
         "tags": [
           "External Skills"
         ],
-        "summary": "List an agent's MCP connections",
+        "summary": "List the workspace's MCP connections",
         "operationId": "listMcpConnections",
         "security": [
           {
@@ -40400,6 +40400,24 @@
                           "hasCredential": {
                             "type": "boolean"
                           },
+                          "usedByAgents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ]
+                            }
+                          },
                           "createdAt": {
                             "type": "string"
                           },
@@ -40414,6 +40432,7 @@
                           "authMethod",
                           "status",
                           "hasCredential",
+                          "usedByAgents",
                           "createdAt",
                           "updatedAt"
                         ]
@@ -40565,6 +40584,24 @@
                     "hasCredential": {
                       "type": "boolean"
                     },
+                    "usedByAgents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -40579,6 +40616,7 @@
                     "authMethod",
                     "status",
                     "hasCredential",
+                    "usedByAgents",
                     "createdAt",
                     "updatedAt"
                   ]
@@ -40863,6 +40901,24 @@
                     "hasCredential": {
                       "type": "boolean"
                     },
+                    "usedByAgents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -40877,6 +40933,7 @@
                     "authMethod",
                     "status",
                     "hasCredential",
+                    "usedByAgents",
                     "createdAt",
                     "updatedAt"
                   ]
@@ -40982,6 +41039,24 @@
                     "hasCredential": {
                       "type": "boolean"
                     },
+                    "usedByAgents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -40996,6 +41071,7 @@
                     "authMethod",
                     "status",
                     "hasCredential",
+                    "usedByAgents",
                     "createdAt",
                     "updatedAt"
                   ]
@@ -41912,6 +41988,24 @@
                     "hasCredential": {
                       "type": "boolean"
                     },
+                    "usedByAgents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -41926,6 +42020,7 @@
                     "authMethod",
                     "status",
                     "hasCredential",
+                    "usedByAgents",
                     "createdAt",
                     "updatedAt"
                   ]

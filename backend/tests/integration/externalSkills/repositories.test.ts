@@ -85,6 +85,7 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     // 099 creates the shared spine; 101 moves detail config onto generic target/config columns.
     await client.query(await readFile(path.join(testMigrationsPath, "099_agent_skills_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "101_agent_skills_generic_targets.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "251_mcp_connections_workspace_owned.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
 
@@ -102,7 +103,7 @@ describeIfDatabase("external skills repositories (postgres)", () => {
   it("round-trips a connection with an encrypted credential", async () => {
     const ciphertext = encryptField("xoxb-secret-token", encryptionKey);
     const created = await connections.create({
-      agentId,
+      workspaceId,
       displayName: "Support Slack",
       serverUrl: "https://mcp.example.com",
       authMethod: "access_token",
@@ -110,7 +111,7 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     });
     expect(created.status).toBe("unconfigured");
 
-    const found = await connections.findById(agentId, created.id);
+    const found = await connections.findById(workspaceId, created.id);
     expect(found?.credentialCiphertext).toBe(ciphertext);
     expect(decryptField(found!.credentialCiphertext!, encryptionKey)).toBe("xoxb-secret-token");
     // never stores plaintext
@@ -120,7 +121,7 @@ describeIfDatabase("external skills repositories (postgres)", () => {
   it("round-trips an OAuth connection's client config, flow, and tokens", async () => {
     const clientCiphertext = encryptField(JSON.stringify({ clientId: "c1" }), encryptionKey);
     const created = await connections.create({
-      agentId,
+      workspaceId,
       displayName: "Scheduler",
       serverUrl: "https://mcp.example.com",
       authMethod: "oauth",
@@ -132,11 +133,11 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     expect(created.oauthFlowCiphertext).toBeNull();
 
     const flowCiphertext = encryptField(JSON.stringify({ state: "s", codeVerifier: "v" }), encryptionKey);
-    const withFlow = await connections.setOauthFlow(agentId, created.id, flowCiphertext);
+    const withFlow = await connections.setOauthFlow(workspaceId, created.id, flowCiphertext);
     expect(withFlow?.oauthFlowCiphertext).toBe(flowCiphertext);
 
     const tokenCiphertext = encryptField(JSON.stringify({ accessToken: "at" }), encryptionKey);
-    const authorized = await connections.setOauthTokens(agentId, created.id, tokenCiphertext);
+    const authorized = await connections.setOauthTokens(workspaceId, created.id, tokenCiphertext);
     expect(authorized?.status).toBe("authorized");
     expect(authorized?.credentialCiphertext).toBe(tokenCiphertext);
     // The transient flow is cleared once authorized.
@@ -145,12 +146,13 @@ describeIfDatabase("external skills repositories (postgres)", () => {
 
   it("creates and resolves a skill definition by name, omitting disabled ones", async () => {
     const connection = await connections.create({
-      agentId,
+      workspaceId,
       displayName: "Slack 2",
       serverUrl: "https://mcp2.example.com",
       authMethod: "access_token",
     });
     await skills.create({
+      workspaceId,
       agentId,
       connectionId: connection.id,
       skillName: "handoff_slack",
@@ -169,6 +171,7 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     });
 
     const disabled = await skills.create({
+      workspaceId,
       agentId,
       connectionId: connection.id,
       skillName: "disabled_skill",
@@ -183,12 +186,13 @@ describeIfDatabase("external skills repositories (postgres)", () => {
 
   it("blocks deleting a connection that a skill definition still references", async () => {
     const connection = await connections.create({
-      agentId,
+      workspaceId,
       displayName: "Referenced",
       serverUrl: "https://mcp3.example.com",
       authMethod: "access_token",
     });
     const skill = await skills.create({
+      workspaceId,
       agentId,
       connectionId: connection.id,
       skillName: "ref_skill",
@@ -197,23 +201,24 @@ describeIfDatabase("external skills repositories (postgres)", () => {
       exposedParams: {},
     });
 
-    await expect(connections.remove(agentId, connection.id)).rejects.toMatchObject({ code: "23503" });
+    await expect(connections.remove(workspaceId, connection.id)).rejects.toMatchObject({ code: "23503" });
     await expect(
-      client.query(`DELETE FROM mcp_connections WHERE agent_id = $1 AND id = $2`, [agentId, connection.id]),
+      client.query(`DELETE FROM mcp_connections WHERE workspace_id = $1 AND id = $2`, [workspaceId, connection.id]),
     ).rejects.toMatchObject({ code: "23503" });
 
     expect(await skills.remove(agentId, skill.id)).toBe(true);
-    expect(await connections.remove(agentId, connection.id)).toBe(true);
+    expect(await connections.remove(workspaceId, connection.id)).toBe(true);
   });
 
   it("enforces unique skill name per agent", async () => {
     const connection = await connections.create({
-      agentId,
+      workspaceId,
       displayName: "Unique",
       serverUrl: "https://mcp4.example.com",
       authMethod: "access_token",
     });
     await skills.create({
+      workspaceId,
       agentId,
       connectionId: connection.id,
       skillName: "dup_skill",
@@ -223,7 +228,8 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     });
     await expect(
       skills.create({
-        agentId,
+        workspaceId,
+      agentId,
         connectionId: connection.id,
         skillName: "dup_skill",
         toolName: "t",

@@ -82,6 +82,28 @@ describeIfDatabase("staff session repository", () => {
     }
   });
 
+  it("creates staff with no password, and binds one Google account to them", async () => {
+    const staff = await users.create({ email: "sso@example.com", name: "SSO", passwordHash: null, role: "owner" });
+
+    expect(staff).toMatchObject({ passwordHash: null, googleSubject: null });
+    await expect(users.bindGoogleSubject(staff.id, "subject-a")).resolves.toBe(true);
+    await expect(users.bindGoogleSubject(staff.id, "subject-a")).resolves.toBe(true);
+    await expect(users.bindGoogleSubject(staff.id, "subject-b")).resolves.toBe(false);
+    await expect(users.findById(staff.id)).resolves.toMatchObject({ googleSubject: "subject-a" });
+
+    const reset = await users.resetCredentials(staff.id, null);
+    expect(reset).toMatchObject({ passwordHash: null, googleSubject: null, status: "active" });
+  });
+
+  it("releases the bound Google account when a disabled staff member is re-enabled, and only then", async () => {
+    const staff = await users.create({ email: "rebound@example.com", name: "Rebound", passwordHash: null, role: "support_read" });
+    await users.bindGoogleSubject(staff.id, "subject-a");
+
+    await expect(users.setStatus(staff.id, "active")).resolves.toMatchObject({ googleSubject: "subject-a" });
+    await expect(users.setStatus(staff.id, "disabled")).resolves.toMatchObject({ googleSubject: "subject-a" });
+    await expect(users.setStatus(staff.id, "active")).resolves.toMatchObject({ googleSubject: null });
+  });
+
   it("reports when a session was last seen, and touching it moves that forward", async () => {
     const staff = await createStaff("seen@example.com");
     await openSession(staff.id, "seen-token");

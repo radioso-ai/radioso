@@ -173,6 +173,43 @@ A session ends after 30 minutes without a request, or when that lifetime runs
 out, whichever comes first. Sign-in attempts are limited per address and per
 source, using the `AUTH_RATE_LIMIT_*` budget.
 
+### Signing in with Google Workspace
+
+Set a Workspace domain and staff sign in with their Google Workspace accounts, which
+brings your Workspace's two-step verification and offboarding to the console:
+
+```bash
+STAFF_GOOGLE_WORKSPACE_DOMAIN=example.com
+```
+
+This shares the Google client customer sign-in uses (`GOOGLE_LOGIN_CLIENT_ID` and
+`GOOGLE_LOGIN_CLIENT_SECRET`). Add the console's redirect URI to that client before
+you set the domain, because the domain turns password sign-in off the moment the
+backend restarts:
+
+```text
+<APP_BASE_URL>/backend/api/v1/ee/operator-console/auth/google/callback
+```
+
+The staff list still decides who gets in. A sign-in succeeds when Google verified
+the address, Google reports the account as part of that exact Workspace domain, and
+the address matches an active staff identity. Check that every staff identity's
+address is its Workspace address before you switch, since anyone else stops being
+able to sign in. New staff need only an address, a name, and a role.
+
+The first sign-in binds the Google account to the staff identity. If Workspace later
+hands that address to someone else, their sign-in is refused until an owner disables
+and re-enables the identity, which releases the binding. Disabling also ends the
+identity's open sessions.
+
+If sign-in is refused, the page says "That Google account can't sign in here" and a
+`staff.auth.login` audit event records the `reason`: `wrong_workspace`, `not_staff`,
+`disabled`, `email_unverified`, `subject_mismatch`, or a step of the exchange with
+Google. If the domain is set but the Google client or `APP_BASE_URL` is missing, the
+console stays closed, the page says "Staff sign-in isn't configured", and the backend
+logs which input is missing at startup. Removing the domain turns password sign-in
+back on for identities that still have a password.
+
 ### First owner and recovery
 
 A fresh install has no staff identity, and only the `staff:bootstrap` command can
@@ -183,7 +220,10 @@ backend has started and created the staff tables. After the first owner exists,
 owners create further staff through the console.
 
 The password comes from the environment, so it stays out of your shell history
-and the job's arguments. It needs at least 12 characters.
+and the job's arguments. It needs at least 12 characters. With
+`STAFF_GOOGLE_WORKSPACE_DOMAIN` in the command's environment, leave the password out:
+the owner signs in with Google, and a reset also releases the Google account bound
+to them so they can use a replacement.
 
 ```bash
 DATABASE_URL="postgresql://..." \
@@ -220,13 +260,17 @@ described in [Monitoring On Google Cloud](../docs/monitoring-google-cloud.md).
 
 ### Console endpoints
 
-Every endpoint below except `auth/login` needs the staff session cookie, and
-anything else under this path answers `401` without it. Reads allow any role; tier
+Every endpoint below except the sign-in ones (`auth/methods`, `auth/login`, and
+`auth/google/*`) needs the staff session cookie, and anything else under this path
+answers `401` without it. Reads allow any role; tier
 changes need `billing_write`; staff management needs `owner`. Writes must be sent
 as `application/json`, including ones with no body, and answer `415` otherwise.
 
 ```text
+GET    /api/v1/ee/operator-console/auth/methods
 POST   /api/v1/ee/operator-console/auth/login
+GET    /api/v1/ee/operator-console/auth/google/start
+GET    /api/v1/ee/operator-console/auth/google/callback
 POST   /api/v1/ee/operator-console/auth/logout
 GET    /api/v1/ee/operator-console/auth/me
 GET    /api/v1/ee/operator-console/organizations

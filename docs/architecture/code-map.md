@@ -2678,15 +2678,17 @@ Primary paths:
   `ee/packages/operator-console/` — the staff Operator Console: routes in
   `staffConsoleRoutes.ts` (`createStaffConsoleRoutes`, mounted at
   `/api/v1/ee/operator-console`), the directory read in
-  `organizationDirectoryService.ts`, the audited and alertable staff events in
-  `staffSecurityEvents.ts`, the owner bootstrap command in `staffBootstrapCli.ts`
+  `organizationDirectoryService.ts`, how staff sign in on this deployment in `staffWorkspaceSignIn.ts`, the
+  Google round trip in `staffGoogleSignInRoutes.ts`, the audited and alertable
+  staff events in `staffSecurityEvents.ts`, the owner bootstrap command in `staffBootstrapCli.ts`
   (never an HTTP route), and the Next.js pages and API client under
   `operator-console/src`. A route is public only if it sits above the
   `router.use(staffSessionGuard)` line in `staffConsoleRoutes.ts`. Its routes sit outside the OSS OpenAPI document the
   copilot coverage map is keyed on, and Ray serves workspace operators rather
   than staff, so the console carries no copilot descriptor. Focused tests:
   `staffConsoleRoutes.test.ts`, `staffAuthService.test.ts`,
-  `staffBootstrapCommand.test.ts`, `organizationDirectoryService.integration.test.ts`,
+  `staffWorkspaceSignIn.test.ts`, `staffBootstrapCommand.test.ts`,
+  `organizationDirectoryService.integration.test.ts`,
   `operator-console/src/__tests__/`, and `frontend/tests/e2e/operator-console.spec.ts`
   (enterprise edition only).
 - `ee/packages/backend-module/src/conversationSpend/` — model spend per

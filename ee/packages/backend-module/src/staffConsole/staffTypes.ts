@@ -8,7 +8,10 @@ export interface StaffUser {
   id: string;
   email: string;
   name: string;
-  passwordHash: string;
+  /** Null for staff who sign in with Google Workspace. */
+  passwordHash: string | null;
+  /** The Google account (`sub`) bound at first Workspace sign-in. */
+  googleSubject: string | null;
   role: StaffRole;
   status: StaffStatus;
   createdAt: Date;

@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   title: "Staff sign in | Operator Console",
 };
 
-export default function OperatorLoginPage() {
-  return <LoginForm />;
+export default async function OperatorLoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string | string[] }>;
+}) {
+  const { error } = await searchParams;
+  return <LoginForm googleSignInRefused={error === "google_sign_in_failed"} />;
 }

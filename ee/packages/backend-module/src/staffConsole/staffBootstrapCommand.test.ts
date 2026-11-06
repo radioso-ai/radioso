@@ -48,6 +48,19 @@ describe("staff bootstrap command", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  it("needs no password when staff sign in with Workspace, and ignores one if present", async () => {
+    const { exitCode, bootstrapOwner } = await run({
+      env: {
+        DATABASE_URL: "postgresql://db.invalid/radioso",
+        STAFF_GOOGLE_WORKSPACE_DOMAIN: "radioso.example",
+        STAFF_BOOTSTRAP_PASSWORD: "a-long-enough-secret",
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(bootstrapOwner).toHaveBeenCalledWith({ email: "ops@example.com", name: "Ops", password: null });
+  });
+
   it("names the ended sessions when it resets an owner", async () => {
     const { exitCode, out } = await run({
       bootstrapOwner: async () => ({ staff, action: "reset_owner", revokedSessions: 3 }),

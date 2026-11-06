@@ -160,6 +160,7 @@ const installOperatorConsoleMocks = async (
   page: Page,
   role: StaffRole = "owner",
   startingProfile: TierProfile = starterProfile,
+  signInMethods: { password: boolean; google: boolean } = { password: true, google: false },
   spend: ConversationSpendFixture = conversationSpend(),
 ) => {
   const requestLog: string[] = [];
@@ -181,6 +182,10 @@ const installOperatorConsoleMocks = async (
     const path = url.pathname.replace(/^.*\/api\/v1\/ee\/operator-console/, "");
     requestLog.push(`${route.request().method()} ${path}`);
 
+    if (path === "/auth/methods" && route.request().method() === "GET") {
+      await json(route, { methods: signInMethods });
+      return;
+    }
     if (path === "/auth/login" && route.request().method() === "POST") {
       await json(route, { staff: staff[0] });
       return;
@@ -298,6 +303,24 @@ test("staff can sign in and review the organization directory and detail usage",
   await expect(page.getByText("Current: Starter")).toBeVisible();
 });
 
+test("with Workspace sign-in on, staff get Google and no password form", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "owner", starterProfile, { password: false, google: true });
+
+  await page.goto("/operator/login");
+
+  await expect(page.getByRole("link", { name: "Continue with Google" }))
+    .toHaveAttribute("href", "/backend/api/v1/ee/operator-console/auth/google/start");
+  await expect(page.getByLabel("Password")).toHaveCount(0);
+});
+
+test("a refused Google account hears why on the sign-in page", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "owner", starterProfile, { password: false, google: true });
+
+  await page.goto("/operator/login?error=google_sign_in_failed");
+
+  await expect(page.getByText("That Google account can't sign in here.")).toBeVisible();
+});
+
 test("the directory reads the conversation meter for a catalog tier", async ({ page }) => {
   await installOperatorConsoleMocks(page, "billing_write", cometProfile);
 
@@ -403,6 +426,18 @@ test("a session that ended mid-edit sends staff back to sign in", async ({ page 
   await page.getByRole("button", { name: "Create staff" }).click();
 
   await expect(page).toHaveURL(/\/operator\/login/);
+});
+
+test("with Workspace sign-in on, an owner adds staff without a password", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "owner", starterProfile, { password: false, google: true });
+
+  await page.goto("/operator/staff");
+  await page.getByLabel("Email").fill("billing@example.com");
+  await page.getByLabel("Name").fill("Billing");
+  await expect(page.getByLabel("Temporary password")).toHaveCount(0);
+  await page.getByRole("button", { name: "Create staff" }).click();
+
+  await expect(page.getByRole("row").filter({ hasText: "billing@example.com" })).toContainText("Billing");
 });
 
 test("support_read staff sees read-only tier UI and no staff management", async ({ page }) => {

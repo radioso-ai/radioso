@@ -1,4 +1,8 @@
-import type { ConnectorIngestionPort, ConnectorSourceDescriptor } from "@radioso/connector-api";
+import type {
+  ConnectorIngestionPort,
+  ConnectorSourceDescriptor,
+  ConnectorSourceReference,
+} from "@radioso/connector-api";
 
 import type {
   DocumentIngestionPort,
@@ -17,14 +21,20 @@ interface ConnectorDocumentDeletionPort {
   delete(input: { workspaceId: string; documentId: string }): Promise<void>;
 }
 
-const toResolverInput = (source: ConnectorSourceDescriptor) =>
-  ({
-    kind: "connector" as const,
-    externalId: source.externalId,
-    name: source.name,
-    config: source.config,
-    metadata: source.metadata,
-  });
+// A descriptor resolves by upsert, so it registers a missing source; a reference
+// resolves by id, so a source deleted since the connector read it stays deleted.
+const toResolverInput = (
+  source: ConnectorSourceDescriptor | ConnectorSourceReference,
+): DocumentSourceResolverInput =>
+  "externalId" in source
+    ? {
+        kind: "connector" as const,
+        externalId: source.externalId,
+        name: source.name,
+        config: source.config,
+        metadata: source.metadata,
+      }
+    : { id: source.id };
 
 /**
  * Narrow view of the application's HTML-to-text capability. The composition
@@ -67,13 +77,19 @@ export const createConnectorIngestionPort = (deps: {
   },
 
   async deleteByExternalId(input) {
-    const source = await deps.documentIngestionService.resolveSource({
-      workspaceId: input.workspaceId,
-      source: toResolverInput(input.source),
-    });
+    // A deleted source took its documents with it, so a reference to one finds nothing.
+    const sourceId =
+      "externalId" in input.source
+        ? (
+            await deps.documentIngestionService.resolveSource({
+              workspaceId: input.workspaceId,
+              source: toResolverInput(input.source),
+            })
+          ).id
+        : input.source.id;
     const existing = await deps.documentRepository.findBySourceAndExternalDocumentId(
       input.workspaceId,
-      source.id,
+      sourceId,
       input.externalDocumentId,
     );
     if (!existing) {

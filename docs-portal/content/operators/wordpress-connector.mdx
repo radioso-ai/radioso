@@ -135,13 +135,18 @@ The same plugin answers the three `.well-known` paths a visiting AI agent looks 
 
 Some hosts — WordPress.com plans below Business, for example — do not allow plugins. Set **WordPress username** and an **Application password** (generate one at **Users → Profile → Application Passwords**), then set **Polling interval (seconds)** to a non-zero value such as `300`. Radioso polls the REST API on that interval. The two credentials travel together, and polling requires both.
 
-## One site per connector
+## Sites the connector accepts
 
-A workspace WordPress connector accepts one configured site. Companion-plugin webhooks include a signed site URL, and Radioso rejects an event when that URL or the post permalink does not belong to the configured site. Changing the WordPress site URL rotates the generated webhook secret, so copy the new secret into the plugin settings for the new site.
+The connector holds one **WordPress site URL** at a time, and every site it has synced keeps its own source under **Knowledge → Sources**. When you point the connector at a new site, the earlier site's source and documents stay in the workspace, and pushes from that site keep syncing into them.
+
+Each push carries the site's signed home URL, and the post permalink has to sit under that site. Radioso accepts the push when the site is the configured one, or one the workspace connected earlier and still holds a source for, and writes the post into that site's own source — so a page on one site never overwrites a page with the same WordPress post ID on another. A plugin too old to sign its home URL is matched by permalink alone; when one site is installed under a path of another, such as `https://example.org/blog` under `https://example.org`, the deeper site gets the push. A push from a site the workspace never connected gets `403` even when its signature is valid: the shared secret alone never adds a site. **Sync now** and polling read the configured site only; earlier sites stay current through their plugin.
+
+Changing the WordPress site URL rotates the webhook secret. Paste the new secret into the plugin on the new site and on every earlier site you want to keep syncing; a plugin still holding the old secret gets `401`. To stop an earlier site syncing, delete its source under **Knowledge → Sources**. That removes its documents, and its pushes get `403` from then on.
 
 ## Common failure modes
 
 - **Nothing arrives after a save.** Confirm the connector is enabled in Radioso, that the shared secret in WordPress matches exactly, and that the post's type is in **Post types to sync**.
+- **Pushes from a site get `403`.** The site is neither the configured one nor one with a source in the workspace — it was never connected, or its source was deleted. Set it as the **WordPress site URL** to connect it.
 - **A backfill stops advancing.** Check the resync status and activity log for cron, scheduling, or dispatch errors, then use **Run next batch now**. WordPress's **Tools → Site Health** reports loopback and scheduled-event failures behind an overdue or missing batch.
 - **A manual sync fails while pushes work.** The site is blocking Radioso's REST calls. Use **Resync all content** in the plugin instead — it goes out from WordPress.
 - **A date rule skips pages and products.** A rule on `dateFrom` matches them only by the dates their content names. Write it against `published_at` to match on when they went up.

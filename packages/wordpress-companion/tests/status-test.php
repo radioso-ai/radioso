@@ -24,10 +24,10 @@ assert_true($scheduled === false, 'schedule failure is returned');
 assert_true($failed_state['status'] === 'failed', 'schedule failure is persisted');
 assert_true(strpos($failed_state['last_error'], 'hidden') === false, 'schedule error secrets are redacted');
 
-$GLOBALS['next_scheduled'] = false;
+$GLOBALS['wp_cron_db'] = [];
 $health = radioso_resync_cron_health(['status' => 'running', 'batch_started_at' => 0]);
 assert_true($health['level'] === 'error', 'missing cron event is reported');
-$GLOBALS['next_scheduled'] = time() + 30;
+wp_cron_store_event(time() + 30);
 $health = radioso_resync_cron_health(['status' => 'running', 'batch_started_at' => 0]);
 assert_true($health['level'] === 'info', 'future cron event is reported');
 

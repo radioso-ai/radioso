@@ -5,9 +5,17 @@
 define('ABSPATH', __DIR__);
 
 $GLOBALS['wp_actions'] = [];
+// The options table. get_option() reads it directly until a test calls wp_begin_request(),
+// which switches on a per-request object cache like WordPress's: a write another request
+// makes to the table stays invisible to this one until its cached copy is dropped.
 $GLOBALS['wp_options'] = [];
+$GLOBALS['wp_cache'] = null;
+// The 'cron' option (timestamp => hook => key => event). wp_cron_db is the stored copy and
+// wp_cron_cache the copy this request loaded; null reads the stored copy directly.
+$GLOBALS['wp_cron_db'] = [];
+$GLOBALS['wp_cron_cache'] = null;
+// Anything other than true makes wp_schedule_single_event() return it, as a rejecting plugin would.
 $GLOBALS['scheduled_result'] = true;
-$GLOBALS['next_scheduled'] = false;
 $GLOBALS['query_posts'] = [];
 $GLOBALS['wp_cache_deletes'] = [];
 $GLOBALS['before_delete_option'] = null;
@@ -15,6 +23,29 @@ $GLOBALS['before_delete_option'] = null;
 class WPDB_Stub {
     public $options = 'wp_options';
     public $before_delete = null;
+    public $before_query = null;
+
+    public function prepare($sql, ...$args) {
+        return ['sql' => $sql, 'args' => $args];
+    }
+
+    // The lock's INSERT IGNORE and nothing else: one statement, and a row that exists wins.
+    public function query($prepared) {
+        if (is_callable($this->before_query)) {
+            $callback = $this->before_query;
+            $this->before_query = null;
+            $callback();
+        }
+        if (strpos($prepared['sql'], 'INSERT IGNORE INTO') !== 0) {
+            return false;
+        }
+        [$name, $value] = $prepared['args'];
+        if (array_key_exists($name, $GLOBALS['wp_options'])) {
+            return 0;
+        }
+        $GLOBALS['wp_options'][$name] = maybe_unserialize($value);
+        return 1;
+    }
 
     public function delete($table, $where, $format) {
         if (is_callable($this->before_delete)) {
@@ -57,11 +88,41 @@ function sanitize_text_field($value) { return trim(strip_tags((string) $value));
 function wp_strip_all_tags($value) { return strip_tags((string) $value); }
 function sanitize_key($value) { return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string) $value)); }
 function is_wp_error($value) { return $value instanceof WP_Error; }
-function get_option($key, $default = false) { return $GLOBALS['wp_options'][$key] ?? $default; }
-function update_option($key, $value, $autoload = null) { $GLOBALS['wp_options'][$key] = $value; return true; }
-function add_option($key, $value, $deprecated = '', $autoload = true) {
-    if (array_key_exists($key, $GLOBALS['wp_options'])) { return false; }
+
+// ── Options, object cache, cron ─────────────────────────────────────────────
+
+// Starts a request: an empty object cache, and the cron array loaded from storage.
+function wp_begin_request() {
+    $GLOBALS['wp_cache'] = ['options' => []];
+    $GLOBALS['wp_cron_cache'] = $GLOBALS['wp_cron_db'];
+}
+function wp_cache_get($key, $group = '') { return $GLOBALS['wp_cache'][$group][$key] ?? false; }
+function wp_cache_set($key, $value, $group = '', $expire = 0) {
+    if ($GLOBALS['wp_cache'] !== null) { $GLOBALS['wp_cache'][$group][$key] = $value; }
+    return true;
+}
+function wp_cache_delete($key, $group = '') {
+    $GLOBALS['wp_cache_deletes'][] = [$key, $group];
+    unset($GLOBALS['wp_cache'][$group][$key]);
+    return true;
+}
+// Follows WordPress: the object cache first, then the table, remembering a miss in 'notoptions'.
+function get_option($key, $default = false) {
+    if ($GLOBALS['wp_cache'] === null) { return $GLOBALS['wp_options'][$key] ?? $default; }
+    if (array_key_exists($key, $GLOBALS['wp_cache']['options'])) { return $GLOBALS['wp_cache']['options'][$key]; }
+    if (isset($GLOBALS['wp_cache']['options']['notoptions'][$key])) { return $default; }
+    if (array_key_exists($key, $GLOBALS['wp_options'])) {
+        return $GLOBALS['wp_cache']['options'][$key] = $GLOBALS['wp_options'][$key];
+    }
+    $GLOBALS['wp_cache']['options']['notoptions'][$key] = true;
+    return $default;
+}
+function update_option($key, $value, $autoload = null) {
     $GLOBALS['wp_options'][$key] = $value;
+    if ($GLOBALS['wp_cache'] !== null) {
+        $GLOBALS['wp_cache']['options'][$key] = $value;
+        unset($GLOBALS['wp_cache']['options']['notoptions'][$key]);
+    }
     return true;
 }
 function delete_option($key) {
@@ -70,14 +131,67 @@ function delete_option($key) {
         $GLOBALS['before_delete_option'] = null;
         $callback();
     }
-    unset($GLOBALS['wp_options'][$key]);
+    unset($GLOBALS['wp_options'][$key], $GLOBALS['wp_cache']['options'][$key]);
     return true;
 }
 function maybe_serialize($value) { return is_array($value) ? serialize($value) : $value; }
-function wp_cache_delete($key, $group = '') { $GLOBALS['wp_cache_deletes'][] = [$key, $group]; return true; }
-function wp_schedule_single_event($timestamp, $hook, $args = [], $wp_error = false) { return $GLOBALS['scheduled_result']; }
-function wp_clear_scheduled_hook($hook) { $GLOBALS['next_scheduled'] = false; return 1; }
-function wp_next_scheduled($hook) { return $GLOBALS['next_scheduled']; }
+function maybe_unserialize($value) { return is_string($value) && strpos($value, 'a:') === 0 ? unserialize($value) : $value; }
+
+function wp_cron_array() { return $GLOBALS['wp_cron_cache'] ?? $GLOBALS['wp_cron_db']; }
+// WordPress writes the whole array this request holds, replacing what is stored.
+function wp_cron_save($crons) {
+    ksort($crons);
+    $GLOBALS['wp_cron_db'] = $crons;
+    if ($GLOBALS['wp_cron_cache'] !== null) { $GLOBALS['wp_cron_cache'] = $crons; }
+}
+// Adds an event to the stored array, as a request that has already finished would have.
+function wp_cron_store_event($timestamp, $hook = 'radioso_resync_batch') {
+    $crons = $GLOBALS['wp_cron_db'];
+    $crons[$timestamp][$hook][md5(serialize([]))] = ['schedule' => false, 'args' => []];
+    ksort($crons);
+    $GLOBALS['wp_cron_db'] = $crons;
+}
+// Mirrors wp_schedule_single_event(): an identical event within ten minutes is a duplicate,
+// and when scheduling within ten minutes of now every past identical event counts as one.
+function wp_schedule_single_event($timestamp, $hook, $args = [], $wp_error = false) {
+    if ($GLOBALS['scheduled_result'] !== true) { return $GLOBALS['scheduled_result']; }
+    $crons = wp_cron_array();
+    $key = md5(serialize($args));
+    $now = time();
+    $min_timestamp = $timestamp < $now + 600 ? 0 : $timestamp - 600;
+    $max_timestamp = $timestamp < $now ? $now + 600 : $timestamp + 600;
+    foreach ($crons as $at => $hooks) {
+        if ($at < $min_timestamp) { continue; }
+        if ($at > $max_timestamp) { break; }
+        if (isset($hooks[$hook][$key])) {
+            return $wp_error ? new WP_Error('duplicate_event', 'A duplicate event already exists.') : false;
+        }
+    }
+    $crons[$timestamp][$hook][$key] = ['schedule' => false, 'args' => $args];
+    wp_cron_save($crons);
+    return true;
+}
+function wp_next_scheduled($hook, $args = []) {
+    $key = md5(serialize($args));
+    foreach (wp_cron_array() as $at => $hooks) {
+        if (isset($hooks[$hook][$key])) { return $at; }
+    }
+    return false;
+}
+function wp_clear_scheduled_hook($hook, $args = []) {
+    $crons = wp_cron_array();
+    $key = md5(serialize($args));
+    $removed = 0;
+    foreach ($crons as $at => $hooks) {
+        if (!isset($hooks[$hook][$key])) { continue; }
+        unset($crons[$at][$hook][$key]);
+        if (!$crons[$at][$hook]) { unset($crons[$at][$hook]); }
+        if (!$crons[$at]) { unset($crons[$at]); }
+        $removed++;
+    }
+    wp_cron_save($crons);
+    return $removed;
+}
 function wp_date($format, $timestamp) { return gmdate($format, $timestamp); }
 function get_post($id) { if (isset($GLOBALS['posts'][$id])) { return $GLOBALS['posts'][$id]; } return (object) [
     'ID' => $id, 'post_type' => 'post', 'post_status' => 'publish', 'post_name' => 'post-' . $id,
@@ -97,6 +211,9 @@ function get_the_author_meta($field, $id) { return 'Author'; }
 function wp_remote_post($url, $args) {
     $GLOBALS['last_webhook_body'] = $args['body'];
     $GLOBALS['webhook_bodies'][] = $args['body'];
+    if (is_callable($GLOBALS['on_webhook'])) {
+        $GLOBALS['on_webhook'](count($GLOBALS['webhook_bodies']));
+    }
     return ['response' => ['code' => 204]];
 }
 
@@ -109,6 +226,8 @@ $GLOBALS['wc_product_terms']  = [];
 $GLOBALS['posts']             = [];
 $GLOBALS['last_webhook_body'] = null;
 $GLOBALS['webhook_bodies']   = [];
+// Called after each webhook with the number sent so far, to act as another request mid-batch.
+$GLOBALS['on_webhook']       = null;
 $GLOBALS['post_parents']     = [];
 
 function esc_html($value) { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); }

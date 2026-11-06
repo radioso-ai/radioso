@@ -60,14 +60,36 @@ function seed_running_resync($overrides = []) {
     ];
     $GLOBALS['query_posts'] = range(1, RADIOSO_RESYNC_BATCH_SIZE);
     $GLOBALS['webhook_bodies'] = [];
-    $GLOBALS['next_scheduled'] = false;
+    $GLOBALS['wp_cache'] = null;
+    $GLOBALS['wp_cron_db'] = [];
+    $GLOBALS['wp_cron_cache'] = null;
     $GLOBALS['scheduled_result'] = true;
+    $GLOBALS['on_webhook'] = null;
     $GLOBALS['can_manage_options'] = true;
 }
 
-function drive_resync($request = ['nonce' => 'nonce-for-radioso_resync_drive']) {
+// Replaces the stored batch event: false for none, otherwise one at that time.
+function set_cron_event($timestamp) {
+    $GLOBALS['wp_cron_db'] = [];
+    $GLOBALS['wp_cron_cache'] = null;
+    if ($timestamp !== false) {
+        wp_cron_store_event($timestamp);
+    }
+}
+
+// What the next request would find scheduled.
+function stored_cron_event() {
+    wp_begin_request();
+    return wp_next_scheduled('radioso_resync_batch');
+}
+
+// Each call is a request of its own, with a cold object cache, unless $new_request is false.
+function drive_resync($request = ['nonce' => 'nonce-for-radioso_resync_drive'], $new_request = true) {
     $_POST = $request;
     $_REQUEST = $request;
+    if ($new_request) {
+        wp_begin_request();
+    }
     try {
         radioso_resync_drive_ajax();
     } catch (Radioso_Test_Response $response) {
@@ -77,8 +99,13 @@ function drive_resync($request = ['nonce' => 'nonce-for-radioso_resync_drive']) 
     exit(1);
 }
 
+// The stored state, whatever any request's cache holds.
 function resync_state() {
-    return get_option(RADIOSO_OPT_RESYNC_STATE, []);
+    return $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_STATE] ?? [];
+}
+
+function log_messages() {
+    return array_column(resync_state()['activity_log'] ?? [], 'message');
 }
 
 // ── Registration ────────────────────────────────────────────────────────────
@@ -95,7 +122,7 @@ assert_true(
 // ── Access ──────────────────────────────────────────────────────────────────
 
 seed_running_resync();
-$GLOBALS['next_scheduled'] = time() - 600;
+set_cron_event(time() - 600);
 $rejected = drive_resync([]);
 assert_true($rejected['success'] === false && $rejected['status'] === 403, 'a request without a nonce is rejected');
 assert_true(count($GLOBALS['webhook_bodies']) === 0, 'a request without a nonce dispatches nothing');
@@ -114,7 +141,7 @@ assert_true(resync_state()['offset'] === 0, 'a user without manage_options leave
 // ── Overdue: the page runs exactly one batch ────────────────────────────────
 
 seed_running_resync();
-$GLOBALS['next_scheduled'] = time() - 600;
+set_cron_event(time() - 600);
 $ran = drive_resync();
 assert_true($ran['success'] === true, 'an overdue batch is run for an administrator');
 assert_true($ran['data']['outcome'] === 'ran', 'the response says a batch ran');
@@ -128,7 +155,7 @@ assert_true($ran['data']['total'] === 45, 'the response reports the total');
 assert_true($ran['data']['progress'] === 'Resync in progress: 20 / 45 posts', 'the response carries the progress text');
 assert_true(is_int($ran['data']['retry_after']) && $ran['data']['retry_after'] >= 1, 'the response says when to come back');
 assert_true(is_array($ran['data']['health']) && isset($ran['data']['health']['level'], $ran['data']['health']['message']), 'the response carries cron health');
-assert_true(get_option(RADIOSO_OPT_RESYNC_LOCK, false) === false, 'the batch releases its lock');
+assert_true(!array_key_exists(RADIOSO_OPT_RESYNC_LOCK, $GLOBALS['wp_options']), 'the batch releases its lock');
 
 // ── Missing: no event at all ────────────────────────────────────────────────
 
@@ -141,7 +168,7 @@ assert_true(resync_state()['offset'] === 20, 'a missing batch advances the offse
 // ── Healthy cron: the page leaves the batch to WP-Cron ──────────────────────
 
 seed_running_resync();
-$GLOBALS['next_scheduled'] = time() + 30;
+set_cron_event(time() + 30);
 $waiting = drive_resync();
 assert_true($waiting['success'] === true, 'a scheduled batch is not an error');
 assert_true($waiting['data']['outcome'] === 'waiting', 'a batch scheduled in the future is left to WP-Cron');
@@ -150,7 +177,7 @@ assert_true(resync_state()['offset'] === 0, 'a batch scheduled in the future lea
 assert_true($waiting['data']['health']['level'] === 'info', 'a healthy schedule reports info');
 
 // A batch that is late by seconds is still within cron's normal jitter.
-$GLOBALS['next_scheduled'] = time() - 20;
+set_cron_event(time() - 20);
 $waiting = drive_resync();
 assert_true($waiting['data']['outcome'] === 'waiting', 'a batch a few seconds late is not yet overdue');
 assert_true(count($GLOBALS['webhook_bodies']) === 0, 'a batch a few seconds late is not run by the page');
@@ -158,7 +185,7 @@ assert_true(count($GLOBALS['webhook_bodies']) === 0, 'a batch a few seconds late
 // ── Takeover: once the page has stepped in, it does not wait a minute per batch ──
 
 seed_running_resync();
-$GLOBALS['next_scheduled'] = time() + 4;
+set_cron_event(time() + 4);
 $waiting = drive_resync(['nonce' => 'nonce-for-radioso_resync_drive', 'takeover' => '1']);
 assert_true($waiting['data']['outcome'] === 'waiting', 'a taking-over page still waits for the scheduled time');
 assert_true(count($GLOBALS['webhook_bodies']) === 0, 'a taking-over page does not run a batch before it is due');
@@ -167,7 +194,7 @@ assert_true(
     'a taking-over page is told to come back when the batch is due'
 );
 
-$GLOBALS['next_scheduled'] = time() - 5;
+set_cron_event(time() - 5);
 $ran = drive_resync(['nonce' => 'nonce-for-radioso_resync_drive', 'takeover' => '1']);
 assert_true($ran['data']['outcome'] === 'ran', 'a taking-over page runs a batch as soon as it is due');
 assert_true(count($GLOBALS['webhook_bodies']) === RADIOSO_RESYNC_BATCH_SIZE, 'a taking-over page runs one batch');
@@ -175,22 +202,102 @@ assert_true(count($GLOBALS['webhook_bodies']) === RADIOSO_RESYNC_BATCH_SIZE, 'a 
 // ── Another batch holds the lock: back off ──────────────────────────────────
 
 seed_running_resync();
-$GLOBALS['next_scheduled'] = time() - 600;
-$held = radioso_resync_acquire_lock();
+set_cron_event(time() - 600);
+$GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_LOCK] = ['token' => 'other-run', 'acquired_at' => time()];
 $busy = drive_resync();
 assert_true($busy['success'] === true, 'a held lock is not an error');
 assert_true($busy['data']['outcome'] === 'busy', 'a held lock is reported as busy');
 assert_true(count($GLOBALS['webhook_bodies']) === 0, 'nothing is dispatched while another batch holds the lock');
 assert_true(resync_state()['offset'] === 0, 'a busy response leaves the offset alone');
 assert_true($busy['data']['retry_after'] >= 1, 'a busy response says when to poll again');
-assert_true(radioso_resync_owns_lock($held), 'the page does not take the lock from the batch that holds it');
-radioso_resync_release_lock($held);
+assert_true(
+    $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_LOCK]['token'] === 'other-run',
+    'the page does not take the lock from the batch that holds it'
+);
+
+// Another request can take the lock after this one has decided to run and before it inserts the
+// lock. The insert is one statement, so that request's lock stands.
+seed_running_resync();
+set_cron_event(time() - 600);
+$GLOBALS['wpdb']->before_query = function () {
+    $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_LOCK] = ['token' => 'other-run', 'acquired_at' => time()];
+};
+$raced = drive_resync();
+assert_true($raced['data']['outcome'] === 'busy', 'a lock taken just before the insert makes the page back off');
+assert_true(count($GLOBALS['webhook_bodies']) === 0, 'the page dispatches nothing when it loses the lock race');
+assert_true(
+    $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_LOCK]['token'] === 'other-run',
+    'a lock taken just before the insert is not overwritten'
+);
+
+// ── The page claims the schedule it runs against ────────────────────────────
+
+// Cron is blocked: the overdue event is never consumed. WordPress counts any past identical
+// event as a duplicate of one scheduled soon, so the batch has to clear it before the
+// checkpoint, or it schedules nothing and logs a schedule it never wrote.
+seed_running_resync();
+set_cron_event(time() - 600);
+drive_resync();
+$next_event = stored_cron_event();
+assert_true($next_event !== false && $next_event > time(), 'a page-run batch leaves a fresh event ahead of now');
+assert_true(resync_state()['next_run_at'] === $next_event, 'the state records the event the batch scheduled');
+assert_true(
+    !in_array('A background batch was already scheduled.', log_messages(), true),
+    'a page-run batch does not log a schedule it never wrote'
+);
+
+// Cron is slow, not blocked: a cron run consumes the overdue event after this request loaded
+// the cron array and before its checkpoint. The batch must not trust the event it still sees.
+seed_running_resync();
+set_cron_event(time() - 600);
+wp_begin_request();
+$GLOBALS['wp_cron_db'] = [];
+$ran = drive_resync(['nonce' => 'nonce-for-radioso_resync_drive'], false);
+assert_true($ran['data']['outcome'] === 'ran', 'a batch the page started on a stale cron array still runs');
+assert_true(stored_cron_event() !== false, 'a batch whose event cron consumed still leaves the next one scheduled');
+
+// ── A cancel or a lost lock during a batch is honoured ──────────────────────
+
+// Cancel, from another request, while the page's batch is dispatching. This request cached the
+// state when it wrote its start checkpoint; only a fresh read sees the cancel.
+seed_running_resync();
+set_cron_event(time() - 600);
+$GLOBALS['on_webhook'] = function ($sent) {
+    if ($sent === 5) {
+        $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_STATE]['status'] = 'cancelled';
+        $GLOBALS['wp_cron_db'] = [];
+    }
+};
+$cancelled = drive_resync();
+$GLOBALS['on_webhook'] = null;
+assert_true(resync_state()['status'] === 'cancelled', 'a cancel that lands mid-batch is not written back to running');
+assert_true($cancelled['data']['status'] === 'cancelled', 'the response reports the cancel');
+assert_true(stored_cron_event() === false, 'a cancelled batch schedules no next batch');
+assert_true(resync_state()['offset'] === 0, 'a cancelled batch records no checkpoint');
+assert_true(!array_key_exists(RADIOSO_OPT_RESYNC_LOCK, $GLOBALS['wp_options']), 'a cancelled batch releases its lock');
+
+// Another request replaces this batch's lock (it looked stalled) while the batch is dispatching.
+seed_running_resync();
+set_cron_event(time() - 600);
+$GLOBALS['on_webhook'] = function ($sent) {
+    if ($sent === 3) {
+        $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_LOCK] = ['token' => 'other-run', 'acquired_at' => time()];
+    }
+};
+drive_resync();
+$GLOBALS['on_webhook'] = null;
+assert_true(count($GLOBALS['webhook_bodies']) === 3, 'a batch that lost its lock stops dispatching');
+assert_true(resync_state()['offset'] === 0, 'a batch that lost its lock records no checkpoint');
+assert_true(
+    $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_LOCK]['token'] === 'other-run',
+    'a batch that lost its lock leaves the new holder\'s lock alone'
+);
 
 // ── Completion ──────────────────────────────────────────────────────────────
 
 seed_running_resync(['total' => 3, 'processed' => 0]);
 $GLOBALS['query_posts'] = [1, 2, 3];
-$GLOBALS['next_scheduled'] = time() - 600;
+set_cron_event(time() - 600);
 $finished = drive_resync();
 assert_true($finished['data']['outcome'] === 'ran', 'the last batch runs');
 assert_true($finished['data']['status'] === 'complete', 'the response reports completion');
@@ -208,7 +315,7 @@ assert_true(count($GLOBALS['webhook_bodies']) === 0, 'a finished resync dispatch
 
 foreach (['cancelled', 'failed', 'complete_with_errors'] as $terminal) {
     seed_running_resync(['status' => $terminal, 'last_error' => 'The batch stopped.']);
-    $GLOBALS['next_scheduled'] = time() - 600;
+    set_cron_event(time() - 600);
     $idle = drive_resync();
     assert_true($idle['data']['outcome'] === 'idle', "a {$terminal} resync is not driven");
     assert_true($idle['data']['status'] === $terminal, "a {$terminal} resync reports its status");
@@ -218,7 +325,7 @@ foreach (['cancelled', 'failed', 'complete_with_errors'] as $terminal) {
 
 // A batch that began long ago and never saved a checkpoint needs an administrator, not a retry loop.
 seed_running_resync(['batch_started_at' => time() - RADIOSO_RESYNC_STALL_AFTER - 10]);
-$GLOBALS['next_scheduled'] = time() - 600;
+set_cron_event(time() - 600);
 $stalled = drive_resync();
 assert_true($stalled['data']['outcome'] === 'stalled', 'a stalled batch is not retried by the page');
 assert_true($stalled['data']['health']['level'] === 'error', 'a stalled batch reports an error');
@@ -226,7 +333,7 @@ assert_true(count($GLOBALS['webhook_bodies']) === 0, 'a stalled batch dispatches
 
 // A batch someone else is mid-way through is left to finish.
 seed_running_resync(['batch_started_at' => time() - 10]);
-$GLOBALS['next_scheduled'] = time() - 600;
+set_cron_event(time() - 600);
 $running = drive_resync();
 assert_true($running['data']['outcome'] === 'busy', 'a batch in flight elsewhere is not doubled');
 assert_true(count($GLOBALS['webhook_bodies']) === 0, 'a batch in flight elsewhere dispatches nothing from the page');
@@ -234,7 +341,7 @@ assert_true(count($GLOBALS['webhook_bodies']) === 0, 'a batch in flight elsewher
 // ── Health messages tell the operator the page carries on ───────────────────
 
 foreach ([['No background batch', false], ['overdue', time() - 600]] as [$needle, $scheduled]) {
-    $GLOBALS['next_scheduled'] = $scheduled;
+    set_cron_event($scheduled);
     $health = radioso_resync_cron_health(['status' => 'running', 'batch_started_at' => 0]);
     assert_true(strpos($health['message'], $needle) !== false, "the {$needle} message names the problem");
     assert_true(
@@ -256,15 +363,24 @@ assert_true(strpos($markup, 'nonce-for-radioso_resync_drive') !== false, 'the sc
 assert_true(strpos($markup, 'https://example.com/wp-admin/admin-ajax.php') !== false, 'the script posts to admin-ajax');
 assert_true(strpos($markup, 'radioso_resync_drive') !== false, 'the script names the action');
 
+$GLOBALS['wp_cache'] = null;
 $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_STATE] = ['status' => 'running', 'total' => 45, 'processed' => 20];
-$GLOBALS['next_scheduled'] = false;
+set_cron_event(false);
 ob_start();
 radioso_render_resync_section();
 $section = ob_get_clean();
 assert_true(strpos($section, 'Resync in progress: 20 / 45 posts') !== false, 'a running resync shows its progress');
 assert_true(strpos($section, 'id="radioso-resync-progress"') !== false, 'the progress text is addressable by the script');
 assert_true(strpos($section, 'admin-ajax.php') !== false, 'a running resync loads the driving script');
-assert_true(strpos($section, 'Run next batch now') !== false, 'the manual button stays for browsers without scripts');
+assert_true(strpos($section, 'Run next batch now') !== false, 'the manual button is there when cron is missing');
+
+// The page's stop message points at the button, so a healthy schedule shows it too.
+set_cron_event(time() + 30);
+ob_start();
+radioso_render_resync_section();
+$section = ob_get_clean();
+assert_true(strpos($section, 'notice-info') !== false, 'a scheduled batch reports info health');
+assert_true(strpos($section, 'Run next batch now') !== false, 'the manual button is there while cron looks healthy');
 
 $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_STATE] = ['status' => 'complete', 'total' => 45, 'processed' => 45];
 ob_start();

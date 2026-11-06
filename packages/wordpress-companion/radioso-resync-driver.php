@@ -57,7 +57,7 @@ function radioso_resync_drive_outcome($takeover) {
     if ($health['phase'] === 'stalled') {
         return 'stalled';
     }
-    if ($health['phase'] === 'running' || radioso_resync_lock_is_active()) {
+    if ($health['phase'] === 'running') {
         return 'busy';
     }
     if (!radioso_resync_batch_is_due($health, $takeover)) {

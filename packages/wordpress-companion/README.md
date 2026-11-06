@@ -196,10 +196,14 @@ request or a batch stalls. A site whose cron loopback is blocked finishes the
 resync with the page open.
 
 Each batch is one request to the `radioso_resync_drive` admin-ajax action. The
-action needs the settings page's nonce and the `manage_options` capability, and
-it runs the batch under the same lock WP-Cron uses, so the two never overlap. It
-leaves a batch to WP-Cron until that batch is a minute overdue, so a site
-with working cron sees no change.
+action needs the settings page's nonce and the `manage_options` capability. A
+batch takes the lock with a single `INSERT IGNORE`, so when the page and WP-Cron
+reach for it together exactly one of them runs, and the other finds the lock
+taken and does nothing. The batch that holds the lock replaces any event still
+scheduled with its own next one. It checks before every post that the lock is
+still its own, and before its checkpoint that the resync has not been
+cancelled, so a Cancel clicked mid-batch stops the run. The action leaves a batch to WP-Cron until that batch is a minute
+overdue, so a site with working cron sees no change.
 
 Close the page and the run waits for WP-Cron again. A resync that has to finish
 unattended needs `wp-cron.php` reachable from the server itself, or a server
@@ -208,9 +212,9 @@ scheduled-event failures.
 
 ### Controls
 
-**Run next batch now** executes one batch from the settings page when the page
-cannot do it for you, for example in a browser with scripts turned off, or after
-a batch stalls or fails. Use **Cancel resync** to stop an in-progress run. It is
+**Run next batch now** sits on the settings page whenever a resync is running.
+It executes one batch when the page cannot do it for you, for example in a
+browser with scripts turned off, or after a batch stalls or fails. Use **Cancel resync** to stop an in-progress run. It is
 safe to run again because Radioso upserts content by WordPress post identity.
 
 The activity log can confirm that WordPress started a non-blocking webhook

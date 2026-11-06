@@ -142,13 +142,42 @@ export interface ConnectorPublicHttpPort {
  *
  * `externalId` is the connector-scoped identity of the channel (e.g.
  * `"wordpress:https://example.com"`); it scopes the upsert key alongside the
- * workspace, so the connector owns the namespace.
+ * workspace, so the connector owns the namespace. Start it with
+ * `<connectorId>:`: `ConnectorSourcesPort` lists a connector's sources by that
+ * prefix.
  */
 export interface ConnectorSourceDescriptor {
   externalId: string;
   name: string;
   config?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * A source the host already holds, named by its id. Writing through a
+ * reference never creates a source: a reference to one that has since been
+ * deleted writes nothing.
+ */
+export interface ConnectorSourceReference {
+  id: string;
+}
+
+/** A source the host already holds for a connector channel, with the host's id for it. */
+export interface ConnectorRegisteredSource {
+  id: string;
+  source: ConnectorSourceDescriptor;
+}
+
+/** The document sources a connector has registered, as the host binds them to that connector. */
+export interface ConnectorSourcesPort {
+  /**
+   * The workspace's sources whose `externalId` starts with this connector's
+   * `<connectorId>:` prefix, oldest first. Read-only: a connector uses it to
+   * check an upstream channel against the ones already registered before it
+   * writes on that channel's behalf.
+   */
+  // Message-queue impact: synchronous host read only; no AMQP or worker payload changes.
+  listSources(workspaceId: string): Promise<ConnectorRegisteredSource[]>;
 }
 
 /**
@@ -196,19 +225,24 @@ export interface ConnectorIngestionPort {
      * one of them must reach the chunks.
      */
     indexedFields?: Record<string, ConnectorIndexedFieldValue>;
-    source?: ConnectorSourceDescriptor;
+    /**
+     * A descriptor registers the source when it is missing. A reference writes
+     * only into a source that still exists and rejects otherwise.
+     */
+    source?: ConnectorSourceDescriptor | ConnectorSourceReference;
   }): Promise<{ documentId: string; status: string }>;
 
   /**
    * Delete the document keyed by
    * (workspaceId, source, externalDocumentId), if any.
    * Returns true when a document was found and deleted, false when no document
-   * matched. Idempotent — safe to call for unknown external ids.
+   * matched — including a reference to a source that no longer exists.
+   * Idempotent — safe to call for unknown external ids.
    */
   deleteByExternalId(input: {
     workspaceId: string;
     externalDocumentId: string;
-    source: ConnectorSourceDescriptor;
+    source: ConnectorSourceDescriptor | ConnectorSourceReference;
   }): Promise<boolean>;
 
   /**
@@ -230,6 +264,8 @@ export interface ConnectorContext {
   http: ConnectorHttpHost;
   publicHttp: ConnectorPublicHttpPort;
   ingestion: ConnectorIngestionPort;
+  /** Bound to this connector's own `<connectorId>:` sources. */
+  sources: ConnectorSourcesPort;
 }
 
 /**
@@ -275,6 +311,8 @@ export interface ConnectorPlugin {
   /**
    * Optional: declare which config field must be globally unique across workspaces.
    * Used by ConnectorRegistry to enforce FR-012 (e.g. one phone_number_id per workspace).
+   * The check compares the field's current value only, not channels a connector still
+   * accepts through sources a workspace registered earlier.
    * Return null if no uniqueness constraint applies.
    */
   uniqueChannelField(): string | null;
@@ -282,8 +320,10 @@ export interface ConnectorPlugin {
   /**
    * Optional policy for connectors whose generated credentials authenticate a
    * unique upstream channel. When true, changing the unique channel field
-   * rotates every generated_secret so the previous channel can no longer send
-   * authenticated events.
+   * rotates every generated_secret, so the copy a previous channel holds stops
+   * authenticating its events. A connector that keeps accepting an earlier
+   * channel (WordPress accepts every site the workspace still holds a source
+   * for) needs the new secret on that channel as well.
    */
   rotateGeneratedSecretsOnUniqueChannelChange?(): boolean;
 

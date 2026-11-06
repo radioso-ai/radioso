@@ -4,7 +4,7 @@
  * Description: Pushes published, updated, and deleted content of any post type
  *              — including WooCommerce products — to a Radioso workspace via
  *              signed webhook (HMAC-SHA256).
- * Version:     0.6.0
+ * Version:     0.7.0
  * Requires at least: 5.7
  * Author:      Radioso
  * License:     MIT
@@ -23,6 +23,9 @@ if (!defined('ABSPATH')) {
 // Agent discovery: the site-level `.well-known` paths a visiting AI agent looks for.
 // Its own file, its own settings screen; this one syncs content and nothing else.
 require_once __DIR__ . '/radioso-agent-card.php';
+
+// Resync from the open settings page: carries a bulk resync forward when WP-Cron cannot fire.
+require_once __DIR__ . '/radioso-resync-driver.php';
 
 const RADIOSO_OPT_WEBHOOK_URL     = 'radioso_sync_webhook_url';
 const RADIOSO_OPT_SHARED_SECRET   = 'radioso_sync_shared_secret';
@@ -330,15 +333,52 @@ function radioso_resync_delete_lock_if_unchanged($lock) {
     return true;
 }
 
+/**
+ * Reads an option past this request's object cache. A write another request makes (a Cancel,
+ * a takeover of a stalled lock) reaches the table, not the copy this request already holds,
+ * so a check that has to see it drops the cached copy first.
+ */
+function radioso_resync_read_fresh($option) {
+    wp_cache_delete($option, 'options');
+    return get_option($option, []);
+}
+
+/**
+ * Takes the lock if no row holds it. One statement, so of two requests racing for a free lock
+ * exactly one inserts it. add_option() checks first and then writes over whatever is there,
+ * which lets a lock taken in between be replaced.
+ */
+function radioso_resync_insert_lock($lock) {
+    global $wpdb;
+
+    $inserted = $wpdb->query($wpdb->prepare(
+        "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
+        RADIOSO_OPT_RESYNC_LOCK,
+        maybe_serialize($lock)
+    ));
+    if ($inserted !== 1) {
+        return false;
+    }
+
+    // The insert went around the object cache, which may remember the lock as absent.
+    wp_cache_delete(RADIOSO_OPT_RESYNC_LOCK, 'options');
+    $not_options = wp_cache_get('notoptions', 'options');
+    if (is_array($not_options) && isset($not_options[RADIOSO_OPT_RESYNC_LOCK])) {
+        unset($not_options[RADIOSO_OPT_RESYNC_LOCK]);
+        wp_cache_set('notoptions', $not_options, 'options');
+    }
+    return true;
+}
+
 function radioso_resync_acquire_lock() {
     $now = time();
     $token = uniqid('radioso_resync_', true);
     $lock = ['token' => $token, 'acquired_at' => $now];
-    if (add_option(RADIOSO_OPT_RESYNC_LOCK, $lock, '', false)) {
+    if (radioso_resync_insert_lock($lock)) {
         return $token;
     }
 
-    $existing = get_option(RADIOSO_OPT_RESYNC_LOCK, []);
+    $existing = radioso_resync_read_fresh(RADIOSO_OPT_RESYNC_LOCK);
     $acquired_at = is_array($existing) && isset($existing['acquired_at'])
         ? (int) $existing['acquired_at']
         : 0;
@@ -349,7 +389,7 @@ function radioso_resync_acquire_lock() {
     if (!radioso_resync_delete_lock_if_unchanged($existing)) {
         return false;
     }
-    return add_option(RADIOSO_OPT_RESYNC_LOCK, $lock, '', false) ? $token : false;
+    return radioso_resync_insert_lock($lock) ? $token : false;
 }
 
 function radioso_resync_release_lock($token) {
@@ -366,7 +406,7 @@ function radioso_resync_owns_lock($token) {
     if (!$token) {
         return false;
     }
-    $existing = get_option(RADIOSO_OPT_RESYNC_LOCK, []);
+    $existing = radioso_resync_read_fresh(RADIOSO_OPT_RESYNC_LOCK);
     return is_array($existing) && isset($existing['token']) && $existing['token'] === $token;
 }
 
@@ -502,7 +542,7 @@ function radioso_resync_capture_fatal() {
         return;
     }
 
-    $state = get_option(RADIOSO_OPT_RESYNC_STATE, []);
+    $state = radioso_resync_read_fresh(RADIOSO_OPT_RESYNC_STATE);
     if (!is_array($state) || !isset($state['status']) || $state['status'] !== 'running') {
         radioso_resync_finish_batch_request();
         return;
@@ -534,13 +574,18 @@ function radioso_run_resync_batch($manual = false) {
     }
     $GLOBALS['radioso_resync_batch_lock_token'] = $lock_token;
 
-    $state = get_option(RADIOSO_OPT_RESYNC_STATE, []);
+    // Another request may have changed the state (a Cancel) since this one first read it.
+    $state = radioso_resync_read_fresh(RADIOSO_OPT_RESYNC_STATE);
     if (!is_array($state) || !isset($state['status']) || !in_array($state['status'], $allowed_statuses, true)) {
         radioso_resync_finish_batch_request();
         return false;
     }
+    // Holding the lock makes this batch the owner of the schedule, whoever started it. Whatever
+    // event is still stored (cron unschedules its own before running it; a button or the
+    // settings page does not) would count as a duplicate of the one the checkpoint writes, and
+    // the next batch would be left unscheduled.
+    wp_clear_scheduled_hook('radioso_resync_batch');
     if ($manual) {
-        wp_clear_scheduled_hook('radioso_resync_batch');
         $state['status'] = 'running';
         $state['next_run_at'] = 0;
         $state['last_error'] = '';
@@ -615,7 +660,7 @@ function radioso_run_resync_batch($manual = false) {
 
     // A cancellation that happened while this batch was dispatching must not
     // allow this handler to schedule another batch.
-    $current_state = get_option(RADIOSO_OPT_RESYNC_STATE, []);
+    $current_state = radioso_resync_read_fresh(RADIOSO_OPT_RESYNC_STATE);
     $current_run_id = is_array($current_state) && isset($current_state['run_id'])
         ? (string) $current_state['run_id']
         : '';
@@ -1344,11 +1389,13 @@ function radioso_resync_cron_health($state) {
     if ($batch_started_at > 0) {
         if (($now - $batch_started_at) >= RADIOSO_RESYNC_STALL_AFTER) {
             return [
+                'phase' => 'stalled',
                 'level' => 'error',
                 'message' => 'The current batch has not saved a checkpoint for at least five minutes. It may have timed out or stopped with a PHP error.',
             ];
         }
         return [
+            'phase' => 'running',
             'level' => 'info',
             'message' => 'A batch is currently running. Refresh this page after it finishes.',
         ];
@@ -1357,21 +1404,26 @@ function radioso_resync_cron_health($state) {
     $next_run_at = wp_next_scheduled('radioso_resync_batch');
     if ($next_run_at === false) {
         return [
+            'phase' => 'missing',
             'level' => 'error',
             'message' => $traffic_cron_disabled
-                ? 'No background batch is scheduled, and traffic-triggered WP-Cron is disabled. Confirm that a server cron calls wp-cron.php, or use “Run next batch now”.'
-                : 'No background batch is scheduled. WP-Cron may have rejected or lost the event; use “Run next batch now” to continue and diagnose it.',
+                ? 'No background batch is scheduled, and traffic-triggered WP-Cron is disabled. This page continues the resync while it stays open. For unattended runs, confirm that a server cron calls wp-cron.php.'
+                : 'No background batch is scheduled. WP-Cron may have rejected or lost the event. This page continues the resync while it stays open. For unattended runs, check Site Health or call wp-cron.php from a server cron.',
         ];
     }
     if ($next_run_at < ($now - 60)) {
         return [
+            'phase' => 'overdue',
+            'next_run_at' => (int) $next_run_at,
             'level' => 'warning',
-            'message' => 'The next batch is overdue. WordPress is not spawning WP-Cron reliably; use “Run next batch now” or check Site Health.',
+            'message' => 'The next batch is overdue because WordPress is not spawning WP-Cron reliably. This page continues the resync while it stays open. For unattended runs, check Site Health or call wp-cron.php from a server cron.',
         ];
     }
 
     if ($traffic_cron_disabled) {
         return [
+            'phase' => 'scheduled',
+            'next_run_at' => (int) $next_run_at,
             'level' => 'warning',
             'message' => sprintf(
                 'The next batch is scheduled for %s. Traffic-triggered WP-Cron is disabled, so a server cron must call wp-cron.php.',
@@ -1381,6 +1433,8 @@ function radioso_resync_cron_health($state) {
     }
 
     return [
+        'phase' => 'scheduled',
+        'next_run_at' => (int) $next_run_at,
         'level' => 'info',
         'message' => sprintf('The next batch is scheduled for %s.', wp_date('Y-m-d H:i:s T', $next_run_at)),
     ];
@@ -1434,7 +1488,6 @@ function radioso_render_resync_section() {
     }
     $status = isset($state['status']) ? $state['status'] : 'idle';
     $total = isset($state['total']) ? (int) $state['total'] : 0;
-    $processed = isset($state['processed']) ? (int) $state['processed'] : 0;
     $dispatch_errors = isset($state['dispatch_errors']) ? (int) $state['dispatch_errors'] : 0;
     $is_configured = (bool) get_option(RADIOSO_OPT_WEBHOOK_URL) && (bool) get_option(RADIOSO_OPT_SHARED_SECRET);
     $cron_health = radioso_resync_cron_health($state);
@@ -1443,14 +1496,13 @@ function radioso_render_resync_section() {
     <h2>Resync all content</h2>
     <p>Push all existing published content of the configured post types to Radioso in the background, in batches. It is safe to run again.</p>
     <?php if ($status === 'running') : ?>
-        <p><strong><?php echo esc_html(sprintf('Resync in progress: %d / %d posts', $processed, $total)); ?></strong> <a href="<?php echo esc_url(admin_url('options-general.php?page=radioso-sync')); ?>">Refresh</a></p>
+        <p><strong id="radioso-resync-progress"><?php echo esc_html(radioso_resync_progress_text($state)); ?></strong> <a href="<?php echo esc_url(admin_url('options-general.php?page=radioso-sync')); ?>">Refresh</a></p>
         <?php if ($cron_health) : ?>
             <?php $health_class = $cron_health['level'] === 'error' ? 'notice-error' : ($cron_health['level'] === 'warning' ? 'notice-warning' : 'notice-info'); ?>
-            <div class="notice <?php echo esc_attr($health_class); ?> inline"><p><?php echo esc_html($cron_health['message']); ?></p></div>
+            <div id="radioso-resync-health" class="notice <?php echo esc_attr($health_class); ?> inline"><p><?php echo esc_html($cron_health['message']); ?></p></div>
         <?php endif; ?>
-        <?php if ($cron_health && $cron_health['level'] !== 'info') : ?>
-            <?php radioso_render_run_now_form(); ?>
-        <?php endif; ?>
+        <?php radioso_render_resync_driver(); ?>
+        <?php radioso_render_run_now_form(); ?>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <input type="hidden" name="action" value="radioso_resync_cancel" />
             <?php wp_nonce_field('radioso_resync_cancel'); ?>

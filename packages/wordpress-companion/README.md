@@ -15,7 +15,7 @@ Pairs with the `wordpress` connector in the Radioso backend
 2. Zip the contents of this directory:
    ```
    cd packages/wordpress-companion
-   zip -r radioso-sync.zip radioso-sync.php README.md
+   zip -r radioso-sync.zip *.php README.md
    ```
 3. In WordPress: Plugins → Add New → Upload Plugin → choose `radioso-sync.zip`
    → Install Now → Activate.
@@ -175,26 +175,59 @@ published post and page of the configured post types. The plugin sends each
 item through the outbound signed webhook, so this works when the WordPress site
 is behind Cloudflare or its REST API is blocked.
 
-The resync runs in background batches, avoiding a timeout on large sites. It
-advances as WordPress WP-Cron ticks, which normally happens with site traffic.
-The settings page shows whether the next batch is scheduled, running, overdue,
-or missing. It also keeps the latest 20 WordPress-side activity entries,
-including schedule failures, batch checkpoints, immediate webhook-start
-errors, and PHP fatal errors.
+The resync runs in background batches of 20 posts, avoiding a timeout on large
+sites. Batches normally advance as WordPress WP-Cron ticks, which happens with
+site traffic. The settings page shows whether the next batch is scheduled,
+running, overdue, or missing. It also keeps the latest 20 WordPress-side
+activity entries, including schedule failures, batch checkpoints, immediate
+webhook-start errors, and PHP fatal errors.
 
-If WP-Cron is disabled or a batch is missing, overdue, stalled, or failed, use
-**Run next batch now** to execute one batch from the settings page. Use
-**Cancel resync** to stop an in-progress run. It is safe to run again because
-Radioso upserts content by WordPress post identity.
+### When WP-Cron cannot fire
+
+WP-Cron runs a batch by having WordPress request its own `wp-cron.php`. A site
+behind a bot-protection rule or an authentication wall can answer that request
+with a challenge, so the event never runs and the resync does not advance.
+
+While the settings page is open, it carries the run. When the next batch is
+overdue or missing, the page runs one batch, then the next, and keeps going
+until the resync completes or you cancel it. The progress line updates after
+every batch, and the page shows a message and stops if WordPress rejects a
+request or a batch stalls. A site whose cron loopback is blocked finishes the
+resync with the page open.
+
+Each batch is one request to the `radioso_resync_drive` admin-ajax action. The
+action needs the settings page's nonce and the `manage_options` capability. A
+batch takes the lock with a single `INSERT IGNORE`, so when the page and WP-Cron
+reach for it together exactly one of them runs, and the other finds the lock
+taken and does nothing. The batch that holds the lock replaces any event still
+scheduled with its own next one. It checks before every post that the lock is
+still its own, and before its checkpoint that the resync has not been
+cancelled, so a Cancel clicked mid-batch stops the run. The action leaves a batch to WP-Cron until that batch is a minute
+overdue, so a site with working cron sees no change.
+
+Close the page and the run waits for WP-Cron again. A resync that has to finish
+unattended needs `wp-cron.php` reachable from the server itself, or a server
+cron that calls it. **Tools → Site Health** reports loopback and
+scheduled-event failures.
+
+### Controls
+
+**Run next batch now** sits on the settings page whenever a resync is running.
+It executes one batch when the page cannot do it for you, for example in a
+browser with scripts turned off, or after a batch stalls or fails. Use **Cancel resync** to stop an in-progress run. It is
+safe to run again because Radioso upserts content by WordPress post identity.
 
 The activity log can confirm that WordPress started a non-blocking webhook
 request. It cannot confirm that Radioso accepted or ingested the post; check
 the Radioso document list or backend logs for that receiver-side result.
 
-One workspace WordPress connector accepts one site. The signed payload includes
-the site's public URL, and Radioso rejects events whose site or post permalink
-does not match the configured WordPress site. Changing the site URL in Radioso
-rotates the shared secret, so update the plugin settings with the new secret.
+The signed payload includes the site's public URL, and the post permalink has to
+sit under it. Radioso accepts the push when that site is the one configured in
+the connector, or one the workspace connected earlier and still holds a source
+for, and writes the post into that site's own source. A site the workspace never
+connected is rejected with `403`, whatever its signature. Changing the site URL
+in Radioso rotates the shared secret, so paste the new secret into the plugin on
+the new site and on every earlier site that should keep syncing.
 
 ## Polling fallback
 
@@ -264,9 +297,10 @@ id resolving, so paste the new one here after a rotation.
 
 ## Tests
 
-The plugin includes standalone PHP scripts that exercise its sync status and
-agent-card behavior without a WordPress installation. Run every script with
-the PHP 8.3 CLI container:
+The plugin includes standalone PHP scripts that exercise its sync status,
+resync driver, and agent-card behavior without a WordPress installation. They
+share the WordPress and WooCommerce stand-ins in `tests/support/`. Run every
+script with the PHP 8.3 CLI container:
 
 ```bash
 for test_file in tests/*-test.php; do

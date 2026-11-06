@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-10-11
+last_updated: 2026-11-07
 ---
 
 # Enterprise usage limits
@@ -35,7 +35,7 @@ Partial recrawls (resumed from a checkpoint or that ended with failures) do not 
 
 ## Configuring a profile
 
-Profiles are managed through the admin API. Each profile can set:
+Profiles are managed through the admin API, which takes 120 requests a minute per source. Each profile can set:
 
 - `monthlyAnswerLimit` (integer, nullable)
 - `storedDocumentLimit` (integer, nullable)

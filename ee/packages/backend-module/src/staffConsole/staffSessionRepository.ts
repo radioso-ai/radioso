@@ -8,6 +8,7 @@ interface StaffSessionRow {
   staff_id: string;
   session_token_hash: string;
   expires_at: Date;
+  last_seen_at: Date;
   revoked_at: Date | null;
 }
 
@@ -16,6 +17,7 @@ const mapStaffSession = (row: StaffSessionRow): StaffSession => ({
   staffId: row.staff_id,
   sessionTokenHash: row.session_token_hash,
   expiresAt: row.expires_at,
+  lastSeenAt: row.last_seen_at,
   revokedAt: row.revoked_at,
 });
 
@@ -27,6 +29,7 @@ export interface StaffSessionRepository {
   findActiveByTokenHash(tokenHash: string): Promise<StaffSession | null>;
   touch(tokenHash: string): Promise<void>;
   revoke(tokenHash: string): Promise<void>;
+  revokeAllForStaff(staffId: string): Promise<number>;
 }
 
 export class PostgresStaffSessionRepository implements StaffSessionRepository {
@@ -36,7 +39,7 @@ export class PostgresStaffSessionRepository implements StaffSessionRepository {
     const rows = rowsOf(await this.database.query<StaffSessionRow>(
       `INSERT INTO ee_staff_sessions (id, staff_id, session_token_hash, expires_at)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, staff_id, session_token_hash, expires_at, revoked_at`,
+       RETURNING id, staff_id, session_token_hash, expires_at, last_seen_at, revoked_at`,
       [randomUUID(), input.staffId, input.sessionTokenHash, input.expiresAt],
     ));
     return mapStaffSession(rows[0]);
@@ -44,7 +47,7 @@ export class PostgresStaffSessionRepository implements StaffSessionRepository {
 
   async findActiveByTokenHash(tokenHash: string): Promise<StaffSession | null> {
     const rows = rowsOf(await this.database.query<StaffSessionRow>(
-      `SELECT id, staff_id, session_token_hash, expires_at, revoked_at
+      `SELECT id, staff_id, session_token_hash, expires_at, last_seen_at, revoked_at
        FROM ee_staff_sessions
        WHERE session_token_hash = $1
          AND revoked_at IS NULL
@@ -71,5 +74,16 @@ export class PostgresStaffSessionRepository implements StaffSessionRepository {
        WHERE session_token_hash = $1 AND revoked_at IS NULL`,
       [tokenHash],
     );
+  }
+
+  async revokeAllForStaff(staffId: string): Promise<number> {
+    const rows = rowsOf(await this.database.query<{ id: string }>(
+      `UPDATE ee_staff_sessions
+       SET revoked_at = NOW()
+       WHERE staff_id = $1 AND revoked_at IS NULL
+       RETURNING id`,
+      [staffId],
+    ));
+    return rows.length;
   }
 }

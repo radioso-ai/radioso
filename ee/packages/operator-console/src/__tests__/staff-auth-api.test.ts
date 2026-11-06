@@ -40,6 +40,16 @@ describe("staff auth api", () => {
     expect(headers.get("content-type")).toBe("application/json");
   });
 
+  it("marks a write with no body as JSON, which the API requires", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await staffAuthApi.logout();
+
+    const firstCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect((firstCall[1].headers as Headers).get("content-type")).toBe("application/json");
+  });
+
   it("builds organization query parameters", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({
       rows: [],

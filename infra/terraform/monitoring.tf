@@ -73,6 +73,10 @@ locals {
   )
 
   alert_documentation = "Radioso ${var.environment} (${var.region}). Runbook: docs/monitoring-alerts.md"
+
+  # Fifteen minutes' worth. A person mistyping a password stays well under it; the per-source
+  # sign-in limit still lets a patient guesser well over it.
+  staff_sign_in_failure_threshold = 20
 }
 
 resource "google_monitoring_notification_channel" "email" {
@@ -391,6 +395,97 @@ resource "google_monitoring_alert_policy" "voice_turn_health" {
 }
 
 # --- Can it still reach its own state ---
+
+# The operator console writes one log line per sign-in attempt and one per change to who holds
+# staff access. EE's staffSecurityEvents.ts names both events, and its test holds these filters in
+# step with them. Lines carry staff ids and reasons, never addresses.
+resource "google_logging_metric" "staff_sign_in_failures" {
+  count = local.monitoring_enabled ? 1 : 0
+
+  name = "${local.resource_name_prefix}-staff-sign-in-failures"
+  filter = join(" AND ", [
+    "resource.type=\"cloud_run_revision\"",
+    "resource.labels.service_name=\"${local.resource_name_prefix}-backend\"",
+    "jsonPayload.event=\"staff_console.sign_in\" AND jsonPayload.outcome=\"failure\"",
+  ])
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_monitoring_alert_policy" "staff_sign_in_failures" {
+  count = local.monitoring_enabled ? 1 : 0
+
+  display_name = "${local.resource_name_prefix} operator console sign-in failures"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Refused staff sign-ins above threshold"
+
+    condition_threshold {
+      filter = join(" AND ", [
+        "metric.type=\"logging.googleapis.com/user/${google_logging_metric.staff_sign_in_failures[0].name}\"",
+        "resource.type=\"cloud_run_revision\"",
+      ])
+      comparison      = "COMPARISON_GT"
+      threshold_value = local.staff_sign_in_failure_threshold
+      duration        = "0s"
+
+      aggregations {
+        alignment_period     = "900s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
+  documentation {
+    content = "More than ${local.staff_sign_in_failure_threshold} operator console sign-ins were refused in fifteen minutes. Someone may be guessing at staff accounts. Search the backend's logs for jsonPayload.event=\"staff_console.sign_in\": reason says why each attempt failed and targetStaffId names the account when the address matched one. ${local.alert_documentation}"
+  }
+}
+
+# Fires on every match rather than on a rate, because even one unexpected change to staff access
+# matters. The bootstrap command runs as a Cloud Run job, so this also watches this stack's region
+# for job logs; the service filter alone would miss the most powerful change there is.
+resource "google_monitoring_alert_policy" "staff_privileged_change" {
+  count = local.monitoring_enabled ? 1 : 0
+
+  display_name = "${local.resource_name_prefix} operator console staff access changed"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Staff created, changed, or bootstrapped"
+
+    condition_matched_log {
+      filter = join(" AND ", [
+        "jsonPayload.event=\"staff_console.privileged_change\"",
+        "resource.labels.location=\"${var.region}\"",
+        "(resource.type=\"cloud_run_job\" OR (resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${local.resource_name_prefix}-backend\"))",
+      ])
+    }
+  }
+
+  alert_strategy {
+    auto_close = "1800s"
+
+    notification_rate_limit {
+      period = "300s"
+    }
+  }
+
+  notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
+  documentation {
+    content = "A staff identity was created, changed role or status, or went through the bootstrap command. If nobody on the team did this, treat it as a compromise: disable the identity and rotate access. Search the logs for jsonPayload.event=\"staff_console.privileged_change\": eventType says what changed, and targetStaffId and actorStaffId say who. ${local.alert_documentation}"
+  }
+}
 
 resource "google_monitoring_alert_policy" "cloudsql_saturation" {
   count = local.monitoring_enabled ? 1 : 0

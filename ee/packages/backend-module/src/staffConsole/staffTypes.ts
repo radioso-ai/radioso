@@ -21,5 +21,6 @@ export interface StaffSession {
   staffId: string;
   sessionTokenHash: string;
   expiresAt: Date;
+  lastSeenAt: Date;
   revokedAt: Date | null;
 }

@@ -1,13 +1,19 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { HttpError } from "../shared/httpError.js";
+import { createRateLimitMiddleware } from "../shared/rateLimit.js";
 import { requireAccountSession } from "../shared/requireAccountSession.js";
 import { EnterpriseOrganizationCreationGuard } from "../orgCreation/organizationCreationGuard.js";
 import { EnterpriseUsageLimitService, normalizePeriodStart } from "./usageLimitService.js";
 
 type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
+
+// Well above what operator scripts send, and it bounds guessing at the bearer token.
+const ADMIN_RATE_LIMIT_PER_MINUTE = 120;
 
 const profileKeySchema = z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$/);
 const accountIdSchema = z.string().uuid();
@@ -53,6 +59,12 @@ const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string):
   throw new HttpError(400, "bad_request", message, parsed.error.flatten());
 };
 
+const sha256 = (value: string): Buffer => createHash("sha256").update(value).digest();
+
+// Hashing first gives timingSafeEqual the equal lengths it requires and hides the token's length.
+const tokensMatch = (presented: string, expected: string): boolean =>
+  timingSafeEqual(sha256(presented), sha256(expected));
+
 const requireAdminToken = (
   inventory?: Pick<RouteDependencies["apiPrincipalRouteInventory"], "markAuthenticator">,
 ): RequestHandler => {
@@ -73,7 +85,7 @@ const requireAdminToken = (
     const bearerToken = authorization?.startsWith("Bearer ")
       ? authorization.slice("Bearer ".length).trim()
       : null;
-    if (bearerToken !== expectedToken) {
+    if (bearerToken === null || !tokensMatch(bearerToken, expectedToken)) {
       res.status(401).json({
         error: {
           code: "unauthorized",
@@ -111,6 +123,17 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
         next(error);
       }
     });
+  }
+
+  if (isRouteDependencies(input)) {
+    router.use(createRateLimitMiddleware({
+      service: input.abuseControlService,
+      auditService: input.auditService,
+      scope: "ee.usage_limits.admin",
+      limit: ADMIN_RATE_LIMIT_PER_MINUTE,
+      windowMs: 60_000,
+      resolveSubjectKey: (req, res) => `source:${input.requestSource.digest(req, res)}`,
+    }));
   }
 
   router.use(requireAdminToken(isRouteDependencies(input) ? input.apiPrincipalRouteInventory : undefined));

@@ -787,7 +787,7 @@ variable "staff_session_ttl_hours" {
 }
 
 variable "ee_usage_admin_token" {
-  description = "Bearer token for the Enterprise usage-limits admin API and operator-console owner bootstrap. Leave unset to disable those break-glass endpoints."
+  description = "Bearer token for the Enterprise usage-limits admin API. Leave unset to disable it."
   type        = string
   default     = null
   sensitive   = true

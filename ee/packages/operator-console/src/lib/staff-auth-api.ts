@@ -161,8 +161,9 @@ const operatorFetch = async <T>(
   init: RequestInit = {},
 ): Promise<T> => {
   const headers = new Headers(init.headers);
-  const hasBody = init.body !== undefined && init.body !== null;
-  if (hasBody && !headers.has("content-type")) {
+  // The API refuses any write that is not JSON, including one with no body.
+  const isWrite = init.method !== undefined && init.method !== "GET";
+  if (isWrite && !headers.has("content-type")) {
     headers.set("content-type", "application/json");
   }
 

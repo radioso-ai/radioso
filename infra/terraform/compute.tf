@@ -1237,18 +1237,6 @@ resource "google_cloud_run_v2_service" "document_worker" {
           value = env.value
         }
       }
-      dynamic "env" {
-        for_each = local.ee_usage_admin_token_configured ? [1] : []
-        content {
-          name = "EE_USAGE_ADMIN_TOKEN"
-          value_source {
-            secret_key_ref {
-              secret  = google_secret_manager_secret.secrets["ee-usage-admin-token"].secret_id
-              version = "latest"
-            }
-          }
-        }
-      }
       # EE's auto-top-up sweep (registerPeriodicTask id ee-billing-auto-top-up) now runs here,
       # not on the backend service (see periodic-task move, issue #1507). Both secrets are
       # bound, matching the backend service exactly: resolveBillingConfig in
@@ -1769,18 +1757,6 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
         content {
           name  = "STAFF_SESSION_TTL_HOURS"
           value = env.value
-        }
-      }
-      dynamic "env" {
-        for_each = local.ee_usage_admin_token_configured ? [1] : []
-        content {
-          name = "EE_USAGE_ADMIN_TOKEN"
-          value_source {
-            secret_key_ref {
-              secret  = google_secret_manager_secret.secrets["ee-usage-admin-token"].secret_id
-              version = "latest"
-            }
-          }
         }
       }
       env {

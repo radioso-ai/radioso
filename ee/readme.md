@@ -194,19 +194,25 @@ pnpm --filter @radioso/enterprise-backend-module run staff:bootstrap \
 
 On Google Cloud the database has no public address, so run the command as a
 one-off Cloud Run job from the enterprise backend image, on the backend's network
-and service account, then delete the job:
+and service account. Keep the password in a short-lived secret that account can
+read, connect over TLS as every runtime does, and delete both when it finishes:
 
 ```bash
+printf '%s' "$PASSWORD" | gcloud secrets create "$BOOTSTRAP_PASSWORD_SECRET" --data-file=-
+gcloud secrets add-iam-policy-binding "$BOOTSTRAP_PASSWORD_SECRET" \
+  --member "serviceAccount:$BACKEND_SERVICE_ACCOUNT" --role roles/secretmanager.secretAccessor
 gcloud run jobs create staff-bootstrap \
   --region "$REGION" \
   --image "$BACKEND_IMAGE" \
   --service-account "$BACKEND_SERVICE_ACCOUNT" \
   --network "$PREFIX-vpc" --subnet "$PREFIX-subnet" --vpc-egress private-ranges-only \
+  --set-env-vars PGSSLMODE=no-verify \
   --set-secrets "DATABASE_URL=$PREFIX-database-url:latest,STAFF_BOOTSTRAP_PASSWORD=$BOOTSTRAP_PASSWORD_SECRET:latest" \
   --command node \
   --args /app/ee/packages/backend-module/dist/staffConsole/staffBootstrapCli.js,--email,ops@example.com,--name,Ops
 gcloud run jobs execute staff-bootstrap --region "$REGION" --wait
 gcloud run jobs delete staff-bootstrap --region "$REGION" --quiet
+gcloud secrets delete "$BOOTSTRAP_PASSWORD_SECRET" --quiet
 ```
 
 Every run writes a `staff.bootstrap` audit event and raises the staff access alert

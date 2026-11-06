@@ -50,6 +50,21 @@ describe("staff auth api", () => {
     expect((firstCall[1].headers as Headers).get("content-type")).toBe("application/json");
   });
 
+  it("returns to sign-in when a session has ended, but not for a wrong password", async () => {
+    const location = { href: "/operator/staff" };
+    vi.stubGlobal("window", { location });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+      error: { code: "unauthorized", message: "Unauthorized" },
+    }, { status: 401 })));
+
+    await expect(staffAuthApi.login({ email: "owner@example.com", password: "wrong" }))
+      .rejects.toBeInstanceOf(StaffApiError);
+    expect(location.href).toBe("/operator/staff");
+
+    await expect(staffAuthApi.setStaffRole("staff-1", "owner")).rejects.toBeInstanceOf(StaffApiError);
+    expect(location.href).toBe("/operator/login");
+  });
+
   it("builds organization query parameters", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({
       rows: [],

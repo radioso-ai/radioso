@@ -72,6 +72,7 @@ jobs:
       TF_VAR_stripe_secret_key: ${{ secrets.STRIPE_SECRET_KEY }}
       TF_VAR_stripe_webhook_secret: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
       TF_VAR_ee_usage_admin_token: ${{ secrets.EE_USAGE_ADMIN_TOKEN }}
+      TF_VAR_staff_google_workspace_domain: ${{ vars.STAFF_GOOGLE_WORKSPACE_DOMAIN }}
 
     steps:
       - name: Require configured GitHub environment variables

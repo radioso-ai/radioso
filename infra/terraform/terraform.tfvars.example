@@ -15,6 +15,7 @@ project_id = "your-gcp-project-id"
 # mail_from_name        = "Radioso"
 # metrics_auth_token       = ""
 # ee_usage_admin_token     = ""   # enables the EE usage-limits admin API
+# staff_google_workspace_domain = "" # EE operator console signs in with this Workspace domain; turns password sign-in off
 
 # Optional overrides (defaults shown)
 # region                  = "us-central1"

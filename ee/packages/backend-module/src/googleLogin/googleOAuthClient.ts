@@ -14,6 +14,8 @@ interface GoogleIdentity {
   emailVerified: boolean;
   /** The `profile` scope's full name; null when the account shares none. */
   name: string | null;
+  /** The Workspace domain Google vouches for (`hd`); null for a personal account. */
+  hostedDomain: string | null;
 }
 
 type FetchLike = typeof fetch;
@@ -35,6 +37,11 @@ export class GoogleOAuthError extends Error {
   }
 }
 
+export const readGoogleClientCredentials = (env: NodeJS.ProcessEnv): { clientId?: string; clientSecret?: string } => ({
+  clientId: env.GOOGLE_LOGIN_CLIENT_ID?.trim() || undefined,
+  clientSecret: env.GOOGLE_LOGIN_CLIENT_SECRET?.trim() || undefined,
+});
+
 export const buildGoogleAuthorizationUrl = (input: {
   config: GoogleOAuthConfig;
   state: string;
@@ -44,6 +51,8 @@ export const buildGoogleAuthorizationUrl = (input: {
    * Google account and provisioning a stray organization instead of joining.
    */
   loginHint?: string;
+  /** Narrows the account chooser to one Workspace domain. A hint only: verify `hostedDomain` on return. */
+  hostedDomain?: string;
 }): string => {
   const url = new URL(AUTHORIZATION_ENDPOINT);
   url.searchParams.set("client_id", input.config.clientId);
@@ -55,6 +64,9 @@ export const buildGoogleAuthorizationUrl = (input: {
   url.searchParams.set("prompt", "select_account");
   if (input.loginHint) {
     url.searchParams.set("login_hint", input.loginHint);
+  }
+  if (input.hostedDomain) {
+    url.searchParams.set("hd", input.hostedDomain);
   }
   return url.toString();
 };
@@ -113,6 +125,7 @@ const fetchUserInfo = async (input: {
     email?: unknown;
     email_verified?: unknown;
     name?: unknown;
+    hd?: unknown;
   };
 
   if (typeof json.sub !== "string" || typeof json.email !== "string") {
@@ -127,6 +140,7 @@ const fetchUserInfo = async (input: {
     email: json.email,
     emailVerified,
     name: typeof json.name === "string" ? json.name : null,
+    hostedDomain: typeof json.hd === "string" && json.hd.length > 0 ? json.hd : null,
   };
 };
 

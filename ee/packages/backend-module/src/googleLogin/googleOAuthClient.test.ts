@@ -22,6 +22,13 @@ const toUrlString = (input: string | URL | Request): string =>
   typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
 describe("buildGoogleAuthorizationUrl", () => {
+  it("narrows the account chooser to one Workspace domain when asked", () => {
+    const url = new URL(buildGoogleAuthorizationUrl({ config, state: "state-123", hostedDomain: "radioso.example" }));
+
+    expect(url.searchParams.get("hd")).toBe("radioso.example");
+    expect(new URL(buildGoogleAuthorizationUrl({ config, state: "state-123" })).searchParams.has("hd")).toBe(false);
+  });
+
   it("builds a Google consent URL with the required parameters", () => {
     const url = new URL(buildGoogleAuthorizationUrl({ config, state: "state-123" }));
 
@@ -58,6 +65,7 @@ describe("resolveGoogleIdentity", () => {
       email: "Person@Example.com",
       emailVerified: true,
       name: "A Person",
+      hostedDomain: null,
     });
     expect(calls[0]).toContain("oauth2.googleapis.com/token");
     expect(calls[1]).toContain("userinfo");
@@ -107,5 +115,28 @@ describe("resolveGoogleIdentity", () => {
     };
 
     await expect(resolveGoogleIdentity({ config, code: "c", fetchImpl })).rejects.toBeInstanceOf(GoogleOAuthError);
+  });
+});
+
+describe("resolveGoogleIdentity hosted domain", () => {
+  const answering = (userinfo: Record<string, unknown>) => async (input: string | URL | Request) =>
+    toUrlString(input).includes("/token")
+      ? jsonResponse(200, { access_token: "token" })
+      : jsonResponse(200, userinfo);
+
+  it("reports the Workspace domain Google vouches for, and null for a personal account", async () => {
+    const workspace = await resolveGoogleIdentity({
+      config,
+      code: "code",
+      fetchImpl: answering({ sub: "1", email: "a@radioso.example", hd: "radioso.example" }),
+    });
+    const personal = await resolveGoogleIdentity({
+      config,
+      code: "code",
+      fetchImpl: answering({ sub: "2", email: "a@gmail.example" }),
+    });
+
+    expect(workspace.hostedDomain).toBe("radioso.example");
+    expect(personal.hostedDomain).toBeNull();
   });
 });

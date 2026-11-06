@@ -7,7 +7,8 @@ interface StaffUserRow {
   id: string;
   email: string;
   name: string;
-  password_hash: string;
+  password_hash: string | null;
+  google_subject: string | null;
   role: StaffRole;
   status: StaffStatus;
   created_at: Date;
@@ -20,12 +21,16 @@ const mapStaffUser = (row: StaffUserRow): StaffUser => ({
   email: row.email,
   name: row.name,
   passwordHash: row.password_hash,
+  googleSubject: row.google_subject,
   role: row.role,
   status: row.status,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   lastLoginAt: row.last_login_at,
 });
+
+const STAFF_USER_COLUMNS =
+  "id, email, name, password_hash, google_subject, role, status, created_at, updated_at, last_login_at";
 
 const rowsOf = <T>(result: T[] | { rows: T[] }): T[] =>
   Array.isArray(result) ? result : result.rows;
@@ -38,12 +43,16 @@ export interface StaffUserRepository {
   create(input: {
     email: string;
     name: string;
-    passwordHash: string;
+    passwordHash: string | null;
     role: StaffRole;
     status?: StaffStatus;
   }): Promise<StaffUser>;
-  updatePassword(id: string, passwordHash: string): Promise<StaffUser | null>;
+  /** Replaces every credential at once: the password, and whichever Google account was bound. */
+  resetCredentials(id: string, passwordHash: string | null): Promise<StaffUser | null>;
+  /** False when a different Google account is already bound to this staff member. */
+  bindGoogleSubject(id: string, subject: string): Promise<boolean>;
   setRole(id: string, role: StaffRole): Promise<StaffUser | null>;
+  /** Re-enabling releases the bound Google account: an owner is vouching for whoever holds the address now. */
   setStatus(id: string, status: StaffStatus): Promise<StaffUser | null>;
   touchLastLogin(id: string): Promise<void>;
 }
@@ -53,7 +62,7 @@ export class PostgresStaffUserRepository implements StaffUserRepository {
 
   async findByEmail(email: string): Promise<StaffUser | null> {
     const rows = rowsOf(await this.database.query<StaffUserRow>(
-      `SELECT id, email, name, password_hash, role, status, created_at, updated_at, last_login_at
+      `SELECT ${STAFF_USER_COLUMNS}
        FROM ee_staff_users
        WHERE LOWER(email) = LOWER($1)
        LIMIT 1`,
@@ -64,7 +73,7 @@ export class PostgresStaffUserRepository implements StaffUserRepository {
 
   async findById(id: string): Promise<StaffUser | null> {
     const rows = rowsOf(await this.database.query<StaffUserRow>(
-      `SELECT id, email, name, password_hash, role, status, created_at, updated_at, last_login_at
+      `SELECT ${STAFF_USER_COLUMNS}
        FROM ee_staff_users
        WHERE id = $1
        LIMIT 1`,
@@ -75,7 +84,7 @@ export class PostgresStaffUserRepository implements StaffUserRepository {
 
   async listStaff(): Promise<StaffUser[]> {
     const rows = rowsOf(await this.database.query<StaffUserRow>(
-      `SELECT id, email, name, password_hash, role, status, created_at, updated_at, last_login_at
+      `SELECT ${STAFF_USER_COLUMNS}
        FROM ee_staff_users
        ORDER BY created_at ASC, id ASC`,
     ));
@@ -94,25 +103,36 @@ export class PostgresStaffUserRepository implements StaffUserRepository {
   async create(input: {
     email: string;
     name: string;
-    passwordHash: string;
+    passwordHash: string | null;
     role: StaffRole;
     status?: StaffStatus;
   }): Promise<StaffUser> {
     const rows = rowsOf(await this.database.query<StaffUserRow>(
       `INSERT INTO ee_staff_users (id, email, name, password_hash, role, status)
        VALUES ($1, LOWER($2), $3, $4, $5, $6)
-       RETURNING id, email, name, password_hash, role, status, created_at, updated_at, last_login_at`,
+       RETURNING ${STAFF_USER_COLUMNS}`,
       [randomUUID(), input.email.trim(), input.name.trim(), input.passwordHash, input.role, input.status ?? "active"],
     ));
     return mapStaffUser(rows[0]);
   }
 
-  async updatePassword(id: string, passwordHash: string): Promise<StaffUser | null> {
+  async bindGoogleSubject(id: string, subject: string): Promise<boolean> {
+    const rows = rowsOf(await this.database.query<{ id: string }>(
+      `UPDATE ee_staff_users
+       SET google_subject = $2, updated_at = NOW()
+       WHERE id = $1 AND (google_subject IS NULL OR google_subject = $2)
+       RETURNING id`,
+      [id, subject],
+    ));
+    return rows.length > 0;
+  }
+
+  async resetCredentials(id: string, passwordHash: string | null): Promise<StaffUser | null> {
     const rows = rowsOf(await this.database.query<StaffUserRow>(
       `UPDATE ee_staff_users
-       SET password_hash = $2, status = 'active', updated_at = NOW()
+       SET password_hash = $2, google_subject = NULL, status = 'active', updated_at = NOW()
        WHERE id = $1
-       RETURNING id, email, name, password_hash, role, status, created_at, updated_at, last_login_at`,
+       RETURNING ${STAFF_USER_COLUMNS}`,
       [id, passwordHash],
     ));
     return rows[0] ? mapStaffUser(rows[0]) : null;
@@ -123,7 +143,7 @@ export class PostgresStaffUserRepository implements StaffUserRepository {
       `UPDATE ee_staff_users
        SET role = $2, updated_at = NOW()
        WHERE id = $1
-       RETURNING id, email, name, password_hash, role, status, created_at, updated_at, last_login_at`,
+       RETURNING ${STAFF_USER_COLUMNS}`,
       [id, role],
     ));
     return rows[0] ? mapStaffUser(rows[0]) : null;
@@ -132,9 +152,11 @@ export class PostgresStaffUserRepository implements StaffUserRepository {
   async setStatus(id: string, status: StaffStatus): Promise<StaffUser | null> {
     const rows = rowsOf(await this.database.query<StaffUserRow>(
       `UPDATE ee_staff_users
-       SET status = $2, updated_at = NOW()
+       SET status = $2,
+           google_subject = CASE WHEN status = 'disabled' AND $2 = 'active' THEN NULL ELSE google_subject END,
+           updated_at = NOW()
        WHERE id = $1
-       RETURNING id, email, name, password_hash, role, status, created_at, updated_at, last_login_at`,
+       RETURNING ${STAFF_USER_COLUMNS}`,
       [id, status],
     ));
     return rows[0] ? mapStaffUser(rows[0]) : null;

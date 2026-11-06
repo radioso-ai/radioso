@@ -10,13 +10,15 @@ import { EnterpriseUsageLimitService } from "../usageLimits/usageLimitService.js
 import type { AccountUsageSummary, UsageLimitProfile } from "../usageLimits/usageLimitService.js";
 import { OrganizationDirectoryService } from "./organizationDirectoryService.js";
 import type { OrganizationDirectoryPage } from "./organizationDirectoryService.js";
-import { StaffAuthService, defaultStaffSessionTtlHours } from "./staffAuthService.js";
+import { StaffAuthService, defaultStaffSessionTtlHours, type StaffAuthResult } from "./staffAuthService.js";
 import { hashStaffPassword, STAFF_PASSWORD_MIN_LENGTH } from "./staffCrypto.js";
 import { PostgresStaffSessionRepository, type StaffSessionRepository } from "./staffSessionRepository.js";
 import { PostgresStaffUserRepository, type StaffUserRepository } from "./staffRepository.js";
+import { createStaffGoogleSignInRouter } from "./staffGoogleSignInRoutes.js";
 import { requireJsonWrites, requireStaffRole, requireStaffSession, type StaffPrincipal } from "./staffGuards.js";
 import { StaffSecurityEvents } from "./staffSecurityEvents.js";
 import { staffRoles, staffStatuses, type StaffUser } from "./staffTypes.js";
+import { resolveStaffSignIn } from "./staffWorkspaceSignIn.js";
 
 type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 
@@ -67,7 +69,7 @@ const staffCreateBodySchema = z.object({
   email: z.string().trim().email().transform((value) => value.toLowerCase()),
   name: z.string().trim().min(1).max(120),
   role: z.enum(staffRoles),
-  password: z.string().min(STAFF_PASSWORD_MIN_LENGTH),
+  password: z.string().min(STAFF_PASSWORD_MIN_LENGTH).optional(),
 });
 
 const staffRoleBodySchema = z.object({
@@ -127,6 +129,7 @@ interface StaffConsoleRouteRepositories {
     EnterpriseUsageLimitService,
     "getAccountUsage" | "listProfiles" | "assignProfile" | "upsertProfile"
   >;
+  fetchImpl?: typeof fetch;
 }
 
 export const createStaffConsoleRoutes = (
@@ -141,6 +144,22 @@ export const createStaffConsoleRoutes = (
   const logger = resolveLogger(dependencies);
   const securityEvents = new StaffSecurityEvents(dependencies.auditService, logger);
   const authService = new StaffAuthService(users, sessions, securityEvents, { ttlHours });
+  const signIn = resolveStaffSignIn({ appBaseUrl: dependencies.env.APP_BASE_URL });
+  if (signIn.mode === "workspace" && !signIn.oauth) {
+    logger.warn?.(
+      { event: "staff_console.sign_in_unavailable", missing: signIn.missing },
+      "Operator console sign-in is closed: Workspace sign-in is on but its configuration is incomplete",
+    );
+  }
+  const setSessionCookie = (res: Response, session: StaffAuthResult): void => {
+    res.cookie(cookieName, session.sessionToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      expires: session.expiresAt,
+    });
+  };
   const organizationDirectoryService =
     repositories.organizationDirectoryService ?? new OrganizationDirectoryService(dependencies.connectorDb);
   const usageLimitService =
@@ -232,21 +251,41 @@ export const createStaffConsoleRoutes = (
     next();
   };
 
+  const requirePasswordSignIn: RequestHandler = (_req, _res, next) => {
+    next(signIn.mode === "password"
+      ? undefined
+      : new HttpError(403, "password_sign_in_disabled", "Sign in with Google."));
+  };
+
   router.use(requireJsonWrites);
 
   // Only routes that exist without a session go above this guard. Its position is the rule:
   // anything registered below it answers 401 to a caller without a staff session.
-  router.post("/auth/login", staffLoginSourceRateLimit, staffLoginRateLimit, async (req, res, next) => {
+  router.get("/auth/methods", (_req, res) => {
+    res.status(200).json({
+      methods: {
+        password: signIn.mode === "password",
+        google: signIn.mode === "workspace" && signIn.oauth !== null,
+      },
+    });
+  });
+
+  router.use("/auth/google", createStaffGoogleSignInRouter({
+    oauth: signIn.mode === "workspace" ? signIn.oauth : null,
+    workspaceDomain: signIn.mode === "workspace" ? signIn.workspaceDomain : null,
+    authService,
+    events: securityEvents,
+    createEntryRateLimit: (scope) => loginRateLimit(scope, (req, res) => `source:${dependencies.requestSource.digest(req, res)}`),
+    setSessionCookie,
+    logger,
+    fetchImpl: repositories.fetchImpl,
+  }));
+
+  router.post("/auth/login", requirePasswordSignIn, staffLoginSourceRateLimit, staffLoginRateLimit, async (req, res, next) => {
     try {
       const body = parseRequest(loginBodySchema, req.body, "Invalid staff login payload");
       const result = await authService.login(body);
-      res.cookie(cookieName, result.sessionToken, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        expires: result.expiresAt,
-      });
+      setSessionCookie(res, result);
       res.status(200).json({ staff: publicStaff(result.staff) });
     } catch (error) {
       next(error);
@@ -432,7 +471,13 @@ export const createStaffConsoleRoutes = (
         if (existing) {
           throw new HttpError(409, "conflict", "Staff user already exists.");
         }
-        const passwordHash = await hashStaffPassword(body.password);
+        if (signIn.mode === "workspace" && body.password !== undefined) {
+          throw new HttpError(400, "password_sign_in_disabled", "Staff sign in with Google here, so a password would never be used.");
+        }
+        if (signIn.mode === "password" && body.password === undefined) {
+          throw new HttpError(400, "bad_request", "A temporary password is required.");
+        }
+        const passwordHash = body.password === undefined ? null : await hashStaffPassword(body.password);
         const staff = await users.create({
           email: body.email,
           name: body.name,
@@ -520,6 +565,9 @@ export const createStaffConsoleRoutes = (
         const updated = await users.setStatus(staffId, body.status);
         if (!updated) {
           throw new HttpError(404, "not_found", "Staff user not found.");
+        }
+        if (updated.status === "disabled") {
+          await sessions.revokeAllForStaff(updated.id);
         }
         await securityEvents.privilegedChange({
           eventType: "staff.user.status_changed",

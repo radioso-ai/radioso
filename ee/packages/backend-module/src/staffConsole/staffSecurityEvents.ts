@@ -7,11 +7,23 @@
 export const STAFF_SIGN_IN_LOG_EVENT = "staff_console.sign_in";
 export const STAFF_PRIVILEGED_CHANGE_LOG_EVENT = "staff_console.privileged_change";
 
-type StaffSignInFailureReason = "unknown_email" | "wrong_password" | "disabled";
+type StaffSignInFailureReason =
+  | "unknown_email"
+  | "wrong_password"
+  | "disabled"
+  | "provider_error"
+  | "invalid_state"
+  | "oauth_exchange_failed"
+  | "email_unverified"
+  | "wrong_workspace"
+  | "not_staff"
+  | "subject_mismatch";
+
+type StaffSignInMethod = "password" | "google";
 
 type StaffSignIn =
-  | { method: "password"; outcome: "success"; staffId: string }
-  | { method: "password"; outcome: "failure"; reason: StaffSignInFailureReason; staffId?: string };
+  | { method: StaffSignInMethod; outcome: "success"; staffId: string }
+  | { method: StaffSignInMethod; outcome: "failure"; reason: StaffSignInFailureReason; staffId?: string };
 
 interface StaffSecurityAuditPort {
   record(input: {

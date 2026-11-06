@@ -77,6 +77,7 @@ describeIfDatabase("staff console migrator", () => {
       expect.objectContaining({ table_name: "ee_staff_users", column_name: "id" }),
       expect.objectContaining({ table_name: "ee_staff_users", column_name: "email" }),
       expect.objectContaining({ table_name: "ee_staff_users", column_name: "password_hash" }),
+      expect.objectContaining({ table_name: "ee_staff_users", column_name: "google_subject" }),
       expect.objectContaining({ table_name: "ee_staff_users", column_name: "role" }),
       expect.objectContaining({ table_name: "ee_staff_sessions", column_name: "session_token_hash" }),
       expect.objectContaining({ table_name: "ee_staff_sessions", column_name: "staff_id" }),

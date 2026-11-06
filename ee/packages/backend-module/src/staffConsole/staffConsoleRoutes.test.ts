@@ -105,6 +105,7 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
     email: "owner@example.com",
     name: "Owner",
     passwordHash: await hashStaffPassword("password-123"),
+    googleSubject: null,
     role: initialRole,
     status: "active" as const,
     createdAt: new Date(),
@@ -138,6 +139,7 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
         email: input.email.toLowerCase(),
         name: input.name,
         passwordHash: input.passwordHash,
+        googleSubject: null,
         role: input.role,
         status: input.status ?? "active",
         createdAt: new Date(),
@@ -147,14 +149,18 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
       staffById.set(created.id, created);
       return created;
     },
-    async updatePassword(id, passwordHash) {
+    async resetCredentials(id, passwordHash) {
       const found = staffById.get(id);
       if (found) {
         found.passwordHash = passwordHash;
+        found.googleSubject = null;
         found.status = "active";
         found.updatedAt = new Date();
       }
       return found ?? null;
+    },
+    async bindGoogleSubject() {
+      return true;
     },
     async setRole(_id, role) {
       const found = staffById.get(_id);
@@ -229,8 +235,12 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
         row.revokedAt = new Date();
       }
     },
-    async revokeAllForStaff() {
-      return 0;
+    async revokeAllForStaff(staffId) {
+      const open = Array.from(sessions.values()).filter((row) => row.staffId === staffId && !row.revokedAt);
+      open.forEach((row) => {
+        row.revokedAt = new Date();
+      });
+      return open.length;
     },
   };
   const addStaff = async (input: {
@@ -247,6 +257,7 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
       email: input.email.toLowerCase(),
       name: input.name,
       passwordHash: await hashStaffPassword(input.password ?? "password-123"),
+      googleSubject: null,
       role: input.role,
       status: input.status ?? "active",
       createdAt: input.createdAt ?? new Date(),
@@ -471,7 +482,7 @@ describe("staff console routes and guards", () => {
       const route = layer.route;
       return route ? Object.keys(route.methods).map((method) => ({ method, path: route.path })) : [];
     });
-    const publicRoutes = new Set(["post /auth/login"]);
+    const publicRoutes = new Set(["post /auth/login", "get /auth/methods"]);
 
     expect(routes.length).toBeGreaterThan(10);
     for (const { method, path } of routes) {
@@ -598,6 +609,36 @@ describe("staff console routes and guards", () => {
       targetStaffId: created.body.staff.id,
     }), expect.any(String));
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("new@example.com");
+  });
+
+  it("ends a staff member's open sessions when they are disabled, so re-enabling does not revive them", async () => {
+    const repositories = await createMemoryRepositories("owner");
+    const member = await repositories.addStaff({
+      id: "44444444-4444-4444-8444-444444444444",
+      email: "member@example.com",
+      name: "Member",
+      role: "support_read",
+    });
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+    const signIn = (email: string) => request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email, password: "password-123" })
+      .expect(200);
+    const ownerCookie = (await signIn("owner@example.com")).headers["set-cookie"][0];
+    const memberCookie = (await signIn("member@example.com")).headers["set-cookie"][0];
+    const setStatus = (status: string) => request(app)
+      .put(`/api/v1/ee/operator-console/staff/${member.id}/status`)
+      .set("Cookie", ownerCookie)
+      .send({ status })
+      .expect(200);
+
+    await setStatus("disabled");
+    await setStatus("active");
+
+    await request(app).get("/api/v1/ee/operator-console/auth/me").set("Cookie", memberCookie).expect(401);
   });
 
   it("refuses a new staff password shorter than twelve characters", async () => {

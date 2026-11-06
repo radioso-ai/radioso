@@ -10,6 +10,7 @@ const activeUser = async () => ({
   email: "owner@example.com",
   name: "Owner",
   passwordHash: await hashStaffPassword("password-123"),
+  googleSubject: null,
   role: "owner" as const,
   status: "active" as const,
   createdAt: new Date(),
@@ -43,7 +44,10 @@ const createRepositories = async (overrides: { status?: "active" | "disabled" } 
     async create() {
       throw new Error("not used");
     },
-    async updatePassword() {
+    async resetCredentials() {
+      throw new Error("not used");
+    },
+    async bindGoogleSubject() {
       throw new Error("not used");
     },
     async setRole() {

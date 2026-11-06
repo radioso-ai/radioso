@@ -2683,7 +2683,7 @@ Primary paths:
   staff events in `staffSecurityEvents.ts`, the owner bootstrap command in `staffBootstrapCli.ts`
   (never an HTTP route), and the Next.js pages and API client under
   `operator-console/src`. A route is public only if it sits above the
-  `router.use(staffSessionGuard)` line in `staffConsoleRoutes.ts`. Its routes sit outside the OSS OpenAPI document the
+  `router.use(staffSessionSourceRateLimit, staffSessionGuard)` line in `staffConsoleRoutes.ts`. Its routes sit outside the OSS OpenAPI document the
   copilot coverage map is keyed on, and Ray serves workspace operators rather
   than staff, so the console carries no copilot descriptor. Focused tests:
   `staffConsoleRoutes.test.ts`, `staffAuthService.test.ts`,

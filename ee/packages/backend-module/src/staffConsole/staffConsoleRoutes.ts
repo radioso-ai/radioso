@@ -189,6 +189,17 @@ export const createStaffConsoleRoutes = (
     (req) => (typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null),
   );
 
+  // Every guarded request costs a session lookup before anyone is known, so this budget comes
+  // first. It is well above what a few people using the console send, and only bounds a flood.
+  const staffSessionSourceRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "ee.staff_console.session_source",
+    limit: 300,
+    windowMs: 60_000,
+    resolveSubjectKey: (req, res) => `source:${dependencies.requestSource.digest(req, res)}`,
+  });
+
   // Authentication narrows the caller pool but is not a rate limit: a compromised or malicious
   // staff session could still hammer the directory, tier, or staff-management endpoints. This
   // budget is enforced once per authenticated request, right after the session check succeeds,
@@ -281,7 +292,7 @@ export const createStaffConsoleRoutes = (
     }
   });
 
-  router.use(staffSessionGuard);
+  router.use(staffSessionSourceRateLimit, staffSessionGuard);
 
   router.post("/auth/logout", async (req, res, next) => {
     try {

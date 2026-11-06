@@ -485,6 +485,32 @@ describe("staff console routes and guards", () => {
     }
   });
 
+  it("throttles requests per source before it looks up their session", async () => {
+    const repositories = await createMemoryRepositories();
+    const findActiveByTokenHash = vi.spyOn(repositories.staffSessions, "findActiveByTokenHash");
+    const abuseControlEnforce = vi.fn(async (input: { scope: string }) => {
+      if (input.scope === "ee.staff_console.session_source") {
+        throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+      }
+    });
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      abuseControlEnforce,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+
+    await request(app)
+      .get("/api/v1/ee/operator-console/auth/me")
+      .set("Cookie", "staff_session=guessed-token")
+      .expect(429);
+
+    expect(findActiveByTokenHash).not.toHaveBeenCalled();
+    expect(abuseControlEnforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "ee.staff_console.session_source",
+      subjectKey: "source:host-source-digest",
+    }));
+  });
+
   it("refuses writes that are not JSON, so a cross-site form cannot make them", async () => {
     const repositories = await createMemoryRepositories("owner");
     const app = createApp(createDependencies({

@@ -155,7 +155,7 @@ variable "connector_encryption_key" {
 }
 
 variable "ee_usage_admin_token" {
-  description = "Bearer token for staging Enterprise admin and operator-console bootstrap endpoints."
+  description = "Bearer token for the staging Enterprise usage-limits admin API."
   type        = string
   default     = null
   sensitive   = true

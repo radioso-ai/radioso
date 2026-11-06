@@ -17,8 +17,23 @@ const roleRank: Record<StaffRole, number> = {
   owner: 3,
 };
 
-export const canSatisfyStaffRole = (actual: StaffRole, minimum: StaffRole): boolean =>
+const canSatisfyStaffRole = (actual: StaffRole, minimum: StaffRole): boolean =>
   roleRank[actual] >= roleRank[minimum];
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * A browser only attaches a JSON content type to a cross-site request after a CORS preflight, and
+ * nothing here answers one, so this stops a forged form from reaching a write with the cookie.
+ */
+export const requireJsonWrites: RequestHandler = (req, _res, next) => {
+  const contentType = req.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+  if (SAFE_METHODS.has(req.method) || contentType === "application/json") {
+    next();
+    return;
+  }
+  next(new HttpError(415, "unsupported_media_type", "Send this request as application/json."));
+};
 
 export const requireStaffSession = (
   authService: StaffAuthService,

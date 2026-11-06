@@ -112,7 +112,7 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
     lastLoginAt: null,
   };
   const staffById = new Map<string, StaffUser>([[staff.id, staff]]);
-  const sessions = new Map<string, { staffId: string; expiresAt: Date; revokedAt: Date | null }>();
+  const sessions = new Map<string, { staffId: string; expiresAt: Date; lastSeenAt: Date; revokedAt: Date | null }>();
   const users: StaffUserRepository = {
     async findByEmail(email) {
       return Array.from(staffById.values()).find((candidate) => candidate.email === email.toLowerCase()) ?? null;
@@ -192,9 +192,11 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
   };
   const staffSessions: StaffSessionRepository = {
     async create(input) {
+      const lastSeenAt = new Date();
       sessions.set(input.sessionTokenHash, {
         staffId: input.staffId,
         expiresAt: input.expiresAt,
+        lastSeenAt,
         revokedAt: null,
       });
       return {
@@ -202,6 +204,7 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
         staffId: input.staffId,
         sessionTokenHash: input.sessionTokenHash,
         expiresAt: input.expiresAt,
+        lastSeenAt,
         revokedAt: null,
       };
     },
@@ -215,6 +218,7 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
         staffId: row.staffId,
         sessionTokenHash: tokenHash,
         expiresAt: row.expiresAt,
+        lastSeenAt: row.lastSeenAt,
         revokedAt: row.revokedAt,
       };
     },
@@ -224,6 +228,9 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
       if (row) {
         row.revokedAt = new Date();
       }
+    },
+    async revokeAllForStaff() {
+      return 0;
     },
   };
   const addStaff = async (input: {
@@ -432,6 +439,185 @@ describe("staff console routes and guards", () => {
     delete process.env.EE_USAGE_ADMIN_TOKEN;
   });
 
+  it("offers no way to mint an owner over HTTP, even with the admin token", async () => {
+    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
+    const repositories = await createMemoryRepositories();
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+
+    await request(app)
+      .post("/api/v1/ee/operator-console/bootstrap")
+      .set("Authorization", "Bearer secret-admin-token")
+      .send({ email: "intruder@example.com", name: "Intruder", password: "new-password-123" })
+      .expect(401);
+
+    await expect(repositories.users.findByEmail("intruder@example.com")).resolves.toBeNull();
+  });
+
+  it("refuses every route but sign-in without a staff session, including routes added later", async () => {
+    const repositories = await createMemoryRepositories();
+    const dependencies = createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    });
+    const app = createApp(dependencies, { users: repositories.users, sessions: repositories.staffSessions });
+    const router = createStaffConsoleRoutes(dependencies, {
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    }) as unknown as { stack: { route?: { path: string; methods: Record<string, boolean> } }[] };
+    const routes = router.stack.flatMap((layer) => {
+      const route = layer.route;
+      return route ? Object.keys(route.methods).map((method) => ({ method, path: route.path })) : [];
+    });
+    const publicRoutes = new Set(["post /auth/login"]);
+
+    expect(routes.length).toBeGreaterThan(10);
+    for (const { method, path } of routes) {
+      if (publicRoutes.has(`${method} ${path}`)) {
+        continue;
+      }
+      const url = `/api/v1/ee/operator-console${path.replace(/:[A-Za-z]+/g, "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa")}`;
+      const attempt = request(app)[method as "get" | "post" | "put"](url);
+      const response = method === "get" ? await attempt : await attempt.send({});
+      expect(`${method} ${path} -> ${response.status}`).toBe(`${method} ${path} -> 401`);
+    }
+  });
+
+  it("throttles requests per source before it looks up their session", async () => {
+    const repositories = await createMemoryRepositories();
+    const findActiveByTokenHash = vi.spyOn(repositories.staffSessions, "findActiveByTokenHash");
+    const abuseControlEnforce = vi.fn(async (input: { scope: string }) => {
+      if (input.scope === "ee.staff_console.session_source") {
+        throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+      }
+    });
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      abuseControlEnforce,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+
+    await request(app)
+      .get("/api/v1/ee/operator-console/auth/me")
+      .set("Cookie", "staff_session=guessed-token")
+      .expect(429);
+
+    expect(findActiveByTokenHash).not.toHaveBeenCalled();
+    expect(abuseControlEnforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "ee.staff_console.session_source",
+      subjectKey: "source:host-source-digest",
+    }));
+  });
+
+  it("refuses writes that are not JSON, so a cross-site form cannot make them", async () => {
+    const repositories = await createMemoryRepositories("owner");
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+    const cookie = login.headers["set-cookie"][0];
+
+    await request(app)
+      .post("/api/v1/ee/operator-console/staff")
+      .set("Cookie", cookie)
+      .type("form")
+      .send({ email: "planted@example.com", name: "Planted", role: "owner", password: "password-1234" })
+      .expect(415);
+    await request(app)
+      .post("/api/v1/ee/operator-console/auth/logout")
+      .set("Cookie", cookie)
+      .expect(415);
+    await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .type("form")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(415);
+
+    await expect(repositories.users.findByEmail("planted@example.com")).resolves.toBeNull();
+  });
+
+  it("records a failed sign-in without the address it was tried against", async () => {
+    const repositories = await createMemoryRepositories();
+    const auditRecord = vi.fn(async () => undefined);
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      auditRecord,
+      logger,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+
+    await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "nobody@example.com", password: "password-123" })
+      .expect(401);
+
+    expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "staff.auth.login",
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ reason: "unknown_email" }),
+    }));
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      event: "staff_console.sign_in",
+      outcome: "failure",
+      reason: "unknown_email",
+    }), expect.any(String));
+    expect(JSON.stringify(auditRecord.mock.calls)).not.toContain("nobody@example.com");
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("nobody@example.com");
+  });
+
+  it("writes one alertable line for each change to who holds staff access", async () => {
+    const repositories = await createMemoryRepositories("owner");
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      logger,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    const created = await request(app)
+      .post("/api/v1/ee/operator-console/staff")
+      .set("Cookie", login.headers["set-cookie"][0])
+      .send({ email: "new@example.com", name: "New", role: "support_read", password: "password-1234" })
+      .expect(201);
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      event: "staff_console.privileged_change",
+      eventType: "staff.user.created",
+      actorStaffId: repositories.staff.id,
+      targetStaffId: created.body.staff.id,
+    }), expect.any(String));
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("new@example.com");
+  });
+
+  it("refuses a new staff password shorter than twelve characters", async () => {
+    const repositories = await createMemoryRepositories("owner");
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    await request(app)
+      .post("/api/v1/ee/operator-console/staff")
+      .set("Cookie", login.headers["set-cookie"][0])
+      .send({ email: "new@example.com", name: "New", role: "support_read", password: "elevenchars" })
+      .expect(400);
+  });
+
   it("rejects missing staff sessions and ignores customer session cookies", async () => {
     const repositories = await createMemoryRepositories();
     const app = createApp(createDependencies({
@@ -469,6 +655,7 @@ describe("staff console routes and guards", () => {
     await request(app)
       .post("/api/v1/ee/operator-console/auth/logout")
       .set("Cookie", cookie)
+      .set("Content-Type", "application/json")
       .expect(204);
   });
 
@@ -524,9 +711,17 @@ describe("staff console routes and guards", () => {
     }));
   });
 
-  it("keys a staff login attempt without an email on the host's request source", async () => {
+  it("budgets sign-in attempts per source, whichever addresses they try", async () => {
     const repositories = await createMemoryRepositories();
-    const abuseControlEnforce = vi.fn(async () => undefined);
+    let sourceAttempts = 0;
+    const abuseControlEnforce = vi.fn(async (input: { scope: string }) => {
+      if (input.scope === "ee.staff_console.auth.login_source") {
+        sourceAttempts += 1;
+        if (sourceAttempts > 1) {
+          throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+        }
+      }
+    });
     const app = createApp(createDependencies({
       users: repositories.users,
       sessions: repositories.staffSessions,
@@ -535,12 +730,18 @@ describe("staff console routes and guards", () => {
 
     await request(app)
       .post("/api/v1/ee/operator-console/auth/login")
-      .set("X-Forwarded-For", "203.0.113.7")
-      .send({ password: "password-123" });
+      .send({ email: "first@example.com", password: "password-123" })
+      .expect(401);
+    await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "second@example.com", password: "password-123" })
+      .expect(429);
 
     expect(abuseControlEnforce).toHaveBeenCalledWith(expect.objectContaining({
-      scope: "ee.staff_console.auth.login",
-      subjectKey: "host-source-digest",
+      scope: "ee.staff_console.auth.login_source",
+      subjectKey: "source:host-source-digest",
+      limit: 10,
+      windowMs: 60_000,
     }));
   });
 
@@ -608,77 +809,6 @@ describe("staff console routes and guards", () => {
       expect(result.passed).toBe(true);
       expect(result.statusCode).toBe(200);
     }
-  });
-
-  it("bootstraps the first owner with the admin token and audits the action", async () => {
-    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
-    const auditRecord = vi.fn(async () => undefined);
-    const repositories = await createMemoryRepositories();
-    const app = createApp(createDependencies({
-      users: repositories.users,
-      sessions: repositories.staffSessions,
-      auditRecord,
-    }), { users: repositories.users, sessions: repositories.staffSessions });
-
-    await request(app)
-      .post("/api/v1/ee/operator-console/bootstrap")
-      .set("Authorization", "Bearer secret-admin-token")
-      .send({ email: "first-owner@example.com", name: "First Owner", password: "password-123" })
-      .expect(200);
-
-    await expect(repositories.users.findByEmail("first-owner@example.com")).resolves.toMatchObject({
-      email: "first-owner@example.com",
-      role: "owner",
-      status: "active",
-    });
-    expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({
-      eventType: "staff.bootstrap",
-      eventStatus: "success",
-      metadata: expect.objectContaining({ actor: "staff.bootstrap" }),
-    }));
-  });
-
-  it("rejects absent or invalid bootstrap admin tokens without creating staff", async () => {
-    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
-    const repositories = await createMemoryRepositories();
-    const createSpy = vi.spyOn(repositories.users, "create");
-    const app = createApp(createDependencies({
-      users: repositories.users,
-      sessions: repositories.staffSessions,
-    }), { users: repositories.users, sessions: repositories.staffSessions });
-
-    await request(app)
-      .post("/api/v1/ee/operator-console/bootstrap")
-      .send({ email: "first-owner@example.com", name: "First Owner", password: "password-123" })
-      .expect(401);
-    await request(app)
-      .post("/api/v1/ee/operator-console/bootstrap")
-      .set("Authorization", "Bearer wrong")
-      .send({ email: "first-owner@example.com", name: "First Owner", password: "password-123" })
-      .expect(401);
-
-    expect(createSpy).not.toHaveBeenCalled();
-  });
-
-  it("resets a locked-out owner credential through bootstrap", async () => {
-    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
-    const repositories = await createMemoryRepositories("owner");
-    await repositories.users.setStatus(repositories.staff.id, "disabled");
-    const app = createApp(createDependencies({
-      users: repositories.users,
-      sessions: repositories.staffSessions,
-    }), { users: repositories.users, sessions: repositories.staffSessions });
-
-    await request(app)
-      .post("/api/v1/ee/operator-console/bootstrap")
-      .set("Authorization", "Bearer secret-admin-token")
-      .send({ email: "owner@example.com", name: "Owner", password: "new-password-123" })
-      .expect(200);
-
-    await request(app)
-      .post("/api/v1/ee/operator-console/auth/login")
-      .send({ email: "owner@example.com", password: "new-password-123" })
-      .expect(200);
   });
 
   it("lists organizations for any staff role and requires a staff session", async () => {
@@ -814,9 +944,9 @@ describe("staff console routes and guards", () => {
       .expect(200);
 
     expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({
-      event: "staff_console.read_auth",
-      action: "organizations.list",
-      outcome: "failure",
+      event: "staff_console.session_rejected",
+      method: "GET",
+      path: "/organizations",
       reason: "missing_session",
     }), expect.any(String));
     expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({

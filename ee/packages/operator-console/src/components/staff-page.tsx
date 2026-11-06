@@ -112,7 +112,7 @@ export function StaffPage() {
             </label>
             <label className="block text-sm font-medium text-zinc-200">
               Temporary password
-              <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required minLength={8} />
+              <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required minLength={12} />
             </label>
           </div>
           <Button className="mt-5" type="submit" disabled={saving}>

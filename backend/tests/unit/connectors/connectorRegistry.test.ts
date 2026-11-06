@@ -165,6 +165,29 @@ describe("ConnectorRegistry", () => {
     );
   });
 
+  it("hands each plugin a sources port bound to its own connector id", async () => {
+    const registry = new ConnectorRegistry();
+    const seen: Record<string, ConnectorContext["sources"]> = {};
+    for (const id of ["alpha", "beta"]) {
+      registry.register(createFakePlugin({
+        id,
+        initialize: async (context) => {
+          seen[id] = context.sources;
+        },
+      }));
+    }
+    const listByExternalIdPrefix = vi.fn(async () => []);
+
+    await registry.initializeAll({ ...lifecycleContext(), sourceDirectory: { listByExternalIdPrefix } });
+    await seen["alpha"].listSources("ws-1");
+    await seen["beta"].listSources("ws-2");
+
+    expect(listByExternalIdPrefix.mock.calls).toEqual([
+      [{ workspaceId: "ws-1", externalIdPrefix: "alpha:" }],
+      [{ workspaceId: "ws-2", externalIdPrefix: "beta:" }],
+    ]);
+  });
+
   it("scopes plugin HTTP mounts under the connector id", async () => {
     const registry = new ConnectorRegistry();
     const mountHandler = vi.fn((_req: Request, res: Response) => res.status(204).end());

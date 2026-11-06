@@ -188,4 +188,57 @@ describe("createConnectorIngestionPort", () => {
     );
     expect(deleteFn).toHaveBeenCalledWith({ workspaceId: "ws-1", documentId: "doc-xyz" });
   });
+
+  it("ingests into a referenced source by id, so a deleted source is never re-created", async () => {
+    const ingest = vi.fn(async () => ({ documentId: "doc-3", status: "queued" }));
+    const { port } = buildPort({ ingest });
+
+    await port.ingest({
+      workspaceId: "ws-1",
+      title: "T",
+      content: "C",
+      externalDocumentId: "wp_post_3",
+      source: { id: "source-earlier" },
+    });
+
+    expect(ingest).toHaveBeenCalledWith(expect.objectContaining({ source: { id: "source-earlier" } }));
+  });
+
+  it("deletes from a referenced source without resolving or creating it", async () => {
+    const resolveSource = vi.fn();
+    const findBySourceAndExternalDocumentId = vi.fn(async () => ({ id: "doc-earlier" }));
+    const deleteFn = vi.fn(async () => {});
+    const { port } = buildPort({ resolveSource, findBySourceAndExternalDocumentId, delete: deleteFn });
+
+    const deleted = await port.deleteByExternalId({
+      workspaceId: "ws-1",
+      externalDocumentId: "wp_post_3",
+      source: { id: "source-earlier" },
+    });
+
+    expect(deleted).toBe(true);
+    expect(resolveSource).not.toHaveBeenCalled();
+    expect(findBySourceAndExternalDocumentId).toHaveBeenCalledWith("ws-1", "source-earlier", "wp_post_3");
+    expect(deleteFn).toHaveBeenCalledWith({ workspaceId: "ws-1", documentId: "doc-earlier" });
+  });
+
+  it("returns false from a delete whose referenced source is gone", async () => {
+    const resolveSource = vi.fn();
+    const deleteFn = vi.fn();
+    const { port } = buildPort({
+      resolveSource,
+      findBySourceAndExternalDocumentId: vi.fn(async () => null),
+      delete: deleteFn,
+    });
+
+    const deleted = await port.deleteByExternalId({
+      workspaceId: "ws-1",
+      externalDocumentId: "wp_post_3",
+      source: { id: "source-deleted" },
+    });
+
+    expect(deleted).toBe(false);
+    expect(resolveSource).not.toHaveBeenCalled();
+    expect(deleteFn).not.toHaveBeenCalled();
+  });
 });

@@ -27,7 +27,7 @@ import {
   stopPollingLoop,
   type WordpressSyncDeps,
 } from "./wordpressSyncService.js";
-import { wordpressSourceFor } from "./wordpressSource.js";
+import { wordpressConnectedSites, wordpressSourceFor } from "./wordpressSource.js";
 
 const WP_CONFIG_KEYS = {
   siteUrl: "site_url",
@@ -119,6 +119,7 @@ export class WordpressConnector implements ConnectorPlugin {
         logger: context.logger,
         state: context.state,
         ingestion: context.ingestion,
+        connectedSites: wordpressConnectedSites(context.sources),
       }),
     );
 

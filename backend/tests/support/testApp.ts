@@ -3268,6 +3268,7 @@ export const createTestDependencies = (overrides: {
       async deleteByExternalId() { return false; },
       async ensureSource() { return { id: "test-source" }; },
     },
+    connectorSourceDirectory: { async listByExternalIdPrefix() { return []; } },
     connectorDb: connectorDb as any,
     chatInferencePipeline,
     crawlerProvider,

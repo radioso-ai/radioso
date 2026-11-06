@@ -20,6 +20,7 @@ import {
   ConnectorManagementService,
   createConnectorChatPort,
   createConnectorIngestionPort,
+  createConnectorSourceDirectory,
 } from "../../modules/connectors/services/public.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import { requestSourceDigestPort } from "../http/middleware/requestSource.js";
@@ -547,9 +548,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentIngestionService: documents.documentIngestionService,
     documentDeletionService: documents.documentDeletionService,
     documentRepository: repositories.documentRepository,
-    htmlContentNormalizer: {
-      extractTextFromHtml: (html) => crawlerProvider.extractTextFromHtml(html),
-    },
+    htmlContentNormalizer: { extractTextFromHtml: (html) => crawlerProvider.extractTextFromHtml(html) },
   });
 
   const chatInferencePipeline = llmRegistry.createChatInferencePipeline(infrastructure.usageEventRecorder);
@@ -1518,6 +1517,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     connectorRegistry,
     connectorManagementService,
     connectorIngestionPort,
+    connectorSourceDirectory: createConnectorSourceDirectory(repositories.documentSourceRepository),
     connectorDb: infrastructure.database,
     chatInferencePipeline,
     operatorCopilotService,

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
+
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { DocumentSourceSummary } from "../../modules/documents/contracts/documentContracts.js";
@@ -29,6 +31,11 @@ export interface DocumentSourceRepositoryPort {
   findExistingIdsByWorkspaceId(workspaceId: string, sourceIds: string[]): Promise<string[]>;
   listByWorkspaceIdWithDocumentCounts(workspaceId: string): Promise<DocumentSourceListRecord[]>;
   countDocumentsWithoutSource(workspaceId: string): Promise<number>;
+  listByKindAndExternalIdPrefix(input: {
+    workspaceId: string;
+    kind: DocumentOriginKind;
+    externalIdPrefix: string;
+  }): Promise<DocumentSourceRecord[]>;
   upsertByExternalId(input: {
     workspaceId: string;
     kind: DocumentOriginKind;
@@ -104,7 +111,7 @@ export const toDocumentSourceSummary = (source: DocumentSourceRecord): DocumentS
   externalId: source.externalId,
 });
 
-export const mapDocumentSource = (row: DocumentSourceRow): DocumentSourceRecord => ({
+const mapDocumentSource = (row: DocumentSourceRow): DocumentSourceRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
   kind: row.kind,
@@ -176,6 +183,25 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
       .executeTakeFirst();
 
     return Number(row?.count ?? "0");
+  }
+
+  async listByKindAndExternalIdPrefix(input: {
+    workspaceId: string;
+    kind: DocumentOriginKind;
+    externalIdPrefix: string;
+  }): Promise<DocumentSourceRecord[]> {
+    const rows = await this.db
+      .selectFrom("document_sources")
+      .select(sourceColumns)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("kind", "=", input.kind)
+      // starts_with reads the prefix literally, where LIKE would treat `_` and `%` as wildcards.
+      .where(sql<boolean>`starts_with(external_id, ${input.externalIdPrefix})`)
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
+
+    return rows.map((row) => mapDocumentSource(row as DocumentSourceRow));
   }
 
   async upsertByExternalId(input: {

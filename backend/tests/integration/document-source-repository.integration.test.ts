@@ -140,4 +140,62 @@ describeIntegration("DocumentSourceRepository (Postgres)", () => {
     expect(await repository.deleteByIdAndWorkspaceId(s.id, workspaceId)).toBe(true);
     expect(await repository.deleteByIdAndWorkspaceId(s.id, workspaceId)).toBe(false);
   });
+
+  it("lists one kind's sources under an external id prefix, oldest first, in one workspace only", async () => {
+    const otherWorkspaceId = randomUUID();
+    await database.query(`INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1,$2,$3,$4)`, [
+      otherWorkspaceId,
+      accountId,
+      "DocSrc Other Workspace",
+      `route-${otherWorkspaceId}`,
+    ]);
+    try {
+      const first = await repository.upsertByExternalId({
+        workspaceId,
+        kind: "connector",
+        name: "one.example.org",
+        externalId: "wordpress:https://one.example.org",
+        config: { siteUrl: "https://one.example.org" },
+      });
+      const second = await repository.upsertByExternalId({
+        workspaceId,
+        kind: "connector",
+        name: "two.example.org",
+        externalId: "wordpress:https://two.example.org",
+      });
+      await repository.upsertByExternalId({ workspaceId, kind: "connector", name: "Slack", externalId: "slack:T1" });
+      // `_` is a LIKE wildcard: a prefix match must read it literally.
+      await repository.upsertByExternalId({ workspaceId, kind: "connector", name: "x", externalId: "wordpressX//x" });
+      await repository.upsertByExternalId({
+        workspaceId,
+        kind: "website",
+        name: "same id, other kind",
+        externalId: "wordpress:https://three.example.org",
+      });
+      await repository.upsertByExternalId({
+        workspaceId: otherWorkspaceId,
+        kind: "connector",
+        name: "other workspace",
+        externalId: "wordpress:https://four.example.org",
+      });
+
+      const listed = await repository.listByKindAndExternalIdPrefix({
+        workspaceId,
+        kind: "connector",
+        externalIdPrefix: "wordpress:",
+      });
+
+      expect(listed.map((source) => source.id)).toEqual([first.id, second.id]);
+      expect(listed[0]).toMatchObject({
+        externalId: "wordpress:https://one.example.org",
+        name: "one.example.org",
+        config: { siteUrl: "https://one.example.org" },
+      });
+      expect(
+        await repository.listByKindAndExternalIdPrefix({ workspaceId, kind: "connector", externalIdPrefix: "wordpress_" }),
+      ).toEqual([]);
+    } finally {
+      await database.query(`DELETE FROM workspaces WHERE id = $1`, [otherWorkspaceId]);
+    }
+  });
 });

@@ -36,7 +36,9 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
     try {
       const batch = await this.repository.consumeBatch(inputs);
       this.throwIfRejected(batch, inputs);
-      void this.repository.deleteExpired(now).catch(() => undefined);
+      // Prune on the batch's own clock, like enforce(); the earliest policy time keeps every counter it still needs.
+      const pruneAt = new Date(Math.min(...inputs.map((input) => input.now.getTime())));
+      void this.repository.deleteExpired(pruneAt).catch(() => undefined);
       return batch.entries.map((entry, index) => this.decide(entry, inputs[index]));
     } catch (error) {
       if (error instanceof AppError) {

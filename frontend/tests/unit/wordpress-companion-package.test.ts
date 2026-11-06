@@ -15,7 +15,7 @@ const readArchiveEntry = (entry: string): string =>
   })
 
 describe('WordPress companion download', () => {
-  it.each(['radioso-sync.php', 'radioso-agent-card.php', 'README.md'])(
+  it.each(['radioso-sync.php', 'radioso-agent-card.php', 'radioso-resync-driver.php', 'README.md'])(
     'packages the current %s source instead of a stale copy',
     (filename) => {
       expect(readArchiveEntry(filename)).toBe(
@@ -40,6 +40,17 @@ describe('WordPress companion download', () => {
     expect(pluginSource).toContain('DISABLE_WP_CRON')
     expect(pluginSource).toContain('radioso_resync_acquire_lock')
     expect(pluginSource).toContain('Run next batch now')
+  })
+
+  it('continues a resync from the open settings page through an admin-only ajax action', () => {
+    const driverSource = readFileSync(resolve(companionRoot, 'radioso-resync-driver.php'), 'utf8')
+
+    expect(pluginSource).toContain("require_once __DIR__ . '/radioso-resync-driver.php'")
+    expect(driverSource).toContain("add_action('wp_ajax_' . RADIOSO_RESYNC_DRIVE_ACTION")
+    expect(driverSource).not.toContain('wp_ajax_nopriv_')
+    expect(driverSource).toContain("current_user_can('manage_options')")
+    expect(driverSource).toContain('check_ajax_referer(RADIOSO_RESYNC_DRIVE_ACTION')
+    expect(driverSource).toContain('radioso_run_resync_batch(false)')
   })
 
   it('answers the site-level discovery paths from its own file', () => {

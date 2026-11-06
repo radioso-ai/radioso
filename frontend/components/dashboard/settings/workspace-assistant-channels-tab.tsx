@@ -32,6 +32,9 @@ import {
 import { AgentBundleExportCard } from '@/components/dashboard/settings/agent-bundle-export-card'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
+import { useAgentDraftSaver } from '@/components/dashboard/settings/use-agent-draft-saver'
+import { useAgentDraftWriter } from '@/components/dashboard/settings/use-agent-draft-writer'
+import { useGreetingDraft } from '@/components/dashboard/settings/use-greeting-draft'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { WebhookDestinationsPanel } from '@/components/dashboard/settings/webhook-destinations-panel'
 import { WorkspaceEmailConnectionsSection } from '@/components/dashboard/settings/workspace-email-connections-section'
@@ -61,7 +64,7 @@ import {
   type RetrievalDefaults,
 } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
-import { AGENT_DRAFT_SAVED_EVENT, registerAgentDraftSaver } from '@/lib/agent-draft-save-port'
+import { AGENT_DRAFT_SAVED_EVENT } from '@/lib/agent-draft-save-port'
 import { readCachedOrganizationName, writeCachedOrganizationName } from '@/lib/organization-name-cache'
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
@@ -166,7 +169,7 @@ export function WorkspaceAssistantChannelsTab({
   const [retrievalDefaults, setRetrievalDefaults] = useState<RetrievalDefaults | null>(null)
   const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
   const [isAssistantLogoSaving, setIsAssistantLogoSaving] = useState(false)
-  const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
+  const { saveError, setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
   const dispatchDraftSaved = useCallback(() => {
     if (agentId) window.dispatchEvent(new CustomEvent(AGENT_DRAFT_SAVED_EVENT, { detail: { agentId } }))
   }, [agentId])
@@ -193,7 +196,6 @@ export function WorkspaceAssistantChannelsTab({
   // the replaced logo URL, whose stored object the upload already deleted.
   const assistantLogoWriteRef = useRef(0)
   const assistantBehaviorDraftVersionRef = useRef(0)
-  const privateInstructionSaveRef = useRef(0)
   const liveBehaviorSaveRef = useRef(0)
   const canManageOrganization = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canManageWorkspaceLifecycle = currentAccountRole === 'owner' || currentAccountRole === 'admin'
@@ -545,6 +547,11 @@ export function WorkspaceAssistantChannelsTab({
     && savedAssistantBehaviorSettings
     && assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction,
   )
+  const greetingDraft = useGreetingDraft({
+    agentId: mode === 'assistant' ? agentId : undefined,
+    agentDefaultLocale: anonSettings?.assistantDefaultLocale ?? 'en',
+  })
+  const hasDraftChanges = hasPrivateInstructionChanges || greetingDraft.dirty
 
   const hasLiveAssistantBehaviorChanges = Boolean(
     assistantBehaviorSettings
@@ -554,62 +561,37 @@ export function WorkspaceAssistantChannelsTab({
   )
 
   useEffect(() => {
-    // Only the private instruction participates in the agent revision. Names and
-    // all other profile settings apply immediately and must never enable Save Draft.
-    onDraftDirtyChange?.(hasPrivateInstructionChanges)
-  }, [hasPrivateInstructionChanges, onDraftDirtyChange])
+    // Only the private instruction and the greeting wording participate in the agent revision.
+    // Names and all other profile settings apply immediately and must never enable Save Draft.
+    onDraftDirtyChange?.(hasDraftChanges)
+  }, [hasDraftChanges, onDraftDirtyChange])
 
-  useEffect(() => {
-    const saveDraftNow = async () => {
-      if (!agentId || !assistantBehaviorSettings || !savedAssistantBehaviorSettings) {
-        throw new Error('The agent editor is still loading.')
-      }
-      if (!hasPrivateInstructionChanges) return
-      const saveId = privateInstructionSaveRef.current + 1
-      privateInstructionSaveRef.current = saveId
-      const draftAtSaveStart = assistantBehaviorSettings
-      setSaveState('saving')
-      setSaveError(null)
-      try {
-        const updated = normalizeAssistantBehaviorSettingsByAgent(
-          agentId,
-          await updateAssistantBehaviorSettings(draftAtSaveStart, savedAssistantBehaviorSettings, 'draft'),
-        )
-        if (privateInstructionSaveRef.current !== saveId) {
-          throw new Error('A newer draft save superseded this request.')
-        }
-        setSavedAssistantBehaviorSettings(updated)
-        // Agent updates return a full record. Keep live fields currently being
-        // edited rather than replacing them with the record returned by this
-        // private-only save.
-        setAssistantBehaviorSettings((current) => current ? { ...updated, ...current } : updated)
-        setAssistantSettingsError(null)
-        setSaveState('saved')
-        window.dispatchEvent(new CustomEvent(AGENT_DRAFT_SAVED_EVENT, { detail: { agentId } }))
-      } catch (error) {
-        if (privateInstructionSaveRef.current === saveId) {
-          setAssistantSettingsError(getApiErrorMessage(error, 'Failed to save draft changes.'))
-          setSaveState('error')
-          setSaveError('Failed to save draft changes')
-        }
-        throw error
-      }
+  const writeDraftInstructions = useCallback(async (isLatest: () => boolean) => {
+    if (!agentId || !assistantBehaviorSettings || !savedAssistantBehaviorSettings) return
+    const updated = normalizeAssistantBehaviorSettingsByAgent(
+      agentId,
+      await updateAssistantBehaviorSettings(assistantBehaviorSettings, savedAssistantBehaviorSettings, 'draft'),
+    )
+    if (!isLatest()) {
+      throw new Error('A newer draft save superseded this request.')
     }
-    const unregister = mode === 'assistant' && agentId
-      ? registerAgentDraftSaver(agentId, {
-          save: saveDraftNow,
-          isDirty: () => hasPrivateInstructionChanges,
-        })
-      : undefined
-    const handler = (event: Event) => {
-      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId === agentId) void saveDraftNow().catch(() => undefined)
-    }
-    if (mode === 'assistant') window.addEventListener('radioso:save-agent-draft', handler)
-    return () => {
-      unregister?.()
-      if (mode === 'assistant') window.removeEventListener('radioso:save-agent-draft', handler)
-    }
-  }, [agentId, assistantBehaviorSettings, hasPrivateInstructionChanges, mode, savedAssistantBehaviorSettings, setSaveError, setSaveState, updateAssistantBehaviorSettings])
+    setSavedAssistantBehaviorSettings(updated)
+    // Agent updates return a full record. Keep live fields currently being
+    // edited rather than replacing them with the record returned by this
+    // private-only save.
+    setAssistantBehaviorSettings((current) => current ? { ...updated, ...current } : updated)
+  }, [agentId, assistantBehaviorSettings, savedAssistantBehaviorSettings, updateAssistantBehaviorSettings])
+  // The page's one draft save: instruction and greeting wording, each written only when changed.
+  const draftWriter = useAgentDraftWriter({
+    ready: Boolean(agentId && assistantBehaviorSettings && savedAssistantBehaviorSettings),
+    hasInstructionChanges: hasPrivateInstructionChanges,
+    hasGreetingChanges: greetingDraft.dirty,
+    writeInstructions: writeDraftInstructions,
+    writeGreeting: greetingDraft.save,
+    onDraftMoved: dispatchDraftSaved,
+    status: { saveError, setSaveState, setSaveError, setSettingsError: setAssistantSettingsError },
+  })
+  useAgentDraftSaver({ agentId: mode === 'assistant' ? agentId : undefined, save: draftWriter.write, isDirty: hasDraftChanges, onFailureResolved: draftWriter.releaseFailure })
 
   useEffect(() => {
     if (!accountId || isOrganizationLoading || !canManageOrganization) {
@@ -910,11 +892,10 @@ export function WorkspaceAssistantChannelsTab({
                   assistantBehaviorSettings={assistantBehaviorSettings}
                   assistantLocaleInput={assistantLocaleInput}
                   showInternalName={Boolean(agentId)}
-                  agentId={agentId}
+                  greetingDraft={agentId ? greetingDraft : undefined}
                   onAssistantSettingChange={handleAssistantSettingChange}
                   onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
                   onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
-                  onGreetingSaveStateChange={handleRevisionSaveStateChange}
                   isAnonSaving={isAnonSaving}
                 />
               </div>

@@ -241,8 +241,12 @@ const baseAgentRevisionState = (): AgentRevisionStateFixture => ({
   proactiveGreetingEnabled: false,
 });
 
+const noGreeting: ApiSchemas["AgentGreetingDraft"] = { exactWordsEnabled: false, exactContent: null };
+
+/** `greeting` is the wording the revision carries; the published revision before it carries none. */
 const buildRevisionDetail = (
   revision: AgentRevisionSummaryFixture,
+  greeting: ApiSchemas["AgentGreetingDraft"] = noGreeting,
 ): ApiSchemas["AgentRevisionDetailResponse"] => ({
   revision: {
     ...revision,
@@ -262,9 +266,9 @@ const buildRevisionDetail = (
       routines: [],
       contextVariableEnablements: [],
       greeting: {
-        before: { exactWordsEnabled: false, exactContent: null },
-        after: { exactWordsEnabled: false, exactContent: null },
-        changed: false,
+        before: noGreeting,
+        after: greeting,
+        changed: JSON.stringify(greeting) !== JSON.stringify(noGreeting),
       },
     },
   },
@@ -1155,6 +1159,7 @@ export const installDashboardApiMocks = async (
   let agentSettings = { ...buildDefaultAgentSettings(platformSettings), ...options.agentSettingsOverrides };
   const extraAgents = (options.extraAgents ?? []).map((extra) => ({ ...extra, current: { ...agentSettings, ...extra.settings } }));
   let agentRevisionState = baseAgentRevisionState();
+  let agentGreetingDraft: ApiSchemas["AgentGreetingDraft"] = { exactWordsEnabled: false, exactContent: null };
   let nextTestExecutionIndex = 1;
   const testExecutions = new Map<string, {
     id: string;
@@ -2182,6 +2187,17 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/greeting/draft`) {
+      await json(route, agentGreetingDraft);
+      return;
+    }
+
+    if (request.method() === "PUT" && path === `/agents/${defaultAgentId}/greeting/draft`) {
+      agentGreetingDraft = request.postDataJSON() as ApiSchemas["AgentGreetingDraft"];
+      await json(route, { greeting: agentGreetingDraft, validation: { ok: true } });
+      return;
+    }
+
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revisions`) {
       await json(route, { revisions: url.searchParams.get("include") === "published" ? [defaultPublishedRevision] : [defaultCandidateRevision, defaultPublishedRevision] });
       return;
@@ -2193,7 +2209,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revisions/${defaultCandidateRevisionId}`) {
-      await json(route, buildRevisionDetail(defaultCandidateRevision));
+      await json(route, buildRevisionDetail(defaultCandidateRevision, agentGreetingDraft));
       return;
     }
 

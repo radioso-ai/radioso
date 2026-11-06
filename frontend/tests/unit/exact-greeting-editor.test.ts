@@ -7,6 +7,7 @@ import {
   applyEditedItem,
   codePointLength,
   createEmptyExactContent,
+  describeGreeting,
   extractValidationIssuesFromError,
   hasVariantForLocale,
   issuesForChipLabel,
@@ -17,6 +18,8 @@ import {
   moveChip,
   removeChip,
   removeVariant,
+  sameGreetingDraft,
+  toGreetingSavePayload,
   updateChipLabel,
   updateVariantBody,
 } from '@/lib/exact-greeting-editor'
@@ -196,5 +199,133 @@ describe('extractValidationIssuesFromError', () => {
     expect(extractValidationIssuesFromError(new Error('network down'))).toBeNull()
     expect(extractValidationIssuesFromError({ status: 500, error: { code: 'internal', message: 'oops' } })).toBeNull()
     expect(extractValidationIssuesFromError(null)).toBeNull()
+  })
+})
+
+describe('sameGreetingDraft', () => {
+  const content = (): ExactContentItem => ({
+    chips: ['chip-a', 'chip-b'],
+    variants: [
+      { locale: 'en', body: 'Welcome!', chipLabels: { 'chip-a': 'Plans', 'chip-b': 'Sales' } },
+      { locale: 'fr', body: 'Bienvenue !', chipLabels: { 'chip-a': 'Offres', 'chip-b': 'Ventes' } },
+    ],
+  })
+
+  it('treats a content copy whose label keys are listed in another order as the same greeting', () => {
+    const reordered = content()
+    reordered.variants[0].chipLabels = { 'chip-b': 'Sales', 'chip-a': 'Plans' }
+
+    expect(sameGreetingDraft(
+      { exactWordsEnabled: true, exactContent: content() },
+      { exactWordsEnabled: true, exactContent: reordered },
+    )).toBe(true)
+  })
+
+  it('tells apart each thing an operator can change', () => {
+    const base = { exactWordsEnabled: true, exactContent: content() }
+    const changed = (edit: (item: ExactContentItem) => void) => {
+      const item = content()
+      edit(item)
+      return { exactWordsEnabled: true, exactContent: item }
+    }
+
+    expect(sameGreetingDraft(base, { ...base, exactWordsEnabled: false })).toBe(false)
+    expect(sameGreetingDraft(base, { ...base, exactContent: null })).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.variants[1].body = 'Salut !' }))).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.variants[0].locale = 'en-US' }))).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.chips = ['chip-b', 'chip-a'] }))).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.variants[0].chipLabels['chip-a'] = 'Pricing' }))).toBe(false)
+    expect(sameGreetingDraft(base, changed((item) => { item.variants.pop() }))).toBe(false)
+  })
+
+  it('treats two greetings with no content as the same', () => {
+    expect(sameGreetingDraft(
+      { exactWordsEnabled: false, exactContent: null },
+      { exactWordsEnabled: false, exactContent: null },
+    )).toBe(true)
+  })
+})
+
+describe('describeGreeting', () => {
+  it('says Automatic for a greeting with no content', () => {
+    expect(describeGreeting({ exactWordsEnabled: false, exactContent: null })).toEqual(['Automatic'])
+  })
+
+  it('lists each language with its wording and its chips in order', () => {
+    expect(describeGreeting({
+      exactWordsEnabled: true,
+      exactContent: {
+        chips: ['plans', 'sales'],
+        variants: [
+          { locale: 'en', body: 'Welcome!', chipLabels: { sales: 'Talk to sales', plans: 'Compare plans' } },
+          { locale: 'fr', body: 'Bienvenue !', chipLabels: { plans: 'Comparer', sales: 'Parler aux ventes' } },
+        ],
+      },
+    })).toEqual([
+      'Exact words',
+      'en: Welcome!',
+      'en chips: Compare plans, Talk to sales',
+      'fr: Bienvenue !',
+      'fr chips: Comparer, Parler aux ventes',
+    ])
+  })
+
+  it('says saved wording is not in use when Exact words is off', () => {
+    expect(describeGreeting({
+      exactWordsEnabled: false,
+      exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome!', chipLabels: {} }] },
+    })).toEqual(['Automatic (saved wording is not in use)', 'en: Welcome!'])
+  })
+})
+
+describe('toGreetingSavePayload', () => {
+  it('sends the greeting as the operator holds it', () => {
+    const exactContent = { chips: [], variants: [{ locale: 'en', body: 'Welcome!', chipLabels: {} }] }
+
+    expect(toGreetingSavePayload({ exactWordsEnabled: true, exactContent }, 'en')).toEqual({ exactWordsEnabled: true, exactContent })
+    expect(toGreetingSavePayload({ exactWordsEnabled: false, exactContent: null }, 'en')).toEqual({ exactWordsEnabled: false, exactContent: null })
+  })
+
+  it('sends the blank default-language variant the editor shows when Exact words is on with nothing written yet, so the server flags the field the operator sees', () => {
+    expect(toGreetingSavePayload({ exactWordsEnabled: true, exactContent: null }, 'fr')).toEqual({
+      exactWordsEnabled: true,
+      exactContent: { chips: [], variants: [{ locale: 'fr', body: '', chipLabels: {} }] },
+    })
+  })
+})
+
+describe('a greeting with nothing written', () => {
+  const blank: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: '', chipLabels: {} }] }
+  const written: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: 'Welcome!', chipLabels: {} }] }
+
+  it('reads the same as no content, so typing a character and deleting it is not a change', () => {
+    expect(sameGreetingDraft({ exactWordsEnabled: false, exactContent: blank }, { exactWordsEnabled: false, exactContent: null })).toBe(true)
+    expect(sameGreetingDraft({ exactWordsEnabled: false, exactContent: null }, { exactWordsEnabled: false, exactContent: blank })).toBe(true)
+    expect(sameGreetingDraft(
+      { exactWordsEnabled: false, exactContent: { chips: [], variants: [{ locale: 'en', body: '   ', chipLabels: {} }] } },
+      { exactWordsEnabled: false, exactContent: null },
+    )).toBe(true)
+  })
+
+  it('still differs from wording that was written, in either direction', () => {
+    expect(sameGreetingDraft({ exactWordsEnabled: false, exactContent: blank }, { exactWordsEnabled: false, exactContent: written })).toBe(false)
+    expect(sameGreetingDraft({ exactWordsEnabled: false, exactContent: written }, { exactWordsEnabled: false, exactContent: null })).toBe(false)
+  })
+
+  it('is content once it has a chip, which the operator added on purpose', () => {
+    const withChip: ExactContentItem = { chips: ['chip-a'], variants: [{ locale: 'en', body: '', chipLabels: { 'chip-a': '' } }] }
+
+    expect(sameGreetingDraft({ exactWordsEnabled: false, exactContent: withChip }, { exactWordsEnabled: false, exactContent: null })).toBe(false)
+  })
+
+  it('is not written while Exact words is off, but wording written there still is', () => {
+    expect(toGreetingSavePayload({ exactWordsEnabled: false, exactContent: blank }, 'en')).toEqual({ exactWordsEnabled: false, exactContent: null })
+    expect(toGreetingSavePayload({ exactWordsEnabled: false, exactContent: written }, 'en')).toEqual({ exactWordsEnabled: false, exactContent: written })
+  })
+
+  it('is sent as the operator holds it while Exact words is on, so the server flags the field they see', () => {
+    const blankEstonian: ExactContentItem = { chips: [], variants: [{ locale: 'et', body: '', chipLabels: {} }] }
+
+    expect(toGreetingSavePayload({ exactWordsEnabled: true, exactContent: blankEstonian }, 'en')).toEqual({ exactWordsEnabled: true, exactContent: blankEstonian })
   })
 })

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { agentRevisionsApi, type AgentRevisionDetail, type AgentRevisionSummary } from '@/lib/api-agent-revisions'
+import { describeGreeting } from '@/lib/exact-greeting-editor'
 
 const timestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -23,6 +24,7 @@ const revisionLabel = (revision: AgentRevisionSummary) =>
 const changeSummary = (revision: AgentRevisionDetail) => {
   const changes = [
     revision.scopedChanges.customInstruction.changed ? 'instructions' : null,
+    revision.scopedChanges.greeting.changed ? 'greeting' : null,
     revision.scopedChanges.directives.length ? `${revision.scopedChanges.directives.length} directive${revision.scopedChanges.directives.length === 1 ? '' : 's'}` : null,
     revision.scopedChanges.routines.length ? `${revision.scopedChanges.routines.length} routine${revision.scopedChanges.routines.length === 1 ? '' : 's'}` : null,
     revision.scopedChanges.contextVariableEnablements.length ? `${revision.scopedChanges.contextVariableEnablements.length} context setting${revision.scopedChanges.contextVariableEnablements.length === 1 ? '' : 's'}` : null,
@@ -109,6 +111,7 @@ export function AgentRevisionHistory({ agentId }: { agentId: string }) {
         {selected ? <div className="space-y-4 text-sm">
           <p className="font-medium">{changeSummary(selected)}</p>
           {selected.scopedChanges.customInstruction.changed ? <section><h3 className="font-medium">Instructions</h3><div className="mt-1 grid gap-2 text-xs sm:grid-cols-2"><div className="rounded border bg-muted/40 p-2"><p className="mb-1 font-medium text-muted-foreground">Before</p><p className="whitespace-pre-wrap">{selected.scopedChanges.customInstruction.before ?? 'None'}</p></div><div className="rounded border p-2"><p className="mb-1 font-medium text-muted-foreground">After</p><p className="whitespace-pre-wrap">{selected.scopedChanges.customInstruction.after ?? 'None'}</p></div></div></section> : null}
+          {selected.scopedChanges.greeting.changed ? <section><h3 className="font-medium">Greeting</h3><div className="mt-1 grid gap-2 text-xs sm:grid-cols-2"><div className="rounded border bg-muted/40 p-2"><p className="mb-1 font-medium text-muted-foreground">Before</p><p className="whitespace-pre-wrap">{describeGreeting(selected.scopedChanges.greeting.before).join('\n')}</p></div><div className="rounded border p-2"><p className="mb-1 font-medium text-muted-foreground">After</p><p className="whitespace-pre-wrap">{describeGreeting(selected.scopedChanges.greeting.after).join('\n')}</p></div></div></section> : null}
           {selected.scopedChanges.directives.length ? <section><h3 className="font-medium">Directives</h3><ul className="mt-1 space-y-1 text-muted-foreground">{selected.scopedChanges.directives.map((change) => <li key={`${change.id}-${change.change}`}>{change.change}: {change.id}</li>)}</ul></section> : null}
           {selected.scopedChanges.routines.length ? <section><h3 className="font-medium">Routines</h3><ul className="mt-1 space-y-1 text-muted-foreground">{selected.scopedChanges.routines.map((change) => <li key={`${change.definitionId}-${change.change}`}>{change.change}: {change.definitionId}</li>)}</ul></section> : null}
           {selected.scopedChanges.contextVariableEnablements.length ? <section><h3 className="font-medium">Context</h3><ul className="mt-1 space-y-1 text-muted-foreground">{selected.scopedChanges.contextVariableEnablements.map((change) => <li key={`${change.contextVariableId}-${change.change}`}>{change.change}: {change.contextVariableId}</li>)}</ul></section> : null}

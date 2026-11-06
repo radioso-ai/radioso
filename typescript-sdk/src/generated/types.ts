@@ -1287,7 +1287,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get the exact greeting content on the agent draft */
+        get: operations["getAgentGreetingDraft"];
         /** Save exact greeting content on the agent draft */
         put: operations["updateAgentGreetingDraft"];
         post?: never;
@@ -16825,6 +16826,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRevisionState"];
+                };
+            };
+        };
+    };
+    getAgentGreetingDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The greeting the agent draft holds; Automatic mode with no content when the draft never authored one */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentGreetingDraft"];
+                };
+            };
+            /** @description Agent draft not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

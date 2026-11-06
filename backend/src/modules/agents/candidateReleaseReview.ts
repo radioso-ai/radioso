@@ -1,4 +1,5 @@
 import type { AgentRevisionSnapshot } from "./agentRevision.js";
+import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 
 export interface CandidateReleaseChange { readonly field: string; readonly id: string; readonly before: string | null; readonly after: string | null; readonly truncated: boolean; }
 
@@ -20,10 +21,18 @@ const changesFor = (field: "directives" | "routines" | "contextVariableEnablemen
   });
 };
 
+const greetingChange = (base: AgentRevisionSnapshot | null, candidate: AgentRevisionSnapshot): CandidateReleaseChange[] => {
+  const unchanged = canonicalGreeting(base ?? {}) === canonicalGreeting(candidate);
+  if (unchanged) return [];
+  const before = text(base ? readAgentRevisionGreeting(base) : null);
+  const after = text(readAgentRevisionGreeting(candidate));
+  return [{ field: "greeting", id: "agent", before: before.value, after: after.value, truncated: before.truncated || after.truncated }];
+};
+
 export const describeCandidateReleaseDiff = (base: AgentRevisionSnapshot | null, candidate: AgentRevisionSnapshot, page: { offset?: number; limit?: number } = {}): { changes: ReadonlyArray<CandidateReleaseChange>; truncated: boolean; nextOffset: number | null } => {
   const instructionBefore = text(base?.customInstruction ?? null); const instructionAfter = text(candidate.customInstruction ?? null);
   const instruction = (base?.customInstruction ?? null) === (candidate.customInstruction ?? null) ? [] : [{ field: "customInstruction", id: "agent", before: instructionBefore.value, after: instructionAfter.value, truncated: instructionBefore.truncated || instructionAfter.truncated }];
-  const changes = [...instruction, ...changesFor("directives", base?.directives ?? [], candidate.directives), ...changesFor("routines", base?.routines ?? [], candidate.routines), ...changesFor("contextVariableEnablements", base?.contextVariableEnablements ?? [], candidate.contextVariableEnablements), ...changesFor("agentSkills", base?.agentSkills ?? [], candidate.agentSkills ?? [])];
+  const changes = [...instruction, ...greetingChange(base, candidate), ...changesFor("directives", base?.directives ?? [], candidate.directives), ...changesFor("routines", base?.routines ?? [], candidate.routines), ...changesFor("contextVariableEnablements", base?.contextVariableEnablements ?? [], candidate.contextVariableEnablements), ...changesFor("agentSkills", base?.agentSkills ?? [], candidate.agentSkills ?? [])];
   const offset = page.offset ?? 0; const limit = page.limit ?? 40; const visible = changes.slice(offset, offset + limit);
   return { changes: visible, truncated: changes.some((change) => change.truncated), nextOffset: offset + limit < changes.length ? offset + limit : null };
 };

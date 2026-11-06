@@ -40,6 +40,16 @@ export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDepend
     } catch (error) { next(error); }
   });
 
+  // The greeting the draft holds, so the editor starts from what the next candidate would
+  // freeze rather than from the published revision.
+  router.get("/:agentId/greeting/draft", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { agentId } = agentParamsSchema.parse(req.params);
+      res.json(await dependencies.agentRevisionService.readDraftGreeting(workspaceId, agentId));
+    } catch (error) { next(error); }
+  });
+
   // Draft-only write (spec 1150 F3/F8): the agent's live `proactiveGreetingEnabled` kill
   // switch stays on `PUT /agents/:agentId`; this route owns exact content and its own
   // enabled flag, which only ever reach a conversation through a published revision.

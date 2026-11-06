@@ -1,5 +1,5 @@
 import { createClientId } from './client-id'
-import type { AgentGreetingValidationIssue, ExactContentItem } from './api-types'
+import type { AgentGreetingDraft, AgentGreetingValidationIssue, ExactContentItem } from './api-types'
 
 /**
  * Pure editor-state transitions and validation-issue lookups for the exact-greeting
@@ -8,7 +8,7 @@ import type { AgentGreetingValidationIssue, ExactContentItem } from './api-types
  * its state so authoring, save, and preview never carry a second, duplicated shape.
  *
  * Knows nothing of React, HTTP, or the dashboard; the component layer owns rendering and
- * calling `agentGreetingApi.saveDraft`.
+ * `use-greeting-draft` owns loading and saving through `agentGreetingApi`.
  */
 
 export const EXACT_GREETING_MAX_CHIPS = 5
@@ -150,6 +150,61 @@ export const issuesForVariants = (issues: readonly ExactGreetingIssue[]): ExactG
 export const applyEditedItem = (
   next: ExactContentItem,
 ): { item: ExactContentItem; issues: ExactGreetingIssue[] } => ({ item: next, issues: [] })
+
+const sameChipLabels = (a: Record<string, string>, b: Record<string, string>): boolean => {
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key])
+}
+
+/** Content with no chips and no wording in any language: what the editor leaves behind when the
+ * operator types into a blank variant and deletes it again. It carries nothing to publish. */
+const isBlankExactContent = (item: ExactContentItem): boolean =>
+  item.chips.length === 0 && item.variants.every((variant) => variant.body.trim() === '')
+
+const sameExactContent = (rawA: ExactContentItem | null, rawB: ExactContentItem | null): boolean => {
+  const a = rawA && isBlankExactContent(rawA) ? null : rawA
+  const b = rawB && isBlankExactContent(rawB) ? null : rawB
+  if (a === null || b === null) {
+    return a === b
+  }
+  return a.chips.length === b.chips.length
+    && a.chips.every((chipId, index) => chipId === b.chips[index])
+    && a.variants.length === b.variants.length
+    && a.variants.every((variant, index) => {
+      const other = b.variants[index]
+      return variant.locale === other.locale && variant.body === other.body && sameChipLabels(variant.chipLabels, other.chipLabels)
+    })
+}
+
+/** Whether two greetings read the same, which is how the page tells an edited greeting from
+ * the one it last loaded or saved. Structural, so the key order a stored copy comes back in
+ * never counts as an edit. */
+export const sameGreetingDraft = (a: AgentGreetingDraft, b: AgentGreetingDraft): boolean =>
+  a.exactWordsEnabled === b.exactWordsEnabled && sameExactContent(a.exactContent, b.exactContent)
+
+/** A greeting as the lines the publish review shows: its mode, then each language's wording
+ * and, when it has chips, that language's chip labels in chip order. */
+export const describeGreeting = (greeting: AgentGreetingDraft): string[] => {
+  const { exactWordsEnabled, exactContent } = greeting
+  const mode = exactWordsEnabled ? 'Exact words' : exactContent ? 'Automatic (saved wording is not in use)' : 'Automatic'
+  const variants = exactContent?.variants.flatMap((variant) => {
+    const chipLabels = exactContent.chips.map((chipId) => variant.chipLabels[chipId] ?? '')
+    return [`${variant.locale}: ${variant.body}`, ...(chipLabels.length ? [`${variant.locale} chips: ${chipLabels.join(', ')}`] : [])]
+  }) ?? []
+  return [mode, ...variants]
+}
+
+/** The body `PUT .../greeting/draft` takes for a greeting the operator holds. Exact words on
+ * with nothing written sends the blank default-language variant the editor shows in that
+ * state, so the server's field-level issues land on a field the operator can see. With Exact
+ * words off, content with nothing written is not sent: it would store a blank variant that reads
+ * as a change to the greeting. Wording written while Exact words is off is sent. */
+export const toGreetingSavePayload = (draft: AgentGreetingDraft, agentDefaultLocale: string): AgentGreetingDraft => {
+  if (draft.exactWordsEnabled) {
+    return draft.exactContent === null ? { exactWordsEnabled: true, exactContent: createEmptyExactContent(agentDefaultLocale) } : draft
+  }
+  return draft.exactContent && isBlankExactContent(draft.exactContent) ? { exactWordsEnabled: false, exactContent: null } : draft
+}
 
 /**
  * `PUT .../greeting/draft` returns 200 with `validation.issues` unless Exact words is

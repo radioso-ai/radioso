@@ -1,3 +1,4 @@
+import { canonicalJson } from "../../shared/domain/canonicalContentHash.js";
 import type { AgentGreetingSnapshot, AgentRevisionSnapshot } from "./agentRevision.js";
 
 /** Absent `greeting` (a draft/revision frozen before this field existed) reads back
@@ -6,22 +7,11 @@ export const readAgentRevisionGreeting = (snapshot: Pick<AgentRevisionSnapshot, 
   snapshot.greeting ?? { exactWordsEnabled: false, exactContent: null };
 
 /**
- * The greeting as a fixed shape for a `JSON.stringify` comparison: a greeting absent from one
- * snapshot reads as the default (via `readAgentRevisionGreeting`), and a variant's chip labels,
- * a record whose key order depends on which writer or JSONB round trip produced it, are listed
- * by sorted key. Chip order and variant order are authored, so they stay as they are.
+ * The greeting as one canonical string, so two snapshots can be compared for a greeting change.
+ * A greeting absent from one snapshot reads as the default (via `readAgentRevisionGreeting`), and
+ * `canonicalJson` fixes the key order of every object, which depends on which writer or JSONB
+ * round trip produced it. It reads the greeting whole, so a field it gains later is compared
+ * without anyone listing it here. Arrays keep their authored order: chips and variants are ordered.
  */
-export const comparableGreeting = (snapshot: Pick<AgentRevisionSnapshot, "greeting">) => {
-  const greeting = readAgentRevisionGreeting(snapshot);
-  return {
-    exactWordsEnabled: greeting.exactWordsEnabled,
-    exactContent: greeting.exactContent && {
-      chips: greeting.exactContent.chips,
-      variants: greeting.exactContent.variants.map((variant) => ({
-        locale: variant.locale,
-        body: variant.body,
-        chipLabels: Object.entries(variant.chipLabels).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
-      })),
-    },
-  };
-};
+export const canonicalGreeting = (snapshot: Pick<AgentRevisionSnapshot, "greeting">): string =>
+  canonicalJson(JSON.parse(JSON.stringify(readAgentRevisionGreeting(snapshot))) as unknown);

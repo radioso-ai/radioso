@@ -52,7 +52,8 @@ const isClean = (session: GreetingSession): boolean => sameGreetingDraft(session
  * page-level Save draft saves it together with the instructions and the editor stays a view.
  * A greeting that failed to load is never saved: the editor would otherwise start blank and
  * overwrite the stored draft. When something else writes the draft greeting (Ray applying a
- * proposal) a clean editor reads it again; an edited one keeps the operator's edits.
+ * proposal) a clean editor reads it again; an edited one keeps the operator's edits and measures
+ * them against the wording the draft now holds.
  */
 export function useGreetingDraft({
   agentId,
@@ -74,42 +75,60 @@ export function useGreetingDraft({
   const saveSequenceRef = useRef(0)
   /** Moves each time a save starts or ends, so a read that began before a write is not applied over it. */
   const writeEpochRef = useRef(0)
+  /** The load the page is showing, so a save that started under an earlier load cannot settle onto this one. */
+  const loadRef = useRef<{ agentId: string; id: number; done: boolean } | null>(null)
   const current = session && session.agentId === agentId && session.attempt === attempt ? session : null
 
   useEffect(() => {
     if (!agentId) return
     let active = true
+    const load = { agentId, id: (loadRef.current?.id ?? 0) + 1, done: false }
+    loadRef.current = load
     const finish = (outcome: GreetingSession['outcome'], greeting: AgentGreetingDraft) => {
-      if (active) setSession({ agentId, attempt, outcome, baseline: greeting, value: greeting, issues: [] })
+      if (!active) return
+      load.done = true
+      setSession({ agentId, attempt, outcome, baseline: greeting, value: greeting, issues: [] })
     }
-    agentGreetingApi.getDraft(agentId).then(
-      (greeting) => finish('ready', greeting),
-      () => finish('error', BLANK),
-    )
+    const read = () => {
+      const epoch = writeEpochRef.current
+      agentGreetingApi.getDraft(agentId).then(
+        // A save started or ended while this read was out, so it may predate that write: read again.
+        (greeting) => (active && writeEpochRef.current !== epoch ? read() : finish('ready', greeting)),
+        () => finish('error', BLANK),
+      )
+    }
+    read()
     return () => {
       active = false
     }
   }, [agentId, attempt])
 
+  /** Takes the draft's greeting as the new baseline: a clean editor shows it, an edited one keeps
+   * its edits and is measured against it. */
+  const readDraftAgain = useCallback((forAgentId: string) => {
+    const epoch = writeEpochRef.current
+    agentGreetingApi.getDraft(forAgentId).then((fresh) => {
+      if (writeEpochRef.current !== epoch) return
+      // Decided against the session as it is when the answer arrives, so edits typed while
+      // the read was in flight are kept.
+      setSession((previous) => {
+        if (!previous || previous.agentId !== forAgentId || previous.outcome !== 'ready') return previous
+        if (sameGreetingDraft(fresh, previous.baseline)) return previous
+        return isClean(previous)
+          ? { ...previous, baseline: fresh, value: fresh, issues: [] }
+          : { ...previous, baseline: fresh }
+      })
+    }, () => undefined)
+  }, [])
+
   useEffect(() => {
     if (!agentId) return
     const readAgain = (event: Event) => {
-      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId !== agentId) return
-      const epoch = writeEpochRef.current
-      agentGreetingApi.getDraft(agentId).then((fresh) => {
-        if (writeEpochRef.current !== epoch) return
-        // Decided against the session as it is when the answer arrives, so edits typed while
-        // the read was in flight are kept.
-        setSession((previous) => {
-          if (!previous || previous.agentId !== agentId || previous.outcome !== 'ready') return previous
-          if (!isClean(previous) || sameGreetingDraft(fresh, previous.baseline)) return previous
-          return { ...previous, baseline: fresh, value: fresh, issues: [] }
-        })
-      }, () => undefined)
+      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId === agentId) readDraftAgain(agentId)
     }
     window.addEventListener(AGENT_GREETING_CHANGED_EVENT, readAgain)
     return () => window.removeEventListener(AGENT_GREETING_CHANGED_EVENT, readAgain)
-  }, [agentId])
+  }, [agentId, readDraftAgain])
 
   const edit = useCallback((change: (value: AgentGreetingDraft) => AgentGreetingDraft, issues?: ExactGreetingIssue[]) => {
     setSession((previous) => previous?.outcome === 'ready'
@@ -136,12 +155,20 @@ export function useGreetingDraft({
     const saveId = saveSequenceRef.current + 1
     saveSequenceRef.current = saveId
     writeEpochRef.current += 1
+    const startedUnder = loadRef.current
     // The saved greeting becomes the baseline whatever was typed meanwhile, so an edit made
     // during the save stays held and stays dirty. The save's issues describe the text it sent,
-    // so they are shown only while the held greeting still reads as that text.
+    // so they are shown only while the held greeting still reads as that text. A session loaded
+    // after the save began, on a return to the agent, is not the one the save started from and
+    // may have been read before the write landed, so it reads the draft again instead (a load
+    // still out does that itself, once it finds a write landed meanwhile).
     const settle = (update: (previous: GreetingSession, sentIsHeld: boolean) => GreetingSession) => {
       writeEpochRef.current += 1
       if (saveSequenceRef.current !== saveId) return
+      if (loadRef.current !== startedUnder) {
+        if (loadRef.current?.agentId === agentId && loadRef.current.done) readDraftAgain(agentId)
+        return
+      }
       setSession((previous) => previous && previous.agentId === agentId
         ? update(previous, sameGreetingDraft(toGreetingSavePayload(previous.value, agentDefaultLocale), payload))
         : previous)
@@ -154,7 +181,7 @@ export function useGreetingDraft({
       settle((previous, sentIsHeld) => ({ ...previous, issues: fieldIssues && sentIsHeld ? fieldIssues : previous.issues }))
       throw error
     }
-  }, [agentDefaultLocale, agentId, current])
+  }, [agentDefaultLocale, agentId, current, readDraftAgain])
 
   const loadState = current?.outcome ?? 'loading'
   const exactWordsEnabled = current?.value.exactWordsEnabled ?? false

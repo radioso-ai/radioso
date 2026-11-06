@@ -146,6 +146,45 @@ describe('useGreetingDraft', () => {
     expect(apiMocks.saveDraft).toHaveBeenCalledTimes(1)
   })
 
+  describe('wording typed and deleted again', () => {
+    const typed: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: 'W', chipLabels: {} }] }
+    const deleted: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: '', chipLabels: {} }] }
+
+    it('is not a change once Exact words is switched back off, and nothing is written', async () => {
+      await loaded({ exactWordsEnabled: false, exactContent: null })
+
+      act(() => latest.setExactWordsEnabled(true))
+      act(() => latest.setExactContent(typed))
+      act(() => latest.setExactContent(deleted))
+      act(() => latest.setExactWordsEnabled(false))
+
+      expect(latest.dirty).toBe(false)
+      await act(async () => { await latest.save() })
+      expect(apiMocks.saveDraft).not.toHaveBeenCalled()
+    })
+
+    it('does not store a blank variant when the operator clears saved wording while Exact words is off', async () => {
+      await loaded({ exactWordsEnabled: false, exactContent: stored })
+
+      act(() => latest.setExactContent(deleted))
+      expect(latest.dirty).toBe(true)
+      await act(async () => { await latest.save() })
+
+      expect(apiMocks.saveDraft).toHaveBeenCalledWith(agentId, { exactWordsEnabled: false, exactContent: null })
+      expect(latest.dirty).toBe(false)
+    })
+
+    it('still saves wording written while Exact words is off', async () => {
+      await loaded({ exactWordsEnabled: false, exactContent: null })
+
+      act(() => latest.setExactContent(typed))
+      expect(latest.dirty).toBe(true)
+      await act(async () => { await latest.save() })
+
+      expect(apiMocks.saveDraft).toHaveBeenCalledWith(agentId, { exactWordsEnabled: false, exactContent: typed })
+    })
+  })
+
   it('saves Exact words with nothing written as the blank default-language variant', async () => {
     await loaded({ exactWordsEnabled: false, exactContent: null })
 
@@ -175,11 +214,11 @@ describe('useGreetingDraft', () => {
 
   it('treats a save the server accepted with issues as saved, and shows the issues', async () => {
     await loaded({ exactWordsEnabled: false, exactContent: null })
-    const issues = [{ path: 'variants[0].body', code: 'blank_body', message: 'Body must not be blank' }]
-    const blank: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: '', chipLabels: {} }] }
-    apiMocks.saveDraft.mockResolvedValueOnce({ greeting: { exactWordsEnabled: false, exactContent: blank }, validation: { ok: false, issues } })
+    const issues = [{ path: 'variants[0].body', code: 'unknown_reference', message: 'Unknown reference {{missing}}' }]
+    const unknownReference: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: 'Hi {{missing}}', chipLabels: {} }] }
+    apiMocks.saveDraft.mockResolvedValueOnce({ greeting: { exactWordsEnabled: false, exactContent: unknownReference }, validation: { ok: false, issues } })
 
-    act(() => latest.setExactContent(blank))
+    act(() => latest.setExactContent(unknownReference))
     await act(async () => { await latest.save() })
 
     expect(latest.dirty).toBe(false)
@@ -343,6 +382,58 @@ describe('useGreetingDraft', () => {
     })
   })
 
+  describe('when the page leaves the agent and returns while a save is in flight', () => {
+    const sent: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: 'Hello!', chipLabels: {} }] }
+    const startSaveThenLeaveAndReturn = async () => {
+      await loaded({ exactWordsEnabled: true, exactContent: stored })
+      const saving = deferred<{ greeting: AgentGreetingDraft; validation: { ok: true } }>()
+      apiMocks.saveDraft.mockReturnValueOnce(saving.promise)
+      act(() => latest.setExactContent(sent))
+      let pending: Promise<void> = Promise.resolve()
+      act(() => { pending = latest.save() })
+      await render(null)
+      return { saving, finish: async () => {
+        await act(async () => {
+          saving.resolve({ greeting: { exactWordsEnabled: true, exactContent: sent }, validation: { ok: true } })
+          await pending
+        })
+      } }
+    }
+
+    it('does not set the saved wording as the baseline of a session that was read before the save landed', async () => {
+      const { finish } = await startSaveThenLeaveAndReturn()
+      apiMocks.getDraft.mockResolvedValueOnce({ exactWordsEnabled: true, exactContent: stored })
+      await render(agentId)
+      apiMocks.getDraft.mockResolvedValueOnce({ exactWordsEnabled: true, exactContent: sent })
+
+      await finish()
+
+      // Left as it was, the editor would hold the old wording against the saved one as an edit,
+      // and the next Save draft would write the old wording over it.
+      expect(latest.exactContent).toEqual(sent)
+      expect(latest.dirty).toBe(false)
+      await act(async () => { await latest.save() })
+      expect(apiMocks.saveDraft).toHaveBeenCalledTimes(1)
+    })
+
+    it('reads again when the save landed while the read was out, since that read may predate it', async () => {
+      const { finish } = await startSaveThenLeaveAndReturn()
+      const reading = deferred<AgentGreetingDraft>()
+      apiMocks.getDraft.mockReturnValueOnce(reading.promise)
+      await render(agentId)
+      apiMocks.getDraft.mockResolvedValueOnce({ exactWordsEnabled: true, exactContent: sent })
+
+      await finish()
+      expect(latest.loadState).toBe('loading')
+      await act(async () => { reading.resolve({ exactWordsEnabled: true, exactContent: stored }) })
+
+      expect(apiMocks.getDraft).toHaveBeenCalledTimes(3)
+      expect(latest.loadState).toBe('ready')
+      expect(latest.exactContent).toEqual(sent)
+      expect(latest.dirty).toBe(false)
+    })
+  })
+
   describe('when something else writes the draft greeting', () => {
     const rays: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: 'Ray wrote this', chipLabels: {} }] }
 
@@ -366,6 +457,33 @@ describe('useGreetingDraft', () => {
 
       expect(latest.exactContent).toBeNull()
       expect(latest.dirty).toBe(true)
+    })
+
+    it('measures the operator\'s edits against what Ray wrote, so putting the old wording back still counts as a change', async () => {
+      await loaded({ exactWordsEnabled: false, exactContent: null })
+      act(() => latest.setExactWordsEnabled(true))
+      apiMocks.getDraft.mockResolvedValueOnce({ exactWordsEnabled: true, exactContent: rays })
+      await announceGreetingChanged()
+
+      act(() => latest.setExactWordsEnabled(false))
+
+      expect(latest.dirty).toBe(true)
+      await act(async () => { await latest.save() })
+      expect(apiMocks.saveDraft).toHaveBeenLastCalledWith(agentId, { exactWordsEnabled: false, exactContent: null })
+      expect(latest.dirty).toBe(false)
+    })
+
+    it('reads clean when the operator\'s edits come to match what Ray wrote', async () => {
+      await loaded({ exactWordsEnabled: false, exactContent: null })
+      act(() => latest.setExactWordsEnabled(true))
+      act(() => latest.setExactContent(rays))
+      expect(latest.dirty).toBe(true)
+      apiMocks.getDraft.mockResolvedValueOnce({ exactWordsEnabled: true, exactContent: rays })
+
+      await announceGreetingChanged()
+
+      expect(latest.exactContent).toEqual(rays)
+      expect(latest.dirty).toBe(false)
     })
 
     it('keeps edits typed while the read was in flight', async () => {
@@ -406,12 +524,12 @@ describe('useGreetingDraft', () => {
 
     it('keeps the issues it is showing when the draft already holds what the editor holds', async () => {
       await loaded({ exactWordsEnabled: false, exactContent: null })
-      const issues = [{ path: 'variants[0].body', code: 'blank_body', message: 'Body must not be blank' }]
-      const blank: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: '', chipLabels: {} }] }
-      apiMocks.saveDraft.mockResolvedValueOnce({ greeting: { exactWordsEnabled: false, exactContent: blank }, validation: { ok: false, issues } })
-      act(() => latest.setExactContent(blank))
+      const issues = [{ path: 'variants[0].body', code: 'unknown_reference', message: 'Unknown reference {{missing}}' }]
+      const unknownReference: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: 'Hi {{missing}}', chipLabels: {} }] }
+      apiMocks.saveDraft.mockResolvedValueOnce({ greeting: { exactWordsEnabled: false, exactContent: unknownReference }, validation: { ok: false, issues } })
+      act(() => latest.setExactContent(unknownReference))
       await act(async () => { await latest.save() })
-      apiMocks.getDraft.mockResolvedValueOnce({ exactWordsEnabled: false, exactContent: blank })
+      apiMocks.getDraft.mockResolvedValueOnce({ exactWordsEnabled: false, exactContent: unknownReference })
 
       await announceGreetingChanged()
 

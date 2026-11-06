@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { applyConfirmationKind, buildCopilotProposalDiff, CopilotProposalCard, targetReference } from '@/components/dashboard/copilot-proposal-card'
-import { AGENT_GREETING_CHANGED_EVENT } from '@/lib/agent-draft-save-port'
+import { AGENT_DRAFT_SAVED_EVENT, AGENT_GREETING_CHANGED_EVENT } from '@/lib/agent-draft-save-port'
 import { copilotApi, type CopilotProposalApplyResult, type CopilotProposalDetail, type CopilotProposalSummary } from '@/lib/api-copilot'
 
 beforeAll(() => {
@@ -375,16 +375,23 @@ describe('CopilotProposalCard', () => {
       status: 'pending',
     }
     let announced: string[]
+    let draftSaved: string[]
     const onGreetingChanged = (event: Event) => {
       announced.push((event as CustomEvent<{ agentId: string }>).detail.agentId)
+    }
+    const onDraftSaved = (event: Event) => {
+      draftSaved.push((event as CustomEvent<{ agentId: string }>).detail.agentId)
     }
 
     beforeEach(() => {
       announced = []
+      draftSaved = []
       window.addEventListener(AGENT_GREETING_CHANGED_EVENT, onGreetingChanged)
+      window.addEventListener(AGENT_DRAFT_SAVED_EVENT, onDraftSaved)
     })
     afterEach(() => {
       window.removeEventListener(AGENT_GREETING_CHANGED_EVENT, onGreetingChanged)
+      window.removeEventListener(AGENT_DRAFT_SAVED_EVENT, onDraftSaved)
       vi.restoreAllMocks()
     })
 
@@ -394,11 +401,18 @@ describe('CopilotProposalCard', () => {
       expect(announced).toEqual(['agent-1'])
     })
 
+    it('tells the revision header and Test Chat the draft moved, so they read it again', async () => {
+      await apply(greetingProposal, { status: 'applied', appliedRef: { agentId: 'agent-1' } })
+
+      expect(draftSaved).toEqual(['agent-1'])
+    })
+
     it('stays quiet when the greeting was not written', async () => {
       await apply(greetingProposal, { status: 'stale', appliedRef: null })
       await apply(greetingProposal, { status: 'failed', reason: 'The draft changed' })
 
       expect(announced).toEqual([])
+      expect(draftSaved).toEqual([])
     })
 
     it('stays quiet for a proposal to something other than the greeting', async () => {

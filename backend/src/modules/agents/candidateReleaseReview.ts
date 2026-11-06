@@ -1,5 +1,5 @@
 import type { AgentRevisionSnapshot } from "./agentRevision.js";
-import { comparableGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
+import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 
 export interface CandidateReleaseChange { readonly field: string; readonly id: string; readonly before: string | null; readonly after: string | null; readonly truncated: boolean; }
 
@@ -22,7 +22,7 @@ const changesFor = (field: "directives" | "routines" | "contextVariableEnablemen
 };
 
 const greetingChange = (base: AgentRevisionSnapshot | null, candidate: AgentRevisionSnapshot): CandidateReleaseChange[] => {
-  const unchanged = JSON.stringify(comparableGreeting(base ?? {})) === JSON.stringify(comparableGreeting(candidate));
+  const unchanged = canonicalGreeting(base ?? {}) === canonicalGreeting(candidate);
   if (unchanged) return [];
   const before = text(base ? readAgentRevisionGreeting(base) : null);
   const after = text(readAgentRevisionGreeting(candidate));

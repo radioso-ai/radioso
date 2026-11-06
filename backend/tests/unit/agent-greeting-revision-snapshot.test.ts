@@ -153,6 +153,29 @@ describe("equalScopedAuthoringSnapshots: exact greeting", () => {
     expect(equalScopedAuthoringSnapshots(snapshotWith(), snapshotWith())).toBe(true);
   });
 
+  it("counts a field the greeting gains later without anyone teaching the comparison about it", () => {
+    // The snapshot schema is strict today, so a field the schema has not learned yet is fed in
+    // unparsed: the comparison must read the greeting as a whole, not a hand-picked list of its fields.
+    const withExtraField = (value: string) => ({
+      ...snapshotWith(compare({})),
+      greeting: { ...compare({}), exactContent: { ...compare({}).exactContent, variants: [{ locale: "en", body: "Welcome!", chipLabels: { plans: "Compare plans", sales: "Talk to sales" }, tone: value }] } },
+    });
+
+    expect(equalScopedAuthoringSnapshots(withExtraField("formal") as never, withExtraField("casual") as never)).toBe(false);
+    expect(equalScopedAuthoringSnapshots(withExtraField("formal") as never, withExtraField("formal") as never)).toBe(true);
+  });
+
+  it("keeps variants in the order they were authored", () => {
+    const variants = [
+      { locale: "en", body: "Welcome!", chipLabels: {} },
+      { locale: "et", body: "Tere!", chipLabels: {} },
+    ];
+    const authored = snapshotWith({ exactWordsEnabled: true, exactContent: exactContent({ variants }) });
+    const reordered = snapshotWith({ exactWordsEnabled: true, exactContent: exactContent({ variants: [...variants].reverse() }) });
+
+    expect(equalScopedAuthoringSnapshots(authored, reordered)).toBe(false);
+  });
+
   it("is not fooled by the order of a variant's chip labels, which a stored copy may list differently", () => {
     const route = compare({ exactContent: exactContent({ chips: ["plans", "sales"], variants: [{ locale: "en", body: "Welcome!", chipLabels: { plans: "Compare plans", sales: "Talk to sales" } }] }) });
     const stored = compare({ exactContent: exactContent({ chips: ["plans", "sales"], variants: [{ locale: "en", body: "Welcome!", chipLabels: { sales: "Talk to sales", plans: "Compare plans" } }] }) });

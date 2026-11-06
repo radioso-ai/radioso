@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { registerAgentDraftSaver } from '@/lib/agent-draft-save-port'
 
@@ -10,9 +10,9 @@ const SAVE_AGENT_DRAFT_EVENT = 'radioso:save-agent-draft'
  * through the save port, and the header's Save draft reaches it through the window event. An
  * `agentId` of `undefined` registers nothing.
  *
- * A save that fails leaves the page showing the failure. When the operator then undoes what
- * could not be saved and nothing is left unsaved, `onFailureResolved` runs so the page can drop
- * the failure it was showing.
+ * A save that fails leaves the page showing the failure. When nothing is left unsaved, whether
+ * the operator undid what could not be saved before or while the save ran, `onFailureResolved`
+ * runs so the page can drop the failure it was showing.
  */
 export function useAgentDraftSaver({
   agentId,
@@ -26,6 +26,9 @@ export function useAgentDraftSaver({
   onFailureResolved?: () => void
 }): void {
   const failedRef = useRef(false)
+  // Counts failed saves so that one which fails after the operator has already undone the edit
+  // still renders: nothing else would change for the effect below to notice.
+  const [failureCount, setFailureCount] = useState(0)
   const onFailureResolvedRef = useRef(onFailureResolved)
   useEffect(() => {
     onFailureResolvedRef.current = onFailureResolved
@@ -36,6 +39,7 @@ export function useAgentDraftSaver({
       failedRef.current = false
     } catch (error) {
       failedRef.current = true
+      setFailureCount((previous) => previous + 1)
       throw error
     }
   }, [save])
@@ -44,7 +48,7 @@ export function useAgentDraftSaver({
     if (isDirty || !failedRef.current) return
     failedRef.current = false
     onFailureResolvedRef.current?.()
-  }, [isDirty])
+  }, [failureCount, isDirty])
 
   useEffect(() => {
     if (!agentId) return

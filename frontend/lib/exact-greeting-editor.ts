@@ -156,7 +156,14 @@ const sameChipLabels = (a: Record<string, string>, b: Record<string, string>): b
   return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key])
 }
 
-const sameExactContent = (a: ExactContentItem | null, b: ExactContentItem | null): boolean => {
+/** Content with no chips and no wording in any language: what the editor leaves behind when the
+ * operator types into a blank variant and deletes it again. It carries nothing to publish. */
+const isBlankExactContent = (item: ExactContentItem): boolean =>
+  item.chips.length === 0 && item.variants.every((variant) => variant.body.trim() === '')
+
+const sameExactContent = (rawA: ExactContentItem | null, rawB: ExactContentItem | null): boolean => {
+  const a = rawA && isBlankExactContent(rawA) ? null : rawA
+  const b = rawB && isBlankExactContent(rawB) ? null : rawB
   if (a === null || b === null) {
     return a === b
   }
@@ -189,11 +196,15 @@ export const describeGreeting = (greeting: AgentGreetingDraft): string[] => {
 
 /** The body `PUT .../greeting/draft` takes for a greeting the operator holds. Exact words on
  * with nothing written sends the blank default-language variant the editor shows in that
- * state, so the server's field-level issues land on a field the operator can see. */
-export const toGreetingSavePayload = (draft: AgentGreetingDraft, agentDefaultLocale: string): AgentGreetingDraft =>
-  draft.exactWordsEnabled && draft.exactContent === null
-    ? { exactWordsEnabled: true, exactContent: createEmptyExactContent(agentDefaultLocale) }
-    : draft
+ * state, so the server's field-level issues land on a field the operator can see. With Exact
+ * words off, content with nothing written is not sent: it would store a blank variant that reads
+ * as a change to the greeting. Wording written while Exact words is off is sent. */
+export const toGreetingSavePayload = (draft: AgentGreetingDraft, agentDefaultLocale: string): AgentGreetingDraft => {
+  if (draft.exactWordsEnabled) {
+    return draft.exactContent === null ? { exactWordsEnabled: true, exactContent: createEmptyExactContent(agentDefaultLocale) } : draft
+  }
+  return draft.exactContent && isBlankExactContent(draft.exactContent) ? { exactWordsEnabled: false, exactContent: null } : draft
+}
 
 /**
  * `PUT .../greeting/draft` returns 200 with `validation.issues` unless Exact words is

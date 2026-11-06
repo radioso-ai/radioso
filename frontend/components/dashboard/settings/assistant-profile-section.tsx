@@ -284,7 +284,7 @@ export function AssistantProfileSection({
         <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <BlockHeading title="Instructions" description="The always-on persona applied to every answer this agent gives." />
-            <Badge variant="outline">Saved to draft</Badge>
+            <Badge variant="outline">Goes live on publish</Badge>
           </div>
           <p className="text-xs text-muted-foreground">Private draft — goes live only after Review &amp; Publish.</p>
           <div className="space-y-2">
@@ -423,7 +423,7 @@ export function AssistantProfileSection({
                 <div className="space-y-2 border-t border-border pt-3">
                   <div className="flex items-center justify-between gap-2">
                     <Label className="text-foreground">Greeting wording</Label>
-                    <Badge variant="outline">Saved to draft</Badge>
+                    <Badge variant="outline">Goes live on publish</Badge>
                   </div>
                   <ExactGreetingEditor
                     draft={greetingDraft}

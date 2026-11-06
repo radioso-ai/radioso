@@ -8,7 +8,7 @@ import {
 } from "../../shared/domain/exactContent.js";
 import { routineDefinitionSchema, toSafeRoutineValidationDiagnostic, validateExposureAcrossSnapshot, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
-import { comparableGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
+import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
 import { canonicalContentHash } from "../../shared/domain/canonicalContentHash.js";
 import { errorClassOf } from "../../shared/observability/errorClass.js";
@@ -147,7 +147,7 @@ const projectScopedAuthoringSnapshot = (snapshot: AgentRevisionSnapshot) => ({
     left.createdAt.getTime() - right.createdAt.getTime() ||
     left.id.localeCompare(right.id)),
   contextVariableEnablements: snapshot.contextVariableEnablements,
-  greeting: comparableGreeting(snapshot),
+  greeting: canonicalGreeting(snapshot),
 });
 
 export const equalScopedAuthoringSnapshots = (

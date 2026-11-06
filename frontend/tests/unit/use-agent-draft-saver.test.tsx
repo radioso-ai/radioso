@@ -103,6 +103,24 @@ describe('useAgentDraftSaver', () => {
       expect(onFailureResolved).toHaveBeenCalledOnce()
     })
 
+    it('lets the page drop the failure when the operator undid the edit while the save was in flight', async () => {
+      const onFailureResolved = vi.fn()
+      let refuse: (reason: Error) => void = () => undefined
+      const save = vi.fn(() => new Promise<void>((_resolve, reject) => { refuse = reject }))
+      renderWith({ save, isDirty: true, onFailureResolved })
+      const saving = saveAgentDraft(agentId).catch((error: unknown) => error)
+
+      renderWith({ save, isDirty: false, onFailureResolved })
+      expect(onFailureResolved).not.toHaveBeenCalled()
+      await act(async () => {
+        refuse(new Error('greeting refused'))
+        await saving
+      })
+
+      // Nothing is left to save, so nothing would ever clear the failure the page is showing.
+      expect(onFailureResolved).toHaveBeenCalledOnce()
+    })
+
     it('has nothing to drop when the save went through, or when none failed', async () => {
       const onFailureResolved = vi.fn()
       const save = vi.fn(async () => undefined)

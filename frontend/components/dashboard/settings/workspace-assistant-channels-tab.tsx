@@ -33,6 +33,7 @@ import { AgentBundleExportCard } from '@/components/dashboard/settings/agent-bun
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { useAgentDraftSaver } from '@/components/dashboard/settings/use-agent-draft-saver'
+import { useAgentDraftWriter } from '@/components/dashboard/settings/use-agent-draft-writer'
 import { useGreetingDraft } from '@/components/dashboard/settings/use-greeting-draft'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { WebhookDestinationsPanel } from '@/components/dashboard/settings/webhook-destinations-panel'
@@ -168,7 +169,7 @@ export function WorkspaceAssistantChannelsTab({
   const [retrievalDefaults, setRetrievalDefaults] = useState<RetrievalDefaults | null>(null)
   const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
   const [isAssistantLogoSaving, setIsAssistantLogoSaving] = useState(false)
-  const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
+  const { saveError, setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
   const dispatchDraftSaved = useCallback(() => {
     if (agentId) window.dispatchEvent(new CustomEvent(AGENT_DRAFT_SAVED_EVENT, { detail: { agentId } }))
   }, [agentId])
@@ -195,7 +196,6 @@ export function WorkspaceAssistantChannelsTab({
   // the replaced logo URL, whose stored object the upload already deleted.
   const assistantLogoWriteRef = useRef(0)
   const assistantBehaviorDraftVersionRef = useRef(0)
-  const privateInstructionSaveRef = useRef(0)
   const liveBehaviorSaveRef = useRef(0)
   const canManageOrganization = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canManageWorkspaceLifecycle = currentAccountRole === 'owner' || currentAccountRole === 'admin'
@@ -566,47 +566,32 @@ export function WorkspaceAssistantChannelsTab({
     onDraftDirtyChange?.(hasDraftChanges)
   }, [hasDraftChanges, onDraftDirtyChange])
 
+  const writeDraftInstructions = useCallback(async (isLatest: () => boolean) => {
+    if (!agentId || !assistantBehaviorSettings || !savedAssistantBehaviorSettings) return
+    const updated = normalizeAssistantBehaviorSettingsByAgent(
+      agentId,
+      await updateAssistantBehaviorSettings(assistantBehaviorSettings, savedAssistantBehaviorSettings, 'draft'),
+    )
+    if (!isLatest()) {
+      throw new Error('A newer draft save superseded this request.')
+    }
+    setSavedAssistantBehaviorSettings(updated)
+    // Agent updates return a full record. Keep live fields currently being
+    // edited rather than replacing them with the record returned by this
+    // private-only save.
+    setAssistantBehaviorSettings((current) => current ? { ...updated, ...current } : updated)
+  }, [agentId, assistantBehaviorSettings, savedAssistantBehaviorSettings, updateAssistantBehaviorSettings])
   // The page's one draft save: instruction and greeting wording, each written only when changed.
-  const saveDraftNow = useCallback(async () => {
-    if (!agentId || !assistantBehaviorSettings || !savedAssistantBehaviorSettings) {
-      throw new Error('The agent editor is still loading.')
-    }
-    if (!hasDraftChanges) return
-    const saveId = privateInstructionSaveRef.current + 1
-    privateInstructionSaveRef.current = saveId
-    const draftAtSaveStart = assistantBehaviorSettings
-    setSaveState('saving')
-    setSaveError(null)
-    try {
-      if (hasPrivateInstructionChanges) {
-        const updated = normalizeAssistantBehaviorSettingsByAgent(
-          agentId,
-          await updateAssistantBehaviorSettings(draftAtSaveStart, savedAssistantBehaviorSettings, 'draft'),
-        )
-        if (privateInstructionSaveRef.current !== saveId) {
-          throw new Error('A newer draft save superseded this request.')
-        }
-        setSavedAssistantBehaviorSettings(updated)
-        // Agent updates return a full record. Keep live fields currently being
-        // edited rather than replacing them with the record returned by this
-        // private-only save.
-        setAssistantBehaviorSettings((current) => current ? { ...updated, ...current } : updated)
-        dispatchDraftSaved() // the draft moved on, whether or not the greeting write below succeeds
-      }
-      await greetingDraft.save()
-      setAssistantSettingsError(null)
-      setSaveState('saved')
-      window.dispatchEvent(new CustomEvent(AGENT_DRAFT_SAVED_EVENT, { detail: { agentId } }))
-    } catch (error) {
-      if (privateInstructionSaveRef.current === saveId) {
-        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to save draft changes.'))
-        setSaveState('error')
-        setSaveError('Failed to save draft changes')
-      }
-      throw error
-    }
-  }, [agentId, assistantBehaviorSettings, dispatchDraftSaved, greetingDraft, hasDraftChanges, hasPrivateInstructionChanges, savedAssistantBehaviorSettings, setSaveError, setSaveState, updateAssistantBehaviorSettings])
-  useAgentDraftSaver({ agentId: mode === 'assistant' ? agentId : undefined, save: saveDraftNow, isDirty: hasDraftChanges, onFailureResolved: () => { setAssistantSettingsError(null); setSaveState('idle') } })
+  const draftWriter = useAgentDraftWriter({
+    ready: Boolean(agentId && assistantBehaviorSettings && savedAssistantBehaviorSettings),
+    hasInstructionChanges: hasPrivateInstructionChanges,
+    hasGreetingChanges: greetingDraft.dirty,
+    writeInstructions: writeDraftInstructions,
+    writeGreeting: greetingDraft.save,
+    onDraftMoved: dispatchDraftSaved,
+    status: { saveError, setSaveState, setSaveError, setSettingsError: setAssistantSettingsError },
+  })
+  useAgentDraftSaver({ agentId: mode === 'assistant' ? agentId : undefined, save: draftWriter.write, isDirty: hasDraftChanges, onFailureResolved: draftWriter.releaseFailure })
 
   useEffect(() => {
     if (!accountId || isOrganizationLoading || !canManageOrganization) {

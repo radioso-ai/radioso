@@ -40,5 +40,10 @@ it("reports no greeting change when only chip label key order differs", () => {
   expect(describeCandidateReleaseDiff(withGreeting(left), withGreeting(right)).changes).toEqual([]);
 });
 
+it("reports a change to a field the greeting gains later, not only the fields the review lists", () => {
+  const withField = (tone: string) => withGreeting({ ...greeting({ a: "Book" }), exactContent: { ...greeting({ a: "Book" }).exactContent, variants: [{ locale: "en", body: "Hello", chipLabels: { a: "Book" }, tone }] } });
+  expect(describeCandidateReleaseDiff(withField("formal"), withField("casual")).changes).toEqual([expect.objectContaining({ field: "greeting", id: "agent" })]);
+});
+
 it("shows no before value for a greeting on a first publish", () =>
   expect(describeCandidateReleaseDiff(null, withGreeting(greeting({ a: "Book" }))).changes.find((change) => change.field === "greeting")).toMatchObject({ before: null }));

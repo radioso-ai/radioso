@@ -242,6 +242,71 @@ describe("agent revision HTTP routes", () => {
 describe("agent greeting draft route", () => {
   const exactContent = { chips: [], variants: [{ locale: "en", body: "Welcome!", chipLabels: {} }] };
 
+  it("reads the greeting the agent's draft holds", async () => {
+    const readDraftGreeting = vi.fn(async () => ({ exactWordsEnabled: true, exactContent }));
+    const dependencies = createDependencies({ agentRevisionService: { readDraftGreeting } });
+
+    const response = await request(createApp(dependencies))
+      .get(`/api/v1/agents/${agentId}/greeting/draft`)
+      .set("Authorization", "Bearer token")
+      .expect(200);
+
+    expect(response.body).toEqual({ exactWordsEnabled: true, exactContent });
+    expect(readDraftGreeting).toHaveBeenCalledWith(workspaceId, agentId);
+  });
+
+  it("answers 404 when the service finds no draft for the agent", async () => {
+    const dependencies = createDependencies({
+      agentRevisionService: {
+        readDraftGreeting: vi.fn(async () => {
+          const error = new Error("Agent draft not found") as Error & { statusCode: number; code: string };
+          error.statusCode = 404; error.code = "not_found";
+          throw error;
+        }),
+      },
+    });
+
+    await request(createApp(dependencies))
+      .get(`/api/v1/agents/${agentId}/greeting/draft`)
+      .set("Authorization", "Bearer token")
+      .expect(404);
+  });
+
+  it("lets a reader of agents read the draft greeting, where the write needs the manage permission", async () => {
+    const requirePermission = vi.fn(async () => undefined);
+    const dependencies = createDependencies({
+      accountAccessService: { requirePermission, hasPermission: vi.fn(async () => true) },
+      agentRevisionService: { readDraftGreeting: vi.fn(async () => ({ exactWordsEnabled: false, exactContent: null })) },
+    });
+
+    await request(createApp(dependencies))
+      .get(`/api/v1/agents/${agentId}/greeting/draft`)
+      .set("Authorization", "Bearer token")
+      .expect(200);
+
+    expect(requirePermission).toHaveBeenCalledWith(expect.objectContaining({ permission: "workspace.agents.read" }));
+    expect(requirePermission).not.toHaveBeenCalledWith(expect.objectContaining({ permission: "workspace.agents.manage" }));
+  });
+
+  it("keeps the draft greeting read behind the agents read permission", async () => {
+    const forbidden = createDependencies({
+      accountAccessService: {
+        requirePermission: vi.fn(async () => {
+          const error = new Error("forbidden") as Error & { statusCode: number; code: string };
+          error.statusCode = 403;
+          error.code = "forbidden";
+          throw error;
+        }),
+        hasPermission: vi.fn(),
+      },
+    });
+
+    await request(createApp(forbidden))
+      .get(`/api/v1/agents/${agentId}/greeting/draft`)
+      .set("Authorization", "Bearer token")
+      .expect(403);
+  });
+
   it("saves exact greeting content on the draft and returns the clean validation result", async () => {
     const dependencies = createDependencies();
 

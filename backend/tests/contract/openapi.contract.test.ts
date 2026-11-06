@@ -114,6 +114,18 @@ describe("openapi contract", () => {
     expect(revisionDetail?.properties?.revision?.allOf?.[1]?.properties?.scope?.properties).toHaveProperty("greeting");
   });
 
+  it("documents reading the greeting back from the agent draft", () => {
+    const document = createOpenApiDocument();
+    const operation = document.paths?.["/api/v1/agents/{agentId}/greeting/draft"]?.get as {
+      operationId?: string;
+      responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+    } | undefined;
+
+    expect(operation?.operationId).toBe("getAgentGreetingDraft");
+    expect(operation?.responses?.["200"]?.content?.["application/json"]?.schema).toEqual({ $ref: "#/components/schemas/AgentGreetingDraft" });
+    expect(operation?.responses?.["404"]).toBeDefined();
+  });
+
   it("publishes the complete discriminated Eval assertion contract", () => {
     const schemas = createOpenApiDocument().components?.schemas ?? {};
     const assertions = schemas.EvalAssertion as {

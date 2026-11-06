@@ -1,30 +1,25 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 
 import { AssistantLocaleCombobox } from '@/components/dashboard/settings/assistant-locale-combobox'
 import { getAssistantLocaleLabel, resolveAssistantLocaleInput } from '@/components/dashboard/settings/assistant-locale-options'
-import { useSettingsSaveStatus, type SettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
+import type { GreetingDraft } from '@/components/dashboard/settings/use-greeting-draft'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Textarea } from '@/components/ui/textarea'
-import { agentGreetingApi } from '@/lib/api-agent-greeting'
-import { agentRevisionsApi } from '@/lib/api-agent-revisions'
-import { getApiErrorMessage } from '@/lib/api-error'
-import type { AgentGreetingDraft, ExactContentItem } from '@/lib/api-types'
+import type { ExactContentItem } from '@/lib/api-types'
 import {
   EXACT_GREETING_BODY_MAX_CODE_POINTS,
   EXACT_GREETING_CHIP_LABEL_MAX_CODE_POINTS,
   EXACT_GREETING_MAX_CHIPS,
   addChip,
   addVariant,
-  applyEditedItem,
   codePointLength,
   createEmptyExactContent,
-  extractValidationIssuesFromError,
   issuesForChipLabel,
   issuesForChips,
   issuesForVariantBody,
@@ -37,23 +32,6 @@ import {
   updateVariantBody,
   type ExactGreetingIssue,
 } from '@/lib/exact-greeting-editor'
-
-type GreetingWordingMode = 'automatic' | 'exact'
-
-/** Best-effort hydration: there is no endpoint that reads the current, possibly-unpublished
- * draft's greeting content back (spec 1150 F3/F8 project it only into `agent_drafts.snapshot`),
- * so this seeds the editor from the agent's currently published revision, the same "before"
- * value the publish review dialog would show. A draft saved and then reloaded before
- * publishing will not reappear here — the save itself is not lost, only this session's view
- * of it after a reload. */
-const loadPublishedGreeting = async (agentId: string): Promise<AgentGreetingDraft | null> => {
-  const state = await agentRevisionsApi.getState(agentId)
-  if (!state.publishedRevision) {
-    return null
-  }
-  const { revision } = await agentRevisionsApi.getRevision(agentId, state.publishedRevision.id)
-  return revision.scopedChanges.greeting?.after ?? null
-}
 
 function ChipEditor({
   item,
@@ -205,53 +183,23 @@ function VariantEditor({
   )
 }
 
+/**
+ * The greeting wording fields. Its state lives in `draft` (see `useGreetingDraft`), which the
+ * page's Save draft writes together with the instructions; this component only edits it.
+ */
 export function ExactGreetingEditor({
-  agentId,
+  draft,
   agentDefaultLocale,
-  onSaveStateChange,
 }: {
-  agentId: string
+  draft: GreetingDraft
   agentDefaultLocale: string
-  onSaveStateChange?: (input: SettingsSaveStatus) => void
 }) {
-  const [mode, setMode] = useState<GreetingWordingMode>('automatic')
-  const [item, setItem] = useState<ExactContentItem>(() => createEmptyExactContent(agentDefaultLocale))
   const [newLocaleInput, setNewLocaleInput] = useState('')
   const [newLocaleError, setNewLocaleError] = useState<string | null>(null)
-  const [issues, setIssues] = useState<ExactGreetingIssue[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const contentTouchedRef = useRef(false)
-  const { saveState, saveError, beginSave, isCurrentSave, markSaved, markError, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
-
-  useEffect(() => {
-    let active = true
-    void loadPublishedGreeting(agentId)
-      .then((greeting) => {
-        if (!active) return
-        if (greeting?.exactContent) {
-          setItem(greeting.exactContent)
-          contentTouchedRef.current = true
-        }
-        setMode(greeting?.exactWordsEnabled ? 'exact' : 'automatic')
-      })
-      .catch(() => {
-        // Hydration is best-effort; the editor still works starting from a blank draft.
-      })
-      .finally(() => {
-        if (active) setLoaded(true)
-      })
-    return () => {
-      active = false
-    }
-  }, [agentId])
-
-  const applyItem = (next: ExactContentItem) => {
-    contentTouchedRef.current = true
-    const applied = applyEditedItem(next)
-    setItem(applied.item)
-    setIssues(applied.issues)
-    resetSaveState()
-  }
+  const { issues } = draft
+  const mode = draft.exactWordsEnabled ? 'exact' : 'automatic'
+  const item = draft.exactContent ?? createEmptyExactContent(agentDefaultLocale)
+  const applyItem = draft.setExactContent
 
   const addLanguage = () => {
     const resolved = resolveAssistantLocaleInput(newLocaleInput)
@@ -268,31 +216,19 @@ export function ExactGreetingEditor({
     setNewLocaleError(null)
   }
 
-  const handleSave = async () => {
-    const saveId = beginSave()
-    setIssues([])
-    try {
-      const response = await agentGreetingApi.saveDraft(agentId, {
-        exactWordsEnabled: mode === 'exact',
-        exactContent: mode === 'exact' || contentTouchedRef.current ? item : null,
-      })
-      if (!isCurrentSave(saveId)) return
-      if (!response.validation.ok) {
-        setIssues(response.validation.issues ?? [])
-      }
-      markSaved()
-    } catch (error) {
-      if (!isCurrentSave(saveId)) return
-      const fieldIssues = extractValidationIssuesFromError(error)
-      if (fieldIssues) {
-        setIssues(fieldIssues)
-      }
-      markError(getApiErrorMessage(error, 'Failed to save the greeting.'))
-    }
+  if (draft.loadState === 'loading') {
+    return <p className="text-sm text-muted-foreground">Loading greeting…</p>
   }
 
-  if (!loaded) {
-    return <p className="text-sm text-muted-foreground">Loading greeting…</p>
+  if (draft.loadState === 'error') {
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm text-destructive" role="alert">Failed to load the greeting wording.</p>
+        <Button type="button" size="sm" variant="outline" onClick={draft.reload}>
+          Try again
+        </Button>
+      </div>
+    )
   }
 
   return (
@@ -300,10 +236,7 @@ export function ExactGreetingEditor({
       <SegmentedControl
         aria-label="Greeting wording"
         value={mode}
-        onValueChange={(next) => {
-          setMode(next)
-          resetSaveState()
-        }}
+        onValueChange={(next) => draft.setExactWordsEnabled(next === 'exact')}
         options={[
           { value: 'automatic', label: 'Automatic' },
           { value: 'exact', label: 'Exact words' },
@@ -314,7 +247,7 @@ export function ExactGreetingEditor({
       ) : (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Visitors receive this wording exactly as written, with no model call. Goes live on publish.
+            Visitors receive this wording exactly as written, with no model call. Saved with the draft; goes live on publish.
           </p>
           {issuesForVariants(issues).map((issue) => (
             <p key={issue.code} className="text-xs text-destructive">{issue.message}</p>
@@ -349,13 +282,6 @@ export function ExactGreetingEditor({
           </div>
         </div>
       )}
-      <div className="flex items-center gap-3">
-        <Button type="button" size="sm" onClick={() => void handleSave()} loading={saveState === 'saving'}>
-          Save greeting
-        </Button>
-        {saveState === 'saved' ? <span className="text-xs text-muted-foreground">Saved to draft</span> : null}
-      </div>
-      {saveState === 'error' && saveError ? <p className="text-sm text-destructive" role="alert">{saveError}</p> : null}
     </div>
   )
 }

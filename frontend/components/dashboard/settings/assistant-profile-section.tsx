@@ -8,6 +8,7 @@ import { BlockHeading } from '@/components/dashboard/settings/block-heading'
 import { ExactGreetingEditor } from '@/components/dashboard/settings/exact-greeting-editor'
 import { ModelPicker } from '@/components/dashboard/settings/model-picker'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import type { GreetingDraft } from '@/components/dashboard/settings/use-greeting-draft'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -189,12 +190,12 @@ interface AssistantProfileSectionProps {
   // Operator-only internal label is per-agent; hidden in workspace general settings.
   showInternalName?: boolean
   // Exact greeting content is agent-scoped (spec 1150 Slice A); absent in workspace-level
-  // general settings, where the wording choice stays Automatic-only.
-  agentId?: string
+  // general settings, where the wording choice stays Automatic-only. The page holds it so its
+  // Save draft writes the wording together with the instructions.
+  greetingDraft?: GreetingDraft
   onAssistantSettingChange: <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => void
   onAssistantLocaleInputChange: (value: string) => void
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
-  onGreetingSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
   isAnonSaving: boolean
 }
 
@@ -203,11 +204,10 @@ export function AssistantProfileSection({
   assistantBehaviorSettings,
   assistantLocaleInput,
   showInternalName = false,
-  agentId,
+  greetingDraft,
   onAssistantSettingChange,
   onAssistantLocaleInputChange,
   onAssistantBehaviorDraft,
-  onGreetingSaveStateChange,
   isAnonSaving,
 }: AssistantProfileSectionProps) {
   const [pendingPreset, setPendingPreset] = useState<InstructionPreset | null>(null)
@@ -248,7 +248,7 @@ export function AssistantProfileSection({
             <BlockHeading title="Name" description="What visitors call this agent, and what you call it in the dashboard." />
             <Badge variant="outline">Applies live now</Badge>
           </div>
-          <p className="text-xs text-muted-foreground">Name, locale, and greeting changes save automatically and affect current agent settings.</p>
+          <p className="text-xs text-muted-foreground">Name, internal name, fallback greeting language, and the proactive greeting switch save automatically and apply live.</p>
           <div className="space-y-2">
             <Label htmlFor="assistantName" className="text-foreground">Assistant name</Label>
             <Input
@@ -284,7 +284,7 @@ export function AssistantProfileSection({
         <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <BlockHeading title="Instructions" description="The always-on persona applied to every answer this agent gives." />
-            <Badge variant="outline">Saved to draft</Badge>
+            <Badge variant="outline">Goes live on publish</Badge>
           </div>
           <p className="text-xs text-muted-foreground">Private draft — goes live only after Review &amp; Publish.</p>
           <div className="space-y-2">
@@ -418,16 +418,16 @@ export function AssistantProfileSection({
                   </p>
                 </div>
               ) : null}
-              {anonSettings.proactiveGreetingEnabled && agentId ? (
+              {/* Turning the switch off keeps unsaved wording on screen, so its save errors have a field to land on. */}
+              {greetingDraft && (anonSettings.proactiveGreetingEnabled || greetingDraft.dirty) ? (
                 <div className="space-y-2 border-t border-border pt-3">
                   <div className="flex items-center justify-between gap-2">
                     <Label className="text-foreground">Greeting wording</Label>
-                    <Badge variant="outline">Saved to draft</Badge>
+                    <Badge variant="outline">Goes live on publish</Badge>
                   </div>
                   <ExactGreetingEditor
-                    agentId={agentId}
+                    draft={greetingDraft}
                     agentDefaultLocale={anonSettings.assistantDefaultLocale ?? 'en'}
-                    onSaveStateChange={onGreetingSaveStateChange}
                   />
                 </div>
               ) : null}

@@ -89,6 +89,9 @@ const wave2BehaviorAuthoring = deferred("Deferred to Wave 2 behavior authoring: 
 const agentRevisionLifecycle = deferred(
   "Deferred: agent revision state, candidate materialization, revision detail, and publication are dashboard lifecycle operations. Ray's current descriptors can propose scoped authoring changes, but they do not select immutable candidates, run candidate-pinned tests/evals, or publish a revision with the required concurrency and idempotency controls.",
 );
+const draftGreetingRead = deferred(
+  "Deferred: reading the draft greeting back feeds the dashboard's greeting editor. Ray's greeting proposal card shows only the proposed wording, and showing the wording it replaces needs the greeting adapter to adopt this read.",
+);
 const revisionTestingAndEval = deferred(
   "Deferred: retrying or retaining a Test Chat side, capturing Test Chat evidence, and frozen revision-eval runs require comparison handling, sample-value validation, retry identity, and evidence handling that current Copilot descriptors do not expose.",
 );
@@ -583,6 +586,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   updateAgentGreetingDraft: "propose_greeting",
   // Revision lifecycle is intentionally dashboard-owned until Ray has explicit
   // candidate selection, candidate-pinned test/eval, and publish capabilities.
+  getAgentGreetingDraft: draftGreetingRead,
   getAgentRevisionState: agentRevisionLifecycle,
   createAgentRevisionCandidate: agentRevisionLifecycle,
   listAgentRevisions: agentRevisionLifecycle,

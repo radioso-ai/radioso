@@ -547,9 +547,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentIngestionService: documents.documentIngestionService,
     documentDeletionService: documents.documentDeletionService,
     documentRepository: repositories.documentRepository,
-    htmlContentNormalizer: {
-      extractTextFromHtml: (html) => crawlerProvider.extractTextFromHtml(html),
-    },
+    documentSourceRepository: repositories.documentSourceRepository,
+    htmlContentNormalizer: { extractTextFromHtml: (html) => crawlerProvider.extractTextFromHtml(html) },
   });
 
   const chatInferencePipeline = llmRegistry.createChatInferencePipeline(infrastructure.usageEventRecorder);

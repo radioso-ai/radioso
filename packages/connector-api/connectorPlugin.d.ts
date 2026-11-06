@@ -151,6 +151,12 @@ export interface ConnectorSourceDescriptor {
   metadata?: Record<string, unknown>;
 }
 
+/** A source the host already holds for a connector channel, with the host's id for it. */
+export interface ConnectorRegisteredSource {
+  id: string;
+  source: ConnectorSourceDescriptor;
+}
+
 /**
  * How the connector's `content` payload should be interpreted by the ingestion
  * pipeline.
@@ -220,6 +226,18 @@ export interface ConnectorIngestionPort {
     workspaceId: string;
     source: ConnectorSourceDescriptor;
   }): Promise<{ id: string }>;
+
+  /**
+   * The workspace's connector sources whose `externalId` starts with
+   * `externalIdPrefix`, oldest first, as the host stores them. Read-only: a
+   * connector uses it to check an upstream channel against the ones already
+   * registered before it writes on that channel's behalf.
+   */
+  // Message-queue impact: synchronous host read only; no AMQP or worker payload changes.
+  listSources(input: {
+    workspaceId: string;
+    externalIdPrefix: string;
+  }): Promise<ConnectorRegisteredSource[]>;
 }
 
 export interface ConnectorContext {

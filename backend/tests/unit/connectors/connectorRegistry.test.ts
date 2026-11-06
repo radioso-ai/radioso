@@ -185,6 +185,7 @@ describe("ConnectorRegistry", () => {
         ingest: async () => ({ documentId: "doc-1", status: "queued" }),
         deleteByExternalId: async () => false,
         ensureSource: async () => ({ id: "src-1" }),
+        listSources: async () => [],
       },
     });
 
@@ -219,6 +220,7 @@ describe("ConnectorRegistry", () => {
         ingest: async () => ({ documentId: "doc-1", status: "queued" }),
         deleteByExternalId: async () => false,
         ensureSource: async () => ({ id: "src-1" }),
+        listSources: async () => [],
       },
     });
 

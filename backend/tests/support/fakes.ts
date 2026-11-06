@@ -2756,6 +2756,21 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
       .length;
   }
 
+  async listByKindAndExternalIdPrefix(input: {
+    workspaceId: string;
+    kind: DocumentOriginKind;
+    externalIdPrefix: string;
+  }): Promise<DocumentSourceRecord[]> {
+    return [...this.items.values()]
+      .filter(
+        (source) =>
+          source.workspaceId === input.workspaceId &&
+          source.kind === input.kind &&
+          (source.externalId?.startsWith(input.externalIdPrefix) ?? false),
+      )
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
   async upsertByExternalId(input: {
     workspaceId: string;
     kind: DocumentOriginKind;

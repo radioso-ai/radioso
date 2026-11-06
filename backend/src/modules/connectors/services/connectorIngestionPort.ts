@@ -1,5 +1,10 @@
-import type { ConnectorIngestionPort, ConnectorSourceDescriptor } from "@radioso/connector-api";
+import type {
+  ConnectorIngestionPort,
+  ConnectorRegisteredSource,
+  ConnectorSourceDescriptor,
+} from "@radioso/connector-api";
 
+import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type {
   DocumentIngestionPort,
   DocumentRepositoryPort,
@@ -48,6 +53,7 @@ export const createConnectorIngestionPort = (deps: {
   documentIngestionService: ConnectorDocumentIngestionPort;
   documentDeletionService: ConnectorDocumentDeletionPort;
   documentRepository: Pick<DocumentRepositoryPort, "findBySourceAndExternalDocumentId">;
+  documentSourceRepository: Pick<DocumentSourceRepositoryPort, "listByKindAndExternalIdPrefix">;
   htmlContentNormalizer: HtmlContentNormalizer;
 }): ConnectorIngestionPort => ({
   async ingest(input) {
@@ -92,5 +98,28 @@ export const createConnectorIngestionPort = (deps: {
       source: toResolverInput(input.source),
     });
     return { id: record.id };
+  },
+
+  async listSources(input) {
+    const records = await deps.documentSourceRepository.listByKindAndExternalIdPrefix({
+      workspaceId: input.workspaceId,
+      kind: "connector",
+      externalIdPrefix: input.externalIdPrefix,
+    });
+    return records.flatMap((record): ConnectorRegisteredSource[] =>
+      record.externalId === null
+        ? []
+        : [
+            {
+              id: record.id,
+              source: {
+                externalId: record.externalId,
+                name: record.name,
+                config: record.config,
+                metadata: record.metadata,
+              },
+            },
+          ],
+    );
   },
 });

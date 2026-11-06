@@ -12,6 +12,7 @@ interface BuildPortOptions {
   resolveSource?: ReturnType<typeof vi.fn>;
   delete?: ReturnType<typeof vi.fn>;
   findBySourceAndExternalDocumentId?: ReturnType<typeof vi.fn>;
+  listByKindAndExternalIdPrefix?: ReturnType<typeof vi.fn>;
   extractTextFromHtml?: ExtractTextFromHtmlMock;
 }
 
@@ -29,6 +30,9 @@ const buildPort = (overrides: BuildPortOptions = {}) => {
       documentRepository: {
         findBySourceAndExternalDocumentId:
           overrides.findBySourceAndExternalDocumentId ?? vi.fn(),
+      } as any,
+      documentSourceRepository: {
+        listByKindAndExternalIdPrefix: overrides.listByKindAndExternalIdPrefix ?? vi.fn(async () => []),
       } as any,
       htmlContentNormalizer: { extractTextFromHtml },
     }),
@@ -187,5 +191,45 @@ describe("createConnectorIngestionPort", () => {
       "wp_post_42",
     );
     expect(deleteFn).toHaveBeenCalledWith({ workspaceId: "ws-1", documentId: "doc-xyz" });
+  });
+
+  it("lists the workspace's connector sources under a prefix without creating any", async () => {
+    const resolveSource = vi.fn();
+    const listByKindAndExternalIdPrefix = vi.fn(async () => [
+      {
+        id: "source-1",
+        workspaceId: "ws-1",
+        kind: "connector",
+        name: "one.example.org",
+        externalId: "wordpress:https://one.example.org",
+        config: { siteUrl: "https://one.example.org" },
+        metadata: { connectorId: "wordpress" },
+        lastSyncStatus: null,
+        lastSyncedAt: null,
+        createdAt: new Date("2026-06-01T00:00:00Z"),
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    ]);
+    const { port } = buildPort({ resolveSource, listByKindAndExternalIdPrefix });
+
+    const sources = await port.listSources({ workspaceId: "ws-1", externalIdPrefix: "wordpress:" });
+
+    expect(listByKindAndExternalIdPrefix).toHaveBeenCalledWith({
+      workspaceId: "ws-1",
+      kind: "connector",
+      externalIdPrefix: "wordpress:",
+    });
+    expect(sources).toEqual([
+      {
+        id: "source-1",
+        source: {
+          externalId: "wordpress:https://one.example.org",
+          name: "one.example.org",
+          config: { siteUrl: "https://one.example.org" },
+          metadata: { connectorId: "wordpress" },
+        },
+      },
+    ]);
+    expect(resolveSource).not.toHaveBeenCalled();
   });
 });

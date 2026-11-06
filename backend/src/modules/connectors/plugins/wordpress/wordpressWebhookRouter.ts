@@ -17,14 +17,18 @@ import { z } from "zod";
 import type {
   ConnectorIngestionPort,
   ConnectorLogger,
+  ConnectorSourceDescriptor,
   ConnectorStatePort,
 } from "@radioso/connector-api";
 
 import { externalIdFor, mapWebhookPostToIngestInput } from "./wordpressIngest.js";
 import {
-  normalizeWordpressSiteUrl,
+  connectedSiteForPush,
+  wordpressPushHost,
+  wordpressPushIsFromSite,
   wordpressSourceFor,
-  wordpressUrlBelongsToSite,
+  type WordpressConnectedSitesPort,
+  type WordpressPushOrigin,
 } from "./wordpressSource.js";
 
 // Metadata rules resolve a field by splitting its path on ".", so a dotted key
@@ -72,9 +76,37 @@ const WordpressEventSchema = z.object({
 
 interface WebhookDeps {
   logger: ConnectorLogger;
-  state: ConnectorStatePort;
-  ingestion: ConnectorIngestionPort;
+  state: Pick<ConnectorStatePort, "getConfig">;
+  ingestion: Pick<ConnectorIngestionPort, "ingest" | "deleteByExternalId">;
+  connectedSites: WordpressConnectedSitesPort;
 }
+
+interface PushTarget {
+  source: ConnectorSourceDescriptor;
+  /** Set when the push writes to an earlier connected site rather than the configured one. */
+  earlierSourceId: string | null;
+}
+
+/**
+ * The source a signed push writes to: the configured site's, or the source of
+ * a site the workspace connected before it. A site the workspace never
+ * connected gets null: every site shares the workspace's secret, so a valid
+ * signature alone must never let a site create a source.
+ */
+const resolvePushTarget = async (
+  connectedSites: WordpressConnectedSitesPort,
+  workspaceId: string,
+  config: Record<string, string>,
+  push: WordpressPushOrigin,
+): Promise<PushTarget | null> => {
+  const configured = wordpressSourceFor(config);
+  if (configured && wordpressPushIsFromSite(configured.config.siteUrl, push)) {
+    return { source: configured, earlierSourceId: null };
+  }
+
+  const earlier = connectedSiteForPush(await connectedSites.listConnectedSites(workspaceId), push);
+  return earlier ? { source: earlier.source, earlierSourceId: earlier.sourceId } : null;
+};
 
 const verifySignature = (body: Buffer, header: string, secret: string): boolean => {
   if (!header || !header.startsWith("sha256=")) return false;
@@ -134,29 +166,26 @@ export const createWordpressWebhookRouter = (deps: WebhookDeps): Router => {
 
     const { event, post, site_url: payloadSiteUrl } = parsed.data;
     const externalDocumentId = externalIdFor(post.id);
-    const source = wordpressSourceFor(config.config);
-    const configuredSiteUrl =
-      typeof source?.config?.["siteUrl"] === "string"
-        ? source.config["siteUrl"]
-        : null;
-    const payloadSiteMatches =
-      !payloadSiteUrl ||
-      normalizeWordpressSiteUrl(payloadSiteUrl) === configuredSiteUrl;
-    if (
-      !source ||
-      !configuredSiteUrl ||
-      !payloadSiteMatches ||
-      !wordpressUrlBelongsToSite(configuredSiteUrl, post.link)
-    ) {
-      deps.logger.warn(
-        { workspaceId, externalDocumentId, event },
-        "wordpress webhook site does not match connector configuration",
-      );
-      res.status(403).json({ error: "Webhook site does not match connector configuration" });
-      return;
-    }
+    const push: WordpressPushOrigin = { siteUrl: payloadSiteUrl, link: post.link };
 
     try {
+      const target = await resolvePushTarget(deps.connectedSites, workspaceId, config.config, push);
+      if (!target) {
+        deps.logger.warn(
+          { workspaceId, externalDocumentId, event, siteHost: wordpressPushHost(push) },
+          "wordpress webhook site does not match connector configuration",
+        );
+        res.status(403).json({ error: "Webhook site does not match connector configuration" });
+        return;
+      }
+      if (target.earlierSourceId) {
+        deps.logger.info(
+          { workspaceId, externalDocumentId, event, sourceId: target.earlierSourceId },
+          "wordpress webhook accepted for an earlier connected site",
+        );
+      }
+
+      const { source } = target;
       if (event === "deleted") {
         const deleted = await deps.ingestion.deleteByExternalId({
           workspaceId,

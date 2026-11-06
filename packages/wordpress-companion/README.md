@@ -191,10 +191,13 @@ The activity log can confirm that WordPress started a non-blocking webhook
 request. It cannot confirm that Radioso accepted or ingested the post; check
 the Radioso document list or backend logs for that receiver-side result.
 
-One workspace WordPress connector accepts one site. The signed payload includes
-the site's public URL, and Radioso rejects events whose site or post permalink
-does not match the configured WordPress site. Changing the site URL in Radioso
-rotates the shared secret, so update the plugin settings with the new secret.
+The signed payload includes the site's public URL, and the post permalink has to
+sit under it. Radioso accepts the push when that site is the one configured in
+the connector, or one the workspace connected earlier and still holds a source
+for, and writes the post into that site's own source. A site the workspace never
+connected is rejected with `403`, whatever its signature. Changing the site URL
+in Radioso rotates the shared secret, so paste the new secret into the plugin on
+the new site and on every earlier site that should keep syncing.
 
 ## Polling fallback
 

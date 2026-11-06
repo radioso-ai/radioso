@@ -19,6 +19,7 @@ export type {
   ConnectorLogger,
   ConnectorPlugin,
   ConnectorPublicHttpPort,
+  ConnectorRegisteredSource,
   ConnectorReplyDraft,
   ConnectorRespondInput,
   ConnectorSourceDescriptor,

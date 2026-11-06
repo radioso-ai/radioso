@@ -3267,6 +3267,7 @@ export const createTestDependencies = (overrides: {
       async ingest() { return { documentId: "test-doc", status: "queued" }; },
       async deleteByExternalId() { return false; },
       async ensureSource() { return { id: "test-source" }; },
+      async listSources() { return []; },
     },
     connectorDb: connectorDb as any,
     chatInferencePipeline,

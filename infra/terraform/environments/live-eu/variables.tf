@@ -154,6 +154,12 @@ variable "connector_encryption_key" {
   sensitive   = true
 }
 
+variable "staff_google_workspace_domain" {
+  description = "Google Workspace domain whose accounts sign in to the Enterprise operator console in live-eu. Setting it turns password sign-in off."
+  type        = string
+  default     = null
+}
+
 variable "ee_usage_admin_token" {
   description = "Bearer token for the EU live Enterprise usage-limits admin API."
   type        = string

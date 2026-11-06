@@ -196,7 +196,8 @@ interface EeStaffUsersTable {
   id: string;
   email: string;
   name: string;
-  password_hash: string;
+  password_hash: string | null;
+  google_subject: string | null;
   role: "support_read" | "billing_write" | "owner";
   status: "active" | "disabled";
   created_at: Generated<Date>;

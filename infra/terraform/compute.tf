@@ -268,6 +268,13 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" && local.staff_google_workspace_domain != "" ? [local.staff_google_workspace_domain] : []
+        content {
+          name  = "STAFF_GOOGLE_WORKSPACE_DOMAIN"
+          value = env.value
+        }
+      }
+      dynamic "env" {
         for_each = local.ee_usage_admin_token_configured ? [1] : []
         content {
           name = "EE_USAGE_ADMIN_TOKEN"

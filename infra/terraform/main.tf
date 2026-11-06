@@ -8,6 +8,8 @@ locals {
   # the wrapper supplies the public app URL or discovered frontend run.app URL.
   app_base_url            = coalesce(var.app_base_url_override, "https://example.invalid")
   operator_mcp_configured = var.radioso_mcp_enabled && var.mcp_public_origin != null
+  # `TF_VAR_` from an unset GitHub variable arrives as an empty string rather than null.
+  staff_google_workspace_domain = trimspace(coalesce(var.staff_google_workspace_domain, " "))
   # The region the email channel's Resend sending domain is created in follows the stack's.
   # That only places the sending and receiving infrastructure: Resend stores account data,
   # email metadata, logs and received message content in the United States regardless of region.

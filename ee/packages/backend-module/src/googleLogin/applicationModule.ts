@@ -1,5 +1,5 @@
 import type { ApplicationModule } from "../radiosoModuleTypes.js";
-import type { GoogleOAuthConfig } from "./googleOAuthClient.js";
+import { readGoogleClientCredentials, type GoogleOAuthConfig } from "./googleOAuthClient.js";
 import { createGoogleLoginRouter } from "./googleLoginRoutes.js";
 
 const MODULE_ID = "radioso-enterprise-google-login";
@@ -15,8 +15,7 @@ interface GoogleLoginConfigSource {
 const readConfigInputs = (input: GoogleLoginConfigSource): Partial<GoogleOAuthConfig> => {
   const env = input.processEnv ?? process.env;
   return {
-    clientId: env.GOOGLE_LOGIN_CLIENT_ID?.trim() || undefined,
-    clientSecret: env.GOOGLE_LOGIN_CLIENT_SECRET?.trim() || undefined,
+    ...readGoogleClientCredentials(env),
     redirectUri:
       env.GOOGLE_LOGIN_REDIRECT_URI?.trim() ||
       (input.appBaseUrl ? `${stripTrailingSlash(input.appBaseUrl)}${ROUTE_MOUNT_PATH}/callback` : undefined),

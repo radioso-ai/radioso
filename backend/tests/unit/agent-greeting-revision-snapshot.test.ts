@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertCandidateSnapshotIsRunnable,
+  equalScopedAuthoringSnapshots,
   parseAgentRevisionSnapshot,
   readAgentRevisionGreeting,
 } from "../../src/modules/agents/public.js";
@@ -116,5 +117,46 @@ describe("agent revision snapshot: exact greeting", () => {
 
     expect(readAgentRevisionGreeting(publishedSnapshot)).toEqual(readAgentRevisionGreeting(candidateSnapshot));
     expect(() => assertCandidateSnapshotIsRunnable(publishedSnapshot, { agentDefaultLocale: "en" })).not.toThrow();
+  });
+});
+
+describe("equalScopedAuthoringSnapshots: exact greeting", () => {
+  const compare = (greeting: unknown) => ({
+    exactWordsEnabled: true,
+    exactContent: exactContent({
+      chips: ["plans", "sales"],
+      variants: [{ locale: "en", body: "Welcome!", chipLabels: { plans: "Compare plans", sales: "Talk to sales" } }],
+    }),
+    ...(greeting as object),
+  });
+  const snapshotWith = (greeting?: unknown) => parseAgentRevisionSnapshot(baseSnapshot(greeting === undefined ? {} : { greeting }));
+
+  it("tells a draft that carries a greeting from a published revision that does not", () => {
+    expect(equalScopedAuthoringSnapshots(snapshotWith(compare({})), snapshotWith())).toBe(false);
+    expect(equalScopedAuthoringSnapshots(snapshotWith(), snapshotWith(compare({})))).toBe(false);
+  });
+
+  it("tells apart each change an operator can make to the greeting", () => {
+    const published = snapshotWith(compare({}));
+
+    expect(equalScopedAuthoringSnapshots(snapshotWith(compare({ exactWordsEnabled: false })), published)).toBe(false);
+    expect(equalScopedAuthoringSnapshots(snapshotWith(compare({ exactContent: null })), published)).toBe(false);
+    expect(equalScopedAuthoringSnapshots(snapshotWith(compare({ exactContent: exactContent({ chips: ["plans", "sales"], variants: [{ locale: "en", body: "Hello!", chipLabels: { plans: "Compare plans", sales: "Talk to sales" } }] }) })), published)).toBe(false);
+    expect(equalScopedAuthoringSnapshots(snapshotWith(compare({ exactContent: exactContent({ chips: ["sales", "plans"], variants: [{ locale: "en", body: "Welcome!", chipLabels: { plans: "Compare plans", sales: "Talk to sales" } }] }) })), published)).toBe(false);
+  });
+
+  it("treats a greeting missing from one side as equal to the default on the other", () => {
+    const authoredDefault = { exactWordsEnabled: false, exactContent: null };
+
+    expect(equalScopedAuthoringSnapshots(snapshotWith(authoredDefault), snapshotWith())).toBe(true);
+    expect(equalScopedAuthoringSnapshots(snapshotWith(), snapshotWith(authoredDefault))).toBe(true);
+    expect(equalScopedAuthoringSnapshots(snapshotWith(), snapshotWith())).toBe(true);
+  });
+
+  it("is not fooled by the order of a variant's chip labels, which a stored copy may list differently", () => {
+    const route = compare({ exactContent: exactContent({ chips: ["plans", "sales"], variants: [{ locale: "en", body: "Welcome!", chipLabels: { plans: "Compare plans", sales: "Talk to sales" } }] }) });
+    const stored = compare({ exactContent: exactContent({ chips: ["plans", "sales"], variants: [{ locale: "en", body: "Welcome!", chipLabels: { sales: "Talk to sales", plans: "Compare plans" } }] }) });
+
+    expect(equalScopedAuthoringSnapshots(snapshotWith(route), snapshotWith(stored))).toBe(true);
   });
 });

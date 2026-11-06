@@ -5,7 +5,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { applyConfirmationKind, buildCopilotProposalDiff, CopilotProposalCard, targetReference } from '@/components/dashboard/copilot-proposal-card'
-import { copilotApi, type CopilotProposalDetail, type CopilotProposalSummary } from '@/lib/api-copilot'
+import { AGENT_GREETING_CHANGED_EVENT } from '@/lib/agent-draft-save-port'
+import { copilotApi, type CopilotProposalApplyResult, type CopilotProposalDetail, type CopilotProposalSummary } from '@/lib/api-copilot'
 
 beforeAll(() => {
   ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -347,6 +348,64 @@ describe('CopilotProposalCard', () => {
     expect(getProposal).toHaveBeenCalledWith('proposal-disable-directive')
     const rows = buildCopilotProposalDiff({ current, proposed })
     expect(rows).toEqual([expect.objectContaining({ path: '$.enabled', current: true, proposed: false })])
+  })
+
+  describe('applying a proposal', () => {
+    const apply = async (proposal: CopilotProposalSummary, result: CopilotProposalApplyResult) => {
+      vi.spyOn(copilotApi, 'applyProposal').mockResolvedValue(result)
+      // The card knows its agent whatever the apply result carries, so only the result's status
+      // decides whether the greeting was written.
+      act(() => root.render(<CopilotProposalCard proposal={proposal} canApply defaultAgentId="agent-1" onOpenEntity={vi.fn()} />))
+      await act(async () => {
+        const button = Array.from(container.querySelectorAll('button')).find((candidate) => candidate.textContent === 'Apply')
+        button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+      await act(async () => {
+        const confirm = Array.from(document.body.querySelectorAll('button')).find((candidate) => candidate.textContent === 'Apply proposal')
+        confirm?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+    }
+    const greetingProposal: CopilotProposalSummary = {
+      id: 'proposal-greeting',
+      targetType: 'agent_greeting',
+      targetLabel: 'Greeting',
+      summary: 'Use the exact wording "Welcome!"',
+      status: 'pending',
+    }
+    let announced: string[]
+    const onGreetingChanged = (event: Event) => {
+      announced.push((event as CustomEvent<{ agentId: string }>).detail.agentId)
+    }
+
+    beforeEach(() => {
+      announced = []
+      window.addEventListener(AGENT_GREETING_CHANGED_EVENT, onGreetingChanged)
+    })
+    afterEach(() => {
+      window.removeEventListener(AGENT_GREETING_CHANGED_EVENT, onGreetingChanged)
+      vi.restoreAllMocks()
+    })
+
+    it('tells an open greeting editor which agent\'s greeting Ray wrote', async () => {
+      await apply(greetingProposal, { status: 'applied', appliedRef: { agentId: 'agent-1' } })
+
+      expect(announced).toEqual(['agent-1'])
+    })
+
+    it('stays quiet when the greeting was not written', async () => {
+      await apply(greetingProposal, { status: 'stale', appliedRef: null })
+      await apply(greetingProposal, { status: 'failed', reason: 'The draft changed' })
+
+      expect(announced).toEqual([])
+    })
+
+    it('stays quiet for a proposal to something other than the greeting', async () => {
+      await apply({ id: 'proposal-directive', targetType: 'directive', targetLabel: 'Refund policy', summary: 'Add a rule', status: 'pending' }, { status: 'applied', appliedRef: { agentId: 'agent-1', directiveId: 'directive-1' } })
+
+      expect(announced).toEqual([])
+    })
   })
 
   it('renders a directive removal preview as one legible row instead of every field marked blank', () => {

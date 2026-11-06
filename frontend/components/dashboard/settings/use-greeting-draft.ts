@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { AGENT_GREETING_CHANGED_EVENT } from '@/lib/agent-draft-save-port'
 import { agentGreetingApi } from '@/lib/api-agent-greeting'
 import type { AgentGreetingDraft, ExactContentItem } from '@/lib/api-types'
 import {
@@ -44,11 +45,14 @@ interface GreetingSession {
 const BLANK: AgentGreetingDraft = { exactWordsEnabled: false, exactContent: null }
 const NO_ISSUES: ExactGreetingIssue[] = []
 
+const isClean = (session: GreetingSession): boolean => sameGreetingDraft(session.value, session.baseline)
+
 /**
  * Owns the greeting wording's load, edit, dirty, and save steps for the agent page, so the
  * page-level Save draft saves it together with the instructions and the editor stays a view.
  * A greeting that failed to load is never saved: the editor would otherwise start blank and
- * overwrite the stored draft.
+ * overwrite the stored draft. When something else writes the draft greeting (Ray applying a
+ * proposal) a clean editor reads it again; an edited one keeps the operator's edits.
  */
 export function useGreetingDraft({
   agentId,
@@ -59,23 +63,53 @@ export function useGreetingDraft({
 }): GreetingDraft {
   const [attempt, setAttempt] = useState(0)
   const [session, setSession] = useState<GreetingSession | null>(null)
+  const [heldFor, setHeldFor] = useState(agentId)
+  if (heldFor !== agentId) {
+    // The page stopped showing this agent's greeting, or switched agents: nothing held for the
+    // earlier one may come back, unread, when the page shows the same agent again.
+    setHeldFor(agentId)
+    setSession(null)
+  }
+  /** Counts saves as they start, so only the latest save reports its outcome. */
   const saveSequenceRef = useRef(0)
+  /** Moves each time a save starts or ends, so a read that began before a write is not applied over it. */
+  const writeEpochRef = useRef(0)
   const current = session && session.agentId === agentId && session.attempt === attempt ? session : null
 
   useEffect(() => {
     if (!agentId) return
     let active = true
-    const settle = (outcome: GreetingSession['outcome'], greeting: AgentGreetingDraft) => {
+    const finish = (outcome: GreetingSession['outcome'], greeting: AgentGreetingDraft) => {
       if (active) setSession({ agentId, attempt, outcome, baseline: greeting, value: greeting, issues: [] })
     }
     agentGreetingApi.getDraft(agentId).then(
-      (greeting) => settle('ready', greeting),
-      () => settle('error', BLANK),
+      (greeting) => finish('ready', greeting),
+      () => finish('error', BLANK),
     )
     return () => {
       active = false
     }
   }, [agentId, attempt])
+
+  useEffect(() => {
+    if (!agentId) return
+    const readAgain = (event: Event) => {
+      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId !== agentId) return
+      const epoch = writeEpochRef.current
+      agentGreetingApi.getDraft(agentId).then((fresh) => {
+        if (writeEpochRef.current !== epoch) return
+        // Decided against the session as it is when the answer arrives, so edits typed while
+        // the read was in flight are kept.
+        setSession((previous) => {
+          if (!previous || previous.agentId !== agentId || previous.outcome !== 'ready') return previous
+          if (!isClean(previous) || sameGreetingDraft(fresh, previous.baseline)) return previous
+          return { ...previous, baseline: fresh, value: fresh, issues: [] }
+        })
+      }, () => undefined)
+    }
+    window.addEventListener(AGENT_GREETING_CHANGED_EVENT, readAgain)
+    return () => window.removeEventListener(AGENT_GREETING_CHANGED_EVENT, readAgain)
+  }, [agentId])
 
   const edit = useCallback((change: (value: AgentGreetingDraft) => AgentGreetingDraft, issues?: ExactGreetingIssue[]) => {
     setSession((previous) => previous?.outcome === 'ready'
@@ -94,24 +128,30 @@ export function useGreetingDraft({
 
   const reload = useCallback(() => setAttempt((previous) => previous + 1), [])
 
-  const dirty = current?.outcome === 'ready' && !sameGreetingDraft(current.value, current.baseline)
+  const dirty = current?.outcome === 'ready' && !isClean(current)
 
   const save = useCallback(async () => {
-    if (!agentId || current?.outcome !== 'ready' || sameGreetingDraft(current.value, current.baseline)) return
+    if (!agentId || current?.outcome !== 'ready' || isClean(current)) return
     const payload = toGreetingSavePayload(current.value, agentDefaultLocale)
     const saveId = saveSequenceRef.current + 1
     saveSequenceRef.current = saveId
-    const settle = (change: (previous: GreetingSession) => GreetingSession) => {
-      if (saveSequenceRef.current === saveId) {
-        setSession((previous) => previous && previous.agentId === agentId ? change(previous) : previous)
-      }
+    writeEpochRef.current += 1
+    // The saved greeting becomes the baseline whatever was typed meanwhile, so an edit made
+    // during the save stays held and stays dirty. The save's issues describe the text it sent,
+    // so they are shown only while the held greeting still reads as that text.
+    const settle = (update: (previous: GreetingSession, sentIsHeld: boolean) => GreetingSession) => {
+      writeEpochRef.current += 1
+      if (saveSequenceRef.current !== saveId) return
+      setSession((previous) => previous && previous.agentId === agentId
+        ? update(previous, sameGreetingDraft(toGreetingSavePayload(previous.value, agentDefaultLocale), payload))
+        : previous)
     }
     try {
       const response = await agentGreetingApi.saveDraft(agentId, payload)
-      settle((previous) => ({ ...previous, baseline: payload, issues: response.validation.issues ?? [] }))
+      settle((previous, sentIsHeld) => ({ ...previous, baseline: payload, issues: sentIsHeld ? response.validation.issues ?? [] : [] }))
     } catch (error) {
       const fieldIssues = extractValidationIssuesFromError(error)
-      if (fieldIssues) settle((previous) => ({ ...previous, issues: fieldIssues }))
+      settle((previous, sentIsHeld) => ({ ...previous, issues: fieldIssues && sentIsHeld ? fieldIssues : previous.issues }))
       throw error
     }
   }, [agentDefaultLocale, agentId, current])

@@ -79,6 +79,54 @@ describe('useAgentDraftSaver', () => {
     expect(save).toHaveBeenCalledOnce()
   })
 
+  describe('when a save fails', () => {
+    const renderWith = (props: { save: () => Promise<void>; isDirty: boolean; onFailureResolved: () => void }) => {
+      act(() => root.render(<FailureHarness {...props} />))
+    }
+    const FailureHarness = (props: { save: () => Promise<void>; isDirty: boolean; onFailureResolved: () => void }) => {
+      useAgentDraftSaver({ agentId, ...props })
+      return null
+    }
+
+    it('lets the page drop the failure once nothing is left unsaved', async () => {
+      const onFailureResolved = vi.fn()
+      const save = vi.fn(async () => { throw new Error('greeting refused') })
+      renderWith({ save, isDirty: true, onFailureResolved })
+
+      await expect(saveAgentDraft(agentId)).rejects.toThrow('greeting refused')
+      expect(onFailureResolved).not.toHaveBeenCalled()
+      renderWith({ save, isDirty: false, onFailureResolved })
+
+      expect(onFailureResolved).toHaveBeenCalledOnce()
+      renderWith({ save, isDirty: true, onFailureResolved })
+      renderWith({ save, isDirty: false, onFailureResolved })
+      expect(onFailureResolved).toHaveBeenCalledOnce()
+    })
+
+    it('has nothing to drop when the save went through, or when none failed', async () => {
+      const onFailureResolved = vi.fn()
+      const save = vi.fn(async () => undefined)
+      renderWith({ save, isDirty: true, onFailureResolved })
+
+      await saveAgentDraft(agentId)
+      renderWith({ save, isDirty: false, onFailureResolved })
+
+      expect(onFailureResolved).not.toHaveBeenCalled()
+    })
+
+    it('has nothing to drop when a later save went through', async () => {
+      const onFailureResolved = vi.fn()
+      const save = vi.fn().mockRejectedValueOnce(new Error('refused')).mockResolvedValue(undefined)
+      renderWith({ save, isDirty: true, onFailureResolved })
+
+      await expect(saveAgentDraft(agentId)).rejects.toThrow('refused')
+      await saveAgentDraft(agentId)
+      renderWith({ save, isDirty: false, onFailureResolved })
+
+      expect(onFailureResolved).not.toHaveBeenCalled()
+    })
+  })
+
   it('registers nothing without an agent', async () => {
     const save = vi.fn(async () => undefined)
     render({ id: undefined, save, isDirty: true })

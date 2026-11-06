@@ -29,6 +29,7 @@ import {
   type CopilotProposalSummary,
   type CopilotProposalStatus,
 } from '@/lib/api-copilot'
+import { announceAgentGreetingChanged } from '@/lib/agent-draft-save-port'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   createCopilotProposalCardState,
@@ -307,6 +308,11 @@ export function CopilotProposalCard({
         ? await copilotApi.applyProposal(proposal.id, workspaceId)
         : await copilotApi.applyProposal(proposal.id)
       setCardState((current) => reconcileCopilotProposalApply(current, result))
+      if (result.status === 'applied' && proposal.targetType === 'agent_greeting') {
+        // An open greeting editor holds the wording from before Ray wrote this one.
+        const greetingAgentId = targetReference(proposal, detail, result.appliedRef ?? null, defaultAgentId)?.agentId
+        if (greetingAgentId) announceAgentGreetingChanged(greetingAgentId)
+      }
     } catch (error) {
       if (isCopilotApiErrorStatus(error, 409)) {
         await reconcileFromServer('This proposal was already resolved.')

@@ -96,8 +96,21 @@ test("configures Exact words with two languages and three chips, saves with the 
     },
   });
 
-  await expect(page.getByRole("button", { name: "Review & publish", exact: true })).toBeVisible();
+  // A greeting-only draft is publishable. This spec's revision-state is a mock, so whether the
+  // real backend reports such a draft as changed is covered by the backend revision-status tests.
+  await expect(page.getByRole("button", { name: "Review & publish", exact: true })).toBeEnabled();
   await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+
+  // The review lists the wording that will go live, not just "Unchanged".
+  await page.getByRole("button", { name: "Review & publish", exact: true }).click();
+  const review = page.getByRole("dialog", { name: "Review draft publication" });
+  await expect(review.getByText("Only saved draft instructions, greeting wording, directives, routines, and context enablements are included.")).toBeVisible();
+  const greetingSection = review.locator("section").filter({ has: page.getByText("Greeting", { exact: true }) });
+  await expect(greetingSection).toContainText("Exact words");
+  await expect(greetingSection).toContainText("en-US: Welcome to Acme! How can we help today?");
+  await expect(greetingSection).toContainText("fr: Bienvenue chez Acme ! Comment pouvons-nous vous aider ?");
+  await expect(greetingSection).not.toContainText("Unchanged");
+  await review.getByRole("button", { name: "Cancel" }).click();
 
   // After a reload the editor starts from the saved draft, not from the published revision,
   // and a page that changed nothing writes nothing.
@@ -158,6 +171,105 @@ test("shows the greeting issues the draft refused and marks the page draft save 
   await expect(page.getByText("Greeting text must not be blank")).toBeVisible();
   // The edit is kept, so the operator can fix the wording and save again.
   await expect(page.getByRole("button", { name: "Save draft" })).toBeEnabled();
+});
+
+test("keeps unsaved wording on screen when the proactive greeting is switched off, so a refused save shows its issues", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/greeting/draft`, async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 400,
+      json: {
+        error: {
+          code: "bad_request",
+          message: "Exact greeting content is invalid",
+          details: { issues: [{ path: "variants[0].body", code: "blank_body", message: "Greeting text must not be blank" }] },
+        },
+      },
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`);
+  await page.getByRole("group", { name: "Greeting wording" }).getByText("Exact words").click();
+  await page.getByLabel("Proactive first greeting").click();
+  await expect(page.getByLabel("Proactive first greeting")).not.toBeChecked();
+
+  await expect(page.getByRole("group", { name: "Greeting wording" })).toBeVisible();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Greeting text must not be blank")).toBeVisible();
+});
+
+test("refreshes the draft status once the instructions are saved even though the greeting was refused, and drops the failure when the refused edit is undone", async ({ page }) => {
+  await seedDashboardStorage(page);
+  let draftGeneration = 1;
+  let stateReads = 0;
+  const candidateRequests: Array<{ expectedDraftGeneration: number }> = [];
+  await installDashboardApiMocks(page);
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}`, async (route) => {
+    if (route.request().method() === "PUT") draftGeneration += 1;
+    await route.fallback();
+  });
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/revision-state`, async (route) => {
+    stateReads += 1;
+    await route.fulfill({
+      json: {
+        agentId: defaultAgentId,
+        status: draftGeneration > 1 ? "draft_dirty" : "draft_clean",
+        draft: { generation: draftGeneration, basePublishedRevisionId: "22222222-2222-4222-8222-222222222222", updatedAt: new Date().toISOString() },
+        publishedRevision: { id: "22222222-2222-4222-8222-222222222222", label: "Published", kind: "published", versionNumber: 1, createdAt: "2026-04-26T12:00:00.000Z" },
+        canPublish: true,
+        proactiveGreetingEnabled: true,
+      },
+    });
+  });
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/revisions/candidates`, async (route) => {
+    candidateRequests.push(route.request().postDataJSON() as { expectedDraftGeneration: number });
+    await route.fallback();
+  });
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/greeting/draft`, async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 400,
+      json: {
+        error: {
+          code: "bad_request",
+          message: "Exact greeting content is invalid",
+          details: { issues: [{ path: "variants[0].body", code: "blank_body", message: "Greeting text must not be blank" }] },
+        },
+      },
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`);
+  await expect(page.getByRole("group", { name: "Greeting wording" })).toBeVisible();
+  await expect.poll(() => stateReads).toBeGreaterThan(0);
+  await page.locator("#assistantAnswerInstruction").fill("Use the saved draft instruction.");
+  await page.getByRole("group", { name: "Greeting wording" }).getByText("Exact words").click();
+  const readsBeforeSave = stateReads;
+  await page.getByRole("button", { name: "Save draft" }).click();
+
+  await expect(page.getByText("Draft save needs attention")).toBeVisible();
+  await expect(page.getByText("Greeting text must not be blank")).toBeVisible();
+  // The instructions were written, so the header reads the draft again instead of keeping the
+  // generation from before the write.
+  await expect.poll(() => stateReads).toBeGreaterThan(readsBeforeSave);
+
+  // Undoing the refused edit leaves nothing to save: the failure goes, and a review is made
+  // against the generation the instructions write produced.
+  await page.getByRole("group", { name: "Greeting wording" }).getByText("Automatic").click();
+  await expect(page.getByText("Draft save needs attention")).toHaveCount(0);
+  await expect(page.getByText("Exact greeting content is invalid")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Review & publish", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Review & publish", exact: true }).click();
+  await expect.poll(() => candidateRequests.length).toBe(1);
+  expect(candidateRequests[0].expectedDraftGeneration).toBe(2);
 });
 
 // No pre-existing Playwright spec exercises the public bootstrap-greeting page at all (it is

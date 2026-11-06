@@ -137,6 +137,24 @@ export const readAgentRevisionGreeting = (snapshot: AgentRevisionSnapshot): Agen
   snapshot.greeting ?? { exactWordsEnabled: false, exactContent: null };
 
 /**
+ * The greeting as a fixed shape for a `JSON.stringify` comparison: a greeting absent from one
+ * snapshot reads as the default (via `readAgentRevisionGreeting`), and a variant's chip labels,
+ * a record whose key order depends on which writer or JSONB round trip produced it, are listed
+ * by sorted key. Chip order and variant order are authored, so they stay as they are.
+ */
+const projectGreeting = (greeting: AgentGreetingSnapshot) => ({
+  exactWordsEnabled: greeting.exactWordsEnabled,
+  exactContent: greeting.exactContent && {
+    chips: greeting.exactContent.chips,
+    variants: greeting.exactContent.variants.map((variant) => ({
+      locale: variant.locale,
+      body: variant.body,
+      chipLabels: Object.entries(variant.chipLabels).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+    })),
+  },
+});
+
+/**
  * The authorable release surface deliberately excludes cutover-only retained
  * pins. It also gives routine arrays the same priority-first ordering used by
  * draft selection, so equivalent published and draft closures compare cleanly.
@@ -149,6 +167,7 @@ const projectScopedAuthoringSnapshot = (snapshot: AgentRevisionSnapshot) => ({
     left.createdAt.getTime() - right.createdAt.getTime() ||
     left.id.localeCompare(right.id)),
   contextVariableEnablements: snapshot.contextVariableEnablements,
+  greeting: projectGreeting(readAgentRevisionGreeting(snapshot)),
 });
 
 export const equalScopedAuthoringSnapshots = (

@@ -566,8 +566,7 @@ export function WorkspaceAssistantChannelsTab({
     onDraftDirtyChange?.(hasDraftChanges)
   }, [hasDraftChanges, onDraftDirtyChange])
 
-  // The page's one draft save: the private instruction and the greeting wording, each written
-  // only when it changed, so an untouched greeting never bumps the draft generation.
+  // The page's one draft save: instruction and greeting wording, each written only when changed.
   const saveDraftNow = useCallback(async () => {
     if (!agentId || !assistantBehaviorSettings || !savedAssistantBehaviorSettings) {
       throw new Error('The agent editor is still loading.')
@@ -592,6 +591,7 @@ export function WorkspaceAssistantChannelsTab({
         // edited rather than replacing them with the record returned by this
         // private-only save.
         setAssistantBehaviorSettings((current) => current ? { ...updated, ...current } : updated)
+        dispatchDraftSaved() // the draft moved on, whether or not the greeting write below succeeds
       }
       await greetingDraft.save()
       setAssistantSettingsError(null)
@@ -605,8 +605,8 @@ export function WorkspaceAssistantChannelsTab({
       }
       throw error
     }
-  }, [agentId, assistantBehaviorSettings, greetingDraft, hasDraftChanges, hasPrivateInstructionChanges, savedAssistantBehaviorSettings, setSaveError, setSaveState, updateAssistantBehaviorSettings])
-  useAgentDraftSaver({ agentId: mode === 'assistant' ? agentId : undefined, save: saveDraftNow, isDirty: hasDraftChanges })
+  }, [agentId, assistantBehaviorSettings, dispatchDraftSaved, greetingDraft, hasDraftChanges, hasPrivateInstructionChanges, savedAssistantBehaviorSettings, setSaveError, setSaveState, updateAssistantBehaviorSettings])
+  useAgentDraftSaver({ agentId: mode === 'assistant' ? agentId : undefined, save: saveDraftNow, isDirty: hasDraftChanges, onFailureResolved: () => { setAssistantSettingsError(null); setSaveState('idle') } })
 
   useEffect(() => {
     if (!accountId || isOrganizationLoading || !canManageOrganization) {

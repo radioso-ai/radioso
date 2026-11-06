@@ -7,6 +7,7 @@ import {
   applyEditedItem,
   codePointLength,
   createEmptyExactContent,
+  describeGreeting,
   extractValidationIssuesFromError,
   hasVariantForLocale,
   issuesForChipLabel,
@@ -242,6 +243,38 @@ describe('sameGreetingDraft', () => {
       { exactWordsEnabled: false, exactContent: null },
       { exactWordsEnabled: false, exactContent: null },
     )).toBe(true)
+  })
+})
+
+describe('describeGreeting', () => {
+  it('says Automatic for a greeting with no content', () => {
+    expect(describeGreeting({ exactWordsEnabled: false, exactContent: null })).toEqual(['Automatic'])
+  })
+
+  it('lists each language with its wording and its chips in order', () => {
+    expect(describeGreeting({
+      exactWordsEnabled: true,
+      exactContent: {
+        chips: ['plans', 'sales'],
+        variants: [
+          { locale: 'en', body: 'Welcome!', chipLabels: { sales: 'Talk to sales', plans: 'Compare plans' } },
+          { locale: 'fr', body: 'Bienvenue !', chipLabels: { plans: 'Comparer', sales: 'Parler aux ventes' } },
+        ],
+      },
+    })).toEqual([
+      'Exact words',
+      'en: Welcome!',
+      'en chips: Compare plans, Talk to sales',
+      'fr: Bienvenue !',
+      'fr chips: Comparer, Parler aux ventes',
+    ])
+  })
+
+  it('says saved wording is not in use when Exact words is off', () => {
+    expect(describeGreeting({
+      exactWordsEnabled: false,
+      exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome!', chipLabels: {} }] },
+    })).toEqual(['Automatic (saved wording is not in use)', 'en: Welcome!'])
   })
 })
 

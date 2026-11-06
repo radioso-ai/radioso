@@ -241,8 +241,12 @@ const baseAgentRevisionState = (): AgentRevisionStateFixture => ({
   proactiveGreetingEnabled: false,
 });
 
+const noGreeting: ApiSchemas["AgentGreetingDraft"] = { exactWordsEnabled: false, exactContent: null };
+
+/** `greeting` is the wording the revision carries; the published revision before it carries none. */
 const buildRevisionDetail = (
   revision: AgentRevisionSummaryFixture,
+  greeting: ApiSchemas["AgentGreetingDraft"] = noGreeting,
 ): ApiSchemas["AgentRevisionDetailResponse"] => ({
   revision: {
     ...revision,
@@ -262,9 +266,9 @@ const buildRevisionDetail = (
       routines: [],
       contextVariableEnablements: [],
       greeting: {
-        before: { exactWordsEnabled: false, exactContent: null },
-        after: { exactWordsEnabled: false, exactContent: null },
-        changed: false,
+        before: noGreeting,
+        after: greeting,
+        changed: JSON.stringify(greeting) !== JSON.stringify(noGreeting),
       },
     },
   },
@@ -2205,7 +2209,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revisions/${defaultCandidateRevisionId}`) {
-      await json(route, buildRevisionDetail(defaultCandidateRevision));
+      await json(route, buildRevisionDetail(defaultCandidateRevision, agentGreetingDraft));
       return;
     }
 

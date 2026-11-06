@@ -12,6 +12,17 @@
  */
 export const AGENT_DRAFT_SAVED_EVENT = 'radioso:agent-draft-saved'
 
+/**
+ * Sent on the window, with `{ agentId }`, after something other than the agent page's own save
+ * wrote the agent's draft greeting (Ray applying a greeting proposal), so an open greeting editor
+ * reads it again. The page's own save does not send it: the editor already holds what it saved.
+ */
+export const AGENT_GREETING_CHANGED_EVENT = 'radioso:agent-greeting-changed'
+
+export function announceAgentGreetingChanged(agentId: string): void {
+  window.dispatchEvent(new CustomEvent(AGENT_GREETING_CHANGED_EVENT, { detail: { agentId } }))
+}
+
 type AgentDraftSaver = {
   save: () => Promise<void>
   isDirty: () => boolean

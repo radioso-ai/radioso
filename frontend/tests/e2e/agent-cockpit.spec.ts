@@ -315,7 +315,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       enabledContextVariableIds: options.enabledContextVariableIds ?? [],
       scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true },
       dependencyWarnings: [{ code: 'routine_reference', message: 'One routine is pinned.' }],
-      scopedChanges: { customInstruction: { before: 'Old', after: 'New', changed: true }, directives: [{ id: 'directive-1', change: 'changed', before: { name: 'Welcome directive', content: 'Old direction' }, after: { name: 'Welcome directive', content: 'New direction' } }], routines: [{ definitionId: 'routine-1', change: 'changed', before: { name: 'Order lookup', steps: ['old'] }, after: { name: 'Order lookup', steps: ['new'] } }], contextVariableEnablements: [{ contextVariableId: 'tier', change: 'added' }] },
+      scopedChanges: { customInstruction: { before: 'Old', after: 'New', changed: true }, directives: [{ id: 'directive-1', change: 'changed', before: { name: 'Welcome directive', content: 'Old direction' }, after: { name: 'Welcome directive', content: 'New direction' } }], routines: [{ definitionId: 'routine-1', change: 'changed', before: { name: 'Order lookup', steps: ['old'] }, after: { name: 'Order lookup', steps: ['new'] } }], contextVariableEnablements: [{ contextVariableId: 'tier', change: 'added' }], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
     } } })
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/revisions/${publishedId}$`), async (route) => {
@@ -325,7 +325,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       enabledContextVariableIds: [],
       scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true },
       dependencyWarnings: [],
-      scopedChanges: { customInstruction: { before: 'Old', after: 'Old', changed: false }, directives: [], routines: [], contextVariableEnablements: [] },
+      scopedChanges: { customInstruction: { before: 'Old', after: 'Old', changed: false }, directives: [], routines: [], contextVariableEnablements: [], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
     } } })
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/revisions/${candidateId}/publish$`), async (route) => {
@@ -1322,6 +1322,46 @@ test('saves the mounted dirty editor before lazily starting a private test', asy
   await expect.poll(() => requestBodies).toContainEqual(expect.objectContaining({ mode: 'single', revisionIds: [candidateId] }))
 })
 
+test('saves a dirty greeting wording before lazily starting a private test, and starts no test while the greeting is refused', async ({ page }) => {
+  const requestBodies: unknown[] = []
+  const greetingWrites: unknown[] = []
+  let refuseGreeting = true
+  await installCockpitMocks(page, { requestBodies })
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/greeting/draft`, async (route) => {
+    if (route.request().method() !== 'PUT') {
+      await route.fallback()
+      return
+    }
+    greetingWrites.push(route.request().postDataJSON())
+    if (refuseGreeting) {
+      await route.fulfill({ status: 400, json: { error: { code: 'bad_request', message: 'Exact greeting content is invalid', details: { issues: [] } } } })
+      return
+    }
+    await route.fallback()
+  })
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`)
+  await page.getByRole('group', { name: 'Greeting wording' }).getByText('Exact words').click()
+  await page.getByLabel(/^Greeting text/).fill('Save this greeting before testing.')
+  await page.getByRole('tab', { name: 'Test Chat' }).click()
+  await testChatComposer(page).fill('Does the saved greeting apply?')
+
+  await page.getByRole('button', { name: 'Save draft & send' }).click()
+
+  await expect.poll(() => greetingWrites).toHaveLength(1)
+  expect(requestBodies).not.toContainEqual(expect.objectContaining({ mode: 'single', revisionIds: [candidateId] }))
+  await expect(testChatComposer(page)).toHaveValue('Does the saved greeting apply?')
+
+  refuseGreeting = false
+  await page.getByRole('button', { name: 'Save draft & send' }).click()
+
+  await expect.poll(() => greetingWrites).toHaveLength(2)
+  expect(greetingWrites[1]).toMatchObject({
+    exactWordsEnabled: true,
+    exactContent: { variants: [expect.objectContaining({ body: 'Save this greeting before testing.' })] },
+  })
+  await expect.poll(() => requestBodies).toContainEqual(expect.objectContaining({ mode: 'single', revisionIds: [candidateId] }))
+})
+
 test('does not start a private execution when the mounted draft save fails', async ({ page }) => {
   const requestBodies: unknown[] = []
   await installCockpitMocks(page, { requestBodies })
@@ -1379,6 +1419,7 @@ test('reviews full scoped changes and publishes the selected candidate with a fr
   await expect(page.getByRole('dialog')).toContainText('Order lookup (changed)')
   await expect(page.getByRole('dialog')).toContainText('Customer tier (added)')
   await expect(page.getByRole('dialog')).toContainText('After')
+  await expect(page.getByRole('dialog').locator('section').filter({ has: page.getByText('Greeting', { exact: true }) })).toContainText('en: Welcome aboard!')
   await page.getByRole('button', { name: 'Publish revision' }).click()
 
   await expect(page.getByRole('dialog')).toBeHidden()
@@ -1642,6 +1683,8 @@ test('opens published agent versions from the Test Chat overflow menu', async ({
   await expect(page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true })).toHaveAttribute('tabindex', '0')
   await page.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('v4 changes')
+  await expect(page.getByRole('dialog')).toContainText('greeting')
+  await expect(page.getByRole('dialog')).toContainText('en: Welcome aboard!')
   await page.getByRole('button', { name: 'Close', exact: true }).click()
 
   await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()

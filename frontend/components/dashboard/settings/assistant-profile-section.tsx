@@ -418,7 +418,8 @@ export function AssistantProfileSection({
                   </p>
                 </div>
               ) : null}
-              {anonSettings.proactiveGreetingEnabled && greetingDraft ? (
+              {/* Turning the switch off keeps unsaved wording on screen, so its save errors have a field to land on. */}
+              {greetingDraft && (anonSettings.proactiveGreetingEnabled || greetingDraft.dirty) ? (
                 <div className="space-y-2 border-t border-border pt-3">
                   <div className="flex items-center justify-between gap-2">
                     <Label className="text-foreground">Greeting wording</Label>

@@ -175,6 +175,18 @@ const sameExactContent = (a: ExactContentItem | null, b: ExactContentItem | null
 export const sameGreetingDraft = (a: AgentGreetingDraft, b: AgentGreetingDraft): boolean =>
   a.exactWordsEnabled === b.exactWordsEnabled && sameExactContent(a.exactContent, b.exactContent)
 
+/** A greeting as the lines the publish review shows: its mode, then each language's wording
+ * and, when it has chips, that language's chip labels in chip order. */
+export const describeGreeting = (greeting: AgentGreetingDraft): string[] => {
+  const { exactWordsEnabled, exactContent } = greeting
+  const mode = exactWordsEnabled ? 'Exact words' : exactContent ? 'Automatic (saved wording is not in use)' : 'Automatic'
+  const variants = exactContent?.variants.flatMap((variant) => {
+    const chipLabels = exactContent.chips.map((chipId) => variant.chipLabels[chipId] ?? '')
+    return [`${variant.locale}: ${variant.body}`, ...(chipLabels.length ? [`${variant.locale} chips: ${chipLabels.join(', ')}`] : [])]
+  }) ?? []
+  return [mode, ...variants]
+}
+
 /** The body `PUT .../greeting/draft` takes for a greeting the operator holds. Exact words on
  * with nothing written sends the blank default-language variant the editor shows in that
  * state, so the server's field-level issues land on a field the operator can see. */

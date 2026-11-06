@@ -255,6 +255,10 @@ gcloud run jobs delete staff-bootstrap --region "$REGION" --quiet
 gcloud secrets delete "$BOOTSTRAP_PASSWORD_SECRET" --quiet
 ```
 
+With Workspace sign-in on, skip the secret: drop `STAFF_BOOTSTRAP_PASSWORD` from
+`--set-secrets` and pass
+`--set-env-vars PGSSLMODE=no-verify,STAFF_GOOGLE_WORKSPACE_DOMAIN=example.com`.
+
 Every run writes a `staff.bootstrap` audit event and raises the staff access alert
 described in [Monitoring On Google Cloud](../docs/monitoring-google-cloud.md).
 

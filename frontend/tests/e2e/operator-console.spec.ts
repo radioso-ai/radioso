@@ -160,8 +160,8 @@ const installOperatorConsoleMocks = async (
   page: Page,
   role: StaffRole = "owner",
   startingProfile: TierProfile = starterProfile,
-  signInMethods: { password: boolean; google: boolean } = { password: true, google: false },
   spend: ConversationSpendFixture = conversationSpend(),
+  signInMethods: { password: boolean; google: boolean } = { password: true, google: false },
 ) => {
   const requestLog: string[] = [];
   let currentUsage = usage(startingProfile);
@@ -304,7 +304,7 @@ test("staff can sign in and review the organization directory and detail usage",
 });
 
 test("with Workspace sign-in on, staff get Google and no password form", async ({ page }) => {
-  await installOperatorConsoleMocks(page, "owner", starterProfile, { password: false, google: true });
+  await installOperatorConsoleMocks(page, "owner", starterProfile, conversationSpend(), { password: false, google: true });
 
   await page.goto("/operator/login");
 
@@ -314,7 +314,7 @@ test("with Workspace sign-in on, staff get Google and no password form", async (
 });
 
 test("a refused Google account hears why on the sign-in page", async ({ page }) => {
-  await installOperatorConsoleMocks(page, "owner", starterProfile, { password: false, google: true });
+  await installOperatorConsoleMocks(page, "owner", starterProfile, conversationSpend(), { password: false, google: true });
 
   await page.goto("/operator/login?error=google_sign_in_failed");
 
@@ -429,7 +429,7 @@ test("a session that ended mid-edit sends staff back to sign in", async ({ page 
 });
 
 test("with Workspace sign-in on, an owner adds staff without a password", async ({ page }) => {
-  await installOperatorConsoleMocks(page, "owner", starterProfile, { password: false, google: true });
+  await installOperatorConsoleMocks(page, "owner", starterProfile, conversationSpend(), { password: false, google: true });
 
   await page.goto("/operator/staff");
   await page.getByLabel("Email").fill("billing@example.com");

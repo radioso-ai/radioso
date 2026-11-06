@@ -92,7 +92,7 @@ CREATE FUNCTION public.block_agent_skill_mcp_connection_delete() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM agents WHERE id = OLD.agent_id) THEN
+  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
     RETURN OLD;
   END IF;
 
@@ -100,7 +100,7 @@ BEGIN
     SELECT 1
     FROM agent_skills
     WHERE kind = 'external_mcp'
-      AND agent_id = OLD.agent_id
+      AND workspace_id = OLD.workspace_id
       AND target_type = 'mcp_connection'
       AND target_id = OLD.id::text
   ) THEN
@@ -240,7 +240,7 @@ BEGIN
     SELECT TRUE INTO target_exists
     FROM mcp_connections
     WHERE id = target_uuid
-      AND agent_id = NEW.agent_id
+      AND workspace_id = NEW.workspace_id
     FOR KEY SHARE;
     IF target_exists IS NOT TRUE THEN
       RAISE EXCEPTION 'external_mcp skill % references unknown MCP connection %', NEW.id, NEW.target_id
@@ -384,6 +384,22 @@ BEGIN
             CONSTRAINT = 'routine_completion_export_destination_ref_published_fk';
   END IF;
 
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: fill_mcp_connection_workspace_from_agent(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fill_mcp_connection_workspace_from_agent() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.workspace_id IS NULL AND NEW.agent_id IS NOT NULL THEN
+    SELECT workspace_id INTO NEW.workspace_id FROM agents WHERE id = NEW.agent_id;
+  END IF;
   RETURN NEW;
 END;
 $$;
@@ -2984,7 +3000,7 @@ CREATE TABLE public.legacy_workspace_credential_tombstones (
 
 CREATE TABLE public.mcp_connections (
     id uuid NOT NULL,
-    agent_id uuid NOT NULL,
+    agent_id uuid,
     display_name text NOT NULL,
     server_url text NOT NULL,
     auth_method text NOT NULL,
@@ -2995,6 +3011,7 @@ CREATE TABLE public.mcp_connections (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     oauth_flow_ciphertext text,
+    workspace_id uuid NOT NULL,
     CONSTRAINT mcp_connections_auth_method_check CHECK ((auth_method = ANY (ARRAY['access_token'::text, 'oauth'::text]))),
     CONSTRAINT mcp_connections_status_check CHECK ((status = ANY (ARRAY['unconfigured'::text, 'authorized'::text, 'needs_reauth'::text, 'error'::text])))
 );
@@ -8452,6 +8469,13 @@ CREATE INDEX idx_mcp_connections_agent ON public.mcp_connections USING btree (ag
 
 
 --
+-- Name: idx_mcp_connections_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mcp_connections_workspace ON public.mcp_connections USING btree (workspace_id);
+
+
+--
 -- Name: idx_message_facets_workspace_prompt_version; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10209,6 +10233,13 @@ CREATE TRIGGER trg_mcp_connections_block_agent_skill_reference BEFORE DELETE ON 
 
 
 --
+-- Name: mcp_connections trg_mcp_connections_fill_workspace_from_agent; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_mcp_connections_fill_workspace_from_agent BEFORE INSERT ON public.mcp_connections FOR EACH ROW EXECUTE FUNCTION public.fill_mcp_connection_workspace_from_agent();
+
+
+--
 -- Name: routine_completion_export trg_routine_completion_export_destination; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -11678,11 +11709,11 @@ ALTER TABLE ONLY public.integration_oauth_connections
 
 
 --
--- Name: mcp_connections mcp_connections_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: mcp_connections mcp_connections_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mcp_connections
-    ADD CONSTRAINT mcp_connections_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+    ADD CONSTRAINT mcp_connections_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

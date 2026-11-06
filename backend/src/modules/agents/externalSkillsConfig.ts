@@ -15,7 +15,7 @@ import { refPlaceholder, secretPlaceholder } from "./agentConfigPlaceholders.js"
  */
 
 /** Non-redacting source shape (real ids + `hasCredential`) drawn from the repos. */
-export interface InternalMcpOauthClientConfig {
+interface InternalMcpOauthClientConfig {
   authorizationEndpoint: string;
   tokenEndpoint: string;
   clientId: string;
@@ -54,7 +54,7 @@ export interface InternalAgentExternalSkillsConfig {
 }
 
 /** The stored rows this projection reads, named structurally so this module keeps its repository ignorance. */
-export interface InternalAgentExternalSkillSources {
+interface InternalAgentExternalSkillSources {
   readonly connections: ReadonlyArray<{
     id: string;
     displayName: string;
@@ -66,7 +66,7 @@ export interface InternalAgentExternalSkillSources {
 }
 
 /**
- * Renders the agent-scoped external-skill rows into the internal config an agent is materialized
+ * Renders an agent's external skills and the connections they use into the internal config it is materialized
  * from. Every caller that reconstitutes a runnable agent — a captured eval snapshot, a live reply
  * draft — needs the same projection, and an agent rebuilt without it silently loses its MCP tools.
  */
@@ -92,7 +92,7 @@ export const projectInternalAgentExternalSkills = (
   })),
 });
 
-export interface McpOauthClientConfig {
+interface McpOauthClientConfig {
   authorizationEndpoint: string;
   tokenEndpoint: string;
   clientId: string;
@@ -201,7 +201,7 @@ export const projectInternalExternalSkills = (
   source: InternalAgentExternalSkillsConfig,
 ): InternalAgentExternalSkillsConfig => cloneJson(source);
 
-export interface ResolvedExternalSkillImport {
+interface ResolvedExternalSkillImport {
   skillName: string;
   connectionId: string;
   toolName: string;
@@ -212,7 +212,7 @@ export interface ResolvedExternalSkillImport {
   enabled: boolean;
 }
 
-export interface ExternalSkillsRefResolution {
+interface ExternalSkillsRefResolution {
   /** Skills whose connection ref re-bound to a created connection id. */
   skills: ResolvedExternalSkillImport[];
   /** Skills dropped because their referenced connection was absent on import. */

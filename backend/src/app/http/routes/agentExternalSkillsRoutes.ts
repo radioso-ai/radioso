@@ -25,11 +25,13 @@ const parseId = (value: unknown, field: string): string => {
 };
 
 /**
- * Per-agent authoring routes for MCP connections + external skill definitions.
- * Mounted at /api/v1/agents alongside the agent routes. Reads require
- * workspace.agents.read; writes require workspace.agents.manage. The agent is
- * resolved through agentService so callers can only touch agents in their
- * workspace. Credentials are write-only (never returned).
+ * Authoring routes for MCP connections + external skill definitions, mounted at
+ * /api/v1/agents alongside the agent routes. A skill belongs to the agent in the
+ * path; a connection belongs to that agent's workspace, so every agent there
+ * reaches the same connections. Reads require workspace.agents.read; writes
+ * require workspace.agents.manage. The agent is resolved through agentService so
+ * callers can only touch agents in their workspace. Credentials are write-only
+ * (never returned).
  */
 export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
@@ -39,19 +41,19 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
   const rateLimitExpensiveAuthenticatedRequest = expensiveAuthenticatedRateLimiter(dependencies);
 
   // Verifies the agent exists in the caller's workspace (throws notFound otherwise).
-  const resolveAgentId = async (req: Request, res: Response): Promise<string> => {
+  const resolveAgent = async (req: Request, res: Response): Promise<{ workspaceId: string; agentId: string }> => {
     const { workspaceId } = res.locals as { workspaceId: string };
     const agentId = parseId(req.params.agentId, "agentId");
     await dependencies.agentService.get(workspaceId, agentId);
-    return agentId;
+    return { workspaceId, agentId };
   };
 
   // --- MCP connections ---
 
   router.get("/:agentId/mcp-connections", workspaceSession, agentRead, async (req, res, next) => {
     try {
-      const agentId = await resolveAgentId(req, res);
-      res.status(200).json({ connections: await dependencies.mcpConnectionService.list(agentId) });
+      const { workspaceId } = await resolveAgent(req, res);
+      res.status(200).json({ connections: await dependencies.mcpConnectionService.list(workspaceId) });
     } catch (error) {
       next(error);
     }
@@ -64,8 +66,8 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
     validateBody(mcpConnectionInputSchema),
     async (req, res, next) => {
       try {
-        const agentId = await resolveAgentId(req, res);
-        res.status(201).json(await dependencies.mcpConnectionService.create(agentId, req.body));
+        const { workspaceId } = await resolveAgent(req, res);
+        res.status(201).json(await dependencies.mcpConnectionService.create(workspaceId, req.body));
       } catch (error) {
         next(error);
       }
@@ -74,8 +76,8 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
 
   router.post("/:agentId/mcp-connections/:connectionId/discover", workspaceSession, agentManage, async (req, res, next) => {
     try {
-      const agentId = await resolveAgentId(req, res);
-      const tools = await dependencies.mcpConnectionService.discoverTools(agentId, parseId(req.params.connectionId, "connectionId"));
+      const { workspaceId } = await resolveAgent(req, res);
+      const tools = await dependencies.mcpConnectionService.discoverTools(workspaceId, parseId(req.params.connectionId, "connectionId"));
       res.status(200).json({ tools });
     } catch (error) {
       next(error);
@@ -90,9 +92,9 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
     rateLimitExpensiveAuthenticatedRequest,
     async (req, res, next) => {
       try {
-        const agentId = await resolveAgentId(req, res);
+        const { workspaceId } = await resolveAgent(req, res);
         const result = await dependencies.mcpConnectionService.startOauthAuthorization(
-          agentId,
+          workspaceId,
           parseId(req.params.connectionId, "connectionId"),
         );
         res.status(200).json(result);
@@ -111,9 +113,9 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
     validateBody(oauthCompleteInputSchema),
     async (req, res, next) => {
       try {
-        const agentId = await resolveAgentId(req, res);
+        const { workspaceId } = await resolveAgent(req, res);
         const summary = await dependencies.mcpConnectionService.completeOauthAuthorization(
-          agentId,
+          workspaceId,
           parseId(req.params.connectionId, "connectionId"),
           req.body.code,
           req.body.state,
@@ -127,8 +129,8 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
 
   router.get("/:agentId/mcp-connections/:connectionId", workspaceSession, agentRead, async (req, res, next) => {
     try {
-      const agentId = await resolveAgentId(req, res);
-      res.status(200).json(await dependencies.mcpConnectionService.get(agentId, parseId(req.params.connectionId, "connectionId")));
+      const { workspaceId } = await resolveAgent(req, res);
+      res.status(200).json(await dependencies.mcpConnectionService.get(workspaceId, parseId(req.params.connectionId, "connectionId")));
     } catch (error) {
       next(error);
     }
@@ -141,9 +143,9 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
     validateBody(mcpConnectionUpdateSchema),
     async (req, res, next) => {
       try {
-        const agentId = await resolveAgentId(req, res);
+        const { workspaceId } = await resolveAgent(req, res);
         res.status(200).json(
-          await dependencies.mcpConnectionService.update(agentId, parseId(req.params.connectionId, "connectionId"), req.body),
+          await dependencies.mcpConnectionService.update(workspaceId, parseId(req.params.connectionId, "connectionId"), req.body),
         );
       } catch (error) {
         next(error);
@@ -153,8 +155,8 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
 
   router.delete("/:agentId/mcp-connections/:connectionId", workspaceSession, agentManage, async (req, res, next) => {
     try {
-      const agentId = await resolveAgentId(req, res);
-      await dependencies.mcpConnectionService.remove(agentId, parseId(req.params.connectionId, "connectionId"));
+      const { workspaceId } = await resolveAgent(req, res);
+      await dependencies.mcpConnectionService.remove(workspaceId, parseId(req.params.connectionId, "connectionId"));
       res.status(204).end();
     } catch (error) {
       next(error);
@@ -165,7 +167,7 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
 
   router.get("/:agentId/external-skills", workspaceSession, agentRead, async (req, res, next) => {
     try {
-      const agentId = await resolveAgentId(req, res);
+      const { agentId } = await resolveAgent(req, res);
       res.status(200).json({ skills: await dependencies.externalSkillDefinitionService.list(agentId) });
     } catch (error) {
       next(error);
@@ -179,8 +181,8 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
     validateBody(skillDefinitionInputSchema),
     async (req, res, next) => {
       try {
-        const agentId = await resolveAgentId(req, res);
-        res.status(201).json(await dependencies.externalSkillDefinitionService.create(agentId, req.body));
+        const { workspaceId, agentId } = await resolveAgent(req, res);
+        res.status(201).json(await dependencies.externalSkillDefinitionService.create(workspaceId, agentId, req.body));
       } catch (error) {
         next(error);
       }
@@ -189,7 +191,7 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
 
   router.get("/:agentId/external-skills/:skillId", workspaceSession, agentRead, async (req, res, next) => {
     try {
-      const agentId = await resolveAgentId(req, res);
+      const { agentId } = await resolveAgent(req, res);
       res.status(200).json(await dependencies.externalSkillDefinitionService.get(agentId, parseId(req.params.skillId, "skillId")));
     } catch (error) {
       next(error);
@@ -203,7 +205,7 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
     validateBody(skillDefinitionUpdateSchema),
     async (req, res, next) => {
       try {
-        const agentId = await resolveAgentId(req, res);
+        const { agentId } = await resolveAgent(req, res);
         res.status(200).json(
           await dependencies.externalSkillDefinitionService.update(agentId, parseId(req.params.skillId, "skillId"), req.body),
         );
@@ -215,7 +217,7 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
 
   router.delete("/:agentId/external-skills/:skillId", workspaceSession, agentManage, async (req, res, next) => {
     try {
-      const agentId = await resolveAgentId(req, res);
+      const { agentId } = await resolveAgent(req, res);
       await dependencies.externalSkillDefinitionService.remove(agentId, parseId(req.params.skillId, "skillId"));
       res.status(204).end();
     } catch (error) {

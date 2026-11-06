@@ -2,7 +2,7 @@ import { request } from './api-client'
 import type { DiscoveredMcpTool } from './external-skills'
 
 export type McpConnectionStatus = 'unconfigured' | 'authorized' | 'needs_reauth' | 'error' | (string & {})
-export type McpAuthMethod = 'access_token' | 'oauth'
+type McpAuthMethod = 'access_token' | 'oauth'
 
 export type McpConnection = {
   id: string
@@ -11,11 +11,13 @@ export type McpConnection = {
   authMethod: string
   status: McpConnectionStatus
   hasCredential: boolean
+  /** Absent while an older backend revision is still serving during a rollout. */
+  usedByAgents?: Array<{ id: string; name: string }>
   createdAt: string
   updatedAt: string
 }
 
-export type ExternalSkillDefinition = {
+type ExternalSkillDefinition = {
   id: string
   connectionId: string
   skillName: string
@@ -29,7 +31,7 @@ export type ExternalSkillDefinition = {
   updatedAt: string
 }
 
-export type OauthConnectionConfig = {
+type OauthConnectionConfig = {
   authorizationEndpoint: string
   tokenEndpoint: string
   clientId: string
@@ -37,7 +39,7 @@ export type OauthConnectionConfig = {
   scopes?: string[]
 }
 
-export type CreateMcpConnectionInput = {
+type CreateMcpConnectionInput = {
   displayName: string
   serverUrl: string
   authMethod: McpAuthMethod
@@ -45,7 +47,7 @@ export type CreateMcpConnectionInput = {
   oauth?: OauthConnectionConfig
 }
 
-export type CreateExternalSkillInput = {
+type CreateExternalSkillInput = {
   skillName: string
   connectionId: string
   toolName: string

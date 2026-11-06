@@ -1259,7 +1259,10 @@ export interface LegacyWorkspaceCredentialTombstones {
 }
 
 export interface McpConnections {
-  agent_id: string;
+  /**
+   * Unused: connections belong to workspace_id. Dropped once no running revision names it.
+   */
+  agent_id: string | null;
   auth_method: string;
   created_at: Generated<Timestamp>;
   credential_ciphertext: string | null;
@@ -1274,6 +1277,7 @@ export interface McpConnections {
   server_url: string;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
+  workspace_id: string;
 }
 
 export interface MessageFacets {

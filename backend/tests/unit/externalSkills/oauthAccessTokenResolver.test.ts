@@ -26,7 +26,7 @@ const CONFIG: StoredOauthClientConfig = {
 
 const buildRecord = (tokens: StoredOauthTokens | null): McpConnectionRecord => ({
   id: "conn-1",
-  agentId: "agent-1",
+  workspaceId: "workspace-1",
   displayName: "Scheduler",
   serverUrl: "https://mcp.example.com",
   authMethod: "oauth",

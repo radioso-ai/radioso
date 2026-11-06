@@ -32,6 +32,8 @@ const applyMigration = async (client: PoolClient, file: string): Promise<void> =
 describeIfDatabase("agent skill target cascade triggers (postgres)", () => {
   const schema = `test_agent_skill_cascade_${randomUUID().replace(/-/g, "")}`;
 
+  const existing = { workspaceId: randomUUID(), agentId: randomUUID(), connectionId: randomUUID() };
+
   let pool: pg.Pool;
   let client: PoolClient;
 
@@ -58,12 +60,28 @@ describeIfDatabase("agent skill target cascade triggers (postgres)", () => {
     await applyMigration(client, "094_external_skills_oauth_flow.sql");
     await applyMigration(client, "099_agent_skills_spine.sql");
     await applyMigration(client, "101_agent_skills_generic_targets.sql");
+
+    await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [existing.workspaceId]);
+    await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [existing.agentId, existing.workspaceId]);
+    await client.query(
+      `INSERT INTO mcp_connections (id, agent_id, display_name, server_url, auth_method)
+       VALUES ($1, $2, 'Existing MCP', 'https://mcp.example.com', 'access_token')`,
+      [existing.connectionId, existing.agentId],
+    );
+
+    await applyMigration(client, "251_mcp_connections_workspace_owned.sql");
   });
 
   afterAll(async () => {
     await client?.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
     client?.release();
     await pool?.end().catch(() => undefined);
+  });
+
+  it("moves a connection that predates workspace ownership into its agent's workspace", async () => {
+    const { rows } = await client.query(`SELECT workspace_id FROM mcp_connections WHERE id = $1`, [existing.connectionId]);
+
+    expect(rows).toEqual([{ workspace_id: existing.workspaceId }]);
   });
 
   it("allows deleting a workspace that owns a webhook skill and destination", async () => {
@@ -93,7 +111,7 @@ describeIfDatabase("agent skill target cascade triggers (postgres)", () => {
     expect((await client.query(`SELECT 1 FROM workspace_webhook_destinations WHERE id = $1`, [destinationId])).rowCount).toBe(0);
   });
 
-  it("allows deleting an agent that owns an MCP skill and connection", async () => {
+  const insertMcpSkillAndConnection = async () => {
     const workspaceId = randomUUID();
     const agentId = randomUUID();
     const connectionId = randomUUID();
@@ -102,9 +120,9 @@ describeIfDatabase("agent skill target cascade triggers (postgres)", () => {
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
     await client.query(
-      `INSERT INTO mcp_connections (id, agent_id, display_name, server_url, auth_method)
+      `INSERT INTO mcp_connections (id, workspace_id, display_name, server_url, auth_method)
        VALUES ($1, $2, 'Support MCP', 'https://mcp.example.com', 'access_token')`,
-      [connectionId, agentId],
+      [connectionId, workspaceId],
     );
     await client.query(
       `INSERT INTO agent_skills
@@ -112,8 +130,22 @@ describeIfDatabase("agent skill target cascade triggers (postgres)", () => {
        VALUES ($1, $2, $3, 'post_to_mcp', 'external_mcp', 'mcp_connection', $4, $5::jsonb)`,
       [skillId, agentId, workspaceId, connectionId, JSON.stringify({ toolName: "post_message" })],
     );
+    return { workspaceId, agentId, connectionId, skillId };
+  };
+
+  it("deleting an agent removes its MCP skill and leaves the workspace's connection", async () => {
+    const { agentId, connectionId, skillId } = await insertMcpSkillAndConnection();
 
     await expect(client.query(`DELETE FROM agents WHERE id = $1`, [agentId])).resolves.toBeDefined();
+
+    expect((await client.query(`SELECT 1 FROM agent_skills WHERE id = $1`, [skillId])).rowCount).toBe(0);
+    expect((await client.query(`SELECT 1 FROM mcp_connections WHERE id = $1`, [connectionId])).rowCount).toBe(1);
+  });
+
+  it("allows deleting a workspace that owns an MCP skill and connection", async () => {
+    const { workspaceId, connectionId, skillId } = await insertMcpSkillAndConnection();
+
+    await expect(client.query(`DELETE FROM workspaces WHERE id = $1`, [workspaceId])).resolves.toBeDefined();
 
     expect((await client.query(`SELECT 1 FROM agent_skills WHERE id = $1`, [skillId])).rowCount).toBe(0);
     expect((await client.query(`SELECT 1 FROM mcp_connections WHERE id = $1`, [connectionId])).rowCount).toBe(0);

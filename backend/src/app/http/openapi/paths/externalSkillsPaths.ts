@@ -44,6 +44,7 @@ const ConnectionSummarySchema = z.object({
   authMethod: z.string(),
   status: z.string(),
   hasCredential: z.boolean(),
+  usedByAgents: z.array(z.object({ id: z.string(), name: z.string() })),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -117,7 +118,7 @@ export const registerExternalSkillsPaths = (
     method: "get",
     path: "/api/v1/agents/{agentId}/mcp-connections",
     tags: TAGS,
-    summary: "List an agent's MCP connections",
+    summary: "List the workspace's MCP connections",
     operationId: "listMcpConnections",
     security: sec,
     request: { params: AgentParams },

@@ -208,7 +208,7 @@ test('Test connection discovers tools, reports failures, and supports retry with
   await seedDashboardStorage(page);
   const connection: McpConnection = {
     id: 'support-server', displayName: 'Support tools', serverUrl: MCP_SERVER_URL,
-    authMethod: 'oauth', status: 'authorized', hasCredential: true,
+    authMethod: 'oauth', status: 'authorized', hasCredential: true, usedByAgents: [],
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
   };
   await installDashboardApiMocks(page, {

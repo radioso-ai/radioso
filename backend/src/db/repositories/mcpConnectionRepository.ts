@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 import type { McpAuthMethod, McpConnectionStatus } from "../../modules/externalSkills/domain.js";
+import { sql } from "kysely";
+
 import { currentTimestamp, tableExists } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface McpConnectionRecord {
   id: string;
-  agentId: string;
+  workspaceId: string;
   displayName: string;
   serverUrl: string;
   authMethod: McpAuthMethod;
@@ -18,8 +20,15 @@ export interface McpConnectionRecord {
   updatedAt: Date;
 }
 
-export interface CreateMcpConnectionInput {
+/** One agent whose skills use a connection, labelled the way the dashboard labels that agent. */
+export interface McpConnectionAgentUsage {
+  connectionId: string;
   agentId: string;
+  agentName: string;
+}
+
+export interface CreateMcpConnectionInput {
+  workspaceId: string;
   displayName: string;
   serverUrl: string;
   authMethod: McpAuthMethod;
@@ -36,7 +45,7 @@ export interface UpdateMcpConnectionInput {
 
 interface McpConnectionRow {
   id: string;
-  agent_id: string;
+  workspace_id: string;
   display_name: string;
   server_url: string;
   auth_method: McpAuthMethod;
@@ -50,7 +59,7 @@ interface McpConnectionRow {
 
 const mapRecord = (row: McpConnectionRow): McpConnectionRecord => ({
   id: row.id,
-  agentId: row.agent_id,
+  workspaceId: row.workspace_id,
   displayName: row.display_name,
   serverUrl: row.server_url,
   authMethod: row.auth_method,
@@ -64,7 +73,7 @@ const mapRecord = (row: McpConnectionRow): McpConnectionRecord => ({
 
 const mcpConnectionColumns = [
   "id",
-  "agent_id",
+  "workspace_id",
   "display_name",
   "server_url",
   "auth_method",
@@ -78,17 +87,21 @@ const mcpConnectionColumns = [
 
 export interface McpConnectionRepositoryPort {
   create(input: CreateMcpConnectionInput): Promise<McpConnectionRecord>;
-  findById(agentId: string, id: string): Promise<McpConnectionRecord | null>;
-  listByAgent(agentId: string): Promise<McpConnectionRecord[]>;
-  updateStatus(agentId: string, id: string, status: McpConnectionStatus): Promise<McpConnectionRecord | null>;
-  update(agentId: string, id: string, input: UpdateMcpConnectionInput): Promise<McpConnectionRecord | null>;
-  setOauthFlow(agentId: string, id: string, oauthFlowCiphertext: string): Promise<McpConnectionRecord | null>;
+  findById(workspaceId: string, id: string): Promise<McpConnectionRecord | null>;
+  listByWorkspace(workspaceId: string): Promise<McpConnectionRecord[]>;
+  /** The connections one agent's skills are bound to, for projecting that agent's configuration. */
+  listUsedByAgent(workspaceId: string, agentId: string): Promise<McpConnectionRecord[]>;
+  /** Which agents use the workspace's connections, or one connection when an id is given. */
+  listAgentUsage(workspaceId: string, connectionId?: string): Promise<McpConnectionAgentUsage[]>;
+  updateStatus(workspaceId: string, id: string, status: McpConnectionStatus): Promise<McpConnectionRecord | null>;
+  update(workspaceId: string, id: string, input: UpdateMcpConnectionInput): Promise<McpConnectionRecord | null>;
+  setOauthFlow(workspaceId: string, id: string, oauthFlowCiphertext: string): Promise<McpConnectionRecord | null>;
   setOauthTokens(
-    agentId: string,
+    workspaceId: string,
     id: string,
     credentialCiphertext: string,
   ): Promise<McpConnectionRecord | null>;
-  remove(agentId: string, id: string): Promise<boolean>;
+  remove(workspaceId: string, id: string): Promise<boolean>;
 }
 
 export class McpConnectionRepository implements McpConnectionRepositoryPort {
@@ -99,7 +112,7 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
       .insertInto("mcp_connections")
       .values({
         id: randomUUID(),
-        agent_id: input.agentId,
+        workspace_id: input.workspaceId,
         display_name: input.displayName,
         server_url: input.serverUrl,
         auth_method: input.authMethod,
@@ -114,14 +127,14 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
 
   /** Persist the in-flight authorization (PKCE/state); sets status back to unconfigured. */
   async setOauthFlow(
-    agentId: string,
+    workspaceId: string,
     id: string,
     oauthFlowCiphertext: string,
   ): Promise<McpConnectionRecord | null> {
     const row = await this.db
       .updateTable("mcp_connections")
       .set({ oauth_flow_ciphertext: oauthFlowCiphertext, updated_at: currentTimestamp() })
-      .where("agent_id", "=", agentId)
+      .where("workspace_id", "=", workspaceId)
       .where("id", "=", id)
       .returning(mcpConnectionColumns)
       .executeTakeFirst();
@@ -130,7 +143,7 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
 
   /** Store freshly issued/refreshed OAuth tokens, mark authorized, and clear the flow. */
   async setOauthTokens(
-    agentId: string,
+    workspaceId: string,
     id: string,
     credentialCiphertext: string,
   ): Promise<McpConnectionRecord | null> {
@@ -142,42 +155,82 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
         status: "authorized",
         updated_at: currentTimestamp(),
       })
-      .where("agent_id", "=", agentId)
+      .where("workspace_id", "=", workspaceId)
       .where("id", "=", id)
       .returning(mcpConnectionColumns)
       .executeTakeFirst();
     return row ? mapRecord(row as McpConnectionRow) : null;
   }
 
-  async findById(agentId: string, id: string): Promise<McpConnectionRecord | null> {
+  async findById(workspaceId: string, id: string): Promise<McpConnectionRecord | null> {
     const row = await this.db
       .selectFrom("mcp_connections")
       .select(mcpConnectionColumns)
-      .where("agent_id", "=", agentId)
+      .where("workspace_id", "=", workspaceId)
       .where("id", "=", id)
       .executeTakeFirst();
     return row ? mapRecord(row as McpConnectionRow) : null;
   }
 
-  async listByAgent(agentId: string): Promise<McpConnectionRecord[]> {
+  async listByWorkspace(workspaceId: string): Promise<McpConnectionRecord[]> {
     const rows = await this.db
       .selectFrom("mcp_connections")
       .select(mcpConnectionColumns)
-      .where("agent_id", "=", agentId)
+      .where("workspace_id", "=", workspaceId)
       .orderBy("created_at", "asc")
       .execute();
     return rows.map((row) => mapRecord(row as McpConnectionRow));
   }
 
+  async listUsedByAgent(workspaceId: string, agentId: string): Promise<McpConnectionRecord[]> {
+    const rows = await this.db
+      .selectFrom("mcp_connections")
+      .select(mcpConnectionColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where(({ exists, selectFrom }) =>
+        exists(
+          selectFrom("agent_skills")
+            .select("agent_skills.id")
+            .where("agent_skills.agent_id", "=", agentId)
+            .where("agent_skills.kind", "=", "external_mcp")
+            .where("agent_skills.target_type", "=", "mcp_connection")
+            .whereRef("agent_skills.target_id", "=", sql<string>`mcp_connections.id::text`),
+        ),
+      )
+      .orderBy("created_at", "asc")
+      .execute();
+    return rows.map((row) => mapRecord(row as McpConnectionRow));
+  }
+
+  async listAgentUsage(workspaceId: string, connectionId?: string): Promise<McpConnectionAgentUsage[]> {
+    const usage = this.db
+      .selectFrom("agent_skills as skill")
+      .innerJoin("agents as agent", "agent.id", "skill.agent_id")
+      .select([
+        "skill.target_id as connectionId",
+        "agent.id as agentId",
+        sql<string>`COALESCE(NULLIF(agent.internal_name, ''), agent.name)`.as("agentName"),
+      ])
+      .distinct()
+      .where("skill.workspace_id", "=", workspaceId)
+      .where("skill.kind", "=", "external_mcp")
+      .where("skill.target_type", "=", "mcp_connection")
+      .where("skill.target_id", "is not", null)
+      .orderBy("agentName")
+      .orderBy("agentId");
+    const rows = await (connectionId === undefined ? usage : usage.where("skill.target_id", "=", connectionId)).execute();
+    return rows.map((row) => ({ connectionId: row.connectionId ?? "", agentId: row.agentId, agentName: row.agentName }));
+  }
+
   async updateStatus(
-    agentId: string,
+    workspaceId: string,
     id: string,
     status: McpConnectionStatus,
   ): Promise<McpConnectionRecord | null> {
     const row = await this.db
       .updateTable("mcp_connections")
       .set({ status, updated_at: currentTimestamp() })
-      .where("agent_id", "=", agentId)
+      .where("workspace_id", "=", workspaceId)
       .where("id", "=", id)
       .returning(mcpConnectionColumns)
       .executeTakeFirst();
@@ -185,7 +238,7 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
   }
 
   async update(
-    agentId: string,
+    workspaceId: string,
     id: string,
     input: UpdateMcpConnectionInput,
   ): Promise<McpConnectionRecord | null> {
@@ -197,14 +250,14 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
         ...(input.status !== undefined ? { status: input.status } : {}),
         updated_at: currentTimestamp(),
       })
-      .where("agent_id", "=", agentId)
+      .where("workspace_id", "=", workspaceId)
       .where("id", "=", id)
       .returning(mcpConnectionColumns)
       .executeTakeFirst();
     return row ? mapRecord(row as McpConnectionRow) : null;
   }
 
-  async remove(agentId: string, id: string): Promise<boolean> {
+  async remove(workspaceId: string, id: string): Promise<boolean> {
     // Guard mirrors the original: only check references when agent_skills exists (it may be
     // absent in a partially-migrated schema), then soft-block the delete if still referenced.
     if (await tableExists(this.db, "agent_skills")) {
@@ -212,7 +265,7 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
         .selectFrom("agent_skills")
         .select(({ fn }) => fn.count<string>("id").as("count"))
         .where("kind", "=", "external_mcp")
-        .where("agent_id", "=", agentId)
+        .where("workspace_id", "=", workspaceId)
         .where("target_type", "=", "mcp_connection")
         .where("target_id", "=", id)
         .executeTakeFirst();
@@ -225,7 +278,7 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
 
     const result = await this.db
       .deleteFrom("mcp_connections")
-      .where("agent_id", "=", agentId)
+      .where("workspace_id", "=", workspaceId)
       .where("id", "=", id)
       .executeTakeFirst();
     return Number(result.numDeletedRows) > 0;

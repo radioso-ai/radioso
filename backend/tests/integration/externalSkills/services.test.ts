@@ -95,13 +95,14 @@ describeIfDatabase("external skills services (postgres)", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     await client.query(`
       CREATE TABLE workspaces (id UUID PRIMARY KEY);
-      CREATE TABLE agents (id UUID PRIMARY KEY, workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE);
+      CREATE TABLE agents (id UUID PRIMARY KEY, workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, name TEXT NOT NULL DEFAULT '', internal_name TEXT NOT NULL DEFAULT '');
     `);
     await client.query(await readFile(path.join(testMigrationsPath, "093_external_skills.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "094_external_skills_oauth_flow.sql"), "utf8"));
     // 099 creates the shared spine; 101 moves detail config onto generic target/config columns.
     await client.query(await readFile(path.join(testMigrationsPath, "099_agent_skills_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "101_agent_skills_generic_targets.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "251_mcp_connections_workspace_owned.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
 
@@ -121,7 +122,7 @@ describeIfDatabase("external skills services (postgres)", () => {
   });
 
   const newConnection = () =>
-    connections.create(agentId, {
+    connections.create(workspaceId, {
       displayName: "Slack",
       serverUrl: "https://mcp.example.com",
       authMethod: "access_token",
@@ -134,20 +135,20 @@ describeIfDatabase("external skills services (postgres)", () => {
     expect(summary.hasCredential).toBe(true);
     expect(JSON.stringify(summary)).not.toContain("xoxb-secret");
 
-    const listed = await connections.list(agentId);
+    const listed = await connections.list(workspaceId);
     expect(listed.some((c) => c.id === summary.id)).toBe(true);
     expect(JSON.stringify(listed)).not.toContain("xoxb-secret");
   });
 
   it("discovers the connection's tools", async () => {
     const connection = await newConnection();
-    const tools = await connections.discoverTools(agentId, connection.id);
+    const tools = await connections.discoverTools(workspaceId, connection.id);
     expect(tools.map((t) => t.name)).toContain("post_message");
   });
 
   it("creates a skill definition after validating it against discovery", async () => {
     const connection = await newConnection();
-    const view = await skills.create(agentId, {
+    const view = await skills.create(workspaceId, agentId, {
       skillName: "handoff_slack",
       connectionId: connection.id,
       toolName: "post_message",
@@ -158,10 +159,28 @@ describeIfDatabase("external skills services (postgres)", () => {
     expect(view).toMatchObject({ skillName: "handoff_slack", toolName: "post_message" });
   });
 
+  it("lets a second agent in the workspace bind the same connection", async () => {
+    const secondAgentId = randomUUID();
+    await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [secondAgentId, workspaceId]);
+    const connection = await newConnection();
+
+    const view = await skills.create(workspaceId, secondAgentId, {
+      connectionId: connection.id,
+      skillName: "second_agent_slack",
+      toolName: "post_message",
+      boundParams: { channel: "#support" },
+      exposedParams: { message: {} },
+      enabled: true,
+    });
+
+    expect(view.connectionId).toBe(connection.id);
+    await expect(connections.remove(workspaceId, connection.id)).rejects.toMatchObject({ statusCode: 409 });
+  });
+
   it("rejects a skill bound to a tool the server does not expose", async () => {
     const connection = await newConnection();
     await expect(
-      skills.create(agentId, {
+      skills.create(workspaceId, agentId, {
         skillName: "bad_tool",
         connectionId: connection.id,
         toolName: "nonexistent",
@@ -175,7 +194,7 @@ describeIfDatabase("external skills services (postgres)", () => {
   it("rejects a skill that does not cover the tool's required inputs", async () => {
     const connection = await newConnection();
     await expect(
-      skills.create(agentId, {
+      skills.create(workspaceId, agentId, {
         skillName: "missing_required",
         connectionId: connection.id,
         toolName: "post_message",
@@ -195,18 +214,18 @@ describeIfDatabase("external skills services (postgres)", () => {
       exposedParams: { message: {} },
       enabled: true,
     };
-    await skills.create(agentId, { ...base, skillName: "dup" });
-    await expect(skills.create(agentId, { ...base, skillName: "dup" })).rejects.toMatchObject({ statusCode: 409 });
-    await expect(connections.remove(agentId, connection.id)).rejects.toMatchObject({ statusCode: 409 });
+    await skills.create(workspaceId, agentId, { ...base, skillName: "dup" });
+    await expect(skills.create(workspaceId, agentId, { ...base, skillName: "dup" })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(connections.remove(workspaceId, connection.id)).rejects.toMatchObject({ statusCode: 409 });
   });
 
   it("updates a connection (rename + rotate token) and a skill (disable + re-bind)", async () => {
     const connection = await newConnection();
-    const renamed = await connections.update(agentId, connection.id, { displayName: "Renamed", accessToken: "rotated-token" });
+    const renamed = await connections.update(workspaceId, connection.id, { displayName: "Renamed", accessToken: "rotated-token" });
     expect(renamed.displayName).toBe("Renamed");
     expect(renamed.hasCredential).toBe(true);
 
-    const skill = await skills.create(agentId, {
+    const skill = await skills.create(workspaceId, agentId, {
       skillName: "updatable",
       connectionId: connection.id,
       toolName: "post_message",
@@ -225,7 +244,7 @@ describeIfDatabase("external skills services (postgres)", () => {
 
   it("persists outcomeMap updates and returns them from get", async () => {
     const connection = await newConnection();
-    const skill = await skills.create(agentId, {
+    const skill = await skills.create(workspaceId, agentId, {
       skillName: "outcome_map_editable",
       connectionId: connection.id,
       toolName: "post_message",

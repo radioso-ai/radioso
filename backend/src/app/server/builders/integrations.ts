@@ -296,8 +296,8 @@ export const buildIntegrationServices = (input: {
     installations: input.repositories.slackInstallationRepository,
   });
   const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
-    mcp_tool: async ({ agentId }) =>
-      (await mcpConnectionService.list(agentId)).map((connection) => ({
+    mcp_tool: async ({ workspaceId }) =>
+      (await mcpConnectionRepository.listByWorkspace(workspaceId)).map((connection) => ({
         id: connection.id,
         label: connection.displayName,
         status: connection.status,

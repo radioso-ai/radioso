@@ -366,7 +366,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
       auditService: { record: async () => undefined } as never,
       imports: new AgentBundleImportRepository(database.kysely),
       importOrphanAgeMs: 15 * 60 * 1_000,
-      mcpConnectionRepository: { listByAgent: async () => [] },
+      mcpConnectionRepository: { listUsedByAgent: async () => [] },
       externalSkillDefinitionRepository: { listByAgent: async () => [] },
       // A deployment whose platform keys serve every model.
       modelAvailability: new PlatformAwareWorkspaceModelAvailability({

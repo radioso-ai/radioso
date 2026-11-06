@@ -115,6 +115,77 @@ describe("integration OAuth access token resolver", () => {
     expect(repository.updateStatus).toHaveBeenCalledWith("workspace-1", "oauth-1", "needs_reauth");
   });
 
+  it("uses the rotated token when another caller already spent the refresh token", async () => {
+    const repository: OauthTokenPersistencePort = {
+      setOauthTokens: vi.fn(),
+      updateStatus: vi.fn(async () => null),
+    };
+    const fetchImpl: FetchLike = async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "invalid_grant" }),
+    });
+    const rotated = record({ accessToken: "access-rotated", refreshToken: "refresh-2", expiresAt: Date.now() + 600_000 });
+
+    await expect(resolveFreshAccessToken({
+      subjectId: "workspace-1",
+      record: record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 }),
+      reloadRecord: async () => rotated,
+      repository,
+      encryptionKey: { current: encryptionKey, previous: [] },
+      fetchImpl,
+    })).resolves.toBe("access-rotated");
+
+    expect(repository.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it("still flags reauthorization when the reloaded credential was not rotated", async () => {
+    const repository: OauthTokenPersistencePort = {
+      setOauthTokens: vi.fn(),
+      updateStatus: vi.fn(async () => null),
+    };
+    const fetchImpl: FetchLike = async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "invalid_grant" }),
+    });
+    const stale = record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 });
+
+    await expect(resolveFreshAccessToken({
+      subjectId: "workspace-1",
+      record: stale,
+      reloadRecord: async () => stale,
+      repository,
+      encryptionKey: { current: encryptionKey, previous: [] },
+      fetchImpl,
+    })).rejects.toBeInstanceOf(OauthNotAuthorizedError);
+
+    expect(repository.updateStatus).toHaveBeenCalledWith("workspace-1", "oauth-1", "needs_reauth");
+  });
+
+  it("still flags reauthorization when the rotated token has expired too", async () => {
+    const repository: OauthTokenPersistencePort = {
+      setOauthTokens: vi.fn(),
+      updateStatus: vi.fn(async () => null),
+    };
+    const fetchImpl: FetchLike = async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "invalid_grant" }),
+    });
+
+    await expect(resolveFreshAccessToken({
+      subjectId: "workspace-1",
+      record: record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 }),
+      reloadRecord: async () => record({ accessToken: "access-2", refreshToken: "refresh-2", expiresAt: Date.now() - 1 }),
+      repository,
+      encryptionKey: { current: encryptionKey, previous: [] },
+      fetchImpl,
+    })).rejects.toBeInstanceOf(OauthNotAuthorizedError);
+
+    expect(repository.updateStatus).toHaveBeenCalledWith("workspace-1", "oauth-1", "needs_reauth");
+  });
+
   it("keeps the connection authorized when refresh fails transiently", async () => {
     const repository: OauthTokenPersistencePort = {
       setOauthTokens: vi.fn(),

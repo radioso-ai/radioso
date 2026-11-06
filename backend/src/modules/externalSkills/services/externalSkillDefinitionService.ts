@@ -7,7 +7,7 @@ import { validateParamCoverage, type SkillDefinitionInput, type SkillDefinitionU
 import type { McpConnectionService } from "./mcpConnectionService.js";
 import type { ExposedParamSpec } from "../skillDefinitions/resolver.js";
 
-export interface ExternalSkillDefinitionView {
+interface ExternalSkillDefinitionView {
   id: string;
   connectionId: string;
   skillName: string;
@@ -46,11 +46,9 @@ export class ExternalSkillDefinitionService {
     private readonly connections: McpConnectionService,
   ) {}
 
-  async create(agentId: string, input: SkillDefinitionInput): Promise<ExternalSkillDefinitionView> {
-    // Verifies the connection exists for this agent (throws notFound otherwise).
-    await this.connections.get(agentId, input.connectionId);
-
-    const tools = await this.connections.discoverTools(agentId, input.connectionId);
+  async create(workspaceId: string, agentId: string, input: SkillDefinitionInput): Promise<ExternalSkillDefinitionView> {
+    // Throws notFound unless the connection exists in this workspace.
+    const tools = await this.connections.discoverTools(workspaceId, input.connectionId);
     const tool = tools.find((candidate) => candidate.name === input.toolName);
     if (!tool) {
       throw badRequest(`Tool "${input.toolName}" was not found on the connection`);
@@ -67,6 +65,7 @@ export class ExternalSkillDefinitionService {
 
     try {
       const record = await this.repository.create({
+        workspaceId,
         agentId,
         connectionId: input.connectionId,
         skillName: input.skillName,
@@ -108,7 +107,7 @@ export class ExternalSkillDefinitionService {
     if (input.boundParams !== undefined || input.exposedParams !== undefined) {
       const boundParams = input.boundParams ?? existing.boundParams;
       const exposedParams = input.exposedParams ?? existing.exposedParams;
-      const tools = await this.connections.discoverTools(agentId, existing.connectionId);
+      const tools = await this.connections.discoverTools(existing.workspaceId, existing.connectionId);
       const tool = tools.find((candidate) => candidate.name === existing.toolName);
       if (!tool) {
         throw badRequest(`Tool "${existing.toolName}" was not found on the connection`);

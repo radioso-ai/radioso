@@ -806,10 +806,10 @@ describe("EvalSnapshotService.capture", () => {
     const repository = new CapturingEvalRepository();
     const externalSkills = {
       connections: {
-        listByAgent: async () => [
+        listUsedByAgent: async () => [
           {
             id: "11111111-1111-4111-8111-111111111111",
-            agentId: originalAgent.id,
+            workspaceId: originalAgent.workspaceId,
             displayName: "Slack",
             serverUrl: "https://mcp.slack.example.com",
             authMethod: "access_token" as const,
@@ -827,6 +827,7 @@ describe("EvalSnapshotService.capture", () => {
           {
             id: "22222222-2222-4222-8222-222222222222",
             agentId: originalAgent.id,
+            workspaceId: originalAgent.workspaceId,
             connectionId: "11111111-1111-4111-8111-111111111111",
             skillName: "handoff_slack",
             toolName: "post_message",

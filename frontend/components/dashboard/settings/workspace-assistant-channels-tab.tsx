@@ -1299,7 +1299,7 @@ export function WorkspaceAssistantChannelsTab({
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">Delete this agent</p>
                   <p className="text-sm text-muted-foreground">
-                    Permanently delete this agent and its channel tokens, conversations, and settings. This action cannot be undone.
+                    Permanently delete this agent and its channel tokens, conversations, and settings. MCP connections stay in the workspace. This action cannot be undone.
                   </p>
                   {isLastAgent ? (
                     <p className="mt-2 text-sm text-muted-foreground">
@@ -1346,7 +1346,7 @@ export function WorkspaceAssistantChannelsTab({
                       <DialogTitle>Delete agent</DialogTitle>
                       <DialogDescription>
                         This will permanently delete the agent <strong>{operatorAgentName}</strong> and
-                        its channel tokens, conversations, and settings. This action cannot be undone.
+                        its channel tokens, conversations, and settings. MCP connections stay in the workspace. This action cannot be undone.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2 py-2">

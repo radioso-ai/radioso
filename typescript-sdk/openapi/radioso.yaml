@@ -27517,7 +27517,7 @@ paths:
     get:
       tags: &a6
         - External Skills
-      summary: List an agent's MCP connections
+      summary: List the workspace's MCP connections
       operationId: listMcpConnections
       security: &a7
         - bearerAuth: []
@@ -27553,6 +27553,18 @@ paths:
                           type: string
                         hasCredential:
                           type: boolean
+                        usedByAgents:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                              - id
+                              - name
                         createdAt:
                           type: string
                         updatedAt:
@@ -27564,6 +27576,7 @@ paths:
                         - authMethod
                         - status
                         - hasCredential
+                        - usedByAgents
                         - createdAt
                         - updatedAt
                 required:
@@ -27660,6 +27673,18 @@ paths:
                     type: string
                   hasCredential:
                     type: boolean
+                  usedByAgents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - id
+                        - name
                   createdAt:
                     type: string
                   updatedAt:
@@ -27671,6 +27696,7 @@ paths:
                   - authMethod
                   - status
                   - hasCredential
+                  - usedByAgents
                   - createdAt
                   - updatedAt
         "400":
@@ -27840,6 +27866,18 @@ paths:
                     type: string
                   hasCredential:
                     type: boolean
+                  usedByAgents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - id
+                        - name
                   createdAt:
                     type: string
                   updatedAt:
@@ -27851,6 +27889,7 @@ paths:
                   - authMethod
                   - status
                   - hasCredential
+                  - usedByAgents
                   - createdAt
                   - updatedAt
         "401":
@@ -27915,6 +27954,18 @@ paths:
                     type: string
                   hasCredential:
                     type: boolean
+                  usedByAgents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - id
+                        - name
                   createdAt:
                     type: string
                   updatedAt:
@@ -27926,6 +27977,7 @@ paths:
                   - authMethod
                   - status
                   - hasCredential
+                  - usedByAgents
                   - createdAt
                   - updatedAt
         "400":
@@ -28506,6 +28558,18 @@ paths:
                     type: string
                   hasCredential:
                     type: boolean
+                  usedByAgents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - id
+                        - name
                   createdAt:
                     type: string
                   updatedAt:
@@ -28517,6 +28581,7 @@ paths:
                   - authMethod
                   - status
                   - hasCredential
+                  - usedByAgents
                   - createdAt
                   - updatedAt
         "400":

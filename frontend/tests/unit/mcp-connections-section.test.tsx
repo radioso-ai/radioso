@@ -39,6 +39,7 @@ const connection = (id: string, displayName: string) => ({
   authMethod: 'access_token',
   status: 'authorized',
   hasCredential: true,
+  usedByAgents: [] as Array<{ id: string; name: string }>,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 })
@@ -59,6 +60,22 @@ describe('McpConnectionsSection', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('names the agents whose skills use each connection', async () => {
+    apiMocks.listConnections.mockResolvedValue({
+      connections: [
+        { ...connection('connection-1', 'Shared'), usedByAgents: [{ id: 'agent-1', name: 'Support' }, { id: 'agent-2', name: 'Sales' }] },
+        connection('connection-2', 'Spare'),
+      ],
+    })
+
+    await act(async () => {
+      root.render(<McpConnectionsSection agentId="agent-1" />)
+    })
+
+    expect(container.textContent).toContain('Used by Support, Sales')
+    expect(container.textContent).toContain('Not used by any skill yet')
   })
 
   it('discards an older agent load that completes after the active agent load', async () => {

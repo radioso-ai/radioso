@@ -884,7 +884,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
           const agent = await repositories.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
           if (!agent) return null;
           const [connections, skills] = await Promise.all([
-            mcpConnectionRepository.listByAgent(agentId),
+            mcpConnectionRepository.listUsedByAgent(workspaceId, agentId),
             externalSkillDefinitionRepository.listByAgent(agentId),
           ]);
           // An agent rebuilt without its external skills would draft as a different agent, which is

@@ -66,6 +66,7 @@ type McpConnectionFixture = {
   authMethod: string;
   status: string;
   hasCredential: boolean;
+  usedByAgents?: Array<{ id: string; name: string }>;
   createdAt: string;
   updatedAt: string;
 };
@@ -3167,6 +3168,7 @@ export const installDashboardApiMocks = async (
         authMethod: body.authMethod,
         status: body.authMethod === "oauth" ? "unconfigured" : "authorized",
         hasCredential: body.authMethod !== "oauth",
+        usedByAgents: [],
         createdAt: nowIso,
         updatedAt: nowIso,
       };

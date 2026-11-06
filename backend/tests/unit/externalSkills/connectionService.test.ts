@@ -46,9 +46,9 @@ describe("McpConnectionService (unit)", () => {
       },
     });
 
-    await expect(service.create("agent-1", { ...baseInput, serverUrl: "https://127.0.0.1:8443" })).rejects.toThrow();
+    await expect(service.create("workspace-1", { ...baseInput, serverUrl: "https://127.0.0.1:8443" })).rejects.toThrow();
     // A public host passes the guard.
-    await expect(service.create("agent-1", baseInput)).resolves.toMatchObject({ status: "authorized" });
+    await expect(service.create("workspace-1", baseInput)).resolves.toMatchObject({ status: "authorized" });
   });
 
   it("fails with a 503 AppError when encryption is not configured", async () => {
@@ -58,8 +58,8 @@ describe("McpConnectionService (unit)", () => {
       // no encryptionKey
     });
 
-    await expect(service.create("agent-1", baseInput)).rejects.toBeInstanceOf(EncryptionNotConfiguredError);
-    await expect(service.create("agent-1", baseInput)).rejects.toMatchObject({ statusCode: 503 });
+    await expect(service.create("workspace-1", baseInput)).rejects.toBeInstanceOf(EncryptionNotConfiguredError);
+    await expect(service.create("workspace-1", baseInput)).rejects.toMatchObject({ statusCode: 503 });
   });
 
   it("creates an OAuth connection as unconfigured and runs the full consent flow to authorized", async () => {
@@ -79,17 +79,17 @@ describe("McpConnectionService (unit)", () => {
       fetchImpl,
     });
 
-    const created = await service.create("agent-1", oauthInput);
+    const created = await service.create("workspace-1", oauthInput);
     expect(created).toMatchObject({ authMethod: "oauth", status: "unconfigured", hasCredential: false });
 
-    const { authorizationUrl } = await service.startOauthAuthorization("agent-1", created.id);
+    const { authorizationUrl } = await service.startOauthAuthorization("workspace-1", created.id);
     const authUrl = new URL(authorizationUrl);
     expect(authUrl.origin + authUrl.pathname).toBe("https://auth.example.com/authorize");
     expect(authUrl.searchParams.get("code_challenge_method")).toBe("S256");
     const state = authUrl.searchParams.get("state")!;
     expect(state).toBeTruthy();
 
-    const completed = await service.completeOauthAuthorization("agent-1", created.id, "auth-code", state);
+    const completed = await service.completeOauthAuthorization("workspace-1", created.id, "auth-code", state);
     expect(completed).toMatchObject({ status: "authorized", hasCredential: true });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
@@ -102,11 +102,11 @@ describe("McpConnectionService (unit)", () => {
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
       fetchImpl: () => Promise.resolve({ ok: true, status: 200, json: async () => ({ access_token: "x" }) }),
     });
-    const created = await service.create("agent-1", oauthInput);
-    await service.startOauthAuthorization("agent-1", created.id);
+    const created = await service.create("workspace-1", oauthInput);
+    await service.startOauthAuthorization("workspace-1", created.id);
 
     await expect(
-      service.completeOauthAuthorization("agent-1", created.id, "auth-code", "wrong-state"),
+      service.completeOauthAuthorization("workspace-1", created.id, "auth-code", "wrong-state"),
     ).rejects.toMatchObject({ statusCode: 400 });
   });
 
@@ -117,10 +117,10 @@ describe("McpConnectionService (unit)", () => {
       encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
     });
-    const created = await service.create("agent-1", oauthInput);
+    const created = await service.create("workspace-1", oauthInput);
 
     await expect(
-      service.update("agent-1", created.id, { accessToken: "raw-token" }),
+      service.update("workspace-1", created.id, { accessToken: "raw-token" }),
     ).rejects.toMatchObject({ statusCode: 400 });
   });
 
@@ -152,12 +152,12 @@ describe("McpConnectionService (unit)", () => {
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
       fetchImpl,
     });
-    const created = await service.create("agent-1", oauthInput);
-    const { authorizationUrl } = await service.startOauthAuthorization("agent-1", created.id);
+    const created = await service.create("workspace-1", oauthInput);
+    const { authorizationUrl } = await service.startOauthAuthorization("workspace-1", created.id);
     const state = new URL(authorizationUrl).searchParams.get("state")!;
-    await service.completeOauthAuthorization("agent-1", created.id, "auth-code", state);
+    await service.completeOauthAuthorization("workspace-1", created.id, "auth-code", state);
 
-    await expect(service.discoverTools("agent-1", created.id)).resolves.toEqual([{ name: "oauth_tool" }]);
+    await expect(service.discoverTools("workspace-1", created.id)).resolves.toEqual([{ name: "oauth_tool" }]);
     expect(discoveredTokens).toEqual(["at-1"]);
   });
 
@@ -189,17 +189,17 @@ describe("McpConnectionService (unit)", () => {
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
       fetchImpl,
     });
-    const created = await service.create("agent-1", oauthInput);
-    const { authorizationUrl } = await service.startOauthAuthorization("agent-1", created.id);
+    const created = await service.create("workspace-1", oauthInput);
+    const { authorizationUrl } = await service.startOauthAuthorization("workspace-1", created.id);
     const state = new URL(authorizationUrl).searchParams.get("state")!;
-    await service.completeOauthAuthorization("agent-1", created.id, "auth-code", state);
+    await service.completeOauthAuthorization("workspace-1", created.id, "auth-code", state);
 
-    await expect(service.discoverTools("agent-1", created.id)).rejects.toMatchObject({
+    await expect(service.discoverTools("workspace-1", created.id)).rejects.toMatchObject({
       statusCode: 409,
       code: "conflict",
     });
 
-    const after = await service.get("agent-1", created.id);
+    const after = await service.get("workspace-1", created.id);
     expect(after.status).toBe("needs_reauth");
   });
 
@@ -229,18 +229,18 @@ describe("McpConnectionService (unit)", () => {
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
       fetchImpl,
     });
-    const created = await service.create("agent-1", oauthInput);
-    const { authorizationUrl } = await service.startOauthAuthorization("agent-1", created.id);
+    const created = await service.create("workspace-1", oauthInput);
+    const { authorizationUrl } = await service.startOauthAuthorization("workspace-1", created.id);
     const state = new URL(authorizationUrl).searchParams.get("state")!;
-    await service.completeOauthAuthorization("agent-1", created.id, "auth-code", state);
+    await service.completeOauthAuthorization("workspace-1", created.id, "auth-code", state);
 
-    await expect(service.discoverTools("agent-1", created.id)).rejects.toMatchObject({
+    await expect(service.discoverTools("workspace-1", created.id)).rejects.toMatchObject({
       statusCode: 503,
       code: "service_unavailable",
     });
 
     // A transient provider outage must not force the operator through re-authorization.
-    const after = await service.get("agent-1", created.id);
+    const after = await service.get("workspace-1", created.id);
     expect(after.status).toBe("authorized");
   });
 
@@ -254,17 +254,17 @@ describe("McpConnectionService (unit)", () => {
       },
       encryptionKey: { current: encryptionKey, previous: [] },
     });
-    const created = await service.create("agent-1", baseInput);
+    const created = await service.create("workspace-1", baseInput);
 
-    await expect(service.discoverTools("agent-1", created.id)).rejects.toMatchObject({
+    await expect(service.discoverTools("workspace-1", created.id)).rejects.toMatchObject({
       statusCode: 409,
       code: "conflict",
       message: expect.stringContaining("access token") as unknown,
     });
-    expect((await service.get("agent-1", created.id)).status).toBe("needs_reauth");
+    expect((await service.get("workspace-1", created.id)).status).toBe("needs_reauth");
 
     // Replacing the token is the operator's way back.
-    await expect(service.update("agent-1", created.id, { accessToken: "fresh-token" })).resolves.toMatchObject({
+    await expect(service.update("workspace-1", created.id, { accessToken: "fresh-token" })).resolves.toMatchObject({
       status: "authorized",
     });
   });
@@ -279,13 +279,13 @@ describe("McpConnectionService (unit)", () => {
       },
       encryptionKey: { current: encryptionKey, previous: [] },
     });
-    const created = await service.create("agent-1", baseInput);
+    const created = await service.create("workspace-1", baseInput);
 
-    await expect(service.discoverTools("agent-1", created.id)).rejects.toMatchObject({
+    await expect(service.discoverTools("workspace-1", created.id)).rejects.toMatchObject({
       statusCode: 502,
       code: "bad_gateway",
     });
-    expect((await service.get("agent-1", created.id)).status).toBe("authorized");
+    expect((await service.get("workspace-1", created.id)).status).toBe("authorized");
   });
 
   it("never returns OAuth secrets in the connection summary", async () => {
@@ -295,7 +295,7 @@ describe("McpConnectionService (unit)", () => {
       encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
     });
-    const created = await service.create("agent-1", oauthInput);
+    const created = await service.create("workspace-1", oauthInput);
     const summary = JSON.stringify(created);
     expect(summary).not.toContain("shh");
     expect(summary).not.toContain("client-123");

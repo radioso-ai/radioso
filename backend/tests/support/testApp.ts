@@ -1772,6 +1772,14 @@ export const createTestDependencies = (overrides: {
   mcpConnectionRepository.setReferenceChecker((connectionId) =>
     externalSkillDefinitionRepository.hasConnectionReference(connectionId),
   );
+  mcpConnectionRepository.setAgentUsageLookup((workspaceId, connectionId) =>
+    Promise.all(
+      externalSkillDefinitionRepository.connectionUsage(workspaceId, connectionId).map(async (usage) => ({
+        ...usage,
+        agentName: (await agentRepository.findByIdAndWorkspaceId(usage.agentId, workspaceId))?.name ?? "",
+      })),
+    ),
+  );
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMockToolServiceFactory(),
@@ -1898,8 +1906,8 @@ export const createTestDependencies = (overrides: {
     installations: slackInstallationRepository,
   });
   const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
-    mcp_tool: async ({ agentId }) =>
-      (await mcpConnectionService.list(agentId)).map((connection) => ({
+    mcp_tool: async ({ workspaceId }) =>
+      (await mcpConnectionRepository.listByWorkspace(workspaceId)).map((connection) => ({
         id: connection.id,
         label: connection.displayName,
         status: connection.status,

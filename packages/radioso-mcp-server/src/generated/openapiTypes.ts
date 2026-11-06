@@ -2043,7 +2043,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List an agent's MCP connections */
+        /** List the workspace's MCP connections */
         get: operations["listMcpConnections"];
         put?: never;
         /** Create an MCP connection */
@@ -19779,6 +19779,10 @@ export interface operations {
                             authMethod: string;
                             status: string;
                             hasCredential: boolean;
+                            usedByAgents: {
+                                id: string;
+                                name: string;
+                            }[];
                             createdAt: string;
                             updatedAt: string;
                         }[];
@@ -19855,6 +19859,10 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        usedByAgents: {
+                            id: string;
+                            name: string;
+                        }[];
                         createdAt: string;
                         updatedAt: string;
                     };
@@ -19988,6 +19996,10 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        usedByAgents: {
+                            id: string;
+                            name: string;
+                        }[];
                         createdAt: string;
                         updatedAt: string;
                     };
@@ -20094,6 +20106,10 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        usedByAgents: {
+                            id: string;
+                            name: string;
+                        }[];
                         createdAt: string;
                         updatedAt: string;
                     };
@@ -20570,6 +20586,10 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        usedByAgents: {
+                            id: string;
+                            name: string;
+                        }[];
                         createdAt: string;
                         updatedAt: string;
                     };

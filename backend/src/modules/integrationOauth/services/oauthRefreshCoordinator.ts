@@ -19,12 +19,13 @@ export interface OauthRefreshCoordinator {
  * In-process single-flight coordinator. Scope is the current process: refreshes
  * dispatched from the API process (where routine/skill execution runs) are
  * deduplicated. Cross-process concurrency (a second backend or the worker
- * refreshing the same connection in the same instant) is not serialized; that
- * window is small and the refresh failure is now treated as transient rather
- * than terminal (see the access-token resolver), so it degrades to a retry
- * instead of a spurious re-authorization.
+ * refreshing the same connection in the same instant) is not serialized; the
+ * caller that loses that race re-reads the connection and uses the token the
+ * winner rotated in (see the access-token resolver). A winner that commits between
+ * that read and the loser's status write can still leave `needs_reauth` showing
+ * over a valid token, until the next refresh sets it back.
  */
-export class InProcessOauthRefreshCoordinator implements OauthRefreshCoordinator {
+class InProcessOauthRefreshCoordinator implements OauthRefreshCoordinator {
   private readonly inFlight = new Map<string, Promise<unknown>>();
 
   coordinate<T>(key: string, refresh: () => Promise<T>): Promise<T> {

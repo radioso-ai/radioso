@@ -68,7 +68,11 @@ import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
-import type { ConnectorManagementPort, ConnectorRegistry } from "../../modules/connectors/services/public.js";
+import type {
+  ConnectorManagementPort,
+  ConnectorRegistry,
+  ConnectorSourceDirectory,
+} from "../../modules/connectors/services/public.js";
 import type { EmailChannelWorker } from "../../modules/connectors/plugins/index.js";
 import type { EmailChannelOperatorServices, EmailReviewChecks } from "../composition/emailChannel/index.js";
 import type { Database } from "../../shared/infra/database.js";
@@ -439,6 +443,7 @@ export interface AppDependencies {
   connectorRegistry: ConnectorRegistry;
   connectorManagementService: ConnectorManagementPort;
   connectorIngestionPort: ConnectorIngestionPort;
+  connectorSourceDirectory: ConnectorSourceDirectory;
   connectorDb: Database;
   chatInferencePipeline: ModelInferencePipeline;
   agentWizardService: AgentWizardService;

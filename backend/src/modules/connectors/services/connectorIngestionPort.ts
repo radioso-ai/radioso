@@ -1,10 +1,9 @@
 import type {
   ConnectorIngestionPort,
-  ConnectorRegisteredSource,
   ConnectorSourceDescriptor,
+  ConnectorSourceReference,
 } from "@radioso/connector-api";
 
-import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type {
   DocumentIngestionPort,
   DocumentRepositoryPort,
@@ -22,14 +21,20 @@ interface ConnectorDocumentDeletionPort {
   delete(input: { workspaceId: string; documentId: string }): Promise<void>;
 }
 
-const toResolverInput = (source: ConnectorSourceDescriptor) =>
-  ({
-    kind: "connector" as const,
-    externalId: source.externalId,
-    name: source.name,
-    config: source.config,
-    metadata: source.metadata,
-  });
+// A descriptor resolves by upsert, so it registers a missing source; a reference
+// resolves by id, so a source deleted since the connector read it stays deleted.
+const toResolverInput = (
+  source: ConnectorSourceDescriptor | ConnectorSourceReference,
+): DocumentSourceResolverInput =>
+  "externalId" in source
+    ? {
+        kind: "connector" as const,
+        externalId: source.externalId,
+        name: source.name,
+        config: source.config,
+        metadata: source.metadata,
+      }
+    : { id: source.id };
 
 /**
  * Narrow view of the application's HTML-to-text capability. The composition
@@ -53,7 +58,6 @@ export const createConnectorIngestionPort = (deps: {
   documentIngestionService: ConnectorDocumentIngestionPort;
   documentDeletionService: ConnectorDocumentDeletionPort;
   documentRepository: Pick<DocumentRepositoryPort, "findBySourceAndExternalDocumentId">;
-  documentSourceRepository: Pick<DocumentSourceRepositoryPort, "listByKindAndExternalIdPrefix">;
   htmlContentNormalizer: HtmlContentNormalizer;
 }): ConnectorIngestionPort => ({
   async ingest(input) {
@@ -73,13 +77,19 @@ export const createConnectorIngestionPort = (deps: {
   },
 
   async deleteByExternalId(input) {
-    const source = await deps.documentIngestionService.resolveSource({
-      workspaceId: input.workspaceId,
-      source: toResolverInput(input.source),
-    });
+    // A deleted source took its documents with it, so a reference to one finds nothing.
+    const sourceId =
+      "externalId" in input.source
+        ? (
+            await deps.documentIngestionService.resolveSource({
+              workspaceId: input.workspaceId,
+              source: toResolverInput(input.source),
+            })
+          ).id
+        : input.source.id;
     const existing = await deps.documentRepository.findBySourceAndExternalDocumentId(
       input.workspaceId,
-      source.id,
+      sourceId,
       input.externalDocumentId,
     );
     if (!existing) {
@@ -98,28 +108,5 @@ export const createConnectorIngestionPort = (deps: {
       source: toResolverInput(input.source),
     });
     return { id: record.id };
-  },
-
-  async listSources(input) {
-    const records = await deps.documentSourceRepository.listByKindAndExternalIdPrefix({
-      workspaceId: input.workspaceId,
-      kind: "connector",
-      externalIdPrefix: input.externalIdPrefix,
-    });
-    return records.flatMap((record): ConnectorRegisteredSource[] =>
-      record.externalId === null
-        ? []
-        : [
-            {
-              id: record.id,
-              source: {
-                externalId: record.externalId,
-                name: record.name,
-                config: record.config,
-                metadata: record.metadata,
-              },
-            },
-          ],
-    );
   },
 });

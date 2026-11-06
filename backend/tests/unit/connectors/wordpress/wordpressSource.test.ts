@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConnectorIngestionPort } from "@radioso/connector-api";
+import type { ConnectorSourcesPort } from "@radioso/connector-api";
 import {
   connectedSiteForPush,
   normalizeWordpressSiteUrl,
@@ -45,20 +45,11 @@ describe("WordPress source URLs", () => {
   });
 });
 
-const siteAt = (siteUrl: string, sourceId: string): WordpressConnectedSite => ({
-  sourceId,
-  siteUrl,
-  source: {
-    externalId: `wordpress:${siteUrl}`,
-    name: new URL(siteUrl).hostname,
-    config: { siteUrl },
-    metadata: { connectorId: "wordpress" },
-  },
-});
+const siteAt = (siteUrl: string, sourceId: string): WordpressConnectedSite => ({ sourceId, siteUrl });
 
 describe("WordPress connected sites", () => {
   it("reads the workspace's WordPress sources from the host and keeps their site URLs", async () => {
-    const listSources = vi.fn<ConnectorIngestionPort["listSources"]>(async () => [
+    const listSources = vi.fn<ConnectorSourcesPort["listSources"]>(async () => [
       {
         id: "src-1",
         source: {
@@ -74,7 +65,7 @@ describe("WordPress connected sites", () => {
 
     const sites = await wordpressConnectedSites({ listSources }).listConnectedSites("ws-1");
 
-    expect(listSources).toHaveBeenCalledWith({ workspaceId: "ws-1", externalIdPrefix: "wordpress:" });
+    expect(listSources).toHaveBeenCalledWith("ws-1");
     expect(sites).toEqual([siteAt("https://one.example.org", "src-1")]);
   });
 

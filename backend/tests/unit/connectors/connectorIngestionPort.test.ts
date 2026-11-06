@@ -12,7 +12,6 @@ interface BuildPortOptions {
   resolveSource?: ReturnType<typeof vi.fn>;
   delete?: ReturnType<typeof vi.fn>;
   findBySourceAndExternalDocumentId?: ReturnType<typeof vi.fn>;
-  listByKindAndExternalIdPrefix?: ReturnType<typeof vi.fn>;
   extractTextFromHtml?: ExtractTextFromHtmlMock;
 }
 
@@ -30,9 +29,6 @@ const buildPort = (overrides: BuildPortOptions = {}) => {
       documentRepository: {
         findBySourceAndExternalDocumentId:
           overrides.findBySourceAndExternalDocumentId ?? vi.fn(),
-      } as any,
-      documentSourceRepository: {
-        listByKindAndExternalIdPrefix: overrides.listByKindAndExternalIdPrefix ?? vi.fn(async () => []),
       } as any,
       htmlContentNormalizer: { extractTextFromHtml },
     }),
@@ -193,43 +189,56 @@ describe("createConnectorIngestionPort", () => {
     expect(deleteFn).toHaveBeenCalledWith({ workspaceId: "ws-1", documentId: "doc-xyz" });
   });
 
-  it("lists the workspace's connector sources under a prefix without creating any", async () => {
-    const resolveSource = vi.fn();
-    const listByKindAndExternalIdPrefix = vi.fn(async () => [
-      {
-        id: "source-1",
-        workspaceId: "ws-1",
-        kind: "connector",
-        name: "one.example.org",
-        externalId: "wordpress:https://one.example.org",
-        config: { siteUrl: "https://one.example.org" },
-        metadata: { connectorId: "wordpress" },
-        lastSyncStatus: null,
-        lastSyncedAt: null,
-        createdAt: new Date("2026-06-01T00:00:00Z"),
-        updatedAt: new Date("2026-06-01T00:00:00Z"),
-      },
-    ]);
-    const { port } = buildPort({ resolveSource, listByKindAndExternalIdPrefix });
+  it("ingests into a referenced source by id, so a deleted source is never re-created", async () => {
+    const ingest = vi.fn(async () => ({ documentId: "doc-3", status: "queued" }));
+    const { port } = buildPort({ ingest });
 
-    const sources = await port.listSources({ workspaceId: "ws-1", externalIdPrefix: "wordpress:" });
-
-    expect(listByKindAndExternalIdPrefix).toHaveBeenCalledWith({
+    await port.ingest({
       workspaceId: "ws-1",
-      kind: "connector",
-      externalIdPrefix: "wordpress:",
+      title: "T",
+      content: "C",
+      externalDocumentId: "wp_post_3",
+      source: { id: "source-earlier" },
     });
-    expect(sources).toEqual([
-      {
-        id: "source-1",
-        source: {
-          externalId: "wordpress:https://one.example.org",
-          name: "one.example.org",
-          config: { siteUrl: "https://one.example.org" },
-          metadata: { connectorId: "wordpress" },
-        },
-      },
-    ]);
+
+    expect(ingest).toHaveBeenCalledWith(expect.objectContaining({ source: { id: "source-earlier" } }));
+  });
+
+  it("deletes from a referenced source without resolving or creating it", async () => {
+    const resolveSource = vi.fn();
+    const findBySourceAndExternalDocumentId = vi.fn(async () => ({ id: "doc-earlier" }));
+    const deleteFn = vi.fn(async () => {});
+    const { port } = buildPort({ resolveSource, findBySourceAndExternalDocumentId, delete: deleteFn });
+
+    const deleted = await port.deleteByExternalId({
+      workspaceId: "ws-1",
+      externalDocumentId: "wp_post_3",
+      source: { id: "source-earlier" },
+    });
+
+    expect(deleted).toBe(true);
     expect(resolveSource).not.toHaveBeenCalled();
+    expect(findBySourceAndExternalDocumentId).toHaveBeenCalledWith("ws-1", "source-earlier", "wp_post_3");
+    expect(deleteFn).toHaveBeenCalledWith({ workspaceId: "ws-1", documentId: "doc-earlier" });
+  });
+
+  it("returns false from a delete whose referenced source is gone", async () => {
+    const resolveSource = vi.fn();
+    const deleteFn = vi.fn();
+    const { port } = buildPort({
+      resolveSource,
+      findBySourceAndExternalDocumentId: vi.fn(async () => null),
+      delete: deleteFn,
+    });
+
+    const deleted = await port.deleteByExternalId({
+      workspaceId: "ws-1",
+      externalDocumentId: "wp_post_3",
+      source: { id: "source-deleted" },
+    });
+
+    expect(deleted).toBe(false);
+    expect(resolveSource).not.toHaveBeenCalled();
+    expect(deleteFn).not.toHaveBeenCalled();
   });
 });

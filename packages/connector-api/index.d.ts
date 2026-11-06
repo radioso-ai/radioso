@@ -23,6 +23,8 @@ export type {
   ConnectorReplyDraft,
   ConnectorRespondInput,
   ConnectorSourceDescriptor,
+  ConnectorSourceReference,
+  ConnectorSourcesPort,
   ConnectorStatePort,
   ConnectorSummary,
   ConnectorTurnExecutionMode,

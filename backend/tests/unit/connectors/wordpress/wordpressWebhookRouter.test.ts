@@ -18,12 +18,11 @@ const signBody = (body: string, secret: string): string =>
 const earlierSite: WordpressConnectedSite = {
   sourceId: "src-earlier",
   siteUrl: "https://earlier.example.org",
-  source: {
-    externalId: "wordpress:https://earlier.example.org",
-    name: "earlier.example.org",
-    config: { siteUrl: "https://earlier.example.org" },
-    metadata: { connectorId: "wordpress" },
-  },
+};
+// A second install under a path of the configured site (https://example.com).
+const nestedEarlierSite: WordpressConnectedSite = {
+  sourceId: "src-blog",
+  siteUrl: "https://example.com/blog",
 };
 
 const setupApp = (overrides?: {
@@ -119,7 +118,7 @@ describe("wordpressWebhookRouter", () => {
   });
 
   it("ingests on a valid signed publish event", async () => {
-    const { app, ingest, listConnectedSites } = setupApp();
+    const { app, ingest } = setupApp();
     const body = JSON.stringify({ event: "published", post: validPost });
     const res = await request(app)
       .post("/api/connectors/wordpress/ws-1/webhook")
@@ -140,7 +139,21 @@ describe("wordpressWebhookRouter", () => {
         externalId: "wordpress:https://example.com",
       },
     });
-    // The configured site needs no lookup of the sites connected before it.
+  });
+
+  it("settles a push signed with the configured site URL without looking up other sites", async () => {
+    const { app, ingest, listConnectedSites } = setupApp({ connectedSites: [nestedEarlierSite] });
+
+    const res = await postSigned(app, {
+      event: "updated",
+      site_url: "https://example.com/",
+      post: { ...validPost, link: "https://example.com/blog-archive" },
+    });
+
+    expect(res.status).toBe(204);
+    expect(ingest.mock.calls[0]).toEqual([
+      expect.objectContaining({ source: expect.objectContaining({ externalId: "wordpress:https://example.com" }) }),
+    ]);
     expect(listConnectedSites).not.toHaveBeenCalled();
   });
 
@@ -310,7 +323,7 @@ describe("wordpressWebhookRouter", () => {
         expect.objectContaining({
           workspaceId: "ws-1",
           externalDocumentId: "wp_post_7",
-          source: earlierSite.source,
+          source: { id: "src-earlier" },
         }),
       ]);
       expect(logger.info).toHaveBeenCalledWith(
@@ -332,7 +345,7 @@ describe("wordpressWebhookRouter", () => {
       expect(deleteByExternalId).toHaveBeenCalledWith({
         workspaceId: "ws-1",
         externalDocumentId: "wp_post_7",
-        source: earlierSite.source,
+        source: { id: "src-earlier" },
       });
     });
 
@@ -343,7 +356,42 @@ describe("wordpressWebhookRouter", () => {
 
       expect(res.status).toBe(204);
       expect(ingest.mock.calls[0]).toEqual([
-        expect.objectContaining({ source: earlierSite.source }),
+        expect.objectContaining({ source: { id: "src-earlier" } }),
+      ]);
+    });
+
+    it("routes an unsigned push from an install nested under the configured site to that install", async () => {
+      const { app, ingest, deleteByExternalId } = setupApp({ connectedSites: [nestedEarlierSite] });
+
+      const published = await postSigned(app, {
+        event: "updated",
+        post: { ...validPost, id: 42, link: "https://example.com/blog/welcome" },
+      });
+      const deleted = await postSigned(app, {
+        event: "deleted",
+        post: { ...validPost, id: 42, link: "https://example.com/blog/welcome" },
+      });
+
+      expect(published.status).toBe(204);
+      expect(deleted.status).toBe(204);
+      expect(ingest.mock.calls[0]).toEqual([
+        expect.objectContaining({ externalDocumentId: "wp_post_42", source: { id: "src-blog" } }),
+      ]);
+      expect(deleteByExternalId).toHaveBeenCalledWith({
+        workspaceId: "ws-1",
+        externalDocumentId: "wp_post_42",
+        source: { id: "src-blog" },
+      });
+    });
+
+    it("keeps an unsigned push outside the nested install on the configured site", async () => {
+      const { app, ingest } = setupApp({ connectedSites: [nestedEarlierSite] });
+
+      const res = await postSigned(app, { event: "updated", post: validPost });
+
+      expect(res.status).toBe(204);
+      expect(ingest.mock.calls[0]).toEqual([
+        expect.objectContaining({ source: expect.objectContaining({ externalId: "wordpress:https://example.com" }) }),
       ]);
     });
 

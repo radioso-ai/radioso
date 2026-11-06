@@ -119,7 +119,7 @@ export class WordpressConnector implements ConnectorPlugin {
         logger: context.logger,
         state: context.state,
         ingestion: context.ingestion,
-        connectedSites: wordpressConnectedSites(context.ingestion),
+        connectedSites: wordpressConnectedSites(context.sources),
       }),
     );
 

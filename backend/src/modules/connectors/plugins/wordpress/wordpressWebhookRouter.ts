@@ -18,6 +18,7 @@ import type {
   ConnectorIngestionPort,
   ConnectorLogger,
   ConnectorSourceDescriptor,
+  ConnectorSourceReference,
   ConnectorStatePort,
 } from "@radioso/connector-api";
 
@@ -82,9 +83,19 @@ interface WebhookDeps {
 }
 
 interface PushTarget {
-  source: ConnectorSourceDescriptor;
+  /**
+   * The configured site's descriptor, or a reference to an earlier site's
+   * source: writing by reference means a source an operator deleted while the
+   * push was in flight stays deleted.
+   */
+  source: ConnectorSourceDescriptor | ConnectorSourceReference;
   /** Set when the push writes to an earlier connected site rather than the configured one. */
   earlierSourceId: string | null;
+}
+
+interface CandidateSite {
+  siteUrl: string;
+  target: PushTarget;
 }
 
 /**
@@ -99,13 +110,25 @@ const resolvePushTarget = async (
   config: Record<string, string>,
   push: WordpressPushOrigin,
 ): Promise<PushTarget | null> => {
-  const configured = wordpressSourceFor(config);
-  if (configured && wordpressPushIsFromSite(configured.config.siteUrl, push)) {
-    return { source: configured, earlierSourceId: null };
+  const source = wordpressSourceFor(config);
+  const configured: CandidateSite | null = source
+    ? { siteUrl: source.config.siteUrl, target: { source, earlierSourceId: null } }
+    : null;
+  // A signed site URL names exactly one site, so a configured match needs no lookup.
+  if (configured && push.siteUrl && wordpressPushIsFromSite(configured.siteUrl, push)) {
+    return configured.target;
   }
 
-  const earlier = connectedSiteForPush(await connectedSites.listConnectedSites(workspaceId), push);
-  return earlier ? { source: earlier.source, earlierSourceId: earlier.sourceId } : null;
+  // A push with no site URL is matched by permalink, which can sit under nested
+  // sites (an earlier install under a path of the configured one); the deepest wins.
+  const earlier = (await connectedSites.listConnectedSites(workspaceId))
+    .filter((site) => site.siteUrl !== configured?.siteUrl)
+    .map((site): CandidateSite => ({
+      siteUrl: site.siteUrl,
+      target: { source: { id: site.sourceId }, earlierSourceId: site.sourceId },
+    }));
+  const candidates = configured ? [configured, ...earlier] : earlier;
+  return connectedSiteForPush(candidates, push)?.target ?? null;
 };
 
 const verifySignature = (body: Buffer, header: string, secret: string): boolean => {

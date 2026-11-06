@@ -8,6 +8,7 @@ import type {
   ConnectorHttpHost,
   ConnectorIngestionPort,
   ConnectorLogger,
+  ConnectorSourcesPort,
   ConnectorStatePort,
   ConnectorSummary,
   ConnectorDetail,
@@ -23,6 +24,7 @@ import type { ConversationOwnershipService } from "../../handoff/public.js";
 import type { SlackOperatorPermissionPort } from "../../slack/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
+import type { ConnectorSourceDirectory } from "./connectorSourceDirectory.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { ConversationLinkResolver } from "../../../shared/domain/conversationLinkResolver.js";
 import {
@@ -129,6 +131,7 @@ export class ConnectorRegistry {
     logger: ConnectorLogger;
     chat: ConnectorChatPort;
     ingestion: ConnectorIngestionPort;
+    sourceDirectory?: ConnectorSourceDirectory;
     approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
     conversationOwnershipService?: ConversationOwnershipService;
     operatorPermissions?: SlackOperatorPermissionPort;
@@ -166,6 +169,7 @@ export class ConnectorRegistry {
             }),
           },
           state: this.createPluginState(context.db, plugin.id),
+          sources: this.createPluginSources(context.sourceDirectory, plugin.id),
           http: this.createHttpHost(plugin.id),
         } as Parameters<ConnectorPlugin["initialize"]>[0]);
         this.initialized.add(plugin.id);
@@ -404,7 +408,10 @@ export class ConnectorRegistry {
       return { kind: "validation_error", issues };
     }
 
-    // Unique channel enforcement (FR-012)
+    // Unique channel enforcement (FR-012). It covers the field's current value only: a channel a
+    // workspace configured earlier and still accepts through its source (an earlier WordPress
+    // site) is not reserved. No data crosses workspaces, because that channel signs with one
+    // workspace's secret and posts to that workspace's own webhook URL.
     const uniqueField = plugin.uniqueChannelField();
     if (uniqueField && mergedPlainConfig[uniqueField]) {
       const conflicts = await db.query<{ workspace_id: string }>(
@@ -796,6 +803,21 @@ export class ConnectorRegistry {
       getConfig: async (workspaceId) => this.getDecryptedConfig(db, workspaceId, connectorId),
       setErrorStatus: async (workspaceId, errorStatus) =>
         this.setErrorStatus(db, workspaceId, connectorId, errorStatus),
+    };
+  }
+
+  /** Binds the source directory to this plugin's own `<connectorId>:` namespace. */
+  private createPluginSources(
+    directory: ConnectorSourceDirectory | undefined,
+    connectorId: string,
+  ): ConnectorSourcesPort {
+    return {
+      listSources: async (workspaceId) => {
+        if (!directory) {
+          throw new Error("Connector source directory is unavailable");
+        }
+        return directory.listByExternalIdPrefix({ workspaceId, externalIdPrefix: `${connectorId}:` });
+      },
     };
   }
 

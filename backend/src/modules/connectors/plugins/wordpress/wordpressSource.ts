@@ -5,10 +5,11 @@
  * which site's source a companion-plugin push belongs to.
  */
 
-import type { ConnectorIngestionPort, ConnectorSourceDescriptor } from "@radioso/connector-api";
+import type { ConnectorSourceDescriptor, ConnectorSourcesPort } from "@radioso/connector-api";
 
+// The plugin id. External ids start with it so the host's `ConnectorSourcesPort`,
+// bound to this plugin, lists them.
 const CONNECTOR_ID = "wordpress";
-const EXTERNAL_ID_PREFIX = `${CONNECTOR_ID}:`;
 
 export const normalizeWordpressSiteUrl = (raw: string): string => {
   const trimmed = raw.trim();
@@ -44,7 +45,7 @@ export const wordpressSourceFor = (
   const siteUrl = normalizeWordpressSiteUrl(config["site_url"] ?? "");
   if (!siteUrl) return null;
   return {
-    externalId: `${EXTERNAL_ID_PREFIX}${siteUrl}`,
+    externalId: `${CONNECTOR_ID}:${siteUrl}`,
     name: deriveSiteName(siteUrl),
     config: { siteUrl },
     metadata: { connectorId: CONNECTOR_ID },
@@ -77,11 +78,10 @@ export interface WordpressPushOrigin {
   link: string;
 }
 
-/** A WordPress site the workspace has connected, and the source its documents live in. */
+/** A WordPress site the workspace has connected, and the id of the source its documents live in. */
 export interface WordpressConnectedSite {
   sourceId: string;
   siteUrl: string;
-  source: ConnectorSourceDescriptor;
 }
 
 /** Reads every WordPress site a workspace has connected, the configured one included. */
@@ -95,14 +95,12 @@ export interface WordpressConnectedSitesPort {
  * the time, so the set grows only through operator configuration and shrinks
  * when an operator deletes a source.
  */
-export const wordpressConnectedSites = (
-  ingestion: Pick<ConnectorIngestionPort, "listSources">,
-): WordpressConnectedSitesPort => ({
+export const wordpressConnectedSites = (sources: ConnectorSourcesPort): WordpressConnectedSitesPort => ({
   async listConnectedSites(workspaceId) {
-    const registered = await ingestion.listSources({ workspaceId, externalIdPrefix: EXTERNAL_ID_PREFIX });
+    const registered = await sources.listSources(workspaceId);
     return registered.flatMap(({ id, source }) => {
       const siteUrl = source.config?.["siteUrl"];
-      return typeof siteUrl === "string" && siteUrl ? [{ sourceId: id, siteUrl, source }] : [];
+      return typeof siteUrl === "string" && siteUrl ? [{ sourceId: id, siteUrl }] : [];
     });
   },
 });

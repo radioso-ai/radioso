@@ -540,7 +540,7 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer:
-        "It is a science that releases karma when practiced consistently\n\n[[1]].\n\nValmora Europe teaches Valmora.",
+        "It is a science that releases karma when practiced consistently\n\n[[1]].\n\nValmora Europe teaches meditation.",
       citations: [
         {
           documentId: "doc-1",
@@ -552,7 +552,7 @@ describe("answer presentation service", () => {
     });
 
     expect(result.answer).toBe(
-      "It is a science that releases karma when practiced consistently.\n\nValmora Europe teaches Valmora.",
+      "It is a science that releases karma when practiced consistently.\n\nValmora Europe teaches meditation.",
     );
     expect(result.answerSegments).toEqual([
       {
@@ -560,7 +560,7 @@ describe("answer presentation service", () => {
         citationIndices: [0],
       },
       {
-        text: ".\n\nValmora Europe teaches Valmora.",
+        text: ".\n\nValmora Europe teaches meditation.",
       },
     ]);
   });
@@ -871,16 +871,16 @@ describe("answer presentation service", () => {
 
       const result = service.present({
         answer:
-          "It is a **sacred science** that releases karma\n\n[[1]].\n\nValmora Europe teaches Valmora.",
+          "It is a **sacred science** that releases karma\n\n[[1]].\n\nValmora Europe teaches meditation.",
         citations: oneCitation,
       });
 
       expect(result.answer).toBe(
-        "It is a **sacred science** that releases karma.\n\nValmora Europe teaches Valmora.",
+        "It is a **sacred science** that releases karma.\n\nValmora Europe teaches meditation.",
       );
       expect(result.answerSegments).toEqual([
         { text: "It is a **sacred science** that releases karma", citationIndices: [0] },
-        { text: ".\n\nValmora Europe teaches Valmora." },
+        { text: ".\n\nValmora Europe teaches meditation." },
       ]);
     });
   });

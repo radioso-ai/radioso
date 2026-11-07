@@ -51,12 +51,12 @@ describe("citation anchor sanitizer", () => {
 
     const chunks = [
       sanitizer.push("It is a science when practiced consistently\n\n[[1]]"),
-      sanitizer.push(".\n\nValmora Europe teaches Valmora."),
+      sanitizer.push(".\n\nValmora Europe teaches meditation."),
       sanitizer.flush(),
     ];
 
     expect(chunks.join("")).toBe(
-      "It is a science when practiced consistently.\n\nValmora Europe teaches Valmora.",
+      "It is a science when practiced consistently.\n\nValmora Europe teaches meditation.",
     );
   });
 
@@ -92,12 +92,12 @@ describe("citation anchor sanitizer", () => {
     const sanitizer = new CitationAnchorSanitizer();
 
     const chunks = [
-      sanitizer.push("It is a science when practiced consistently\n\n[[1]]. Valmora Europe teaches Valmora."),
+      sanitizer.push("It is a science when practiced consistently\n\n[[1]]. Valmora Europe teaches meditation."),
       sanitizer.flush(),
     ];
 
     expect(chunks.join("")).toBe(
-      "It is a science when practiced consistently. Valmora Europe teaches Valmora.",
+      "It is a science when practiced consistently. Valmora Europe teaches meditation.",
     );
   });
 

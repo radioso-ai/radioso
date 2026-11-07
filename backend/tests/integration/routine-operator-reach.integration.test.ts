@@ -43,6 +43,30 @@ describeIntegration("routine operator reach (Postgres)", () => {
     await states.confirm(recipientId, generation, new Date());
   };
 
+  const linkSlackEscalationChannel = async (): Promise<void> => {
+    const oauthConnectionId = randomUUID();
+    const connectionId = randomUUID();
+    const installationId = randomUUID();
+    await database.query(
+      `INSERT INTO integration_oauth_connections (id, workspace_id, provider, display_name, status)
+       VALUES ($1, $2, 'slack', 'Slack OAuth', 'authorized')`,
+      [oauthConnectionId, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO integration_connections (id, workspace_id, oauth_connection_id, provider, display_name, status)
+       VALUES ($1, $2, $3, 'slack', 'Slack', 'authorized')`,
+      [connectionId, workspaceId, oauthConnectionId],
+    );
+    await database.query(
+      "INSERT INTO slack_installations (id, connection_id, workspace_id, account_id, team_id, bot_user_id) VALUES ($1, $2, $3, $4, $5, $6)",
+      [installationId, connectionId, workspaceId, accountId, `T${randomUUID()}`, "B1"],
+    );
+    await database.query(
+      "INSERT INTO slack_channel_bindings (id, installation_id, workspace_id, answering_agent_id, escalation_channel_id) VALUES ($1, $2, $3, $4, $5)",
+      [randomUUID(), installationId, workspaceId, agentId, "COPS"],
+    );
+  };
+
   const storedRecipientCount = async (): Promise<number> => {
     const rows = await database.query<{ count: string }>(
       "SELECT count(*) AS count FROM notification_recipient_confirmations WHERE workspace_id = $1",
@@ -139,5 +163,16 @@ describeIntegration("routine operator reach (Postgres)", () => {
     })).resolves.toBe(false);
 
     expect(mailer.send).not.toHaveBeenCalled();
+  });
+
+  it("finds a linked Slack escalation channel for a completion notice, and not for a contact request", async () => {
+    const notice = { terminal: { kind: "complete", stepId: "done", operatorNotice: { skillName: "notify_bookings" } } } as const;
+    const contactRequest = { actions: [{ type: "contact.send", payload: {}, skillName: "notify_bookings" }] };
+    await expect(reach().canReachOperators(notice)).resolves.toBe(false);
+
+    await linkSlackEscalationChannel();
+
+    await expect(reach().canReachOperators(notice)).resolves.toBe(true);
+    await expect(reach().canReachOperators(contactRequest)).resolves.toBe(false);
   });
 });

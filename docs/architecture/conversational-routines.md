@@ -609,18 +609,24 @@ delivery and never logged; it holds visitor data.
 The reply is written before the worker runs, so the runner asks first. On a turn
 that emitted an action, ran a skill that may act outside the conversation, or
 landed on a notice, `DefaultRoutineRunner` asks its `operatorReach` port
-(`ConversationRoutineOperatorReach`) whether what the turn did can reach anyone,
-and the answer is all it learns. When the answer is no, the reply input carries
+(`ConversationRoutineOperatorReach`) whether what the turn did can notify the team,
+and the answer is all it learns. A turn that parks awaiting a decision is not asked:
+the approval sits in the Inbox. When the answer is no, the reply input carries
 `operatorsUnreachable` and the routine trace records `operatorsUnreachable: true`.
 `RoutineStepRenderer` renders `routine-step-operators-unreachable.md` into the step
 reply, after the step's instruction, and hands a grounded answer the same text as
-one more `routine` rule, where its generator reads the instruction. Hand-off
-messages read none of it. A host with no port checks nothing. In Radioso,
+one more `routine` rule, where its generator reads the instruction. The text is about
+the team's notification only: whatever else the step says stays. Hand-off messages
+read none of it. A host with no port checks nothing. In Radioso,
 `RoutineOperatorReachReader` answers: `contact.send`, a notify skill step, and a
 completion's notice count, read through the resolver delivery uses and the
 recipient policy's `describe`, and a webhook or one address in a deliverable state
-is enough. A read that fails answers yes, because the worker may still deliver. The
-action queues either way, and the delivery outcome records what happened.
+is enough. A completion's notice also counts a Slack escalation channel, read through
+`SlackEscalationChannelReader`, which shares its rule with the Slack sink. A read
+that fails answers yes, because the worker may still deliver. The action queues
+either way, and the delivery outcome records what happened. The fact lasts one turn:
+a run keeps no record of it, so a later step or ending that says the team has the
+request is not checked unless that turn itself notifies.
 
 Each routine turn records a step-by-step trace that hangs off the turn's
 `Routine` spine stage as a `routine` sub-trace, the way retrieval hangs its own
@@ -882,8 +888,8 @@ picks an exit, retrying its own model call once when a completion comes back
 unreadable. The step renderer (`routineStepRenderer.ts` with
 `backend/prompts/chat/routine-step-reply.md`, `routine-step-progress.md` on a
 chat step, `routine-step-context-evidence.md` around the visitor's page,
-`routine-step-operators-unreachable.md` when nobody can receive what the turn
-sent, and `routine-step-reask.md` with its `-gap`, `-exhausted-gap`,
+`routine-step-operators-unreachable.md` when the turn cannot notify the team,
+and `routine-step-reask.md` with its `-gap`, `-exhausted-gap`,
 `-missing-slots`, and `-exhausted` pieces on a re-ask) writes the reply. A routine turn therefore
 makes two or three model calls, all on the workspace chat model at reasoning
 effort `none`, so small wording and layout changes move their behavior a lot.

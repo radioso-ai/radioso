@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { EmailWebhookOperatorNotificationSink as EmailWebhookOperatorNotificationSinkBase } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
 import type { ContactNotificationMailer } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
 import { OperatorNotificationDispatcher } from "../../../src/modules/operatorNotifications/public.js";
-import { SlackOperatorNotificationSink } from "../../../src/modules/slack/public.js";
+import { SlackEscalationChannelReader, SlackOperatorNotificationSink } from "../../../src/modules/slack/public.js";
 import type {
   SlackChannelBindingRecord,
   SlackInstallationRecord,
@@ -96,6 +96,7 @@ const createSink = (overrides: {
   binding?: SlackChannelBindingRecord | null;
   decision?: PendingDecisionRecord | null;
   conversationLinks?: { resolve: () => Promise<string | null> };
+  accountId?: string | null;
 } = {}) => {
   const enqueued: Parameters<SlackPostOutboxPort["enqueue"]>[0][] = [];
   const outbox: SlackPostOutboxPort = {
@@ -104,16 +105,21 @@ const createSink = (overrides: {
       return { id: "action_1", duplicate: false };
     }),
   };
-  const sink = new SlackOperatorNotificationSink({
+  const channelPorts = {
     installations: {
       findByAccountId: vi.fn(async () =>
         Object.prototype.hasOwnProperty.call(overrides, "installation") ? overrides.installation! : installation),
     },
-    workspaceAccounts: { getAccountId: vi.fn(async () => "acct_1") },
+    workspaceAccounts: {
+      getAccountId: vi.fn(async () => Object.prototype.hasOwnProperty.call(overrides, "accountId") ? overrides.accountId! : "acct_1"),
+    },
     bindings: {
       findByInstallationId: vi.fn(async () =>
         Object.prototype.hasOwnProperty.call(overrides, "binding") ? overrides.binding! : binding),
     },
+  };
+  const sink = new SlackOperatorNotificationSink({
+    ...channelPorts,
     pendingDecisions: {
       loadByHandle: vi.fn(async () =>
         Object.prototype.hasOwnProperty.call(overrides, "decision") ? overrides.decision! : decision()),
@@ -121,7 +127,7 @@ const createSink = (overrides: {
     outbox,
     conversationLinks: overrides.conversationLinks,
   });
-  return { sink, enqueued };
+  return { sink, enqueued, channel: new SlackEscalationChannelReader(channelPorts) };
 };
 
 const permalink = "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1";
@@ -133,6 +139,38 @@ const linkTexts = (enqueued: Parameters<SlackPostOutboxPort["enqueue"]>[0][]): s
     .flatMap((block) => block.elements ?? [])
     .map((element) => element.text ?? "");
 };
+
+describe("SlackEscalationChannelReader", () => {
+  const completionNotification = { ...handoffNotification, kind: "completion" as const, routineId: "routine_1" };
+
+  it.each([
+    { name: "a linked, installed workspace with an escalation channel", overrides: {}, reason: null },
+    { name: "a workspace linked to no account", overrides: { accountId: null }, reason: "slack_workspace_not_linked" },
+    { name: "an account with no Slack install", overrides: { installation: null }, reason: "slack_not_installed" },
+    { name: "an install with no binding", overrides: { binding: null }, reason: "slack_escalation_channel_not_configured" },
+    {
+      name: "a binding with no escalation channel",
+      overrides: { binding: { ...binding, escalationChannelId: null } },
+      reason: "slack_escalation_channel_not_configured",
+    },
+  ])("says what the sink does for $name", async ({ overrides, reason }) => {
+    const { sink, channel, enqueued } = createSink(overrides);
+
+    const outcome = await sink.deliver(completionNotification, { requestId: "request_1" });
+
+    await expect(channel.hasEscalationChannel("ws_1")).resolves.toBe(reason === null);
+    expect(outcome).toEqual(reason === null ? { disposition: "delivered" } : { disposition: "skipped", reason });
+    expect(enqueued).toHaveLength(reason === null ? 1 : 0);
+  });
+
+  it("reads and posts nothing", async () => {
+    const { channel, enqueued } = createSink();
+
+    await channel.hasEscalationChannel("ws_1");
+
+    expect(enqueued).toEqual([]);
+  });
+});
 
 describe("SlackOperatorNotificationSink", () => {
   it("links the decision post to the resolved conversation permalink", async () => {

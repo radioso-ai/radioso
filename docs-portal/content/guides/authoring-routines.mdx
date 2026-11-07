@@ -305,17 +305,22 @@ address.
 
 The agent writes its reply before the notice goes out, so it checks first. When
 the destination has no webhook and every address is waiting for confirmation,
-stopped, or suppressed, the reply says the request could not be passed on and
-suggests contacting the team directly, with contact details if the agent's
-instructions or documents give them. That holds whatever the ending's
-instruction says, so an ending written as "Tell them reception has it" stays
-honest. One address that can receive mail, or a webhook, is enough for the
-ending's own wording to stand. The contact routine and a notify skill step get
-the same check. A **Hand off** keeps its wording, because the conversation lands
-in the Inbox whether or not an email goes out. The notice still queues, so an
-address that confirms in the meantime receives it. The check leaves out the
-daily email allowance, so a notice that allowance stops still reads as passed
-on.
+stopped, or suppressed, the reply says the team could not be told and suggests
+contacting them directly, with contact details if the agent's instructions or
+documents give them. That overrides what the ending's instruction says about
+the team, so an ending written as "Tell them reception has it" stays honest, and
+the rest of the instruction stands: a booking a skill made on that turn is still
+reported. One address that can receive mail, or a webhook, is enough for the
+ending's own wording to stand, and so is a Slack escalation channel for a finish
+ending's notice. The contact routine and a notify skill step get the same check,
+without the Slack channel, since neither posts there. A **Hand off** keeps its
+wording, because the conversation lands in the Inbox whether or not an email
+goes out, and a step waiting on an approval keeps its wording for the same
+reason. The check runs on the turn the routine notifies. A later step's wording
+is its own, so write a step that follows a notify skill without assuming the
+team has it. The notice still queues, so an address that confirms in the
+meantime receives it. The check leaves out the daily email allowance and the
+per-conversation dispatch cap, so a notice either one stops still reads as sent.
 
 A step is asked the same way at most three times in a row when the visitor's
 replies give it nothing new. From then on it asks in different words, saying
@@ -378,9 +383,12 @@ exactly as it would for a customer. Retrieval skills run in both modes, and
 test values still stand in for context variables either way. Action steps,
 handoffs, team notices, and completion export stay off in every private test;
 a test turn that reaches an ending that notifies shows the notice it would
-send, and the address replies would go to, in the turn's trace instead. The
-reply itself reads as it would for a customer, so a test of an ending nobody can
-receive shows the visitor being told the request could not be passed on.
+send, and the address replies would go to, in the turn's trace instead. A test
+of a finish ending whose notice nobody can receive shows the reply a customer
+would read: the team could not be told. A notify skill step stays off in a test,
+so the check does not count it, and a routine that tells the team only through
+such a step keeps its own wording in Test Chat where a customer would read
+otherwise.
 
 A notify skill delivers through the saved conversation, so it stays off in
 every private test even with **Run skills for real** on. **Retry** re-runs
@@ -412,9 +420,10 @@ from a test that kept skills off.
 - A finish sends no team notice: check that **Notify the team** is on for that
   ending, and that the agent has a contact recipient — the notice goes where
   contact requests go.
-- The agent tells a visitor their request could not be passed on: nobody can
-  receive it. The **Send with** line shows each address's state, so confirm one
-  or add a webhook to the skill. The turn trace carries
+- The agent tells a visitor the team could not be told: nobody can receive the
+  notice. The **Send with** line shows each address's state, so confirm one or
+  add a webhook to the skill. A finish ending's notice also goes to a Slack
+  escalation channel when the workspace has one. The turn trace carries
   `operatorsUnreachable: true` on the routine's sub-trace for that turn.
 - The **Send with** select shows a name as **(unavailable)**: the notify skill
   it names was deleted, turned off, or can no longer be named by a routine.

@@ -63,6 +63,7 @@ export { FetchSlackResponseUrlClient } from "./operator/slackResponseUrlClient.j
 export {
   SlackOperatorNotificationSink,
 } from "./operator/slackOperatorNotificationSink.js";
+export { SlackEscalationChannelReader } from "./operator/slackEscalationChannel.js";
 export {
   SlackCustomerReplyDeliverer,
 } from "./operator/slackCustomerReplyDeliverer.js";

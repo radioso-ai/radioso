@@ -350,7 +350,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       stepProgressPromptTemplate?: string;
       /** Frames the evidence a step's context variables carry (`{{evidence}}`). */
       contextEvidencePromptTemplate?: string;
-      /** What a reply is told when the turn's effects can reach no one (#1702). */
+      /** What a reply is told when the turn's effects cannot notify the team (#1702). */
       operatorsUnreachablePromptTemplate?: string;
       responseLanguage?: string | Promise<string | undefined>;
       groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
@@ -444,7 +444,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     return this.stepReply(input);
   }
 
-  /** What a reply must not claim when the turn's effects reach no one (#1702). */
+  /** What a reply must not claim when the turn's effects cannot notify the team (#1702). */
   private operatorsUnreachableInstruction(): string {
     return renderPromptTemplate(
       "chat/routine-step-operators-unreachable.md",
@@ -455,8 +455,8 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
 
   /**
    * A grounded answer is written from the host's own prompt, not the step reply's. It reads the
-   * step through its `routine` rules, so a turn whose effects reach no one tells it there, beside
-   * the instruction the fact overrides.
+   * step through its `routine` rules, so a turn whose effects cannot notify the team tells it
+   * there, beside the instruction the fact overrides.
    */
   private groundedAnswerInput(input: RoutineStepReplyInput): RoutineStepReplyInput {
     return input.operatorsUnreachable

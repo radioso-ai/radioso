@@ -13,12 +13,8 @@ import {
   resolveConversationLink,
   type ConversationLinkResolver,
 } from "../../../shared/domain/conversationLinkResolver.js";
-import type {
-  SlackBindingRepositoryPort,
-  SlackInstallationRepositoryPort,
-  SlackPostOutboxPort,
-  WorkspaceAccountLookup,
-} from "../public.js";
+import type { SlackPostOutboxPort } from "../public.js";
+import { resolveSlackEscalationChannel, type SlackEscalationChannelPorts } from "./slackEscalationChannel.js";
 import {
   enqueueSlackPostAction,
   slackPostIdempotencyKey,
@@ -33,10 +29,7 @@ const isPendingApproval = (decision: PendingDecisionRecord, notification: Operat
   decision.agentId === notification.agentId;
 
 export class SlackOperatorNotificationSink implements OperatorNotificationSink {
-  constructor(private readonly options: {
-    installations: Pick<SlackInstallationRepositoryPort, "findByAccountId">;
-    workspaceAccounts: WorkspaceAccountLookup;
-    bindings: Pick<SlackBindingRepositoryPort, "findByInstallationId">;
+  constructor(private readonly options: SlackEscalationChannelPorts & {
     pendingDecisions: Pick<PendingDecisionRepository, "loadByHandle">;
     outbox: SlackPostOutboxPort;
     conversationLinks?: ConversationLinkResolver;
@@ -44,18 +37,11 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
   }) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
-    const accountId = await this.options.workspaceAccounts.getAccountId(notification.workspaceId);
-    if (!accountId) {
-      return { disposition: "skipped", reason: "slack_workspace_not_linked" };
+    const channel = await resolveSlackEscalationChannel(this.options, notification.workspaceId);
+    if (!channel.found) {
+      return { disposition: "skipped", reason: channel.reason };
     }
-    const installation = await this.options.installations.findByAccountId(accountId);
-    if (!installation) {
-      return { disposition: "skipped", reason: "slack_not_installed" };
-    }
-    const binding = await this.options.bindings.findByInstallationId(installation.id);
-    if (!binding?.escalationChannelId) {
-      return { disposition: "skipped", reason: "slack_escalation_channel_not_configured" };
-    }
+    const { accountId, installationId, channelId } = channel;
     if (notification.kind !== "approval") {
       // Slack has no separate subject field, so the post's text leads with the formatter's
       // subject line (authored, or its per-kind default) before the headline and the rest of
@@ -86,8 +72,8 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
           sourceId: `${notification.kind}:${notification.conversationId}:${context.idempotencyKey ?? context.requestId}`,
         }),
         payload: {
-          installationId: installation.id,
-          channelId: binding.escalationChannelId,
+          installationId,
+          channelId,
           kind: "operator_notification",
           conversationRef: notification.conversationId,
           text: message.text,
@@ -120,8 +106,8 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
         sourceId: `decision:${decision.handle}`,
       }),
       payload: {
-        installationId: installation.id,
-        channelId: binding.escalationChannelId,
+        installationId,
+        channelId,
         kind: "operator_notification",
         conversationRef: notification.conversationId,
         text: message.text,

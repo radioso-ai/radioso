@@ -372,15 +372,21 @@ a routine with nobody worth replying to stays as it is.
 
 The agent writes its reply before the notice goes out, so it checks first. When
 the destination has no webhook and every address is waiting for confirmation,
-stopped, or suppressed, the reply says the request could not be passed on and
-suggests contacting the team directly, with contact details if the agent's
-instructions or documents give them. That holds whatever the ending's
-instruction says. One address that can receive mail, or a webhook, is enough for
-the ending's own wording to stand. The contact routine and a notify skill step
-get the same check. A **Hand off** keeps its wording, because the conversation
-lands in the Inbox whether or not an email goes out. The notice still queues, so
-an address that confirms in the meantime receives it. The turn trace carries
-`operatorsUnreachable: true` on the routine's sub-trace when the reply was told.
+stopped, or suppressed, the reply says the team could not be told and suggests
+contacting them directly, with contact details if the agent's instructions or
+documents give them. That overrides what the ending's instruction says about the
+team, and the rest of the instruction stands. One address that can receive mail,
+or a webhook, is enough for the ending's own wording to stand, and so is a Slack
+escalation channel for a finish ending's notice. The contact routine and a notify
+skill step get the same check, without the Slack channel, since neither posts
+there. A **Hand off** keeps its wording, because the conversation lands in the
+Inbox whether or not an email goes out, and a step waiting on an approval keeps
+its wording for the same reason. The check runs on the turn the routine notifies,
+so a later step's wording is its own. The notice still queues, so an address that
+confirms in the meantime receives it. The check leaves out the daily email
+allowance and the per-conversation dispatch cap, so a notice either one stops
+still reads as sent. The turn trace carries `operatorsUnreachable: true` on the
+routine's sub-trace when the reply was told.
 
 A step the visitor keeps answering without giving what it needs is asked again
 up to three times, then asks differently once. When some branch row leads to a

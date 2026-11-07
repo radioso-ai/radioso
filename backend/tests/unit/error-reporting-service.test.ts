@@ -58,6 +58,28 @@ describe("ErrorReportingService", () => {
     }));
   });
 
+  it("names a wrapped error's cause by class and code, never by message", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = new ErrorReportingService({
+      enabled: true,
+      environment: "test",
+      logger: createLogger() as any,
+      service: "radioso-api",
+      sinks: [sink],
+    });
+    const cause = Object.assign(new Error("current transaction is aborted"), { name: "DatabaseError", code: "25P02" });
+
+    const event = await service.report({
+      errorType: "http.request.unhandled",
+      error: new Error("Abuse control enforcement is unavailable", { cause }),
+    });
+
+    expect(event?.metadata).toEqual({ causeClass: "DatabaseError", causeCode: "25P02" });
+    expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: { causeClass: "DatabaseError", causeCode: "25P02" },
+    }));
+  });
+
   it("redacts sensitive metadata and logs sink failures", async () => {
     const logger = createLogger();
     const service = new ErrorReportingService({

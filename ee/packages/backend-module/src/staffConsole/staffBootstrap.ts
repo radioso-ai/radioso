@@ -26,31 +26,19 @@ export class StaffBootstrapService {
     const email = input.email.trim().toLowerCase();
     const existing = await this.users.findByEmail(email);
     const passwordHash = input.password === null ? null : await hashStaffPassword(input.password);
-    const result = existing
-      ? await this.resetExistingOwner(existing, passwordHash)
-      : {
-        staff: await this.users.create({
-          email,
-          name: input.name.trim(),
-          passwordHash,
-          role: "owner",
-          status: "active",
-        }),
-        action: "create_owner" as const,
-        revokedSessions: 0,
-      };
+    if (existing) {
+      return this.resetExistingOwner(existing, passwordHash);
+    }
 
-    await this.events.privilegedChange({
-      eventType: "staff.bootstrap",
-      metadata: {
-        actor: "staff.bootstrap",
-        targetStaffId: result.staff.id,
-        action: result.action,
-        revokedSessions: result.revokedSessions,
-      },
+    const staff = await this.users.create({
+      email,
+      name: input.name.trim(),
+      passwordHash,
+      role: "owner",
+      status: "active",
     });
-
-    return result;
+    await this.recordChange(staff, "create_owner", 0);
+    return { staff, action: "create_owner", revokedSessions: 0 };
   }
 
   private async resetExistingOwner(existing: StaffUser, passwordHash: string | null): Promise<StaffBootstrapResult> {
@@ -61,8 +49,27 @@ export class StaffBootstrapService {
     if (!staff) {
       throw new HttpError(404, "not_found", "Staff owner not found.");
     }
-    // A reset exists because the old credential can no longer be trusted, so nothing it opened survives.
-    const revokedSessions = await this.sessions.revokeAllForStaff(existing.id);
+    // A reset exists because the old credential can no longer be trusted, so nothing it opened
+    // survives. The credential has already changed by now, so a failure here still gets recorded.
+    let revokedSessions: number;
+    try {
+      revokedSessions = await this.sessions.revokeAllForStaff(existing.id);
+    } catch (error) {
+      await this.recordChange(staff, "reset_owner", null);
+      throw error;
+    }
+    await this.recordChange(staff, "reset_owner", revokedSessions);
     return { staff, action: "reset_owner", revokedSessions };
+  }
+
+  private recordChange(
+    staff: StaffUser,
+    action: StaffBootstrapResult["action"],
+    revokedSessions: number | null,
+  ): Promise<void> {
+    return this.events.privilegedChange({
+      eventType: "staff.bootstrap",
+      metadata: { actor: "staff.bootstrap", targetStaffId: staff.id, action, revokedSessions },
+    });
   }
 }

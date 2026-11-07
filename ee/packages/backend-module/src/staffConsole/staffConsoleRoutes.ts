@@ -575,9 +575,6 @@ export const createStaffConsoleRoutes = (
         if (!updated) {
           throw new HttpError(404, "not_found", "Staff user not found.");
         }
-        if (updated.status === "disabled") {
-          await sessions.revokeAllForStaff(updated.id);
-        }
         await securityEvents.privilegedChange({
           eventType: "staff.user.status_changed",
           metadata: {
@@ -587,6 +584,11 @@ export const createStaffConsoleRoutes = (
             toStatus: updated.status,
           },
         });
+        // After the record: a disabled identity is already refused on every request, so this
+        // failing leaves nothing usable, while the change itself must not go unreported.
+        if (updated.status === "disabled") {
+          await sessions.revokeAllForStaff(updated.id);
+        }
         res.status(200).json({ staff: publicStaff(updated) });
       } catch (error) {
         next(error);

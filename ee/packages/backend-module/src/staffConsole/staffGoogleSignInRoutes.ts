@@ -1,8 +1,13 @@
 import { randomBytes } from "node:crypto";
 
-import { Router, type RequestHandler, type Response } from "express";
+import { Router, type ErrorRequestHandler, type RequestHandler, type Response } from "express";
 
-import { buildGoogleAuthorizationUrl, resolveGoogleIdentity, type GoogleOAuthConfig } from "../googleLogin/googleOAuthClient.js";
+import {
+  GoogleOAuthError,
+  buildGoogleAuthorizationUrl,
+  resolveGoogleIdentity,
+  type GoogleOAuthConfig,
+} from "../googleLogin/googleOAuthClient.js";
 import { HttpError } from "../shared/httpError.js";
 import type { StaffAuthResult, StaffAuthService } from "./staffAuthService.js";
 import type { StaffSecurityEvents } from "./staffSecurityEvents.js";
@@ -10,7 +15,8 @@ import type { StaffSecurityEvents } from "./staffSecurityEvents.js";
 const STATE_COOKIE = "radioso_staff_google_state";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const SIGNED_IN_REDIRECT = "/operator/organizations";
-const REFUSED_REDIRECT = "/operator/login?error=google_sign_in_failed";
+const ACCOUNT_REFUSED_REDIRECT = "/operator/login?error=google_account_refused";
+const SIGN_IN_FAILED_REDIRECT = "/operator/login?error=google_sign_in_failed";
 
 interface StaffGoogleSignInRouterOptions {
   /** Null when Workspace sign-in is off or incomplete: both routes then answer 404. */
@@ -55,7 +61,7 @@ export const createStaffGoogleSignInRouter = (options: StaffGoogleSignInRouterOp
 
     const refuse = async (reason: "provider_error" | "invalid_state" | "oauth_exchange_failed"): Promise<void> => {
       await events.signIn({ method: "google", outcome: "failure", reason });
-      res.redirect(REFUSED_REDIRECT);
+      res.redirect(SIGN_IN_FAILED_REDIRECT);
     };
 
     const { code, state, error } = req.query;
@@ -71,7 +77,15 @@ export const createStaffGoogleSignInRouter = (options: StaffGoogleSignInRouterOp
     let identity: Awaited<ReturnType<typeof resolveGoogleIdentity>>;
     try {
       identity = await resolveGoogleIdentity({ config: oauth!, code, fetchImpl: options.fetchImpl });
-    } catch {
+    } catch (caught) {
+      options.logger.warn?.(
+        {
+          event: "staff_console.google_sign_in_error",
+          step: "exchange",
+          code: caught instanceof GoogleOAuthError ? caught.code : "unexpected",
+        },
+        "Staff Google sign-in could not complete the exchange with Google",
+      );
       await refuse("oauth_exchange_failed");
       return;
     }
@@ -80,17 +94,30 @@ export const createStaffGoogleSignInRouter = (options: StaffGoogleSignInRouterOp
       options.setSessionCookie(res, await authService.loginWithGoogle(identity, workspaceDomain!));
       res.redirect(SIGNED_IN_REDIRECT);
     } catch (caught) {
-      // `loginWithGoogle` records its own refusals. Anything else is a broken step, not an answer
-      // about this identity, and this is the only place the error exists.
-      if (!(caught instanceof HttpError)) {
-        options.logger.warn?.(
-          { event: "staff_console.google_sign_in_error", err: caught },
-          "Staff Google sign-in did not complete",
-        );
+      // `loginWithGoogle` records its own refusals, and those are an answer about this account.
+      // Anything else is a broken step, and this is the only place that error exists.
+      if (caught instanceof HttpError) {
+        res.redirect(ACCOUNT_REFUSED_REDIRECT);
+        return;
       }
-      res.redirect(REFUSED_REDIRECT);
+      options.logger.warn?.(
+        { event: "staff_console.google_sign_in_error", step: "sign_in", err: caught },
+        "Staff Google sign-in did not complete",
+      );
+      res.redirect(SIGN_IN_FAILED_REDIRECT);
     }
   });
+
+  // Both routes are browser navigations, so a limit's answer has to land where a person can act on it.
+  const redirectWhenThrottled: ErrorRequestHandler = (error, _req, res, next) => {
+    const { statusCode } = error as { statusCode?: number };
+    if (statusCode === 429 || statusCode === 503) {
+      res.redirect(SIGN_IN_FAILED_REDIRECT);
+      return;
+    }
+    next(error);
+  };
+  router.use(redirectWhenThrottled);
 
   return router;
 };

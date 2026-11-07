@@ -678,6 +678,39 @@ describe("staff console routes and guards", () => {
     await request(app).get("/api/v1/ee/operator-console/auth/me").set("Cookie", memberCookie).expect(401);
   });
 
+  it("alerts on a disabled staff member even when ending their sessions fails", async () => {
+    const repositories = await createMemoryRepositories("owner");
+    const member = await repositories.addStaff({
+      id: "55555555-5555-4555-8555-555555555555",
+      email: "member@example.com",
+      name: "Member",
+      role: "support_read",
+    });
+    vi.spyOn(repositories.staffSessions, "revokeAllForStaff").mockRejectedValue(new Error("database unavailable"));
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      logger,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    await request(app)
+      .put(`/api/v1/ee/operator-console/staff/${member.id}/status`)
+      .set("Cookie", login.headers["set-cookie"][0])
+      .send({ status: "disabled" })
+      .expect(500);
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      event: "staff_console.privileged_change",
+      eventType: "staff.user.status_changed",
+      targetStaffId: member.id,
+    }), expect.any(String));
+  });
+
   it("refuses a new staff password shorter than twelve characters", async () => {
     const repositories = await createMemoryRepositories("owner");
     const app = createApp(createDependencies({

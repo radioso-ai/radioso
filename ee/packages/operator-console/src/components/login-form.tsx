@@ -7,13 +7,16 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { staffAuthApi, staffGoogleSignInUrl, type StaffSignInMethods } from "../lib/staff-auth-api";
 
-export function LoginForm({ googleSignInRefused = false }: { googleSignInRefused?: boolean }) {
+const signInErrorMessages = {
+  google_account_refused: "That Google account can't sign in here.",
+  google_sign_in_failed: "Google sign-in didn't finish. Try again.",
+};
+
+export function LoginForm({ signInError = null }: { signInError?: keyof typeof signInErrorMessages | null }) {
   const [methods, setMethods] = useState<StaffSignInMethods | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(
-    googleSignInRefused ? "That Google account can't sign in here." : null,
-  );
+  const [error, setError] = useState<string | null>(signInError ? signInErrorMessages[signInError] : null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {

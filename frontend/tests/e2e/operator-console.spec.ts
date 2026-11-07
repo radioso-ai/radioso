@@ -316,9 +316,26 @@ test("with Workspace sign-in on, staff get Google and no password form", async (
 test("a refused Google account hears why on the sign-in page", async ({ page }) => {
   await installOperatorConsoleMocks(page, "owner", starterProfile, conversationSpend(), { password: false, google: true });
 
-  await page.goto("/operator/login?error=google_sign_in_failed");
+  await page.goto("/operator/login?error=google_account_refused");
 
   await expect(page.getByText("That Google account can't sign in here.")).toBeVisible();
+});
+
+test("a Google sign-in that broke is not blamed on the account", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "owner", starterProfile, conversationSpend(), { password: false, google: true });
+
+  await page.goto("/operator/login?error=google_sign_in_failed");
+
+  await expect(page.getByText("Google sign-in didn't finish. Try again.")).toBeVisible();
+  await expect(page.getByText("That Google account can't sign in here.")).toHaveCount(0);
+});
+
+test("an unknown error value on the sign-in page is ignored", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "owner");
+
+  await page.goto("/operator/login?error=constructor");
+
+  await expect(page.getByLabel("Password")).toBeVisible();
 });
 
 test("the directory reads the conversation meter for a catalog tier", async ({ page }) => {
@@ -438,6 +455,19 @@ test("with Workspace sign-in on, an owner adds staff without a password", async 
   await page.getByRole("button", { name: "Create staff" }).click();
 
   await expect(page.getByRole("row").filter({ hasText: "billing@example.com" })).toContainText("Billing");
+});
+
+test("the staff form waits to learn how staff sign in", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "owner");
+  await page.route("**/api/v1/ee/operator-console/auth/methods", async (route) => {
+    await json(route, { error: { code: "unavailable", message: "Sign-in methods could not be loaded." } }, 503);
+  });
+
+  await page.goto("/operator/staff");
+
+  await expect(page.getByText("Sign-in methods could not be loaded.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create staff" })).toBeDisabled();
+  await expect(page.getByText("They sign in with their Google Workspace account")).toHaveCount(0);
 });
 
 test("support_read staff sees read-only tier UI and no staff management", async ({ page }) => {

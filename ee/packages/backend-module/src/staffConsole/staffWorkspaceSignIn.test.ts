@@ -111,6 +111,7 @@ const workspaceIdentity = {
 const createApp = async (input: {
   seed?: Partial<StaffUser>;
   fetchImpl?: typeof fetch;
+  abuseControlEnforce?: ReturnType<typeof vi.fn>;
 } = {}) => {
   const repositories = await createRepositories(input.seed);
   const auditRecord = vi.fn(async () => undefined);
@@ -123,7 +124,7 @@ const createApp = async (input: {
       APP_BASE_URL: "https://app.example.com/",
     },
     auditService: { record: auditRecord },
-    abuseControlService: { enforce: vi.fn(async () => undefined) },
+    abuseControlService: { enforce: input.abuseControlEnforce ?? vi.fn(async () => undefined) },
     requestSource: { digest: () => "host-source-digest" },
     logger,
   } as unknown as RouteDependencies;
@@ -174,6 +175,7 @@ const sessionCookieOf = (response: request.Response): string | undefined =>
   (response.headers["set-cookie"] as unknown as string[] | undefined)
     ?.find((cookie) => cookie.startsWith("staff_session=") && !cookie.startsWith("staff_session=;"));
 
+const REFUSED_REDIRECT = "/operator/login?error=google_account_refused";
 const FAILURE_REDIRECT = "/operator/login?error=google_sign_in_failed";
 
 describe("operator console Workspace sign-in", () => {
@@ -289,7 +291,7 @@ describe("operator console Workspace sign-in", () => {
 
       const callback = await completeGoogleSignIn(app);
 
-      expect(callback.headers.location).toBe(FAILURE_REDIRECT);
+      expect(callback.headers.location).toBe(REFUSED_REDIRECT);
       expect(sessionCookieOf(callback)).toBeUndefined();
       expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({
         eventType: "staff.auth.login",
@@ -325,7 +327,7 @@ describe("operator console Workspace sign-in", () => {
 
     it("reports a failed exchange with Google as a failed sign-in", async () => {
       useWorkspaceSignIn();
-      const { app, auditRecord } = await createApp({ fetchImpl: googleAnswering(workspaceIdentity, 500) });
+      const { app, auditRecord, logger } = await createApp({ fetchImpl: googleAnswering(workspaceIdentity, 500) });
 
       const callback = await completeGoogleSignIn(app);
 
@@ -333,6 +335,41 @@ describe("operator console Workspace sign-in", () => {
       expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({
         metadata: { method: "google", reason: "oauth_exchange_failed" },
       }));
+      expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+        event: "staff_console.google_sign_in_error",
+        code: "token_exchange_failed",
+      }), expect.any(String));
+    });
+
+    it("does not tell staff their account was refused when a step of ours broke", async () => {
+      useWorkspaceSignIn();
+      const { app, users, logger } = await createApp();
+      vi.spyOn(users, "findByEmail").mockRejectedValue(new Error("database unavailable"));
+
+      const callback = await completeGoogleSignIn(app);
+
+      expect(callback.headers.location).toBe(FAILURE_REDIRECT);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "staff_console.google_sign_in_error" }),
+        expect.any(String),
+      );
+    });
+
+    it.each([
+      ["start", "ee.staff_console.google.start"],
+      ["callback", "ee.staff_console.google.callback"],
+    ])("sends a throttled %s back to the sign-in page rather than a JSON error", async (route, scope) => {
+      useWorkspaceSignIn();
+      const abuseControlEnforce = vi.fn(async (input: { scope: string }) => {
+        if (input.scope === scope) {
+          throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+        }
+      });
+      const { app } = await createApp({ abuseControlEnforce });
+
+      const response = await request(app).get(`${MOUNT}/auth/google/${route}`).expect(302);
+
+      expect(response.headers.location).toBe(FAILURE_REDIRECT);
     });
 
     it("reports a refusal at Google's consent screen as a failed sign-in", async () => {

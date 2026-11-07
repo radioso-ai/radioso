@@ -12,5 +12,7 @@ export default async function OperatorLoginPage({
   searchParams: Promise<{ error?: string | string[] }>;
 }) {
   const { error } = await searchParams;
-  return <LoginForm googleSignInRefused={error === "google_sign_in_failed"} />;
+  return (
+    <LoginForm signInError={error === "google_account_refused" || error === "google_sign_in_failed" ? error : null} />
+  );
 }

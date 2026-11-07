@@ -185,9 +185,11 @@ STAFF_GOOGLE_WORKSPACE_DOMAIN=example.com
 ```
 
 This shares the Google client customer sign-in uses (`GOOGLE_LOGIN_CLIENT_ID` and
-`GOOGLE_LOGIN_CLIENT_SECRET`). Add the console's redirect URI to that client before
-you set the domain, because the domain turns password sign-in off the moment the
-backend restarts:
+`GOOGLE_LOGIN_CLIENT_SECRET`). Deploy this release and add the console's redirect URI
+to that client before you set the domain, because the domain turns password sign-in
+off the moment the backend restarts. On the bundled Cloud Run stack, set the domain
+as the `STAFF_GOOGLE_WORKSPACE_DOMAIN` GitHub environment variable, not a secret, and
+apply Terraform.
 
 ```text
 <APP_BASE_URL>/backend/api/v1/ee/operator-console/auth/google/callback
@@ -204,13 +206,25 @@ hands that address to someone else, their sign-in is refused until an owner disa
 and re-enables the identity, which releases the binding. Disabling also ends the
 identity's open sessions.
 
-If sign-in is refused, the page says "That Google account can't sign in here" and a
-`staff.auth.login` audit event records the `reason`: `wrong_workspace`, `not_staff`,
-`disabled`, `email_unverified`, `subject_mismatch`, or a step of the exchange with
-Google. If the domain is set but the Google client or `APP_BASE_URL` is missing, the
+If the account is refused, the page says "That Google account can't sign in here" and
+a `staff.auth.login` audit event records the `reason`: `wrong_workspace`, `not_staff`,
+`disabled`, `email_unverified`, or `subject_mismatch`. If something broke instead,
+including a cancelled consent screen or an expired attempt, the page says "Google
+sign-in didn't finish. Try again" and the backend logs
+`staff_console.google_sign_in_error`.
+
+If the domain is set but the Google client or `APP_BASE_URL` is missing, the
 console stays closed, the page says "Staff sign-in isn't configured", and the backend
 logs which input is missing at startup. Removing the domain turns password sign-in
 back on for identities that still have a password.
+
+Sessions already open when you set the domain keep working until they end: 30 idle
+minutes, or the session lifetime. If you're switching because a password may be
+compromised, end them all once the domain is live:
+
+```sql
+UPDATE ee_staff_sessions SET revoked_at = NOW() WHERE revoked_at IS NULL;
+```
 
 ### First owner and recovery
 

@@ -96,13 +96,17 @@ export type NotificationSkipReason =
   | `mail_not_dispatched:driver=${string}`;
 
 /**
- * A transport sent/enqueued a notice to every destination it is configured for, to some of them
- * only (`partial`, with why the rest were left out), or intentionally to none.
+ * What a transport did with a notice. `delivered`: every destination it is set up for. `partial`:
+ * some of them, with why the rest were left out. `skipped`: none of them, though it was set up to
+ * send. `not_applicable`: it had nothing to send to or for, because its destination is not set up
+ * or the notice no longer applies; another transport delivering then leaves nothing undelivered,
+ * which is what tells it apart from `skipped`.
  */
 export type OperatorNotificationSinkOutcome =
   | { disposition: "delivered" }
   | { disposition: "partial"; reason: NotificationSkipReason }
-  | { disposition: "skipped"; reason: NotificationSkipReason };
+  | { disposition: "skipped"; reason: NotificationSkipReason }
+  | { disposition: "not_applicable"; reason: NotificationSkipReason };
 
 export interface OperatorNotificationSink {
   deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome>;

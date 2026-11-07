@@ -12,14 +12,16 @@ export const UNDELIVERED_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export interface UndeliveredRecipientAlertPort {
   /**
    * Tells the workspace's administrators a notice skipped this address, unless they were told
-   * about it within the last day. Resolves without error when nothing is sent.
+   * about it within the last day. Resolves without error when nothing is sent. Once `signal`
+   * aborts the caller has stopped waiting: the alert finishes quietly, recording no outcome, so one
+   * alert never has two.
    */
   notify(input: {
     workspaceId: string;
     agentId: string | null;
     email: string;
     reason: UndeliveredRecipientReason;
-  }): Promise<void>;
+  }, options?: { signal?: AbortSignal }): Promise<void>;
 }
 
 export interface UndeliveredAlertClaim {
@@ -75,7 +77,10 @@ export class UndeliveredRecipientAlerts implements UndeliveredRecipientAlertPort
     agentId: string | null;
     email: string;
     reason: UndeliveredRecipientReason;
-  }): Promise<void> {
+  }, options: { signal?: AbortSignal } = {}): Promise<void> {
+    const { signal } = options;
+    // A caller that stopped waiting has already recorded its own outcome for this alert.
+    const abandoned = (): boolean => signal?.aborted === true;
     let claim: UndeliveredAlertClaim | null = null;
     try {
       claim = await this.options.store.claim({
@@ -85,9 +90,26 @@ export class UndeliveredRecipientAlerts implements UndeliveredRecipientAlertPort
         windowMs: UNDELIVERED_ALERT_WINDOW_MS,
       });
       if (!claim) return;
-      const sent = await this.sendToAdministrators(input, claim);
-      if (sent === 0) {
-        await this.options.store.release(claim);
+      const result = await this.sendToAdministrators(input, claim, signal);
+      // Nobody to tell, or every send failed: nothing was said, so a later notice may try again.
+      // A transport that reports dispatching nothing will say nothing on any retry, so it keeps the claim.
+      const anyoneTold = result.dispatched > 0;
+      const keepClaim = anyoneTold || (result.administrators > 0 && result.rejected === 0);
+      if (!keepClaim) await this.options.store.release(claim);
+      if (abandoned()) return;
+      if (result.rejected > 0) {
+        this.count("failed", input.reason);
+        this.options.logger?.warn({
+          event: "notification_undelivered_alert_failed",
+          workspaceId: input.workspaceId,
+          reason: input.reason,
+          errorName: result.firstFailure instanceof Error ? result.firstFailure.name : "unknown",
+          failedCount: result.rejected,
+          administratorCount: result.administrators,
+        }, "Undelivered recipient alert failed");
+        return;
+      }
+      if (!anyoneTold) {
         this.count("not_sent", input.reason);
         return;
       }
@@ -96,9 +118,11 @@ export class UndeliveredRecipientAlerts implements UndeliveredRecipientAlertPort
         event: "notification_undelivered_alert_sent",
         workspaceId: input.workspaceId,
         reason: input.reason,
-        administratorCount: sent,
+        administratorCount: result.dispatched,
       }, "Undelivered recipient alert sent");
     } catch (error) {
+      if (claim) await this.options.store.release(claim).catch(() => undefined);
+      if (abandoned()) return;
       this.count("failed", input.reason);
       this.options.logger?.warn({
         event: "notification_undelivered_alert_failed",
@@ -106,20 +130,23 @@ export class UndeliveredRecipientAlerts implements UndeliveredRecipientAlertPort
         reason: input.reason,
         errorName: error instanceof Error ? error.name : "unknown",
       }, "Undelivered recipient alert failed");
-      if (claim) await this.options.store.release(claim).catch(() => undefined);
     }
   }
 
   private async sendToAdministrators(
     input: { workspaceId: string; agentId: string | null; email: string; reason: UndeliveredRecipientReason },
     claim: UndeliveredAlertClaim,
-  ): Promise<number> {
+    signal: AbortSignal | undefined,
+  ): Promise<{ administrators: number; dispatched: number; rejected: number; firstFailure: unknown }> {
+    const nothingSent = (administrators: number) => ({ administrators, dispatched: 0, rejected: 0, firstFailure: undefined });
     const administrators = await this.options.store.listAdministratorEmails(input.workspaceId);
-    if (administrators.length === 0) return 0;
+    if (administrators.length === 0 || signal?.aborted) return nothingSent(0);
     const [names, dashboardUrl] = await Promise.all([
       this.options.identity.resolve(input),
       this.options.dashboardUrl(input).catch(() => null),
     ]);
+    // Past this point mail goes out; before it, an abandoned alert has told no one and can stop.
+    if (signal?.aborted) return nothingSent(0);
     const message = undeliveredRecipientAlertMessage({ ...input, ...names, dashboardUrl });
     const results = await Promise.allSettled(administrators.map((to) => this.options.mailer.send({
       to,
@@ -128,7 +155,13 @@ export class UndeliveredRecipientAlerts implements UndeliveredRecipientAlertPort
       text: message.text,
       idempotencyKey: `notification-undelivered-alert:${claim.recipientId}:${claim.claimedAt.toISOString()}:${to}`,
     })));
-    return results.filter((result) => result.status === "fulfilled" && result.value.dispatched).length;
+    const rejections = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    return {
+      administrators: administrators.length,
+      dispatched: results.filter((result) => result.status === "fulfilled" && result.value.dispatched).length,
+      rejected: rejections.length,
+      firstFailure: rejections[0]?.reason,
+    };
   }
 
   private count(outcome: "sent" | "not_sent" | "failed", reason: UndeliveredRecipientReason): void {

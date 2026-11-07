@@ -300,3 +300,24 @@ describe.each(senders)("per-recipient delivery record: $name", ({ run }) => {
     expect(state.webhookPosts).toBe(1);
   });
 });
+
+describe("operator notice workspace", () => {
+  it("records against the workspace the request ran in, the one its plan and recipients used", async () => {
+    const { state, mailer, httpClient, recorder, target, policy, admission } = harness({ emails: ["one@example.com"] });
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer, { resolve: async () => target }, undefined, httpClient, undefined, admission, policy, recorder,
+    );
+
+    await sink.deliver({
+      kind: "handoff",
+      // The notification names another workspace than the queued request's own.
+      workspaceId: "00000000-0000-4000-8000-0000000000ff",
+      conversationId: context.conversationId,
+      agentId: "00000000-0000-4000-8000-0000000000cc",
+      reason: "customer_requested_human",
+    }, context);
+
+    expect(state.records).toHaveLength(1);
+    expect(state.records[0].subject.workspaceId).toBe(context.workspaceId);
+  });
+});

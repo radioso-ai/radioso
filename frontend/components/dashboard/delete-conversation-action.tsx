@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 
 import {
@@ -17,7 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { chatApi } from '@/lib/api'
-import { apiAccessApi } from '@/lib/api-api-access'
+import { useWorkspaceCanManage } from '@/lib/use-workspace-can-manage'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { matchesWorkspaceInvalidation } from '@/lib/dashboard-query-invalidation'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -41,15 +41,9 @@ export function DeleteConversationAction({
   const [open, setOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const workspaceAccess = useQuery({
-    queryKey: ['workspace-effective-role', activeWorkspaceId],
-    queryFn: () => apiAccessApi.getSummary(activeWorkspaceId ?? ''),
-    enabled: Boolean(activeWorkspaceId),
-    staleTime: 60_000,
-  })
+  const { canManage } = useWorkspaceCanManage()
 
-  const effectiveRole = workspaceAccess.data?.effectiveRole
-  if (effectiveRole !== 'owner' && effectiveRole !== 'admin') {
+  if (!canManage) {
     return null
   }
 

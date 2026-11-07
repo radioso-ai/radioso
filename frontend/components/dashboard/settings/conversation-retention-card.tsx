@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { apiAccessApi } from '@/lib/api-api-access'
+import { useWorkspaceCanManage } from '@/lib/use-workspace-can-manage'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { settingsApi } from '@/lib/api-settings'
 import {
@@ -47,12 +47,7 @@ export function ConversationRetentionCard({ id }: { id?: string }) {
     queryFn: () => settingsApi.getPrivacySettings(),
     enabled: Boolean(activeWorkspaceId),
   })
-  const workspaceAccess = useQuery({
-    queryKey: ['workspace-effective-role', activeWorkspaceId],
-    queryFn: () => apiAccessApi.getSummary(activeWorkspaceId ?? ''),
-    enabled: Boolean(activeWorkspaceId),
-    staleTime: 60_000,
-  })
+  const { canManage: canChange, roleKnown } = useWorkspaceCanManage()
   const stored = privacy.data?.conversationRetentionDays ?? null
   // The operator's unsaved edit; null shows the stored window.
   const [edit, setEdit] = useState<{ choice: string; customDays: string } | null>(null)
@@ -62,8 +57,6 @@ export function ConversationRetentionCard({ id }: { id?: string }) {
   const choice = edit?.choice ?? retentionChoiceFor(stored)
   const customDays = edit?.customDays ?? (stored === null ? '' : String(stored))
 
-  const effectiveRole = workspaceAccess.data?.effectiveRole
-  const canChange = effectiveRole === 'owner' || effectiveRole === 'admin'
   const draft = choice === 'custom'
     ? parseCustomRetentionDays(customDays)
     : conversationRetentionPresets.find((preset) => preset.value === choice)?.days ?? null
@@ -153,7 +146,7 @@ export function ConversationRetentionCard({ id }: { id?: string }) {
             ? 'Conversations stay until someone deletes them.'
             : `Conversations with no activity for ${stored} days are erased with everything derived from them.`}
         </p>
-        {!canChange && workspaceAccess.isSuccess ? (
+        {!canChange && roleKnown ? (
           <p className="text-sm text-muted-foreground">Only owners and admins can change this.</p>
         ) : null}
         {error && !confirmOpen ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}

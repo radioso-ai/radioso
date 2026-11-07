@@ -84,7 +84,7 @@ export const deliverNotification = async (input: {
   /** The webhook post, when the destination configures one. */
   postWebhook: (() => Promise<void>) | null;
   logger?: { warn(payload: Record<string, unknown>, message: string): void };
-}): Promise<OperatorNotificationSinkOutcome> => {
+}): Promise<Exclude<OperatorNotificationSinkOutcome, { disposition: "not_applicable" }>> => {
   const { plan } = input;
   const record = async (deliveries: readonly RecipientDelivery[]): Promise<void> => {
     if (!input.recorder || deliveries.length === 0) return;

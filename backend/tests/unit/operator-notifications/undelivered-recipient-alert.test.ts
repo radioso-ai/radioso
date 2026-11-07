@@ -39,18 +39,26 @@ const throttlingStore = (administrators: string[]): UndeliveredRecipientAlertSto
 const setup = (options: {
   administrators?: string[];
   dispatched?: boolean;
+  /** Administrators whose mail the transport rejects. */
+  rejecting?: string[];
+  /** Holds every send until it resolves, so a test can decide when the mail finishes. */
+  gate?: Promise<void>;
   names?: { workspaceName: string; agentName: string };
   dashboardUrl?: string | null;
 } = {}) => {
   let current = new Date("2026-11-07T10:00:00.000Z");
   const store = throttlingStore(options.administrators ?? ["owner@example.com", "admin@example.com"]);
   const sent: Array<{ to: string; kind: string; subject: string; text: string; idempotencyKey: string }> = [];
+  const started: string[] = [];
   const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn() };
   const alerts = new UndeliveredRecipientAlerts({
     store,
     mailer: {
       send: async (message) => {
+        started.push(message.to);
+        await options.gate;
+        if (options.rejecting?.includes(message.to)) throw new Error(`provider rejected ${message.to}`);
         sent.push(message);
         return { dispatched: options.dispatched ?? true };
       },
@@ -65,6 +73,7 @@ const setup = (options: {
     alerts,
     store,
     sent,
+    started,
     logger,
     metrics,
     advance: (ms: number) => { current = new Date(current.getTime() + ms); },
@@ -124,16 +133,109 @@ describe("UndeliveredRecipientAlerts", () => {
     expect(sent).toHaveLength(2);
   });
 
-  it("gives the claim back when nobody could be told, so the next skipped notice alerts again", async () => {
+  it("gives the claim back when there is nobody to tell, so the next skipped notice alerts again", async () => {
     const { alerts, sent, store } = setup({ administrators: [] });
 
     await notify(alerts);
+
     expect(sent).toHaveLength(0);
     expect(store.releases).toBe(1);
+  });
 
-    const retry = setup({ dispatched: false });
-    await notify(retry.alerts);
-    expect(retry.store.releases).toBe(1);
+  it("keeps the claim when the transport dispatches nothing, since retrying on every notice would send nothing either", async () => {
+    const { alerts, store, metrics, logger, advance } = setup({ dispatched: false });
+    const attempts = vi.spyOn(store, "listAdministratorEmails");
+
+    await notify(alerts);
+    await notify(alerts);
+    await notify(alerts);
+
+    expect(store.releases).toBe(0);
+    expect(attempts).toHaveBeenCalledTimes(1);
+    expect(metrics.incrementCounter).toHaveBeenCalledTimes(1);
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      "notification_undelivered_alerts_total",
+      expect.objectContaining({ labels: { outcome: "not_sent", reason: "unconfirmed" } }),
+    );
+    expect(logger.info).not.toHaveBeenCalled();
+
+    advance(UNDELIVERED_ALERT_WINDOW_MS + 1_000);
+    await notify(alerts);
+    expect(attempts).toHaveBeenCalledTimes(2);
+  });
+
+  it("counts a rejected send as a failure, once, even when another administrator was told", async () => {
+    const { alerts, sent, store, metrics, logger } = setup({ rejecting: ["admin@example.com"] });
+
+    await notify(alerts);
+
+    expect(sent.map((message) => message.to)).toEqual(["owner@example.com"]);
+    expect(metrics.incrementCounter).toHaveBeenCalledTimes(1);
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      "notification_undelivered_alerts_total",
+      expect.objectContaining({ labels: { outcome: "failed", reason: "unconfirmed" } }),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "notification_undelivered_alert_failed", workspaceId: WORKSPACE }),
+      expect.any(String),
+    );
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(JSON.stringify([logger.warn.mock.calls, metrics.incrementCounter.mock.calls])).not.toContain("admin@example.com");
+    // An administrator was told, so the day's alert stands.
+    expect(store.releases).toBe(0);
+  });
+
+  it("gives the claim back when every send is rejected, so a later notice tries again", async () => {
+    const { alerts, store, metrics } = setup({ rejecting: ["owner@example.com", "admin@example.com"] });
+
+    await notify(alerts);
+
+    expect(store.releases).toBe(1);
+    expect(metrics.incrementCounter).toHaveBeenCalledTimes(1);
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      "notification_undelivered_alerts_total",
+      expect.objectContaining({ labels: { outcome: "failed", reason: "unconfirmed" } }),
+    );
+  });
+
+  describe("once the caller has stopped waiting", () => {
+    const stopWaiting = async (options: Parameters<typeof setup>[0]) => {
+      let finish!: () => void;
+      const gate = new Promise<void>((resolve) => { finish = resolve; });
+      const abandoned = new AbortController();
+      const harness = setup({ ...options, gate });
+      const running = harness.alerts.notify(
+        { workspaceId: WORKSPACE, agentId: AGENT, email: ADDRESS, reason: "unconfirmed" },
+        { signal: abandoned.signal },
+      );
+      // The mail is in flight when the caller gives up.
+      await vi.waitFor(() => expect(harness.started).toHaveLength(2));
+      abandoned.abort();
+      finish();
+      await running;
+      return harness;
+    };
+
+    it("counts and logs nothing when the abandoned alert finishes late, so one alert never has two outcomes", async () => {
+      const { sent, store, metrics, logger } = await stopWaiting({});
+
+      expect(sent).toHaveLength(2);
+      expect(metrics.incrementCounter).not.toHaveBeenCalled();
+      expect(logger.info).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
+      // The mail went out, so the day's alert stands.
+      expect(store.releases).toBe(0);
+    });
+
+    it("gives the claim back, silently, when the abandoned alert ends up sending nothing", async () => {
+      const { sent, store, metrics, logger } = await stopWaiting({ rejecting: ["owner@example.com", "admin@example.com"] });
+
+      expect(sent).toHaveLength(0);
+      expect(store.releases).toBe(1);
+      expect(metrics.incrementCounter).not.toHaveBeenCalled();
+      expect(logger.info).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
   });
 
   it("leaves the link out when the deployment has no public address", async () => {

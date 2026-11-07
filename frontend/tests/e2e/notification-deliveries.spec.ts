@@ -135,3 +135,26 @@ test("a teammate who cannot manage recipients sees the log without a resend they
   await expect(recent.getByRole("button", { name: "Resend confirmation" })).toHaveCount(0);
 });
 
+test("asking an address again twice quickly asks it once", async ({ page }) => {
+  const resends: Array<{ agentId: string; email: string }> = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    notificationDeliveries: [delivery(1, { recipientEmail: "waiting@example.com", outcome: "skipped_unconfirmed" })],
+    confirmationResends: resends,
+  });
+  await installEffectiveRole(page, "admin");
+  // The answer takes a moment, as a real send does, so the first click is still in flight for the second.
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/notification-recipient-confirmations/resend`, async (route) => {
+    resends.push({ agentId: defaultAgentId, email: (route.request().postDataJSON() as { email: string }).email });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.fulfill({ status: 202, json: { sent: true } });
+  });
+
+  await openSkills(page);
+
+  const recent = page.getByRole("region", { name: "Recent notifications" });
+  await recent.getByRole("button", { name: "Resend confirmation" }).dblclick();
+  await expect(recent.getByText("Confirmation sent")).toBeVisible();
+  expect(resends).toEqual([{ agentId: defaultAgentId, email: "waiting@example.com" }]);
+});
+

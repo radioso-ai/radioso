@@ -200,18 +200,24 @@ describe("SlackOperatorNotificationSink", () => {
     expect(actions.elements.map((element) => (element.text as { text: string }).text)).toEqual(["Ship it", "Hold"]);
   });
 
-  it("skips Slack when the workspace has no installation", async () => {
+  it("is not applicable when the workspace has no installation", async () => {
     const { sink, enqueued } = createSink({ installation: null });
 
-    await sink.deliver(notification, { requestId: "request_1" });
+    await expect(sink.deliver(notification, { requestId: "request_1" })).resolves.toEqual({
+      disposition: "not_applicable",
+      reason: "slack_not_installed",
+    });
 
     expect(enqueued).toHaveLength(0);
   });
 
-  it("skips Slack when no operator channel is configured", async () => {
+  it("is not applicable when no operator channel is configured", async () => {
     const { sink, enqueued } = createSink({ binding: { ...binding, escalationChannelId: null } });
 
-    await sink.deliver(notification, { requestId: "request_1" });
+    await expect(sink.deliver(notification, { requestId: "request_1" })).resolves.toEqual({
+      disposition: "not_applicable",
+      reason: "slack_escalation_channel_not_configured",
+    });
 
     expect(enqueued).toHaveLength(0);
   });
@@ -237,13 +243,19 @@ describe("SlackOperatorNotificationSink", () => {
     expect(enqueued).toHaveLength(0);
   });
 
-  it("skips Slack when the pending decision is missing or no longer pending", async () => {
+  it("is not applicable when the pending decision is missing or no longer pending", async () => {
     const missing = createSink({ decision: null });
-    await missing.sink.deliver(notification, { requestId: "request_1" });
+    await expect(missing.sink.deliver(notification, { requestId: "request_1" })).resolves.toEqual({
+      disposition: "not_applicable",
+      reason: "slack_approval_not_pending",
+    });
     expect(missing.enqueued).toHaveLength(0);
 
     const resolved = createSink({ decision: decision({ status: "resolved" }) });
-    await resolved.sink.deliver(notification, { requestId: "request_1" });
+    await expect(resolved.sink.deliver(notification, { requestId: "request_1" })).resolves.toEqual({
+      disposition: "not_applicable",
+      reason: "slack_approval_not_pending",
+    });
     expect(resolved.enqueued).toHaveLength(0);
   });
 

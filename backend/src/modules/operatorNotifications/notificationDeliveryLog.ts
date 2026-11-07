@@ -73,13 +73,22 @@ class AlertTimeout extends Error {
   }
 }
 
-/** Resolves when `work` does, or rejects with {@link AlertTimeout}; `work` itself is left to finish alone. */
-const withinBudget = <T>(work: Promise<T>, budgetMs: number): Promise<T> => {
+/**
+ * Resolves when the work does, or rejects with {@link AlertTimeout} once the budget is spent, and
+ * tells the work to stop recording: it is left to finish alone, so its late result must not count
+ * as a second outcome for the same alert.
+ */
+const withinBudget = <T>(start: (signal: AbortSignal) => Promise<T>, budgetMs: number): Promise<T> => {
+  const abandoned = new AbortController();
+  const work = start(abandoned.signal);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new AlertTimeout()), budgetMs);
+    timer = setTimeout(() => {
+      abandoned.abort();
+      reject(new AlertTimeout());
+    }, budgetMs);
   });
-  // A late failure of the abandoned work is the alert's own to count; here it must not go unhandled.
+  // A late failure of the abandoned work is the alert's own business; here it must not go unhandled.
   work.catch(() => undefined);
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 };
@@ -146,7 +155,7 @@ export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort
       if (!reason) return;
       try {
         await withinBudget(
-          alerts.notify({ workspaceId: subject.workspaceId, agentId, email, reason }),
+          (signal) => alerts.notify({ workspaceId: subject.workspaceId, agentId, email, reason }, { signal }),
           this.options.alertBudgetMs ?? ALERT_BUDGET_MS,
         );
       } catch (error) {

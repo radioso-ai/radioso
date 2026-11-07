@@ -158,7 +158,11 @@ import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolve
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
-import { buildNotificationRecipientPolicy, buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
+import {
+  buildNotificationDeliveryReader,
+  buildNotificationRecipientPolicy,
+  buildOperatorNoticeDestinationsReader,
+} from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import { NotificationRecipientStateRepository } from "../../db/repositories/notificationRecipientStateRepository.js";
@@ -289,6 +293,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookDestinations,
     webhookSkillDefinitionService,
   } = integrations;
+  const notificationDeliveries = buildNotificationDeliveryReader(infrastructure.database);
   const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(
     infrastructure.database,
     notificationRecipientPolicy,
@@ -1089,6 +1094,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillsService,
     skillCapabilityRegistry,
     operatorNoticeDestinations: { read: (input) => operatorNoticeDestinations.read(input) },
+    notificationDeliveries,
     contextVariables: contextVariableService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
@@ -1501,6 +1507,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillCapabilityRegistry,
     agentSkillsService,
     operatorNoticeDestinations,
+    notificationDeliveries,
     notificationRecipientPolicy,
     notificationRecipientSuppressions,
     accountRepository: repositories.accountRepository,

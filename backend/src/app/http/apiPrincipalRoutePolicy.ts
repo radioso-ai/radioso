@@ -321,6 +321,8 @@ const declarations: readonly PolicyDeclaration[] = [
     ["GET", "/api/v1/agents/:agentId/operator-notice-destinations", "workspace.agents.read"],
     ["GET", "/api/v1/agents/:agentId/skills/:skillId/notification-recipients", "workspace.agents.read"],
     ["POST", "/api/v1/agents/:agentId/notification-recipient-confirmations/resend", "workspace.notification_recipients.manage"],
+    // Names the address each notice went to, which is personal data: workspace members only.
+    ["GET", "/api/v1/notification-deliveries", "workspace.agents.read"],
     ["POST", "/api/v1/agents/:agentId/skills", "workspace.agents.manage"],
     ["PATCH", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],
     ["DELETE", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],

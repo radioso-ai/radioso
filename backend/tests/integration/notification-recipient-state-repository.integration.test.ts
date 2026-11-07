@@ -312,7 +312,10 @@ describeIntegration("NotificationRecipientStateRepository (Postgres)", () => {
     await expect(deliver()).resolves.toMatchObject({ eligibleEmails: ["quiet-agent@example.com"] });
 
     now = new Date(now.getTime() + 2 * DAY_MS);
-    await expect(deliver()).resolves.toMatchObject({ eligibleEmails: [], skipped: { unconfirmed: 1 } });
+    await expect(deliver()).resolves.toMatchObject({
+      eligibleEmails: [],
+      skippedRecipients: [{ email: "quiet-agent@example.com", reason: "unconfirmed" }],
+    });
     expect(asked).toEqual(["quiet-agent@example.com"]);
   });
 

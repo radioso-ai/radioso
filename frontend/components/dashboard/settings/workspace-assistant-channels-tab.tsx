@@ -916,6 +916,15 @@ export function WorkspaceAssistantChannelsTab({
                 assistantBehaviorSettings={assistantBehaviorSettings}
                 isAssistantBehaviorLoading={isAssistantBehaviorLoading}
                 onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+                conversationHref={(conversationId) => buildDashboardHref(accountId, {
+                  section: 'activity',
+                  activityTab: 'all',
+                  historyFilter: 'chat',
+                  historyItemKind: 'chat',
+                  historyItemId: conversationId,
+                  workspaceId: activeWorkspaceId ?? undefined,
+                  workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                })}
               />
             ) : null}
           </section>

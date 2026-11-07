@@ -25,3 +25,19 @@ export const conversationPermalink = (
   url.searchParams.set("itemId", input.conversationId);
   return url.toString();
 };
+
+/**
+ * The agent's skills page, where its notification recipients and recent notifications are. With no
+ * agent it opens the workspace's agent list instead.
+ */
+export const agentSkillsPermalink = (
+  input: { workspacePublicRouteKey: string; agentId: string | null },
+  baseUrl?: string | null,
+): string => {
+  const workspacePath = `/w/${encodeURIComponent(input.workspacePublicRouteKey)}/agents`;
+  if (!input.agentId) return appUrl(workspacePath, baseUrl).toString();
+  const url = appUrl(`${workspacePath}/${encodeURIComponent(input.agentId)}`, baseUrl);
+  url.searchParams.set("tab", "behavior");
+  url.searchParams.set("anchor", "assistant-skills");
+  return url.toString();
+};

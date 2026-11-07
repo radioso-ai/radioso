@@ -7,6 +7,8 @@ import { createAgentProposalCopilotTools, createWebsiteAnalysisProbeCopilotTools
 import type { AgentProposalCopilotToolDependencies, WebsiteAnalysisProbeCopilotToolDependencies } from "./agentProposals.js";
 import { createAgentSkillConfigProposalCopilotTools, createAgentSkillsCopilotTools, createOperatorNoticeDestinationsCopilotTools } from "./agentSkills.js";
 import type { AgentSkillConfigProposalCopilotToolDependencies, AgentSkillsCopilotToolDependencies, CopilotAgentSkillsAgentPort, OperatorNoticeDestinationsCopilotToolDependencies } from "./agentSkills.js";
+import { createNotificationDeliveriesCopilotTools } from "./notificationDeliveries.js";
+import type { NotificationDeliveriesCopilotToolDependencies } from "./notificationDeliveries.js";
 import { createAudiencePulseCopilotTools } from "./audiencePulse.js";
 import { createContextVariableProposalCopilotTools, createContextVariablesCopilotTools } from "./contextVariables.js";
 import type { ContextVariableProposalCopilotToolDependencies, ContextVariablesCopilotToolDependencies, CopilotContextVariablesAgentPort } from "./contextVariables.js";
@@ -91,6 +93,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & AudiencePulseCopilotToolDependencies
   & AgentSkillsCopilotToolDependencies
   & OperatorNoticeDestinationsCopilotToolDependencies
+  & NotificationDeliveriesCopilotToolDependencies
   & ContextVariablesCopilotToolDependencies
   & { readonly workspaceSettings: CopilotWorkspaceSettingsPort }
   & Omit<WorkspaceTriageCopilotToolDependencies, "agentLookup">
@@ -138,6 +141,7 @@ export const createCopilotToolDescriptors = (
   ...createDocumentKnowledgeCopilotTools(deps),
   ...createAgentSkillsCopilotTools(deps),
   ...createOperatorNoticeDestinationsCopilotTools(deps),
+  ...createNotificationDeliveriesCopilotTools(deps),
   ...createContextVariablesCopilotTools(deps),
   ...createWorkspaceSettingsCopilotTools(deps),
   ...createWorkspaceSetupStateCopilotTools(deps),
@@ -173,6 +177,7 @@ export const createCopilotToolDescriptors = (
 ]));
 
 export type { CopilotAgentSkillsPort, CopilotOperatorNoticeDestinationsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
+export type { CopilotNotificationDeliveriesPort } from "./notificationDeliveries.js";
 export type { CopilotAudiencePulsePort } from "./audiencePulse.js";
 export type { CopilotContextVariablesPort } from "./contextVariables.js";
 export type { CopilotConversationHistoryPort } from "./chat.js";

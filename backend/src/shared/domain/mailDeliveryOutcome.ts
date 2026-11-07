@@ -1,4 +1,5 @@
-const isUndispatchedMailResult = (value: unknown): value is { dispatched: false; driver?: string } =>
+/** True only for a result that explicitly reports the transport recorded the message instead of sending it. */
+export const isUndispatchedMailResult = (value: unknown): value is { dispatched: false; driver?: string } =>
   !!value && typeof value === "object" && "dispatched" in value && value.dispatched === false;
 
 /**

@@ -1,4 +1,4 @@
-import { ActionDispatchSkippedError } from "../../shared/domain/actionDispatchOutcome.js";
+import { ActionDispatchSkippedError, type ActionDispatchOutcome } from "../../shared/domain/actionDispatchOutcome.js";
 import type {
   OperatorNotification,
   OperatorNotificationContext,
@@ -12,7 +12,12 @@ export class OperatorNotificationDispatcher {
     private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
   ) {}
 
-  async dispatch(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
+  /**
+   * Resolves `partial` when a sink reached only some of its destinations, so the action is not
+   * settled as a whole send. A sink that has no destination configured at all (Slack not linked)
+   * is skipped, not partial: another sink delivering still settles the action as dispatched.
+   */
+  async dispatch(notification: OperatorNotification, context: OperatorNotificationContext): Promise<ActionDispatchOutcome> {
     // Attempt every sink (one failing sink must not skip the others), then surface any failure so
     // the action outbox retries. Sinks are idempotent (email/webhook idempotency keys, slack.post
     // idempotency keys), so a retry re-attempts all without duplicating an already-sent message.
@@ -21,11 +26,14 @@ export class OperatorNotificationDispatcher {
     );
     const failures: unknown[] = [];
     const skips: Extract<OperatorNotificationSinkOutcome, { disposition: "skipped" }>[] = [];
+    const partials: Extract<OperatorNotificationSinkOutcome, { disposition: "partial" }>[] = [];
     let delivered = false;
     for (const result of results) {
       if (result.status === "fulfilled") {
         if (result.value.disposition === "delivered") {
           delivered = true;
+        } else if (result.value.disposition === "partial") {
+          partials.push(result.value);
         } else {
           skips.push(result.value);
         }
@@ -48,8 +56,12 @@ export class OperatorNotificationDispatcher {
         "Operator notification delivery failed",
       );
     }
+    if (partials.length > 0) {
+      return { disposition: "partial", reason: partials[0].reason };
+    }
     if (!delivered) {
       throw new ActionDispatchSkippedError(skips[0]?.reason ?? "operator_notification_no_sink");
     }
+    return { disposition: "dispatched" };
   }
 }

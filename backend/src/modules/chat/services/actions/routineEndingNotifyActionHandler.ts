@@ -5,7 +5,7 @@ import {
   type RoutineEndingNotificationSubject,
 } from "../../../operatorNotifications/public.js";
 import type { RoutineEndingNoticeAction } from "../operatorNoticeAction.js";
-import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
+import type { ActionDispatchOutcome, ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import type { RoutineEndingNoticeSummaryGenerator } from "./routineEndingNoticeSummary.js";
 import { traceOperation } from "../../../../shared/observability/tracing/operations.js";
 import { ROUTINE_NOTICE_SUMMARY_TIMEOUT_MS } from "./routineEndingNoticeSummary.js";
@@ -55,7 +55,7 @@ export class RoutineEndingNotifyActionHandler implements ActionHandler {
   }
   private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void };
 
-  async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
+  async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<ActionDispatchOutcome> {
     // The queued row is the trusted source for its workspace and conversation; `routineId` is
     // payload data, but the resolver scopes it through that conversation's agent.
     const conversationId = input.context.conversationId ?? "unknown";
@@ -123,7 +123,7 @@ export class RoutineEndingNotifyActionHandler implements ActionHandler {
           },
         })
       : null;
-    await this.dispatcher.dispatch(summary ? { ...notification, aiSummary: summary } : notification, {
+    return this.dispatcher.dispatch(summary ? { ...notification, aiSummary: summary } : notification, {
       requestId: input.context.requestId,
       workspaceId: input.context.workspaceId,
       accountId: input.context.accountId,

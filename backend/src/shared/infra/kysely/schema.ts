@@ -1312,6 +1312,19 @@ export interface Messages {
   workspace_id: string;
 }
 
+export interface NotificationDeliveries {
+  agent_id: string | null;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  kind: string;
+  outcome: string;
+  recipient_email: string;
+  request_id: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface NotificationDeliveryOutcomes {
   conversation_dispatch_limit: number;
   conversation_id: string | null;
@@ -1352,6 +1365,7 @@ export interface NotificationRecipientConfirmations {
   normalized_email: string;
   revoked_at: Timestamp | null;
   state: string;
+  undelivered_alert_sent_at: Timestamp | null;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
@@ -2233,6 +2247,7 @@ export interface DB {
   mcp_connections: McpConnections;
   message_facets: MessageFacets;
   messages: Messages;
+  notification_deliveries: NotificationDeliveries;
   notification_delivery_outcomes: NotificationDeliveryOutcomes;
   notification_email_suppressions: NotificationEmailSuppressions;
   notification_recipient_confirmation_daily_usage: NotificationRecipientConfirmationDailyUsage;

@@ -22,7 +22,7 @@ const allowedRecipientPolicy = {
   prepareDelivery: async (input: { emails: readonly string[] }) => ({
     eligibleEmails: [...input.emails],
     eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
-    skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+    skippedRecipients: [],
   }),
 };
 
@@ -185,12 +185,15 @@ describe("EmailWebhookOperatorNotificationSink", () => {
             email: "ready@example.com",
             listUnsubscribeUrl: "https://api.example.com/revoke?token=signed",
           }],
-          skipped: { unconfirmed: 1, suppressed: 0, revoked: 0 },
+          skippedRecipients: [{ email: "waiting@example.com", reason: "unconfirmed" }],
         }),
       },
     );
 
-    await expect(sink.deliver(notification, context)).resolves.toEqual({ disposition: "delivered" });
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "partial",
+      reason: "notification_recipient_unconfirmed",
+    });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
       to: "ready@example.com",
@@ -242,7 +245,10 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       { prepareDelivery: async () => { throw new Error("recipient reservation unavailable"); } },
     );
 
-    await expect(sink.deliver(notification, context)).resolves.toEqual({ disposition: "delivered" });
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "partial",
+      reason: "notification_recipient_state_unavailable",
+    });
     expect(sent).toEqual([]);
     expect(requests).toHaveLength(1);
   });

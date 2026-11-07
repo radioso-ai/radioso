@@ -7,7 +7,7 @@ describe("RepositoryRoutineEndingNotificationSubjectResolver", () => {
   const input = { workspaceId: "ws_1", routineId, conversationId: "conv_1" };
 
   it("resolves the names, the routine's declared slot order, and the stored entry page of the conversation", async () => {
-    const conversations = { findByIdAndWorkspaceId: vi.fn(async () => ({ agentId: "agent_1", entryPageUrl: "https://ananda.example/stays" })) };
+    const conversations = { findByIdAndWorkspaceId: vi.fn(async () => ({ agentId: "agent_1", entryPageUrl: "https://valmora.example/stays" })) };
     const agents = { findByIdAndWorkspaceId: vi.fn(async () => ({ name: "Retreat desk" })) };
     const routines = { findById: vi.fn(async () => ({ name: "Book accommodation", slots: [{ key: "guest_name" }, { key: "arrival_date" }, { key: "nights" }] })) };
     const resolver = new RepositoryRoutineEndingNotificationSubjectResolver(
@@ -21,7 +21,7 @@ describe("RepositoryRoutineEndingNotificationSubjectResolver", () => {
       agentName: "Retreat desk",
       routineName: "Book accommodation",
       routineSlotKeys: ["guest_name", "arrival_date", "nights"],
-      conversation: { entryPageUrl: "https://ananda.example/stays" },
+      conversation: { entryPageUrl: "https://valmora.example/stays" },
     });
     expect(conversations.findByIdAndWorkspaceId).toHaveBeenCalledWith("conv_1", "ws_1");
     expect(agents.findByIdAndWorkspaceId).toHaveBeenCalledWith("agent_1", "ws_1");

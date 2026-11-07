@@ -238,13 +238,13 @@ describe('AssistantMessageContent', () => {
           },
           { text: 'This remembrance can change how you respond. ' },
           { text: 'You can read more in [Discover Who You Are!](' },
-          { text: 'https://corsi.ananda.it/en/blog/discover-who-you-are)\n' },
+          { text: 'https://courses.valmora.example/en/blog/find-your-calm)\n' },
           {
             text: '- Practice inner calm: through simple meditation and breath, you can steady the mind. ',
             citationIndices: [2],
           },
           {
-            text: 'Learn more at [Ananda](https://www.ananda.org)\n',
+            text: 'Learn more at [Valmora](https://www.valmora.example)\n',
             citationIndices: [3],
           },
         ]}
@@ -939,7 +939,7 @@ describe('AssistantMessageContent', () => {
       <AssistantMessageContent
         content="unused"
         citations={[
-          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Aryavan McSweeney &mdash; Ananda &amp; Co.' },
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Ravi Halden &mdash; Valmora &amp; Co.' },
         ]}
         answerSegments={[
           { text: 'See bio', citationIndices: [0] },
@@ -949,7 +949,7 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toContain('Aryavan McSweeney — Ananda &amp; Co.')
+    expect(html).toContain('Ravi Halden — Valmora &amp; Co.')
     expect(html).not.toContain('&mdash;')
   })
 

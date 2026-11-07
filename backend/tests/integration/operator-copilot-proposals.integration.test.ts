@@ -179,7 +179,7 @@ it("lets an Operator MCP client read, route, and check which notify skill sends 
   const ownerEmail = "notice-routing-owner@example.com";
   const { workspaceId, accountId, userId } = await issueTestSession(app, ownerEmail);
   const agentId = (await dependencies.agentService.listExisting(workspaceId))[0].id;
-  for (const [name, recipient] of [["notify_bookings", "francesco@example.com"], ["notify_sales", "sales@example.com"]] as const) {
+  for (const [name, recipient] of [["notify_bookings", "marta@valmora.example"], ["notify_sales", "sales@example.com"]] as const) {
     await dependencies.agentSkillsService.create(workspaceId, agentId, {
       name,
       capability: "notify",
@@ -230,7 +230,7 @@ it("lets an Operator MCP client read, route, and check which notify skill sends 
   };
   expect(destinations.default).toMatchObject({ via: "workspace_owner", recipientEmails: [ownerEmail] });
   expect(destinations.skills).toEqual(expect.arrayContaining([
-    expect.objectContaining({ skillName: "notify_bookings", via: "named_skill", recipientEmails: ["francesco@example.com"] }),
+    expect.objectContaining({ skillName: "notify_bookings", via: "named_skill", recipientEmails: ["marta@valmora.example"] }),
     expect.objectContaining({ skillName: "notify_sales", via: "named_skill", recipientEmails: ["sales@example.com"] }),
   ]));
 

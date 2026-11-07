@@ -53,32 +53,32 @@ describe("query rewrite subqueries", () => {
       async rewrite() {
         return {
           rewrittenQuery:
-            "Confronto tra 108 palpiti d’Amore, La meditazione di Yogananda e L'arte come guida al risveglio",
+            "Confronto tra 108 battiti di Luce, Il silenzio di Orin e La musica come guida alla calma",
           semanticQuery:
-            "Confronto tra 108 palpiti d’Amore, La meditazione di Yogananda e L'arte come guida al risveglio per identificare il più romantico",
+            "Confronto tra 108 battiti di Luce, Il silenzio di Orin e La musica come guida alla calma per identificare il più romantico",
           lexicalQuery:
-            "108 palpiti d’Amore La meditazione di Yogananda L'arte come guida al risveglio romantico",
+            "108 battiti di Luce Il silenzio di Orin La musica come guida alla calma romantico",
           responseLanguagePolicy: "match_user_question",
           retrievalSubqueries: [
             {
               id: "",
-              label: "108 palpiti d’Amore",
-              semanticQuery: "108 palpiti d’Amore come libro romantico",
-              lexicalQuery: "108 palpiti d’Amore",
+              label: "108 battiti di Luce",
+              semanticQuery: "108 battiti di Luce come libro romantico",
+              lexicalQuery: "108 battiti di Luce",
               responseLanguagePolicy: "match_user_question",
             },
             {
               id: "",
-              label: "La meditazione di Yogananda",
-              semanticQuery: "La meditazione di Yogananda come libro romantico",
-              lexicalQuery: "La meditazione di Yogananda",
+              label: "Il silenzio di Orin",
+              semanticQuery: "Il silenzio di Orin come libro romantico",
+              lexicalQuery: "Il silenzio di Orin",
               responseLanguagePolicy: "match_user_question",
             },
             {
               id: "",
-              label: "L'arte come guida al risveglio",
-              semanticQuery: "L'arte come guida al risveglio come libro romantico",
-              lexicalQuery: "L'arte come guida al risveglio",
+              label: "La musica come guida alla calma",
+              semanticQuery: "La musica come guida alla calma come libro romantico",
+              lexicalQuery: "La musica come guida alla calma",
               responseLanguagePolicy: "match_user_question",
             },
           ],
@@ -101,12 +101,12 @@ describe("query rewrite subqueries", () => {
     });
 
     expect(result.retrievalSubqueries?.map(({ id, label }) => ({ id, label }))).toEqual([
-      { id: "subquery_1", label: "108 palpiti d'Amore" },
-      { id: "subquery_2", label: "La meditazione di Yogananda" },
-      { id: "subquery_3", label: "L'arte come guida al risveglio" },
+      { id: "subquery_1", label: "108 battiti di Luce" },
+      { id: "subquery_2", label: "Il silenzio di Orin" },
+      { id: "subquery_3", label: "La musica come guida alla calma" },
     ]);
-    expect(result.retrievalSubqueries?.[0]?.semanticQuery).toBe("108 palpiti d’Amore come libro romantico");
-    expect(result.retrievalSubqueries?.[0]?.lexicalQuery).toBe("108 palpiti d’Amore");
+    expect(result.retrievalSubqueries?.[0]?.semanticQuery).toBe("108 battiti di Luce come libro romantico");
+    expect(result.retrievalSubqueries?.[0]?.lexicalQuery).toBe("108 battiti di Luce");
   });
 
   it.each([
@@ -169,29 +169,29 @@ describe("query rewrite subqueries", () => {
     const service = new QueryRewriteService({
       async rewrite() {
         return {
-          rewrittenQuery: "who is narayani and arudra?",
-          semanticQuery: "who is narayani and arudra?",
-          lexicalQuery: "who is narayani and arudra?",
+          rewrittenQuery: "who is freya and tomas?",
+          semanticQuery: "who is freya and tomas?",
+          lexicalQuery: "who is freya and tomas?",
           responseLanguagePolicy: "match_user_question",
           retrievalSubqueries: [
             {
               id: "",
-              label: "Narayani",
-              semanticQuery: "who is narayani",
-              lexicalQuery: "narayani",
+              label: "Freya",
+              semanticQuery: "who is freya",
+              lexicalQuery: "freya",
               responseLanguagePolicy: "match_user_question",
             },
             {
               id: "",
-              label: "Arudra",
-              semanticQuery: "who is arudra",
-              lexicalQuery: "arudra",
+              label: "Tomas",
+              semanticQuery: "who is tomas",
+              lexicalQuery: "tomas",
               responseLanguagePolicy: "match_user_question",
             },
           ],
           turnKind: "comparative",
-          proposedActiveSubject: "Narayani",
-          relatedEntities: ["Arudra"],
+          proposedActiveSubject: "Freya",
+          relatedEntities: ["Tomas"],
           unresolved: false,
           confidence: 0.92,
         };
@@ -199,7 +199,7 @@ describe("query rewrite subqueries", () => {
     });
 
     const result = await service.rewrite({
-      query: "who is narayani and arudra?",
+      query: "who is freya and tomas?",
       contextWindow: {
         selectedMessages: [],
         truncated: false,
@@ -214,7 +214,7 @@ describe("query rewrite subqueries", () => {
     expect(result.retrievalEligible).toBe(true);
     expect(result.responseLanguagePolicy).toBe("match_user_question");
     expect(result.retrievalSubqueries).toHaveLength(2);
-    expect(result.retrievalSubqueries?.map((subquery) => subquery.label)).toEqual(["Narayani", "Arudra"]);
+    expect(result.retrievalSubqueries?.map((subquery) => subquery.label)).toEqual(["Freya", "Tomas"]);
     expect(result.retrievalSubqueries?.every((subquery) => subquery.responseLanguagePolicy === "match_user_question")).toBe(true);
   });
 
@@ -272,7 +272,7 @@ describe("query rewrite subqueries", () => {
         return {
           rewrittenQuery: "who are these teachers?",
           semanticQuery: "who are these teachers?",
-          lexicalQuery: '"Narayani" OR "Swami Kriyananda"',
+          lexicalQuery: '"Freya" OR "Swami Selan"',
           responseLanguagePolicy: "match_user_question",
           turnKind: "fresh_subject",
           proposedActiveSubject: "teachers",

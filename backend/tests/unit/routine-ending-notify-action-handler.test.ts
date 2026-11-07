@@ -332,7 +332,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
       agentId: "agent_1",
       agentName: "Retreat desk",
       routineName: "Book accommodation",
-      conversation: { entryPageUrl: "https://ananda.example/stays" },
+      conversation: { entryPageUrl: "https://valmora.example/stays" },
     }));
     const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete, dispatcher: { dispatch }, subjects: { resolve } });
 
@@ -360,7 +360,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
       routine: { id: "routine_1", name: "Book accommodation" },
       collected: { name: "Ada" },
       notice: { subject: "Booking: {{slot.name}}" },
-      conversation: { entryPageUrl: "https://ananda.example/stays" },
+      conversation: { entryPageUrl: "https://valmora.example/stays" },
     }, expect.objectContaining({ idempotencyKey: "routine-action:conv_1:completion.notify" }));
   });
 

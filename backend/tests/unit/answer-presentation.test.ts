@@ -30,30 +30,30 @@ describe("answer presentation service", () => {
     const service = new AnswerPresentationService();
 
     const normalized = service.normalize({
-      answer: "Arudra is a leader[[1]].",
+      answer: "Tomas is a leader[[1]].",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
-          title: "Arudra",
-          content: "Arudra is a leader.",
+          title: "Tomas",
+          content: "Tomas is a leader.",
         },
       ],
     });
 
     expect(normalized).toEqual({
-      answer: "Arudra is a leader.",
+      answer: "Tomas is a leader.",
       citationEvidence: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
-          title: "Arudra",
-          content: "Arudra is a leader.",
+          title: "Tomas",
+          content: "Tomas is a leader.",
         },
       ],
       answerSegments: [
         {
-          text: "Arudra is a leader",
+          text: "Tomas is a leader",
           citationIndices: [0],
         },
         {
@@ -67,22 +67,22 @@ describe("answer presentation service", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "Arudra is a leader[[1]].",
+      answer: "Tomas is a leader[[1]].",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
-          title: "Arudra",
-          content: "Arudra is a leader.",
+          title: "Tomas",
+          content: "Tomas is a leader.",
         },
       ],
     });
 
     expect(result).toEqual({
-      answer: "Arudra is a leader.",
-      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Arudra" }],
+      answer: "Tomas is a leader.",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Tomas" }],
       answerSegments: [
-        { text: "Arudra is a leader", citationIndices: [0] },
+        { text: "Tomas is a leader", citationIndices: [0] },
         { text: "." },
       ],
     });
@@ -92,19 +92,19 @@ describe("answer presentation service", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "Ananda Yoga can lead naturally into meditation[[1]] . It also supports inner silence[[1]] .",
+      answer: "Valmora Yoga can lead naturally into meditation[[1]] . It also supports inner silence[[1]] .",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
-          title: "Ananda Yoga",
-          content: "Ananda Yoga can lead naturally into meditation and supports inner silence.",
+          title: "Valmora Yoga",
+          content: "Valmora Yoga can lead naturally into meditation and supports inner silence.",
         },
       ],
     });
 
     expect(result.answer).toBe(
-      "Ananda Yoga can lead naturally into meditation. It also supports inner silence.",
+      "Valmora Yoga can lead naturally into meditation. It also supports inner silence.",
     );
   });
 
@@ -113,13 +113,13 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer:
-        "You can explore the main overview here: [Meditation and Kriya Yoga](https://anandaeurope.org/meditation-and-kriya-yoga) \nIf you want to look at course options, here are the residential pages: [Il sentiero del Kriya Yoga 4 giorni](https://corsi.ananda.it/corso/0007963-corso-residenziale-il-sentiero-del-kriya-yoga-4-giorni) and [Il sentiero del Kriya Yoga 5 giorni](https://corsi.ananda.it/en/course/0007995-corso-residenziale-il-sentiero-del-kriya-yoga-5-days) ",
+        "You can explore the main overview here: [Meditation and Breathwork](https://valmora-europe.example/meditation-and-breathwork) \nIf you want to look at course options, here are the residential pages: [Il cammino della Meditazione 4 giorni](https://courses.valmora.example/corso/0004217-corso-residenziale-il-cammino-della-meditazione-4-giorni) and [Il cammino della Meditazione 5 giorni](https://courses.valmora.example/en/course/0004218-corso-residenziale-il-cammino-della-meditazione-5-days) ",
       citations: [],
     });
 
     expect(result).toEqual({
       answer:
-        "You can explore the main overview here: [Meditation and Kriya Yoga](https://anandaeurope.org/meditation-and-kriya-yoga).\nIf you want to look at course options, here are the residential pages: [Il sentiero del Kriya Yoga 4 giorni](https://corsi.ananda.it/corso/0007963-corso-residenziale-il-sentiero-del-kriya-yoga-4-giorni) and [Il sentiero del Kriya Yoga 5 giorni](https://corsi.ananda.it/en/course/0007995-corso-residenziale-il-sentiero-del-kriya-yoga-5-days)",
+        "You can explore the main overview here: [Meditation and Breathwork](https://valmora-europe.example/meditation-and-breathwork).\nIf you want to look at course options, here are the residential pages: [Il cammino della Meditazione 4 giorni](https://courses.valmora.example/corso/0004217-corso-residenziale-il-cammino-della-meditazione-4-giorni) and [Il cammino della Meditazione 5 giorni](https://courses.valmora.example/en/course/0004218-corso-residenziale-il-cammino-della-meditazione-5-days)",
     });
   });
 
@@ -128,19 +128,19 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer:
-        "Arudra is a leader/facilitator featured by Ananda Europe[[1]], leads morning meditations and Purification ceremonies[[2]], and events are offered in Italian and English[[3]].",
+        "Tomas is a leader/facilitator featured by Valmora Europe[[1]], leads morning meditations and Purification ceremonies[[2]], and events are offered in Italian and English[[3]].",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
           title: "Profile",
-          content: "Arudra is a leader/facilitator featured by Ananda Europe.",
+          content: "Tomas is a leader/facilitator featured by Valmora Europe.",
         },
         {
           documentId: "doc-2",
           chunkId: "chunk-2",
           title: "Program",
-          content: "Arudra leads morning meditations and Purification ceremonies.",
+          content: "Tomas leads morning meditations and Purification ceremonies.",
         },
         {
           documentId: "doc-3",
@@ -152,7 +152,7 @@ describe("answer presentation service", () => {
     });
 
     expect(result.answer).toBe(
-      "Arudra is a leader/facilitator featured by Ananda Europe, leads morning meditations and Purification ceremonies, and events are offered in Italian and English.",
+      "Tomas is a leader/facilitator featured by Valmora Europe, leads morning meditations and Purification ceremonies, and events are offered in Italian and English.",
     );
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Profile" },
@@ -161,7 +161,7 @@ describe("answer presentation service", () => {
     ]);
     expect(result.answerSegments).toEqual([
       {
-        text: "Arudra is a leader/facilitator featured by Ananda Europe",
+        text: "Tomas is a leader/facilitator featured by Valmora Europe",
         citationIndices: [0],
       },
       {
@@ -182,31 +182,31 @@ describe("answer presentation service", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "Narayani's books are available from Ananda Edizioni[[1]][[2]].",
+      answer: "Freya's books are available from Valmora Books[[1]][[2]].",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
-          title: "Narayani Anaya",
-          content: "Narayani's books are available from Ananda Edizioni.",
+          title: "Freya Rennick",
+          content: "Freya's books are available from Valmora Books.",
         },
         {
           documentId: "doc-2",
           chunkId: "chunk-2",
-          title: "Ananda Edizioni",
+          title: "Valmora Books",
           content: "The author page lists several books and bundles.",
         },
       ],
     });
 
-    expect(result.answer).toBe("Narayani's books are available from Ananda Edizioni.");
+    expect(result.answer).toBe("Freya's books are available from Valmora Books.");
     expect(result.citations).toEqual([
-      { documentId: "doc-1", chunkId: "chunk-1", title: "Narayani Anaya" },
-      { documentId: "doc-2", chunkId: "chunk-2", title: "Ananda Edizioni" },
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Freya Rennick" },
+      { documentId: "doc-2", chunkId: "chunk-2", title: "Valmora Books" },
     ]);
     expect(result.answerSegments).toEqual([
       {
-        text: "Narayani's books are available from Ananda Edizioni",
+        text: "Freya's books are available from Valmora Books",
         citationIndices: [0, 1],
       },
       {
@@ -275,37 +275,37 @@ describe("answer presentation service", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "Narayani's books are available from Ananda Edizioni[[1]][[2]][[3]].",
+      answer: "Freya's books are available from Valmora Books[[1]][[2]][[3]].",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
-          title: "Narayani Anaya",
-          content: "Narayani's books are available from Ananda Edizioni.",
+          title: "Freya Rennick",
+          content: "Freya's books are available from Valmora Books.",
         },
         {
           documentId: "doc-1",
           chunkId: "chunk-2",
-          title: "Narayani Anaya",
+          title: "Freya Rennick",
           content: "The author page lists several books and bundles.",
         },
         {
           documentId: "doc-2",
           chunkId: "chunk-3",
-          title: "Ananda Edizioni",
-          content: "Narayani's books are available from Ananda Edizioni.",
+          title: "Valmora Books",
+          content: "Freya's books are available from Valmora Books.",
         },
       ],
     });
 
-    expect(result.answer).toBe("Narayani's books are available from Ananda Edizioni.");
+    expect(result.answer).toBe("Freya's books are available from Valmora Books.");
     expect(result.citations).toEqual([
-      { documentId: "doc-1", chunkId: "chunk-1", title: "Narayani Anaya" },
-      { documentId: "doc-2", chunkId: "chunk-3", title: "Ananda Edizioni" },
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Freya Rennick" },
+      { documentId: "doc-2", chunkId: "chunk-3", title: "Valmora Books" },
     ]);
     expect(result.answerSegments).toEqual([
       {
-        text: "Narayani's books are available from Ananda Edizioni",
+        text: "Freya's books are available from Valmora Books",
         citationIndices: [0, 1],
       },
       {
@@ -321,26 +321,26 @@ describe("answer presentation service", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "Author page: https://anandaedizioni.it/autore/narayani-anaya[[1]]. Price: EUR 18,00[[9]]. Broken [[abc]] token and dangling [[ marker.",
+      answer: "Author page: https://books.valmora.example/autore/freya-rennick[[1]]. Price: EUR 18,00[[9]]. Broken [[abc]] token and dangling [[ marker.",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
-          title: "Narayani Anaya",
-          content: "Author page: https://anandaedizioni.it/autore/narayani-anaya.",
+          title: "Freya Rennick",
+          content: "Author page: https://books.valmora.example/autore/freya-rennick.",
         },
       ],
     });
 
     expect(result.answer).toBe(
-      "Author page: https://anandaedizioni.it/autore/narayani-anaya. Price: EUR 18,00. Broken  token and dangling [[ marker.",
+      "Author page: https://books.valmora.example/autore/freya-rennick. Price: EUR 18,00. Broken  token and dangling [[ marker.",
     );
     expect(result.citations).toEqual([
-      { documentId: "doc-1", chunkId: "chunk-1", title: "Narayani Anaya" },
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Freya Rennick" },
     ]);
     expect(result.answerSegments).toEqual([
       {
-        text: "Author page: https://anandaedizioni.it/autore/narayani-anaya",
+        text: "Author page: https://books.valmora.example/autore/freya-rennick",
         citationIndices: [0],
       },
       {
@@ -477,26 +477,26 @@ describe("answer presentation service", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "Arudra leads morning meditations[[1]]. He also leads Purification ceremonies[[1]].",
+      answer: "Tomas leads morning meditations[[1]]. He also leads Purification ceremonies[[1]].",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
           title: "Program",
-          content: "Arudra leads morning meditations and Purification ceremonies.",
+          content: "Tomas leads morning meditations and Purification ceremonies.",
         },
       ],
     });
 
     expect(result.answer).toBe(
-      "Arudra leads morning meditations. He also leads Purification ceremonies.",
+      "Tomas leads morning meditations. He also leads Purification ceremonies.",
     );
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Program" },
     ]);
     expect(result.answerSegments).toEqual([
       {
-        text: "Arudra leads morning meditations. He also leads Purification ceremonies",
+        text: "Tomas leads morning meditations. He also leads Purification ceremonies",
         citationIndices: [0],
       },
       {
@@ -540,7 +540,7 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer:
-        "It is a science that releases karma when practiced consistently\n\n[[1]].\n\nAnanda Europe teaches Kriya.",
+        "It is a science that releases karma when practiced consistently\n\n[[1]].\n\nValmora Europe teaches Kriya.",
       citations: [
         {
           documentId: "doc-1",
@@ -552,7 +552,7 @@ describe("answer presentation service", () => {
     });
 
     expect(result.answer).toBe(
-      "It is a science that releases karma when practiced consistently.\n\nAnanda Europe teaches Kriya.",
+      "It is a science that releases karma when practiced consistently.\n\nValmora Europe teaches Kriya.",
     );
     expect(result.answerSegments).toEqual([
       {
@@ -560,7 +560,7 @@ describe("answer presentation service", () => {
         citationIndices: [0],
       },
       {
-        text: ".\n\nAnanda Europe teaches Kriya.",
+        text: ".\n\nValmora Europe teaches Kriya.",
       },
     ]);
   });
@@ -871,16 +871,16 @@ describe("answer presentation service", () => {
 
       const result = service.present({
         answer:
-          "It is a **sacred science** that releases karma\n\n[[1]].\n\nAnanda Europe teaches Kriya.",
+          "It is a **sacred science** that releases karma\n\n[[1]].\n\nValmora Europe teaches Kriya.",
         citations: oneCitation,
       });
 
       expect(result.answer).toBe(
-        "It is a **sacred science** that releases karma.\n\nAnanda Europe teaches Kriya.",
+        "It is a **sacred science** that releases karma.\n\nValmora Europe teaches Kriya.",
       );
       expect(result.answerSegments).toEqual([
         { text: "It is a **sacred science** that releases karma", citationIndices: [0] },
-        { text: ".\n\nAnanda Europe teaches Kriya." },
+        { text: ".\n\nValmora Europe teaches Kriya." },
       ]);
     });
   });

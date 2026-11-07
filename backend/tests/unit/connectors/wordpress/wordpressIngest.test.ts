@@ -102,9 +102,9 @@ describe("mapWebhookPostToIngestInput", () => {
     // companion plugin sends a name with no account behind it.
     const { metadata } = mapWebhookPostToIngestInput("ws-1", {
       ...baseWebhookPost,
-      author: { name: "Swami Kriyananda" },
+      author: { name: "Swami Selan" },
     });
-    expect(metadata).toMatchObject({ author: "Swami Kriyananda" });
+    expect(metadata).toMatchObject({ author: "Swami Selan" });
   });
 
   it("omits author metadata when not provided", () => {

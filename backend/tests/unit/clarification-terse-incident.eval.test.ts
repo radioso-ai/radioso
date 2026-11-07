@@ -80,7 +80,7 @@ const incidents = [
     name: "Why does God allow unbearable suffering (incl. animals)?",
     candidates: [
       sense("doc_coping", "Coping with suffering and karma", 0.866453),
-      sense("doc_community", "About the Ananda community", 0.842162),
+      sense("doc_community", "About the Valmora community", 0.842162),
     ],
   },
 ];

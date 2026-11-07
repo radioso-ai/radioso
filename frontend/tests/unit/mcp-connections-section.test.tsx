@@ -132,29 +132,29 @@ describe('McpConnectionsSection', () => {
 
   it('replaces a rejected access token and reloads the connection', async () => {
     apiMocks.listConnections
-      .mockResolvedValueOnce({ connections: [{ ...connection('conn-1', 'Ananda'), status: 'needs_reauth' }] })
-      .mockResolvedValueOnce({ connections: [connection('conn-1', 'Ananda')] })
+      .mockResolvedValueOnce({ connections: [{ ...connection('conn-1', 'Valmora'), status: 'needs_reauth' }] })
+      .mockResolvedValueOnce({ connections: [connection('conn-1', 'Valmora')] })
     apiMocks.discoverTools.mockRejectedValue(new Error('The MCP server rejected this connection\'s access token.'))
-    apiMocks.updateConnection.mockResolvedValue(connection('conn-1', 'Ananda'))
+    apiMocks.updateConnection.mockResolvedValue(connection('conn-1', 'Valmora'))
     await act(async () => { root.render(<McpConnectionsSection agentId="agent-1" />) })
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Test connection to Ananda"]')!.click()
+      container.querySelector<HTMLButtonElement>('[aria-label="Test connection to Valmora"]')!.click()
     })
     apiMocks.listConnections.mockClear()
     expect(container.textContent).toContain('rejected this connection')
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Replace token for Ananda"]')!.click()
+      container.querySelector<HTMLButtonElement>('[aria-label="Replace token for Valmora"]')!.click()
     })
-    const tokenInput = container.querySelector<HTMLInputElement>('[aria-label="New access token for Ananda"]')!
+    const tokenInput = container.querySelector<HTMLInputElement>('[aria-label="New access token for Valmora"]')!
     await act(async () => { typeInto(tokenInput, 'fresh-token') })
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Save token for Ananda"]')!.click()
+      container.querySelector<HTMLButtonElement>('[aria-label="Save token for Valmora"]')!.click()
     })
 
     expect(apiMocks.updateConnection).toHaveBeenCalledWith('agent-1', 'conn-1', { accessToken: 'fresh-token' })
     expect(apiMocks.listConnections).toHaveBeenCalledTimes(1)
-    expect(container.querySelector('[aria-label="New access token for Ananda"]')).toBeNull()
+    expect(container.querySelector('[aria-label="New access token for Valmora"]')).toBeNull()
     expect(container.textContent).not.toContain('rejected this connection')
   })
 })

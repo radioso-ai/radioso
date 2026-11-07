@@ -1118,12 +1118,12 @@ describe("document ingestion", () => {
       title: "Synced doc",
       content: "Body",
       externalDocumentId: "wp_post_42",
-      metadata: { author: "Swami Kriyananda", sourceUrl: "https://example.com/p" },
+      metadata: { author: "Swami Selan", sourceUrl: "https://example.com/p" },
       indexedFields: { author: "staff-uploader", price: 17 },
     });
 
     const current = await documentRepository.findByIdAndWorkspaceId(result.documentId, "workspace-1");
-    expect(current?.metadata).toMatchObject({ author: "Swami Kriyananda", price: 17 });
+    expect(current?.metadata).toMatchObject({ author: "Swami Selan", price: 17 });
   });
 
   it("leaves the content hash untouched for documents that carry no indexed fields", async () => {

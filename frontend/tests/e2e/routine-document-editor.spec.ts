@@ -410,7 +410,7 @@ test("a step instruction offers only the variable menu, never a skill or flow-ta
   // through a tool step, never through step text.
   const instruction = documentEditor.getByLabel("Step 1 instruction");
   await instruction.click();
-  await instruction.pressSequentially("Ask via #ananda_edizioni_mcp");
+  await instruction.pressSequentially("Ask via #valmora_books_mcp");
   await expect(page.getByRole("listbox")).toHaveCount(0);
 
   // `@` still opens the variable menu, undisturbed by `#` finding nothing.
@@ -428,7 +428,7 @@ test("a step instruction offers only the variable menu, never a skill or flow-ta
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   // The `#` text was never converted to a chip: it reads back exactly as typed.
-  await expect(documentEditor).toContainText("Ask via #ananda_edizioni_mcp then @order_total on Current page");
+  await expect(documentEditor).toContainText("Ask via #valmora_books_mcp then @order_total on Current page");
 });
 
 // Whether the page's selection covers the element whole, not just part of it.

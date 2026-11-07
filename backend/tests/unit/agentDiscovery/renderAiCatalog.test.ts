@@ -12,7 +12,7 @@ describe("renderAiCatalog", () => {
     expect(catalog.agents).toHaveLength(1);
     expect(catalog.agents[0]).toMatchObject({
       publicId: "ag_QmFzZTY0dXJsSWRlbnQxMg",
-      name: "Ananda support",
+      name: "Valmora support",
       description: "Answers questions about bookings, rooms, and retreats.",
       documentationUrl: "https://docs.radioso.ai/guides/agent-converse",
       publishedAt: "2026-09-01T10:15:00.000Z",

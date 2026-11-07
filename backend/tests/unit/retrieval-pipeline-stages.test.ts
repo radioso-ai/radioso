@@ -1902,26 +1902,26 @@ describe("retrieval pipeline stages", () => {
       new QueryRewriteService({
         async rewrite() {
           return {
-            rewrittenQuery: "who is narayani and arudra",
-            semanticQuery: "who is narayani and arudra",
-            lexicalQuery: "who is narayani and arudra",
+            rewrittenQuery: "who is freya and tomas",
+            semanticQuery: "who is freya and tomas",
+            lexicalQuery: "who is freya and tomas",
             retrievalSubqueries: [
               {
                 id: "",
-                label: "Narayani",
-                semanticQuery: "who is narayani",
-                lexicalQuery: "narayani",
+                label: "Freya",
+                semanticQuery: "who is freya",
+                lexicalQuery: "freya",
               },
               {
                 id: "",
-                label: "Arudra",
-                semanticQuery: "who is arudra",
-                lexicalQuery: "arudra",
+                label: "Tomas",
+                semanticQuery: "who is tomas",
+                lexicalQuery: "tomas",
               },
             ],
             turnKind: "comparative",
-            proposedActiveSubject: "Narayani",
-            relatedEntities: ["Arudra"],
+            proposedActiveSubject: "Freya",
+            relatedEntities: ["Tomas"],
             unresolved: false,
             confidence: 0.92,
           };
@@ -1932,7 +1932,7 @@ describe("retrieval pipeline stages", () => {
     const interpreted = await interpretationStage.execute({
       request: {
         workspaceId: "a1",
-        query: "who is narayani and arudra?",
+        query: "who is freya and tomas?",
         history: [],
       },
       settings: {
@@ -1959,7 +1959,7 @@ describe("retrieval pipeline stages", () => {
     });
 
     expect(interpreted.activeRetrievalSubqueries).toHaveLength(2);
-    expect(interpreted.activeRetrievalSubqueries.map((subquery) => subquery.label)).toEqual(["Narayani", "Arudra"]);
+    expect(interpreted.activeRetrievalSubqueries.map((subquery) => subquery.label)).toEqual(["Freya", "Tomas"]);
 
     const vectorQueries: string[] = [];
     const lexicalQueries: string[] = [];
@@ -2016,9 +2016,9 @@ describe("retrieval pipeline stages", () => {
     const retrieved = await retrievalStage.execute(interpreted);
 
     expect(vectorQueries).toEqual(["1", "2"]);
-    expect(lexicalQueries).toEqual(["narayani", "arudra"]);
+    expect(lexicalQueries).toEqual(["freya", "tomas"]);
     expect(retrieved.retrievalBranches).toHaveLength(2);
-    expect(retrieved.retrievalBranches.map((branch) => branch.label)).toEqual(["Narayani", "Arudra"]);
+    expect(retrieved.retrievalBranches.map((branch) => branch.label)).toEqual(["Freya", "Tomas"]);
     expect(retrieved.originalContexts).toHaveLength(0);
     expect(retrieved.rewrittenContexts).toHaveLength(2);
     expect(retrieved.lexicalContexts).toHaveLength(2);
@@ -2171,7 +2171,7 @@ describe("retrieval pipeline stages", () => {
       },
       rewrittenQuery: {
         originalQuery: "what about her later work?",
-        rewrittenQuery: "What did Arudra publish later?",
+        rewrittenQuery: "What did Tomas publish later?",
         effectiveQuery: "what about her later work?",
         semanticQuery: "what about her later work?",
         lexicalQuery: "what about her later work?",

@@ -770,8 +770,8 @@ describe("retrieval sense clarification", () => {
     const answerInputs: ChatGatewayInput[] = [];
     const detector = {
       detect: vi.fn(async () => [
-        { id: "doc-hatha", label: "A general overview of Ananda Yoga", labelStatus: "generated", relationship: "redundant", confidence: 0.727256, payload: { documentIds: ["doc-hatha"] } },
-        { id: "doc-raja", label: "A newer or updated Ananda Yoga page", labelStatus: "generated", relationship: "redundant", confidence: 0.719315, payload: { documentIds: ["doc-raja"] } },
+        { id: "doc-hatha", label: "A general overview of Valmora Yoga", labelStatus: "generated", relationship: "redundant", confidence: 0.727256, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "A newer or updated Valmora Yoga page", labelStatus: "generated", relationship: "redundant", confidence: 0.719315, payload: { documentIds: ["doc-raja"] } },
       ]),
     };
     const service = makeService({
@@ -787,7 +787,7 @@ describe("retrieval sense clarification", () => {
 
     const response = await service.answer({
       workspaceId: "workspace-1",
-      query: "what ananda yoga types exist?",
+      query: "what valmora yoga types exist?",
       stream: false,
     });
 

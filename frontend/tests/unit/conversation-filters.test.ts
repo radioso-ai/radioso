@@ -22,7 +22,7 @@ const conversation = (overrides: Partial<ChatConversationSummary> = {}): ChatCon
   agentName: 'Gioia',
   agentInternalName: null,
   sourceChannel: 'website_embed',
-  sourceOrigin: 'https://www.anandaedizioni.it',
+  sourceOrigin: 'https://books.valmora.example',
   channelContext: null,
   anonymousSessionId: 'visitor-1',
   entryPageUrl: null,
@@ -111,12 +111,12 @@ describe('filterConversations', () => {
 
   it('filters by siteOrigin, treating null as no filter', () => {
     const conversations = [
-      conversation({ id: 'a', sourceOrigin: 'https://www.anandaedizioni.it' }),
-      conversation({ id: 'b', sourceOrigin: 'https://corsi.ananda.it' }),
+      conversation({ id: 'a', sourceOrigin: 'https://books.valmora.example' }),
+      conversation({ id: 'b', sourceOrigin: 'https://courses.valmora.example' }),
     ]
 
     expect(
-      filterConversations(conversations, { ...baseFilters, siteOrigin: 'https://corsi.ananda.it' }, NOW).map(
+      filterConversations(conversations, { ...baseFilters, siteOrigin: 'https://courses.valmora.example' }, NOW).map(
         (c) => c.id,
       ),
     ).toEqual(['b'])
@@ -141,28 +141,28 @@ describe('filterConversations', () => {
         id: 'match',
         preview: 'Recupero accesso',
         agentId: 'agent-1',
-        sourceOrigin: 'https://www.anandaedizioni.it',
+        sourceOrigin: 'https://books.valmora.example',
         updatedAt: OLD_TIMESTAMP,
       }),
       conversation({
         id: 'wrong-agent',
         preview: 'Recupero accesso',
         agentId: 'agent-2',
-        sourceOrigin: 'https://www.anandaedizioni.it',
+        sourceOrigin: 'https://books.valmora.example',
         updatedAt: OLD_TIMESTAMP,
       }),
       conversation({
         id: 'wrong-search',
         preview: 'Orari dei corsi',
         agentId: 'agent-1',
-        sourceOrigin: 'https://www.anandaedizioni.it',
+        sourceOrigin: 'https://books.valmora.example',
         updatedAt: OLD_TIMESTAMP,
       }),
       conversation({
         id: 'wrong-outcome',
         preview: 'Recupero accesso',
         agentId: 'agent-1',
-        sourceOrigin: 'https://www.anandaedizioni.it',
+        sourceOrigin: 'https://books.valmora.example',
         updatedAt: RECENT_TIMESTAMP,
       }),
     ]
@@ -173,7 +173,7 @@ describe('filterConversations', () => {
         search: 'recupero',
         outcome: 'completed',
         agentId: 'agent-1',
-        siteOrigin: 'https://www.anandaedizioni.it',
+        siteOrigin: 'https://books.valmora.example',
         callerKind: null,
       },
       NOW,
@@ -210,8 +210,8 @@ describe('buildConversationSearchParams', () => {
   it('passes agentId and siteOrigin through under their API names, omitting null', () => {
     expect(buildConversationSearchParams({ ...baseFilters, agentId: 'agent-1' })).toEqual({ agentId: 'agent-1' })
     expect(buildConversationSearchParams({ ...baseFilters, agentId: null })).toEqual({})
-    expect(buildConversationSearchParams({ ...baseFilters, siteOrigin: 'https://www.anandaedizioni.it' }))
-      .toEqual({ sourceOrigin: 'https://www.anandaedizioni.it' })
+    expect(buildConversationSearchParams({ ...baseFilters, siteOrigin: 'https://books.valmora.example' }))
+      .toEqual({ sourceOrigin: 'https://books.valmora.example' })
     expect(buildConversationSearchParams({ ...baseFilters, siteOrigin: null })).toEqual({})
   })
 
@@ -225,13 +225,13 @@ describe('buildConversationSearchParams', () => {
       search: ' recupero ',
       outcome: 'completed',
       agentId: 'agent-1',
-      siteOrigin: 'https://www.anandaedizioni.it',
+      siteOrigin: 'https://books.valmora.example',
       callerKind: 'agent',
     })).toEqual({
       q: 'recupero',
       outcome: 'completed',
       agentId: 'agent-1',
-      sourceOrigin: 'https://www.anandaedizioni.it',
+      sourceOrigin: 'https://books.valmora.example',
       callerKind: 'agent',
     })
   })

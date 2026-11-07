@@ -35,14 +35,14 @@ describe("citation anchor sanitizer", () => {
     const sanitizer = new CitationAnchorSanitizer();
 
     const chunks = [
-      sanitizer.push("Ananda Yoga can lead naturally into meditation [[1]]"),
+      sanitizer.push("Valmora Yoga can lead naturally into meditation [[1]]"),
       sanitizer.push(" . It also supports inner silence [[1]]"),
       sanitizer.push(" ."),
       sanitizer.flush(),
     ];
 
     expect(chunks.join("")).toBe(
-      "Ananda Yoga can lead naturally into meditation. It also supports inner silence.",
+      "Valmora Yoga can lead naturally into meditation. It also supports inner silence.",
     );
   });
 
@@ -51,12 +51,12 @@ describe("citation anchor sanitizer", () => {
 
     const chunks = [
       sanitizer.push("It is a science when practiced consistently\n\n[[1]]"),
-      sanitizer.push(".\n\nAnanda Europe teaches Kriya."),
+      sanitizer.push(".\n\nValmora Europe teaches Kriya."),
       sanitizer.flush(),
     ];
 
     expect(chunks.join("")).toBe(
-      "It is a science when practiced consistently.\n\nAnanda Europe teaches Kriya.",
+      "It is a science when practiced consistently.\n\nValmora Europe teaches Kriya.",
     );
   });
 
@@ -92,12 +92,12 @@ describe("citation anchor sanitizer", () => {
     const sanitizer = new CitationAnchorSanitizer();
 
     const chunks = [
-      sanitizer.push("It is a science when practiced consistently\n\n[[1]]. Ananda Europe teaches Kriya."),
+      sanitizer.push("It is a science when practiced consistently\n\n[[1]]. Valmora Europe teaches Kriya."),
       sanitizer.flush(),
     ];
 
     expect(chunks.join("")).toBe(
-      "It is a science when practiced consistently. Ananda Europe teaches Kriya.",
+      "It is a science when practiced consistently. Valmora Europe teaches Kriya.",
     );
   });
 

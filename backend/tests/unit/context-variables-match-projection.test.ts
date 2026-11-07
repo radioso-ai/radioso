@@ -56,7 +56,7 @@ describe("projectContextForMatching", () => {
           city: "Assisi",
           language: "en",
           referrer: "https://partner.example",
-          entryPageUrl: "https://corsi.ananda.it/",
+          entryPageUrl: "https://courses.valmora.example/",
         },
       },
       roomyBound,
@@ -67,7 +67,7 @@ describe("projectContextForMatching", () => {
       region: "UMB",
       city: "Assisi",
       referrer: "https://partner.example",
-      entryPageUrl: "https://corsi.ananda.it/",
+      entryPageUrl: "https://courses.valmora.example/",
     });
   });
 

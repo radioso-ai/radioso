@@ -533,14 +533,14 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     routine: { id: "routine_1", name: "Book accommodation" },
     collected: { name: "Ada Lovelace", arrival_date: "2026-10-12" },
     notice: { subject: "New booking: {{slot.name}}", intro: "Confirm {{slot.arrival_date}} with the guest." },
-    conversation: { entryPageUrl: "https://ananda.example/stays" },
+    conversation: { entryPageUrl: "https://valmora.example/stays" },
   };
 
   it("emails a completion notice in plain text with the authored subject and intro and every collected value", async () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => routedTo(["reception@ananda.example"]) },
+      { resolve: async () => routedTo(["reception@valmora.example"]) },
       undefined,
       undefined,
       { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?itemId=conv_1" },
@@ -550,7 +550,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0].subject).toBe("New booking: Ada Lovelace");
-    expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:completion.notify:email:reception%40ananda.example");
+    expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:completion.notify:email:reception%40valmora.example");
     expect(sent[0].text).toBe([
       "A visitor completed a request in chat.",
       "Confirm 2026-10-12 with the guest.",
@@ -559,7 +559,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       "  Name: Ada Lovelace",
       "  Arrival date: 2026-10-12",
       "",
-      "Entry page: https://ananda.example/stays",
+      "Entry page: https://valmora.example/stays",
       "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
     ].join("\n"));
   });
@@ -610,14 +610,14 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       const { mailer, sent } = recordingMailer();
       const sink = new EmailWebhookOperatorNotificationSink(
         mailer,
-        { resolve: async () => routedTo(["reception@ananda.example", "owner@ananda.example"]) },
+        { resolve: async () => routedTo(["reception@valmora.example", "owner@valmora.example"]) },
       );
 
       await sink.deliver(giftNotification(), { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
 
       expect(sent.map((message) => [message.to, message.replyTo])).toEqual([
-        ["reception@ananda.example", "grace@example.com"],
-        ["owner@ananda.example", "grace@example.com"],
+        ["reception@valmora.example", "grace@example.com"],
+        ["owner@valmora.example", "grace@example.com"],
       ]);
     });
 
@@ -637,7 +637,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     it("sends with no reply-to when the notice has none", async () => {
       const { mailer, sent } = recordingMailer();
-      const sink = new EmailWebhookOperatorNotificationSink(mailer, { resolve: async () => routedTo(["reception@ananda.example"]) });
+      const sink = new EmailWebhookOperatorNotificationSink(mailer, { resolve: async () => routedTo(["reception@valmora.example"]) });
 
       await sink.deliver(completionNotification, { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
 

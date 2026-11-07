@@ -26,7 +26,7 @@ const candidate = (
 const pendingOffer = (candidates: ClarificationCandidate[]): Omit<PendingClarification, "askedEventId"> => ({
   sessionId: "conv_1",
   source: "retrieval_sense",
-  originalQuery: "what is ananda yoga",
+  originalQuery: "what is valmora yoga",
   mode: "offer",
   candidates,
   status: "pending",
@@ -35,8 +35,8 @@ const pendingOffer = (candidates: ClarificationCandidate[]): Omit<PendingClarifi
 
 describe("alignOfferPendingCandidates", () => {
   it("stores only the offered alternatives, so position 1 is the first option the visitor actually saw", () => {
-    const top = candidate({ id: "top", label: "Ananda Yoga overview" });
-    const alternative = candidate({ id: "alt", label: "Newer Ananda Yoga page" });
+    const top = candidate({ id: "top", label: "Valmora Yoga overview" });
+    const alternative = candidate({ id: "alt", label: "Newer Valmora Yoga page" });
 
     const aligned = alignOfferPendingCandidates(pendingOffer([top, alternative]), [alternative]);
 
@@ -47,7 +47,7 @@ describe("alignOfferPendingCandidates", () => {
   });
 
   it("preserves the offered order across several alternatives", () => {
-    const top = candidate({ id: "top", label: "Ananda Yoga overview" });
+    const top = candidate({ id: "top", label: "Valmora Yoga overview" });
     const first = candidate({ id: "alt-1", label: "Raja yoga" });
     const second = candidate({ id: "alt-2", label: "Kriya yoga" });
 
@@ -57,10 +57,10 @@ describe("alignOfferPendingCandidates", () => {
   });
 
   it("removes a non-presentable alternative rather than storing it at a position nothing displayed", () => {
-    const top = candidate({ id: "top", label: "Ananda Yoga overview" });
+    const top = candidate({ id: "top", label: "Valmora Yoga overview" });
     const emptyLabel = candidate({ id: "doc-empty", label: "   " });
     const idAsLabel = candidate({ id: "doc-42", label: "doc-42" });
-    const alternative = candidate({ id: "alt", label: "Newer Ananda Yoga page" });
+    const alternative = candidate({ id: "alt", label: "Newer Valmora Yoga page" });
 
     const aligned = alignOfferPendingCandidates(
       pendingOffer([top, emptyLabel, idAsLabel, alternative]),
@@ -71,15 +71,15 @@ describe("alignOfferPendingCandidates", () => {
   });
 
   it("leaves every other pending field untouched", () => {
-    const top = candidate({ id: "top", label: "Ananda Yoga overview" });
-    const alternative = candidate({ id: "alt", label: "Newer Ananda Yoga page" });
+    const top = candidate({ id: "top", label: "Valmora Yoga overview" });
+    const alternative = candidate({ id: "alt", label: "Newer Valmora Yoga page" });
 
     const aligned = alignOfferPendingCandidates(pendingOffer([top, alternative]), [alternative]);
 
     expect(aligned).toMatchObject({
       sessionId: "conv_1",
       source: "retrieval_sense",
-      originalQuery: "what is ananda yoga",
+      originalQuery: "what is valmora yoga",
       mode: "offer",
       status: "pending",
     });

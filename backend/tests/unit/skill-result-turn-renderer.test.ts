@@ -17,7 +17,7 @@ import type { SkillOutcome } from "../../src/modules/skills/public.js";
 import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
 const TOOL_TEXT = [
-  "Ananda Edizioni publishes [Autobiografia di uno Yogi](https://example.com/autobiografia).",
+  "Valmora Books publishes [Diario di un Viandante](https://example.com/autobiografia).",
   "",
   JSON.stringify({
     conversationId: "conversation-9",
@@ -26,7 +26,7 @@ const TOOL_TEXT = [
     traceId: "trace-9",
   }, null, 2),
 ].join("\n");
-const MODEL_REPLY = "We publish [Autobiografia di uno Yogi](https://example.com/autobiografia), a classic on yoga.";
+const MODEL_REPLY = "We publish [Diario di un Viandante](https://example.com/autobiografia), a classic on yoga.";
 const DIRECTIVE_ACTION = "Ask the publishing catalog and tell the user what it found.";
 
 const session = (): PreparedSession => ({
@@ -36,7 +36,7 @@ const session = (): PreparedSession => ({
   effectiveQuery: "Which books do you publish on yoga?",
   history: [],
   turnRoute: "retrieval",
-  retrieval: { responseIdentity: null, responseSettings: { customInstruction: "Help visitors find Ananda books." } },
+  retrieval: { responseIdentity: null, responseSettings: { customInstruction: "Help visitors find Valmora books." } },
   resolvedContext: { snapshot: {}, fragments: [], renderFragments: [], staged: [] },
   directiveSteering: {
     rules: [{ action: DIRECTIVE_ACTION, source: "directive", lifespan: "response" }],
@@ -47,7 +47,7 @@ const session = (): PreparedSession => ({
 
 const agentSkillOutcome = (over: Partial<SkillOutcome> = {}, kind = AGENT_SKILL_OUTCOME_KIND): TurnOutcome => ({
   kind,
-  skillName: "ananda_edizioni",
+  skillName: "valmora_books",
   outcome: { status: "completed", answer: TOOL_TEXT, ...over },
   stagedContext: [],
   steering: [],
@@ -112,7 +112,7 @@ describe("skill result turn renderer", () => {
     const presentation = await renderer.render(agentSkillOutcome(), ctx);
 
     expect(presentation).toMatchObject({
-      skillName: "ananda_edizioni",
+      skillName: "valmora_books",
       skillOutcome: "completed",
       skillStatus: "completed",
     });
@@ -146,7 +146,7 @@ describe("skill result turn renderer", () => {
       hasStreamedAnswer: true,
       finalPresentation: {
         answer: MODEL_REPLY,
-        skillName: "ananda_edizioni",
+        skillName: "valmora_books",
         skillOutcome: "completed",
         skillStatus: "completed",
         answerOutcome: undefined,
@@ -202,7 +202,7 @@ describe("skill result turn renderer", () => {
 });
 
 describe("skill result findings cap", () => {
-  const ids = { skillName: "ananda_edizioni", workspaceId: "workspace-1", conversationId: "conversation-1" };
+  const ids = { skillName: "valmora_books", workspaceId: "workspace-1", conversationId: "conversation-1" };
   const cap = CHAT_BEHAVIOR.skillResult.maxFindingsInputTokens;
   // A non-ASCII character (as in a Cyrillic/CJK MCP result): under the budget guard's
   // language-aware estimator it is one code point and one token, the same way an ASCII

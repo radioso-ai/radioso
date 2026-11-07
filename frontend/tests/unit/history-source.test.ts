@@ -81,24 +81,24 @@ describe('history source formatting', () => {
   it('uses the entry page path and keeps the full URL openable', () => {
     expect(formatConversationLocation(conversation({
       sourceChannel: 'website_embed',
-      sourceOrigin: 'https://it.ananda.eu',
-      entryPageUrl: 'https://it.ananda.eu/courses/yoga/?utm_source=chat#overview',
+      sourceOrigin: 'https://it.valmora.example',
+      entryPageUrl: 'https://it.valmora.example/courses/yoga/?utm_source=chat#overview',
     }))).toEqual({
-      text: 'it.ananda.eu/courses/yoga',
-      href: 'https://it.ananda.eu/courses/yoga/?utm_source=chat#overview',
-      title: 'https://it.ananda.eu/courses/yoga/?utm_source=chat#overview',
+      text: 'it.valmora.example/courses/yoga',
+      href: 'https://it.valmora.example/courses/yoga/?utm_source=chat#overview',
+      title: 'https://it.valmora.example/courses/yoga/?utm_source=chat#overview',
     })
   })
 
   it('falls back to the parsed origin or channel when the entry URL is invalid', () => {
     expect(formatConversationLocation(conversation({
       sourceChannel: 'website_embed',
-      sourceOrigin: 'https://it.ananda.eu',
+      sourceOrigin: 'https://it.valmora.example',
       entryPageUrl: 'not a URL',
     }))).toEqual({
-      text: 'it.ananda.eu',
-      href: 'https://it.ananda.eu',
-      title: 'https://it.ananda.eu',
+      text: 'it.valmora.example',
+      href: 'https://it.valmora.example',
+      title: 'https://it.valmora.example',
     })
 
     expect(formatConversationLocation(conversation({

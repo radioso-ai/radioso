@@ -7,12 +7,12 @@ const wordpressContext = (metadata: Record<string, unknown>): FinalPromptContext
   ({
     chunkId: "chunk-49642",
     documentId: "document-49642",
-    title: "Who Was Swamiji, Really?",
+    title: "Who Was Orin, Really?",
     content: "There are encounters that change your life.",
     metadata,
     similarity: 0.9,
     retrievalSources: ["semantic_original"],
-    retrievalText: "Who Was Swamiji, Really?",
+    retrievalText: "Who Was Orin, Really?",
     semanticScore: 0.9,
     lexicalScore: 0,
     relevanceScore: 0.9,
@@ -29,7 +29,7 @@ describe("PromptBuilder context metadata", () => {
       history: [],
       contexts: [
         wordpressContext({
-          sourceUrl: "https://anandaeurope.org/blog/2026/07/22/who-was-swamiji-really/",
+          sourceUrl: "https://valmora-europe.example/blog/2026/07/22/who-was-orin-really/",
           author: "Bikram Mario Liguori",
           published_at: "2026-07-22T14:16:07",
           dateFrom: "2026-07-22",
@@ -39,7 +39,7 @@ describe("PromptBuilder context metadata", () => {
     });
 
     expect(result.prompt).toContain(
-      "Source: https://anandaeurope.org/blog/2026/07/22/who-was-swamiji-really/",
+      "Source: https://valmora-europe.example/blog/2026/07/22/who-was-orin-really/",
     );
     expect(result.prompt).toContain(
       "Attributes: Date from: 2026-07-22 | Author: Bikram Mario Liguori",

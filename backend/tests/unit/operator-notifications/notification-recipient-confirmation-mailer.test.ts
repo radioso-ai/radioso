@@ -26,18 +26,18 @@ describe("NotificationRecipientConfirmationMailer", () => {
 
     await mailer.send({
       workspaceId: "workspace-id",
-      workspaceName: "Ananda",
+      workspaceName: "Valmora",
       agentName: "Reception",
-      email: "francesco@example.com",
+      email: "marta@valmora.example",
       recipientId: "recipient-id",
       generation: 4,
       idempotencyKey: "request-id",
     });
 
     expect(send).toHaveBeenCalledWith(expect.objectContaining({
-      to: "francesco@example.com",
+      to: "marta@valmora.example",
       kind: "recipient_confirmation",
-      subject: "Ananda wants to send you Reception notifications via Radioso",
+      subject: "Valmora wants to send you Reception notifications via Radioso",
       text: expect.stringMatching(/confirm\?token=[A-Za-z0-9_.-]+/u),
       listUnsubscribeUrl: expect.stringMatching(/revoke\?token=[A-Za-z0-9_.-]+/u),
       idempotencyKey: "notification-recipient-confirmation:request-id:recipient-id:4",
@@ -59,7 +59,7 @@ describe("NotificationRecipientConfirmationMailer", () => {
       workspaceId: "workspace-id",
       workspaceName: `Cheap watches ${"x".repeat(200)} visit spam.example`,
       agentName: "Reception",
-      email: "francesco@example.com",
+      email: "marta@valmora.example",
       recipientId: "recipient-id",
       generation: 1,
       idempotencyKey: "request-id",
@@ -82,8 +82,8 @@ describe("NotificationRecipientConfirmationMailer", () => {
     });
 
     await expect(mailer.send({
-      workspaceId: "workspace-id", workspaceName: "Ananda", agentName: "Reception",
-      email: "francesco@example.com", recipientId: "recipient-id", generation: 0, idempotencyKey: "request-id",
+      workspaceId: "workspace-id", workspaceName: "Valmora", agentName: "Reception",
+      email: "marta@valmora.example", recipientId: "recipient-id", generation: 0, idempotencyKey: "request-id",
     })).resolves.toEqual({ dispatched: false });
     expect(incrementCounter).not.toHaveBeenCalled();
   });
@@ -101,8 +101,8 @@ describe("NotificationRecipientConfirmationMailer", () => {
     });
 
     await mailer.send({
-      workspaceId: "workspace-id", workspaceName: "Ananda", agentName: "Reception",
-      email: "francesco@example.com", recipientId: "recipient-id", generation: 1, idempotencyKey: "request-id",
+      workspaceId: "workspace-id", workspaceName: "Valmora", agentName: "Reception",
+      email: "marta@valmora.example", recipientId: "recipient-id", generation: 1, idempotencyKey: "request-id",
     });
 
     const message = messages[0];

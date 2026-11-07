@@ -35,7 +35,7 @@ describe("renderMcpServerCard", () => {
     const undescribed = renderMcpServerCard(profileFixture({ description: null }));
 
     expect(long.description.length).toBeLessThanOrEqual(100);
-    expect(undescribed.description).toBe("Ananda support");
+    expect(undescribed.description).toBe("Valmora support");
   });
 
   it("carries no internal identifier", () => {

@@ -349,16 +349,16 @@ describe("edge cases", () => {
           return [{
             chunkId: "c2",
             documentId: "d2",
-            title: "Arudra",
-            content: "Arudra later work.",
+            title: "Tomas",
+            content: "Tomas later work.",
             similarity: 0.9,
           }];
         }
         return [{
           chunkId: "c1",
           documentId: "d1",
-          title: "Narayani",
-          content: "Narayani later work.",
+          title: "Freya",
+          content: "Freya later work.",
           similarity: 0.8,
         }];
       },
@@ -390,9 +390,9 @@ describe("edge cases", () => {
       new QueryRewriteService({
         async rewrite() {
           return {
-            rewrittenQuery: "What did Arudra publish later?",
+            rewrittenQuery: "What did Tomas publish later?",
             turnKind: "referential_followup",
-            proposedActiveSubject: "Arudra",
+            proposedActiveSubject: "Tomas",
             relatedEntities: [],
             unresolved: false,
             confidence: 0.9,
@@ -417,37 +417,37 @@ describe("edge cases", () => {
           conversationId: "c1",
           workspaceId: "a1",
           role: "user",
-          content: "Who is Narayani?",
+          content: "Who is Freya?",
           createdAt: new Date(),
         },
       ],
     });
 
-    expect(result.rewrittenQuery).toBe("What did Arudra publish later?");
+    expect(result.rewrittenQuery).toBe("What did Tomas publish later?");
     expect(result.diagnostics.materialDisagreement).toBe(false);
     expect(result.diagnostics.rejectionReason).toBeUndefined();
-    expect(result.contexts[0]?.title).toBe("Narayani");
-    expect(embeddedQueries).toEqual(["What did Arudra publish later?"]);
+    expect(result.contexts[0]?.title).toBe("Freya");
+    expect(embeddedQueries).toEqual(["What did Tomas publish later?"]);
   });
 
   it("rejects a subject switch when raw retrieval only mentions the rewritten subject incidentally", async () => {
     const semantic = createSemanticTestPorts({
-      embed: (texts) => texts.map((text) => [text.toLowerCase().includes("arudra") ? 1 : 0, 0, 0]),
+      embed: (texts) => texts.map((text) => [text.toLowerCase().includes("tomas") ? 1 : 0, 0, 0]),
       search(input) {
         if ((input.queryVector[0] ?? 0) === 1) {
           return [{
             chunkId: "c2",
             documentId: "d2",
-            title: "Arudra",
-            content: "Arudra later work and publications.",
+            title: "Tomas",
+            content: "Tomas later work and publications.",
             similarity: 0.95,
           }];
         }
         return [{
           chunkId: "c1",
           documentId: "d1",
-          title: "Narayani",
-          content: "Narayani sometimes collaborates with Arudra on events.",
+          title: "Freya",
+          content: "Freya sometimes collaborates with Tomas on events.",
           similarity: 0.75,
         }];
       },
@@ -479,9 +479,9 @@ describe("edge cases", () => {
       new QueryRewriteService({
         async rewrite() {
           return {
-            rewrittenQuery: "What did Arudra publish later?",
+            rewrittenQuery: "What did Tomas publish later?",
             turnKind: "referential_followup",
-            proposedActiveSubject: "Arudra",
+            proposedActiveSubject: "Tomas",
             relatedEntities: [],
             unresolved: false,
             confidence: 0.95,
@@ -506,7 +506,7 @@ describe("edge cases", () => {
           conversationId: "c1",
           workspaceId: "a1",
           role: "user",
-          content: "Who is Narayani, and does she collaborate with Arudra?",
+          content: "Who is Freya, and does she collaborate with Tomas?",
           createdAt: new Date(),
         },
         {
@@ -514,13 +514,13 @@ describe("edge cases", () => {
           conversationId: "c1",
           workspaceId: "a1",
           role: "assistant",
-          content: "Narayani sometimes collaborates with Arudra.",
+          content: "Freya sometimes collaborates with Tomas.",
           createdAt: new Date(),
         },
       ],
     });
 
-    expect(result.rewrittenQuery).toBe("What did Arudra publish later?");
+    expect(result.rewrittenQuery).toBe("What did Tomas publish later?");
     expect(result.diagnostics.materialDisagreement).toBe(false);
     expect(result.diagnostics.rejectionReason).toBeUndefined();
     expect(result.diagnostics.rewrittenCandidateCount).toBe(1);
@@ -558,10 +558,10 @@ describe("edge cases", () => {
       new QueryRewriteService({
         async rewrite() {
           return {
-            rewrittenQuery: "Does Narayani work with Arudra?",
+            rewrittenQuery: "Does Freya work with Tomas?",
             turnKind: "referential_relation",
-            proposedActiveSubject: "Narayani",
-            relatedEntities: ["Arudra"],
+            proposedActiveSubject: "Freya",
+            relatedEntities: ["Tomas"],
             unresolved: true,
             confidence: 0.78,
           };
@@ -578,14 +578,14 @@ describe("edge cases", () => {
 
     const result = await service.run({
       workspaceId: "a1",
-      query: "Does she work with Arudra?",
+      query: "Does she work with Tomas?",
       history: [
         {
           id: "1",
           conversationId: "c1",
           workspaceId: "a1",
           role: "user",
-          content: "Who is Narayani?",
+          content: "Who is Freya?",
           createdAt: new Date(),
         },
       ],
@@ -600,9 +600,9 @@ describe("edge cases", () => {
     const service = new QueryRewriteService({
       async rewrite() {
         return {
-          rewrittenQuery: "What did Arudra publish later?",
+          rewrittenQuery: "What did Tomas publish later?",
           turnKind: "referential_followup",
-          proposedActiveSubject: "Arudra",
+          proposedActiveSubject: "Tomas",
           relatedEntities: [],
           unresolved: false,
           confidence: 0.78,
@@ -620,7 +620,7 @@ describe("edge cases", () => {
             conversationId: "c1",
             workspaceId: "a1",
             role: "user",
-            content: "Who is Narayani?",
+            content: "Who is Freya?",
             createdAt: new Date(),
           },
           {
@@ -628,7 +628,7 @@ describe("edge cases", () => {
             conversationId: "c1",
             workspaceId: "a1",
             role: "assistant",
-            content: "Narayani sometimes collaborates with Arudra.",
+            content: "Freya sometimes collaborates with Tomas.",
             createdAt: new Date(),
           },
         ],
@@ -639,7 +639,7 @@ describe("edge cases", () => {
 
     expect(result.status).toBe("applied");
     expect(result.retrievalEligible).toBe(true);
-    expect(result.effectiveQuery).toBe("What did Arudra publish later?");
+    expect(result.effectiveQuery).toBe("What did Tomas publish later?");
   });
 
   it("rejects rewritten retrieval when the proposed subject is unsupported in rewritten evidence", async () => {
@@ -660,8 +660,8 @@ describe("edge cases", () => {
         return [{
           chunkId: "c1",
           documentId: "d1",
-          title: "Arudra",
-          content: "Arudra later work and publications.",
+          title: "Tomas",
+          content: "Tomas later work and publications.",
           similarity: 0.81,
         }];
       },
@@ -693,9 +693,9 @@ describe("edge cases", () => {
       new QueryRewriteService({
         async rewrite() {
           return {
-            rewrittenQuery: "What did Arudra publish later?",
+            rewrittenQuery: "What did Tomas publish later?",
             turnKind: "referential_followup",
-            proposedActiveSubject: "Arudra",
+            proposedActiveSubject: "Tomas",
             relatedEntities: [],
             unresolved: false,
             confidence: 0.93,
@@ -720,13 +720,13 @@ describe("edge cases", () => {
           conversationId: "c1",
           workspaceId: "a1",
           role: "user",
-          content: "Who is Narayani, and does she collaborate with Arudra?",
+          content: "Who is Freya, and does she collaborate with Tomas?",
           createdAt: new Date(),
         },
       ],
     });
 
-    expect(result.rewrittenQuery).toBe("What did Arudra publish later?");
+    expect(result.rewrittenQuery).toBe("What did Tomas publish later?");
     expect(result.diagnostics.materialDisagreement).toBe(false);
     expect(result.diagnostics.rejectionReason).toBeUndefined();
     expect(result.diagnostics.rewrittenCandidateCount).toBe(1);

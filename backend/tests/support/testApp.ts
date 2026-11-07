@@ -1322,7 +1322,7 @@ export const createTestDependencies = (overrides: {
           rewrittenQuery: input.query.trim(),
           turnKind: "referential_relation",
           proposedActiveSubject: normalizedContext,
-          relatedEntities: ["Arudra"],
+          relatedEntities: ["Tomas"],
           unresolved: true,
           confidence: 0.75,
         };

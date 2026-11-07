@@ -610,7 +610,7 @@ describe("routine defaults", () => {
     const gw = gateway("ok");
     const scopedTurn: TurnContext = {
       ...turn,
-      agent: { id: "a", name: "Ananda", instructions: ["Help only with Ananda Europe programs and events."] },
+      agent: { id: "a", name: "Valmora", instructions: ["Help only with Valmora Europe programs and events."] },
     };
     await new RoutineStepRenderer(gw).render({
       step: currentStep,
@@ -619,8 +619,8 @@ describe("routine defaults", () => {
     });
 
     const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
-    expect(systemPrompt).toContain("Ananda");
-    expect(systemPrompt).toContain("Help only with Ananda Europe programs and events.");
+    expect(systemPrompt).toContain("Valmora");
+    expect(systemPrompt).toContain("Help only with Valmora Europe programs and events.");
     expect(systemPrompt).toContain("do not answer or perform it");
     expect(systemPrompt).toContain("Never produce off-scope content");
   });

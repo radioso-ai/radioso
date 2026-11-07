@@ -61,6 +61,30 @@ const ALERTING_OUTCOMES: Partial<Record<RecipientDeliveryOutcome, UndeliveredRec
 const agentIdSchema = z.string().uuid();
 
 /**
+ * How long a notice's action waits for its alerts. The action has a fixed budget, and one that runs
+ * out is retried: a stalled mail provider must not make notices that already went out go out again.
+ */
+const ALERT_BUDGET_MS = 10_000;
+
+class AlertTimeout extends Error {
+  constructor() {
+    super("The undelivered recipient alert did not finish in time");
+    this.name = "AlertTimeout";
+  }
+}
+
+/** Resolves when `work` does, or rejects with {@link AlertTimeout}; `work` itself is left to finish alone. */
+const withinBudget = <T>(work: Promise<T>, budgetMs: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new AlertTimeout()), budgetMs);
+  });
+  // A late failure of the abandoned work is the alert's own to count; here it must not go unhandled.
+  work.catch(() => undefined);
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+};
+
+/**
  * Keeps the per-address record of every notice and warns the account's administrators when an
  * address is being skipped. Both are bookkeeping around a delivery that has already been decided,
  * so neither can fail it: a failure is logged without any address and counted.
@@ -71,6 +95,8 @@ export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort
     alerts?: UndeliveredRecipientAlertPort;
     logger?: { warn(payload: Record<string, unknown>, message: string): void };
     metrics?: LogMetrics | null;
+    /** How long to wait for each alert; defaults to ten seconds. */
+    alertBudgetMs?: number;
   }) {}
 
   async record(subject: NotificationDeliverySubject, deliveries: readonly RecipientDelivery[]): Promise<void> {
@@ -119,8 +145,15 @@ export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort
       const reason = ALERTING_OUTCOMES[outcome];
       if (!reason) return;
       try {
-        await alerts.notify({ workspaceId: subject.workspaceId, agentId, email, reason });
+        await withinBudget(
+          alerts.notify({ workspaceId: subject.workspaceId, agentId, email, reason }),
+          this.options.alertBudgetMs ?? ALERT_BUDGET_MS,
+        );
       } catch (error) {
+        this.options.metrics?.incrementCounter("notification_undelivered_alerts_total", {
+          help: "Alerts to workspace administrators about an address that notices skip.",
+          labels: { outcome: "failed", reason },
+        });
         this.options.logger?.warn({
           event: "notification_undelivered_alert_failed",
           workspaceId: subject.workspaceId,

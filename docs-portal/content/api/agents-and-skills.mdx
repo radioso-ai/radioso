@@ -459,7 +459,7 @@ In the dashboard, the same entries show under **Recent notifications** at the bo
 
 #### Alert to owners and admins
 
-When a notice skips an address because it has not confirmed, its owner stopped notifications, or it bounced, Radioso emails the organization's owners and admins. The email names the address, says why it was skipped, names the agent, and links to the agent's Skills page, where the address can be replaced or asked again. Only active members with a verified login address receive it.
+When a notice skips an address because it has not confirmed, its owner stopped notifications, or it bounced, Radioso emails the people who can fix it: the organization's owners and admins, and members who are admins of that workspace through a workspace grant. The email names the address, says why it was skipped, names the agent, and links to the agent's Skills page, where the address can be replaced or asked again. Only active members with a verified login address receive it, and an address that itself bounced, or whose owner stopped notifications from the workspace, is left out.
 
 Each address triggers at most one alert a day for a workspace, however many notices it misses. A skip because of a daily allowance, and an email that failed in transit, send no alert: neither is something the address's owner or the operator fixes by changing the recipient. The alert uses the deployment's mail transport, so a deployment without a mail provider writes it to the log like any other email.
 

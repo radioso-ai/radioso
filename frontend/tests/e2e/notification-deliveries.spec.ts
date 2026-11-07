@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import type { NotificationDelivery } from "@/lib/notification-deliveries";
 
@@ -6,6 +6,7 @@ import {
   defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
+  workspaceId,
   workspaceKey,
 } from "./dashboard-fixtures";
 
@@ -23,7 +24,22 @@ const delivery = (index: number, overrides: Partial<NotificationDelivery> = {}):
   ...overrides,
 });
 
-const openSkills = async (page: import("@playwright/test").Page) => {
+/** The workspace-effective role the server resolves, account role and workspace grant together. */
+const installEffectiveRole = async (page: Page, effectiveRole: "owner" | "admin" | "member") => {
+  await page.route(`**/backend/api/v1/account/workspaces/${workspaceId}/api-access`, async (route) => {
+    await route.fulfill({
+      json: {
+        effectiveRole,
+        capabilities: { manageOwnPersonalTokens: true, auditWorkspacePersonalTokens: false, manageServiceAccounts: effectiveRole !== "member" },
+        defaults: { personalTokenLifetimeDays: 90, serviceCredentialLifetimeDays: 365 },
+        limits: { personalTokensPerUser: 10, serviceAccountsPerWorkspace: 50, credentialsPerServiceAccount: 5, maximumPageSize: 100 },
+        legacyCredentialMigration: { active: false },
+      },
+    });
+  });
+};
+
+const openSkills = async (page: Page) => {
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
   await expect(page.getByRole("heading", { name: "Skills", level: 1 })).toBeVisible();
 };
@@ -42,6 +58,7 @@ test("an operator sees who each notice was sent to, why one was not, and asks an
     notificationDeliveryRequests: requests,
     confirmationResends: resends,
   });
+  await installEffectiveRole(page, "admin");
 
   await openSkills(page);
 
@@ -78,6 +95,7 @@ test("recent notifications page through a long log and say plainly when a resend
     confirmationResends: resends,
     confirmationResendSent: false,
   });
+  await installEffectiveRole(page, "admin");
 
   await openSkills(page);
 
@@ -90,7 +108,7 @@ test("recent notifications page through a long log and say plainly when a resend
   await expect(recent.getByRole("button", { name: "Show more" })).toHaveCount(0);
 
   await recent.getByRole("button", { name: "Resend confirmation" }).click();
-  await expect(recent.getByText(/Not sent: asked recently/)).toBeVisible();
+  await expect(recent.getByText(/Not sent: already confirmed, asked recently/)).toBeVisible();
 });
 
 test("recent notifications say so when nothing has been sent", async ({ page }) => {
@@ -101,3 +119,19 @@ test("recent notifications say so when nothing has been sent", async ({ page }) 
 
   await expect(page.getByRole("region", { name: "Recent notifications" }).getByText("No notifications sent yet.")).toBeVisible();
 });
+
+test("a teammate who cannot manage recipients sees the log without a resend they could not make", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    notificationDeliveries: [delivery(1, { recipientEmail: "waiting@example.com", outcome: "skipped_unconfirmed" })],
+  });
+  await installEffectiveRole(page, "member");
+
+  await openSkills(page);
+
+  const recent = page.getByRole("region", { name: "Recent notifications" });
+  await expect(recent.getByText("waiting@example.com")).toBeVisible();
+  await expect(recent.getByText("Not sent: not confirmed")).toBeVisible();
+  await expect(recent.getByRole("button", { name: "Resend confirmation" })).toHaveCount(0);
+});
+

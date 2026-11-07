@@ -128,6 +128,64 @@ describe("NotificationDeliveryLog", () => {
   });
 });
 
+describe("NotificationDeliveryLog alert budget", () => {
+  const WAITING = [{ email: "waiting@example.com", outcome: "skipped_unconfirmed" as const }];
+
+  it("stops waiting for an alert that stalls, and logs and counts it like any other alert failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const logger = { warn: vi.fn() };
+      const metrics = { incrementCounter: vi.fn() };
+      const stalled = new Promise<void>(() => undefined);
+      const log = new NotificationDeliveryLog({
+        store: { upsert: async () => undefined },
+        alerts: { notify: () => stalled },
+        logger,
+        metrics,
+      });
+      let settled = false;
+
+      const recording = log.record(subject(), WAITING).then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await recording;
+
+      expect(settled).toBe(true);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "notification_undelivered_alert_failed", reason: "unconfirmed", errorName: "AlertTimeout" }),
+        expect.any(String),
+      );
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("waiting@example.com");
+      expect(metrics.incrementCounter).toHaveBeenCalledWith(
+        "notification_undelivered_alerts_total",
+        expect.objectContaining({ labels: { outcome: "failed", reason: "unconfirmed" } }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not wait on an alert that finishes in time, and lets a late failure go unnoticed", async () => {
+    vi.useFakeTimers();
+    try {
+      const logger = { warn: vi.fn() };
+      const late = new Promise<void>((_resolve, reject) => setTimeout(() => reject(new Error("late")), 15_000));
+      const log = new NotificationDeliveryLog({ store: { upsert: async () => undefined }, alerts: { notify: () => late }, logger });
+
+      const recording = log.record(subject(), WAITING);
+      await vi.advanceTimersByTimeAsync(11_000);
+      await recording;
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      // The detached alert's own rejection is handled: nothing escapes as an unhandled rejection.
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 const record = (n: number): NotificationDeliveryRecord => ({
   id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
   agentId: AGENT,

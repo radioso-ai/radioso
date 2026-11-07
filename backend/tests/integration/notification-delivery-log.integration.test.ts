@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import pg from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { AccountAccessService } from "../../src/modules/account/public.js";
+import { AccountMembershipRepository } from "../../src/db/repositories/accountMembershipRepository.js";
+import { WorkspaceGrantRepository } from "../../src/db/repositories/workspaceGrantRepository.js";
 import { NotificationDeliveryRepository } from "../../src/db/repositories/notificationDeliveryRepository.js";
 import { NotificationRecipientIdentityRepository, NotificationRecipientStateRepository } from "../../src/db/repositories/notificationRecipientStateRepository.js";
 import { UndeliveredRecipientAlertRepository } from "../../src/db/repositories/undeliveredRecipientAlertRepository.js";
@@ -33,8 +36,10 @@ describeIntegration("notification delivery log (Postgres)", () => {
   let states: NotificationRecipientStateRepository;
   let alertStore: UndeliveredRecipientAlertRepository;
 
+  const createdUserIds: string[] = [];
   const addUser = async (email: string, options: { role: string; verified?: boolean; disabled?: boolean; status?: string }) => {
     const userId = randomUUID();
+    createdUserIds.push(userId);
     await database.query(
       "INSERT INTO users (id, email, password_hash, email_verified_at, disabled_at) VALUES ($1, $2, $3, $4, $5)",
       [userId, email, "hash", options.verified === false ? null : new Date(), options.disabled ? new Date() : null],
@@ -42,6 +47,19 @@ describeIntegration("notification delivery log (Postgres)", () => {
     await database.query(
       "INSERT INTO account_memberships (id, account_id, user_id, role, status) VALUES ($1, $2, $3, $4, $5)",
       [randomUUID(), accountId, userId, options.role, options.status ?? "active"],
+    );
+    return userId;
+  };
+  const grantWorkspaceRole = (targetWorkspaceId: string, userId: string, role: "admin" | "member") => database.query(
+    "INSERT INTO workspace_grants (id, workspace_id, account_id, user_id, role) VALUES ($1, $2, $3, $4, $5)",
+    [randomUUID(), targetWorkspaceId, accountId, userId, role],
+  );
+  const suppressedAddresses: string[] = [];
+  const suppress = (email: string) => {
+    suppressedAddresses.push(email);
+    return database.query(
+      "INSERT INTO notification_email_suppressions (normalized_email, reason, provider, provider_event_id) VALUES ($1, 'hard_bounce', 'resend', $2)",
+      [email, randomUUID()],
     );
   };
 
@@ -89,8 +107,20 @@ describeIntegration("notification delivery log (Postgres)", () => {
     }
   }, 30_000);
 
+  /** Removes the people this suite added, and only them. */
+  const removeTestUsers = async () => {
+    await database.query("DELETE FROM workspace_grants WHERE user_id = ANY($1::uuid[])", [createdUserIds]);
+    await database.query("DELETE FROM notification_email_suppressions WHERE normalized_email = ANY($1::text[])", [suppressedAddresses]);
+    suppressedAddresses.length = 0;
+    await database.query("DELETE FROM account_memberships WHERE user_id = ANY($1::uuid[])", [createdUserIds]);
+    await database.query("DELETE FROM users WHERE id = ANY($1::uuid[])", [createdUserIds]);
+    createdUserIds.length = 0;
+  };
+
+  afterEach(removeTestUsers);
+
   beforeEach(async () => {
-    await database.query("DELETE FROM notification_deliveries");
+    await database.query("DELETE FROM notification_deliveries WHERE workspace_id = ANY($1::uuid[])", [[workspaceId, otherWorkspaceId]]);
   });
 
   const subject = (requestId: string, overrides: Partial<Parameters<NotificationDeliveryRepository["upsert"]>[0]> = {}) => ({
@@ -292,6 +322,62 @@ describeIntegration("notification delivery log (Postgres)", () => {
       expect((await alertStore.listAdministratorEmails(workspaceId)).sort())
         .toEqual(["admin@example.com", "owner@example.com"]);
     });
+
+    it("leaves out an administrator whose address bounced or whose owner stopped notifications from this workspace", async () => {
+      const unique = randomUUID();
+      await addUser(`fine-${unique}@example.com`, { role: "admin" });
+      await addUser(`bounced-${unique}@example.com`, { role: "admin" });
+      await addUser(`stopped-${unique}@example.com`, { role: "admin" });
+      await addUser(`stopped-elsewhere-${unique}@example.com`, { role: "admin" });
+      await suppress(`bounced-${unique}@example.com`);
+      const now = new Date("2026-11-12T10:00:00.000Z");
+      await states.revoke((await states.ensure(workspaceId, `stopped-${unique}@example.com`)).recipientId, now);
+      await states.revoke((await states.ensure(otherWorkspaceId, `stopped-elsewhere-${unique}@example.com`)).recipientId, now);
+
+      expect((await alertStore.listAdministratorEmails(workspaceId)).sort())
+        .toEqual([`fine-${unique}@example.com`, `stopped-elsewhere-${unique}@example.com`]);
+    });
+
+    it("includes a member who is an admin of this workspace through a grant, for this workspace only", async () => {
+      const unique = randomUUID();
+      const granted = await addUser(`granted-${unique}@example.com`, { role: "member" });
+      const elsewhere = await addUser(`elsewhere-${unique}@example.com`, { role: "member" });
+      const plain = await addUser(`plain-${unique}@example.com`, { role: "member" });
+      const unverified = await addUser(`unverified-${unique}@example.com`, { role: "member", verified: false });
+      const disabled = await addUser(`disabled-${unique}@example.com`, { role: "member", disabled: true });
+      await grantWorkspaceRole(workspaceId, granted, "admin");
+      await grantWorkspaceRole(otherWorkspaceId, elsewhere, "admin");
+      await grantWorkspaceRole(workspaceId, plain, "member");
+      await grantWorkspaceRole(workspaceId, unverified, "admin");
+      await grantWorkspaceRole(workspaceId, disabled, "admin");
+
+      expect(await alertStore.listAdministratorEmails(workspaceId)).toEqual([`granted-${unique}@example.com`]);
+      expect(await alertStore.listAdministratorEmails(otherWorkspaceId)).toEqual([`elsewhere-${unique}@example.com`]);
+    });
+
+    it("reaches exactly the teammates who hold the recipient-management permission, as the access rules decide it", async () => {
+      const unique = randomUUID();
+      await addUser(`owner-${unique}@example.com`, { role: "owner" });
+      await addUser(`admin-${unique}@example.com`, { role: "admin" });
+      await addUser(`member-${unique}@example.com`, { role: "member" });
+      await grantWorkspaceRole(workspaceId, await addUser(`granted-${unique}@example.com`, { role: "member" }), "admin");
+      await grantWorkspaceRole(workspaceId, await addUser(`granted-member-${unique}@example.com`, { role: "member" }), "member");
+      await grantWorkspaceRole(otherWorkspaceId, await addUser(`other-${unique}@example.com`, { role: "member" }), "admin");
+      const access = new AccountAccessService(
+        new AccountMembershipRepository(database.kysely),
+        { record: async () => undefined } as never,
+        new WorkspaceGrantRepository(database.kysely),
+      );
+      const holders = (await access.listMembersWithWorkspacePermission({
+        accountId,
+        workspaceId,
+        permission: "workspace.notification_recipients.manage",
+      })).map((member) => member.email.toLowerCase()).filter((email) => email.includes(unique));
+
+      expect((await alertStore.listAdministratorEmails(workspaceId)).filter((email) => email.includes(unique)).sort())
+        .toEqual(holders.sort());
+      expect(holders).toHaveLength(3);
+    });
   });
 
   describe("a skipped notice, end to end", () => {
@@ -336,9 +422,8 @@ describeIntegration("notification delivery log (Postgres)", () => {
     };
 
     beforeEach(async () => {
-      await database.query("DELETE FROM account_memberships");
-      await database.query("DELETE FROM users");
-      await database.query("UPDATE notification_recipient_confirmations SET undelivered_alert_sent_at = NULL");
+      await removeTestUsers();
+      await database.query("UPDATE notification_recipient_confirmations SET undelivered_alert_sent_at = NULL WHERE workspace_id = $1", [workspaceId]);
       await addUser("owner@example.com", { role: "owner" });
       await addUser("admin@example.com", { role: "admin" });
       await addUser("unverified@example.com", { role: "admin", verified: false });
@@ -366,6 +451,23 @@ describeIntegration("notification delivery log (Postgres)", () => {
       current = new Date(current.getTime() + UNDELIVERED_ALERT_WINDOW_MS);
       await sendThrough({ now, sent });
       expect(alertMails()).toHaveLength(4);
+    });
+
+    it("holds no throttle when every administrator is one the policy refuses, so a later administrator is told at once", async () => {
+      const sent: Array<{ to: string; kind: string; text: string }> = [];
+      const now = () => new Date("2026-11-13T10:00:00.000Z");
+      await removeTestUsers();
+      const unique = randomUUID();
+      await addUser(`bounced-${unique}@example.com`, { role: "owner" });
+      await suppress(`bounced-${unique}@example.com`);
+
+      await sendThrough({ now, sent });
+      expect(sent.filter((message) => message.kind === "notification_alert")).toEqual([]);
+
+      await addUser(`new-owner-${unique}@example.com`, { role: "admin" });
+      await sendThrough({ now, sent });
+      expect(sent.filter((message) => message.kind === "notification_alert").map((message) => message.to))
+        .toEqual([`new-owner-${unique}@example.com`]);
     });
 
     it("records a cap against a confirmed address and alerts nobody", async () => {

@@ -84,6 +84,20 @@ export class Database {
     });
     this.pool.on("release", (_error, client) => {
       client.removeListener("error", onCheckedOutClientError);
+      // `query_timeout` is a client-side timer: it can fire while the statement still runs on
+      // the server, and `pg` then drops a queued ROLLBACK unsent when that query's own timer
+      // fires. A connection released like that fails every later borrower with 25P02, on any
+      // route, so it never goes back into the pool. Ending it here works because pg-pool emits
+      // this event before it decides whether to keep the client, and it does not keep one that
+      // is ending. An `I` status with a query still running is left alone: nothing is open.
+      const transactionStatus = client.getTransactionStatus();
+      if (transactionStatus === "T" || transactionStatus === "E") {
+        options.logger?.warn(
+          { applicationName: options.applicationName, transactionStatus },
+          "database_connection_discarded_mid_transaction",
+        );
+        void (client as PoolClient & { end(): Promise<void> }).end().catch(() => undefined);
+      }
     });
   }
 
@@ -133,7 +147,9 @@ export class Database {
       await client.query("COMMIT");
       return value;
     } catch (error) {
-      await client.query("ROLLBACK");
+      // A failed ROLLBACK must not replace the error that caused it; the release guard in the
+      // constructor discards the connection it leaves inside the transaction.
+      await client.query("ROLLBACK").catch(() => undefined);
       throw error;
     } finally {
       client.release();

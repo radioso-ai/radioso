@@ -114,9 +114,10 @@ export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort
   ): Promise<void> {
     const { alerts } = this.options;
     if (!alerts) return;
-    for (const { email, outcome } of deliveries) {
+    // Each address is throttled on its own, so they alert side by side rather than one after another.
+    await Promise.all(deliveries.map(async ({ email, outcome }) => {
       const reason = ALERTING_OUTCOMES[outcome];
-      if (!reason) continue;
+      if (!reason) return;
       try {
         await alerts.notify({ workspaceId: subject.workspaceId, agentId, email, reason });
       } catch (error) {
@@ -127,7 +128,7 @@ export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort
           errorName: error instanceof Error ? error.name : "unknown",
         }, "Undelivered recipient alert failed");
       }
-    }
+    }));
   }
 }
 

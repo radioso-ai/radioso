@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { routineSkillCatalogApi } from '@/lib/api-routine-skill-catalog'
+import { useOptionalAuth } from '@/lib/auth-context'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
 import {
   appendNotificationDeliveryPage,
   canResendConfirmation,
@@ -18,6 +20,7 @@ import {
   type NotificationDeliveryOutcome,
 } from '@/lib/notification-deliveries'
 import { cn } from '@/lib/utils'
+import { useWorkspace } from '@/lib/workspace-context'
 
 const PAGE_SIZE = 10
 
@@ -34,13 +37,20 @@ const formatTime = (value: string) =>
  * What happened to each address of this agent's recent notices: when, which kind, who, and whether
  * it was sent or why not. A skipped address that has not confirmed can be asked again from here.
  */
-export function RecentNotifications({
-  agentId,
-  conversationHref,
-}: {
-  agentId: string
-  conversationHref: (conversationId: string) => string
-}) {
+export function RecentNotifications({ agentId }: { agentId: string }) {
+  const accountId = useOptionalAuth()?.user?.accountId ?? null
+  const { activeWorkspace } = useWorkspace()
+  const conversationHref = accountId
+    ? (conversationId: string) => buildDashboardHref(accountId, {
+        section: 'activity',
+        activityTab: 'all',
+        historyFilter: 'chat',
+        historyItemKind: 'chat',
+        historyItemId: conversationId,
+        workspaceId: activeWorkspace?.id,
+        workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+      })
+    : null
   const [items, setItems] = useState<NotificationDelivery[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -136,9 +146,11 @@ export function RecentNotifications({
                       </Button>
                     )
                   ) : null}
-                  <Link href={conversationHref(item.conversationId)} className="text-xs text-primary hover:underline">
-                    Open conversation
-                  </Link>
+                  {conversationHref ? (
+                    <Link href={conversationHref(item.conversationId)} className="text-xs text-primary hover:underline">
+                      Open conversation
+                    </Link>
+                  ) : null}
                 </div>
               </article>
             </li>

@@ -511,6 +511,43 @@ describe("staff console routes and guards", () => {
     }));
   });
 
+  it("spends no budget on a request with no session cookie, which costs no database work", async () => {
+    const repositories = await createMemoryRepositories();
+    const findActiveByTokenHash = vi.spyOn(repositories.staffSessions, "findActiveByTokenHash");
+    const abuseControlEnforce = vi.fn(async () => undefined);
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      abuseControlEnforce,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+
+    await request(app).get("/api/v1/ee/operator-console/auth/me").expect(401);
+
+    expect(abuseControlEnforce).not.toHaveBeenCalled();
+    expect(findActiveByTokenHash).not.toHaveBeenCalled();
+  });
+
+  it("does not report a broken session lookup as a rejected session", async () => {
+    const repositories = await createMemoryRepositories();
+    vi.spyOn(repositories.staffSessions, "findActiveByTokenHash").mockRejectedValue(new Error("database unavailable"));
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      logger,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+
+    await request(app)
+      .get("/api/v1/ee/operator-console/auth/me")
+      .set("Cookie", "staff_session=valid-looking-token")
+      .expect(500);
+
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: "staff_console.session_rejected" }),
+      expect.anything(),
+    );
+  });
+
   it("refuses writes that are not JSON, so a cross-site form cannot make them", async () => {
     const repositories = await createMemoryRepositories("owner");
     const app = createApp(createDependencies({

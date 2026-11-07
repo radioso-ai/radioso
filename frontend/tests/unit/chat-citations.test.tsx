@@ -238,7 +238,7 @@ describe('AssistantMessageContent', () => {
           },
           { text: 'This remembrance can change how you respond. ' },
           { text: 'You can read more in [Discover Who You Are!](' },
-          { text: 'https://courses.valmora.example/en/blog/discover-who-you-are)\n' },
+          { text: 'https://courses.valmora.example/en/blog/find-your-calm)\n' },
           {
             text: '- Practice inner calm: through simple meditation and breath, you can steady the mind. ',
             citationIndices: [2],

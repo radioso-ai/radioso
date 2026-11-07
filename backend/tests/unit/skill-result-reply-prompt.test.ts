@@ -8,7 +8,7 @@ import {
 import { CHAT_TURN_ROUTE } from "../../src/shared/domain/chatTurnRoute.js";
 
 const FINDINGS = [
-  "Valmora Books publishes [Autobiografia di uno Yogi](https://example.com/autobiografia).",
+  "Valmora Books publishes [Diario di un Viandante](https://example.com/autobiografia).",
   "",
   JSON.stringify({ conversationId: "conversation-9", traceId: "trace-9", ownership: { owner: "agent" } }, null, 2),
 ].join("\n");

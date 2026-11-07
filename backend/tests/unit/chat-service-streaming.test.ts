@@ -7772,19 +7772,19 @@ describe("chat service streaming", () => {
             {
               chunkId: "chunk-2",
               documentId: "doc-2",
-              title: "God is our True Home: In Conversation with Nadia - Valmora Europe",
+              title: "Peace is our True Home: In Conversation with Nadia - Valmora Europe",
               content: "An interview about Nadia's path and spiritual life.",
             },
             {
               chunkId: "chunk-3",
               documentId: "doc-3",
-              title: "Il gusto della sola - Valmora Books - ricette, consigli e ispirazioni salutari",
+              title: "Il sapore della calma - Valmora Books - ricette, consigli e ispirazioni leggere",
               content: "Her cooking book and related work.",
             },
             {
               chunkId: "chunk-4",
               documentId: "doc-4",
-              title: "Challenges and blessings go hand in hand - Interview with Nadia (ENG) - Valmora Europe",
+              title: "Challenges and gifts go hand in hand - Interview with Nadia (ENG) - Valmora Europe",
               content: "Another interview with adjacent material.",
             },
           ],
@@ -8181,7 +8181,7 @@ describe("chat service streaming", () => {
               chunkId: "chunk-1",
               documentId: "doc-1",
               title: "Freya Rennick Archivi - Valmora Books",
-              content: "Freya wrote La mia anima ricorda Swami Selan.",
+              content: "Freya wrote Il mio cammino con Swami Selan.",
             },
             {
               chunkId: "chunk-2",
@@ -8215,7 +8215,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
-        const answerText = "Freya ha scritto La mia anima ricorda Swami Selan[[1]].";
+        const answerText = "Freya ha scritto Il mio cammino con Swami Selan[[1]].";
         if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             { text: "Quale altro libro o progetto è collegato a Freya?", kind: "broader", contextIndex: 1 },
@@ -8224,7 +8224,7 @@ describe("chat service streaming", () => {
         return answerText;
       },
       async *streamAnswer() {
-        yield "Freya ha scritto La mia anima ricorda Swami Selan[[1]].";
+        yield "Freya ha scritto Il mio cammino con Swami Selan[[1]].";
       },
     };
     const service = makeChatService(

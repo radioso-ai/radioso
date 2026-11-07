@@ -271,7 +271,7 @@ describe('ChatMessageThread', () => {
             id: 'assistant-1',
             role: 'assistant',
             content:
-              'Valmora offers several ways to explore **Valmora Yoga**:\n\n- A **3-day intensive residential course**, **[Valmora Yoga in silenzio - 3 Giorni](https://courses.valmora.example/corso/0008136-corso-residenziale-intensivo-valmora-yoga-in-silenzio-3-giorni)**, focused on deeper practice.\n- For learning more, see **[Valmora Yoga videos](https://valmora-europe.example/video/guided-valmora-yoga)**.',
+              'Valmora offers several ways to explore **Valmora Yoga**:\n\n- A **3-day intensive residential course**, **[Valmora Yoga in silenzio - 3 Giorni](https://courses.valmora.example/corso/0004390-corso-residenziale-intensivo-valmora-yoga-in-silenzio-3-giorni)**, focused on deeper practice.\n- For learning more, see **[Valmora Yoga videos](https://valmora-europe.example/video/guided-valmora-yoga)**.',
             createdAt: '2026-04-02T10:00:00.000Z',
           },
         ]}

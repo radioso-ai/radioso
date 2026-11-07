@@ -113,13 +113,13 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer:
-        "You can explore the main overview here: [Meditation and Valmora Meditation](https://valmora-europe.example/meditation-and-valmora-meditation) \nIf you want to look at course options, here are the residential pages: [Il sentiero del Valmora Meditation 4 giorni](https://courses.valmora.example/corso/0007963-corso-residenziale-il-sentiero-del-valmora-meditation-4-giorni) and [Il sentiero del Valmora Meditation 5 giorni](https://courses.valmora.example/en/course/0007995-corso-residenziale-il-sentiero-del-valmora-meditation-5-days) ",
+        "You can explore the main overview here: [Meditation and Breathwork](https://valmora-europe.example/meditation-and-breathwork) \nIf you want to look at course options, here are the residential pages: [Il cammino della Meditazione 4 giorni](https://courses.valmora.example/corso/0004217-corso-residenziale-il-cammino-della-meditazione-4-giorni) and [Il cammino della Meditazione 5 giorni](https://courses.valmora.example/en/course/0004218-corso-residenziale-il-cammino-della-meditazione-5-days) ",
       citations: [],
     });
 
     expect(result).toEqual({
       answer:
-        "You can explore the main overview here: [Meditation and Valmora Meditation](https://valmora-europe.example/meditation-and-valmora-meditation).\nIf you want to look at course options, here are the residential pages: [Il sentiero del Valmora Meditation 4 giorni](https://courses.valmora.example/corso/0007963-corso-residenziale-il-sentiero-del-valmora-meditation-4-giorni) and [Il sentiero del Valmora Meditation 5 giorni](https://courses.valmora.example/en/course/0007995-corso-residenziale-il-sentiero-del-valmora-meditation-5-days)",
+        "You can explore the main overview here: [Meditation and Breathwork](https://valmora-europe.example/meditation-and-breathwork).\nIf you want to look at course options, here are the residential pages: [Il cammino della Meditazione 4 giorni](https://courses.valmora.example/corso/0004217-corso-residenziale-il-cammino-della-meditazione-4-giorni) and [Il cammino della Meditazione 5 giorni](https://courses.valmora.example/en/course/0004218-corso-residenziale-il-cammino-della-meditazione-5-days)",
     });
   });
 

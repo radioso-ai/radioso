@@ -53,32 +53,32 @@ describe("query rewrite subqueries", () => {
       async rewrite() {
         return {
           rewrittenQuery:
-            "Confronto tra 108 palpiti d’Amore, La meditazione di Orin e L'arte come guida al risveglio",
+            "Confronto tra 108 battiti di Luce, Il silenzio di Orin e La musica come guida alla calma",
           semanticQuery:
-            "Confronto tra 108 palpiti d’Amore, La meditazione di Orin e L'arte come guida al risveglio per identificare il più romantico",
+            "Confronto tra 108 battiti di Luce, Il silenzio di Orin e La musica come guida alla calma per identificare il più romantico",
           lexicalQuery:
-            "108 palpiti d’Amore La meditazione di Orin L'arte come guida al risveglio romantico",
+            "108 battiti di Luce Il silenzio di Orin La musica come guida alla calma romantico",
           responseLanguagePolicy: "match_user_question",
           retrievalSubqueries: [
             {
               id: "",
-              label: "108 palpiti d’Amore",
-              semanticQuery: "108 palpiti d’Amore come libro romantico",
-              lexicalQuery: "108 palpiti d’Amore",
+              label: "108 battiti di Luce",
+              semanticQuery: "108 battiti di Luce come libro romantico",
+              lexicalQuery: "108 battiti di Luce",
               responseLanguagePolicy: "match_user_question",
             },
             {
               id: "",
-              label: "La meditazione di Orin",
-              semanticQuery: "La meditazione di Orin come libro romantico",
-              lexicalQuery: "La meditazione di Orin",
+              label: "Il silenzio di Orin",
+              semanticQuery: "Il silenzio di Orin come libro romantico",
+              lexicalQuery: "Il silenzio di Orin",
               responseLanguagePolicy: "match_user_question",
             },
             {
               id: "",
-              label: "L'arte come guida al risveglio",
-              semanticQuery: "L'arte come guida al risveglio come libro romantico",
-              lexicalQuery: "L'arte come guida al risveglio",
+              label: "La musica come guida alla calma",
+              semanticQuery: "La musica come guida alla calma come libro romantico",
+              lexicalQuery: "La musica come guida alla calma",
               responseLanguagePolicy: "match_user_question",
             },
           ],
@@ -101,12 +101,12 @@ describe("query rewrite subqueries", () => {
     });
 
     expect(result.retrievalSubqueries?.map(({ id, label }) => ({ id, label }))).toEqual([
-      { id: "subquery_1", label: "108 palpiti d'Amore" },
-      { id: "subquery_2", label: "La meditazione di Orin" },
-      { id: "subquery_3", label: "L'arte come guida al risveglio" },
+      { id: "subquery_1", label: "108 battiti di Luce" },
+      { id: "subquery_2", label: "Il silenzio di Orin" },
+      { id: "subquery_3", label: "La musica come guida alla calma" },
     ]);
-    expect(result.retrievalSubqueries?.[0]?.semanticQuery).toBe("108 palpiti d’Amore come libro romantico");
-    expect(result.retrievalSubqueries?.[0]?.lexicalQuery).toBe("108 palpiti d’Amore");
+    expect(result.retrievalSubqueries?.[0]?.semanticQuery).toBe("108 battiti di Luce come libro romantico");
+    expect(result.retrievalSubqueries?.[0]?.lexicalQuery).toBe("108 battiti di Luce");
   });
 
   it.each([

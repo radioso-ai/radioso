@@ -293,7 +293,7 @@ describe("chat integration", () => {
 
   it("answers from a tool's reply envelope without showing the visitor its JSON", async () => {
     const toolText = [
-      "Valmora Books publishes Autobiografia di uno Yogi.",
+      "Valmora Books publishes Diario di un Viandante.",
       "",
       JSON.stringify({
         conversationId: "4d3c2b1a-0000-4000-8000-000000000001",
@@ -303,7 +303,7 @@ describe("chat integration", () => {
         citations: [{ documentId: "doc-1", title: "Catalogo" }],
       }, null, 2),
     ].join("\n");
-    const { gateway, calls } = recordingChatGateway("We publish Autobiografia di uno Yogi.");
+    const { gateway, calls } = recordingChatGateway("We publish Diario di un Viandante.");
     const { app, dependencies, repositories } = createTestApp({
       skillExecutorRegistry: settledSkillExecutorRegistry(toolText),
       chatGateway: gateway,
@@ -319,7 +319,7 @@ describe("chat integration", () => {
 
     const composed = calls.find((call) => call.attemptKey === "skill_result");
     expect(composed?.prompt).toContain(`<skill_findings>\n${toolText}\n</skill_findings>`);
-    expect(response.body.answer).toBe("We publish Autobiografia di uno Yogi.");
+    expect(response.body.answer).toBe("We publish Diario di un Viandante.");
     expect(response.body.answer).not.toContain("traceId");
     expect(response.body.answer).not.toContain("conversationId");
   });
@@ -1742,7 +1742,7 @@ describe("chat integration", () => {
       queryRewriteGateway: {
         async rewrite() {
           return {
-            rewrittenQuery: "Can I buy Freya's book La mia anima ricorda Swami Selan?",
+            rewrittenQuery: "Can I buy Freya's book Il mio cammino con Swami Selan?",
             turnKind: "referential_followup",
             proposedActiveSubject: "Freya",
             relatedEntities: [],
@@ -1762,14 +1762,14 @@ describe("chat integration", () => {
       .send({
         title: "Freya Rennick Archivi - Valmora Books",
         content:
-          "Freya Rennick. La mia anima ricorda Swami Selan. Aggiungi al carrello. Prezzo 18,00 euro.",
+          "Freya Rennick. Il mio cammino con Swami Selan. Aggiungi al carrello. Prezzo 18,00 euro.",
       });
     await request(app)
       .post("/api/v1/document/")
       .set("Authorization", authorization)
       .send({
         title: "Freya Profile",
-        content: "Freya is the author of La mia anima ricorda Swami Selan.",
+        content: "Freya is the author of Il mio cammino con Swami Selan.",
       });
 
     await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
@@ -2268,11 +2268,11 @@ describe("chat integration", () => {
           }
 
           return {
-            rewrittenQuery: "RESIDENTIAL COURSE: Original Teachings of Orin - Simple Living and High Thinking",
-            semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Orin - Simple Living and High Thinking",
-            lexicalQuery: "\"RESIDENTIAL COURSE: Original Teachings of Orin - Simple Living and High Thinking\"",
+            rewrittenQuery: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
+            semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
+            lexicalQuery: "\"RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking\"",
             turnKind: "referential_followup" as const,
-            proposedActiveSubject: "RESIDENTIAL COURSE: Original Teachings of Orin - Simple Living and High Thinking",
+            proposedActiveSubject: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
             relatedEntities: [],
             unresolved: false,
             confidence: 0.88,
@@ -2288,8 +2288,8 @@ describe("chat integration", () => {
       .post("/api/v1/document/")
       .set("Authorization", authorization)
       .send({
-        title: "RESIDENTIAL COURSE: Original Teachings of Orin - Simple Living and High Thinking",
-        content: "Simple Living and High Thinking explores the course themes, community ideals, and practical applications.",
+        title: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
+        content: "Calm Living and Clear Thinking explores the course themes, community ideals, and practical applications.",
       });
 
     await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
@@ -2311,7 +2311,7 @@ describe("chat integration", () => {
       workspaceId,
       role: "assistant",
       content:
-        "I couldn't verify that from your workspace documents, but I did find related material in \"RESIDENTIAL COURSE: Original Teachings of Orin - Simple Living and High Thinking\" if you'd like to explore that instead.",
+        "I couldn't verify that from your workspace documents, but I did find related material in \"RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking\" if you'd like to explore that instead.",
     });
 
     const response = await request(app)
@@ -2329,7 +2329,7 @@ describe("chat integration", () => {
     expect(response.body.answer.length).toBeGreaterThan(0);
     expect(response.body.debug.activitySummary.parsedQuery).toMatchObject({
       originalQuery: "go ahead",
-      semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Orin - Simple Living and High Thinking",
+      semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
     });
     expect(response.body.debug.activitySummary.rewrite).toMatchObject({
       status: "applied",

@@ -420,6 +420,7 @@ const conversationTraceWithRoutineTrace = (
       outputs: {
         routineId: routineTrace.routineId,
         filledSlotKeys: routineTrace.filledSlotKeys,
+        ...(routineTrace.operatorsUnreachable ? { operatorsUnreachable: true } : {}),
         steps: routineTrace.steps.map((step) => ({
           stepId: step.stepId,
           kind: step.kind,

@@ -1,6 +1,7 @@
 import {
   ConfiguredContactDeliveryResolver,
   OperatorNoticeDestinationsReader,
+  RoutineOperatorReachReader,
   WorkspaceOwnerContactRecipientResolver,
 } from "../../modules/chat/composition.js";
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
@@ -98,3 +99,19 @@ export const buildNotificationRecipientPolicy = (input: {
     metrics: input.metrics,
   });
 };
+
+/** Tells a routine turn's reply whether what the turn did reaches anyone, through the resolver that sends it. */
+export const buildRoutineOperatorReachReader = (input: {
+  database: Database;
+  env: Env;
+  mailer: MailTransportPort;
+  logger: AppLogger;
+  metrics: MetricsRegistry | null;
+}): RoutineOperatorReachReader =>
+  new RoutineOperatorReachReader({
+    resolver: buildContactDeliveryResolver(input.database),
+    recipientPolicy: buildNotificationRecipientPolicy(input),
+    skills: new AgentSkillRepository(input.database.kysely),
+    logger: input.logger,
+    metrics: input.metrics,
+  });

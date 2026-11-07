@@ -17,6 +17,7 @@ import type {
 
 import {
   DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT,
+  DEFAULT_ROUTINE_STEP_OPERATORS_UNREACHABLE_PROMPT,
   DEFAULT_ROUTINE_STEP_PROGRESS_PROMPT,
   DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_GAP_PROMPT,
   DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT,
@@ -325,6 +326,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
   private readonly stuckHandoffPromptTemplate: string;
   private readonly stepProgressPromptTemplate: string;
   private readonly contextEvidencePromptTemplate: string;
+  private readonly operatorsUnreachablePromptTemplate: string;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
@@ -348,6 +350,8 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       stepProgressPromptTemplate?: string;
       /** Frames the evidence a step's context variables carry (`{{evidence}}`). */
       contextEvidencePromptTemplate?: string;
+      /** What a reply is told when the turn's effects can reach no one (#1702). */
+      operatorsUnreachablePromptTemplate?: string;
       responseLanguage?: string | Promise<string | undefined>;
       groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
       /** Frames directive guidance as subordinate to the step instruction. */
@@ -371,6 +375,8 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     this.stepProgressPromptTemplate = options.stepProgressPromptTemplate ?? DEFAULT_ROUTINE_STEP_PROGRESS_PROMPT;
     this.contextEvidencePromptTemplate =
       options.contextEvidencePromptTemplate ?? DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT;
+    this.operatorsUnreachablePromptTemplate =
+      options.operatorsUnreachablePromptTemplate ?? DEFAULT_ROUTINE_STEP_OPERATORS_UNREACHABLE_PROMPT;
   }
 
   async render(input: RoutineStepReplyInput): Promise<RenderableTurn> {
@@ -422,7 +428,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
 
     const groundedAnswerRenderer = this.options.groundedAnswerRenderer;
     if (groundedAnswerRenderer?.prepare) {
-      return groundedAnswerRenderer.prepare(input) ?? this.stepReply(input);
+      return groundedAnswerRenderer.prepare(this.groundedAnswerInput(input)) ?? this.stepReply(input);
     }
     if (groundedAnswerRenderer) {
       // Whether the step is groundable is known only once the host renders it, so this
@@ -431,11 +437,37 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       return {
         render: async () => {
           await this.options.responseLanguage;
-          return (await groundedAnswerRenderer.render(input)) ?? stepReply.render();
+          return (await groundedAnswerRenderer.render(this.groundedAnswerInput(input))) ?? stepReply.render();
         },
       };
     }
     return this.stepReply(input);
+  }
+
+  /** What a reply must not claim when the turn's effects reach no one (#1702). */
+  private operatorsUnreachableInstruction(): string {
+    return renderPromptTemplate(
+      "chat/routine-step-operators-unreachable.md",
+      this.operatorsUnreachablePromptTemplate,
+      {},
+    ).trim();
+  }
+
+  /**
+   * A grounded answer is written from the host's own prompt, not the step reply's. It reads the
+   * step through its `routine` rules, so a turn whose effects reach no one tells it there, beside
+   * the instruction the fact overrides.
+   */
+  private groundedAnswerInput(input: RoutineStepReplyInput): RoutineStepReplyInput {
+    return input.operatorsUnreachable
+      ? {
+          ...input,
+          steering: [
+            ...input.steering,
+            { action: this.operatorsUnreachableInstruction(), source: "routine", lifespan: "response" },
+          ],
+        }
+      : input;
   }
 
   /** The reply that follows the step's own instruction, generated through the model gateway. */
@@ -466,6 +498,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       subordinate_guidance: renderSteeringRules(guidance, routineStepSteeringOptions(this.steeringPromptTemplate)),
       instructions: renderRoutineStepInstructions(instructions.map((rule) => rule.action)),
       reask_context: reaskBlock(input.reask, this.reaskTemplates),
+      operators_unreachable_context: input.operatorsUnreachable ? `\n\n${this.operatorsUnreachableInstruction()}` : "",
     });
     return {
       messages: turnMessages(input.turn, input.contextEvidence ?? [], this.contextEvidencePromptTemplate),

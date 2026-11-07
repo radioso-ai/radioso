@@ -121,6 +121,15 @@ const replyCases: Array<{ name: string; input: RoutineStepReplyInput; responseLa
     responseLanguage: "German",
   },
   {
+    name: "a terminal step reply whose operators cannot be reached",
+    input: { step: confirmed, steering: [routineRule("Confirm the booking request was sent.")], turn, operatorsUnreachable: true },
+    responseLanguage: "German",
+  },
+  {
+    name: "a chat step reply after an action step whose operators cannot be reached",
+    input: { step: askContact, steering: contactSteering, turn, operatorsUnreachable: true },
+  },
+  {
     name: "a step reply on an unresolved request with directive guidance and one evidence block",
     input: {
       step: askContact,

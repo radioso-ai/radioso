@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DefaultRoutineRunner } from "../src/routineRunner.js";
 import type {
   ConversationRoutineNextStepSelector,
+  ConversationRoutineOperatorReach,
   ConversationRoutineSkillDispatcher,
   ConversationRoutineStepRenderer,
   Routine,
@@ -4767,6 +4768,244 @@ describe("DefaultRoutineRunner operator notices", () => {
     const malformed = await new DefaultRoutineRunner([ending({ terminalKind: "handoff", operatorNotice: { subject: 42, intro: "Call back." } })], landingOnDone(), renderer)
       .resume({ turn, state: state(["ask_name"]) });
     expect(malformed.terminal?.operatorNotice).toEqual({ intro: "Call back." });
+  });
+});
+
+describe("DefaultRoutineRunner operator reach (#1702)", () => {
+  const nameSlot = { id: "slot_name", key: "name", type: "text" as const, required: true };
+  /** ask_name -> done; `done` carries `metadata`, and `send` (an action step) sits between them when asked for. */
+  const ending = (metadata: Record<string, unknown>, options: { withAction?: boolean } = {}): Routine => ({
+    id: "contact",
+    rootStepId: "ask_name",
+    slots: [nameSlot],
+    steps: [
+      { id: "ask_name", kind: "chat", action: "Ask for {{slot.name}}." },
+      ...(options.withAction ? [{ id: "send", kind: "action" as const, actionType: "contact.send" }] : []),
+      { id: "done", kind: "terminal" as const, action: "Say it was forwarded.", metadata },
+    ],
+    transitions: options.withAction
+      ? [
+          { from: "ask_name", to: "send", condition: "The user gave their name." },
+          { from: "send", to: "done", condition: "Sent." },
+        ]
+      : [{ from: "ask_name", to: "done", condition: "The user gave their name." }],
+  });
+  const landingOn = (stepId: string): ConversationRoutineNextStepSelector => ({
+    select: vi.fn(async () => ({ nextStepId: stepId, variables: { name: "Ada" } })),
+  });
+  const recordingRenderer = () => {
+    const render = vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ step }) => ({ answer: `[${step.id}]` }));
+    return { renderer: { render } satisfies ConversationRoutineStepRenderer, render };
+  };
+  const reach = (reachable: boolean) => ({
+    canReachOperators: vi.fn<ConversationRoutineOperatorReach["canReachOperators"]>(async () => reachable),
+  });
+  const notifyingEnding = { terminalKind: "complete", operatorNotice: { skillName: "notify_bookings" } };
+
+  it("tells the reply when the ending's notice can reach nobody, and says so on the trace", async () => {
+    const operatorReach = reach(false);
+    const { renderer, render } = recordingRenderer();
+    const runner = new DefaultRoutineRunner([ending(notifyingEnding)], landingOn("done"), renderer, undefined, { operatorReach });
+
+    const result = await runner.resume({ turn, state: state(["ask_name"]) });
+
+    expect(render.mock.calls[0][0].operatorsUnreachable).toBe(true);
+    expect(result.trace?.operatorsUnreachable).toBe(true);
+    expect(operatorReach.canReachOperators).toHaveBeenCalledWith({
+      actions: [],
+      skillsWithExternalEffects: [],
+      terminal: expect.objectContaining({ kind: "complete", operatorNotice: { skillName: "notify_bookings" } }),
+    });
+    // The ending still happens as authored: only what the reply may claim changes.
+    expect(result.terminal?.operatorNotice).toEqual({ skillName: "notify_bookings" });
+    expect(result.nextState).toBeNull();
+  });
+
+  it("leaves the reply and the trace alone when someone can be reached", async () => {
+    const { renderer, render } = recordingRenderer();
+    const runner = new DefaultRoutineRunner([ending(notifyingEnding)], landingOn("done"), renderer, undefined, { operatorReach: reach(true) });
+
+    const result = await runner.resume({ turn, state: state(["ask_name"]) });
+
+    expect(render.mock.calls[0][0]).not.toHaveProperty("operatorsUnreachable");
+    expect(result.trace).not.toHaveProperty("operatorsUnreachable");
+  });
+
+  it("checks nothing for a host that supplies no port", async () => {
+    const { renderer, render } = recordingRenderer();
+    const runner = new DefaultRoutineRunner([ending(notifyingEnding)], landingOn("done"), renderer);
+
+    const result = await runner.resume({ turn, state: state(["ask_name"]) });
+
+    expect(render.mock.calls[0][0]).not.toHaveProperty("operatorsUnreachable");
+    expect(result.trace).not.toHaveProperty("operatorsUnreachable");
+    expect(result.terminal?.operatorNotice).toEqual({ skillName: "notify_bookings" });
+  });
+
+  it("does not ask on a turn that does nothing operators could receive", async () => {
+    const operatorReach = reach(false);
+    const { renderer, render } = recordingRenderer();
+
+    const asking = new DefaultRoutineRunner([ending(notifyingEnding)], landingOn("ask_name"), renderer, undefined, { operatorReach });
+    await asking.resume({ turn, state: state(["ask_name"]) });
+    const quietEnding = new DefaultRoutineRunner([ending({ terminalKind: "complete" })], landingOn("done"), renderer, undefined, { operatorReach });
+    await quietEnding.resume({ turn, state: state(["ask_name"]) });
+
+    expect(operatorReach.canReachOperators).not.toHaveBeenCalled();
+    expect(render.mock.calls.every(([input]) => !("operatorsUnreachable" in input))).toBe(true);
+  });
+
+  it("asks with the actions the walk emitted on its way to the ending", async () => {
+    const operatorReach = reach(false);
+    const { renderer, render } = recordingRenderer();
+    const runner = new DefaultRoutineRunner(
+      [ending({ terminalKind: "complete" }, { withAction: true })],
+      landingOn("send"),
+      renderer,
+      undefined,
+      { operatorReach },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_name"]) });
+
+    expect(result.actions?.map((action) => action.type)).toEqual(["contact.send"]);
+    expect(operatorReach.canReachOperators.mock.calls[0][0].actions?.map((action) => action.type)).toEqual(["contact.send"]);
+    expect(render.mock.calls[0][0].operatorsUnreachable).toBe(true);
+    expect(result.trace?.operatorsUnreachable).toBe(true);
+  });
+
+  it("asks with the completion export the ending queues, which the walk adds last", async () => {
+    const operatorReach = reach(true);
+    const { renderer } = recordingRenderer();
+    const exporting: Routine = {
+      ...ending({ terminalKind: "complete" }),
+      completionExport: { enabled: true, destinationRef: "dest_1", triggerKinds: ["complete"] },
+    };
+    const runner = new DefaultRoutineRunner([exporting], landingOn("done"), renderer, undefined, { operatorReach });
+
+    await runner.resume({ turn, state: state(["ask_name"]) });
+
+    expect(operatorReach.canReachOperators.mock.calls[0][0].actions?.map((action) => action.type)).toEqual(["webhook.send"]);
+  });
+
+  it("asks with the skills that may have acted outside the conversation, since a skill queues its own effect", async () => {
+    const operatorReach = reach(false);
+    const { renderer, render } = recordingRenderer();
+    const viaSkill: Routine = {
+      id: "contact",
+      rootStepId: "notify",
+      steps: [
+        { id: "notify", kind: "skill", skillName: "notify_bookings" },
+        { id: "done", kind: "terminal", action: "Say it was forwarded.", metadata: { terminalKind: "complete" } },
+      ],
+      transitions: [{ from: "notify", to: "done", condition: "Notified." }],
+    };
+    const dispatch = vi.fn<ConversationRoutineSkillDispatcher["dispatch"]>(async () => ({ status: "delivered", outputs: {} }));
+    const runner = new DefaultRoutineRunner([viaSkill], landingOn("done"), renderer, { dispatch }, { operatorReach });
+
+    const result = await runner.resume({ turn, state: state([]), activationTurn: true });
+
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(operatorReach.canReachOperators.mock.calls[0][0].skillsWithExternalEffects).toEqual(["notify_bookings"]);
+    expect(render.mock.calls[0][0].operatorsUnreachable).toBe(true);
+    expect(result.trace?.operatorsUnreachable).toBe(true);
+  });
+
+  it("does not ask about a skill that reports it stayed inside the conversation", async () => {
+    const operatorReach = reach(false);
+    const { renderer } = recordingRenderer();
+    const viaSkill: Routine = {
+      id: "contact",
+      rootStepId: "lookup",
+      steps: [
+        { id: "lookup", kind: "skill", skillName: "lookup" },
+        { id: "done", kind: "terminal", action: "Say goodbye.", metadata: { terminalKind: "complete" } },
+      ],
+      transitions: [{ from: "lookup", to: "done", condition: "Looked up." }],
+    };
+    const dispatch = vi.fn<ConversationRoutineSkillDispatcher["dispatch"]>(async () => ({
+      status: "completed",
+      outputs: {},
+      actsOutsideConversation: false,
+    }));
+    const runner = new DefaultRoutineRunner([viaSkill], landingOn("done"), renderer, { dispatch }, { operatorReach });
+
+    await runner.resume({ turn, state: state([]), activationTurn: true });
+
+    expect(operatorReach.canReachOperators).not.toHaveBeenCalled();
+  });
+
+  it("carries the fact onto a reply that parks at a decision gate after an action step", async () => {
+    const operatorReach = reach(false);
+    const { renderer, render } = recordingRenderer();
+    const parking: Routine = {
+      id: "contact",
+      rootStepId: "ask_name",
+      slots: [nameSlot],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for {{slot.name}}." },
+        { id: "send", kind: "action", actionType: "contact.send" },
+        {
+          id: "gate",
+          kind: "await",
+          action: "Say it is waiting on a decision.",
+          decision: { captureKey: "choice", options: [{ id: "yes", label: "Yes" }] },
+        },
+        { id: "done", kind: "terminal", action: "Done.", metadata: { terminalKind: "complete" } },
+      ],
+      transitions: [
+        { from: "ask_name", to: "send", condition: "The user gave their name." },
+        { from: "send", to: "gate", condition: "Sent." },
+        { from: "gate", to: "done", condition: "Decided." },
+      ],
+    };
+    const runner = new DefaultRoutineRunner([parking], landingOn("send"), renderer, undefined, { operatorReach });
+
+    const result = await runner.resume({ turn, state: state(["ask_name"]) });
+
+    expect(result.awaitingDecision).toBeDefined();
+    expect(render.mock.calls[0][0].operatorsUnreachable).toBe(true);
+    expect(result.trace?.operatorsUnreachable).toBe(true);
+  });
+
+  it("does not ask for a visitor stuck past the re-ask limit: that ending goes to a person", async () => {
+    const operatorReach = reach(false);
+    const { renderer, render } = recordingRenderer();
+    const stuck: Routine = {
+      id: "contact",
+      rootStepId: "ask_name",
+      slots: [nameSlot],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for {{slot.name}}.", metadata: { collectsSlots: ["name"] } },
+        { id: "person", kind: "terminal", action: "A person takes over.", metadata: { terminalKind: "handoff" } },
+      ],
+      transitions: [{ from: "ask_name", to: "person", condition: "The visitor asks for a person." }],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "ask_name" }));
+    const runner = new DefaultRoutineRunner([stuck], { select }, renderer, undefined, { operatorReach, reaskLimit: 0 });
+
+    const result = await runner.resume({ turn, state: { ...state(["ask_name"]), reaskCount: 1 } });
+
+    expect(result.terminal?.kind).toBe("stuck");
+    expect(operatorReach.canReachOperators).not.toHaveBeenCalled();
+    expect(render.mock.calls[0][0]).not.toHaveProperty("operatorsUnreachable");
+  });
+
+  it("lets the reply stay lazy: nothing is generated until the claim's holder asks", async () => {
+    const operatorReach = reach(false);
+    const { renderer, render } = recordingRenderer();
+    const runner = new DefaultRoutineRunner([ending(notifyingEnding)], landingOn("done"), renderer, undefined, { operatorReach });
+
+    const claim = await runner.claim({ turn, state: state(["ask_name"]) });
+
+    expect(operatorReach.canReachOperators).toHaveBeenCalledOnce();
+    expect(render).not.toHaveBeenCalled();
+    expect(claim.kind).toBe("claimed");
+    if (claim.kind === "claimed") {
+      expect(claim.effects.trace?.operatorsUnreachable).toBe(true);
+      await claim.reply.render();
+      expect(render.mock.calls[0][0].operatorsUnreachable).toBe(true);
+    }
   });
 });
 

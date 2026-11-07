@@ -1,6 +1,7 @@
 import type { ConversationModelGateway } from "./modelGateway.js";
 import type { ReferenceTimeZone } from "./referenceTimeZone.js";
 import type { RoutineRunTrace } from "./routineTrace.js";
+import type { ConversationRoutineStepRenderer, RoutineStepReplyInput } from "./routineStepReply.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
@@ -1356,63 +1357,13 @@ export interface ConversationRoutineNextStepSelector {
   }): Promise<RoutineNextStepDecision>;
 }
 
-/**
- * Renders the reply for the routine's current step. The host implements this with
- * the Radioso composer (the projected step steering is passed in), so the pure
- * engine owns graph mechanics and the host owns generation/presentation. It is told
- * only what it needs to write the message — the step and its projected steering for
- * this turn, and on a re-ask what the step still lacks — not the graph topology or
- * slot values.
- *
- * The rules play two roles (#1351): a `source: "routine"` rule is the step's own
- * instruction and controls what the message asks for or does; every other rule
- * (authored directives) is subordinate guidance that shapes how it is said and
- * never replaces the step's question or action.
- */
-export interface ConversationRoutineStepRenderer {
-  render(input: RoutineStepReplyInput): Promise<RenderableTurn>;
-  /**
-   * Decides the reply without generating it: no model call happens until the returned
-   * reply's `render()` or `stream()`, and `prepare(input).render()` produces what
-   * `render(input)` would. Optional; a runner without it renders with `render`.
-   */
-  prepare?(input: RoutineStepReplyInput): PendingRenderableTurn;
-}
-
-/** What a routine step's reply is written from. */
-export interface RoutineStepReplyInput {
-  step: RoutineStep;
-  steering: SteeringRule[];
-  turn: TurnContext;
-  reask?: RoutineStepReask;
-  /**
-   * True when the runner ends the routine on `step` because the visitor stayed stuck on it
-   * past the re-ask limit, and a person takes the conversation over (#1384). The reply tells
-   * the visitor a person continues from here; it neither asks the step's question nor
-   * follows its instruction, so `steering` is empty and `reask` absent.
-   */
-  stuckHandoff?: boolean;
-  /** {@link RoutineContextRenderer.evidence} of the context variables the step references; absent when none carries any. */
-  contextEvidence?: readonly string[];
-}
-
-/**
- * Present when the turn renders the same chat step the user was answering, because
- * their reply did not satisfy it. Absent on a step's first rendering, including the
- * routine's activation turn.
- */
-export interface RoutineStepReask {
-  /**
-   * The step's collected slots that are still unfilled, plus any whose value this turn was
-   * rejected for not fitting its declared type. Schema only, never values.
-   */
-  missingSlots: RoutineSlotSchema[];
-  /**
-   * True once the step has been asked again more times in a row than the runner's re-ask
-   * limit allows (#1376): the reply should ask differently rather than repeat the question.
-   */
-  exhausted?: boolean;
-}
+export type {
+  ConversationRoutineOperatorReach,
+  ConversationRoutineStepRenderer,
+  RoutineOperatorBoundEffects,
+  RoutineStepReask,
+  RoutineStepReplyInput,
+} from "./routineStepReply.js";
 
 /**
  * Which directives steered one routine step's reply, recorded as
@@ -2104,7 +2055,11 @@ export interface RoutineContextRenderer {
   evidence?(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
 }
 
-/** Renders a grounded answer for a routine step, or null when the step is not groundable. */
+/**
+ * Renders a grounded answer for a routine step, or null when the step is not groundable. Whatever
+ * else the step's reply must obey arrives as a `source: "routine"` rule in `steering`, where the
+ * host already reads the step's own instruction.
+ */
 export interface RoutineGroundedAnswerRenderer {
   render(input: RoutineGroundedAnswerInput): Promise<RenderableTurn | null>;
   /**

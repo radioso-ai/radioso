@@ -6,6 +6,7 @@ import { spineStageLabel, spineStageTelemetry } from '@/lib/turn-trace'
 import { skillDispatchOutcome } from '@/lib/skill-dispatch-outcome'
 import {
   buildRoutineRunTrace,
+  routineRunFacts,
   type RoutineRunTraceView,
   type RoutineStepSelectionOutcome,
   type RoutineTraceStepView,
@@ -1105,9 +1106,7 @@ function RoutineStageDetail({
           <KeyValueGrid
             record={{
               ...(routineId ? { routineId } : {}),
-              ...(trace?.startStepId ? { startStep: trace.startStepId } : {}),
-              ...(trace?.landedStepId ? { landedStep: trace.landedStepId } : {}),
-              ...(trace?.terminalKind ? { terminalKind: trace.terminalKind } : {}),
+              ...routineRunFacts(trace),
               ...(typeof completed === 'boolean' ? { completed } : {}),
               ...(typeof answerLength === 'number' ? { answerLength } : {}),
             }}

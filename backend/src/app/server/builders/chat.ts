@@ -5,12 +5,6 @@ import { RoutineDefinitionRepository } from "../../../db/repositories/routineDef
 import { RoutineStateRepository } from "../../../db/repositories/routineStateRepository.js";
 import { DirectiveStateRepository } from "../../../db/repositories/directiveStateRepository.js";
 import { ConversationSummaryRepository } from "../../../db/repositories/conversationSummaryRepository.js";
-import {
-  ConversationSummaryService,
-  ModelConversationSummaryGenerator,
-  ModelConversationEarlyTitleGenerator,
-  conversationSummaryRefreshHandler,
-} from "../../../modules/chat/composition.js";
 import { BackgroundJobRuntime, type BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 import { PeriodicTaskRunner } from "../../composition/periodicTaskRunner.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
@@ -86,7 +80,12 @@ import {
   AgentConverseService,
   CONTACT_SEND_ACTION_TYPE,
   type PreparedSession,
+  ConversationSummaryService,
+  ModelConversationSummaryGenerator,
+  ModelConversationEarlyTitleGenerator,
+  conversationSummaryRefreshHandler,
 } from "../../../modules/chat/composition.js";
+import { buildRoutineOperatorReachReader } from "../../composition/contactDelivery.js";
 import { type ApplicationComposition } from "../../composition/index.js";
 import { createDefaultActionDrainDispatcher } from "../../composition/defaultComposition.js";
 import {
@@ -679,6 +678,7 @@ export const buildChatServices = (input: {
     publishedRoutineSource,
     routineDefinitionRepository: input.routineDefinitionRepository,
     routineInvocableSkillNames: input.routineInvocableSkillNames,
+    operatorReach: buildRoutineOperatorReachReader({ database: input.database, env: input.env, mailer: input.mailService, logger: input.logger, metrics: input.metricsRegistry ?? null }),
     routineRegistrations: input.composition.routineRegistrations,
     routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
     skillExecutorRegistry: input.composition.skillExecutorRegistry,

@@ -136,7 +136,7 @@ const effectiveState = (view: NotificationRecipientStateView, now: Date): Stored
 const awaitingConfirmation = (state: NotificationRecipientState): boolean =>
   state === "grandfathered" || state === "waiting_for_confirmation";
 
-const deliverable = (state: NotificationRecipientState): boolean =>
+export const deliverable = (state: NotificationRecipientState): boolean =>
   state === "confirmed" || state === "grandfathered" || state === "confirmation_not_required";
 
 /** Resolves the names a confirmation shows at most once per call, and only when one is sent. */

@@ -91,8 +91,18 @@ export interface RoutineRunTraceView {
   /** Slot keys that held a value before the turn and were given a different one. */
   replacedSlotKeys?: string[]
   filledSlotKeys: string[]
+  /** What the turn sent could reach no one, so its reply was told not to claim it was passed on. */
+  operatorsUnreachable?: true
   steps: RoutineTraceStepView[]
 }
+
+/** The turn's walk as the stage detail lists it, each key present only when the trace carries it. */
+export const routineRunFacts = (trace: RoutineRunTraceView | undefined): Record<string, string | boolean> => ({
+  ...(trace?.startStepId ? { startStep: trace.startStepId } : {}),
+  ...(trace?.landedStepId ? { landedStep: trace.landedStepId } : {}),
+  ...(trace?.terminalKind ? { terminalKind: trace.terminalKind } : {}),
+  ...(trace?.operatorsUnreachable ? { operatorsUnreachable: true } : {}),
+})
 
 /**
  * Parse the routine stage's `routine` sub-trace into a renderable, metadata-safe
@@ -138,6 +148,7 @@ export const buildRoutineRunTrace = (
     capturedSlotKeys: asStringArray(payload.capturedSlotKeys),
     ...(replacedSlotKeys.length > 0 ? { replacedSlotKeys } : {}),
     filledSlotKeys: asStringArray(payload.filledSlotKeys),
+    ...(payload.operatorsUnreachable === true ? { operatorsUnreachable: true as const } : {}),
     steps,
   }
 }

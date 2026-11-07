@@ -662,7 +662,8 @@ export const createConversationEngine = (): ConversationEngine => new DefaultCon
 
 export { answerCoverageHeadParseOutcome } from "./coverageVerdictSink.js";
 
-export { DefaultRoutineRunner, sensitiveSlotKeys } from "./routineRunner.js";
+export { DefaultRoutineRunner } from "./routineRunner.js";
+export { sensitiveSlotKeys } from "./routineEnding.js";
 export {
   collectedSlotsForStep,
   isSlotCollectionStepSatisfied,

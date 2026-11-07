@@ -51,6 +51,7 @@ import { createContactRoutineApplicationModule } from "../../src/app/composition
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { contactRoutineDefinition } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
+import { RoutineOperatorReachReader } from "../../src/modules/chat/services/actions/routineOperatorReach.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import {
   createAuditService,
@@ -186,6 +187,7 @@ const chatService = async (input: {
   const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
   const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const auditEvents = new InMemoryAuditEventRepository();
+  const actionOutbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
   const service = new ChatService({
     conversationRepository,
     messageRepository,
@@ -209,7 +211,7 @@ const chatService = async (input: {
     conversationEngine: createConversationEngine(),
     routineStore,
     routineProvider: input.routineProvider,
-    actionOutbox: { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) },
+    actionOutbox,
     assistantTurnPersistence: input.persistence?.(messageRepository),
     conversationTurnRegistry: new InMemoryConversationTurnRegistry(
       input.turnCancelled ? { turnCancelled: input.turnCancelled } : undefined,
@@ -218,7 +220,7 @@ const chatService = async (input: {
   });
   /** An existing conversation with this agent, for turns that must share one. */
   const existingConversationId = conversation.id;
-  return { service, messageRepository, routineStore, reservation, metrics, logger, auditEvents, existingConversationId };
+  return { service, messageRepository, routineStore, reservation, metrics, logger, auditEvents, actionOutbox, existingConversationId };
 };
 
 const request = (
@@ -308,7 +310,8 @@ const builtInRegistrations = (): RoutineRegistration[] => {
   return registry.routineRegistrations;
 };
 
-const contactRoutineProvider = (): ChatRoutineProvider => createRoutineTurnProvider({
+const contactRoutineProvider = (options: { operatorReach?: RoutineOperatorReachReader } = {}): ChatRoutineProvider => createRoutineTurnProvider({
+  ...(options.operatorReach ? { operatorReach: options.operatorReach } : {}),
   agentSkillRepository: { listByAgent: vi.fn(async () => []) },
   capabilityPolicy: new DefaultAllowCapabilityPolicy(),
   clusteringEmbeddings: {
@@ -636,6 +639,257 @@ describe("ChatService delivers a routine reply after a skill step by what the sk
       ? done.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate")
       : undefined;
     expect(routineStage?.outputs).toMatchObject({ replyDelivery: "whole" });
+  });
+});
+
+describe("ChatService when nobody can receive what a routine turn sends (#1702)", () => {
+  const FACT = "The team cannot be reached from this chat right now";
+
+  /** The real reader over one route, its recipients in these states. */
+  const operatorReach = (recipientStates: Record<string, "confirmed" | "waiting_for_confirmation">) => {
+    const describeRecipients = vi.fn(async (_workspaceId: string, emails: readonly string[]) =>
+      emails.map((email) => ({ email, state: recipientStates[email] ?? ("waiting_for_confirmation" as const) })));
+    const prepareDelivery = vi.fn();
+    const reader = new RoutineOperatorReachReader({
+      resolver: {
+        resolveForAgent: vi.fn(async () => ({
+          emails: Object.keys(recipientStates),
+          webhook: null,
+          via: "agent_setting" as const,
+          recipientsFromWorkspaceOwner: false,
+        })),
+      },
+      recipientPolicy: { describe: describeRecipients, prepareDelivery } as never,
+      skills: { findByName: vi.fn(async () => null) },
+      logger: { warn: vi.fn() },
+    });
+    return { reader, prepareDelivery };
+  };
+
+  /** ask_note -> done, whose ending notifies operators; or through `send`, a contact.send step. */
+  const noticeRoutine: Routine = {
+    id: "booking",
+    rootStepId: "ask_note",
+    steps: [
+      { id: "ask_note", kind: "chat", action: "Ask what they would like to book." },
+      {
+        id: "done",
+        kind: "terminal",
+        action: "Say the request was passed to reception.",
+        metadata: { terminalKind: "complete", operatorNotice: { subject: "New booking" } },
+      },
+    ],
+    transitions: [{ from: "ask_note", to: "done", condition: "they said what to book" }],
+  };
+
+  const replyPrompts = () => {
+    const prompts: string[] = [];
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        prompts.push(input.systemPrompt ?? "");
+        return "I could not pass that on. Please contact the team directly.";
+      },
+      async *streamAnswer() {
+        throw new Error("a turn that queues an action writes its reply whole");
+      },
+    };
+    return { prompts, chatGateway };
+  };
+
+  const noticeProvider = (reach: RoutineOperatorReachReader): ChatRoutineProvider => ({
+    forTurn: async ({ modelGateway, agentId, workspaceId }) => ({
+      routines: [noticeRoutine],
+      activator: { activate: async () => ({ kind: "activate" as const, routineId: noticeRoutine.id }) },
+      runner: new DefaultRoutineRunner(
+        [noticeRoutine],
+        { select: async () => ({ nextStepId: "done" }) },
+        new RoutineStepRenderer(modelGateway),
+        undefined,
+        { operatorReach: reach.forAgent({ workspaceId: workspaceId ?? "", agentId }) },
+      ),
+    }),
+  });
+
+  const activeNoticeRoutine: RoutineState = {
+    sessionId: "ignored",
+    routineId: noticeRoutine.id,
+    path: ["ask_note"],
+    variables: {},
+    status: "active",
+  };
+
+  const notifyActions = (enqueue: ReturnType<typeof vi.fn>) =>
+    enqueue.mock.calls.map(([action]) => (action as { type: string }).type);
+
+  it("tells the reply prompt, still queues the notice, and records it on the turn's trace", async () => {
+    const { prompts, chatGateway } = replyPrompts();
+    const { reader, prepareDelivery } = operatorReach({ "reception@example.com": "waiting_for_confirmation" });
+    const observed: Observed = { order: [], events: [] };
+    const harness = await chatService({
+      routineProvider: noticeProvider(reader),
+      chatGateway,
+      order: observed.order,
+      activeRoutine: activeNoticeRoutine,
+    });
+
+    const error = await drainTurn(harness.service.streamAnswer(request("A room for two")), observed);
+
+    expect(error).toBeUndefined();
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain(FACT);
+    expect(notifyActions(harness.actionOutbox.enqueue)).toEqual(["completion.notify"]);
+    expect(prepareDelivery).not.toHaveBeenCalled();
+    // The turn is stored before the reply shows, as any turn that queues an action is.
+    expect(observed.order[0]).toBe("persist");
+    expect(chunkText(observed.events)).toBe("I could not pass that on. Please contact the team directly.");
+    const done = observed.events.find((event) => event.type === "done");
+    const routineStage = done?.type === "done"
+      ? done.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_resume")
+      : undefined;
+    expect(routineStage?.subTrace?.payload).toMatchObject({ operatorsUnreachable: true, terminalKind: "complete" });
+  });
+
+  it("keeps the prompt and the trace as they were when one recipient can receive the notice", async () => {
+    const { prompts, chatGateway } = replyPrompts();
+    const { reader } = operatorReach({ "reception@example.com": "confirmed", "other@example.com": "waiting_for_confirmation" });
+    const observed: Observed = { order: [], events: [] };
+    const harness = await chatService({
+      routineProvider: noticeProvider(reader),
+      chatGateway,
+      order: observed.order,
+      activeRoutine: activeNoticeRoutine,
+    });
+
+    await drainTurn(harness.service.streamAnswer(request("A room for two")), observed);
+
+    expect(prompts[0]).not.toContain(FACT);
+    expect(notifyActions(harness.actionOutbox.enqueue)).toEqual(["completion.notify"]);
+    const done = observed.events.find((event) => event.type === "done");
+    const routineStage = done?.type === "done"
+      ? done.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_resume")
+      : undefined;
+    expect(routineStage?.subTrace?.payload).not.toHaveProperty("operatorsUnreachable");
+  });
+
+  it("tells the built-in contact routine's reply through the production turn provider, and still queues contact.send", async () => {
+    const prompts: string[] = [];
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        const system = input.systemPrompt ?? "";
+        if (system.includes("You are guiding a user through a structured, multi-step routine")) {
+          return JSON.stringify({ claimsAuthority: false, condition: 2, offTopic: false, variables: { message: "Please call me" } });
+        }
+        prompts.push(system);
+        return "I could not pass that on.";
+      },
+      async *streamAnswer() {
+        throw new Error("a turn that queues an action writes its reply whole");
+      },
+    };
+    const { reader } = operatorReach({ "owner@example.com": "waiting_for_confirmation" });
+    const observed: Observed = { order: [], events: [] };
+    const harness = await chatService({
+      routineProvider: contactRoutineProvider({ operatorReach: reader }),
+      chatGateway,
+      order: observed.order,
+      activeRoutine: {
+        sessionId: "ignored",
+        routineId: contactRoutineDefinition.id,
+        path: ["ask_email", "ask_message"],
+        variables: { email: "visitor@example.com" },
+        status: "active",
+      },
+    });
+
+    const error = await drainTurn(harness.service.streamAnswer(request("Please call me")), observed);
+
+    expect(error).toBeUndefined();
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain(FACT);
+    expect(prompts[0]).toContain("Confirm their request was sent");
+    expect(notifyActions(harness.actionOutbox.enqueue)).toEqual(["contact.send"]);
+  });
+
+  /** A retrieval step feeding an ending that notifies operators, on the production renderers. */
+  const groundedEndingTurn = async (recipientStates: Record<string, "confirmed" | "waiting_for_confirmation">) => {
+    const systemPrompts: string[] = [];
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        systemPrompts.push(input.systemPrompt ?? "");
+        return groundedEnvelope("The studio is open nine to five on weekdays[[1]]. I could not pass your note on.");
+      },
+      async *streamAnswer() {
+        throw new Error("a turn that queues an action writes its reply whole");
+      },
+    };
+    const routine: Routine = {
+      id: "lookup_then_notify",
+      rootStepId: "lookup",
+      steps: [
+        { id: "lookup", kind: "skill", skillName: retrievalContextSkillDefinition.name },
+        {
+          id: "done",
+          kind: "terminal",
+          action: "Answer their question and say the team has their note.",
+          metadata: { terminalKind: "complete", operatorNotice: { subject: "New note" } },
+        },
+      ],
+      transitions: [{ from: "lookup", to: "done", condition: "always" }],
+    };
+    const lookup = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: {
+        status: "context_ready",
+        outputs: { has_context: true },
+        metadata: { __retrievalResult: stagedRetrieval() },
+      } as unknown as SkillOutcome,
+    }));
+    const registry = new SkillExecutorRegistry();
+    registry.register({ ...(retrievalContextSkillDefinition.execution as { kind: "internal"; adapter: string }), executor: { dispatch: lookup } });
+    const { reader } = operatorReach(recipientStates);
+    const observed: Observed = { order: [], events: [] };
+    const harness = await chatService({
+      routineProvider: {
+        forTurn: async ({ modelGateway, groundedAnswerRenderer, agentId, workspaceId }) => ({
+          routines: [routine],
+          activator: { activate: async () => ({ kind: "activate" as const, routineId: routine.id }) },
+          runner: new DefaultRoutineRunner(
+            [routine],
+            { select: async () => ({ nextStepId: "done" }) },
+            new RoutineStepRenderer(modelGateway, { groundedAnswerRenderer }),
+            new RoutineSkillExecutorDispatcher(new StaticRoutineSkillResolver([retrievalContextSkillDefinition]), registry),
+            { contextRenderer: routineContextRenderer, operatorReach: reader.forAgent({ workspaceId: workspaceId ?? "", agentId }) },
+          ),
+        }),
+      },
+      chatGateway,
+      order: observed.order,
+    });
+
+    const error = await drainTurn(harness.service.streamAnswer(request("When are you open?")), observed);
+
+    expect(error).toBeUndefined();
+    expect(lookup).toHaveBeenCalledOnce();
+    expect(notifyActions(harness.actionOutbox.enqueue)).toEqual(["completion.notify"]);
+    // The grounded generator wrote it: its envelope was parsed and its anchor consumed.
+    expect(chunkText(observed.events)).toBe("The studio is open nine to five on weekdays. I could not pass your note on.");
+    expect(systemPrompts).toHaveLength(1);
+    return systemPrompts[0];
+  };
+
+  it("tells a retrieval-fed ending's grounded answer, in the prompt its generator reads", async () => {
+    const prompt = await groundedEndingTurn({ "reception@example.com": "waiting_for_confirmation" });
+
+    expect(prompt).toContain("This answer is one step of a guided flow");
+    expect(prompt).toContain(FACT);
+    expect(prompt.indexOf(FACT)).toBeGreaterThan(prompt.indexOf("Answer their question and say the team has their note."));
+  });
+
+  it("leaves a grounded answer's prompt alone when someone can receive the notice", async () => {
+    const prompt = await groundedEndingTurn({ "reception@example.com": "confirmed" });
+
+    expect(prompt).toContain("Answer their question and say the team has their note.");
+    expect(prompt).not.toContain(FACT);
   });
 });
 

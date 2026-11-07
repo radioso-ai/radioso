@@ -1,6 +1,7 @@
 import type {
   ConversationRoutineClaim,
   ConversationRoutineNextStepSelector,
+  ConversationRoutineOperatorReach,
   ConversationRoutineResumeInput,
   ConversationRoutineResumeResult,
   ConversationRoutineRunner,
@@ -13,7 +14,7 @@ import type {
   RoutineContextRenderer,
   RoutineGuard,
   RoutineNextStepDecision,
-  RoutineOperatorNoticeTemplate,
+  RoutineOperatorBoundEffects,
   RoutinePendingStep,
   RoutineRunTrace,
   RoutineSelectionTrace,
@@ -28,8 +29,15 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { redactSensitiveValues } from "@radioso/conversation-contract";
 
+import {
+  completionExportActionFor,
+  declaredSlotVariables,
+  maskedSlotKeys,
+  outboundVariables,
+  sensitiveSlotKeys,
+  terminalResult,
+} from "./routineEnding.js";
 import {
   foldStepEntry,
   runSlotKeyFields,
@@ -344,35 +352,6 @@ const pendingStepFor = (
     .map((slot) => slot.key),
 });
 
-/** The routine's slot keys its author marked sensitive, in declared order. */
-export const sensitiveSlotKeys = (routine: Routine): string[] =>
-  (routine.slots ?? []).filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key);
-
-/**
- * The variables as a copy that leaves the conversation carries them: a sensitive slot's value
- * reads as the redaction marker. The run's own state keeps the value, since the routine needs it
- * to run; every payload, ending, and trace the runner hands out goes through here.
- */
-const outboundVariables = (
-  routine: Routine,
-  variables: Record<string, unknown>,
-): Record<string, unknown> => redactSensitiveValues(variables, sensitiveSlotKeys(routine));
-
-/** The declared slots' values as they leave the conversation, sensitive ones masked. */
-const declaredSlotVariables = (
-  routine: Routine,
-  variables: Record<string, unknown>,
-): Record<string, unknown> =>
-  outboundVariables(
-    routine,
-    Object.fromEntries(
-      (routine.slots ?? [])
-        .map((slot) => slot.key)
-        .filter((key) => hasVariable(variables, key))
-        .map((key) => [key, variables[key]]),
-    ),
-  );
-
 /**
  * Runner-local gate on top of the shared `isSlotCollectionStepSatisfied` rule: only a
  * chat step on a routine with a typed slot schema can be fast-forwarded past.
@@ -416,76 +395,6 @@ const routesToHandoff = (routine: Routine): boolean =>
     return target !== undefined && terminalKindFor(target) === "handoff";
   });
 
-/** The keys of an ending's collected values that were masked as sensitive, reported beside them. */
-const maskedSlotKeys = (
-  routine: Routine,
-  collected: Record<string, unknown>,
-): Pick<NonNullable<ConversationRoutineResumeResult["terminal"]>, "sensitiveSlotKeys"> => {
-  const keys = sensitiveSlotKeys(routine).filter((key) => hasVariable(collected, key));
-  return keys.length > 0 ? { sensitiveSlotKeys: keys } : {};
-};
-
-const terminalResult = (
-  routine: Routine,
-  kind: RoutineAuthoredTerminalKind,
-  step: RoutineStep,
-  collected: Record<string, unknown>,
-): NonNullable<ConversationRoutineResumeResult["terminal"]> => {
-  const operatorNotice = operatorNoticeTemplateFor(step);
-  return { kind, stepId: step.id, collected, ...maskedSlotKeys(routine, collected), ...(operatorNotice ? { operatorNotice } : {}) };
-};
-
-/**
- * The operator notice template a terminal step carries. The host's compiler puts it there
- * exactly when the ending notifies operators; the runner only reads it back, keeping the
- * fields that are strings so a malformed metadata value can never reach a notice.
- */
-const operatorNoticeTemplateFor = (step: RoutineStep): RoutineOperatorNoticeTemplate | null => {
-  const notice = step.kind === "terminal" ? step.metadata?.operatorNotice : undefined;
-  if (typeof notice !== "object" || notice === null || Array.isArray(notice)) {
-    return null;
-  }
-  const { subject, intro, skillName, replyToSlot, includeAiSummary } = notice as Record<string, unknown>;
-  return {
-    ...(typeof subject === "string" ? { subject } : {}),
-    ...(typeof intro === "string" ? { intro } : {}),
-    ...(typeof skillName === "string" ? { skillName } : {}),
-    ...(typeof replyToSlot === "string" ? { replyToSlot } : {}),
-    ...(includeAiSummary === true ? { includeAiSummary: true } : {}),
-  };
-};
-
-const completionExportActionFor = (
-  routine: Routine,
-  step: RoutineStep,
-  terminalKind: RoutineAuthoredTerminalKind | null,
-  variables: Record<string, unknown>,
-): RoutineActionRequest | null => {
-  const completionExport = routine.completionExport;
-  if (
-    !completionExport?.enabled ||
-    !completionExport.destinationRef ||
-    (terminalKind !== "complete" && terminalKind !== "handoff") ||
-    !completionExport.triggerKinds.includes(terminalKind)
-  ) {
-    return null;
-  }
-
-  return {
-    type: "webhook.send",
-    payload: {
-      destinationRef: completionExport.destinationRef,
-      source: {
-        routineId: routine.id,
-        stepId: step.id,
-        terminalKind,
-        status: "completed",
-      },
-      data: declaredSlotVariables(routine, variables),
-    },
-  };
-};
-
 /**
  * Walks a registered Routine graph for the current turn: it asks the injected
  * next-step selector which step the turn lands on, captures slot variables, runs
@@ -527,6 +436,8 @@ interface DefaultRoutineRunnerOptions {
    * message as a reply.
    */
   openingMessageStatesSlotValues?: boolean;
+  /** Asked before a reply is written whether what the turn did reaches anyone; absent, nothing is checked. */
+  operatorReach?: ConversationRoutineOperatorReach;
 }
 
 export class DefaultRoutineRunner implements ConversationRoutineRunner {
@@ -563,6 +474,17 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
   /** The reply for a step, generated only when the claim's holder asks for it. */
   private prepareReply(input: RoutineStepReplyInput): PendingRenderableTurn {
     return this.renderer.prepare?.(input) ?? { render: () => this.renderer.render(input) };
+  }
+
+  /** Whether the host says what this turn did reaches no one. Only a turn that did something is asked about. */
+  private async operatorsUnreachable(effects: RoutineOperatorBoundEffects): Promise<boolean> {
+    const asksAboutNothing = !effects.actions?.length
+      && !effects.skillsWithExternalEffects?.length
+      && !effects.terminal?.operatorNotice;
+    if (!this.options.operatorReach || asksAboutNothing) {
+      return false;
+    }
+    return !(await this.options.operatorReach.canReachOperators(effects));
   }
 
   /**
@@ -1328,10 +1250,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const steering = input.steeringResolver
         ? await input.steeringResolver.resolve({ step, baseSteering, turn: replyTurn })
         : baseSteering;
+      const operatorsUnreachable = await this.operatorsUnreachable({ actions, skillsWithExternalEffects });
       const reply = this.prepareReply({
         ...rendered,
         steering,
         turn: replyTurn,
+        ...(operatorsUnreachable ? { operatorsUnreachable } : {}),
       });
       traceSteps.push({ stepId: step.id, kind: step.kind, event: "suspended" });
       const trace: RoutineRunTrace = {
@@ -1341,6 +1265,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         ...runSlotKeyFields(traceSteps),
         filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
         ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
+        ...(operatorsUnreachable ? { operatorsUnreachable } : {}),
         steps: traceSteps,
       };
       const reason = typeof step.metadata?.reason === "string" ? step.metadata.reason : undefined;
@@ -1392,18 +1317,28 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     const reask: RoutineStepReask | null = reaskExhausted
       ? { ...(missing ?? { missingSlots: [] }), exhausted: true }
       : missing;
-    const reply = this.prepareReply({
-      ...rendered,
-      steering,
-      turn: replyTurn,
-      ...(reask ? { reask } : {}),
-    });
 
     const terminalKind = terminalKindFor(step);
     const completionExportAction = completionExportActionFor(routine, step, terminalKind, variables);
     if (completionExportAction) {
       actions.push(completionExportAction);
     }
+    const terminal = terminalKind
+      ? terminalResult(routine, terminalKind, step, declaredSlotVariables(routine, variables))
+      : undefined;
+
+    const operatorsUnreachable = await this.operatorsUnreachable({
+      actions,
+      skillsWithExternalEffects,
+      ...(terminal ? { terminal } : {}),
+    });
+    const reply = this.prepareReply({
+      ...rendered,
+      steering,
+      turn: replyTurn,
+      ...(reask ? { reask } : {}),
+      ...(operatorsUnreachable ? { operatorsUnreachable } : {}),
+    });
 
     // Mark the step the turn replied from — unless it already has the last entry this
     // turn (a re-ask renders the very step it stayed on), which would list it twice.
@@ -1419,6 +1354,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       ...runSlotKeyFields(traceSteps),
       filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
       ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
+      ...(operatorsUnreachable ? { operatorsUnreachable } : {}),
       steps: traceSteps,
     };
 
@@ -1428,9 +1364,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // A terminal step ends the routine — clear its state, and report the values it ended
         // with for the host's record of the ended run.
         ...(step.kind === "terminal" ? { nextState: null, endedVariables: variables } : { nextState }),
-        ...(terminalKind
-          ? { terminal: terminalResult(routine, terminalKind, step, declaredSlotVariables(routine, variables)) }
-          : {}),
+        ...(terminal ? { terminal } : {}),
         ...(actions.length > 0 ? { actions } : {}),
         ...(skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects } : {}),
         trace,

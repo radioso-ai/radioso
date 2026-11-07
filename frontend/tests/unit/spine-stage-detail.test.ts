@@ -6,7 +6,7 @@ import {
   readDirectiveAdherence,
 } from '@/components/dashboard/spine-stage-detail'
 import type { ConversationTraceStage } from '@/lib/api'
-import { buildRoutineRunTrace } from '@/lib/routine-run-trace'
+import { buildRoutineRunTrace, routineRunFacts } from '@/lib/routine-run-trace'
 
 // #1575: the answer commits to each directive before it writes; the trace carries that commitment.
 describe('readDirectiveAdherence', () => {
@@ -197,6 +197,14 @@ describe('buildRoutineRunTrace', () => {
     expect(view?.capturedSlotKeys).toEqual(['message'])
     expect(view?.replacedSlotKeys).toEqual(['email'])
     expect(view?.steps[0]).toMatchObject({ capturedSlotKeys: ['message'], replacedSlotKeys: ['email'] })
+  })
+
+  it('says when a reply was told nobody could receive what the turn sent, and only then', () => {
+    const told = buildRoutineRunTrace(routineStage({ operatorsUnreachable: true, steps: [] }))
+    const untold = buildRoutineRunTrace(routineStage({ steps: [] }))
+
+    expect(routineRunFacts(told)).toEqual({ operatorsUnreachable: true })
+    expect(routineRunFacts(untold)).toEqual({})
   })
 
   it('carries no replaced keys when the turn replaced none', () => {

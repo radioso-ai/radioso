@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-11-02
+last_updated: 2026-11-07
 ---
 
 # Conversational Routines
@@ -606,6 +606,22 @@ again for its name and declared slot order, because the queued payload is jsonb
 and keeps no key order. The notice text is rendered at
 delivery and never logged; it holds visitor data.
 
+The reply is written before the worker runs, so the runner asks first. On a turn
+that emitted an action, ran a skill that may act outside the conversation, or
+landed on a notice, `DefaultRoutineRunner` asks its `operatorReach` port
+(`ConversationRoutineOperatorReach`) whether what the turn did can reach anyone,
+and the answer is all it learns. When the answer is no, the reply input carries
+`operatorsUnreachable` and the routine trace records `operatorsUnreachable: true`.
+`RoutineStepRenderer` renders `routine-step-operators-unreachable.md` into the step
+reply, after the step's instruction, and hands a grounded answer the same text as
+one more `routine` rule, where its generator reads the instruction. Hand-off
+messages read none of it. A host with no port checks nothing. In Radioso,
+`RoutineOperatorReachReader` answers: `contact.send`, a notify skill step, and a
+completion's notice count, read through the resolver delivery uses and the
+recipient policy's `describe`, and a webhook or one address in a deliverable state
+is enough. A read that fails answers yes, because the worker may still deliver. The
+action queues either way, and the delivery outcome records what happened.
+
 Each routine turn records a step-by-step trace that hangs off the turn's
 `Routine` spine stage as a `routine` sub-trace, the way retrieval hangs its own
 trace off the dispatch stage. The conversation debug panel renders it as a
@@ -865,9 +881,10 @@ the declared slots and the rules for filling them) extracts slot values and
 picks an exit, retrying its own model call once when a completion comes back
 unreadable. The step renderer (`routineStepRenderer.ts` with
 `backend/prompts/chat/routine-step-reply.md`, `routine-step-progress.md` on a
-chat step, `routine-step-context-evidence.md` around the visitor's page, and
-`routine-step-reask.md` with its `-gap`, `-exhausted-gap`, `-missing-slots`, and
-`-exhausted` pieces on a re-ask) writes the reply. A routine turn therefore
+chat step, `routine-step-context-evidence.md` around the visitor's page,
+`routine-step-operators-unreachable.md` when nobody can receive what the turn
+sent, and `routine-step-reask.md` with its `-gap`, `-exhausted-gap`,
+`-missing-slots`, and `-exhausted` pieces on a re-ask) writes the reply. A routine turn therefore
 makes two or three model calls, all on the workspace chat model at reasoning
 effort `none`, so small wording and layout changes move their behavior a lot.
 Each template reaches the selector or renderer as a template option, so a host

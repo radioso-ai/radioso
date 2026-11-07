@@ -390,6 +390,21 @@ test("billing staff can create a tier with byte limits in human units", async ({
   await expect(scaleRow).toContainText("2 GB");
 });
 
+test("a session that ended mid-edit sends staff back to sign in", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "owner");
+
+  await page.goto("/operator/staff");
+  await page.getByLabel("Email").fill("billing@example.com");
+  await page.getByLabel("Name").fill("Billing");
+  await page.getByLabel("Temporary password").fill("password-123");
+  await page.route("**/api/v1/ee/operator-console/staff", async (route) => {
+    await json(route, { error: { code: "unauthorized", message: "Unauthorized" } }, 401);
+  });
+  await page.getByRole("button", { name: "Create staff" }).click();
+
+  await expect(page).toHaveURL(/\/operator\/login/);
+});
+
 test("support_read staff sees read-only tier UI and no staff management", async ({ page }) => {
   await installOperatorConsoleMocks(page, "support_read");
 

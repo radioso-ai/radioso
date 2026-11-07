@@ -185,8 +185,10 @@ resource "google_secret_manager_secret_iam_member" "backend_access" {
   member    = "serviceAccount:${data.google_service_account.backend.email}"
 }
 
+# Workers read every secret but the usage-limits admin token: only the backend serves that API,
+# and workers handle crawled pages and uploaded files.
 resource "google_secret_manager_secret_iam_member" "worker_access" {
-  for_each  = local.secret_names
+  for_each  = setsubtract(local.secret_names, ["ee-usage-admin-token"])
   secret_id = google_secret_manager_secret.secrets[each.key].secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${data.google_service_account.worker.email}"

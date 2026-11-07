@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from "express";
+import { Router, type Request, type RequestHandler, type Response } from "express";
 import { z } from "zod";
 
 import type { ConversationSpend } from "../conversationSpend/conversationSpend.js";
@@ -11,11 +11,11 @@ import type { AccountUsageSummary, UsageLimitProfile } from "../usageLimits/usag
 import { OrganizationDirectoryService } from "./organizationDirectoryService.js";
 import type { OrganizationDirectoryPage } from "./organizationDirectoryService.js";
 import { StaffAuthService, defaultStaffSessionTtlHours } from "./staffAuthService.js";
-import { StaffBootstrapService } from "./staffBootstrap.js";
-import { hashStaffPassword } from "./staffCrypto.js";
+import { hashStaffPassword, STAFF_PASSWORD_MIN_LENGTH } from "./staffCrypto.js";
 import { PostgresStaffSessionRepository, type StaffSessionRepository } from "./staffSessionRepository.js";
 import { PostgresStaffUserRepository, type StaffUserRepository } from "./staffRepository.js";
-import { requireStaffRole, requireStaffSession } from "./staffGuards.js";
+import { requireJsonWrites, requireStaffRole, requireStaffSession, type StaffPrincipal } from "./staffGuards.js";
+import { StaffSecurityEvents } from "./staffSecurityEvents.js";
 import { staffRoles, staffStatuses, type StaffUser } from "./staffTypes.js";
 
 type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
@@ -23,12 +23,6 @@ type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 const loginBodySchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(1),
-});
-
-const bootstrapBodySchema = z.object({
-  email: z.string().trim().email(),
-  name: z.string().trim().min(1).max(120),
-  password: z.string().min(8),
 });
 
 const listOrganizationsQuerySchema = z.object({
@@ -73,7 +67,7 @@ const staffCreateBodySchema = z.object({
   email: z.string().trim().email().transform((value) => value.toLowerCase()),
   name: z.string().trim().min(1).max(120),
   role: z.enum(staffRoles),
-  password: z.string().min(8),
+  password: z.string().min(STAFF_PASSWORD_MIN_LENGTH),
 });
 
 const staffRoleBodySchema = z.object({
@@ -84,52 +78,12 @@ const staffStatusBodySchema = z.object({
   status: z.enum(staffStatuses),
 });
 
-// Marks the 401 as already logged by the read-auth guard, so the catch block below it
-// does not emit a duplicate "invalid_session" warning for a request with no session cookie.
-class ReadAuthUnauthorizedError extends HttpError {
-  readonly readAuthLogged = true;
-
-  constructor() {
-    super(401, "unauthorized", "Unauthorized");
-  }
-}
-
 const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string): T => {
   const parsed = schema.safeParse(value);
   if (parsed.success) {
     return parsed.data;
   }
   throw new HttpError(400, "bad_request", message, parsed.error.flatten());
-};
-
-const requireAdminToken = (): RequestHandler => (req, res, next) => {
-  const expectedToken = process.env.EE_USAGE_ADMIN_TOKEN;
-  if (!expectedToken) {
-    res.status(503).json({
-      error: {
-        code: "service_unavailable",
-        message: "EE staff bootstrap is not configured.",
-        details: { missingEnv: "EE_USAGE_ADMIN_TOKEN" },
-      },
-    });
-    return;
-  }
-
-  const authorization = req.header("authorization");
-  const bearerToken = authorization?.startsWith("Bearer ")
-    ? authorization.slice("Bearer ".length).trim()
-    : null;
-  if (bearerToken !== expectedToken) {
-    res.status(401).json({
-      error: {
-        code: "unauthorized",
-        message: "Unauthorized",
-      },
-    });
-    return;
-  }
-
-  next();
 };
 
 const resolveStaffCookieName = (dependencies: RouteDependencies): string => {
@@ -184,37 +138,60 @@ export const createStaffConsoleRoutes = (
   const sessions = repositories.sessions ?? new PostgresStaffSessionRepository(dependencies.connectorDb);
   const cookieName = resolveStaffCookieName(dependencies);
   const ttlHours = resolveStaffTtlHours(dependencies);
-  const authService = new StaffAuthService(users, sessions, { ttlHours });
-  const bootstrapService = new StaffBootstrapService(users, dependencies.auditService);
+  const logger = resolveLogger(dependencies);
+  const securityEvents = new StaffSecurityEvents(dependencies.auditService, logger);
+  const authService = new StaffAuthService(users, sessions, securityEvents, { ttlHours });
   const organizationDirectoryService =
     repositories.organizationDirectoryService ?? new OrganizationDirectoryService(dependencies.connectorDb);
   const usageLimitService =
     repositories.usageLimitService ?? new EnterpriseUsageLimitService(dependencies.connectorDb);
   const conversationSpendService =
     repositories.conversationSpendService ?? new ConversationSpendService(dependencies.connectorDb);
-  const logger = resolveLogger(dependencies);
 
   // The login endpoint has no session yet, so it is the one route in this router throttled
-  // pre-auth -- per attempted email, falling back to the request source -- mirroring the OSS
-  // backend's own `auth.login` limiter (js/missing-rate-limiting correctly flagged this route: unlike
-  // OSS's authRoutes.ts, it had no limiter at all).
-  const staffLoginRateLimit = createRateLimitMiddleware({
+  // pre-auth. The per-address budget stops guessing one account from many sources; the per-source
+  // budget stops one source spraying many addresses. Both mirror the OSS backend's `auth.login`
+  // limit (js/missing-rate-limiting flagged this route when it had none).
+  const loginRateLimit = (scope: string, resolveSubjectKey: (req: Request, res: Response) => string | null) =>
+    createRateLimitMiddleware({
+      service: dependencies.abuseControlService,
+      auditService: dependencies.auditService,
+      scope,
+      limit: dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS ?? 10,
+      windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS ?? 60_000,
+      resolveSubjectKey,
+    });
+  const staffLoginSourceRateLimit = loginRateLimit(
+    "ee.staff_console.auth.login_source",
+    (req, res) => `source:${dependencies.requestSource.digest(req, res)}`,
+  );
+  const staffLoginRateLimit = loginRateLimit(
+    "ee.staff_console.auth.login",
+    (req) => (typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null),
+  );
+
+  const hasSessionCookie = (req: Request): boolean => {
+    const sessionToken: unknown = req.cookies?.[cookieName];
+    return typeof sessionToken === "string" && sessionToken.length > 0;
+  };
+
+  // A session cookie costs a database lookup before anyone is known, so this budget comes first.
+  // A request without one is refused for free and spends nothing. The limit is well above what a
+  // few people using the console send, and only bounds a flood.
+  const staffSessionSourceRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
-    scope: "ee.staff_console.auth.login",
-    limit: dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS ?? 10,
-    windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS ?? 60_000,
-    resolveSubjectKey: (req, res) => {
-      const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null;
-      return email || dependencies.requestSource.digest(req, res);
-    },
+    scope: "ee.staff_console.session_source",
+    limit: 300,
+    windowMs: 60_000,
+    resolveSubjectKey: (req, res) =>
+      (hasSessionCookie(req) ? `source:${dependencies.requestSource.digest(req, res)}` : null),
   });
 
-  // Every other route in this router runs behind an authenticated staff session. Authentication
-  // narrows the caller pool but is not a rate limit: a compromised or malicious staff session
-  // could still hammer the directory, tier, or staff-management endpoints. This budget is
-  // enforced once per authenticated request, right after the session check succeeds, so it
-  // covers every guarded route from one place. No EE-specific rate-limit env knob is threaded
+  // Authentication narrows the caller pool but is not a rate limit: a compromised or malicious
+  // staff session could still hammer the directory, tier, or staff-management endpoints. This
+  // budget is enforced once per authenticated request, right after the session check succeeds,
+  // so it covers every guarded route from one place. No EE-specific rate-limit env knob is threaded
   // through yet, so the limit mirrors the magnitude of OSS's own authenticated-route default
   // (`EXPENSIVE_AUTHENTICATED_RATE_LIMIT_*`, 60 requests / 60s) as a literal.
   const staffSessionRateLimit = createRateLimitMiddleware({
@@ -229,70 +206,46 @@ export const createStaffConsoleRoutes = (
     },
   });
 
-  // Kept as a single `RequestHandler` (not `[authenticate, rateLimit]`) so every call site's
-  // route-handler argument still gets Express's normal parameter-type inference; an array here
-  // makes the compiler fall back to implicit `any` for req/res/next on every downstream handler.
   const authenticateStaffSession = requireStaffSession(authService, cookieName);
   const staffSessionGuard: RequestHandler = (req, res, next) => {
     authenticateStaffSession(req, res, (error?: unknown) => {
       if (error) {
+        // A broken lookup is a fault, not a rejected caller, and the error handler reports it.
+        if (error instanceof HttpError && error.statusCode === 401) {
+          logger.warn?.({
+            event: "staff_console.session_rejected",
+            method: req.method,
+            path: req.path,
+            reason: hasSessionCookie(req) ? "invalid_session" : "missing_session",
+          }, "Staff console session rejected");
+        }
         next(error);
         return;
       }
       staffSessionRateLimit(req, res, next);
     });
   };
-  const staffReadSessionGuard = (input: {
+  const logStaffRead = (input: {
     action: string;
     targetId?: (req: Parameters<RequestHandler>[0]) => string | null;
-  }): RequestHandler => async (req, res, next) => {
-    const targetId = input.targetId?.(req) ?? null;
-    try {
-      const sessionToken = req.cookies?.[cookieName];
-      if (typeof sessionToken !== "string" || sessionToken.length === 0) {
-        logger.warn?.({
-          event: "staff_console.read_auth",
-          action: input.action,
-          targetId,
-          outcome: "failure",
-          reason: "missing_session",
-        }, "Staff console read authentication failed");
-        throw new ReadAuthUnauthorizedError();
-      }
-      const { staff } = await authService.authenticateStaffSession(sessionToken);
-      res.locals.staff = {
-        id: staff.id,
-        role: staff.role,
-        email: staff.email,
-        name: staff.name,
-      };
-      logger.info?.({
-        event: "staff_console.read_auth",
-        action: input.action,
-        targetId,
-        staffId: staff.id,
-        role: staff.role,
-        outcome: "success",
-      }, "Staff console read authentication succeeded");
-      // Shares the session-wide budget every other guarded route enforces, rather than
-      // calling `next()` directly, so read routes are bounded the same way write routes are.
-      staffSessionRateLimit(req, res, next);
-    } catch (error) {
-      const authError = error as { statusCode?: number; readAuthLogged?: boolean };
-      if (authError.statusCode === 401 && !authError.readAuthLogged) {
-        logger.warn?.({
-          event: "staff_console.read_auth",
-          action: input.action,
-          targetId,
-          outcome: "failure",
-          reason: "invalid_session",
-        }, "Staff console read authentication failed");
-      }
-      next(error);
-    }
+  }): RequestHandler => (req, res, next) => {
+    const staff = res.locals.staff as StaffPrincipal;
+    logger.info?.({
+      event: "staff_console.read_auth",
+      action: input.action,
+      targetId: input.targetId?.(req) ?? null,
+      staffId: staff.id,
+      role: staff.role,
+      outcome: "success",
+    }, "Staff console read authentication succeeded");
+    next();
   };
 
-  router.post("/auth/login", staffLoginRateLimit, async (req, res, next) => {
+  router.use(requireJsonWrites);
+
+  // Only routes that exist without a session go above this guard. Its position is the rule:
+  // anything registered below it answers 401 to a caller without a staff session.
+  router.post("/auth/login", staffLoginSourceRateLimit, staffLoginRateLimit, async (req, res, next) => {
     try {
       const body = parseRequest(loginBodySchema, req.body, "Invalid staff login payload");
       const result = await authService.login(body);
@@ -309,7 +262,9 @@ export const createStaffConsoleRoutes = (
     }
   });
 
-  router.post("/auth/logout", staffSessionGuard, async (req, res, next) => {
+  router.use(staffSessionSourceRateLimit, staffSessionGuard);
+
+  router.post("/auth/logout", async (req, res, next) => {
     try {
       const sessionToken = req.cookies?.[cookieName];
       if (typeof sessionToken === "string" && sessionToken.length > 0) {
@@ -322,23 +277,13 @@ export const createStaffConsoleRoutes = (
     }
   });
 
-  router.get("/auth/me", staffSessionGuard, (_req, res) => {
+  router.get("/auth/me", (_req, res) => {
     res.status(200).json({ staff: res.locals.staff });
-  });
-
-  router.post("/bootstrap", requireAdminToken(), async (req, res, next) => {
-    try {
-      const body = parseRequest(bootstrapBodySchema, req.body, "Invalid staff bootstrap payload");
-      const staff = await bootstrapService.bootstrapOwner(body);
-      res.status(200).json({ staff: publicStaff(staff) });
-    } catch (error) {
-      next(error);
-    }
   });
 
   router.get(
     "/organizations",
-    staffReadSessionGuard({ action: "organizations.list" }),
+    logStaffRead({ action: "organizations.list" }),
     async (req, res, next) => {
       try {
         const query = parseRequest(
@@ -362,7 +307,7 @@ export const createStaffConsoleRoutes = (
 
   router.get(
     "/organizations/:accountId/usage",
-    staffReadSessionGuard({
+    logStaffRead({
       action: "organizations.usage.read",
       targetId: (req) => String(req.params.accountId),
     }),
@@ -383,7 +328,7 @@ export const createStaffConsoleRoutes = (
 
   router.get(
     "/tiers",
-    staffReadSessionGuard({ action: "tiers.list" }),
+    logStaffRead({ action: "tiers.list" }),
     async (_req, res, next) => {
       try {
         const tiers: UsageLimitProfile[] = await usageLimitService.listProfiles();
@@ -396,7 +341,6 @@ export const createStaffConsoleRoutes = (
 
   router.put(
     "/organizations/:accountId/tier",
-    staffSessionGuard,
     requireStaffRole("billing_write"),
     async (req, res, next) => {
       try {
@@ -425,7 +369,6 @@ export const createStaffConsoleRoutes = (
 
   router.put(
     "/tiers/:profileKey",
-    staffSessionGuard,
     requireStaffRole("billing_write"),
     async (req, res, next) => {
       try {
@@ -477,7 +420,6 @@ export const createStaffConsoleRoutes = (
 
   router.get(
     "/staff",
-    staffSessionGuard,
     requireStaffRole("owner"),
     async (_req, res, next) => {
       try {
@@ -491,7 +433,6 @@ export const createStaffConsoleRoutes = (
 
   router.post(
     "/staff",
-    staffSessionGuard,
     requireStaffRole("owner"),
     async (req, res, next) => {
       try {
@@ -508,11 +449,8 @@ export const createStaffConsoleRoutes = (
           role: body.role,
           status: "active",
         });
-        await dependencies.auditService.record({
-          accountId: null,
-          workspaceId: null,
+        await securityEvents.privilegedChange({
           eventType: "staff.user.created",
-          eventStatus: "success",
           metadata: {
             actorStaffId: res.locals.staff.id,
             targetStaffId: staff.id,
@@ -528,7 +466,6 @@ export const createStaffConsoleRoutes = (
 
   router.put(
     "/staff/:staffId/role",
-    staffSessionGuard,
     requireStaffRole("owner"),
     async (req, res, next) => {
       try {
@@ -552,11 +489,8 @@ export const createStaffConsoleRoutes = (
         if (!updated) {
           throw new HttpError(404, "not_found", "Staff user not found.");
         }
-        await dependencies.auditService.record({
-          accountId: null,
-          workspaceId: null,
+        await securityEvents.privilegedChange({
           eventType: "staff.user.role_changed",
-          eventStatus: "success",
           metadata: {
             actorStaffId: res.locals.staff.id,
             targetStaffId: target.id,
@@ -573,7 +507,6 @@ export const createStaffConsoleRoutes = (
 
   router.put(
     "/staff/:staffId/status",
-    staffSessionGuard,
     requireStaffRole("owner"),
     async (req, res, next) => {
       try {
@@ -597,11 +530,8 @@ export const createStaffConsoleRoutes = (
         if (!updated) {
           throw new HttpError(404, "not_found", "Staff user not found.");
         }
-        await dependencies.auditService.record({
-          accountId: null,
-          workspaceId: null,
+        await securityEvents.privilegedChange({
           eventType: "staff.user.status_changed",
-          eventStatus: "success",
           metadata: {
             actorStaffId: res.locals.staff.id,
             targetStaffId: target.id,

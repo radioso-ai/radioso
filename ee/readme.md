@@ -97,7 +97,8 @@ Operator requests use `Authorization: Bearer <token>` against:
 ```
 
 The API can list or upsert profiles, assign or clear an account profile, and
-inspect an account's current usage for a UTC month.
+inspect an account's current usage for a UTC month. It takes 120 requests a minute
+per source.
 
 Enterprise keeps open signup available and lets signed-in users create
 additional organizations. The additional-organization path is capped per user
@@ -168,24 +169,63 @@ STAFF_SESSION_COOKIE_NAME=radioso_staff_session
 STAFF_SESSION_TTL_HOURS=8
 ```
 
+A session ends after 30 minutes without a request, or when that lifetime runs
+out, whichever comes first. Sign-in attempts are limited per address and per
+source, using the `AUTH_RATE_LIMIT_*` budget. Any other console request carrying a session
+cookie is limited to 300 a minute per source, and to 60 a minute per signed-in staff
+member.
+
 ### First owner and recovery
 
-A fresh install has no staff identity. Use the bootstrap endpoint to create the
-first `owner`, or to reset a locked-out owner's password. It is gated only by
-`EE_USAGE_ADMIN_TOKEN` and can do nothing else. After the first owner exists,
+A fresh install has no staff identity, and only the `staff:bootstrap` command can
+create the first `owner`. The same command gets a locked-out owner back in: it
+resets the password and ends every session that owner had open. It talks to the
+database directly, so it runs wherever you already hold `DATABASE_URL`, once the
+backend has started and created the staff tables. After the first owner exists,
 owners create further staff through the console.
 
+The password comes from the environment, so it stays out of your shell history
+and the job's arguments. It needs at least 12 characters.
+
 ```bash
-curl -X POST "$BASE_URL/api/v1/ee/operator-console/bootstrap" \
-  -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"email": "ops@example.com", "name": "Ops", "password": "change-me-please"}'
+DATABASE_URL="postgresql://..." \
+STAFF_BOOTSTRAP_PASSWORD="..." \
+pnpm --filter @radioso/enterprise-backend-module run staff:bootstrap \
+  --email ops@example.com --name Ops
 ```
+
+On Google Cloud the database has no public address, so run the command as a
+one-off Cloud Run job from the enterprise backend image, on the backend's network
+and service account. Keep the password in a short-lived secret that account can
+read, connect over TLS as every runtime does, and delete both when it finishes:
+
+```bash
+printf '%s' "$PASSWORD" | gcloud secrets create "$BOOTSTRAP_PASSWORD_SECRET" --data-file=-
+gcloud secrets add-iam-policy-binding "$BOOTSTRAP_PASSWORD_SECRET" \
+  --member "serviceAccount:$BACKEND_SERVICE_ACCOUNT" --role roles/secretmanager.secretAccessor
+gcloud run jobs create staff-bootstrap \
+  --region "$REGION" \
+  --image "$BACKEND_IMAGE" \
+  --service-account "$BACKEND_SERVICE_ACCOUNT" \
+  --network "$PREFIX-vpc" --subnet "$PREFIX-subnet" --vpc-egress private-ranges-only \
+  --set-env-vars PGSSLMODE=no-verify \
+  --set-secrets "DATABASE_URL=$PREFIX-database-url:latest,STAFF_BOOTSTRAP_PASSWORD=$BOOTSTRAP_PASSWORD_SECRET:latest" \
+  --command node \
+  --args /app/ee/packages/backend-module/dist/staffConsole/staffBootstrapCli.js,--email,ops@example.com,--name,Ops
+gcloud run jobs execute staff-bootstrap --region "$REGION" --wait
+gcloud run jobs delete staff-bootstrap --region "$REGION" --quiet
+gcloud secrets delete "$BOOTSTRAP_PASSWORD_SECRET" --quiet
+```
+
+Every run writes a `staff.bootstrap` audit event and raises the staff access alert
+described in [Monitoring On Google Cloud](../docs/monitoring-google-cloud.md).
 
 ### Console endpoints
 
-All endpoints below use the staff session cookie. Reads allow any role; tier
-changes need `billing_write`; staff management needs `owner`.
+Every endpoint below except `auth/login` needs the staff session cookie, and
+anything else under this path answers `401` without it. Reads allow any role; tier
+changes need `billing_write`; staff management needs `owner`. Writes must be sent
+as `application/json`, including ones with no body, and answer `415` otherwise.
 
 ```text
 POST   /api/v1/ee/operator-console/auth/login

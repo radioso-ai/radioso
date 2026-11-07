@@ -1,7 +1,7 @@
 ---
 title: "Monitoring On Google Cloud"
-description: "Terraform-managed Cloud Monitoring alerting for a Radioso deployment on Google Cloud: uptime check, alert policies, log-based error and voice turn metrics, and Cloud Run health probes."
-last_updated: 2026-10-24
+description: "Terraform-managed Cloud Monitoring alerting for a Radioso deployment on Google Cloud: uptime check, alert policies, log-based error, voice turn and staff sign-in metrics, and Cloud Run health probes."
+last_updated: 2026-11-07
 ---
 
 # Monitoring On Google Cloud
@@ -68,6 +68,10 @@ Every policy delivers to the union of the email channels and this list.
 **Voice turn health.** Two log-based metrics on the backend service feed one policy, and either condition opens it. Each counts the backend's one log line per voice turn by its structured fields, `event: "voice.turn"` with `turnLimitReached: true` or with `streamAbandoned: true`, so the count holds however the line's message is worded. The turn-limit condition fires when more than `monitoring_voice_turn_limit_threshold` (default 5) voice turns hit the turn limit in fifteen minutes: the caller waited out the limit and heard the fallback line, or kept waiting when the agent has none for the call's language. The abandoned condition fires when the voice runtime closed more than `monitoring_voice_abandoned_turn_threshold` (default 5) turns' requests before their outcome reached it in fifteen minutes, however the turn itself ended: a runtime that stops waiting at 20 seconds while the answer lands at 30 still counts. It also counts a caller who hangs up while the agent is thinking or speaking, so a few a day are normal; set the threshold for a burst, which is what a runtime timing out on slow answers looks like. A turn that hit the limit counts toward the first condition whatever became of it, so a turn whose request closed after the limit counts toward both.
 
 Both thresholds count turns per window rather than a share of all voice turns, so a busy deployment wants a higher number than a quiet one; a true ratio would need a third log metric counting every voice turn. To see the turns behind an incident, search the backend's logs for `jsonPayload.event="voice.turn"` with `jsonPayload.turnLimitReached=true` or `jsonPayload.streamAbandoned=true`. Each line carries `agentId`, `vendor`, `conversationId`, `durationMs` and `result`, never what was said. The Quality page's Voice card shows the period's turn-limit turns out of all its voice turns; see [Call numbers on the Quality page](voice-channel.md#call-numbers-on-the-quality-page). The card has no row for closed requests: they show in the logs and this alert.
+
+**Operator console sign-in failures.** A log-based metric on the backend service counts the console's one log line per refused sign-in, `event: "staff_console.sign_in"` with `outcome: "failure"`. The policy fires above 20 in fifteen minutes, which a person mistyping a password stays well under and someone guessing at staff accounts does not. Search the backend's logs for `jsonPayload.event="staff_console.sign_in"`: `reason` says why each attempt failed, and `targetStaffId` names the account when the address matched one. Lines never carry the address.
+
+**Operator console staff access changed.** This policy matches log entries directly and fires on every `event: "staff_console.privileged_change"` line in the stack's region: a staff identity created, its role or status changed, or the bootstrap command run. It watches Cloud Run jobs as well as the backend service, because the bootstrap command runs as a job. Unlike the other alerts, one match is enough; if nobody on your team made the change, disable the identity and rotate access. `eventType` says what changed, and `actorStaffId` and `targetStaffId` say who.
 
 ## Health probes
 

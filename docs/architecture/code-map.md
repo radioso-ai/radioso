@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-02
+last_updated: 2026-11-07
 ---
 
 # Code Map
@@ -2678,11 +2678,15 @@ Primary paths:
   `ee/packages/operator-console/` — the staff Operator Console: routes in
   `staffConsoleRoutes.ts` (`createStaffConsoleRoutes`, mounted at
   `/api/v1/ee/operator-console`), the directory read in
-  `organizationDirectoryService.ts`, and the Next.js pages and API client under
-  `operator-console/src`. Its routes sit outside the OSS OpenAPI document the
+  `organizationDirectoryService.ts`, the audited and alertable staff events in
+  `staffSecurityEvents.ts`, the owner bootstrap command in `staffBootstrapCli.ts`
+  (never an HTTP route), and the Next.js pages and API client under
+  `operator-console/src`. A route is public only if it sits above the
+  `router.use(staffSessionSourceRateLimit, staffSessionGuard)` line in `staffConsoleRoutes.ts`. Its routes sit outside the OSS OpenAPI document the
   copilot coverage map is keyed on, and Ray serves workspace operators rather
   than staff, so the console carries no copilot descriptor. Focused tests:
-  `staffConsoleRoutes.test.ts`, `organizationDirectoryService.integration.test.ts`,
+  `staffConsoleRoutes.test.ts`, `staffAuthService.test.ts`,
+  `staffBootstrapCommand.test.ts`, `organizationDirectoryService.integration.test.ts`,
   `operator-console/src/__tests__/`, and `frontend/tests/e2e/operator-console.spec.ts`
   (enterprise edition only).
 - `ee/packages/backend-module/src/conversationSpend/` — model spend per

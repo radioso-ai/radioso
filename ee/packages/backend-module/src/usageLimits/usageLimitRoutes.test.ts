@@ -64,7 +64,7 @@ type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 
 const createDependencies = (
   database: UsageLimitDatabasePort,
-  options: { auditRecord?: ReturnType<typeof vi.fn> } = {},
+  options: { auditRecord?: ReturnType<typeof vi.fn>; abuseControlEnforce?: ReturnType<typeof vi.fn> } = {},
 ): RouteDependencies => ({
   connectorDb: database,
   env: {
@@ -80,6 +80,12 @@ const createDependencies = (
   },
   auditService: {
     record: options.auditRecord ?? vi.fn(async () => undefined),
+  },
+  abuseControlService: {
+    enforce: options.abuseControlEnforce ?? vi.fn(async () => undefined),
+  },
+  requestSource: {
+    digest: () => "host-source-digest",
   },
   authService: {
     async authenticateSession(token: string) {
@@ -119,7 +125,7 @@ const createDependencies = (
 
 const createSessionApp = (
   database: UsageLimitDatabasePort,
-  options: { auditRecord?: ReturnType<typeof vi.fn> } = {},
+  options: { auditRecord?: ReturnType<typeof vi.fn>; abuseControlEnforce?: ReturnType<typeof vi.fn> } = {},
 ) => {
   const app = express();
   app.use(express.json());
@@ -173,6 +179,35 @@ describe("usage limit admin route auth", () => {
     await request(createApp())
       .get("/api/v1/ee/usage-limits/profiles")
       .expect(401);
+  });
+
+  it("rejects a wrong bearer token of any length", async () => {
+    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
+
+    for (const token of ["secret-admin-tokeX", "short", "secret-admin-token-and-then-some"]) {
+      await request(createApp())
+        .get("/api/v1/ee/usage-limits/profiles")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(401);
+    }
+  });
+
+  it("throttles admin requests per source before it looks at the token", async () => {
+    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
+    const abuseControlEnforce = vi.fn(async () => {
+      throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+    });
+    const app = createSessionApp(inertDatabase, { abuseControlEnforce });
+
+    await request(app)
+      .get("/api/v1/ee/usage-limits/profiles")
+      .set("Authorization", "Bearer wrong-token")
+      .expect(429);
+
+    expect(abuseControlEnforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "ee.usage_limits.admin",
+      subjectKey: "source:host-source-digest",
+    }));
   });
 
   it("rejects an invalid credits payload", async () => {

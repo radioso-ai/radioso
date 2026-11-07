@@ -155,7 +155,7 @@ variable "connector_encryption_key" {
 }
 
 variable "ee_usage_admin_token" {
-  description = "Bearer token for EU live Enterprise admin and operator-console bootstrap endpoints."
+  description = "Bearer token for the EU live Enterprise usage-limits admin API."
   type        = string
   default     = null
   sensitive   = true

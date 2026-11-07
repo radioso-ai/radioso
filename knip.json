@@ -93,7 +93,8 @@
         "*.ts",
         "src/index.ts",
         "src/featureManifest.ts",
-        "src/billing/stripeCatalogSyncCli.ts"
+        "src/billing/stripeCatalogSyncCli.ts",
+        "src/staffConsole/staffBootstrapCli.ts"
       ]
     }
   }

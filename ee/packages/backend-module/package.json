@@ -18,7 +18,8 @@
     "build": "tsc -p tsconfig.build.json && node scripts/copy-prompts.mjs",
     "pretest": "pnpm --dir ../plan-catalog run build",
     "test": "vitest run --passWithNoTests --testTimeout 20000",
-    "stripe:sync": "pnpm --dir ../plan-catalog run build && pnpm run build && node dist/billing/stripeCatalogSyncCli.js"
+    "stripe:sync": "pnpm --dir ../plan-catalog run build && pnpm run build && node dist/billing/stripeCatalogSyncCli.js",
+    "staff:bootstrap": "pnpm --dir ../plan-catalog run build && pnpm run build && node dist/staffConsole/staffBootstrapCli.js"
   },
   "files": [
     "dist",
@@ -31,6 +32,7 @@
     "bcryptjs": "^2.4.3",
     "express": "^4.22.1",
     "kysely": "^0.29.2",
+    "pg": "^8.20.0",
     "stripe": "^22.6.2",
     "zod": "^4.6.7"
   },
@@ -40,7 +42,6 @@
     "@types/node": "^24.3.0",
     "@types/pg": "^8.20.0",
     "@types/supertest": "^6.0.3",
-    "pg": "^8.20.0",
     "supertest": "^7.1.4",
     "typescript": "^5.9.2",
     "vitest": "^4.1.8"

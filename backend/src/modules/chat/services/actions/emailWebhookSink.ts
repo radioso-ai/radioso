@@ -1,10 +1,12 @@
 import type { AgentContactWebhook } from "../../../agents/public.js";
 import {
+  deliverNotification,
   formatRoutineEndingNotification,
   planNotificationEmail,
   type OperatorNotification,
   type OperatorNotificationContext,
   type NotificationDeliveryAdmissionPort,
+  type NotificationDeliveryRecorderPort,
   type OperatorNotificationSink,
   type OperatorNotificationSinkOutcome,
   type RoutineEndingOperatorNotification,
@@ -14,7 +16,6 @@ import {
   resolveConversationLink,
   type ConversationLinkResolver,
 } from "../../../../shared/domain/conversationLinkResolver.js";
-import { mailDeliverySkipReason } from "../../../../shared/domain/mailDeliveryOutcome.js";
 import type {
   ContactNotificationMailer,
   ContactWebhookHttpClient,
@@ -71,6 +72,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     private readonly conversationLinks: ConversationLinkResolver | undefined,
     private readonly admission: NotificationDeliveryAdmissionPort | undefined,
     private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
+    private readonly recorder?: NotificationDeliveryRecorderPort,
   ) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
@@ -157,40 +159,41 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         idempotencyKey: baseIdempotencyKey,
       },
     });
-    if (!plan.dispatchAllowed) {
-      return { disposition: "skipped", reason: plan.reason };
+    if (plan.dispatchAllowed) {
+      this.logger?.info(
+        { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
+        "operator_notice_routed",
+      );
     }
-    this.logger?.info(
-      { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
-      "operator_notice_routed",
-    );
 
-    const [emailResults] = await Promise.all([
-      Promise.all(plan.recipients.map((recipient) =>
-        this.mailer.send({
-          to: recipient.email,
-          kind: "operator_notice",
-          ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
-          subject: delivery.subject,
-          text: delivery.text,
-          ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
-          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
-        })),
-      ),
-      target.webhook ? this.postWebhook({
-        webhook: target.webhook,
+    const webhook = target.webhook;
+    return deliverNotification({
+      plan,
+      subject: {
+        workspaceId: notification.workspaceId,
+        agentId: notification.agentId,
+        conversationId: recipientContext.conversationId,
+        requestId: context.requestId,
+        kind: notification.kind,
+      },
+      recorder: this.recorder,
+      logger: this.logger,
+      sendEmail: (recipient) => this.mailer.send({
+        to: recipient.email,
+        kind: "operator_notice",
+        ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
+        subject: delivery.subject,
+        text: delivery.text,
+        ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
+        idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
+      }),
+      postWebhook: webhook ? () => this.postWebhook({
+        webhook,
         payload: delivery.webhookPayload,
         idempotencyKey: `${baseIdempotencyKey}:webhook`,
         missingClientMessage: TRANSPORT_TEXT_BY_KIND[notification.kind].missingWebhookClientMessage,
-      }) : Promise.resolve(),
-    ]);
-    if (!target.webhook) {
-      const skipReason = plan.emailSkipReason ?? mailDeliverySkipReason(emailResults);
-      if (skipReason) {
-        return { disposition: "skipped", reason: skipReason };
-      }
-    }
-    return { disposition: "delivered" };
+      }) : null,
+    });
   }
 
   /**

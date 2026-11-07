@@ -78,6 +78,29 @@ describe("OperatorNotificationDispatcher", () => {
     const delivered: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
     const dispatcher = new OperatorNotificationDispatcher([skipped, delivered]);
 
-    await expect(dispatcher.dispatch(notification, context)).resolves.toBeUndefined();
+    await expect(dispatcher.dispatch(notification, context)).resolves.toEqual({ disposition: "dispatched" });
+  });
+
+  it("reports a sink that reached only some of its destinations as a partial send", async () => {
+    const partial: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "partial", reason: "notification_recipient_unconfirmed" } as const)),
+    };
+    const delivered: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
+    const dispatcher = new OperatorNotificationDispatcher([delivered, partial]);
+
+    await expect(dispatcher.dispatch(notification, context)).resolves.toEqual({
+      disposition: "partial",
+      reason: "notification_recipient_unconfirmed",
+    });
+  });
+
+  it("still retries when a sink fails even though another sink was partial", async () => {
+    const partial: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "partial", reason: "notification_recipient_revoked" } as const)),
+    };
+    const failing: OperatorNotificationSink = { deliver: vi.fn(async () => { throw new Error("sink_down"); }) };
+    const dispatcher = new OperatorNotificationDispatcher([partial, failing]);
+
+    await expect(dispatcher.dispatch(notification, context)).rejects.toThrow();
   });
 });

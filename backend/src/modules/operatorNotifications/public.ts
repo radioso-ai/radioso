@@ -2,6 +2,7 @@ export {
   OperatorNotificationDispatcher,
 } from "./operatorNotificationDispatcher.js";
 export type {
+  NotificationSkipReason,
   OperatorNotification,
   OperatorNotificationContext,
   OperatorNotificationSink,
@@ -35,8 +36,37 @@ export {
   type NotificationRecipientPolicyPort,
   type NotificationRecipientStateStore,
   type NotificationRecipientStateView,
+  type RecipientPolicySkipReason,
+  type SkippedRecipient,
 } from "./notificationRecipientPolicy.js";
 export { planNotificationEmail } from "./notificationEmailPlan.js";
+export {
+  deliverNotification,
+  RECIPIENT_DELIVERY_OUTCOMES,
+  type NotificationDeliveryRecorderPort,
+  type NotificationDeliverySubject,
+  type NotificationKind,
+  type RecipientDelivery,
+  type RecipientDeliveryOutcome,
+} from "./notificationDelivery.js";
+export {
+  NotificationDeliveryLog,
+  NotificationDeliveryReader,
+  notificationDeliveryOutcomeSchema,
+  type NotificationDeliveryPage,
+  type NotificationDeliveryPosition,
+  type NotificationDeliveryReaderPort,
+  type NotificationDeliveryRecord,
+  type NotificationDeliveryStore,
+} from "./notificationDeliveryLog.js";
+export {
+  UndeliveredRecipientAlerts,
+  UNDELIVERED_ALERT_WINDOW_MS,
+  type UndeliveredAlertClaim,
+  type UndeliveredRecipientAlertPort,
+  type UndeliveredRecipientAlertStore,
+  type UndeliveredRecipientReason,
+} from "./undeliveredRecipientAlert.js";
 export { NotificationRecipientConfirmationMailer } from "./notificationRecipientConfirmationMailer.js";
 export { NotificationRecipientTokenSigner } from "./notificationRecipientToken.js";
 export { recordNotificationSuppression, type NotificationSuppressionStore } from "./providerSuppression.js";

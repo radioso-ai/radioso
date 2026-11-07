@@ -78,26 +78,31 @@ export interface OperatorNotificationContext {
   skillName?: string | null;
 }
 
-/** A transport either sent/enqueued a notice or intentionally did not. */
+/** Why a transport left a destination out of a notice by design. */
+export type NotificationSkipReason =
+  | "contact_destination_not_configured"
+  | "slack_workspace_not_linked"
+  | "slack_not_installed"
+  | "slack_escalation_channel_not_configured"
+  | "slack_approval_not_pending"
+  | "workspace_daily_email_cap"
+  | "conversation_dispatch_cap"
+  | "missing_context"
+  | "notification_recipient_unconfirmed"
+  | "notification_recipient_revoked"
+  | "notification_recipient_suppressed"
+  | "notification_recipient_state_unavailable"
+  | "operator_notification_no_sink"
+  | `mail_not_dispatched:driver=${string}`;
+
+/**
+ * A transport sent/enqueued a notice to every destination it is configured for, to some of them
+ * only (`partial`, with why the rest were left out), or intentionally to none.
+ */
 export type OperatorNotificationSinkOutcome =
   | { disposition: "delivered" }
-  | {
-      disposition: "skipped";
-      reason:
-        | "contact_destination_not_configured"
-        | "slack_workspace_not_linked"
-        | "slack_not_installed"
-        | "slack_escalation_channel_not_configured"
-        | "slack_approval_not_pending"
-        | "workspace_daily_email_cap"
-        | "conversation_dispatch_cap"
-        | "missing_context"
-        | "notification_recipient_unconfirmed"
-        | "notification_recipient_revoked"
-        | "notification_recipient_suppressed"
-        | "operator_notification_no_sink"
-        | `mail_not_dispatched:driver=${string}`;
-    };
+  | { disposition: "partial"; reason: NotificationSkipReason }
+  | { disposition: "skipped"; reason: NotificationSkipReason };
 
 export interface OperatorNotificationSink {
   deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome>;

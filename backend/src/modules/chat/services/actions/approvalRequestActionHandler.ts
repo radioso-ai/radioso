@@ -1,4 +1,4 @@
-import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
+import type { ActionDispatchOutcome, ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import type { OperatorNotificationDispatcher } from "../../../operatorNotifications/public.js";
 
 /**
@@ -24,7 +24,7 @@ export class ApprovalRequestActionHandler implements ActionHandler {
     private readonly conversations: ApprovalRequestConversationLookup,
   ) {}
 
-  async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
+  async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<ActionDispatchOutcome> {
     // The queued row is the trusted source for its workspace and conversation, and that
     // conversation for its agent. Payload copies of these ids are ignored: a payload can carry
     // visitor-filled variables under any key.
@@ -37,7 +37,7 @@ export class ApprovalRequestActionHandler implements ActionHandler {
     const workspaceId = contextWorkspaceId ?? "unknown";
     const agentId = conversation?.agentId ?? "unknown";
     const handle = asString(input.payload.handle) ?? "unknown";
-    await this.dispatcher.dispatch({
+    return this.dispatcher.dispatch({
       kind: "approval",
       workspaceId,
       conversationId,

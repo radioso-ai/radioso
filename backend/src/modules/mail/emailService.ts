@@ -25,6 +25,7 @@ export type EmailKind =
   | "recipient_confirmation"
   | "usage_alert"
   | "billing_notice"
+  | "notification_alert"
   | "channel_reply";
 
 /** The threading headers of an email-channel reply. `autoSubmitted` is set for agent-authored mail only (RFC 3834). */

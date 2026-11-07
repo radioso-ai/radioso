@@ -31,7 +31,7 @@ import type { ActionRequestRecord, EnqueueActionRequestInput } from "../../../sr
 
 const allowedRecipientPolicy = {
   prepareDelivery: async (input: { emails: readonly string[] }) => ({
-    eligibleEmails: [...input.emails], eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })), skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+    eligibleEmails: [...input.emails], eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })), skippedRecipients: [],
   }),
 };
 class ContactSendActionHandler extends ContactSendActionHandlerBase {

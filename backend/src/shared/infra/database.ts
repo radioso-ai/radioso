@@ -43,8 +43,12 @@ const describeIdleConnectionLoss = (error: Error, applicationName?: string): Idl
 export class Database {
   readonly pool: Pool;
   #kysely?: Kysely<DB>;
+  readonly #logger: DatabaseOptions["logger"];
+  readonly #applicationName: string | undefined;
 
   constructor(connectionString: string, options: DatabaseOptions = {}) {
+    this.#logger = options.logger;
+    this.#applicationName = options.applicationName;
     this.pool = new Pool({
       connectionString,
       max: options.poolMax,
@@ -84,20 +88,7 @@ export class Database {
     });
     this.pool.on("release", (_error, client) => {
       client.removeListener("error", onCheckedOutClientError);
-      // `query_timeout` is a client-side timer: it can fire while the statement still runs on
-      // the server, and `pg` then drops a queued ROLLBACK unsent when that query's own timer
-      // fires. A connection released like that fails every later borrower with 25P02, on any
-      // route, so it never goes back into the pool. Ending it here works because pg-pool emits
-      // this event before it decides whether to keep the client, and it does not keep one that
-      // is ending. An `I` status with a query still running is left alone: nothing is open.
-      const transactionStatus = client.getTransactionStatus();
-      if (transactionStatus === "T" || transactionStatus === "E") {
-        options.logger?.warn(
-          { applicationName: options.applicationName, transactionStatus },
-          "database_connection_discarded_mid_transaction",
-        );
-        void (client as PoolClient & { end(): Promise<void> }).end().catch(() => undefined);
-      }
+      discardUnsettledClient(client, options);
     });
   }
 
@@ -149,7 +140,12 @@ export class Database {
     } catch (error) {
       // A failed ROLLBACK must not replace the error that caused it; the release guard in the
       // constructor discards the connection it leaves inside the transaction.
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch((rollbackError: unknown) => {
+        this.#logger?.warn(
+          { applicationName: this.#applicationName, ...errorIdentity(rollbackError) },
+          "database_rollback_failed",
+        );
+      });
       throw error;
     } finally {
       client.release();
@@ -160,6 +156,41 @@ export class Database {
     await this.pool.end();
   }
 }
+
+/** The name and SQLSTATE of a failure, never its message, which can carry statement text. */
+const errorIdentity = (error: unknown): { errorName: string; code?: string } => {
+  const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : undefined;
+  return {
+    errorName: error instanceof Error ? error.name : "unknown",
+    ...(typeof code === "string" ? { code } : {}),
+  };
+};
+
+/** `pg` keeps `readyForQuery` false while a statement it sent is still running on the server. */
+type ReleasedClient = PoolClient & { readyForQuery?: boolean };
+
+/**
+ * Ends a client that is released before its connection has settled, instead of letting the pool
+ * hand it to the next borrower. `query_timeout` is a client-side timer: it can fire while the
+ * statement still runs on the server, and `pg` then drops a queued ROLLBACK unsent when that
+ * query's own timer fires. A client released inside a transaction fails every later borrower with
+ * 25P02, on any route. A client released with a statement still in flight makes the next borrower
+ * queue behind it, or run inside a transaction whose BEGIN only lands after the release. Ending it
+ * here works because pg-pool emits "release" before it decides whether to keep the client, and it
+ * does not keep one that is ending; the integration test pins that ordering.
+ */
+const discardUnsettledClient = (client: PoolClient, options: Pick<DatabaseOptions, "logger" | "applicationName">): void => {
+  const transactionStatus = client.getTransactionStatus();
+  const statementInFlight = (client as ReleasedClient).readyForQuery === false;
+  if (transactionStatus !== "T" && transactionStatus !== "E" && !statementInFlight) {
+    return;
+  }
+  options.logger?.warn(
+    { applicationName: options.applicationName, transactionStatus, statementInFlight },
+    "database_connection_discarded_on_release",
+  );
+  void client.end().catch(() => undefined);
+};
 
 /** pg-pool closes a client released with an error instead of pooling it. */
 const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));

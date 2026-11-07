@@ -43,8 +43,9 @@ const describeIdleConnectionLoss = (error: Error, applicationName?: string): Idl
 export class Database {
   readonly pool: Pool;
   #kysely?: Kysely<DB>;
-  readonly #logger: DatabaseOptions["logger"];
-  readonly #applicationName: string | undefined;
+  // Optional so the structural Database doubles in the integration tests still type-check.
+  readonly #logger?: DatabaseOptions["logger"] | undefined;
+  readonly #applicationName?: string | undefined;
 
   constructor(connectionString: string, options: DatabaseOptions = {}) {
     this.#logger = options.logger;

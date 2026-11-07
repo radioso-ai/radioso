@@ -159,6 +159,11 @@ export interface BackgroundJobHandlerRegistration {
  */
 export interface BackgroundJobSkipped {
   readonly skipped: string;
+  /**
+   * Some of the work was delivered and the rest left out by design: the run counts as completed, and a
+   * store with its own state for that records the reason beside it instead of calling the job skipped.
+   */
+  readonly partial?: boolean;
 }
 
 /**

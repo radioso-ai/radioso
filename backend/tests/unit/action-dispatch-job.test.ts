@@ -121,6 +121,37 @@ describe("action dispatch job handler", () => {
     expect(result).toMatchObject({ claimed: 1, skipped: 1, completed: 0, retried: 0, deadLettered: 0 });
   });
 
+  it("completes a partial send with its reason, without retrying and without calling it a skip", async () => {
+    const handler: ActionHandler = {
+      handle: vi.fn(async () => ({ disposition: "partial" as const, reason: "notification_recipient_unconfirmed" })),
+    };
+    const registry = new ActionHandlerRegistry([{ type: "contact.send", handler }]);
+    const observed: ActionDispatchPersistedOutcome[] = [];
+    const { queue, runtime, store } = setup(registry, { onPersistedOutcome: ({ outcome }) => observed.push(outcome) });
+    const complete = vi.spyOn(store, "complete");
+    await queue.enqueue(backgroundJobRequest(ACTION_DISPATCH_JOB, actionPayload()));
+
+    const result = await runtime.drain({ maxJobs: 1 });
+
+    expect(result).toMatchObject({ claimed: 1, completed: 1, skipped: 0, retried: 0, deadLettered: 0 });
+    expect(complete).toHaveBeenCalledWith(
+      expect.anything(),
+      { skipped: "notification_recipient_unconfirmed", partial: true },
+    );
+    expect(observed).toEqual(["claimed", "partially_dispatched"]);
+  });
+
+  it("completes an explicit dispatched outcome like a handler that returns nothing", async () => {
+    const handler: ActionHandler = { handle: vi.fn(async () => ({ disposition: "dispatched" as const })) };
+    const registry = new ActionHandlerRegistry([{ type: "contact.send", handler }]);
+    const { queue, runtime, store } = setup(registry);
+    const complete = vi.spyOn(store, "complete");
+    await queue.enqueue(backgroundJobRequest(ACTION_DISPATCH_JOB, actionPayload()));
+
+    expect(await runtime.drain({ maxJobs: 1 })).toMatchObject({ claimed: 1, completed: 1, skipped: 0 });
+    expect(complete).toHaveBeenCalledWith(expect.anything(), undefined);
+  });
+
   it("fails the run (for the generic retry policy) without calling recordFailureOutcome when no handler is registered for the type", async () => {
     const registry = new ActionHandlerRegistry();
     const { queue, runtime, store } = setup(registry);

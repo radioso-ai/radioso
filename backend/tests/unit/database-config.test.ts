@@ -207,7 +207,7 @@ describe("database configuration", () => {
   it("stops watching a checked-out client's errors on release, so repeated checkouts do not accumulate listeners", async () => {
     const warn = vi.fn();
     const database = new Database("postgres://test:test@localhost:5432/test", { logger: { warn } });
-    const client = new EventEmitter();
+    const client = Object.assign(new EventEmitter(), { getTransactionStatus: () => "I" });
 
     for (let i = 0; i < 5; i += 1) {
       database.pool.emit("acquire", client);

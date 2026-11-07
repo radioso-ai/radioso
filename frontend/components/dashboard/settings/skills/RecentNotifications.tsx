@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useQuery } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { apiAccessApi } from '@/lib/api-api-access'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { routineSkillCatalogApi } from '@/lib/api-routine-skill-catalog'
 import { useOptionalAuth } from '@/lib/auth-context'
@@ -22,6 +20,7 @@ import {
   type NotificationDeliveryOutcome,
 } from '@/lib/notification-deliveries'
 import { cn } from '@/lib/utils'
+import { useWorkspaceCanManage } from '@/lib/use-workspace-can-manage'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const PAGE_SIZE = 10
@@ -41,16 +40,9 @@ const formatTime = (value: string) =>
  */
 export function RecentNotifications({ agentId }: { agentId: string }) {
   const accountId = useOptionalAuth()?.user?.accountId ?? null
-  const { activeWorkspace, activeWorkspaceId } = useWorkspace()
+  const { activeWorkspace } = useWorkspace()
   // Asking an address again is for owners and admins; the log itself is for anyone who can read the agent.
-  const workspaceAccess = useQuery({
-    queryKey: ['workspace-effective-role', activeWorkspaceId],
-    queryFn: () => apiAccessApi.getSummary(activeWorkspaceId ?? ''),
-    enabled: Boolean(activeWorkspaceId),
-    staleTime: 60_000,
-  })
-  const effectiveRole = workspaceAccess.data?.effectiveRole
-  const canManageRecipients = effectiveRole === 'owner' || effectiveRole === 'admin'
+  const { canManage: canManageRecipients } = useWorkspaceCanManage()
   const conversationHref = accountId
     ? (conversationId: string) => buildDashboardHref(accountId, {
         section: 'activity',
@@ -69,6 +61,9 @@ export function RecentNotifications({ agentId }: { agentId: string }) {
   const [error, setError] = useState<string | null>(null)
   // What each resend came to, by row, so the answer stays beside the address it was about.
   const [resendResults, setResendResults] = useState<Record<string, string>>({})
+  // Rows whose resend is on its way, so a second click cannot ask the address again.
+  const resending = useRef(new Set<string>())
+  const [resendingIds, setResendingIds] = useState<ReadonlySet<string>>(new Set())
   const loadVersion = useRef(0)
 
   useEffect(() => {
@@ -114,8 +109,15 @@ export function RecentNotifications({ agentId }: { agentId: string }) {
   }, [agentId, nextCursor])
 
   const resend = (item: NotificationDelivery) => {
+    if (resending.current.has(item.id)) return
+    resending.current.add(item.id)
+    setResendingIds(new Set(resending.current))
     void routineSkillCatalogApi.resendNotificationRecipientConfirmationResult(agentId, item.recipientEmail)
       .then((result) => setResendResults((current) => ({ ...current, [item.id]: result })))
+      .finally(() => {
+        resending.current.delete(item.id)
+        setResendingIds(new Set(resending.current))
+      })
   }
 
   return (
@@ -152,7 +154,7 @@ export function RecentNotifications({ agentId }: { agentId: string }) {
                     resendResults[item.id] ? (
                       <span className="text-xs text-muted-foreground">{resendResults[item.id]}</span>
                     ) : (
-                      <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => resend(item)}>
+                      <Button type="button" variant="link" className="h-auto p-0 text-xs" disabled={resendingIds.has(item.id)} onClick={() => resend(item)}>
                         <RefreshCw className="mr-1 h-3 w-3" /> Resend confirmation
                       </Button>
                     )

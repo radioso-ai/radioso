@@ -12,8 +12,9 @@ import type { RfcMessageId } from "./emailHeaderValues.js";
  * Values are provider tag names: ASCII letters, numbers and underscores only.
  *
  * `channel_reply` contains a customer's conversation. Recipient-confirmation messages and any
- * notice carrying an unsubscribe URL contain signed recipient tokens. No driver logs identifying
- * or token-bearing fields for those messages (FR-045).
+ * notice carrying an unsubscribe URL contain signed recipient tokens. A `notification_alert` names
+ * the recipient address a notice could not reach. No driver logs identifying or token-bearing
+ * fields for those messages (FR-045).
  */
 export type EmailKind =
   | "email_verification"
@@ -175,7 +176,12 @@ const shortHash = (value: string): string =>
 
 class LogEmailDriver implements EmailDriver {
   async send(message: EmailMessage): Promise<EmailSendResult> {
-    if (message.kind === "channel_reply" || message.kind === "recipient_confirmation" || Boolean(message.listUnsubscribeUrl)) {
+    if (
+      message.kind === "channel_reply"
+      || message.kind === "recipient_confirmation"
+      || message.kind === "notification_alert"
+      || Boolean(message.listUnsubscribeUrl)
+    ) {
       console.info("email.send", redactedSensitiveMail(message));
       return { ...undispatched(), driver: "log" };
     }

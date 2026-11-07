@@ -107,7 +107,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId, via: target.via },
         `${actionType}: no recipient configured for workspace; skipping`,
       );
-      return { disposition: "skipped", reason: "contact_destination_not_configured" };
+      return { disposition: "not_applicable", reason: "contact_destination_not_configured" };
     }
     const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
     const conversationUrl = await resolveConversationLink(
@@ -170,7 +170,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     return deliverNotification({
       plan,
       subject: {
-        workspaceId: notification.workspaceId,
+        workspaceId: recipientContext.workspaceId,
         agentId: notification.agentId,
         conversationId: recipientContext.conversationId,
         requestId: context.requestId,

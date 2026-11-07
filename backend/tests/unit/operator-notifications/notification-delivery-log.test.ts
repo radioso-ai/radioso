@@ -166,6 +166,40 @@ describe("NotificationDeliveryLog alert budget", () => {
     }
   });
 
+  it("tells the alert it was abandoned when the budget runs out, and not when it finishes in time", async () => {
+    vi.useFakeTimers();
+    try {
+      const signals: AbortSignal[] = [];
+      const finishing = new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+      const stalled = new Promise<void>(() => undefined);
+      let call = 0;
+      const log = new NotificationDeliveryLog({
+        store: { upsert: async () => undefined },
+        alerts: {
+          notify: (_input, options) => {
+            signals.push(options!.signal!);
+            call += 1;
+            return call === 1 ? finishing : stalled;
+          },
+        },
+        logger: { warn: vi.fn() },
+      });
+
+      const recording = log.record(subject(), [
+        { email: "a@example.com", outcome: "skipped_unconfirmed" },
+        { email: "b@example.com", outcome: "skipped_revoked" },
+      ]);
+      await vi.advanceTimersByTimeAsync(11_000);
+      await recording;
+
+      expect(signals).toHaveLength(2);
+      expect(signals[0].aborted).toBe(false);
+      expect(signals[1].aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not wait on an alert that finishes in time, and lets a late failure go unnoticed", async () => {
     vi.useFakeTimers();
     try {

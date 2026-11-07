@@ -329,6 +329,17 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(requests).toHaveLength(0);
   });
 
+  it("is not applicable when the destination has neither a recipient nor a webhook", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(mailer, { resolve: async () => routedTo([]) });
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "not_applicable",
+      reason: "contact_destination_not_configured",
+    });
+    expect(sent).toEqual([]);
+  });
+
   it("leaves an email-only notice to retry when recipient preparation fails", async () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(

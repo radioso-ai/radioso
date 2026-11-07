@@ -22,7 +22,7 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
       if (error instanceof AppError) {
         throw error;
       }
-      throw serviceUnavailable("Abuse control enforcement is unavailable");
+      throw serviceUnavailable("Abuse control enforcement is unavailable", undefined, { cause: error });
     }
   }
 
@@ -44,7 +44,7 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
       if (error instanceof AppError) {
         throw error;
       }
-      throw serviceUnavailable("Abuse control enforcement is unavailable");
+      throw serviceUnavailable("Abuse control enforcement is unavailable", undefined, { cause: error });
     }
   }
 

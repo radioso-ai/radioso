@@ -1,4 +1,5 @@
 import type { AppLogger } from "../observability/logger.js";
+import { safeErrorFields } from "../observability/logging/logSafeValues.js";
 import { matchedRoutePattern } from "../observability/matchedRoute.js";
 import { createRequestCorrelation, type CorrelationFields, type RequestCorrelationSource } from "../observability/telemetry/correlation.js";
 import { redactRecord } from "../observability/telemetry/redactionPolicy.js";
@@ -32,10 +33,14 @@ const serializeError = (
   error: unknown,
 ): { errorClass?: string; message: string; stack?: string; metadata?: Record<string, unknown> } => {
   if (error instanceof Error) {
+    // A wrapping error's own stack ends at the wrapper, so name what it wraps: class and code only,
+    // since the cause's message can quote a visitor.
+    const cause = safeErrorFields(error).cause;
     return {
       errorClass: error.name,
       message: error.message,
       stack: error.stack,
+      ...(cause ? { metadata: { causeClass: cause.name, ...(cause.code !== undefined ? { causeCode: cause.code } : {}) } } : {}),
     };
   }
 

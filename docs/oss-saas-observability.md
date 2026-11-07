@@ -242,6 +242,9 @@ Normalize crashes into a Radioso-owned shape before any external export:
 - normalized exception type
 - message
 - stack trace
+- the wrapped cause's class and code (`causeClass`, `causeCode` in the metadata),
+  for an error that stands for another, such as a 503 raised when the rate-limit
+  store fails; the cause's message stays out because it can quote a visitor
 - tags
 - selected breadcrumbs
 

@@ -45,6 +45,11 @@ vi.mock('@/components/dashboard/settings/skills/SkillForm', () => ({
   ) : null,
 }))
 
+// The notification log has its own journey; here it is only what the list renders after the skills.
+vi.mock('@/components/dashboard/settings/skills/RecentNotifications', () => ({
+  RecentNotifications: () => null,
+}))
+
 vi.mock('@/lib/api-skills', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api-skills')>()),
   agentSkillsApi: apiMocks,
@@ -156,7 +161,7 @@ describe('SkillList submit', () => {
 
   it('replaces config on edit so omitted defaulted fields clear stored overrides', async () => {
     await act(async () => {
-      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
+      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} conversationHref={() => '/activity'} />)
     })
 
     await act(async () => {
@@ -193,13 +198,13 @@ describe('SkillList submit', () => {
     )
 
     await act(async () => {
-      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
+      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} conversationHref={() => '/activity'} />)
     })
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     await act(async () => {
-      root.render(<SkillList agentId="agent-2" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
+      root.render(<SkillList agentId="agent-2" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} conversationHref={() => '/activity'} />)
     })
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -220,7 +225,7 @@ describe('SkillList submit', () => {
   it('uses the existing agent behavior draft for the retrieval answer switch', async () => {
     const onAssistantBehaviorDraft = vi.fn()
     await act(async () => {
-      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={onAssistantBehaviorDraft} />)
+      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={onAssistantBehaviorDraft} conversationHref={() => '/activity'} />)
     })
 
     await act(async () => {

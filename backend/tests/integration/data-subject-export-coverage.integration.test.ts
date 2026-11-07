@@ -62,6 +62,7 @@ const coverage: Record<string, ExportCoverage> = {
   eval_message_case_associations: excluded("Links an answer to the evaluation case a teammate made of it."),
   usage_events: excluded("The billing ledger: models, tokens and costs per turn."),
   notification_delivery_outcomes: excluded("The daily email cap's ledger: counts and a recipient digest."),
+  notification_deliveries: excluded("Which of the workspace's own recipient addresses a notice went to, and whether it was sent: the team's addresses, never the subject's, and no message content. It goes with its conversation."),
   agent_test_execution_sides: excluded("A private test side mints a conversation id that never becomes a conversations row; its transcript is a teammate's test."),
   agent_converse_session_mappings: excluded("Maps an agent grant to the public session it minted; it holds no conversation content."),
   copilot_messages: excluded("Ray's own conversation with a teammate."),

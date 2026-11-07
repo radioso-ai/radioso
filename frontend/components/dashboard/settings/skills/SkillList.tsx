@@ -25,6 +25,7 @@ import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retr
 import { cn } from '@/lib/utils'
 import { CapabilityPicker } from './CapabilityPicker'
 import { McpServersPanel } from './McpServersPanel'
+import { RecentNotifications } from './RecentNotifications'
 import { SkillForm } from './SkillForm'
 import { formatCapabilityLabel, formatInvocationMode } from './skill-form-model'
 import { countSkillUsage, describeSkillUsage, NO_SKILL_USAGE, type SkillUsage } from './skill-usage'
@@ -46,11 +47,14 @@ export function SkillList({
   assistantBehaviorSettings,
   isAssistantBehaviorLoading,
   onAssistantBehaviorDraft,
+  conversationHref,
 }: {
   agentId: string
   assistantBehaviorSettings: AssistantBehaviorSettings | null
   isAssistantBehaviorLoading: boolean
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
+  /** Where a conversation opens in Activity; the recent notifications link to the conversation that raised them. */
+  conversationHref: (conversationId: string) => string
 }) {
   const [skills, setSkills] = useState<AgentSkill[]>([])
   const [platformSkills, setPlatformSkills] = useState<PlatformAnswerSkill[]>([])
@@ -290,6 +294,8 @@ export function SkillList({
           ))}
         </ul>
       ) : null}
+
+      {!isLoading ? <RecentNotifications agentId={agentId} conversationHref={conversationHref} /> : null}
 
       <CapabilityPicker
         open={pickerOpen}

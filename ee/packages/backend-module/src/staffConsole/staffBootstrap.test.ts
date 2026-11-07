@@ -86,6 +86,22 @@ describe("StaffBootstrapService", () => {
     }));
   });
 
+  it("still audits and alerts on a reset when ending the old sessions fails", async () => {
+    const { service, revokeAllForStaff, record, warn } = createService(await staffUser("owner"));
+    revokeAllForStaff.mockRejectedValueOnce(new Error("connection lost"));
+
+    await expect(service.bootstrapOwner(input)).rejects.toThrow("connection lost");
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "staff.bootstrap",
+      metadata: expect.objectContaining({ action: "reset_owner", revokedSessions: null }),
+    }));
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({
+      event: "staff_console.privileged_change",
+      eventType: "staff.bootstrap",
+    }), expect.any(String));
+  });
+
   it("refuses to take over an address held by non-owner staff", async () => {
     const { service, revokeAllForStaff, record } = createService(await staffUser("support_read"));
 

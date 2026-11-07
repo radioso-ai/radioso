@@ -171,8 +171,9 @@ STAFF_SESSION_TTL_HOURS=8
 
 A session ends after 30 minutes without a request, or when that lifetime runs
 out, whichever comes first. Sign-in attempts are limited per address and per
-source, using the `AUTH_RATE_LIMIT_*` budget. Every other console request is limited
-to 300 a minute per source, and to 60 a minute per signed-in staff member.
+source, using the `AUTH_RATE_LIMIT_*` budget. Any other console request carrying a session
+cookie is limited to 300 a minute per source, and to 60 a minute per signed-in staff
+member.
 
 ### First owner and recovery
 

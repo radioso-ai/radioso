@@ -170,15 +170,22 @@ export const createStaffConsoleRoutes = (
     (req) => (typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null),
   );
 
-  // Every guarded request costs a session lookup before anyone is known, so this budget comes
-  // first. It is well above what a few people using the console send, and only bounds a flood.
+  const hasSessionCookie = (req: Request): boolean => {
+    const sessionToken: unknown = req.cookies?.[cookieName];
+    return typeof sessionToken === "string" && sessionToken.length > 0;
+  };
+
+  // A session cookie costs a database lookup before anyone is known, so this budget comes first.
+  // A request without one is refused for free and spends nothing. The limit is well above what a
+  // few people using the console send, and only bounds a flood.
   const staffSessionSourceRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
     scope: "ee.staff_console.session_source",
     limit: 300,
     windowMs: 60_000,
-    resolveSubjectKey: (req, res) => `source:${dependencies.requestSource.digest(req, res)}`,
+    resolveSubjectKey: (req, res) =>
+      (hasSessionCookie(req) ? `source:${dependencies.requestSource.digest(req, res)}` : null),
   });
 
   // Authentication narrows the caller pool but is not a rate limit: a compromised or malicious
@@ -203,13 +210,15 @@ export const createStaffConsoleRoutes = (
   const staffSessionGuard: RequestHandler = (req, res, next) => {
     authenticateStaffSession(req, res, (error?: unknown) => {
       if (error) {
-        const sessionToken: unknown = req.cookies?.[cookieName];
-        logger.warn?.({
-          event: "staff_console.session_rejected",
-          method: req.method,
-          path: req.path,
-          reason: typeof sessionToken === "string" && sessionToken.length > 0 ? "invalid_session" : "missing_session",
-        }, "Staff console session rejected");
+        // A broken lookup is a fault, not a rejected caller, and the error handler reports it.
+        if (error instanceof HttpError && error.statusCode === 401) {
+          logger.warn?.({
+            event: "staff_console.session_rejected",
+            method: req.method,
+            path: req.path,
+            reason: hasSessionCookie(req) ? "invalid_session" : "missing_session",
+          }, "Staff console session rejected");
+        }
         next(error);
         return;
       }

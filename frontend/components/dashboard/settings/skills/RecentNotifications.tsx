@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { apiAccessApi } from '@/lib/api-api-access'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { routineSkillCatalogApi } from '@/lib/api-routine-skill-catalog'
 import { useOptionalAuth } from '@/lib/auth-context'
@@ -39,7 +41,16 @@ const formatTime = (value: string) =>
  */
 export function RecentNotifications({ agentId }: { agentId: string }) {
   const accountId = useOptionalAuth()?.user?.accountId ?? null
-  const { activeWorkspace } = useWorkspace()
+  const { activeWorkspace, activeWorkspaceId } = useWorkspace()
+  // Asking an address again is for owners and admins; the log itself is for anyone who can read the agent.
+  const workspaceAccess = useQuery({
+    queryKey: ['workspace-effective-role', activeWorkspaceId],
+    queryFn: () => apiAccessApi.getSummary(activeWorkspaceId ?? ''),
+    enabled: Boolean(activeWorkspaceId),
+    staleTime: 60_000,
+  })
+  const effectiveRole = workspaceAccess.data?.effectiveRole
+  const canManageRecipients = effectiveRole === 'owner' || effectiveRole === 'admin'
   const conversationHref = accountId
     ? (conversationId: string) => buildDashboardHref(accountId, {
         section: 'activity',
@@ -137,7 +148,7 @@ export function RecentNotifications({ agentId }: { agentId: string }) {
                   <Badge className={cn(outcomeTone(item.outcome))} variant="secondary">
                     {NOTIFICATION_DELIVERY_OUTCOME_LABELS[item.outcome]}
                   </Badge>
-                  {canResendConfirmation(item.outcome) ? (
+                  {canManageRecipients && canResendConfirmation(item.outcome) ? (
                     resendResults[item.id] ? (
                       <span className="text-xs text-muted-foreground">{resendResults[item.id]}</span>
                     ) : (

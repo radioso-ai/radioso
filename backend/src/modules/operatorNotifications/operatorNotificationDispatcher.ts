@@ -1,10 +1,24 @@
 import { ActionDispatchSkippedError, type ActionDispatchOutcome } from "../../shared/domain/actionDispatchOutcome.js";
 import type {
+  NotificationSkipReason,
   OperatorNotification,
   OperatorNotificationContext,
   OperatorNotificationSink,
   OperatorNotificationSinkOutcome,
 } from "./operatorNotification.js";
+
+/**
+ * Skips that leave nothing undelivered: the sink had no destination of its own to reach, or the
+ * approval it would announce is no longer waiting. Any other skip is a destination that was set up
+ * and left out, which a send that reached another sink must still report.
+ */
+const NOTHING_LEFT_UNDELIVERED: ReadonlySet<NotificationSkipReason> = new Set([
+  "contact_destination_not_configured",
+  "slack_workspace_not_linked",
+  "slack_not_installed",
+  "slack_escalation_channel_not_configured",
+  "slack_approval_not_pending",
+]);
 
 export class OperatorNotificationDispatcher {
   constructor(
@@ -13,9 +27,11 @@ export class OperatorNotificationDispatcher {
   ) {}
 
   /**
-   * Resolves `partial` when a sink reached only some of its destinations, so the action is not
-   * settled as a whole send. A sink that has no destination configured at all (Slack not linked)
-   * is skipped, not partial: another sink delivering still settles the action as dispatched.
+   * Resolves `partial` when a destination that was set up got nothing, so the action is not settled
+   * as a whole send: a sink that reached only some of its own destinations, or a sink that skipped
+   * (an address that has not confirmed, a cap) while another sink delivered. A sink with no
+   * destination configured at all (Slack not linked) leaves nothing undelivered, so another sink
+   * delivering still settles the action as dispatched.
    */
   async dispatch(notification: OperatorNotification, context: OperatorNotificationContext): Promise<ActionDispatchOutcome> {
     // Attempt every sink (one failing sink must not skip the others), then surface any failure so
@@ -62,6 +78,7 @@ export class OperatorNotificationDispatcher {
     if (!delivered) {
       throw new ActionDispatchSkippedError(skips[0]?.reason ?? "operator_notification_no_sink");
     }
-    return { disposition: "dispatched" };
+    const leftOut = skips.find((skip) => !NOTHING_LEFT_UNDELIVERED.has(skip.reason));
+    return leftOut ? { disposition: "partial", reason: leftOut.reason } : { disposition: "dispatched" };
   }
 }

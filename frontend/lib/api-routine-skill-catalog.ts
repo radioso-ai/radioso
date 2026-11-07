@@ -180,7 +180,7 @@ export const routineSkillCatalogApi = {
   async resendNotificationRecipientConfirmationResult(agentId: string, email: string): Promise<string> {
     try {
       const result = await routineSkillCatalogApi.resendNotificationRecipientConfirmation(agentId, email)
-      return result.sent ? 'Confirmation sent' : 'Not sent: asked recently, daily limit reached, or mail delivery unavailable'
+      return result.sent ? 'Confirmation sent' : 'Not sent: already confirmed, asked recently, limit reached, or mail unavailable'
     } catch (resendError) {
       return getApiErrorMessage(resendError, 'Could not resend the confirmation')
     }

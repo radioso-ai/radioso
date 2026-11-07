@@ -17,6 +17,12 @@ import {
   type NotificationRecipientPolicyPort,
 } from "../../modules/operatorNotifications/public.js";
 import {
+  PostgresWorkspaceAccountLookup,
+  SlackChannelBindingRepository,
+  SlackEscalationChannelReader,
+  SlackInstallationRepository,
+} from "../../modules/slack/public.js";
+import {
   NotificationRecipientIdentityRepository,
   NotificationRecipientStateRepository,
 } from "../../db/repositories/notificationRecipientStateRepository.js";
@@ -114,4 +120,9 @@ export const buildRoutineOperatorReachReader = (input: {
     skills: new AgentSkillRepository(input.database.kysely),
     logger: input.logger,
     metrics: input.metrics,
+    escalationChannel: new SlackEscalationChannelReader({
+      installations: new SlackInstallationRepository(input.database.kysely),
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(input.database.kysely),
+      bindings: new SlackChannelBindingRepository(input.database.kysely),
+    }),
   });

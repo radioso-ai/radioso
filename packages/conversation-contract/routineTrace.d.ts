@@ -123,8 +123,8 @@ export interface RoutineRunTrace {
   /** Present alongside `slotValues` when the filled-slot count exceeded the bound. */
   omittedSlotCount?: number;
   /**
-   * Present when the turn's effects could reach no one, so its reply was told not to claim they
-   * were passed on (`RoutineStepReplyInput.operatorsUnreachable`). Absent otherwise.
+   * Present when the turn's effects could not notify the team, so its reply was told not to claim
+   * the team was told (`RoutineStepReplyInput.operatorsUnreachable`). Absent otherwise.
    */
   operatorsUnreachable?: true;
   steps: RoutineTraceStepEntry[];

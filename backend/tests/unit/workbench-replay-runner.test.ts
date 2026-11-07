@@ -2987,29 +2987,29 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
   });
 
   describe("a routine whose operators cannot be reached (#1702)", () => {
-    const FACT = "The team cannot be reached from this chat right now";
+    const FACT = "The team cannot be notified from this chat right now";
     const notifySkill = {
       name: "notify_bookings",
       execution: { kind: "internal", adapter: NOTIFY_SKILLS_ADAPTER, enqueue: false },
       requiredCapabilities: [],
       owner: "platform",
     } as unknown as SkillDefinition;
-    const routine: Routine = {
+    const notifyThenEnd = (endingMetadata: Record<string, unknown>): Routine => ({
       id: "notify_then_end",
       rootStepId: "notify",
       steps: [
         { id: "notify", kind: "skill", skillName: notifySkill.name },
-        {
-          id: "done",
-          kind: "terminal",
-          action: "Say the request was passed to reception.",
-          metadata: { terminalKind: "complete", operatorNotice: { subject: "New booking" } },
-        },
+        { id: "done", kind: "terminal", action: "Say the request was passed to reception.", metadata: endingMetadata },
       ],
       transitions: [{ from: "notify", to: "done", condition: "always" }],
-    };
+    });
+    const notifyingEnding = { terminalKind: "complete", operatorNotice: { subject: "New booking" } };
+    const quietEnding = { terminalKind: "complete" };
 
-    const safeTest = async (recipientState: "confirmed" | "waiting_for_confirmation") => {
+    const safeTest = async (
+      recipientState: "confirmed" | "waiting_for_confirmation",
+      routine: Routine = notifyThenEnd(notifyingEnding),
+    ) => {
       const executeNotify = vi.fn<SkillExecutorPort["dispatch"]>();
       const registry = new SkillExecutorRegistry();
       registry.register({ ...(notifySkill.execution as { kind: "internal"; adapter: string }), executor: { dispatch: executeNotify } });
@@ -3035,11 +3035,11 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
       const chatGateway = {
         answer: vi.fn(async (input: { systemPrompt?: string }) => {
           prompts.push(input.systemPrompt ?? "");
-          return "I could not pass that on.";
+          return "I could not tell the team.";
         }),
         streamAnswer: vi.fn(async function* (input: { systemPrompt?: string }) {
           prompts.push(input.systemPrompt ?? "");
-          yield "I could not pass that on.";
+          yield "I could not tell the team.";
         }),
       };
       const routineProvider: ChatRoutineProvider = {
@@ -3079,7 +3079,7 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
       return { result, prompts, executeNotify, prepareDelivery };
     };
 
-    it("shows a safe test the wording live chat would write, and sends nothing", async () => {
+    it("tells a safe test's reply when an ending's notice can reach nobody, and sends nothing", async () => {
       const { result, prompts, executeNotify, prepareDelivery } = await safeTest("waiting_for_confirmation");
 
       expect(prompts).toHaveLength(1);
@@ -3101,6 +3101,15 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
 
     it("keeps a safe test's wording when someone can receive the notice", async () => {
       const { result, prompts, executeNotify } = await safeTest("confirmed");
+
+      expect(prompts[0]).not.toContain(FACT);
+      expect(executeNotify).not.toHaveBeenCalled();
+      const routineStage = result.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate");
+      expect(routineStage?.subTrace?.payload).not.toHaveProperty("operatorsUnreachable");
+    });
+
+    it("does not count a suppressed notify step: with no notice on the ending, a safe test keeps its wording", async () => {
+      const { result, prompts, executeNotify } = await safeTest("waiting_for_confirmation", notifyThenEnd(quietEnding));
 
       expect(prompts[0]).not.toContain(FACT);
       expect(executeNotify).not.toHaveBeenCalled();

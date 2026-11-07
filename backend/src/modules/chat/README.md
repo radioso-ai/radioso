@@ -595,10 +595,12 @@ imports from `services/`.
   Operator MCP client. Neither returns a webhook URL.
   `services/actions/routineOperatorReach.ts`'s `RoutineOperatorReachReader` reads the same
   resolver before a routine turn's reply is written, and is where the rule for which effects
-  count lives: `contact.send`, a notify skill step, and a completion's notice do; a hand-off,
-  an approval, and a completion export do not. It calls the recipient policy's `describe`,
-  never `prepareDelivery`, and answers reachable when a read fails, with a warning and
-  `routine_operator_reach_read_failures_total`. `app/composition/contactDelivery.ts` builds it.
+  count lives: `contact.send`, a notify skill step, and a completion's notice do; a hand-off and
+  a completion export do not, and the runner never asks on a turn parked at an approval. A
+  completion's notice also counts the workspace's Slack escalation channel. It calls the
+  recipient policy's `describe`, never `prepareDelivery`, and answers reachable when a read
+  fails, with a warning and `routine_operator_reach_read_failures_total`.
+  `app/composition/contactDelivery.ts` builds it.
   An authored notice can also carry `replyToSlot`, the key of the email slot replies go
   to. Unlike `skillName` it is content, not routing, so it rides the payload's `notice`
   next to `subject` and `intro` (`operatorNoticeActionPayload`). At delivery

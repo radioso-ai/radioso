@@ -199,7 +199,7 @@ describe('buildRoutineRunTrace', () => {
     expect(view?.steps[0]).toMatchObject({ capturedSlotKeys: ['message'], replacedSlotKeys: ['email'] })
   })
 
-  it('says when a reply was told nobody could receive what the turn sent, and only then', () => {
+  it('says when a reply was told the team could not be notified, and only then', () => {
     const told = buildRoutineRunTrace(routineStage({ operatorsUnreachable: true, steps: [] }))
     const untold = buildRoutineRunTrace(routineStage({ steps: [] }))
 

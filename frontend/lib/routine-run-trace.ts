@@ -91,7 +91,7 @@ export interface RoutineRunTraceView {
   /** Slot keys that held a value before the turn and were given a different one. */
   replacedSlotKeys?: string[]
   filledSlotKeys: string[]
-  /** What the turn sent could reach no one, so its reply was told not to claim it was passed on. */
+  /** The turn could not notify the team, so its reply was told not to claim the team was told. */
   operatorsUnreachable?: true
   steps: RoutineTraceStepView[]
 }

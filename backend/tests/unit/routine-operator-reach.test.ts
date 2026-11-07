@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { RoutineOperatorBoundEffects } from "@radioso/conversation-contract";
+import type {
+  ConversationRoutineStepRenderer,
+  Routine,
+  RoutineOperatorBoundEffects,
+  TurnContext,
+} from "@radioso/conversation-contract";
+import { DefaultRoutineRunner } from "@radioso/conversation-engine";
 
 import { RoutineOperatorReachReader } from "../../src/modules/chat/services/actions/routineOperatorReach.js";
 import type { RoutedContactDeliveryTarget } from "../../src/modules/chat/services/actions/contactSendActionHandler.js";
@@ -56,6 +62,7 @@ const readerOver = (input: {
   targets: Record<string, RoutedContactDeliveryTarget>;
   states?: Record<string, Exclude<RecipientState, "confirmation_not_required">>;
   notifySkills?: readonly string[];
+  escalationChannel?: boolean;
 }) => {
   const resolveForAgent = vi.fn(async ({ skillName }: { skillName: string | null }) => {
     const resolved = input.targets[skillName ?? "default"];
@@ -67,14 +74,16 @@ const readerOver = (input: {
   const logger = { warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn() };
   const policy = policyOver(input.states ?? {});
+  const hasEscalationChannel = vi.fn(async () => input.escalationChannel === true);
   const reader = new RoutineOperatorReachReader({
     resolver: { resolveForAgent },
     recipientPolicy: policy.service,
     skills: { findByName },
     logger,
     metrics,
+    ...(input.escalationChannel === undefined ? {} : { escalationChannel: { hasEscalationChannel } }),
   });
-  return { reach: reader.forAgent(scope), resolveForAgent, findByName, logger, metrics, policy };
+  return { reach: reader.forAgent(scope), resolveForAgent, findByName, logger, metrics, policy, hasEscalationChannel };
 };
 
 describe("RoutineOperatorReachReader", () => {
@@ -172,6 +181,135 @@ describe("RoutineOperatorReachReader", () => {
     });
   });
 
+  describe("a Slack escalation channel", () => {
+    const nobody = { default: target([]), notify_sales: target([]) };
+
+    it("reaches the team for a completion notice nobody can receive by email", async () => {
+      const { reach, hasEscalationChannel, policy } = readerOver({
+        targets: { default: target(["a@example.com"]) },
+        states: { "a@example.com": "waiting_for_confirmation" },
+        escalationChannel: true,
+      });
+
+      await expect(reach.canReachOperators({ terminal: notice() })).resolves.toBe(true);
+
+      expect(hasEscalationChannel).toHaveBeenCalledWith(scope.workspaceId);
+      expect(policy.prepareDelivery).not.toHaveBeenCalled();
+    });
+
+    it("leaves a completion notice unreachable when the workspace has no such channel", async () => {
+      const { reach } = readerOver({ targets: nobody, escalationChannel: false });
+
+      await expect(reach.canReachOperators({ terminal: notice() })).resolves.toBe(false);
+    });
+
+    it("does not reach anyone for a contact request or a notify skill step: they have no Slack path", async () => {
+      const { reach, hasEscalationChannel } = readerOver({
+        targets: nobody,
+        notifySkills: ["notify_sales"],
+        escalationChannel: true,
+      });
+
+      await expect(reach.canReachOperators({ actions: [{ type: "contact.send", payload: {} }] })).resolves.toBe(false);
+      await expect(reach.canReachOperators({ skillsWithExternalEffects: ["notify_sales"] })).resolves.toBe(false);
+
+      expect(hasEscalationChannel).not.toHaveBeenCalled();
+    });
+
+    it("reports reachable, with a warning, when the channel cannot be read", async () => {
+      const logger = { warn: vi.fn() };
+      const metrics = { incrementCounter: vi.fn() };
+      const reader = new RoutineOperatorReachReader({
+        resolver: { resolveForAgent: vi.fn(async () => target([])) },
+        recipientPolicy: policyOver({}).service,
+        skills: { findByName: vi.fn(async () => null) },
+        logger,
+        metrics,
+        escalationChannel: { hasEscalationChannel: vi.fn(async () => { throw new Error("slack lookup failed"); }) },
+      });
+
+      await expect(reader.forAgent(scope).canReachOperators({ terminal: notice() })).resolves.toBe(true);
+
+      expect(logger.warn).toHaveBeenCalledOnce();
+      expect(metrics.incrementCounter).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("a turn parked at an approval gate", () => {
+    const gated: Routine = {
+      id: "gated",
+      rootStepId: "ask",
+      steps: [
+        { id: "ask", kind: "chat", action: "Ask what to do." },
+        { id: "send", kind: "action", actionType: "contact.send" },
+        {
+          id: "gate",
+          kind: "await",
+          action: "Say a teammate decides.",
+          decision: { captureKey: "choice", options: [{ id: "yes", label: "Yes" }] },
+        },
+        { id: "done", kind: "terminal", action: "Done.", metadata: { terminalKind: "complete", operatorNotice: {} } },
+      ],
+      transitions: [
+        { from: "ask", to: "send", condition: "They said." },
+        { from: "send", to: "gate", condition: "Sent." },
+        { from: "gate", to: "done", condition: "Decided." },
+      ],
+    };
+    const turn: TurnContext = {
+      agent: { id: scope.agentId, name: "Assistant" },
+      sessionId: "session_1",
+      inputEvent: { id: "in_1", kind: "message", content: "Please book it" },
+      history: [],
+      stagedContext: [],
+      steering: [],
+    };
+
+    it("keeps the reply's wording though nobody can receive the turn's contact request: the approval sits in the Inbox", async () => {
+      const { reach, resolveForAgent } = readerOver({ targets: { default: target([]) } });
+      const render = vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ step }) => ({ answer: `[${step.id}]` }));
+      const runner = new DefaultRoutineRunner(
+        [gated],
+        { select: async () => ({ nextStepId: "send" }) },
+        { render },
+        undefined,
+        { operatorReach: reach },
+      );
+
+      const result = await runner.resume({
+        turn,
+        state: { sessionId: turn.sessionId, routineId: gated.id, path: ["ask"], variables: {}, status: "active" },
+      });
+
+      expect(result.awaitingDecision).toMatchObject({ stepId: "gate" });
+      expect(render.mock.calls[0][0]).not.toHaveProperty("operatorsUnreachable");
+      expect(result.trace).not.toHaveProperty("operatorsUnreachable");
+      expect(resolveForAgent).not.toHaveBeenCalled();
+    });
+
+    it("checks again on the turn the decision ends the routine on a notice", async () => {
+      const { reach, resolveForAgent } = readerOver({ targets: { default: target([]) } });
+      const render = vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ step }) => ({ answer: `[${step.id}]` }));
+      const runner = new DefaultRoutineRunner(
+        [gated],
+        { select: async () => ({ nextStepId: "done" }) },
+        { render },
+        undefined,
+        { operatorReach: reach },
+      );
+
+      const result = await runner.resume({
+        turn,
+        state: { sessionId: turn.sessionId, routineId: gated.id, path: ["ask", "send", "gate"], variables: {}, status: "active" },
+        decisionTurn: true,
+      });
+
+      expect(result.terminal?.kind).toBe("complete");
+      expect(render.mock.calls[0][0].operatorsUnreachable).toBe(true);
+      expect(resolveForAgent).toHaveBeenCalledOnce();
+    });
+  });
+
   describe("which effects count", () => {
     const nobody = { default: target([]) };
 
@@ -222,10 +360,9 @@ describe("RoutineOperatorReachReader", () => {
           terminal: { kind: "handoff" as const, stepId: "person" },
         },
       },
-      { name: "an approval request", effects: { actions: [{ type: "approval.request", payload: {} }] } },
       { name: "a completion export", effects: { actions: [{ type: "webhook.send", payload: {} }] } },
       { name: "a completion with no notice", effects: { terminal: { kind: "complete" as const, stepId: "done" } } },
-    ])("does not count $name: its wording stays true without an email", async ({ effects }) => {
+    ])("does not count $name", async ({ effects }) => {
       const { reach, resolveForAgent } = readerOver({ targets: nobody });
 
       await expect(reach.canReachOperators(effects)).resolves.toBe(true);

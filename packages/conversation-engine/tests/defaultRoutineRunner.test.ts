@@ -4935,7 +4935,7 @@ describe("DefaultRoutineRunner operator reach (#1702)", () => {
     expect(operatorReach.canReachOperators).not.toHaveBeenCalled();
   });
 
-  it("carries the fact onto a reply that parks at a decision gate after an action step", async () => {
+  it("does not ask on a turn that parks awaiting a person's decision: the decision waits in the Inbox", async () => {
     const operatorReach = reach(false);
     const { renderer, render } = recordingRenderer();
     const parking: Routine = {
@@ -4964,8 +4964,10 @@ describe("DefaultRoutineRunner operator reach (#1702)", () => {
     const result = await runner.resume({ turn, state: state(["ask_name"]) });
 
     expect(result.awaitingDecision).toBeDefined();
-    expect(render.mock.calls[0][0].operatorsUnreachable).toBe(true);
-    expect(result.trace?.operatorsUnreachable).toBe(true);
+    expect(result.actions?.map((action) => action.type)).toEqual(["contact.send"]);
+    expect(operatorReach.canReachOperators).not.toHaveBeenCalled();
+    expect(render.mock.calls[0][0]).not.toHaveProperty("operatorsUnreachable");
+    expect(result.trace).not.toHaveProperty("operatorsUnreachable");
   });
 
   it("does not ask for a visitor stuck past the re-ask limit: that ending goes to a person", async () => {

@@ -436,7 +436,7 @@ interface DefaultRoutineRunnerOptions {
    * message as a reply.
    */
   openingMessageStatesSlotValues?: boolean;
-  /** Asked before a reply is written whether what the turn did reaches anyone; absent, nothing is checked. */
+  /** Asked before a reply is written whether what the turn did can notify the team; absent, nothing is checked. */
   operatorReach?: ConversationRoutineOperatorReach;
 }
 
@@ -476,7 +476,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     return this.renderer.prepare?.(input) ?? { render: () => this.renderer.render(input) };
   }
 
-  /** Whether the host says what this turn did reaches no one. Only a turn that did something is asked about. */
+  /** Whether the host says what this turn did cannot notify the team. Only a turn that did something is asked about. */
   private async operatorsUnreachable(effects: RoutineOperatorBoundEffects): Promise<boolean> {
     const asksAboutNothing = !effects.actions?.length
       && !effects.skillsWithExternalEffects?.length
@@ -1250,12 +1250,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const steering = input.steeringResolver
         ? await input.steeringResolver.resolve({ step, baseSteering, turn: replyTurn })
         : baseSteering;
-      const operatorsUnreachable = await this.operatorsUnreachable({ actions, skillsWithExternalEffects });
       const reply = this.prepareReply({
         ...rendered,
         steering,
         turn: replyTurn,
-        ...(operatorsUnreachable ? { operatorsUnreachable } : {}),
       });
       traceSteps.push({ stepId: step.id, kind: step.kind, event: "suspended" });
       const trace: RoutineRunTrace = {
@@ -1265,7 +1263,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         ...runSlotKeyFields(traceSteps),
         filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
         ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
-        ...(operatorsUnreachable ? { operatorsUnreachable } : {}),
         steps: traceSteps,
       };
       const reason = typeof step.metadata?.reason === "string" ? step.metadata.reason : undefined;

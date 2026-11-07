@@ -164,7 +164,7 @@ describe("RoutineStepRenderer.prepare", () => {
 });
 
 describe("RoutineStepRenderer when the turn's operators cannot be reached (#1702)", () => {
-  const FACT = "The team cannot be reached from this chat right now";
+  const FACT = "The team cannot be notified from this chat right now";
   const ending: RoutineStep = {
     id: "done",
     kind: "terminal",
@@ -181,6 +181,9 @@ describe("RoutineStepRenderer when the turn's operators cannot be reached (#1702
     expect(prompt.indexOf(FACT)).toBeGreaterThan(prompt.indexOf("Say the request was passed to reception."));
     // The reply's language rule stays the last word, so the fact does not pull the language.
     expect(prompt.indexOf(FACT)).toBeLessThan(prompt.indexOf("Always reply in the same language"));
+    // Only the team's notification failed: a booking a skill made this turn stays true to report.
+    expect(prompt).toContain("Keep anything else the step instruction(s) say that is still true.");
+    expect(prompt).not.toContain("passed to anyone");
 
     const untold = gatewayFor("reply");
     await new RoutineStepRenderer(untold.gateway).render({ step: ending, steering: endingSteering, turn });

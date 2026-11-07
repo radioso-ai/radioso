@@ -48,17 +48,18 @@ export interface RoutineStepReplyInput {
   /** {@link RoutineContextRenderer.evidence} of the context variables the step references; absent when none carries any. */
   contextEvidence?: readonly string[];
   /**
-   * True when {@link ConversationRoutineOperatorReach} reports that this turn's effects can reach
-   * no one. The reply does not claim what the visitor gave was passed on, whatever the step
-   * instruction says. A hand-off's message ignores it: that wording makes no such claim.
+   * True when {@link ConversationRoutineOperatorReach} reports that this turn's effects cannot
+   * notify the team. The reply does not claim the team was told, whatever the step instruction
+   * says, and keeps the rest of what the step says. A hand-off's message ignores it: that wording
+   * makes no such claim.
    */
   operatorsUnreachable?: boolean;
 }
 
 /**
  * The effects of a routine turn the host weighs when {@link ConversationRoutineOperatorReach} asks
- * whether they reach anyone. A skill can queue its own effect, so the skills a turn ran count
- * beside the actions it emitted.
+ * whether they can notify the team. A skill can queue its own effect, so the skills a turn ran
+ * count beside the actions it emitted.
  */
 export type RoutineOperatorBoundEffects = Pick<
   ConversationRoutineRunEffects,
@@ -68,10 +69,11 @@ export type RoutineOperatorBoundEffects = Pick<
 /**
  * Asked before a routine turn's reply is written, on a turn that emitted an action, ran a skill
  * that may act outside the conversation, or ended on an operator notice: can what the turn did
- * reach anyone? Delivery happens later, in a worker, and the reply must not promise what cannot
+ * notify the team? Delivery happens later, in a worker, and the reply must not promise what cannot
  * happen. Only the host knows which effects address operators and who could receive them, so the
- * answer is all the runner learns. A runner with no port checks nothing. A rejection fails the
- * turn, as any port's does, so a host answers `true` when it cannot tell.
+ * answer is all the runner learns. A turn that parks awaiting a person's decision is not asked: a
+ * person already has it. A runner with no port checks nothing. A rejection fails the turn, as any
+ * port's does, so a host answers `true` when it cannot tell.
  */
 export interface ConversationRoutineOperatorReach {
   canReachOperators(effects: RoutineOperatorBoundEffects): Promise<boolean>;

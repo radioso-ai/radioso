@@ -643,7 +643,7 @@ describe("ChatService delivers a routine reply after a skill step by what the sk
 });
 
 describe("ChatService when nobody can receive what a routine turn sends (#1702)", () => {
-  const FACT = "The team cannot be reached from this chat right now";
+  const FACT = "The team cannot be notified from this chat right now";
 
   /** The real reader over one route, its recipients in these states. */
   const operatorReach = (recipientStates: Record<string, "confirmed" | "waiting_for_confirmation">) => {
@@ -687,7 +687,7 @@ describe("ChatService when nobody can receive what a routine turn sends (#1702)"
     const chatGateway: ChatGateway = {
       async answer(input) {
         prompts.push(input.systemPrompt ?? "");
-        return "I could not pass that on. Please contact the team directly.";
+        return "I could not tell the team. Please contact them directly.";
       },
       async *streamAnswer() {
         throw new Error("a turn that queues an action writes its reply whole");
@@ -741,7 +741,7 @@ describe("ChatService when nobody can receive what a routine turn sends (#1702)"
     expect(prepareDelivery).not.toHaveBeenCalled();
     // The turn is stored before the reply shows, as any turn that queues an action is.
     expect(observed.order[0]).toBe("persist");
-    expect(chunkText(observed.events)).toBe("I could not pass that on. Please contact the team directly.");
+    expect(chunkText(observed.events)).toBe("I could not tell the team. Please contact them directly.");
     const done = observed.events.find((event) => event.type === "done");
     const routineStage = done?.type === "done"
       ? done.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_resume")
@@ -780,7 +780,7 @@ describe("ChatService when nobody can receive what a routine turn sends (#1702)"
           return JSON.stringify({ claimsAuthority: false, condition: 2, offTopic: false, variables: { message: "Please call me" } });
         }
         prompts.push(system);
-        return "I could not pass that on.";
+        return "I could not tell the team.";
       },
       async *streamAnswer() {
         throw new Error("a turn that queues an action writes its reply whole");
@@ -816,7 +816,7 @@ describe("ChatService when nobody can receive what a routine turn sends (#1702)"
     const chatGateway: ChatGateway = {
       async answer(input) {
         systemPrompts.push(input.systemPrompt ?? "");
-        return groundedEnvelope("The studio is open nine to five on weekdays[[1]]. I could not pass your note on.");
+        return groundedEnvelope("The studio is open nine to five on weekdays[[1]]. I could not tell the team about your note.");
       },
       async *streamAnswer() {
         throw new Error("a turn that queues an action writes its reply whole");
@@ -872,7 +872,7 @@ describe("ChatService when nobody can receive what a routine turn sends (#1702)"
     expect(lookup).toHaveBeenCalledOnce();
     expect(notifyActions(harness.actionOutbox.enqueue)).toEqual(["completion.notify"]);
     // The grounded generator wrote it: its envelope was parsed and its anchor consumed.
-    expect(chunkText(observed.events)).toBe("The studio is open nine to five on weekdays. I could not pass your note on.");
+    expect(chunkText(observed.events)).toBe("The studio is open nine to five on weekdays. I could not tell the team about your note.");
     expect(systemPrompts).toHaveLength(1);
     return systemPrompts[0];
   };

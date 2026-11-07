@@ -20,9 +20,11 @@ const canReach = async (url?: string): Promise<boolean> => {
 
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
-const QUERY_TIMEOUT_MS = 200;
-const STATEMENT_TIMEOUT_MS = 800;
-const SLOW_STATEMENT = "SELECT pg_sleep(5)";
+// Wide enough apart that a loaded CI database still orders them: the client gives up on the
+// statement, then on the queued ROLLBACK, and only then does the server cancel the statement.
+const QUERY_TIMEOUT_MS = 500;
+const STATEMENT_TIMEOUT_MS = 1_500;
+const SLOW_STATEMENT = "SELECT pg_sleep(10)";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // `query_timeout` is a client-side timer, so it can fire while the statement still runs on the
@@ -32,12 +34,11 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 describeIfDatabase("a transaction whose rollback never reaches the server", () => {
   const databases: Database[] = [];
 
-  const openDatabase = (warn = vi.fn()) => {
+  const openDatabase = (warn = vi.fn(), timeouts: "short" | "default" = "short") => {
     const database = new Database(integrationDatabaseUrl!, {
       applicationName: "radioso-transaction-release-test",
       poolMax: 1,
-      queryTimeoutMs: QUERY_TIMEOUT_MS,
-      statementTimeoutMs: STATEMENT_TIMEOUT_MS,
+      ...(timeouts === "short" ? { queryTimeoutMs: QUERY_TIMEOUT_MS, statementTimeoutMs: STATEMENT_TIMEOUT_MS } : {}),
       logger: { warn },
     });
     databases.push(database);
@@ -66,19 +67,19 @@ describeIfDatabase("a transaction whose rollback never reaches the server", () =
     await nextStatementSucceeds(database);
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({ applicationName: "radioso-transaction-release-test", transactionStatus: "T" }),
-      "database_connection_discarded_mid_transaction",
+      "database_connection_discarded_on_release",
     );
-  }, 10_000);
+  }, 15_000);
 
   it("does not poison later statements after a Kysely transaction times out", async () => {
     const database = openDatabase();
 
     await expect(
-      database.kysely.transaction().execute((transaction) => sql`SELECT pg_sleep(5)`.execute(transaction)),
+      database.kysely.transaction().execute((transaction) => sql`SELECT pg_sleep(10)`.execute(transaction)),
     ).rejects.toThrow("Query read timeout");
 
     await nextStatementSucceeds(database);
-  }, 10_000);
+  }, 15_000);
 
   it("reports the error that broke the transaction, not the failed rollback", async () => {
     const database = openDatabase();
@@ -89,11 +90,25 @@ describeIfDatabase("a transaction whose rollback never reaches the server", () =
     })).rejects.toThrow("the failure that matters");
 
     await nextStatementSucceeds(database);
-  }, 10_000);
+  }, 15_000);
+
+  it("does not make the next borrower wait behind a statement that timed out outside a transaction", async () => {
+    const warn = vi.fn();
+    const database = openDatabase(warn);
+
+    await expect(sql`SELECT pg_sleep(10)`.execute(database.kysely)).rejects.toThrow("Query read timeout");
+    const next = await sql<{ one: number }>`SELECT 1 AS one`.execute(database.kysely);
+
+    expect(next.rows[0]?.one).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ statementInFlight: true }),
+      "database_connection_discarded_on_release",
+    );
+  }, 15_000);
 
   it("keeps a connection whose transaction ended cleanly", async () => {
     const warn = vi.fn();
-    const database = openDatabase(warn);
+    const database = openDatabase(warn, "default");
     const backendPid = async () =>
       (await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(database.kysely)).rows[0]?.pid;
 
@@ -106,5 +121,5 @@ describeIfDatabase("a transaction whose rollback never reaches the server", () =
 
     expect(after).toBe(before);
     expect(warn).not.toHaveBeenCalled();
-  }, 10_000);
+  }, 15_000);
 });

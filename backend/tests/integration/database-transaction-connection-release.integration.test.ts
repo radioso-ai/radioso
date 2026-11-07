@@ -32,13 +32,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 describeIfDatabase("a transaction whose rollback never reaches the server", () => {
   const databases: Database[] = [];
 
-  const openDatabase = (logger?: { warn: ReturnType<typeof vi.fn> }) => {
+  const openDatabase = (warn = vi.fn()) => {
     const database = new Database(integrationDatabaseUrl!, {
       applicationName: "radioso-transaction-release-test",
       poolMax: 1,
       queryTimeoutMs: QUERY_TIMEOUT_MS,
       statementTimeoutMs: STATEMENT_TIMEOUT_MS,
-      ...(logger ? { logger } : {}),
+      logger: { warn },
     });
     databases.push(database);
     return database;
@@ -59,7 +59,7 @@ describeIfDatabase("a transaction whose rollback never reaches the server", () =
 
   it("does not poison later statements after withTransaction times out", async () => {
     const warn = vi.fn();
-    const database = openDatabase({ warn });
+    const database = openDatabase(warn);
 
     await expect(database.withTransaction((client) => client.query(SLOW_STATEMENT))).rejects.toThrow("Query read timeout");
 
@@ -93,7 +93,7 @@ describeIfDatabase("a transaction whose rollback never reaches the server", () =
 
   it("keeps a connection whose transaction ended cleanly", async () => {
     const warn = vi.fn();
-    const database = openDatabase({ warn });
+    const database = openDatabase(warn);
     const backendPid = async () =>
       (await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(database.kysely)).rows[0]?.pid;
 

@@ -30,7 +30,7 @@ const MODEL_REPLY = "We publish [Diario di un Viandante](https://example.com/aut
 const DIRECTIVE_ACTION = "Ask the publishing catalog and tell the user what it found.";
 
 const session = (): PreparedSession => ({
-  agent: { id: "agent-1", workspaceId: "workspace-1", name: "Claudio", chatModelOverride: null },
+  agent: { id: "agent-1", workspaceId: "workspace-1", name: "Nico", chatModelOverride: null },
   conversation: { id: "conversation-1", workspaceId: "workspace-1" },
   userMessage: { id: "message-1", content: "Which books do you publish on yoga?" },
   effectiveQuery: "Which books do you publish on yoga?",

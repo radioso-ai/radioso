@@ -232,7 +232,7 @@ describe("answer presentation service", () => {
     const service = new AnswerPresentationService();
 
     const result = service.present({
-      answer: "The retreat is offered in Assisi[[9]][[2]][[3]].",
+      answer: "The retreat is offered in Montelago[[9]][[2]][[3]].",
       citations: [
         {
           documentId: "doc-1",
@@ -244,25 +244,25 @@ describe("answer presentation service", () => {
           documentId: "doc-2",
           chunkId: "chunk-2",
           title: "Retreat Calendar",
-          content: "The retreat is offered in Assisi.",
+          content: "The retreat is offered in Montelago.",
         },
         {
           documentId: "doc-3",
           chunkId: "chunk-3",
           title: "Venue Guide",
-          content: "The retreat venue is in Assisi.",
+          content: "The retreat venue is in Montelago.",
         },
       ],
     });
 
-    expect(result.answer).toBe("The retreat is offered in Assisi.");
+    expect(result.answer).toBe("The retreat is offered in Montelago.");
     expect(result.citations).toEqual([
       { documentId: "doc-2", chunkId: "chunk-2", title: "Retreat Calendar" },
       { documentId: "doc-3", chunkId: "chunk-3", title: "Venue Guide" },
     ]);
     expect(result.answerSegments).toEqual([
       {
-        text: "The retreat is offered in Assisi",
+        text: "The retreat is offered in Montelago",
         citationIndices: [0, 1],
       },
       {
@@ -379,11 +379,11 @@ describe("answer presentation service", () => {
       new AnswerPresentationService().present({ answer, citations });
 
     it("removes a marker mid-sentence", () => {
-      const { answer } = present("Kriya is not [?] documented here.");
+      const { answer } = present("Valmora is not [?] documented here.");
 
       expect(answer).not.toContain("[?]");
       expect(answer).not.toContain("[[?]]");
-      expect(answer).toMatch(/^Kriya is not\s+documented here\.$/);
+      expect(answer).toMatch(/^Valmora is not\s+documented here\.$/);
     });
 
     it("keeps an unsupported claim out of the next claim's citation", () => {
@@ -540,19 +540,19 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer:
-        "It is a science that releases karma when practiced consistently\n\n[[1]].\n\nValmora Europe teaches Kriya.",
+        "It is a science that releases karma when practiced consistently\n\n[[1]].\n\nValmora Europe teaches meditation.",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
-          title: "Kriya Yoga",
+          title: "Valmora Meditation",
           content: "It is a science that releases karma when practiced consistently.",
         },
       ],
     });
 
     expect(result.answer).toBe(
-      "It is a science that releases karma when practiced consistently.\n\nValmora Europe teaches Kriya.",
+      "It is a science that releases karma when practiced consistently.\n\nValmora Europe teaches meditation.",
     );
     expect(result.answerSegments).toEqual([
       {
@@ -560,7 +560,7 @@ describe("answer presentation service", () => {
         citationIndices: [0],
       },
       {
-        text: ".\n\nValmora Europe teaches Kriya.",
+        text: ".\n\nValmora Europe teaches meditation.",
       },
     ]);
   });
@@ -570,19 +570,19 @@ describe("answer presentation service", () => {
 
     const result = service.present({
       answer:
-        "See our course pages for details\n\n[[1]] ; [Kriya Yoga intro and practice](https://example.com/intro).",
+        "See our course pages for details\n\n[[1]] ; [Valmora Meditation intro and practice](https://example.com/intro).",
       citations: [
         {
           documentId: "doc-1",
           chunkId: "chunk-1",
-          title: "Kriya Yoga intro",
+          title: "Valmora Meditation intro",
           content: "See our course pages for details.",
         },
       ],
     });
 
     expect(result.answer).toBe(
-      "See our course pages for details; [Kriya Yoga intro and practice](https://example.com/intro).",
+      "See our course pages for details; [Valmora Meditation intro and practice](https://example.com/intro).",
     );
   });
 
@@ -644,8 +644,8 @@ describe("answer presentation service", () => {
       {
         documentId: "doc-1",
         chunkId: "chunk-1",
-        title: "Kriya Yoga",
-        content: "Kriya is a sacred technique.",
+        title: "Valmora Meditation",
+        content: "Valmora is a sacred technique.",
       },
     ];
 
@@ -653,27 +653,27 @@ describe("answer presentation service", () => {
       const service = new AnswerPresentationService();
 
       const result = service.present({
-        answer: "Kriya is **a sacred [[1]] technique** taught in Assisi.",
+        answer: "Valmora is **a sacred [[1]] technique** taught in Montelago.",
         citations: oneCitation,
       });
 
       expect(result.answerSegments).toEqual([
-        { text: "Kriya is **a sacred  technique**", citationIndices: [0] },
-        { text: " taught in Assisi." },
+        { text: "Valmora is **a sacred  technique**", citationIndices: [0] },
+        { text: " taught in Montelago." },
       ]);
-      expect(result.answer).toBe("Kriya is **a sacred  technique** taught in Assisi.");
+      expect(result.answer).toBe("Valmora is **a sacred  technique** taught in Montelago.");
     });
 
     it("attaches the citation after an emphasis span opened with a single marker", () => {
       const service = new AnswerPresentationService();
 
       const result = service.present({
-        answer: "Kriya is *a sacred [[1]] technique* taught in Assisi.",
+        answer: "Valmora is *a sacred [[1]] technique* taught in Montelago.",
         citations: oneCitation,
       });
 
       expect(result.answerSegments?.[0]).toEqual({
-        text: "Kriya is *a sacred  technique*",
+        text: "Valmora is *a sacred  technique*",
         citationIndices: [0],
       });
     });
@@ -700,7 +700,7 @@ describe("answer presentation service", () => {
         "",
         "| Course | Date |",
         "| --- | --- |",
-        "| Kriya [[1]] | May |",
+        "| Valmora [[1]] | May |",
         "| Yoga | June |",
         "",
         "Book early.",
@@ -715,7 +715,7 @@ describe("answer presentation service", () => {
             "",
             "| Course | Date |",
             "| --- | --- |",
-            "| Kriya  | May |",
+            "| Valmora  | May |",
             "| Yoga | June |",
           ].join("\n"),
           citationIndices: [0],
@@ -761,7 +761,7 @@ describe("answer presentation service", () => {
           {
             documentId: "doc-1",
             chunkId: "chunk-1",
-            title: "Kriya Yoga",
+            title: "Valmora Meditation",
             content: "The sacred technique.",
           },
           {
@@ -778,7 +778,7 @@ describe("answer presentation service", () => {
         { text: " now." },
       ]);
       expect(result.citations).toEqual([
-        { documentId: "doc-1", chunkId: "chunk-1", title: "Kriya Yoga" },
+        { documentId: "doc-1", chunkId: "chunk-1", title: "Valmora Meditation" },
         { documentId: "doc-2", chunkId: "chunk-2", title: "Practice" },
       ]);
     });
@@ -787,13 +787,13 @@ describe("answer presentation service", () => {
       const service = new AnswerPresentationService();
 
       const normalized = service.normalize({
-        answer: "Kriya is **not [[?]] documented** here.",
+        answer: "Valmora is **not [[?]] documented** here.",
         citations: oneCitation,
       });
 
       expect(normalized.citationEvidence).toEqual([]);
       expect(normalized.answerSegments).toEqual([
-        { text: "Kriya is **not  documented**" },
+        { text: "Valmora is **not  documented**" },
         { text: " here." },
       ]);
     });
@@ -802,13 +802,13 @@ describe("answer presentation service", () => {
       const service = new AnswerPresentationService();
 
       const result = service.present({
-        answer: "Kriya is **a sacred technique**[[1]] taught in Assisi.",
+        answer: "Valmora is **a sacred technique**[[1]] taught in Montelago.",
         citations: oneCitation,
       });
 
       expect(result.answerSegments).toEqual([
-        { text: "Kriya is **a sacred technique**", citationIndices: [0] },
-        { text: " taught in Assisi." },
+        { text: "Valmora is **a sacred technique**", citationIndices: [0] },
+        { text: " taught in Montelago." },
       ]);
     });
 
@@ -848,7 +848,7 @@ describe("answer presentation service", () => {
       const service = new AnswerPresentationService({ incrementCounter });
 
       service.present({
-        answer: "Kriya is a sacred technique[[1]].",
+        answer: "Valmora is a sacred technique[[1]].",
         citations: oneCitation,
       });
 
@@ -859,7 +859,7 @@ describe("answer presentation service", () => {
       const withMetrics = new AnswerPresentationService({ incrementCounter: vi.fn() });
       const withoutMetrics = new AnswerPresentationService();
       const input = {
-        answer: "Kriya is **a sacred [[1]] technique** taught in Assisi.",
+        answer: "Valmora is **a sacred [[1]] technique** taught in Montelago.",
         citations: oneCitation,
       };
 
@@ -871,16 +871,16 @@ describe("answer presentation service", () => {
 
       const result = service.present({
         answer:
-          "It is a **sacred science** that releases karma\n\n[[1]].\n\nValmora Europe teaches Kriya.",
+          "It is a **sacred science** that releases karma\n\n[[1]].\n\nValmora Europe teaches meditation.",
         citations: oneCitation,
       });
 
       expect(result.answer).toBe(
-        "It is a **sacred science** that releases karma.\n\nValmora Europe teaches Kriya.",
+        "It is a **sacred science** that releases karma.\n\nValmora Europe teaches meditation.",
       );
       expect(result.answerSegments).toEqual([
         { text: "It is a **sacred science** that releases karma", citationIndices: [0] },
-        { text: ".\n\nValmora Europe teaches Kriya." },
+        { text: ".\n\nValmora Europe teaches meditation." },
       ]);
     });
   });

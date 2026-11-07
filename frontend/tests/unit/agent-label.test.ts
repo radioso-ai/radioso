@@ -4,21 +4,21 @@ import { getAgentOperatorLabel, getAgentPublicNameHint } from '@/lib/agent-label
 
 describe('operator agent labels', () => {
   it('prefers a trimmed internal label and exposes the public name as a hint', () => {
-    const agent = { internalName: '  Italian support  ', name: 'Claudio' }
+    const agent = { internalName: '  Italian support  ', name: 'Nico' }
 
     expect(getAgentOperatorLabel(agent)).toBe('Italian support')
-    expect(getAgentPublicNameHint(agent)).toBe('Claudio')
+    expect(getAgentPublicNameHint(agent)).toBe('Nico')
   })
 
   it('falls back through the public name and supplied fallback', () => {
-    expect(getAgentOperatorLabel({ name: '  Claudio  ' })).toBe('Claudio')
+    expect(getAgentOperatorLabel({ name: '  Nico  ' })).toBe('Nico')
     expect(getAgentOperatorLabel({ internalName: '   ', name: '   ' }, 'Unknown agent')).toBe('Unknown agent')
     expect(getAgentOperatorLabel(null, 'No agent')).toBe('No agent')
   })
 
   it('does not expose a redundant public name hint', () => {
-    expect(getAgentPublicNameHint({ internalName: 'Claudio', name: 'Claudio' })).toBeNull()
-    expect(getAgentPublicNameHint({ name: 'Claudio' })).toBeNull()
+    expect(getAgentPublicNameHint({ internalName: 'Nico', name: 'Nico' })).toBeNull()
+    expect(getAgentPublicNameHint({ name: 'Nico' })).toBeNull()
     expect(getAgentPublicNameHint(undefined)).toBeNull()
   })
 })

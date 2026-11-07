@@ -49,7 +49,7 @@ describe("alignOfferPendingCandidates", () => {
   it("preserves the offered order across several alternatives", () => {
     const top = candidate({ id: "top", label: "Valmora Yoga overview" });
     const first = candidate({ id: "alt-1", label: "Raja yoga" });
-    const second = candidate({ id: "alt-2", label: "Kriya yoga" });
+    const second = candidate({ id: "alt-2", label: "Valmora meditation" });
 
     const aligned = alignOfferPendingCandidates(pendingOffer([top, first, second]), [first, second]);
 

@@ -593,7 +593,7 @@ describe("grounded miss response composer", () => {
   it("keeps a scoped no-context response instead of discarding it as boilerplate-worthy", async () => {
     const scopedResponse = [
       "That is outside what I can help with here.",
-      "I can help with Valmora Europe, meditation, Kriya Yoga, retreats, satsangs, events, books, videos, news, and the Valmora Assisi retreat center.",
+      "I can help with Valmora Europe, meditation, Valmora Meditation, retreats, satsangs, events, books, videos, news, and the Valmora Montelago retreat center.",
       "If you are exploring spiritual practice, ask about a course, retreat, or upcoming online event.",
       "For example, I can help you find a beginner-friendly meditation option or point you toward the official calendar.",
     ].join(" ");

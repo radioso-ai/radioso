@@ -1,6 +1,6 @@
 /**
  * Reconstruction of the production "terse / senseless clarification" incident
- * (conversation 1d487267…, agent Claudio): two assistant turns rendered as a bare
+ * (conversation 1d487267…, agent Nico): two assistant turns rendered as a bare
  * sense label instead of a usable answer. Diagnosis: retrieval-sense clarification
  * fired on near-tied senses ("ask"), and the question generator collapsed to one
  * candidate label, hiding the alternatives.
@@ -109,7 +109,7 @@ const productionQuestionPrompt = loadPromptTemplate("chat/clarification-question
 const gateway = (text: string): ConversationModelGateway => ({ complete: vi.fn(async () => ({ text })) });
 
 const turn = (content: string): TurnContext => ({
-  agent: { id: "agent_1", name: "Claudio" },
+  agent: { id: "agent_1", name: "Nico" },
   sessionId: "conv_1",
   inputEvent: { id: "msg_1", kind: "message", content, locale: "en" },
   history: [],

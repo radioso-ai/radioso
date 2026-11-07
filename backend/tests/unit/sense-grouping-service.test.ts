@@ -617,7 +617,7 @@ describe("SenseGroupingService", () => {
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
         id: group.id,
-        label: group.id === "doc-left" ? "What Kriya Yoga is" : "How to begin Kriya Yoga",
+        label: group.id === "doc-left" ? "What Valmora Meditation is" : "How to begin Valmora Meditation",
         relationship: "complementary" as const,
       }))),
     };
@@ -629,11 +629,11 @@ describe("SenseGroupingService", () => {
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
-      question: "What is Kriya Yoga and how do I learn it?",
+      question: "What is Valmora Meditation and how do I learn it?",
       rankedCandidates: sameShapeCandidates({
-        leftTitle: "About Kriya Yoga",
+        leftTitle: "About Valmora Meditation",
         leftSimilarities: [0.82, 0.8],
-        rightTitle: "Learning Kriya Yoga",
+        rightTitle: "Learning Valmora Meditation",
         rightSimilarities: [0.8, 0.78],
       }),
       conversationLanguage: "en",
@@ -799,8 +799,8 @@ describe("SenseGroupingService", () => {
     // the whole set — the unlabeled (potentially exclusive) facet gets no clarity.
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async () => [
-        { id: "doc-a", label: "What Kriya Yoga is", relationship: "complementary" as const },
-        { id: "doc-b", label: "How to begin Kriya Yoga", relationship: "complementary" as const },
+        { id: "doc-a", label: "What Valmora Meditation is", relationship: "complementary" as const },
+        { id: "doc-b", label: "How to begin Valmora Meditation", relationship: "complementary" as const },
       ]),
     };
     const service = new SenseGroupingService({
@@ -819,17 +819,17 @@ describe("SenseGroupingService", () => {
     });
 
     const rankedCandidates: RetrievedCandidate[] = [
-      candidate({ chunkId: "a-1", documentId: "doc-a", title: "About Kriya Yoga", similarity: 0.86 }),
-      candidate({ chunkId: "a-2", documentId: "doc-a", title: "About Kriya Yoga", similarity: 0.84 }),
-      candidate({ chunkId: "b-1", documentId: "doc-b", title: "Learning Kriya Yoga", similarity: 0.82 }),
-      candidate({ chunkId: "b-2", documentId: "doc-b", title: "Learning Kriya Yoga", similarity: 0.8 }),
+      candidate({ chunkId: "a-1", documentId: "doc-a", title: "About Valmora Meditation", similarity: 0.86 }),
+      candidate({ chunkId: "a-2", documentId: "doc-a", title: "About Valmora Meditation", similarity: 0.84 }),
+      candidate({ chunkId: "b-1", documentId: "doc-b", title: "Learning Valmora Meditation", similarity: 0.82 }),
+      candidate({ chunkId: "b-2", documentId: "doc-b", title: "Learning Valmora Meditation", similarity: 0.8 }),
       candidate({ chunkId: "c-1", documentId: "doc-c", title: "Refund Policy", similarity: 0.78 }),
       candidate({ chunkId: "c-2", documentId: "doc-c", title: "Refund Policy", similarity: 0.76 }),
     ];
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
-      question: "What is Kriya Yoga, how do I begin, and what is your refund policy?",
+      question: "What is Valmora Meditation, how do I begin, and what is your refund policy?",
       rankedCandidates,
       conversationLanguage: "en",
     });
@@ -875,7 +875,7 @@ const complementaryCandidate = (
   confidence: number,
 ): RetrievalSenseClarificationCandidate => ({
   id,
-  label: id === "doc-left" ? "What Kriya Yoga is" : "How to begin Kriya Yoga",
+  label: id === "doc-left" ? "What Valmora Meditation is" : "How to begin Valmora Meditation",
   labelStatus: "generated",
   confidence,
   relationship: "complementary",
@@ -897,7 +897,7 @@ describe("evaluateRetrievalSenseClarification complementary facets", () => {
       rankedCandidates: [],
       conversationId: "conversation-1",
       messageId: "message-1",
-      originalQuery: "What is Kriya Yoga and how do I learn it?",
+      originalQuery: "What is Valmora Meditation and how do I learn it?",
       conversationLanguage: "en",
       policy: basePolicy,
       suppressAsk: false,

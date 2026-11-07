@@ -51,12 +51,12 @@ describe("citation anchor sanitizer", () => {
 
     const chunks = [
       sanitizer.push("It is a science when practiced consistently\n\n[[1]]"),
-      sanitizer.push(".\n\nValmora Europe teaches Kriya."),
+      sanitizer.push(".\n\nValmora Europe teaches meditation."),
       sanitizer.flush(),
     ];
 
     expect(chunks.join("")).toBe(
-      "It is a science when practiced consistently.\n\nValmora Europe teaches Kriya.",
+      "It is a science when practiced consistently.\n\nValmora Europe teaches meditation.",
     );
   });
 
@@ -65,12 +65,12 @@ describe("citation anchor sanitizer", () => {
 
     const chunks = [
       sanitizer.push("See our course pages for details\n\n[[1]]"),
-      sanitizer.push(" ; [Kriya Yoga intro and practice](https://example.com/intro)."),
+      sanitizer.push(" ; [Valmora Meditation intro and practice](https://example.com/intro)."),
       sanitizer.flush(),
     ];
 
     expect(chunks.join("")).toBe(
-      "See our course pages for details; [Kriya Yoga intro and practice](https://example.com/intro).",
+      "See our course pages for details; [Valmora Meditation intro and practice](https://example.com/intro).",
     );
   });
 
@@ -92,12 +92,12 @@ describe("citation anchor sanitizer", () => {
     const sanitizer = new CitationAnchorSanitizer();
 
     const chunks = [
-      sanitizer.push("It is a science when practiced consistently\n\n[[1]]. Valmora Europe teaches Kriya."),
+      sanitizer.push("It is a science when practiced consistently\n\n[[1]]. Valmora Europe teaches meditation."),
       sanitizer.flush(),
     ];
 
     expect(chunks.join("")).toBe(
-      "It is a science when practiced consistently. Valmora Europe teaches Kriya.",
+      "It is a science when practiced consistently. Valmora Europe teaches meditation.",
     );
   });
 
@@ -151,11 +151,11 @@ describe("citation anchor sanitizer", () => {
     };
 
     it("removes a marker mid-sentence", () => {
-      const streamed = stream("Kriya is not [?] documented here.");
+      const streamed = stream("Valmora is not [?] documented here.");
 
       expect(streamed).not.toContain("[?]");
       expect(streamed).not.toContain("[[?]]");
-      expect(streamed).toMatch(/^Kriya is not\s+documented here\.$/);
+      expect(streamed).toMatch(/^Valmora is not\s+documented here\.$/);
     });
 
     it("removes a marker at the end of a sentence", () => {

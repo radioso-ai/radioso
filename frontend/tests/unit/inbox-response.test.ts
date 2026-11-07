@@ -224,15 +224,15 @@ describe('readOnlyHandledByLabel', () => {
   it('names the agent that handled the conversation', () => {
     expect(readOnlyHandledByLabel({
       agentId: 'agent-1',
-      agentName: 'Gioia',
+      agentName: 'Sola',
       agentInternalName: null,
-    })).toBe('handled by Gioia')
+    })).toBe('handled by Sola')
   })
 
   it('prefers the internal operator label over the public agent name', () => {
     expect(readOnlyHandledByLabel({
       agentId: 'agent-1',
-      agentName: 'Claudio',
+      agentName: 'Nico',
       agentInternalName: 'Website support',
     })).toBe('handled by Website support')
   })
@@ -241,7 +241,7 @@ describe('readOnlyHandledByLabel', () => {
     expect(readOnlyHandledByLabel({
       ownership: { ownerDisplayName: 'Anna' },
       agentId: 'agent-1',
-      agentName: 'Gioia',
+      agentName: 'Sola',
       agentInternalName: null,
     })).toBe('handled by Anna')
   })
@@ -258,8 +258,8 @@ describe('readOnlyHandledByLabel', () => {
 
 describe('doneControlTooltip', () => {
   it('names the agent for a handoff', () => {
-    expect(doneControlTooltip({ type: 'handoff', agentName: 'Gioia', agentInternalName: null }))
-      .toBe('Closes this item and hands the conversation back to Gioia')
+    expect(doneControlTooltip({ type: 'handoff', agentName: 'Sola', agentInternalName: null }))
+      .toBe('Closes this item and hands the conversation back to Sola')
   })
 
   it('falls back to a generic agent label for a handoff with no agent name', () => {

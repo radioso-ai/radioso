@@ -8270,23 +8270,23 @@ describe("chat service streaming", () => {
     const retrievalPipeline = {
       async run() {
         return {
-          rewrittenQuery: "want links to the next page of assisi videos",
+          rewrittenQuery: "want links to the next page of montelago videos",
           contexts: [
             {
               chunkId: "chunk-1",
               documentId: "doc-1",
-              title: "Assisi Archives - Page 2 of 14 - Valmora Europe",
+              title: "Montelago Archives - Page 2 of 14 - Valmora Europe",
               content: "Page 2 links to the next page in the archive.",
             },
             {
               chunkId: "chunk-2",
               documentId: "doc-2",
-              title: "Assisi Archives - Page 3 of 14 - Valmora Europe",
+              title: "Montelago Archives - Page 3 of 14 - Valmora Europe",
               content: "Page 3 is part of a 14-page archive.",
             },
           ],
           prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Assisi Archives - Page 2 of 14 - Valmora Europe" }],
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Montelago Archives - Page 2 of 14 - Valmora Europe" }],
           diagnostics: {
             rewriteStatus: "skipped",
             rerankStatus: "skipped",
@@ -8298,8 +8298,8 @@ describe("chat service streaming", () => {
             candidateFallbackApplied: false,
             fallbackApplied: false,
             parsedQuery: {
-              semanticQuery: "assisi videos next page",
-              lexicalQuery: "assisi videos page 3",
+              semanticQuery: "montelago videos next page",
+              lexicalQuery: "montelago videos page 3",
             },
           },
           responseSettings: {
@@ -8310,20 +8310,20 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
-        const answerText = "Yes — here's the next page of the Assisi videos archive: https://valmora-europe.example/category/video-from-assisi/page/3/[[1]]";
+        const answerText = "Yes — here's the next page of the Montelago videos archive: https://valmora-europe.example/category/video-from-montelago/page/3/[[1]]";
         if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             // Near-paraphrase of the user's query — should be filtered.
-            { text: "Where are the next Assisi videos links?", kind: "deeper", contextIndex: 2 },
+            { text: "Where are the next Montelago videos links?", kind: "deeper", contextIndex: 2 },
             // Legitimate adjacent angle — should survive even though it shares
-            // topic vocabulary ("Assisi", "archive") with the answer.
-            { text: "How many Assisi archive pages are there?", kind: "broader", contextIndex: 2 },
+            // topic vocabulary ("Montelago", "archive") with the answer.
+            { text: "How many Montelago archive pages are there?", kind: "broader", contextIndex: 2 },
           ]);
         }
         return answerText;
       },
       async *streamAnswer() {
-        yield "Yes — here's the next page of the Assisi videos archive: https://valmora-europe.example/category/video-from-assisi/page/3/[[1]]";
+        yield "Yes — here's the next page of the Montelago videos archive: https://valmora-europe.example/category/video-from-montelago/page/3/[[1]]";
       },
     };
     const service = makeChatService(
@@ -8345,7 +8345,7 @@ describe("chat service streaming", () => {
     const response = await service.answer({
       workspaceId: "workspace-1",
       accountId: "account-1",
-      query: "Want links to the next page of Assisi videos?",
+      query: "Want links to the next page of Montelago videos?",
       stream: false,
     });
 

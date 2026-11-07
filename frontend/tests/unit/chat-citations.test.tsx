@@ -780,15 +780,15 @@ describe('AssistantMessageContent', () => {
         ]}
         answerSegments={[
           { text: 'all from 21 to 23 August 2026', citationIndices: [0] },
-          { text: '. The first-Kriya programs are limited.' },
+          { text: '. The first-Valmora programs are limited.' },
         ]}
         onOpenDocument={async () => 'opened'}
       />,
     )
 
     // The period must not glue to the next sentence ("2026[1].The").
-    expect(textContent(html)).toContain('. The first-Kriya')
-    expect(textContent(html)).not.toContain('.The first-Kriya')
+    expect(textContent(html)).toContain('. The first-Valmora')
+    expect(textContent(html)).not.toContain('.The first-Valmora')
   })
 
   it('keeps a space between a citation marker and a following clause after a comma', async () => {
@@ -800,14 +800,14 @@ describe('AssistantMessageContent', () => {
         ]}
         answerSegments={[
           { text: 'initiated at that level', citationIndices: [0] },
-          { text: ', and the higher-Kriya weekend is separate.' },
+          { text: ', and the higher-Valmora weekend is separate.' },
         ]}
         onOpenDocument={async () => 'opened'}
       />,
     )
 
-    expect(textContent(html)).toContain(', and the higher-Kriya')
-    expect(textContent(html)).not.toContain(',and the higher-Kriya')
+    expect(textContent(html)).toContain(', and the higher-Valmora')
+    expect(textContent(html)).not.toContain(',and the higher-Valmora')
   })
 
   it('normalizes seam spacing the model or anchor removal mangled', async () => {
@@ -835,12 +835,12 @@ describe('AssistantMessageContent', () => {
         citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
         answerSegments={[
           { text: 'initiated at that level', citationIndices: [0] },
-          { text: ' ,and the higher-Kriya weekend is separate.' },
+          { text: ' ,and the higher-Valmora weekend is separate.' },
         ]}
         onOpenDocument={async () => 'opened'}
       />,
     )
-    expect(textContent(comma)).toContain(', and the higher-Kriya')
+    expect(textContent(comma)).toContain(', and the higher-Valmora')
     expect(textContent(comma)).not.toContain(' ,and')
     expect(textContent(comma)).not.toContain(',and the higher')
   })

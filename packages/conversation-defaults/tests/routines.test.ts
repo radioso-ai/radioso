@@ -190,7 +190,7 @@ describe("routine defaults", () => {
         source: "retrieval.context",
         data: {
           has_context: true,
-          contexts: [{ title: "Course Guide", content: "Kriya is introduced in the first module." }],
+          contexts: [{ title: "Course Guide", content: "Valmora is introduced in the first module." }],
         },
       }],
     };
@@ -506,7 +506,7 @@ describe("routine defaults", () => {
           source: "retrieval.context",
           data: {
             has_context: true,
-            contexts: [{ title: "Course Guide", content: "Kriya is introduced in the first module." }],
+            contexts: [{ title: "Course Guide", content: "Valmora is introduced in the first module." }],
             citations: [{ title: "Course Guide", documentId: "doc_1", chunkId: "chunk_1" }],
           },
         }],
@@ -516,7 +516,7 @@ describe("routine defaults", () => {
     const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("untrusted quoted data");
     expect(call.systemPrompt).not.toContain("Course Guide");
-    expect(call.systemPrompt).not.toContain("Kriya is introduced");
+    expect(call.systemPrompt).not.toContain("Valmora is introduced");
     expect(call.messages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         role: "user",
@@ -524,7 +524,7 @@ describe("routine defaults", () => {
       }),
     ]));
     expect(call.messages.map((message) => message.content).join("\n")).toContain("Course Guide");
-    expect(call.messages.map((message) => message.content).join("\n")).toContain("Kriya is introduced");
+    expect(call.messages.map((message) => message.content).join("\n")).toContain("Valmora is introduced");
   });
 
   it("passes a step's context evidence as one untrusted message before the visitor's, never in the system prompt", async () => {
@@ -576,7 +576,7 @@ describe("routine defaults", () => {
                 documentId: "doc_1",
                 chunkId: "chunk_1",
                 title: "Course Guide",
-                content: "Kriya is introduced in the first module.",
+                content: "Valmora is introduced in the first module.",
                 metadata: { sourceUrl: "https://example.com/guide" },
               },
             ],
@@ -590,7 +590,7 @@ describe("routine defaults", () => {
         documentId: "doc_1",
         chunkId: "chunk_1",
         title: "Course Guide",
-        content: "Kriya is introduced in the first module.",
+        content: "Valmora is introduced in the first module.",
         metadata: { sourceUrl: "https://example.com/guide" },
       },
     ]);

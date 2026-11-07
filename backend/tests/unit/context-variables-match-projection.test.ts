@@ -53,7 +53,7 @@ describe("projectContextForMatching", () => {
         visitor_request: {
           country: "IT",
           region: "UMB",
-          city: "Assisi",
+          city: "Montelago",
           language: "en",
           referrer: "https://partner.example",
           entryPageUrl: "https://courses.valmora.example/",
@@ -65,7 +65,7 @@ describe("projectContextForMatching", () => {
     expect(projection.context.visitor_request).toEqual({
       country: "IT",
       region: "UMB",
-      city: "Assisi",
+      city: "Montelago",
       referrer: "https://partner.example",
       entryPageUrl: "https://courses.valmora.example/",
     });

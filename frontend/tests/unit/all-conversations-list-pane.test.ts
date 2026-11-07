@@ -23,7 +23,7 @@ const chatEntry = (overrides: Partial<ChatConversationSummary> = {}): HistoryLis
   const conversation: ChatConversationSummary = {
     id: 'conversation-1',
     agentId: 'agent-1',
-    agentName: 'Gioia',
+    agentName: 'Sola',
     agentInternalName: null,
     sourceChannel: 'website_embed',
     sourceOrigin: 'https://books.valmora.example',
@@ -161,8 +161,8 @@ describe('filterAllLensItems', () => {
 describe('buildAgentOptions / buildSiteOptions', () => {
   it('stay stable while a filter is active — options must be built from the unfiltered page, not the filtered rows', () => {
     const items = [
-      chatEntry({ id: 'a', agentId: 'agent-1', agentName: 'Gioia', sourceOrigin: 'https://books.valmora.example', preview: 'Recupero accesso' }),
-      chatEntry({ id: 'b', agentId: 'agent-2', agentName: 'Claudio', sourceOrigin: 'https://courses.valmora.example', preview: 'Orari corsi yoga' }),
+      chatEntry({ id: 'a', agentId: 'agent-1', agentName: 'Sola', sourceOrigin: 'https://books.valmora.example', preview: 'Recupero accesso' }),
+      chatEntry({ id: 'b', agentId: 'agent-2', agentName: 'Nico', sourceOrigin: 'https://courses.valmora.example', preview: 'Orari corsi yoga' }),
     ]
     const unfilteredConversations = items.map(chatConversation)
 
@@ -175,8 +175,8 @@ describe('buildAgentOptions / buildSiteOptions', () => {
     // including agent-2/courses.valmora.example, which the active filter hides from
     // the row list but must not hide from the filter itself.
     expect(buildAgentOptions(unfilteredConversations)).toEqual([
-      { agentId: 'agent-1', label: 'Gioia' },
-      { agentId: 'agent-2', label: 'Claudio' },
+      { agentId: 'agent-1', label: 'Sola' },
+      { agentId: 'agent-2', label: 'Nico' },
     ])
     expect(buildSiteOptions(unfilteredConversations)).toEqual([
       'https://books.valmora.example',
@@ -186,13 +186,13 @@ describe('buildAgentOptions / buildSiteOptions', () => {
 
   it('would silently drop an option if built from the filtered rows instead (the regression this guards against)', () => {
     const items = [
-      chatEntry({ id: 'a', agentId: 'agent-1', agentName: 'Gioia', preview: 'Recupero accesso' }),
-      chatEntry({ id: 'b', agentId: 'agent-2', agentName: 'Claudio', preview: 'Orari corsi yoga' }),
+      chatEntry({ id: 'a', agentId: 'agent-1', agentName: 'Sola', preview: 'Recupero accesso' }),
+      chatEntry({ id: 'b', agentId: 'agent-2', agentName: 'Nico', preview: 'Orari corsi yoga' }),
     ]
 
     const visibleRows = filterAllLensItems(items, filters({ search: 'recupero' }), NOW)
     const optionsFromFilteredRows = buildAgentOptions(visibleRows.map(chatConversation))
 
-    expect(optionsFromFilteredRows).toEqual([{ agentId: 'agent-1', label: 'Gioia' }])
+    expect(optionsFromFilteredRows).toEqual([{ agentId: 'agent-1', label: 'Sola' }])
   })
 })

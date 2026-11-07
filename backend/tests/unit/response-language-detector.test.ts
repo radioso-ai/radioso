@@ -59,8 +59,8 @@ describe("response language detector", () => {
     await detector.detect({
       query: "No aspetta, arrivo il 15 novembre, non il 14.",
       history: [
-        message("Ciao, sono Claudio: posso aiutarti con eventi e corsi.", "assistant"),
-        message("Vorrei prenotare un soggiorno per il ritiro di Kriya Yoga."),
+        message("Ciao, sono Nico: posso aiutarti con eventi e corsi.", "assistant"),
+        message("Vorrei prenotare un soggiorno per il ritiro di Valmora Meditation."),
         message("Great, what dates do you have in mind?", "assistant"),
         message("Please answer in English from now on."),
         message("Reception will confirm availability and price by email.", "assistant"),
@@ -68,14 +68,14 @@ describe("response language detector", () => {
     });
 
     const prompt = vi.mocked(model.complete).mock.calls[0][0].prompt;
-    expect(prompt).toContain("USER: Vorrei prenotare un soggiorno per il ritiro di Kriya Yoga.");
+    expect(prompt).toContain("USER: Vorrei prenotare un soggiorno per il ritiro di Valmora Meditation.");
     // A sticky language request is the user's own words, so it stays in evidence.
     expect(prompt).toContain("USER: Please answer in English from now on.");
     expect(prompt).toContain("that instruction is sticky across later turns");
     expect(prompt).not.toContain("ASSISTANT:");
     expect(prompt).not.toContain("Great, what dates do you have in mind?");
     expect(prompt).not.toContain("Reception will confirm availability and price by email.");
-    expect(prompt).not.toContain("Ciao, sono Claudio");
+    expect(prompt).not.toContain("Ciao, sono Nico");
     expect(prompt).toContain("These instructions are written in English; that does not tell you the language the\n  user writes in.");
   });
 
@@ -88,11 +88,11 @@ describe("response language detector", () => {
 
     await detector.detect({
       query: "ok",
-      history: [message("Ciao, sono Claudio: posso aiutarti con eventi e corsi.", "assistant")],
+      history: [message("Ciao, sono Nico: posso aiutarti con eventi e corsi.", "assistant")],
     });
 
     const prompt = vi.mocked(model.complete).mock.calls[0][0].prompt;
-    expect(prompt).toContain("ASSISTANT: Ciao, sono Claudio: posso aiutarti con eventi e corsi.");
+    expect(prompt).toContain("ASSISTANT: Ciao, sono Nico: posso aiutarti con eventi e corsi.");
     expect(prompt).toContain("or of the conversation\n  so far when the user has written nothing else yet.");
   });
 

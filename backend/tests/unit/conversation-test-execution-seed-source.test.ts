@@ -108,7 +108,7 @@ describe("ConversationTestExecutionSeedSource", () => {
     const expiresAt = new Date("2026-06-01T01:00:00.000Z");
     loadActive.mockResolvedValue({
       sessionId: conversationId,
-      routineId: "kriya-courses",
+      routineId: "valmora-courses",
       path: ["start", "collect_date"],
       variables: { date: "2026-07" },
       attempts: { collect_date: 1 },
@@ -133,7 +133,7 @@ describe("ConversationTestExecutionSeedSource", () => {
     expect(seed?.continuation).toEqual({
       version: 1,
       routineState: {
-        routineId: "kriya-courses",
+        routineId: "valmora-courses",
         path: ["start", "collect_date"],
         variables: { date: "2026-07" },
         attempts: { collect_date: 1 },

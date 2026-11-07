@@ -7,8 +7,8 @@ import type { InboxAgentOption } from '@/lib/needs-attention'
 
 /**
  * The workspace's full agent list for the queue's Agent filter, so the
- * dropdown offers every agent (matching the mock's "Agent: all / Gioia /
- * Claudio") rather than only agents that currently have an open item.
+ * dropdown offers every agent (matching the mock's "Agent: all / Sola /
+ * Nico") rather than only agents that currently have an open item.
  */
 export const useInboxAgentOptions = (enabled: boolean): InboxAgentOption[] => {
   const [agents, setAgents] = useState<InboxAgentOption[]>([])

@@ -1715,13 +1715,13 @@ describe("chat history service", () => {
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       role: "user",
-      content: "sqrt(5) and tell me about kriya",
+      content: "sqrt(5) and tell me about valmora",
     });
     const assistant = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       role: "assistant",
-      content: "I can tell you about Kriya Yoga.",
+      content: "I can tell you about Valmora Meditation.",
     });
 
     await auditRepository.create({
@@ -1733,8 +1733,8 @@ describe("chat history service", () => {
         assistantMessageId: assistant.id,
         citationCount: 2,
         citations: [
-          { documentId: "doc-1", chunkId: "chunk-1", title: "Kriya overview" },
-          { documentId: "doc-1", chunkId: "chunk-2", title: "Kriya history" },
+          { documentId: "doc-1", chunkId: "chunk-1", title: "Valmora overview" },
+          { documentId: "doc-1", chunkId: "chunk-2", title: "Valmora history" },
         ],
         route: {
           generator: "assistant",
@@ -1760,7 +1760,7 @@ describe("chat history service", () => {
                 ruleId: "events-only",
                 matched: false,
                 matchStrength: 0.09,
-                reason: "Query asks about sqrt(5) and kriya, not a time-bound course, celebration, or event.",
+                reason: "Query asks about sqrt(5) and valmora, not a time-bound course, celebration, or event.",
                 triggerInstructionPreview: "enact when the user is asking about courses, celebrations or events that are time-bound",
               },
             ],
@@ -1812,8 +1812,8 @@ describe("chat history service", () => {
     );
     expect(diagnosticsStage?.outputs).toMatchObject({
       finalContexts: [
-        { documentId: "doc-1", chunkId: "chunk-1", title: "Kriya overview" },
-        { documentId: "doc-1", chunkId: "chunk-2", title: "Kriya history" },
+        { documentId: "doc-1", chunkId: "chunk-1", title: "Valmora overview" },
+        { documentId: "doc-1", chunkId: "chunk-2", title: "Valmora history" },
       ],
     });
   });

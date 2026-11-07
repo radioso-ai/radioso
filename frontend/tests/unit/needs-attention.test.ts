@@ -1288,15 +1288,15 @@ describe('withinLastDays', () => {
 describe('countAiHandledConversationsByAgent', () => {
   it('counts conversations never escalated to a human, per agent', () => {
     const counts = countAiHandledConversationsByAgent([
-      conversation({ id: 'c-1', agentId: 'agent-1', agentName: 'Gioia' }),
-      conversation({ id: 'c-2', agentId: 'agent-1', agentName: 'Gioia' }),
-      conversation({ id: 'c-3', agentId: 'agent-2', agentName: 'Claudio' }),
-      conversation({ id: 'c-4', agentId: 'agent-1', agentName: 'Gioia', ownership: ownership({ conversationId: 'c-4' }) }),
+      conversation({ id: 'c-1', agentId: 'agent-1', agentName: 'Sola' }),
+      conversation({ id: 'c-2', agentId: 'agent-1', agentName: 'Sola' }),
+      conversation({ id: 'c-3', agentId: 'agent-2', agentName: 'Nico' }),
+      conversation({ id: 'c-4', agentId: 'agent-1', agentName: 'Sola', ownership: ownership({ conversationId: 'c-4' }) }),
     ])
 
     expect(counts).toEqual([
-      { agentId: 'agent-1', agentName: 'Gioia', agentInternalName: null, count: 2 },
-      { agentId: 'agent-2', agentName: 'Claudio', agentInternalName: null, count: 1 },
+      { agentId: 'agent-1', agentName: 'Sola', agentInternalName: null, count: 2 },
+      { agentId: 'agent-2', agentName: 'Nico', agentInternalName: null, count: 1 },
     ])
   })
 
@@ -1322,16 +1322,16 @@ describe('countAiHandledConversationsByAgent', () => {
 describe('summarizeAiHandledConversations', () => {
   it('rolls up a single agent as singular ("agent")', () => {
     expect(summarizeAiHandledConversations([
-      conversation({ id: 'c-1', agentId: 'agent-1', agentName: 'Gioia' }),
-      conversation({ id: 'c-2', agentId: 'agent-1', agentName: 'Gioia' }),
+      conversation({ id: 'c-1', agentId: 'agent-1', agentName: 'Sola' }),
+      conversation({ id: 'c-2', agentId: 'agent-1', agentName: 'Sola' }),
     ])).toEqual({ totalCount: 2, agentCount: 1 })
   })
 
   it('sums across every agent as plural ("agents") — the Inbox speaks for the workspace, not one named agent', () => {
     expect(summarizeAiHandledConversations([
-      conversation({ id: 'c-1', agentId: 'agent-1', agentName: 'Gioia' }),
-      conversation({ id: 'c-2', agentId: 'agent-1', agentName: 'Gioia' }),
-      conversation({ id: 'c-3', agentId: 'agent-2', agentName: 'Claudio' }),
+      conversation({ id: 'c-1', agentId: 'agent-1', agentName: 'Sola' }),
+      conversation({ id: 'c-2', agentId: 'agent-1', agentName: 'Sola' }),
+      conversation({ id: 'c-3', agentId: 'agent-2', agentName: 'Nico' }),
     ])).toEqual({ totalCount: 3, agentCount: 2 })
   })
 
@@ -1384,7 +1384,7 @@ describe('delivery failures in the inbox model', () => {
   it('titles the row after its conversation, and carries its agent, when the conversation is loaded', () => {
     const items = buildInboxItems({
       decisions: [],
-      conversations: [humanOwned({ id: 'c-email', title: 'Where is my order?', agentId: 'agent-2', agentName: 'Gioia' })],
+      conversations: [humanOwned({ id: 'c-email', title: 'Where is my order?', agentId: 'agent-2', agentName: 'Sola' })],
       qualityTurns: [],
       deliveryFailures: [deliveryFailure()],
     })
@@ -1392,7 +1392,7 @@ describe('delivery failures in the inbox model', () => {
     expect(items.find((item) => item.type === 'delivery_failed')).toMatchObject({
       title: 'Where is my order?',
       agentId: 'agent-2',
-      agentName: 'Gioia',
+      agentName: 'Sola',
     })
   })
 
@@ -1402,10 +1402,10 @@ describe('delivery failures in the inbox model', () => {
       conversations: [],
       qualityTurns: [],
       deliveryFailures: [deliveryFailure()],
-      failureConversations: [{ id: 'c-email', title: 'Where is my order?', updatedAt: '2026-06-19T10:00:00.000Z', agentId: 'agent-3', agentName: 'Gioia' }],
+      failureConversations: [{ id: 'c-email', title: 'Where is my order?', updatedAt: '2026-06-19T10:00:00.000Z', agentId: 'agent-3', agentName: 'Sola' }],
     })
 
-    expect(items[0]).toMatchObject({ type: 'delivery_failed', title: 'Where is my order?', agentId: 'agent-3', agentName: 'Gioia' })
+    expect(items[0]).toMatchObject({ type: 'delivery_failed', title: 'Where is my order?', agentId: 'agent-3', agentName: 'Sola' })
     expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, agentId: 'agent-3' }, { currentUserId: null })
       .map((item) => item.key)).toEqual(['delivery_failed:failure-1'])
     expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, agentId: 'agent-other' }, { currentUserId: null })).toEqual([])
@@ -1525,12 +1525,12 @@ describe('held replies in the inbox model', () => {
   it('titles the row after its conversation, and carries its agent, when the conversation is loaded', () => {
     const items = buildInboxItems({
       decisions: [],
-      conversations: [humanOwned({ id: 'c-email', title: 'Where is my order?', agentId: 'agent-2', agentName: 'Gioia' })],
+      conversations: [humanOwned({ id: 'c-email', title: 'Where is my order?', agentId: 'agent-2', agentName: 'Sola' })],
       qualityTurns: [],
       heldReplies: [heldReply()],
     })
 
-    expect(items.find((item) => item.heldReplyId)).toMatchObject({ title: 'Where is my order?', agentName: 'Gioia' })
+    expect(items.find((item) => item.heldReplyId)).toMatchObject({ title: 'Where is my order?', agentName: 'Sola' })
   })
 
   it('leaves routine approvals exactly as they were, sorted with held replies oldest first', () => {

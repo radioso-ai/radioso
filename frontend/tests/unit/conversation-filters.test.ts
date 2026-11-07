@@ -19,7 +19,7 @@ const baseFilters: ConversationFilterState = {
 const conversation = (overrides: Partial<ChatConversationSummary> = {}): ChatConversationSummary => ({
   id: 'conversation-1',
   agentId: 'agent-1',
-  agentName: 'Gioia',
+  agentName: 'Sola',
   agentInternalName: null,
   sourceChannel: 'website_embed',
   sourceOrigin: 'https://books.valmora.example',

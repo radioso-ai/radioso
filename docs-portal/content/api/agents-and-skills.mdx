@@ -402,6 +402,8 @@ endpoint and the Operator MCP `operator_notice_destinations` tool report
 
 Resend hard-bounce and complaint events add the address to the deployment-wide notification suppression list. Suppression applies to contact messages, operator notices, and recipient confirmations. Authentication mail such as password resets and login-address verification keeps its separate delivery path. When every email recipient is skipped, the delivery outcome names why: `notification_recipient_unconfirmed` while any address still has to confirm, then `notification_recipient_revoked` when a recipient stopped notifications, then `notification_recipient_suppressed`. Logs and metrics carry only the reason and recipient count.
 
+A routine's reply reads the same states before it is written. When a contact request, a notify skill step, or a finish ending's notice goes to a destination with no webhook and no address that can receive mail, the visitor is told the request could not be passed on, and the routine's sub-trace on that turn carries `operatorsUnreachable: true`. The action still queues and settles with the outcome above, because an address can confirm before the worker runs. A hand-off and an approval keep their wording: both stay visible in the Inbox.
+
 Visitor content is bounded before delivery: contact names use at most 200
 characters, contact messages 4,000, and each routine slot value in a notice
 1,000. A visitor-supplied address is used as `Reply-To` only when it is a valid

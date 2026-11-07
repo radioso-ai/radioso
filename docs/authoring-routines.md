@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-26
+last_updated: 2026-11-07
 ---
 
 # Authoring Routines
@@ -369,6 +369,18 @@ When the routine has an email field and a notifying ending's **Replies go to**
 is **No reply-to**, a note under the select reads "Replies won't reach the visitor. Choose
 their email field." The ending still saves and the routine still publishes, so
 a routine with nobody worth replying to stays as it is.
+
+The agent writes its reply before the notice goes out, so it checks first. When
+the destination has no webhook and every address is waiting for confirmation,
+stopped, or suppressed, the reply says the request could not be passed on and
+suggests contacting the team directly, with contact details if the agent's
+instructions or documents give them. That holds whatever the ending's
+instruction says. One address that can receive mail, or a webhook, is enough for
+the ending's own wording to stand. The contact routine and a notify skill step
+get the same check. A **Hand off** keeps its wording, because the conversation
+lands in the Inbox whether or not an email goes out. The notice still queues, so
+an address that confirms in the meantime receives it. The turn trace carries
+`operatorsUnreachable: true` on the routine's sub-trace when the reply was told.
 
 A step the visitor keeps answering without giving what it needs is asked again
 up to three times, then asks differently once. When some branch row leads to a

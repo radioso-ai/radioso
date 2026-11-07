@@ -4,6 +4,7 @@ import type {
   ConversationModelGateway,
   ConversationCoverageRoutineActivator,
   ConversationRoutineActivator,
+  ConversationRoutineOperatorReach,
   ConversationRoutineReentryGate,
   ConversationRoutineRunner,
   ConversationRoutineSlotCorrection,
@@ -78,6 +79,10 @@ interface RoutineTurnProviderDependencies {
   skillExecutorRegistry: SkillExecutorRegistry;
   approvalResumeEffectJournal: ApprovalResumeEffectJournal;
   turnPlanAdapters: RoutineTurnPlanAdapters;
+  /** Whether an agent's turn can reach anyone, told to its reply; absent, no reply is told. */
+  operatorReach?: {
+    forAgent(scope: { workspaceId: string; agentId: string }): ConversationRoutineOperatorReach;
+  };
 }
 
 interface RoutineTurnScope {
@@ -475,6 +480,7 @@ export const createRoutineTurnProvider = (
         stuckHandoffPromptTemplate: loadPromptTemplate("chat/routine-step-stuck-handoff.md"),
         stepProgressPromptTemplate: loadPromptTemplate("chat/routine-step-progress.md"),
         contextEvidencePromptTemplate: loadPromptTemplate("chat/routine-step-context-evidence.md"),
+        operatorsUnreachablePromptTemplate: loadPromptTemplate("chat/routine-step-operators-unreachable.md"),
         responseLanguage,
         groundedAnswerRenderer,
         steeringPromptTemplate: loadPromptTemplate("chat/routine-step-steering.md"),
@@ -510,7 +516,14 @@ export const createRoutineTurnProvider = (
       })(),
       // `{{context.<name>}}` in a step instruction reads staged visitor context through
       // the context-variables module, which owns what each variable may show.
-      { contextRenderer: routineContextRenderer, includeSlotValues, ...direct?.runnerOptions },
+      {
+        contextRenderer: routineContextRenderer,
+        includeSlotValues,
+        ...direct?.runnerOptions,
+        ...(workspaceId && dependencies.operatorReach
+          ? { operatorReach: dependencies.operatorReach.forAgent({ workspaceId, agentId }) }
+          : {}),
+      },
     );
 
     if (routineInvocation && direct) {

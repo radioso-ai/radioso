@@ -56,6 +56,10 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_PROGRESS_PROMPT",
   },
   {
+    source: "routine-step-operators-unreachable.md",
+    exportName: "DEFAULT_ROUTINE_STEP_OPERATORS_UNREACHABLE_PROMPT",
+  },
+  {
     source: "routine-step-context-evidence.md",
     exportName: "DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT",
   },

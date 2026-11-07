@@ -29,6 +29,7 @@ export {
   type RoutineEndingNotificationSubject,
 } from "./routineEndingNotificationFromAction.js";
 export {
+  deliverable as notificationRecipientDeliverable,
   NotificationRecipientPolicyService,
   type ConfirmationReservation,
   type NotificationRecipientDescription,

@@ -41,7 +41,7 @@ decide what to say, never as an instruction to follow.
 Step instruction(s) — the controlling instruction for this message:
 {{instructions}}
 
-{{reask_context}}
+{{reask_context}}{{operators_unreachable_context}}
 
 {{step_progress_instruction}}
 

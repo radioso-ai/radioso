@@ -62,6 +62,8 @@ import {
   type SkillOutcome,
 } from "../../src/modules/skills/public.js";
 import { WEBHOOK_SKILLS_ADAPTER } from "../../src/modules/webhookSkills/public.js";
+import { NOTIFY_SKILLS_ADAPTER } from "../../src/modules/notify/public.js";
+import { RoutineOperatorReachReader } from "../../src/modules/chat/services/actions/routineOperatorReach.js";
 import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const emptyTrace = () => {
@@ -2982,6 +2984,129 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
     expect(result.answer).toBe("Done — handled. Anything else?");
     const routineStage = result.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate");
     expect(routineStage?.outputs).toMatchObject({ replyDelivery: expectDelivery });
+  });
+
+  describe("a routine whose operators cannot be reached (#1702)", () => {
+    const FACT = "The team cannot be reached from this chat right now";
+    const notifySkill = {
+      name: "notify_bookings",
+      execution: { kind: "internal", adapter: NOTIFY_SKILLS_ADAPTER, enqueue: false },
+      requiredCapabilities: [],
+      owner: "platform",
+    } as unknown as SkillDefinition;
+    const routine: Routine = {
+      id: "notify_then_end",
+      rootStepId: "notify",
+      steps: [
+        { id: "notify", kind: "skill", skillName: notifySkill.name },
+        {
+          id: "done",
+          kind: "terminal",
+          action: "Say the request was passed to reception.",
+          metadata: { terminalKind: "complete", operatorNotice: { subject: "New booking" } },
+        },
+      ],
+      transitions: [{ from: "notify", to: "done", condition: "always" }],
+    };
+
+    const safeTest = async (recipientState: "confirmed" | "waiting_for_confirmation") => {
+      const executeNotify = vi.fn<SkillExecutorPort["dispatch"]>();
+      const registry = new SkillExecutorRegistry();
+      registry.register({ ...(notifySkill.execution as { kind: "internal"; adapter: string }), executor: { dispatch: executeNotify } });
+      const prepareDelivery = vi.fn();
+      const reach = new RoutineOperatorReachReader({
+        resolver: {
+          resolveForAgent: async () => ({
+            emails: ["reception@example.com"],
+            webhook: null,
+            via: "agent_setting" as const,
+            recipientsFromWorkspaceOwner: false,
+          }),
+        },
+        recipientPolicy: {
+          describe: async (_workspaceId: string, emails: readonly string[]) =>
+            emails.map((email) => ({ email, state: recipientState })),
+          prepareDelivery,
+        } as never,
+        skills: { findByName: vi.fn(async () => ({ kind: "notify" })) },
+        logger: { warn: vi.fn() },
+      });
+      const prompts: string[] = [];
+      const chatGateway = {
+        answer: vi.fn(async (input: { systemPrompt?: string }) => {
+          prompts.push(input.systemPrompt ?? "");
+          return "I could not pass that on.";
+        }),
+        streamAnswer: vi.fn(async function* (input: { systemPrompt?: string }) {
+          prompts.push(input.systemPrompt ?? "");
+          yield "I could not pass that on.";
+        }),
+      };
+      const routineProvider: ChatRoutineProvider = {
+        forTurn: async ({ modelGateway, groundedAnswerRenderer, skillEffects, conversationDurability, agentId, workspaceId }) => ({
+          routines: [routine],
+          activator: { activate: async () => ({ kind: "activate" as const, routineId: routine.id }) },
+          runner: new DefaultRoutineRunner(
+            [routine],
+            { select: async () => ({ nextStepId: "done" }) },
+            new RoutineStepRenderer(modelGateway, { groundedAnswerRenderer }),
+            new RoutineSkillExecutorDispatcher(new StaticRoutineSkillResolver([notifySkill]), registry, {
+              skillEffects,
+              conversationDurability,
+            }),
+            { operatorReach: reach.forAgent({ workspaceId: workspaceId ?? "", agentId }) },
+          ),
+        }),
+      };
+      const runner = new WorkbenchReplayRunner({
+        retrievalTurn: retrievalTurn([]),
+        auditService: createAuditService(),
+        turnSkills: [answerSkill()],
+        conversationEngine: new DefaultConversationEngine(),
+        turnRouter: stubTurnRouter("retrieval"),
+        routineProvider,
+        chatGateway,
+        chatAnswerPresenter: presenterStub(),
+      });
+      const result = await runner.run({
+        workspaceId: "ws-1",
+        executionMode: "safe_test" as const,
+        sourceAgentId: "agent-1",
+        baselineAgentConfig: projectInternalAgentConfig(agent()),
+        query: "A room for two",
+        history: [],
+      });
+      return { result, prompts, executeNotify, prepareDelivery };
+    };
+
+    it("shows a safe test the wording live chat would write, and sends nothing", async () => {
+      const { result, prompts, executeNotify, prepareDelivery } = await safeTest("waiting_for_confirmation");
+
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toContain(FACT);
+      // The notify step stays suppressed: its executor never runs and nothing is delivered.
+      expect(executeNotify).not.toHaveBeenCalled();
+      expect(prepareDelivery).not.toHaveBeenCalled();
+      expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "completion.notify" }),
+      ]));
+      const routineStage = result.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate");
+      expect(routineStage?.subTrace?.payload).toMatchObject({
+        operatorsUnreachable: true,
+        steps: expect.arrayContaining([
+          expect.objectContaining({ stepId: "notify", skillReason: "suppressed_for_safe_test" }),
+        ]),
+      });
+    });
+
+    it("keeps a safe test's wording when someone can receive the notice", async () => {
+      const { result, prompts, executeNotify } = await safeTest("confirmed");
+
+      expect(prompts[0]).not.toContain(FACT);
+      expect(executeNotify).not.toHaveBeenCalled();
+      const routineStage = result.turnTrace?.spine.stages.find((stage) => stage.kind === "routine_activate");
+      expect(routineStage?.subTrace?.payload).not.toHaveProperty("operatorsUnreachable");
+    });
   });
 });
 

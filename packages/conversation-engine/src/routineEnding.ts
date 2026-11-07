@@ -1,9 +1,117 @@
 import type {
   ConversationRoutineResumeResult,
   ProcessTurnResult,
+  Routine,
+  RoutineActionRequest,
+  RoutineAuthoredTerminalKind,
   RoutineOperatorNoticeEffect,
+  RoutineOperatorNoticeTemplate,
   RoutineState,
+  RoutineStep,
 } from "@radioso/conversation-contract";
+import { redactSensitiveValues } from "@radioso/conversation-contract";
+
+const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(variables, key);
+
+/** The routine's slot keys its author marked sensitive, in declared order. */
+export const sensitiveSlotKeys = (routine: Routine): string[] =>
+  (routine.slots ?? []).filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key);
+
+/**
+ * The variables as a copy that leaves the conversation carries them: a sensitive slot's value
+ * reads as the redaction marker. The run's own state keeps the value, since the routine needs it
+ * to run; every payload, ending, and trace the runner hands out goes through here.
+ */
+export const outboundVariables = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+): Record<string, unknown> => redactSensitiveValues(variables, sensitiveSlotKeys(routine));
+
+/** The declared slots' values as they leave the conversation, sensitive ones masked. */
+export const declaredSlotVariables = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+): Record<string, unknown> =>
+  outboundVariables(
+    routine,
+    Object.fromEntries(
+      (routine.slots ?? [])
+        .map((slot) => slot.key)
+        .filter((key) => hasVariable(variables, key))
+        .map((key) => [key, variables[key]]),
+    ),
+  );
+
+/** The keys of an ending's collected values that were masked as sensitive, reported beside them. */
+export const maskedSlotKeys = (
+  routine: Routine,
+  collected: Record<string, unknown>,
+): Pick<NonNullable<ConversationRoutineResumeResult["terminal"]>, "sensitiveSlotKeys"> => {
+  const keys = sensitiveSlotKeys(routine).filter((key) => hasVariable(collected, key));
+  return keys.length > 0 ? { sensitiveSlotKeys: keys } : {};
+};
+
+/**
+ * The operator notice template a terminal step carries. The host's compiler puts it there
+ * exactly when the ending notifies operators; the runner only reads it back, keeping the
+ * fields that are strings so a malformed metadata value can never reach a notice.
+ */
+const operatorNoticeTemplateFor = (step: RoutineStep): RoutineOperatorNoticeTemplate | null => {
+  const notice = step.kind === "terminal" ? step.metadata?.operatorNotice : undefined;
+  if (typeof notice !== "object" || notice === null || Array.isArray(notice)) {
+    return null;
+  }
+  const { subject, intro, skillName, replyToSlot, includeAiSummary } = notice as Record<string, unknown>;
+  return {
+    ...(typeof subject === "string" ? { subject } : {}),
+    ...(typeof intro === "string" ? { intro } : {}),
+    ...(typeof skillName === "string" ? { skillName } : {}),
+    ...(typeof replyToSlot === "string" ? { replyToSlot } : {}),
+    ...(includeAiSummary === true ? { includeAiSummary: true } : {}),
+  };
+};
+
+export const terminalResult = (
+  routine: Routine,
+  kind: RoutineAuthoredTerminalKind,
+  step: RoutineStep,
+  collected: Record<string, unknown>,
+): NonNullable<ConversationRoutineResumeResult["terminal"]> => {
+  const operatorNotice = operatorNoticeTemplateFor(step);
+  return { kind, stepId: step.id, collected, ...maskedSlotKeys(routine, collected), ...(operatorNotice ? { operatorNotice } : {}) };
+};
+
+export const completionExportActionFor = (
+  routine: Routine,
+  step: RoutineStep,
+  terminalKind: RoutineAuthoredTerminalKind | null,
+  variables: Record<string, unknown>,
+): RoutineActionRequest | null => {
+  const completionExport = routine.completionExport;
+  if (
+    !completionExport?.enabled ||
+    !completionExport.destinationRef ||
+    (terminalKind !== "complete" && terminalKind !== "handoff") ||
+    !completionExport.triggerKinds.includes(terminalKind)
+  ) {
+    return null;
+  }
+
+  return {
+    type: "webhook.send",
+    payload: {
+      destinationRef: completionExport.destinationRef,
+      source: {
+        routineId: routine.id,
+        stepId: step.id,
+        terminalKind,
+        status: "completed",
+      },
+      data: declaredSlotVariables(routine, variables),
+    },
+  };
+};
 
 /**
  * The record a routine keeps once a turn ends it, built from the state that turn started on:

@@ -1,7 +1,7 @@
 ---
 title: "Author a routine"
 description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
-last_updated: 2026-10-26
+last_updated: 2026-11-07
 ---
 
 # Author a routine
@@ -303,6 +303,20 @@ Routine slot text is capped at 1,000 characters before it reaches either
 delivery, and a collected reply-to is used only when it is a valid email
 address.
 
+The agent writes its reply before the notice goes out, so it checks first. When
+the destination has no webhook and every address is waiting for confirmation,
+stopped, or suppressed, the reply says the request could not be passed on and
+suggests contacting the team directly, with contact details if the agent's
+instructions or documents give them. That holds whatever the ending's
+instruction says, so an ending written as "Tell them reception has it" stays
+honest. One address that can receive mail, or a webhook, is enough for the
+ending's own wording to stand. The contact routine and a notify skill step get
+the same check. A **Hand off** keeps its wording, because the conversation lands
+in the Inbox whether or not an email goes out. The notice still queues, so an
+address that confirms in the meantime receives it. The check leaves out the
+daily email allowance, so a notice that allowance stops still reads as passed
+on.
+
 A step is asked the same way at most three times in a row when the visitor's
 replies give it nothing new. From then on it asks in different words, saying
 plainly what it needs and giving an example of an answer that works. The limit
@@ -364,7 +378,9 @@ exactly as it would for a customer. Retrieval skills run in both modes, and
 test values still stand in for context variables either way. Action steps,
 handoffs, team notices, and completion export stay off in every private test;
 a test turn that reaches an ending that notifies shows the notice it would
-send, and the address replies would go to, in the turn's trace instead.
+send, and the address replies would go to, in the turn's trace instead. The
+reply itself reads as it would for a customer, so a test of an ending nobody can
+receive shows the visitor being told the request could not be passed on.
 
 A notify skill delivers through the saved conversation, so it stays off in
 every private test even with **Run skills for real** on. **Retry** re-runs
@@ -396,6 +412,10 @@ from a test that kept skills off.
 - A finish sends no team notice: check that **Notify the team** is on for that
   ending, and that the agent has a contact recipient — the notice goes where
   contact requests go.
+- The agent tells a visitor their request could not be passed on: nobody can
+  receive it. The **Send with** line shows each address's state, so confirm one
+  or add a webhook to the skill. The turn trace carries
+  `operatorsUnreachable: true` on the routine's sub-trace for that turn.
 - The **Send with** select shows a name as **(unavailable)**: the notify skill
   it names was deleted, turned off, or can no longer be named by a routine.
   Validation flags the ending until you pick another skill or switch back to

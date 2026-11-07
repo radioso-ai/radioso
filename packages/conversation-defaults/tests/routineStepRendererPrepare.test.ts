@@ -163,6 +163,93 @@ describe("RoutineStepRenderer.prepare", () => {
   });
 });
 
+describe("RoutineStepRenderer when the turn's operators cannot be reached (#1702)", () => {
+  const FACT = "The team cannot be reached from this chat right now";
+  const ending: RoutineStep = {
+    id: "done",
+    kind: "terminal",
+    action: "Say the request was passed to reception.",
+    metadata: { terminalKind: "complete" },
+  };
+  const endingSteering = [{ action: "Say the request was passed to reception.", source: "routine" as const, lifespan: "response" as const }];
+
+  it("tells the step reply, after the step's instruction, and only when the fact holds", async () => {
+    const told = gatewayFor("reply");
+    await new RoutineStepRenderer(told.gateway).render({ step: ending, steering: endingSteering, turn, operatorsUnreachable: true });
+    const prompt = told.requests[0].request.systemPrompt ?? "";
+    expect(prompt).toContain(FACT);
+    expect(prompt.indexOf(FACT)).toBeGreaterThan(prompt.indexOf("Say the request was passed to reception."));
+    // The reply's language rule stays the last word, so the fact does not pull the language.
+    expect(prompt.indexOf(FACT)).toBeLessThan(prompt.indexOf("Always reply in the same language"));
+
+    const untold = gatewayFor("reply");
+    await new RoutineStepRenderer(untold.gateway).render({ step: ending, steering: endingSteering, turn });
+    expect(untold.requests[0].request.systemPrompt).not.toContain(FACT);
+  });
+
+  it("streams the same told reply as it renders", async () => {
+    const { gateway, requests } = gatewayFor("reply");
+    const reply = new RoutineStepRenderer(gateway).prepare({ step: askEmail, steering: stepSteering, turn, operatorsUnreachable: true });
+    const stream = reply.stream?.();
+    let next = await stream?.next();
+    while (next && !next.done) {
+      next = await stream?.next();
+    }
+    expect(requests[0].request.systemPrompt).toContain(FACT);
+  });
+
+  it("hands the grounded answer the fact as one of the step's own rules, and leaves its input alone otherwise", () => {
+    const { gateway } = gatewayFor("generic reply");
+    const prepare = vi.fn<NonNullable<RoutineGroundedAnswerRenderer["prepare"]>>(() => ({ render: vi.fn() }));
+    const renderer = new RoutineStepRenderer(gateway, { groundedAnswerRenderer: { render: vi.fn(), prepare } });
+
+    renderer.prepare({ step: ending, steering: endingSteering, turn: stagedTurn, operatorsUnreachable: true });
+    const [told] = prepare.mock.calls[0];
+    expect(told.steering[0]).toEqual(endingSteering[0]);
+    expect(told.steering[1]).toMatchObject({ source: "routine", lifespan: "response" });
+    expect(told.steering[1].action).toContain(FACT);
+
+    renderer.prepare({ step: ending, steering: endingSteering, turn: stagedTurn });
+    expect(prepare.mock.calls[1][0].steering).toEqual(endingSteering);
+  });
+
+  it("gives a grounded answer that can only decide while rendering the same rule", async () => {
+    const { gateway } = gatewayFor("generic reply");
+    const render = vi.fn<RoutineGroundedAnswerRenderer["render"]>(async () => ({ answer: "Grounded." }));
+
+    await new RoutineStepRenderer(gateway, { groundedAnswerRenderer: { render } })
+      .prepare({ step: ending, steering: endingSteering, turn: stagedTurn, operatorsUnreachable: true })
+      .render();
+
+    expect(render.mock.calls[0][0].steering.at(-1)?.action).toContain(FACT);
+  });
+
+  it("tells the step reply once when the grounded answer declines the step", async () => {
+    const { gateway, requests } = gatewayFor("generic reply");
+    const groundedAnswerRenderer: RoutineGroundedAnswerRenderer = { render: vi.fn(async () => null), prepare: vi.fn(() => null) };
+
+    await new RoutineStepRenderer(gateway, { groundedAnswerRenderer })
+      .prepare({ step: ending, steering: endingSteering, turn, operatorsUnreachable: true })
+      .render();
+
+    const prompt = requests[0].request.systemPrompt ?? "";
+    expect(prompt.split(FACT)).toHaveLength(2);
+  });
+
+  it.each([
+    { name: "a hand-off terminal", input: { step: { ...ending, metadata: { terminalKind: "handoff" } }, steering: endingSteering, turn } },
+    { name: "a stuck hand-off", input: { step: askEmail, steering: [], turn, stuckHandoff: true } },
+  ])("keeps $name's wording: the conversation lands in the Inbox either way", async ({ input }) => {
+    const told = gatewayFor("handoff");
+    const untold = gatewayFor("handoff");
+
+    await new RoutineStepRenderer(told.gateway).render({ ...input, operatorsUnreachable: true });
+    await new RoutineStepRenderer(untold.gateway).render(input);
+
+    expect(told.requests[0].request).toEqual(untold.requests[0].request);
+  });
+});
+
 describe("RoutineStepRenderer streamed step reply", () => {
   it("streams the reply trimmed, and finishes with the turn render() would return", async () => {
     const input = { step: askEmail, steering: stepSteering, turn: stagedTurn };

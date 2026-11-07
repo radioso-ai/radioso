@@ -132,7 +132,7 @@ describeIntegration("notification delivery log (Postgres)", () => {
       expect(all).toHaveLength(1);
       expect(all[0]).toMatchObject({ outcome: "sent" });
       expect(all[0]?.created_at.getTime()).toBe(first?.created_at.getTime());
-      expect(all[0]?.updated_at.getTime()).toBeGreaterThanOrEqual(first!.updated_at.getTime());
+      expect(all[0]?.updated_at.getTime()).toBeGreaterThanOrEqual(first.updated_at.getTime());
     });
 
     it("does not unsay a mail that went out when a retry finds the address skipped", async () => {

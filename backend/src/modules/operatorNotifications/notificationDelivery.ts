@@ -65,13 +65,7 @@ const emailOutcome = (result: PromiseSettledResult<unknown>): RecipientDeliveryO
 };
 
 /** Starts an attempt so a throw before its first await rejects like any other failure. */
-const attempt = <T>(run: () => Promise<T>): Promise<T> => {
-  try {
-    return run();
-  } catch (error) {
-    return Promise.reject(error);
-  }
-};
+const attempt = async <T>(run: () => Promise<T>): Promise<T> => run();
 
 /**
  * Sends a planned notice's emails and its webhook together, records what happened to each address,

@@ -22,7 +22,7 @@ export const listNotificationDeliveriesQuerySchema = z.object({
 }).strict();
 
 /** The wire shape: the address and what happened to it, never a request id or message content. */
-export const presentNotificationDelivery = (record: NotificationDeliveryRecord) => ({
+const presentNotificationDelivery = (record: NotificationDeliveryRecord) => ({
   id: record.id,
   agentId: record.agentId,
   conversationId: record.conversationId,

@@ -158,11 +158,7 @@ import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolve
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
-import {
-  buildNotificationDeliveryReader,
-  buildNotificationRecipientPolicy,
-  buildOperatorNoticeDestinationsReader,
-} from "../composition/contactDelivery.js";
+import { buildNotificationDeliveryReader, buildNotificationRecipientPolicy, buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import { NotificationRecipientStateRepository } from "../../db/repositories/notificationRecipientStateRepository.js";
@@ -294,11 +290,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookSkillDefinitionService,
   } = integrations;
   const notificationDeliveries = buildNotificationDeliveryReader(infrastructure.database);
-  const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(
-    infrastructure.database,
-    notificationRecipientPolicy,
-    infrastructure.usageLimitPolicy,
-  );
+  const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(infrastructure.database, notificationRecipientPolicy, infrastructure.usageLimitPolicy);
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
     composition,
     env,

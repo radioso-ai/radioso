@@ -1129,6 +1129,61 @@ describe("document ingestion", () => {
     expect(current?.title).toBe("Yoga Retreat Weekend – Example Site");
   });
 
+  it.each([
+    ["internal newlines and runs of spaces", "Page\n  | Site", "Page | Site"],
+    ["a no-break space before a colon", "Atelier : Yoga", "Atelier : Yoga"],
+    ["a narrow no-break space before a colon", "Atelier : Yoga", "Atelier : Yoga"],
+  ])("skips reprocessing when the stored and incoming titles differ only by %s", async (_label, storedTitle, incomingTitle) => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: storedTitle,
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+    const second = await service.ingest({
+      workspaceId: "workspace-1",
+      title: incomingTitle,
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+
+    expect(second).toEqual({ documentId: first.documentId, status: "ready" });
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(1);
+    expect(current?.title).toBe(storedTitle);
+  });
+
+  it("re-ingests when an incoming title differs in more than whitespace", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Page\n  | Site",
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+    await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Page | Other site",
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(2);
+    expect(current?.title).toBe("Page | Other site");
+  });
+
   it("re-ingests when an indexed field changes type without changing its text", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

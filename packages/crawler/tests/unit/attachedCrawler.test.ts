@@ -435,6 +435,21 @@ describe("runAttachedCrawler", () => {
       expect(publisher.upsert).toHaveBeenCalledWith(expect.objectContaining({ title: "Docs Home" }));
     });
 
+    it.each([
+      ["internal newlines and runs of spaces", "Docs\n  | Home", "Docs | Home"],
+      ["a no-break space before a colon", "Docs : Home", "Docs : Home"],
+      ["a narrow no-break space before a colon", "Docs : Home", "Docs : Home"]
+    ])("does not republish a page whose title differs only by %s", async (_label, stored, fetched) => {
+      const persistence = createFakePersistence();
+      const source = await seedPublishedPage(persistence, stored);
+      const publisher = createPublisher();
+
+      const result = await recrawl(persistence, source, publisher, { title: fetched });
+
+      expect(result.stats.pagesUnchanged).toBe(1);
+      expect(publisher.upsert).not.toHaveBeenCalled();
+    });
+
     it("does not republish a page whose fetch supplied no title", async () => {
       const persistence = createFakePersistence();
       const source = await seedPublishedPage(persistence, "Docs Home");

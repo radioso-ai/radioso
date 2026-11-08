@@ -7,6 +7,7 @@ import {
   normalizeText,
   type ExtractionOptions,
 } from "./htmlProcessing.js";
+import { normalizePageTitle } from "./pageTitle.js";
 
 const ALWAYS_NON_CONTENT_SELECTOR = [
   "script",
@@ -270,7 +271,7 @@ const extractPageTitle = ($: CheerioAPI): string | null => {
     if (isInsideNonPageTitleAncestor(candidate)) {
       continue;
     }
-    const title = $(candidate).text().replace(/\s+/g, " ").trim();
+    const title = normalizePageTitle($(candidate).text());
     if (title) {
       return title;
     }

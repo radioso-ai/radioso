@@ -26,6 +26,7 @@ project_id = "your-gcp-project-id"
 # worker_max_instances   = 5
 # db_tier                 = "db-f1-micro"
 # db_deletion_protection  = false
+# db_maintenance_window   = null  # e.g. { day = 7, hour = 2 } for Sunday 02:00 UTC
 # backend_min_instances   = 0
 # backend_max_instances   = 2
 # frontend_min_instances  = 0

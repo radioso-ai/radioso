@@ -1,6 +1,7 @@
 import type { Page, Route } from "@playwright/test";
 import type { components, operations } from "../../../typescript-sdk/src/generated/types";
 import type { SkillAuthoringDescriptor } from "@/lib/api-routine-skill-catalog";
+import type { NotificationDelivery } from "@/lib/notification-deliveries";
 import type { OperatorNoticeDestinations } from "@/lib/operator-notice-destinations";
 
 type ApiSchemas = components["schemas"];
@@ -1144,6 +1145,12 @@ export const installDashboardApiMocks = async (
     agentSkillRequests?: Array<{ method: string; path: string; body?: unknown }>;
     routineSkillCatalog?: RoutineSkillCatalogFixture;
     operatorNoticeDestinations?: OperatorNoticeDestinations;
+    /** What GET /notification-deliveries returns, newest first; the mock pages it by the cursor it hands out. */
+    notificationDeliveries?: NotificationDelivery[];
+    notificationDeliveryRequests?: string[];
+    /** Records each POST to resend a recipient confirmation; the mock answers it with `confirmationResendSent`. */
+    confirmationResends?: Array<{ agentId: string; email: string }>;
+    confirmationResendSent?: boolean;
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
@@ -2712,6 +2719,24 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/operator-notice-destinations` && request.method() === "GET") {
       await json(route, operatorNoticeDestinations);
+      return;
+    }
+
+    if (path === "/notification-deliveries" && request.method() === "GET") {
+      const url = new URL(request.url());
+      options.notificationDeliveryRequests?.push(`${url.pathname}${url.search}`);
+      const all = (options.notificationDeliveries ?? []).filter((item) => item.agentId === url.searchParams.get("agentId"));
+      const start = Number(url.searchParams.get("cursor") ?? 0);
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const items = all.slice(start, start + limit);
+      await json(route, { items, nextCursor: start + limit < all.length ? String(start + limit) : null });
+      return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/notification-recipient-confirmations/resend` && request.method() === "POST") {
+      const body = request.postDataJSON() as { email: string };
+      options.confirmationResends?.push({ agentId: defaultAgentId, email: body.email });
+      await json(route, { sent: options.confirmationResendSent ?? true }, 202);
       return;
     }
 

@@ -2,6 +2,7 @@ const SUPPRESSIBLE_EMAIL_KINDS = new Set([
   "contact_notification",
   "operator_notice",
   "recipient_confirmation",
+  "notification_alert",
 ]);
 
 type SuppressionReason = "hard_bounce" | "complaint";

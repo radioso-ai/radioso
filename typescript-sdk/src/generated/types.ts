@@ -2950,6 +2950,26 @@ export interface paths {
         patch: operations["updateAgentSkill"];
         trace?: never;
     };
+    "/api/v1/notification-deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List notification deliveries
+         * @description What happened to each address of each notice, newest first: when it was handled, which kind of notice, which conversation, which address, and whether it was sent or why it was skipped. Recipient emails are personal data, so this route accepts workspace sessions only.
+         */
+        get: operations["listNotificationDeliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retrieval/answer": {
         parameters: {
             query?: never;
@@ -10727,6 +10747,47 @@ export interface components {
         };
         EnableEmailDirectReceivingRequest: {
             confirmation: string;
+        };
+        NotificationDelivery: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description Null when the notice names no agent, or its agent was deleted.
+             */
+            agentId: string | null;
+            /**
+             * Format: uuid
+             * @description The conversation that raised the notice.
+             */
+            conversationId: string;
+            /**
+             * @description What raised the notice: a contact request, an approval, or a routine ending's hand-off or completion.
+             * @enum {string}
+             */
+            kind: "contact_request" | "approval" | "handoff" | "completion";
+            /** @description The normalized address the notice was meant for. */
+            recipientEmail: string;
+            /**
+             * @description `sent`: the mail provider accepted it. `skipped_unconfirmed`: the address has not confirmed. `skipped_revoked`: its owner stopped notifications. `skipped_suppressed`: an earlier mail bounced or was reported as spam. `skipped_cap`: a daily or per-conversation limit stopped it. `not_dispatched`: the deployment records mail without sending it. `failed`: the mail was attempted and did not go out, or the address's state could not be read.
+             * @enum {string}
+             */
+            outcome: "sent" | "skipped_unconfirmed" | "skipped_revoked" | "skipped_suppressed" | "skipped_cap" | "not_dispatched" | "failed";
+            /**
+             * Format: date-time
+             * @description When the notice was first handled.
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description When its latest attempt settled.
+             */
+            updatedAt: string;
+        };
+        NotificationDeliveryPage: {
+            items: components["schemas"]["NotificationDelivery"][];
+            /** @description Pass back as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
         };
         /** @description One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id. */
         DataSubjectIdentity: {
@@ -25135,6 +25196,58 @@ export interface operations {
             };
             /** @description Default-answer already exists */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listNotificationDeliveries: {
+        parameters: {
+            query?: {
+                agentId?: string;
+                outcome?: "sent" | "skipped_unconfirmed" | "skipped_revoked" | "skipped_suppressed" | "skipped_cap" | "not_dispatched" | "failed";
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Notification deliveries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationDeliveryPage"];
+                };
+            };
+            /** @description An invalid query or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

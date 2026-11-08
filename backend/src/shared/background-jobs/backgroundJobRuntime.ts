@@ -281,7 +281,7 @@ export class BackgroundJobRuntime {
     if (completion !== "deleted") {
       return this.record(claim, "superseded", startedAt);
     }
-    return this.record(claim, skipped ? "skipped" : "completed", startedAt);
+    return this.record(claim, skipped && !skipped.partial ? "skipped" : "completed", startedAt);
   }
 
   /**

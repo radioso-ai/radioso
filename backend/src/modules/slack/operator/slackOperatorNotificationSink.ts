@@ -46,15 +46,15 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
     const accountId = await this.options.workspaceAccounts.getAccountId(notification.workspaceId);
     if (!accountId) {
-      return { disposition: "skipped", reason: "slack_workspace_not_linked" };
+      return { disposition: "not_applicable", reason: "slack_workspace_not_linked" };
     }
     const installation = await this.options.installations.findByAccountId(accountId);
     if (!installation) {
-      return { disposition: "skipped", reason: "slack_not_installed" };
+      return { disposition: "not_applicable", reason: "slack_not_installed" };
     }
     const binding = await this.options.bindings.findByInstallationId(installation.id);
     if (!binding?.escalationChannelId) {
-      return { disposition: "skipped", reason: "slack_escalation_channel_not_configured" };
+      return { disposition: "not_applicable", reason: "slack_escalation_channel_not_configured" };
     }
     if (notification.kind !== "approval") {
       // Slack has no separate subject field, so the post's text leads with the formatter's
@@ -99,7 +99,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
 
     const decision = await this.options.pendingDecisions.loadByHandle(notification.handle);
     if (!decision || !isPendingApproval(decision, notification)) {
-      return { disposition: "skipped", reason: "slack_approval_not_pending" };
+      return { disposition: "not_applicable", reason: "slack_approval_not_pending" };
     }
 
     const message = buildDecisionMessage({

@@ -1,4 +1,5 @@
 import type { EmailKind } from "../mail/public.js";
+import { boundedMailName as boundedName } from "./boundedMailName.js";
 import type { NotificationRecipientTokenSigner } from "./notificationRecipientToken.js";
 
 interface ConfirmationMailTransport {
@@ -18,15 +19,6 @@ interface ConfirmationObservability {
     incrementCounter(name: string, options: { help: string; labels?: Record<string, string>; value?: number }): void;
   } | null;
 }
-
-// Workspace and agent names are tenant-authored, so they are kept short enough that the
-// confirmation request cannot carry a message of its own.
-const NAME_MAX_LENGTH = 60;
-
-const boundedName = (value: string): string => {
-  const line = value.replace(/[\r\n]+/gu, " ").trim();
-  return line.length > NAME_MAX_LENGTH ? `${line.slice(0, NAME_MAX_LENGTH - 1).trimEnd()}…` : line;
-};
 
 export class NotificationRecipientConfirmationMailer {
   private readonly baseUrl: URL;

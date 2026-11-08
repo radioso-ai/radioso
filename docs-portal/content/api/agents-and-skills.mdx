@@ -400,7 +400,7 @@ the routine editor says so under the notice's destination, and the destinations
 endpoint and the Operator MCP `operator_notice_destinations` tool report
 `dailyEmailAllowance.reachedToday`.
 
-Resend hard-bounce and complaint events add the address to the deployment-wide notification suppression list. Suppression applies to contact messages, operator notices, and recipient confirmations. Authentication mail such as password resets and login-address verification keeps its separate delivery path. When every email recipient is skipped, the delivery outcome names why: `notification_recipient_unconfirmed` while any address still has to confirm, then `notification_recipient_revoked` when a recipient stopped notifications, then `notification_recipient_suppressed`. Logs and metrics carry only the reason and recipient count.
+Resend hard-bounce and complaint events add the address to the deployment-wide notification suppression list. Suppression applies to contact messages, operator notices, and recipient confirmations. Authentication mail such as password resets and login-address verification keeps its separate delivery path. When some of the addresses are skipped, the others still receive the email and the [delivery log](#delivery-log) records each address on its own. When every email recipient is skipped, the delivery outcome names why: `notification_recipient_unconfirmed` while any address still has to confirm, then `notification_recipient_revoked` when a recipient stopped notifications, then `notification_recipient_suppressed`. Logs and metrics carry only the reason and recipient count.
 
 Visitor content is bounded before delivery: contact names use at most 200
 characters, contact messages 4,000, and each routine slot value in a notice
@@ -416,6 +416,52 @@ Radioso also tells a person when a conversation needs one, or when a routine fin
 `GET /api/v1/agents/{agentId}/skills/{skillId}/notification-recipients` returns the same `recipients` list, with `email` and `state`, for one notify skill whatever its invocation mode; it takes the same permission and workspace session.
 
 An owner or admin can call `POST /api/v1/agents/{agentId}/notification-recipient-confirmations/resend` with `{ "email": "support@example.com" }`. The address must be the agent's default destination or a recipient of one of its notify skills. A `202` response returns `{ "sent": true }` when the confirmation was admitted, or `false` when confirmation is disabled, the recipient is already confirmed, stopped notifications, or is suppressed, the address was asked within the last 24 hours, or the daily confirmation allowance is exhausted.
+
+### Delivery log
+
+The notify skills' recipient list tells you who a notice is meant for. The delivery log tells you what happened to it: one entry for each address of each contact request or operator notice, whichever skill or default destination it went through.
+
+`GET /api/v1/notification-deliveries` lists them newest first. It needs `workspace.agents.read` and a workspace session; a machine API token gets `401`, because the entries name recipient emails. Narrow the list with `agentId` or `outcome`, and page through it with `limit` (1 to 100, default 50) and the `nextCursor` of the previous page passed back as `cursor`.
+
+```json
+{
+  "items": [
+    {
+      "id": "...",
+      "agentId": "...",
+      "conversationId": "...",
+      "kind": "handoff",
+      "recipientEmail": "front-desk@example.com",
+      "outcome": "skipped_unconfirmed",
+      "createdAt": "2026-11-07T10:00:00.000Z",
+      "updatedAt": "2026-11-07T10:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+`kind` says what raised the notice: `contact_request`, `approval`, `handoff`, or `completion`. `outcome` is one of:
+
+| Outcome | What happened |
+|---|---|
+| `sent` | The mail provider accepted the email. |
+| `skipped_unconfirmed` | The address has not confirmed yet. |
+| `skipped_revoked` | Its owner stopped notifications from the workspace. |
+| `skipped_suppressed` | An earlier email to it bounced or was reported as spam. |
+| `skipped_cap` | The daily email allowance or the conversation's dispatch allowance stopped it. |
+| `not_dispatched` | The deployment has no mail provider, so the email was written to the log. |
+| `failed` | The email was attempted and did not go out, or the address's state could not be read. |
+
+A retry of the same notice updates its entries rather than adding new ones, so an address that failed and then went out reads `sent`; an entry that reads `sent` is never changed afterwards. The log lists email only: a webhook post is not an entry. A notice for a conversation with no agent, or whose agent has since been deleted, has `agentId` set to `null`. Entries go with their conversation, so [deleting a conversation](/operators/deleting-conversation-data), or a retention window erasing it, deletes them too.
+
+In the dashboard, the same entries show under **Recent notifications** at the bottom of the agent's Skills page, with a link to the conversation and, for an address that has not confirmed, **Resend confirmation**. Ray reads them with `list_notification_deliveries`, and so does an Operator MCP client.
+
+#### Alert to owners and admins
+
+When a notice skips an address because it has not confirmed, its owner stopped notifications, or it bounced, Radioso emails the people who can fix it: the organization's owners and admins, and members who are admins of that workspace through a workspace grant. The email names the address, says why it was skipped, names the agent, and links to the agent's Skills page, where the address can be replaced or asked again. Only active members with a verified login address receive it, and an address that itself bounced, or whose owner stopped notifications from the workspace, is left out.
+
+Each address triggers at most one alert a day for a workspace, however many notices it misses. A skip because of a daily allowance, and an email that failed in transit, send no alert: neither is something the address's owner or the operator fixes by changing the recipient. The alert uses the deployment's mail transport. Without a mail provider it is not sent, the log shows only that an alert was due, and the day's alert is spent anyway, since a retry would send nothing either.
 
 Each notice is emailed to the resolved recipients as plain text and, when a webhook is configured, posted to it as JSON. Here is the notice a "Book accommodation" routine sends when it finishes with a notice of its own:
 

@@ -3064,6 +3064,27 @@ CREATE TABLE public.messages (
 
 
 --
+-- Name: notification_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_deliveries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid,
+    conversation_id uuid NOT NULL,
+    request_id uuid NOT NULL,
+    kind text NOT NULL,
+    recipient_email text NOT NULL,
+    outcome text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_deliveries_kind_check CHECK ((kind = ANY (ARRAY['contact_request'::text, 'approval'::text, 'handoff'::text, 'completion'::text]))),
+    CONSTRAINT notification_deliveries_outcome_check CHECK ((outcome = ANY (ARRAY['sent'::text, 'skipped_unconfirmed'::text, 'skipped_revoked'::text, 'skipped_suppressed'::text, 'skipped_cap'::text, 'not_dispatched'::text, 'failed'::text]))),
+    CONSTRAINT notification_deliveries_recipient_email_check CHECK (((recipient_email = lower(btrim(recipient_email))) AND (recipient_email <> ''::text)))
+);
+
+
+--
 -- Name: notification_delivery_outcomes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3132,6 +3153,7 @@ CREATE TABLE public.notification_recipient_confirmations (
     confirmation_generation integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    undelivered_alert_sent_at timestamp with time zone,
     CONSTRAINT notification_recipient_confirmati_confirmation_generation_check CHECK ((confirmation_generation >= 0)),
     CONSTRAINT notification_recipient_confirmations_check CHECK (((state = 'grandfathered'::text) = (grandfathered_until IS NOT NULL))),
     CONSTRAINT notification_recipient_confirmations_normalized_email_check CHECK (((normalized_email = lower(btrim(normalized_email))) AND (normalized_email <> ''::text))),
@@ -5863,6 +5885,22 @@ ALTER TABLE ONLY public.message_facets
 
 ALTER TABLE ONLY public.messages
     ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_deliveries notification_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_deliveries
+    ADD CONSTRAINT notification_deliveries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_deliveries notification_deliveries_request_id_recipient_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_deliveries
+    ADD CONSTRAINT notification_deliveries_request_id_recipient_email_key UNIQUE (request_id, recipient_email);
 
 
 --
@@ -8910,6 +8948,27 @@ CREATE INDEX messages_workspace_skill_turn_idx ON public.messages USING btree (w
 
 
 --
+-- Name: notification_deliveries_agent_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_deliveries_agent_idx ON public.notification_deliveries USING btree (agent_id, created_at DESC, id DESC) WHERE (agent_id IS NOT NULL);
+
+
+--
+-- Name: notification_deliveries_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_deliveries_conversation_idx ON public.notification_deliveries USING btree (conversation_id);
+
+
+--
+-- Name: notification_deliveries_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_deliveries_workspace_idx ON public.notification_deliveries USING btree (workspace_id, created_at DESC, id DESC);
+
+
+--
 -- Name: notification_delivery_outcomes_conversation_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11762,6 +11821,30 @@ ALTER TABLE ONLY public.messages
 
 ALTER TABLE ONLY public.messages
     ADD CONSTRAINT messages_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_deliveries notification_deliveries_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_deliveries
+    ADD CONSTRAINT notification_deliveries_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
+
+
+--
+-- Name: notification_deliveries notification_deliveries_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_deliveries
+    ADD CONSTRAINT notification_deliveries_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_deliveries notification_deliveries_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_deliveries
+    ADD CONSTRAINT notification_deliveries_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

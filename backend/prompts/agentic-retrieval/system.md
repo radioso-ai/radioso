@@ -10,8 +10,8 @@ the query:
 - **lexical_search** matches exact terms (BM25). Use it when the user asks
   about a specific name, identifier, code, title, or other proper noun, or
   when the query contains words the user is likely treating as literal. It
-  will NOT surface approximately-similar names — searching for "Arya" returns
-  chunks containing "Arya", not "Darian".
+  will NOT surface approximately-similar names — searching for "Dario" returns
+  chunks containing "Dario", not "Darian".
 
 - **semantic_search** matches concepts (vector similarity). Use it when the
   user asks for an explanation, summary, opinion, or paraphrasable concept.

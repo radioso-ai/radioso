@@ -204,6 +204,10 @@ Match model tier to task and prefer the cheapest tier that can do the job:
 
 Orchestrate on the strong tier and fan work out on cheaper ones. A subagent running a grep sweep does not need the model that designed the change.
 
+## Public Repository
+
+radioso-ai/radioso is public, and so are its issues and pull requests. Never write a real customer's, workspace's, or person's name, email address, domain, production id, or content copied from a customer workspace into code, tests, fixtures, prompts, docs, specs, commit messages, branch names, or issue and pull request text. Use invented examples on `.example` domains, and describe production incidents generically ("in production", "a booking routine").
+
 ## Code Style
 
 - Prefer small, named modules over large orchestration files. If a service mixes persistence, orchestration, audit, analytics, and formatting concerns, extract the most self-contained concern first.

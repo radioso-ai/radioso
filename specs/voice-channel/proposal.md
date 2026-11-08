@@ -307,6 +307,6 @@ Full memo: [competitive-landscape.md](competitive-landscape.md).
 - Epic #856: historical p50 14 s / p90 39 s; #857, #858, #859, #868, #871 shipped. Issue #507 closed as deferred 2026-06-01.
 - Spec 1263 validation: TTFT p50 3,569 ms / p95 4,183 ms baseline, 20-turn local benchmark.
 - Live Valmora test turn 2026-10-07 10:56 UTC: routine "Book accommodation" auto-picked at 0.92, about 4.5 s wall clock.
-- Valmora workspace: two agents (EN, IT) on `gpt-5.4-mini`, 11,556 embedded chunks, 30 most recent conversations all `website_embed`, Italian majority, dominated by course dates, availability and booking.
+- Valmora workspace: two agents (EN, IT) on `gpt-5.4-mini`, about 10,000 embedded chunks, 30 most recent conversations all `website_embed`, Italian majority, dominated by course dates, availability and booking.
 - Plan catalog: Satellite `priceCents: 14900`, `monthlyConversations: 1000`.
 - No audio, speech, telephony or WebSocket-realtime code exists anywhere in the repository.

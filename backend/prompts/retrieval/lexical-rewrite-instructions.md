@@ -4,8 +4,8 @@ Examples:
 where can I find tangerines in Beijing?
 → tangerines Beijing
 
-Who is Swami Orin and Dr. Lewis?
-→ "Swami Orin" "Dr. Lewis"
+Who is Swami Orin and Dr. Hale?
+→ "Swami Orin" "Dr. Hale"
 
 Why does requirePermission.ts bypass workspace permissions?
 → requirePermission.ts workspace permission bypass

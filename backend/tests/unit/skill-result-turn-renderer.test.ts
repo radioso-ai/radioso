@@ -17,7 +17,7 @@ import type { SkillOutcome } from "../../src/modules/skills/public.js";
 import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
 const TOOL_TEXT = [
-  "Valmora Books publishes [Autobiografia di uno Yogi](https://example.com/autobiografia).",
+  "Valmora Books publishes [Diario di un Viandante](https://example.com/autobiografia).",
   "",
   JSON.stringify({
     conversationId: "conversation-9",
@@ -26,7 +26,7 @@ const TOOL_TEXT = [
     traceId: "trace-9",
   }, null, 2),
 ].join("\n");
-const MODEL_REPLY = "We publish [Autobiografia di uno Yogi](https://example.com/autobiografia), a classic on yoga.";
+const MODEL_REPLY = "We publish [Diario di un Viandante](https://example.com/autobiografia), a classic on yoga.";
 const DIRECTIVE_ACTION = "Ask the publishing catalog and tell the user what it found.";
 
 const session = (): PreparedSession => ({

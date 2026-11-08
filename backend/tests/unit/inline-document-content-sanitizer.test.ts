@@ -39,7 +39,7 @@ describe("inline document content sanitizer", () => {
       title: "How to begin with meditation? 5 Tips - Elio - Valmora Europe",
       sourceContent: content,
       metadata: {
-        sourceUrl: "https://valmora-europe.example/video/how-to-begin-with-meditation-5-tips-elio",
+        sourceUrl: "https://valmora-europe.example/video/how-to-begin-with-meditation-5-tips",
       },
     });
 

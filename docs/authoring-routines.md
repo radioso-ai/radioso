@@ -356,7 +356,7 @@ it always notifies.
 **Replies go to** chooses where reception's reply to the notice email lands —
 stored as `operatorNotice.replyToSlot` on the ending. It lists the routine's
 email fields, plus **No reply-to**. Pick `guest_email` on Valmora's **Booked**
-ending, and when Marta hits Reply, his answer goes to the address the guest
+ending, and when Marta hits Reply, her answer goes to the address the guest
 gave in the chat. Radioso only ever uses the field you pick: a gift booking can
 collect the buyer's address and the recipient's, and only you know which one
 reception should answer. A notice you turn on, or a new **Hand off** ending,

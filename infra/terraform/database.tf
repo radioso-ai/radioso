@@ -43,6 +43,17 @@ resource "google_sql_database_instance" "postgres" {
       ssl_mode = var.db_require_encrypted_connections ? "ENCRYPTED_ONLY" : "ALLOW_UNENCRYPTED_AND_ENCRYPTED"
     }
 
+    # A zonal instance has no database while Cloud SQL restarts it for maintenance, so each stack
+    # names a quiet hour. Changing the window itself does not restart the instance.
+    dynamic "maintenance_window" {
+      for_each = var.db_maintenance_window == null ? [] : [var.db_maintenance_window]
+      content {
+        day          = maintenance_window.value.day
+        hour         = maintenance_window.value.hour
+        update_track = maintenance_window.value.update_track
+      }
+    }
+
     # Pinned rather than left to the provider's defaults, because deleted conversation data lives on
     # in backups until they age out: seven daily backups, and seven days of point-in-time recovery
     # logs where recovery is on. The data retention docs state the same windows.

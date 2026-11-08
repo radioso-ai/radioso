@@ -36,6 +36,11 @@ export interface DocumentSourceRepositoryPort {
     kind: DocumentOriginKind;
     externalIdPrefix: string;
   }): Promise<DocumentSourceRecord[]>;
+  /**
+   * Registers the source, or on conflict renames it and merges `config` and `metadata` over the
+   * stored ones at the top level: a key the caller supplies wins, a key it omits is kept. To drop
+   * or rewrite the whole config, use `updateConfigByIdAndWorkspaceId`.
+   */
   upsertByExternalId(input: {
     workspaceId: string;
     kind: DocumentOriginKind;
@@ -230,7 +235,9 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
           .where("external_id", "is not", null)
           .doUpdateSet((eb) => ({
             name: eb.ref("excluded.name"),
-            config: eb.ref("excluded.config"),
+            // Shallow merge: the caller owns the top-level keys it supplies, and keys an operator
+            // set on the source afterwards (document metadata, enrichment override) survive a re-sync.
+            config: jsonbConcat(eb.ref("document_sources.config"), eb.ref("excluded.config")),
             metadata: jsonbConcat(eb.ref("document_sources.metadata"), eb.ref("excluded.metadata")),
             updated_at: currentTimestamp(),
           })),

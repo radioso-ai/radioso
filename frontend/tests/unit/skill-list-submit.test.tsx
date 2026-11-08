@@ -45,6 +45,11 @@ vi.mock('@/components/dashboard/settings/skills/SkillForm', () => ({
   ) : null,
 }))
 
+// The notification log has its own journey; here it is only what the list renders after the skills.
+vi.mock('@/components/dashboard/settings/skills/RecentNotifications', () => ({
+  RecentNotifications: () => null,
+}))
+
 vi.mock('@/lib/api-skills', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api-skills')>()),
   agentSkillsApi: apiMocks,

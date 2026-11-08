@@ -817,14 +817,7 @@ export function SkillForm({
                     onChange={(value) => updateSetting(field.key, value)}
                     recipientStates={field.key === 'delivery.recipientEmails' ? recipientStates : undefined}
                     onResendConfirmation={field.key === 'delivery.recipientEmails'
-                      ? async (email) => {
-                          try {
-                            const result = await routineSkillCatalogApi.resendNotificationRecipientConfirmation(agentId, email)
-                            return result.sent ? 'Confirmation sent' : 'Not sent: asked recently, daily limit reached, or mail delivery unavailable'
-                          } catch (resendError) {
-                            return getApiErrorMessage(resendError, 'Could not resend the confirmation')
-                          }
-                        }
+                      ? (email) => routineSkillCatalogApi.resendNotificationRecipientConfirmationResult(agentId, email)
                       : undefined}
                   />
                 </div>

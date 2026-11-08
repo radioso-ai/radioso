@@ -10,6 +10,7 @@ import { createConversationActivityRoutes } from "./conversationActivityRoutes.j
 import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
 import { createConversationRecordingRoutes } from "./conversationRecordingRoutes.js";
 import { createDeliveryFailureRoutes } from "./deliveryFailureRoutes.js";
+import { createNotificationDeliveryRoutes } from "./notificationDeliveryRoutes.js";
 import { createHeldReplyRoutes } from "./heldReplyRoutes.js";
 import { createContextVariableRoutes } from "./contextVariableRoutes.js";
 import { createDecisionRoutes } from "./decisionRoutes.js";
@@ -107,6 +108,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationRecordingRoutes },
   { path: "/api/v1/delivery-failures", createRouter: createDeliveryFailureRoutes },
+  { path: "/api/v1/notification-deliveries", createRouter: createNotificationDeliveryRoutes },
   { path: "/api/v1", createRouter: createHeldReplyRoutes },
   { path: "/api/v1/history", createRouter: createHistoryRoutes },
   { path: "/api/v1/observability", createRouter: createObservabilityRoutes },

@@ -25,6 +25,7 @@ import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retr
 import { cn } from '@/lib/utils'
 import { CapabilityPicker } from './CapabilityPicker'
 import { McpServersPanel } from './McpServersPanel'
+import { RecentNotifications } from './RecentNotifications'
 import { SkillForm } from './SkillForm'
 import { formatCapabilityLabel, formatInvocationMode } from './skill-form-model'
 import { countSkillUsage, describeSkillUsage, NO_SKILL_USAGE, type SkillUsage } from './skill-usage'
@@ -290,6 +291,8 @@ export function SkillList({
           ))}
         </ul>
       ) : null}
+
+      {!isLoading ? <RecentNotifications agentId={agentId} /> : null}
 
       <CapabilityPicker
         open={pickerOpen}

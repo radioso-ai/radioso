@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-02
+last_updated: 2026-11-07
 ---
 
 # Code Map
@@ -899,7 +899,8 @@ Focused checks:
 
 Owns notifying operators outside the dashboard (email) about conversation and
 routine events: recipient confirmation and tokens, delivery admission policy,
-provider suppression handling, and routine-ending notification text.
+provider suppression handling, routine-ending notification text, the per-address
+delivery log, and the alert to owners and admins when a notice skips an address.
 
 Public surfaces and key files:
 
@@ -908,10 +909,21 @@ Public surfaces and key files:
 - `backend/src/modules/operatorNotifications/notificationRecipientConfirmationMailer.ts`,
   `notificationRecipientPolicy.ts`
 - `backend/src/modules/operatorNotifications/routineEndingNotificationFromAction.ts`
+- `backend/src/modules/operatorNotifications/notificationEmailPlan.ts`,
+  `notificationDelivery.ts` (plan and send, recording one row per address)
+- `backend/src/modules/operatorNotifications/notificationDeliveryLog.ts`,
+  `undeliveredRecipientAlert.ts` (the record's writer and reader, and the throttled alert)
+- `backend/src/db/repositories/notificationDeliveryRepository.ts`,
+  `undeliveredRecipientAlertRepository.ts`
+- `backend/src/app/http/routes/notificationDeliveryRoutes.ts` (`GET /api/v1/notification-deliveries`),
+  `backend/src/modules/operatorCopilot/tools/notificationDeliveries.ts` (`list_notification_deliveries`)
+- `frontend/components/dashboard/settings/skills/RecentNotifications.tsx`
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/operator-notifications`
+- `cd backend && pnpm exec vitest run tests/unit/operator-notifications tests/contract/notification-deliveries.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/notification-delivery-log.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec playwright test tests/e2e/notification-deliveries.spec.ts`
 
 ## Agent Bundle (portable agent export/import)
 

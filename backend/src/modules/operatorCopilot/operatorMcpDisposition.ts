@@ -61,6 +61,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   eval_results: eligibleRead,
   needs_attention: contextDependent,
   operator_notice_destinations: eligibleRead,
+  list_notification_deliveries: eligibleRead,
   product_doc_page: deferredRead,
   product_docs: deferredRead,
   propose_agent: deferredProposal,

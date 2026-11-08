@@ -155,7 +155,7 @@ import type {
 import type {
   WorkspaceCanonicalEmbeddingCoverage,
 } from "../../src/modules/embeddingProfiles/contracts/embeddingCoverage.js";
-import type { DocumentProcessingJobOptions } from "../../src/modules/documents/contracts/documentContracts.js";
+import type { DocumentPageState, DocumentProcessingJobOptions } from "../../src/modules/documents/contracts/documentContracts.js";
 import type {
   ConversationRecord,
   ConversationRepositoryPort,
@@ -3634,12 +3634,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     workspaceId: string;
     sourceId?: string | null;
     externalDocumentId: string;
-  }): Promise<{
-    documentId: string;
-    revision: number;
-    contentSizeBytes: number | null;
-    contentHash: string | null;
-  } | null> {
+  }): Promise<DocumentPageState | null> {
     const sourceId = input.sourceId ?? null;
     const match = [...this.items.values()].find((doc) =>
       doc.workspaceId === input.workspaceId &&
@@ -3655,6 +3650,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       revision: match.revision,
       contentSizeBytes: match.contentSizeBytes ?? null,
       contentHash: match.contentHash ?? null,
+      title: match.title,
     };
   }
 
@@ -3663,12 +3659,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     workspaceId: string;
     sourceId?: string | null;
     externalDocumentId: string;
-  }): Promise<{
-    documentId: string;
-    revision: number;
-    contentSizeBytes: number | null;
-    contentHash: string | null;
-  } | null> {
+  }): Promise<DocumentPageState | null> {
     const sourceId = input.sourceId ?? null;
     const match = [...this.items.values()].find((doc) =>
       doc.workspaceId === input.workspaceId &&
@@ -3683,6 +3674,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       revision: match.revision,
       contentSizeBytes: match.contentSizeBytes ?? null,
       contentHash: match.contentHash ?? null,
+      title: match.title,
     };
   }
 

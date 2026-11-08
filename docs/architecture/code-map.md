@@ -182,8 +182,9 @@ Primary paths:
   migration runner and allowlisted raw-SQL adapters
 - `backend/src/shared/infra/databaseConnectionFailure.ts` — names a failure to get a database
   connection: an unreachable database or an exhausted pool. `Database`'s pool marks failures
-  raised while borrowing a connection; the HTTP error handler answers either kind with a 503 and
-  reports it as `database.unavailable` or `database.pool_exhausted`
+  raised while borrowing a connection. `backend/src/shared/errors/databaseFailureReport.ts` turns
+  either kind into its report (`database.unavailable` or `database.pool_exhausted`), which the
+  HTTP error handler (with a 503) and a failed chat turn's report both use
 - `backend/src/shared/infra/kysely/` — `kyselyDatabase.ts` (builds Kysely on the pool),
   generated `schema.ts` (the `DB` type), and `sqlHelpers.ts` (the only home for
   Postgres-specific fragments: pgvector, jsonb, `now()`, etc.)

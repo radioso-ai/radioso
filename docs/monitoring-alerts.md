@@ -212,7 +212,7 @@ Radioso reports on itself, not on the machine underneath it. Postgres saturation
 
 Whatever you use for host monitoring, alert on Postgres memory, CPU, disk, and connection count. If those sit near their limit, that is your answer before you go looking in the application.
 
-When an HTTP request fails because the backend couldn't get a database connection, it answers `503 service_unavailable` rather than a generic `500`, and the request's error report is recorded as `database.unavailable` at `WARNING`. `radioso_errors_total{error_type="database.unavailable"}` then counts outages apart from code faults, and the report's `reason` says what failed:
+When the backend can't get a database connection, an HTTP request answers `503 service_unavailable` rather than a generic `500` (a streaming chat reply that has already started ends its stream instead), and the error report for the request, or for the chat turn, is recorded as `database.unavailable` at `WARNING`. `radioso_errors_total{error_type="database.unavailable"}` then counts outages apart from code faults, and the report's `reason` says what failed:
 
 | `reason` | What happened |
 |---|---|
@@ -222,7 +222,7 @@ When an HTTP request fails because the backend couldn't get a database connectio
 | `server_unavailable` | Postgres was shutting down or still starting (SQLSTATE `57P01`, `57P02`, `57P03`) |
 | `connection_limit` | Postgres refused the connection at its `max_connections` limit (SQLSTATE `53300`) |
 
-A socket reset in the middle of a statement (`ECONNRESET` or `EPIPE` on a connection that was already open) isn't classified, so it stays an unhandled `500`. So do failures where Postgres answered while the connection was opening, such as wrong credentials (`28P01`) or a missing database, because those are configuration to fix rather than an outage to wait out. A chat turn that fails this way is reported first as `chat.turn_failed`.
+A socket reset in the middle of a statement (`ECONNRESET` or `EPIPE` on a connection that was already open) isn't classified, so it stays an unhandled `500`. So do failures where Postgres answered while the connection was opening, such as wrong credentials (`28P01`) or a missing database, because those are configuration to fix rather than an outage to wait out.
 
 `database.pool_exhausted` is the other connection failure, recorded at `ERROR` with the same `503` for the caller. It means every connection in the backend's own pool stayed checked out for `DB_POOL_CONNECTION_TIMEOUT_MS`. Postgres may be healthy: look for slow queries, a connection held across a slow call, or a `DB_POOL_MAX` too small for the instance's load before you look at the host.
 

@@ -139,6 +139,8 @@ describe("a request whose database cannot be reached", () => {
     expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
       errorType: "database.unavailable",
       severity: "warn",
+      message: "Database unavailable (connect_timeout): Error caused by Error",
+      fingerprint: "radioso-worker:database.unavailable:Error",
       metadata: expect.objectContaining({ reason: "connect_timeout" }),
       requestContext: { method: "POST", route: "/internal/tasks/periodic-tasks/:taskId/run", statusCode: 503 },
     }));
@@ -189,6 +191,9 @@ describe("a request whose database cannot be reached", () => {
     expect(response.status).toBe(503);
     await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
     expect(sink.record).toHaveBeenCalledWith(reportedOutage(reason));
+    expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
+      message: `Database unavailable (${reason}): error [${code}]`,
+    }));
   });
 
   it("reports a 503 that stands for an unreachable database as an outage, and keeps that error's own body", async () => {
@@ -229,6 +234,8 @@ describe("a request that found every pooled connection busy", () => {
     expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
       errorType: "database.pool_exhausted",
       severity: "error",
+      message: "Database pool exhausted: Error",
+      fingerprint: "radioso-worker:database.pool_exhausted:Error",
       requestContext: expect.objectContaining({ statusCode: 503 }),
     }));
   });

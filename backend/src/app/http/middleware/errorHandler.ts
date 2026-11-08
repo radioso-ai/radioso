@@ -1,9 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 
+import { databaseFailureReport } from "../../../shared/errors/databaseFailureReport.js";
 import type { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
 import { AppError, isReportableFault, isStructuredAppError } from "../../../shared/domain/errors.js";
-import { classifyDatabaseConnectionFailure } from "../../../shared/infra/databaseConnectionFailure.js";
 import { applyRetryAfterFromError } from "../rateLimitHeaders.js";
 import { markHttpResponseFailed } from "./httpResponseCompletion.js";
 
@@ -57,19 +57,15 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
     // this exact error object (e.g. ChatTurnLifecycle.recordFailure) is not reported again.
     // A failure to get a database connection is reported as what it is, whatever the response
     // below says: an outage of the database, or this process's own pool with none free.
-    const databaseFailure = classifyDatabaseConnectionFailure(error);
+    const databaseFailure = databaseFailureReport(error);
     const reportFault = (statusCode?: number): void => {
       if (!isReportableFault(error) || errorReportingService?.wasReported(error)) {
         return;
       }
       const failure = { error, request: req, statusCode };
-      if (databaseFailure?.kind === "unavailable") {
-        void errorReportingService?.reportDatabaseUnavailableRequest({ ...failure, reason: databaseFailure.reason });
-      } else if (databaseFailure?.kind === "pool_exhausted") {
-        void errorReportingService?.reportDatabasePoolExhaustedRequest(failure);
-      } else {
-        void errorReportingService?.reportUnhandledRequestError(failure);
-      }
+      void (databaseFailure
+        ? errorReportingService?.reportRequestFailure({ ...failure, ...databaseFailure })
+        : errorReportingService?.reportUnhandledRequestError(failure));
     };
 
     if (res.headersSent) {

@@ -63,8 +63,11 @@ export const markConnectFailure = <T>(error: T): T => {
   return error;
 };
 
-// An error that stands for another (a 503 raised when a store fails) keeps it on `cause`.
-const MAX_CAUSE_DEPTH = 4;
+// An error that stands for another (a 503 raised when a store fails) keeps it on `cause`. The
+// walk reads the error objects themselves (a pg message, a mark), which the redacted cause chain
+// a report carries no longer holds, so it stops at the same depth that chain does (`safeErrorFields`):
+// the report then names every cause this classified on.
+const MAX_CAUSE_DEPTH = 3;
 
 const failureOf = (error: Error): DatabaseConnectionFailure | null => {
   if (error.message === POOL_CHECKOUT_TIMEOUT) {

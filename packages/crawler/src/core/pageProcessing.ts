@@ -14,7 +14,7 @@ import type {
 } from "../persistence/types.js";
 import type { DocumentPublicationEnvelope, DocumentPublisher } from "../types.js";
 
-export type AttachedPageProcessingResult = {
+type AttachedPageProcessingResult = {
   pageRecord: CrawlerPageRecord;
   pageStatus: "success" | "unchanged" | "failed";
   publication: {

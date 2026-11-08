@@ -282,7 +282,7 @@ export const createObservabilityRoutes = (
             route,
           },
           metadata: {
-            componentStack: stackFramesOf(req.body.componentStack),
+            componentStack: stackFramesOf(sanitizeFrontendErrorStack(req.body.componentStack)),
             source: req.body.source,
             userAgent: String(req.headers["user-agent"] ?? "unknown").slice(0, 512),
           },

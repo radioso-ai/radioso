@@ -7,6 +7,11 @@ import type { CorrelationFields } from "../observability/telemetry/correlation.j
  * crash handlers depend on this so they stay decoupled from how reporting is
  * assembled (sinks, redaction, correlation). {@link ErrorReportingService}
  * satisfies this structurally.
+ *
+ * A narrower port of its own must also declare `message?: ErrorReportMessage`, never
+ * `string`. TypeScript checks a method-syntax parameter bivariantly, so a port that
+ * declared `message?: string` would still accept the service, and its callers could pass
+ * an error's raw message straight past the brand.
  */
 export interface ErrorReporter {
   report(input: {

@@ -1,4 +1,4 @@
-import { isClassName, isCode, isErrorSummary, isStackFrame, isUuid, safeErrorFields } from "../observability/logging/logSafeValues.js";
+import { isClassName, isCode, isErrorCode, isStackFrame, isUuid, safeErrorFields } from "../observability/logging/logSafeValues.js";
 import type { ErrorIdentity, ErrorReportMessage, ErrorStackFrames } from "./errorTypes.js";
 
 // What an error report keeps of an error, and the only constructors of the branded message and
@@ -6,17 +6,36 @@ import type { ErrorIdentity, ErrorReportMessage, ErrorStackFrames } from "./erro
 // the app logger applies, so an error reads the same way in a log line and in every error sink.
 
 const REDACTED = "[REDACTED]";
+const CAUSED_BY = " caused by ";
 
-// A class name, a class and its code (`AppError [not_found]`), a lowercase code, an id, or a finite
-// number: each rules out a sentence.
+// One link of an error summary: a class name, then its code in brackets.
+const SUMMARY_LINK_PATTERN = /^(?<errorClass>[^\s[\]]+)(?: \[(?<code>[^\s[\]]+)\])?$/u;
+const NUMERIC_CODE_PATTERN = /^-?\d{1,10}$/u;
+
+const isSummaryLink = (link: string): boolean => {
+  const { errorClass, code } = SUMMARY_LINK_PATTERN.exec(link)?.groups ?? {};
+  return (
+    errorClass !== undefined &&
+    isClassName(errorClass) &&
+    (code === undefined || isErrorCode(code) || (NUMERIC_CODE_PATTERN.test(code) && isErrorCode(Number(code))))
+  );
+};
+
+// A class and its code, then each cause's, as `errorSummaryOf` writes them:
+// `AppError [service_unavailable] caused by Error [ECONNRESET]`.
+const isErrorSummary = (value: string): boolean => value.split(CAUSED_BY).every(isSummaryLink);
+
+// An error summary, a lowercase code, an id, or an integer small enough to be a code or a count
+// (`safeErrorFields`' cap): each rules out a sentence, an email address and a phone number.
 const isMessageSafe = (value: string | number): boolean =>
-  typeof value === "number" ? Number.isFinite(value) : isErrorSummary(value) || isCode(value) || isUuid(value);
+  typeof value === "number" ? isErrorCode(value) : isErrorSummary(value) || isCode(value) || isUuid(value);
 
 /**
  * A readable message for an error report, written as a tagged template, such as
  * errorReportMessage`${kind} dead-lettered: ${summary}`. The literal text is source code. Each
- * value must be a class name, a class and its code, a lowercase code, an id or a number; any other
- * value, such as an error's own message, reads as `[REDACTED]`.
+ * value must be an error summary (a class name, with its code and its causes' as `errorSummaryOf`
+ * writes them), a lowercase code, an id or a small integer; any other value, such as an error's
+ * own message, reads as `[REDACTED]`.
  */
 export const errorReportMessage = (text: TemplateStringsArray, ...values: ReadonlyArray<string | number>): ErrorReportMessage =>
   values.reduce<string>(
@@ -68,7 +87,7 @@ export const redactedErrorFields = (input: { error?: unknown; errorClass?: strin
 const summaryOf = ({ errorClass, code }: ErrorIdentity): string => (code === undefined ? errorClass : `${errorClass} [${String(code)}]`);
 
 const describeChain = (identity: ErrorIdentity, causes: readonly ErrorIdentity[]): string =>
-  [summaryOf(identity), ...causes.map((cause) => `caused by ${summaryOf(cause)}`)].join(" ");
+  [identity, ...causes].map(summaryOf).join(CAUSED_BY);
 
 /**
  * The message a report carries when its caller wrote none: the report's type, then the error's

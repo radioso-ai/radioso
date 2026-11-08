@@ -29,8 +29,9 @@ export interface ErrorIdentity {
 /**
  * What every error sink receives: the audit log, metrics, the ops webhook and any exporter such as
  * PostHog. An error's message can echo a provider response, document text, SQL or a visitor's
- * words, so no field here carries it: the message and stack are the branded types above, and the
- * class and code are shape-checked.
+ * words, so no field here carries it: the message and stack are the branded types above, the
+ * class and code are shape-checked, and `metadata` is the caller's, key-redacted, with any `Error`
+ * in it reduced to its class, code, causes and frames (`redactionPolicy.ts`).
  */
 export interface ErrorEvent {
   errorType: string;

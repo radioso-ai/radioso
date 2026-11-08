@@ -1,3 +1,5 @@
+import { safeErrorFields } from "../logging/logSafeValues.js";
+
 const REDACTED = "[REDACTED]";
 
 const blockedKeys = new Set([
@@ -49,12 +51,10 @@ const redactValue = (value: unknown, parentKey?: string): unknown => {
     return value.map((item) => redactValue(item));
   }
 
+  // An error's message can quote a provider response or a visitor, and these records reach error
+  // and analytics sinks outside Radioso: an error keeps its class, code, causes and frames only.
   if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: value.message,
-      stack: value.stack,
-    };
+    return safeErrorFields(value);
   }
 
   if (!isPlainObject(value)) {

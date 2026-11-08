@@ -83,4 +83,19 @@ describe("ProductAnalyticsService", () => {
       "product_analytics_sink_failed",
     );
   });
+
+  it("hands its sinks an error in the properties as its class and code, never its message", async () => {
+    const visitorWords = "my daughter has asthma and needs the ground floor room";
+    const emit = vi.fn<ProductAnalyticsSink["emit"]>().mockResolvedValue(undefined);
+    const service = new ProductAnalyticsService({ enabled: true, logger: createLogger() as any, sinks: [{ emit }] });
+
+    await service.track({
+      eventName: "chat.failed",
+      properties: { stream: true, failure: Object.assign(new TypeError(`Cannot read "${visitorWords}"`), { code: "ERR_INVALID_ARG_TYPE" }) },
+    });
+
+    const emitted = emit.mock.calls[0]?.[0];
+    expect(JSON.stringify(emitted)).not.toContain(visitorWords);
+    expect(emitted?.properties).toMatchObject({ stream: true, failure: { name: "TypeError", code: "ERR_INVALID_ARG_TYPE" } });
+  });
 });

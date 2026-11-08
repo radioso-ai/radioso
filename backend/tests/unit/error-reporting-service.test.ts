@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AppError } from "../../src/shared/domain/errors.js";
-import { errorReportMessage } from "../../src/shared/errors/errorReportShape.js";
+import { errorReportMessage, errorSummaryOf } from "../../src/shared/errors/errorReportShape.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import type { ErrorSink } from "../../src/shared/errors/errorSink.js";
 
@@ -231,6 +231,21 @@ describe("what an error sink receives", () => {
     expect(received()).not.toHaveProperty("errorClass");
   });
 
+  it("reduces an error a caller puts in metadata to its class, code and frames", async () => {
+    const { service, received } = recordingService();
+
+    await service.report({
+      errorType: "hitl.ownership.notification_failed",
+      metadata: { attempt: 2, cause: Object.assign(new Error(`push to ${visitorWords} failed`), { code: "ECONNRESET" }) },
+    });
+
+    expect(JSON.stringify(received())).not.toContain(visitorWords);
+    expect(received()?.metadata).toMatchObject({ attempt: 2, cause: { name: "Error", code: "ECONNRESET" } });
+    const frames = (received()?.metadata?.cause as { stack?: string } | undefined)?.stack?.split("\n") ?? [];
+    expect(frames.length).toBeGreaterThan(0);
+    expect(frames.every((frame) => frame.trimStart().startsWith("at "))).toBe(true);
+  });
+
   it("carries a caller's message built from safe values, and redacts a value that is not one", async () => {
     const { service, received } = recordingService();
     const summary = "AppError [provider_unavailable]";
@@ -242,6 +257,25 @@ describe("what an error sink receives", () => {
     });
 
     expect(received()?.message).toBe("facets.extraction dead-lettered: AppError [provider_unavailable] after 3 attempts, last said [REDACTED]");
+  });
+
+  it("keeps a summary errorSummaryOf wrote, codes and cause chain included, in a caller's message", () => {
+    const summary = errorSummaryOf(
+      Object.assign(new AppError(503, "service_unavailable", visitorWords), {
+        cause: Object.assign(new Error(visitorWords), { name: "DatabaseError", code: "25P02", cause: Object.assign(new Error(visitorWords), { code: "ECONNRESET" }) }),
+      }),
+    );
+
+    expect(summary).toBe("AppError [service_unavailable] caused by DatabaseError [25P02] caused by Error [ECONNRESET]");
+    expect(errorReportMessage`tick failed: ${summary}`).toBe(`tick failed: ${summary}`);
+    expect(errorReportMessage`retry: ${errorSummaryOf(Object.assign(new Error("x"), { code: -104 }))}`).toBe("retry: Error [-104]");
+    expect(errorReportMessage`then: ${`${summary} caused by ${visitorWords}`}`).toBe("then: [REDACTED]");
+  });
+
+  it("keeps a number in a caller's message only when it is small enough to be a code or a count", () => {
+    expect(errorReportMessage`attempt ${3} of ${5}`).toBe("attempt 3 of 5");
+    expect(errorReportMessage`call ${4915112345678}`).toBe("call [REDACTED]");
+    expect(errorReportMessage`ratio ${Number.NaN}`).toBe("ratio [REDACTED]");
   });
 
   it("fingerprints a report on its service, type, class and code, so distinct failures stay distinct", async () => {

@@ -9,6 +9,7 @@ import { WorkspaceGrantRepository } from "../../src/db/repositories/workspaceGra
 import { NotificationDeliveryRepository } from "../../src/db/repositories/notificationDeliveryRepository.js";
 import { NotificationRecipientIdentityRepository, NotificationRecipientStateRepository } from "../../src/db/repositories/notificationRecipientStateRepository.js";
 import { UndeliveredRecipientAlertRepository } from "../../src/db/repositories/undeliveredRecipientAlertRepository.js";
+import { NotificationAdministratorRepository } from "../../src/db/repositories/notificationAdministratorRepository.js";
 import { NotificationDeliveryOutcomeRepository } from "../../src/db/repositories/notificationDeliveryOutcomeRepository.js";
 import { buildNotificationAdministratorFallback, buildNotificationDeliveryRecorder } from "../../src/app/composition/contactDelivery.js";
 import { ContactSendActionHandler } from "../../src/modules/chat/services/actions/contactSendActionHandler.js";
@@ -41,6 +42,7 @@ describeIntegration("notification delivery log (Postgres)", () => {
   let deliveries: NotificationDeliveryRepository;
   let states: NotificationRecipientStateRepository;
   let alertStore: UndeliveredRecipientAlertRepository;
+  let administrators: NotificationAdministratorRepository;
 
   const createdUserIds: string[] = [];
   const addUser = async (email: string, options: { role: string; verified?: boolean; disabled?: boolean; status?: string }) => {
@@ -101,6 +103,7 @@ describeIntegration("notification delivery log (Postgres)", () => {
     deliveries = new NotificationDeliveryRepository(database.kysely);
     states = new NotificationRecipientStateRepository(database.kysely);
     alertStore = new UndeliveredRecipientAlertRepository(database.kysely, states);
+    administrators = new NotificationAdministratorRepository(database.kysely);
   }, 30_000);
 
   afterAll(async () => {
@@ -325,7 +328,7 @@ describeIntegration("notification delivery log (Postgres)", () => {
       await addUser("invited-admin@example.com", { role: "admin", status: "invited" });
       await addUser("member@example.com", { role: "member" });
 
-      expect((await alertStore.listAdministratorEmails(workspaceId)).sort())
+      expect((await administrators.listAdministratorEmails(workspaceId)).sort())
         .toEqual(["admin@example.com", "owner@example.com"]);
     });
 
@@ -340,7 +343,7 @@ describeIntegration("notification delivery log (Postgres)", () => {
       await states.revoke((await states.ensure(workspaceId, `stopped-${unique}@example.com`)).recipientId, now);
       await states.revoke((await states.ensure(otherWorkspaceId, `stopped-elsewhere-${unique}@example.com`)).recipientId, now);
 
-      expect((await alertStore.listAdministratorEmails(workspaceId)).sort())
+      expect((await administrators.listAdministratorEmails(workspaceId)).sort())
         .toEqual([`fine-${unique}@example.com`, `stopped-elsewhere-${unique}@example.com`]);
     });
 
@@ -357,8 +360,8 @@ describeIntegration("notification delivery log (Postgres)", () => {
       await grantWorkspaceRole(workspaceId, unverified, "admin");
       await grantWorkspaceRole(workspaceId, disabled, "admin");
 
-      expect(await alertStore.listAdministratorEmails(workspaceId)).toEqual([`granted-${unique}@example.com`]);
-      expect(await alertStore.listAdministratorEmails(otherWorkspaceId)).toEqual([`elsewhere-${unique}@example.com`]);
+      expect(await administrators.listAdministratorEmails(workspaceId)).toEqual([`granted-${unique}@example.com`]);
+      expect(await administrators.listAdministratorEmails(otherWorkspaceId)).toEqual([`elsewhere-${unique}@example.com`]);
     });
 
     it("reaches exactly the teammates who hold the recipient-management permission, as the access rules decide it", async () => {
@@ -380,7 +383,7 @@ describeIntegration("notification delivery log (Postgres)", () => {
         permission: "workspace.notification_recipients.manage",
       })).map((member) => member.email.toLowerCase()).filter((email) => email.includes(unique));
 
-      expect((await alertStore.listAdministratorEmails(workspaceId)).filter((email) => email.includes(unique)).sort())
+      expect((await administrators.listAdministratorEmails(workspaceId)).filter((email) => email.includes(unique)).sort())
         .toEqual(holders.sort());
       expect(holders).toHaveLength(3);
     });
@@ -398,6 +401,7 @@ describeIntegration("notification delivery log (Postgres)", () => {
       };
       const alerts = new UndeliveredRecipientAlerts({
         store: alertStore,
+        administrators,
         mailer,
         identity: new NotificationRecipientIdentityRepository(database.kysely),
         dashboardUrl: async () => "https://app.example.com/w/acme/agents/front-desk",
@@ -493,21 +497,36 @@ describeIntegration("notification delivery log (Postgres)", () => {
     const CONFIGURED = "reception@example.com";
     const VISITOR = "visitor@example.com";
     const ADMINISTRATORS = ["admin@example.com", "granted@example.com", "owner@example.com"];
-    type Mail = { to: string; kind?: string; subject: string; text: string; replyTo?: string | null; idempotencyKey?: string | null };
+    type Mail = {
+      to: string;
+      kind?: string;
+      subject: string;
+      text: string;
+      replyTo?: string | null;
+      idempotencyKey?: string | null;
+      listUnsubscribeUrl?: string | null;
+    };
+    const stopLink = (recipientId: string) => `${APP_BASE_URL}/backend/api/v1/notification-recipient-confirmations/revoke?recipient=${recipientId}`;
 
     /** The senders as composition wires them, over this database, with a mailer that keeps what it was given. */
-    const wire = (options: { sent: Mail[]; dailyEmailLimit?: number }) => {
+    const wire = (options: { sent: Mail[]; dailyEmailLimit?: number; configured?: string }) => {
+      const configured = options.configured ?? CONFIGURED;
       const mailer = { send: async (message: Mail) => { options.sent.push(message); return { dispatched: true }; } };
       const env = { APP_BASE_URL };
-      const recorder = buildNotificationDeliveryRecorder({ database, env, mailer, logger: createLogger("silent"), metrics: null, states });
-      const fallback = buildNotificationAdministratorFallback({ database, env, states });
+      const recorder = buildNotificationDeliveryRecorder({ database, env, mailer, logger: createLogger("silent"), metrics: null });
       const usageLimits = { getNotificationEmailDailyLimit: async () => options.dailyEmailLimit ?? 100 } as unknown as UsageLimitPolicy;
       const admission = new NotificationDeliveryAdmissionService(new NotificationDeliveryOutcomeRepository(database.kysely), usageLimits);
-      const policy = new NotificationRecipientPolicyService({ enabled: true, states, sendConfirmation: async () => ({ dispatched: false }) });
+      const policy = new NotificationRecipientPolicyService({
+        enabled: true,
+        states,
+        sendConfirmation: async () => ({ dispatched: false }),
+        revocationUrl: stopLink,
+      });
+      const fallback = buildNotificationAdministratorFallback({ database, env, recipientPolicy: policy });
       return {
         contact: new ContactSendActionHandler(
           mailer,
-          { resolve: async () => ({ emails: [CONFIGURED], webhook: null, agentId }) },
+          { resolve: async () => ({ emails: [configured], webhook: null, agentId }) },
           undefined,
           undefined,
           undefined,
@@ -518,7 +537,7 @@ describeIntegration("notification delivery log (Postgres)", () => {
         ),
         notice: new EmailWebhookOperatorNotificationSink(
           mailer,
-          { resolve: async () => ({ emails: [CONFIGURED], webhook: null, agentId, via: "agent_setting", recipientsFromWorkspaceOwner: false }) },
+          { resolve: async () => ({ emails: [configured], webhook: null, agentId, via: "agent_setting", recipientsFromWorkspaceOwner: false }) },
           undefined,
           undefined,
           undefined,
@@ -530,14 +549,19 @@ describeIntegration("notification delivery log (Postgres)", () => {
       };
     };
     const contextFor = (requestId: string) => ({
-      requestId, workspaceId, accountId, conversationId, idempotencyKey: `key-${requestId}`, attempt: 1, skillName: null,
+      requestId, workspaceId, accountId, conversationId: noticeConversationId, idempotencyKey: `key-${requestId}`, attempt: 1, skillName: null,
     });
     const reservedEmails = async (requestId: string) => (await database.query<{ reserved_email_count: number }>(
       "SELECT reserved_email_count FROM notification_delivery_outcomes WHERE request_id = $1",
       [requestId],
     )).map((row) => row.reserved_email_count);
 
+    // Each test runs in a conversation of its own, so the per-conversation dispatch cap is one test's.
+    let noticeConversationId = conversationId;
+
     beforeEach(async () => {
+      noticeConversationId = randomUUID();
+      await database.query("INSERT INTO conversations (id, workspace_id, agent_id) VALUES ($1, $2, $3)", [noticeConversationId, workspaceId, agentId]);
       await removeTestUsers();
       await database.query("UPDATE notification_recipient_confirmations SET undelivered_alert_sent_at = NULL WHERE workspace_id = $1", [workspaceId]);
       await addUser("owner@example.com", { role: "owner" });
@@ -578,7 +602,7 @@ describeIntegration("notification delivery log (Postgres)", () => {
       const sent: Mail[] = [];
 
       const outcome = await wire({ sent }).notice.deliver(
-        { kind: "completion", workspaceId, conversationId, agentId, reason: "routine_complete", replyTo: VISITOR },
+        { kind: "completion", workspaceId, conversationId: noticeConversationId, agentId, reason: "routine_complete", replyTo: VISITOR },
         contextFor(randomUUID()),
       );
 
@@ -590,6 +614,31 @@ describeIntegration("notification delivery log (Postgres)", () => {
         ["owner@example.com", "sent", "completion"],
         [CONFIGURED, "skipped_unconfirmed", "completion"],
       ]);
+    });
+
+    it("gives each administrator's copy the one-click stop link for that administrator's own address", async () => {
+      const sent: Mail[] = [];
+
+      await wire({ sent }).contact.handle({ payload: { message: "Please call me" }, context: contextFor(randomUUID()) });
+
+      expect(sent).toHaveLength(ADMINISTRATORS.length);
+      for (const mail of sent) {
+        const { recipientId } = await states.ensure(workspaceId, mail.to);
+        expect(mail.listUnsubscribeUrl).toBe(stopLink(recipientId));
+      }
+    });
+
+    it("sends the notice as usual when the configured address is an administrator's own login address", async () => {
+      const sent: Mail[] = [];
+
+      // A verified member's login address counts as confirmed, so it never needs the fallback.
+      const outcome = await wire({ sent, configured: "owner@example.com" }).contact
+        .handle({ payload: { message: "Please call me" }, context: contextFor(randomUUID()) });
+
+      expect(outcome).toEqual({ disposition: "dispatched" });
+      expect(sent.map((mail) => [mail.to, mail.kind])).toEqual([["owner@example.com", "contact_notification"]]);
+      expect(sent[0]?.text.startsWith("This notification came to you")).toBe(false);
+      expect((await rows()).map((row) => [row.recipient_email, row.outcome])).toEqual([["owner@example.com", "sent"]]);
     });
 
     it("sends no separate alert when the notice reached the administrators", async () => {

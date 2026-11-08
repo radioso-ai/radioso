@@ -41,6 +41,7 @@ export {
   NotificationAdministratorFallback,
   type NotificationAdministratorFallbackPort,
 } from "./notificationAdministratorFallback.js";
+export type { NotificationAdministratorReader } from "./notificationAdministratorReader.js";
 export {
   deliverNotification,
   type NotificationDeliveryRecorderPort,

@@ -12,16 +12,22 @@ const fallbackWith = (options: {
 } = {}) => {
   const listAdministratorEmails = vi.fn(async (_workspaceId: string) => options.administrators ?? ["owner@example.com"]);
   const dashboardUrl = vi.fn(options.dashboardUrl ?? (async () => LINK));
+  const unsubscribeUrl = vi.fn(async (_workspaceId: string, email: string) => `https://api.example.com/stop/${email}`);
   return {
-    fallback: new NotificationAdministratorFallback({ administrators: { listAdministratorEmails }, dashboardUrl }),
+    fallback: new NotificationAdministratorFallback({
+      administrators: { listAdministratorEmails },
+      unsubscribeLinks: { unsubscribeUrl },
+      dashboardUrl,
+    }),
     listAdministratorEmails,
     dashboardUrl,
+    unsubscribeUrl,
   };
 };
 
 describe("NotificationAdministratorFallback", () => {
   it("sends to the workspace's administrators, saying which address missed the notice, why, and where to fix it", async () => {
-    const { fallback, listAdministratorEmails, dashboardUrl } = fallbackWith({ administrators: ["owner@example.com", "admin@example.com"] });
+    const { fallback, listAdministratorEmails, dashboardUrl, unsubscribeUrl } = fallbackWith({ administrators: ["owner@example.com", "admin@example.com"] });
 
     const plan = await fallback.plan({
       workspaceId: WORKSPACE,
@@ -31,7 +37,12 @@ describe("NotificationAdministratorFallback", () => {
 
     expect(listAdministratorEmails).toHaveBeenCalledWith(WORKSPACE);
     expect(dashboardUrl).toHaveBeenCalledWith({ workspaceId: WORKSPACE, agentId: AGENT });
-    expect(plan?.recipients).toEqual(["owner@example.com", "admin@example.com"]);
+    expect(unsubscribeUrl).toHaveBeenCalledWith(WORKSPACE, "owner@example.com");
+    // Each copy carries the one-click stop link a configured address's copy does, for its own address.
+    expect(plan?.recipients).toEqual([
+      { email: "owner@example.com", listUnsubscribeUrl: "https://api.example.com/stop/owner@example.com" },
+      { email: "admin@example.com", listUnsubscribeUrl: "https://api.example.com/stop/admin@example.com" },
+    ]);
     expect(plan?.note).toBe(
       "This notification came to you because reception@example.com cannot receive it: the address has not confirmed yet "
         + `that it wants notifications. Fix it on the agent's page: ${LINK}`,

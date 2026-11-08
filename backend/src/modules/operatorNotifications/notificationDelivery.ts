@@ -1,14 +1,6 @@
-import { z } from "zod";
-
 import { isUndispatchedMailResult, mailDeliverySkipReason } from "../../shared/domain/mailDeliveryOutcome.js";
 import type { NotificationEmailPlan, PlannedSkip, PlannedSkipReason } from "./notificationEmailPlan.js";
 import type { OperatorNotificationSinkOutcome } from "./operatorNotification.js";
-
-const agentIdSchema = z.string().uuid();
-
-/** Some notices name their agent "unknown" when the conversation has none; that is no agent. */
-export const knownAgentId = (agentId: string | null): string | null =>
-  agentId !== null && agentIdSchema.safeParse(agentId).success ? agentId : null;
 
 /** What raised a notice: the contact routine's request, an approval, or a routine ending's hand-off or completion. */
 export type NotificationKind = "contact_request" | "approval" | "handoff" | "completion";
@@ -116,12 +108,13 @@ const noticeCopies = (
   if (!fallback) return configured;
   return [
     ...configured,
-    ...fallback.recipients.map((email): NoticeCopy => ({
+    ...fallback.recipients.map(({ email, listUnsubscribeUrl }): NoticeCopy => ({
       via: "administrator_fallback",
       email: {
         to: email,
         subject: message.subject,
         text: `${fallback.note}\n\n${message.text}`,
+        ...(listUnsubscribeUrl ? { listUnsubscribeUrl } : {}),
         idempotencyKey: `${message.idempotencyKey}:administrator-fallback:${encodeURIComponent(email)}`,
       },
     })),

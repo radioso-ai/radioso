@@ -43,6 +43,7 @@ interface SentMessage {
   text: string;
   replyTo: string | null;
   idempotencyKey: string | null;
+  listUnsubscribeUrl: string | null;
 }
 
 interface Harness {
@@ -68,6 +69,7 @@ interface Scenario {
 
 const DASHBOARD_URL = "https://app.example.com/w/front/agents/00000000-0000-4000-8000-0000000000cc?tab=behavior";
 const VISITOR = "visitor@example.com";
+const stopLink = (email: string) => `https://api.example.com/notification-recipient-confirmations/revoke?for=${email}`;
 
 type SettledOutcome =
   | { settled: "dispatched" }
@@ -96,6 +98,7 @@ const harness = (scenario: Scenario) => {
         text: message.text,
         replyTo: message.replyTo ?? null,
         idempotencyKey: message.idempotencyKey ?? null,
+        listUnsubscribeUrl: message.listUnsubscribeUrl ?? null,
       });
       return scenario.undispatched ? { dispatched: false, driver: "log" } : { dispatched: true };
     },
@@ -115,6 +118,7 @@ const harness = (scenario: Scenario) => {
   const fallback = administrators
     ? new NotificationAdministratorFallback({
       administrators: { listAdministratorEmails: async () => administrators },
+      unsubscribeLinks: { unsubscribeUrl: async (_workspaceId, email) => stopLink(email) },
       dashboardUrl: async () => DASHBOARD_URL,
     })
     : undefined;
@@ -354,6 +358,7 @@ describe.each(senders)("a notice no configured address can receive: $name", ({ r
       expect(notice.join("\n")).toBe(normalCopy.text);
       expect(message.subject).toBe(normalCopy.subject);
       expect(message.replyTo).toBe(VISITOR);
+      expect(message.listUnsubscribeUrl).toBe(stopLink(message.to));
     }
   });
 

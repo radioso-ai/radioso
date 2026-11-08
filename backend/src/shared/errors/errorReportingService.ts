@@ -121,16 +121,33 @@ export class ErrorReportingService {
     return errorEvent;
   }
 
-  async reportUnhandledRequestError(input: {
-    error: unknown;
-    request: RequestCorrelationSource;
-    statusCode?: number;
+  async reportUnhandledRequestError(input: RequestFailure): Promise<ErrorEvent | null> {
+    return this.reportRequestFailure({ ...input, errorType: "http.request.unhandled" });
+  }
+
+  /**
+   * A request that failed because the database could not be reached: a restart, a maintenance
+   * window, a full connection limit. Its own type keeps an outage out of the unhandled group that
+   * code faults land in, and it is a warning because the fault is the database's availability, not
+   * the request's code: the same request succeeds once the database is back. `reason` is a bounded
+   * code.
+   */
+  async reportDatabaseUnavailableRequest(input: RequestFailure & { reason: string }): Promise<ErrorEvent | null> {
+    const { reason, ...failure } = input;
+    return this.reportRequestFailure({ ...failure, errorType: "database.unavailable", severity: "warn", metadata: { reason } });
+  }
+
+  private async reportRequestFailure(input: RequestFailure & {
+    errorType: string;
+    severity?: ErrorSeverity;
+    metadata?: Record<string, unknown>;
   }): Promise<ErrorEvent | null> {
     // The matched pattern, never the URL: a path segment can hold a credential. An error raised
     // before any route matched carries no route at all.
     const route = matchedRoutePattern(input.request);
     return this.report({
-      errorType: "http.request.unhandled",
+      errorType: input.errorType,
+      severity: input.severity,
       correlation: createRequestCorrelation(input.request),
       error: input.error,
       requestContext: {
@@ -138,6 +155,13 @@ export class ErrorReportingService {
         ...(route ? { route } : {}),
         statusCode: input.statusCode ?? 500,
       },
+      metadata: input.metadata,
     });
   }
+}
+
+interface RequestFailure {
+  error: unknown;
+  request: RequestCorrelationSource;
+  statusCode?: number;
 }

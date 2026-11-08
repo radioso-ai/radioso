@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-10-27
+last_updated: 2026-11-08
 ---
 
 # OSS And SaaS Observability
@@ -273,6 +273,12 @@ not limited to the HTTP request path:
   message, an Enterprise error shaped the same way, or an unexpected exception
   answered with a generic `500`. The same `isReportableFault` rule as chat turns
   (next bullet) decides what counts: anything under 500 stays a client outcome.
+  A failure that means Postgres could not be reached, by itself or as the cause
+  an error wraps, is reported as `errorType: database.unavailable` at warning
+  level instead, with a bounded `reason` (see
+  [`backend/src/shared/infra/databaseUnavailable.ts`](../backend/src/shared/infra/databaseUnavailable.ts)),
+  so a database restart groups apart from code faults. Unless the error carries
+  its own status, the client gets a retryable `503 service_unavailable`.
   A request whose response already started (an SSE chat turn failing
   mid-stream, or any other response that started writing its body) also gets
   exactly one report there. Each failure is reported once, even when a caller

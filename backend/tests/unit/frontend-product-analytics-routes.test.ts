@@ -295,7 +295,7 @@ describe("frontend error reporting routes", () => {
         message: "Dashboard render failed for visitor@example.com",
         errorClass: "TypeError",
         stack: "TypeError: Dashboard render failed for visitor@example.com\n    at Dashboard (https://app.example/w/acme/chat:1:2)",
-        componentStack: "\n    at Composer (/_next/static/chunks/app.js:5:6)\n    at Inbox (visitor@example.com)",
+        componentStack: "\n    at Composer (/_next/static/chunks/app.js:5:6)\n    at Inbox (visitor@example.com)\n    at Thread (https://app.example/w/acme/inbox:7:8)",
         path: "/w/acme/chat?token=secret",
         source: "frontend",
       })
@@ -319,7 +319,7 @@ describe("frontend error reporting routes", () => {
             route: "/w/[workspaceKey]/chat",
           },
           metadata: expect.objectContaining({
-            componentStack: "    at Composer (/_next/static/chunks/app.js:5:6)",
+            componentStack: "    at Composer (/_next/static/chunks/app.js:5:6)\n    at Thread (/w/[workspaceKey]/inbox:7:8)",
             source: "frontend",
             userAgent: expect.any(String),
           }),

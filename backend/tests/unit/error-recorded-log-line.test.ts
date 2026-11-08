@@ -291,10 +291,16 @@ describe("error_recorded log line", () => {
     await service.report({
       errorType: "chat.turn.failed",
       error: new Error(`Could not parse "${visitorWords}"`),
+      metadata: { attempt: 2, stage: "chat.answer", token: "secret-value", cause: new Error(`retry of "${visitorWords}" failed`) },
     });
 
     const reported = vi.mocked(sink.record).mock.calls[0]?.[0];
     expect(JSON.stringify(reported)).not.toContain(visitorWords);
+    expect(JSON.stringify(reported)).not.toContain("secret-value");
     expect(reported).toMatchObject({ errorClass: "Error", message: "chat.turn.failed: Error", stack: line().stack });
+    // A sink gets the caller's metadata, key-redacted and with an error reduced to its class and
+    // frames; the line keeps only what is shaped like a count, flag, id or code.
+    expect(reported?.metadata).toMatchObject({ attempt: 2, stage: "chat.answer", token: "[REDACTED]", cause: { name: "Error" } });
+    expect(line().metadata).toEqual({ attempt: 2 });
   });
 });

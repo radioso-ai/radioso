@@ -259,8 +259,14 @@ PostHog, and Sentry. The stack loses its first line, which restates the
 message. The `ErrorEvent` type holds this in place: its `message` and `stack`
 are branded types that only `errorReportMessage` and the reporting service
 build, so passing `error.message` as a report's message fails to compile. A
-value interpolated into `errorReportMessage` must be a class name, a code, an
-id or a number; anything else reads as `[REDACTED]`.
+value interpolated into `errorReportMessage` must be an error summary as
+`errorSummaryOf` writes it (`AppError [internal_error] caused by Error [ECONNRESET]`),
+a code, an id, or an integer below 2^31; anything else reads as `[REDACTED]`.
+
+A report's metadata is what its caller supplies. Values under sensitive keys
+such as `token` or `prompt` read as `[REDACTED]`, and an `Error` value is
+reduced to the same class, code, causes and frames. Product analytics
+properties get the same treatment.
 
 PostHog groups reports into issues by the fingerprint. A document worker tick
 that fails with `AppError [service_unavailable]` and one that fails with a

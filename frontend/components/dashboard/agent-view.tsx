@@ -227,22 +227,26 @@ export function AgentView({
   const [testTitleContainer, setTestTitleContainer] = useState<HTMLDivElement | null>(null)
   const [agentCreationHandoff, setAgentCreationHandoff] = useState<AgentCreationHandoff | null>(null)
 
-  const loadAgents = useCallback(async () => {
+  // A blocking load replaces the page with the loading state; a silent one only swaps the list in,
+  // so the tab and the unsaved draft it holds stay mounted. Failures are reported by blocking loads.
+  const loadAgents = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!activeWorkspaceId) {
       setAgents([])
       setIsAgentsLoading(false)
       return
     }
-    setIsAgentsLoading(true)
+    if (!silent) setIsAgentsLoading(true)
     try {
       const response = await agentsApi.listAgents()
       setAgents(response.agents)
       setAgentsError(null)
     } catch {
-      setAgents([])
-      setAgentsError('Failed to load agents')
+      if (!silent) {
+        setAgents([])
+        setAgentsError('Failed to load agents')
+      }
     } finally {
-      setIsAgentsLoading(false)
+      if (!silent) setIsAgentsLoading(false)
     }
   }, [activeWorkspaceId])
 
@@ -255,8 +259,10 @@ export function AgentView({
   }, [loadAgents, routeState.agentId])
 
   useEffect(() => {
+    // Both events only say the list changed (a name, a created or deleted agent); the page the
+    // operator is on stays put while the switcher's list is read again.
     const handleAgentsUpdated = () => {
-      void loadAgents()
+      void loadAgents({ silent: true })
     }
 
     window.addEventListener('radioso:agents-updated', handleAgentsUpdated)

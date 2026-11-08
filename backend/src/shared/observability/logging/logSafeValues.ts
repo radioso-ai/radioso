@@ -18,7 +18,7 @@ const PATH_SHAPE_PATTERN = /^\/[\w\-./[\]:]*$/u;
 
 export const isUuid = (value: string): boolean => UUID_PATTERN.test(value);
 
-const isCode = (value: string): boolean => CODE_PATTERN.test(value);
+export const isCode = (value: string): boolean => CODE_PATTERN.test(value);
 
 export const isClassName = (value: string): boolean => CLASS_NAME_PATTERN.test(value);
 
@@ -60,7 +60,7 @@ const MAX_NUMERIC_CODE = 2 ** 31;
 
 type SafeErrorCode = string | number;
 
-const isErrorCode = (value: unknown): value is SafeErrorCode =>
+export const isErrorCode = (value: unknown): value is SafeErrorCode =>
   typeof value === "number"
     ? Number.isInteger(value) && Math.abs(value) < MAX_NUMERIC_CODE
     : typeof value === "string" && (isCode(value) || UPPERCASE_CODE_PATTERN.test(value) || SQLSTATE_PATTERN.test(value));

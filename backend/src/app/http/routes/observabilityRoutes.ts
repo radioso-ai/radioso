@@ -5,6 +5,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { readRequestSource } from "../middleware/requestSource.js";
 import { validateBody } from "../middleware/validate.js";
+import { stackFramesOf } from "../../../shared/errors/errorReportShape.js";
 import { isPathShape } from "../../../shared/observability/logging/logSafeValues.js";
 
 const FRONTEND_ERROR_MESSAGE_MAX_LENGTH = 2048;
@@ -270,9 +271,10 @@ export const createObservabilityRoutes = (
         // so the shape check is what actually rules it out, not the normalization alone.
         const normalizedPath = req.body.path ? sanitizeFrontendPageViewPath(req.body.path) : undefined;
         const route = normalizedPath && isPathShape(normalizedPath) ? normalizedPath : undefined;
+        // A browser error's message is the browser's own text, which can quote what a visitor typed,
+        // so the report names it by type and class; its stacks keep their frames only.
         const event = await dependencies.errorReportingService.report({
           errorType: req.body.errorType,
-          message: req.body.message,
           errorClass: req.body.errorClass,
           stack: sanitizeFrontendErrorStack(req.body.stack),
           requestContext: {
@@ -280,7 +282,7 @@ export const createObservabilityRoutes = (
             route,
           },
           metadata: {
-            componentStack: req.body.componentStack,
+            componentStack: stackFramesOf(sanitizeFrontendErrorStack(req.body.componentStack)),
             source: req.body.source,
             userAgent: String(req.headers["user-agent"] ?? "unknown").slice(0, 512),
           },

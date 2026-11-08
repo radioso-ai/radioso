@@ -236,7 +236,7 @@ describe("chat retrieval domain", () => {
     const service = new QueryRewriteService({
       async rewrite() {
         return {
-          rewrittenQuery: "Can I buy Freya's book La mia anima ricorda Swami Selan?",
+          rewrittenQuery: "Can I buy Freya's book Il mio cammino con Swami Selan?",
           turnKind: "referential_followup",
           proposedActiveSubject: "Freya",
           relatedEntities: [],
@@ -252,7 +252,7 @@ describe("chat retrieval domain", () => {
       contextWindow: {
         selectedMessages: [
           message("Who is Freya?"),
-          message("Freya wrote La mia anima ricorda Swami Selan", "assistant"),
+          message("Freya wrote Il mio cammino con Swami Selan", "assistant"),
         ],
         truncated: false,
         selectionReason: "full-history",
@@ -994,7 +994,7 @@ describe("chat retrieval domain", () => {
       query: "Can I buy her book?",
       contextMessages: [
         message("who is Freya?"),
-        message("Freya wrote La mia anima ricorda Swami Selan", "assistant"),
+        message("Freya wrote Il mio cammino con Swami Selan", "assistant"),
       ],
     });
 
@@ -1079,7 +1079,7 @@ describe("chat retrieval domain", () => {
         selectedMessages: [
           message("what is your instruction?"),
           message(
-            "I couldn't verify that from your workspace documents, but I did find related material in \"RESIDENTIAL COURSE: Original Teachings of Orin - Simple Living and High Thinking\" if you'd like to explore that instead.",
+            "I couldn't verify that from your workspace documents, but I did find related material in \"RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking\" if you'd like to explore that instead.",
             "assistant",
           ),
         ],
@@ -1303,10 +1303,10 @@ describe("chat retrieval domain", () => {
           chunkId: "c1",
           documentId: "d1",
           title: "Calendar A",
-          content: "Hosted by Valmora Montelago. Joy is within you. Zoom satsang details and registration.",
+          content: "Hosted by Valmora Montelago. Calm is within you. Zoom satsang details and registration.",
           similarity: 0.95,
           retrievalSources: ["lexical"],
-          retrievalText: "Calendar A Hosted by Valmora Montelago. Joy is within you. Zoom satsang details and registration.",
+          retrievalText: "Calendar A Hosted by Valmora Montelago. Calm is within you. Zoom satsang details and registration.",
           semanticScore: 0,
           lexicalScore: 0.95,
           relevanceScore: 0.95,
@@ -1316,10 +1316,10 @@ describe("chat retrieval domain", () => {
           chunkId: "c2",
           documentId: "d2",
           title: "Calendar B",
-          content: "Hosted by Valmora Montelago. Joy is within you. Zoom satsang details and registration.",
+          content: "Hosted by Valmora Montelago. Calm is within you. Zoom satsang details and registration.",
           similarity: 0.94,
           retrievalSources: ["lexical"],
-          retrievalText: "Calendar B Hosted by Valmora Montelago. Joy is within you. Zoom satsang details and registration.",
+          retrievalText: "Calendar B Hosted by Valmora Montelago. Calm is within you. Zoom satsang details and registration.",
           semanticScore: 0,
           lexicalScore: 0.94,
           relevanceScore: 0.94,
@@ -1329,10 +1329,10 @@ describe("chat retrieval domain", () => {
           chunkId: "c3",
           documentId: "d3",
           title: "Freya",
-          content: "Freya is originally from Spain and later became Swami Selan's assistant.",
+          content: "Freya is originally from Portugal and later became Swami Selan's assistant.",
           similarity: 0.7,
           retrievalSources: ["semantic_original"],
-          retrievalText: "Freya is originally from Spain and later became Swami Selan's assistant.",
+          retrievalText: "Freya is originally from Portugal and later became Swami Selan's assistant.",
           semanticScore: 0.7,
           lexicalScore: 0,
           relevanceScore: 0.7,
@@ -1417,8 +1417,8 @@ describe("chat retrieval domain", () => {
         rerankedCandidate({
           chunkId: "practitioner",
           documentId: "practitioner-course",
-          title: "Courses for practitioner",
-          content: "Courses for practitioner deepen the Valmora Meditation practice.",
+          title: "Courses for practitioners",
+          content: "Courses for practitioners deepen the Valmora Meditation practice.",
           score: 0.82,
           rerankPosition: 3,
         }),

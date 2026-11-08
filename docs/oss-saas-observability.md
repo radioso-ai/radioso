@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-10-27
+last_updated: 2026-11-08
 ---
 
 # OSS And SaaS Observability
@@ -239,11 +239,33 @@ Normalize crashes into a Radioso-owned shape before any external export:
 - service
 - request metadata
 - workspace or account identifiers
-- normalized exception type
-- message
-- stack trace
+- the error's class, and its code when it carries one in a safe shape: an
+  `AppError` code such as `service_unavailable`, an errno such as
+  `ECONNREFUSED`, or a SQLSTATE such as `25P02`
+- the class and code of each error it wraps (`causes`)
+- a message built from safe parts: the report's type followed by the error's
+  class and code, such as
+  `http.request.unhandled: AppError [service_unavailable] caused by DatabaseError [25P02]`,
+  or a message the caller wrote with `errorReportMessage`
+- the stack's frames: function, file, line and column
+- a fingerprint: the service, the report's type, and the error's class and code
 - tags
 - selected breadcrumbs
+
+An error's own message can quote a provider response, a document, a SQL
+statement, or a visitor's words, so it stays in the process. Every sink gets
+the shape above and nothing more: the audit log, metrics, the ops webhook,
+PostHog, and Sentry. The stack loses its first line, which restates the
+message. The `ErrorEvent` type holds this in place: its `message` and `stack`
+are branded types that only `errorReportMessage` and the reporting service
+build, so passing `error.message` as a report's message fails to compile. A
+value interpolated into `errorReportMessage` must be a class name, a code, an
+id or a number; anything else reads as `[REDACTED]`.
+
+PostHog groups reports into issues by the fingerprint. A document worker tick
+that fails with `AppError [service_unavailable]` and one that fails with a
+`TypeError` are two issues, and the same failure recurring with different
+message text stays one.
 
 ### Default OSS behavior
 
@@ -305,7 +327,9 @@ not limited to the HTTP request path:
   analytics event carry a fixed string naming the failure kind in place of the
   provider's own error text, which can echo back the customer's rejected prompt.
 - **Browser errors** — posted to `/api/v1/observability/frontend-errors`
-  (`frontend.*.unhandled`).
+  (`frontend.*.unhandled`). The report keeps the browser error's class and the
+  frames of its stack and component stack. The browser's message text is left
+  out, because it can quote what a visitor typed.
 - **Process-level crashes** — every entrypoint installs
   [`installProcessErrorHandlers`](../backend/src/runtime/processErrorHandlers.ts),
   which reports `process.uncaughtException` and `process.unhandledRejection`

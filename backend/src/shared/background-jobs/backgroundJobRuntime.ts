@@ -1,4 +1,6 @@
 import { AppError } from "../domain/errors.js";
+import { errorReportMessage } from "../errors/errorReportShape.js";
+import type { ErrorReportMessage } from "../errors/errorTypes.js";
 import { traceOperation } from "../observability/tracing/operations.js";
 import { InvalidBackgroundJobPayloadError, NonRetryableBackgroundJobError } from "./jobKind.js";
 import type {
@@ -78,7 +80,7 @@ interface RuntimeErrorReporter {
   report(input: {
     errorType: string;
     errorClass?: string;
-    message?: string;
+    message?: ErrorReportMessage;
     severity?: "info" | "warn" | "error" | "fatal";
     metadata?: Record<string, unknown>;
   }): Promise<unknown>;
@@ -242,7 +244,7 @@ export class BackgroundJobRuntime {
             ?.report({
               errorType: "background_job.poll_failed",
               errorClass: errorClassFromSummary(summary),
-              message: `Background job poll failed: ${summary}`,
+              message: errorReportMessage`Background job poll failed: ${summary}`,
               severity: "error",
               metadata: { errorClass: summary },
             })
@@ -416,7 +418,7 @@ export class BackgroundJobRuntime {
         "background_job.attempt_failed_hook_failed",
         claim,
         hookError,
-        `${claim.kind} attempt-failed hook failed: ${hookError}`,
+        errorReportMessage`${claim.kind} attempt-failed hook failed: ${hookError}`,
         { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, hookError },
       );
       return this.options.store.retry(claim, { error: summary, delaySeconds });
@@ -442,7 +444,7 @@ export class BackgroundJobRuntime {
         "background_job.dead_lettered",
         claim,
         summary,
-        `${claim.kind} dead-lettered: ${summary}`,
+        errorReportMessage`${claim.kind} dead-lettered: ${summary}`,
         { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, lastError: summary },
       );
     }
@@ -494,7 +496,7 @@ export class BackgroundJobRuntime {
         "background_job.dead_letter_hook_failed",
         claim,
         hookError,
-        `${claim.kind} dead-letter hook failed: ${hookError}`,
+        errorReportMessage`${claim.kind} dead-letter hook failed: ${hookError}`,
         { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, hookError },
       );
       return this.options.store.deadLetter(claim, { error: summary });
@@ -506,7 +508,13 @@ export class BackgroundJobRuntime {
    * bare class in `errorClass`, so error tracking splits a report by both instead of folding
    * every kind and failure into one sink-default "unknown error" issue.
    */
-  private report(errorType: string, claim: BackgroundJobClaim, summary: string, message: string, metadata: Record<string, unknown>): void {
+  private report(
+    errorType: string,
+    claim: BackgroundJobClaim,
+    summary: string,
+    message: ErrorReportMessage,
+    metadata: Record<string, unknown>,
+  ): void {
     void this.options.errorReporter
       ?.report({
         errorType: `${errorType}.${claim.kind}`,

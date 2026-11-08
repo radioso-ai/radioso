@@ -3,7 +3,7 @@ import multer from "multer";
 
 import type { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
 import { AppError, isReportableFault, isStructuredAppError } from "../../../shared/domain/errors.js";
-import { classifyDatabaseUnavailable } from "../../../shared/infra/databaseUnavailable.js";
+import { classifyDatabaseConnectionFailure } from "../../../shared/infra/databaseConnectionFailure.js";
 import { applyRetryAfterFromError } from "../rateLimitHeaders.js";
 import { markHttpResponseFailed } from "./httpResponseCompletion.js";
 
@@ -55,16 +55,21 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
     // an error under 500 or one marked `isExpectedOutcome` (a lost client), and anything
     // else — any 5xx, AppError or not — is reported once. A caller that already reported
     // this exact error object (e.g. ChatTurnLifecycle.recordFailure) is not reported again.
-    // A failure that means the database could not be reached is reported as that outage instead,
-    // whatever the response below says.
-    const databaseUnavailable = classifyDatabaseUnavailable(error);
+    // A failure to get a database connection is reported as what it is, whatever the response
+    // below says: an outage of the database, or this process's own pool with none free.
+    const databaseFailure = classifyDatabaseConnectionFailure(error);
     const reportFault = (statusCode?: number): void => {
       if (!isReportableFault(error) || errorReportingService?.wasReported(error)) {
         return;
       }
-      void (databaseUnavailable
-        ? errorReportingService?.reportDatabaseUnavailableRequest({ error, request: req, statusCode, reason: databaseUnavailable })
-        : errorReportingService?.reportUnhandledRequestError({ error, request: req, statusCode }));
+      const failure = { error, request: req, statusCode };
+      if (databaseFailure?.kind === "unavailable") {
+        void errorReportingService?.reportDatabaseUnavailableRequest({ ...failure, reason: databaseFailure.reason });
+      } else if (databaseFailure?.kind === "pool_exhausted") {
+        void errorReportingService?.reportDatabasePoolExhaustedRequest(failure);
+      } else {
+        void errorReportingService?.reportUnhandledRequestError(failure);
+      }
     };
 
     if (res.headersSent) {
@@ -140,8 +145,9 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
       return;
     }
 
-    if (databaseUnavailable) {
-      // A 503 is retried by Cloud Tasks and Cloud Scheduler and tells any other caller to try again.
+    if (databaseFailure) {
+      // The request itself was fine; the service could not get at its data, so 503 is the honest
+      // status.
       reportFault(503);
       res.status(503).json({
         error: {

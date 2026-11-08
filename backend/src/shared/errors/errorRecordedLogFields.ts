@@ -16,7 +16,7 @@ interface ErrorRecordedLogFields {
 // Metadata keys whose values the reporting code picks from a closed set: an action outbox event
 // (actionDrainAfterCommit.ts), an ownership action and notification (committedOwnershipAudit.ts),
 // a frontend report's source (observabilityRoutes.ts), a background job's kind
-// (backgroundJobRuntime.ts), and a database outage's reason (databaseUnavailable.ts). Each value
+// (backgroundJobRuntime.ts), and a database outage's reason (databaseConnectionFailure.ts). Each value
 // must still be a code.
 const CODED_FIELDS = new Set(["event", "action", "notification", "source", "kind", "reason"]);
 

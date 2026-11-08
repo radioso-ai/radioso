@@ -416,7 +416,7 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
     expect(projectionClaim).toMatchObject({ id: projection.work.id });
     await expect(vectorIndexWorkRepository.markFailed({
       id: projection.work.id,
-      claimedAt: projectionClaim.claimedAt,
+      attemptCount: projectionClaim.attemptCount,
       errorCode: "adapter_unavailable",
       retryAt: new Date(Date.now() + 5_000),
       maxAttempts: 1,
@@ -494,7 +494,7 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
     expect(activeProjectionClaim).toMatchObject({ id: activeProjection.work.id });
     await vectorIndexWorkRepository.markFailed({
       id: activeProjection.work.id,
-      claimedAt: activeProjectionClaim.claimedAt,
+      attemptCount: activeProjectionClaim.attemptCount,
       errorCode: "adapter_unavailable",
       retryAt: new Date(Date.now() + 5_000),
       maxAttempts: 1,
@@ -566,7 +566,7 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
     });
     await vectorIndexWorkRepository.markFailed({
       id: staleProjection.work.id,
-      claimedAt: staleProjectionClaim.claimedAt,
+      attemptCount: staleProjectionClaim.attemptCount,
       errorCode: "adapter_unavailable",
       retryAt: new Date(Date.now() + 5_000),
       maxAttempts: 1,
@@ -634,7 +634,7 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
     expect(replacementProjectionClaim).toMatchObject({ id: replacementProjection.work.id });
     await vectorIndexWorkRepository.markCompletedAndAdvanceCheckpoint({
       id: replacementProjection.work.id,
-      claimedAt: replacementProjectionClaim.claimedAt,
+      attemptCount: replacementProjectionClaim.attemptCount,
       backendKey: "pgvector",
       workspaceId,
       embeddingSpaceId: pending.id,

@@ -1,5 +1,4 @@
 import type {
-  ClaimedVectorIndexWork,
   EmbeddingProfileRepositoryPort,
   EmbeddingSpaceRecord,
   VectorIndexCheckpointRecord,
@@ -70,8 +69,7 @@ export class VectorIndexReconciler {
       try {
         await this.process(work);
       } catch (error) {
-        // The row keeps its lease and is reclaimed when the lease expires, so one
-        // row must not stop the rest of the batch or the caller's maintenance run.
+        // One row must not stop the rest of the batch or the caller's maintenance run.
         this.options.onLoopError?.(error);
       }
     }
@@ -138,7 +136,7 @@ export class VectorIndexReconciler {
     await this.running;
   }
 
-  private async process(work: ClaimedVectorIndexWork): Promise<void> {
+  private async process(work: VectorIndexWorkRecord): Promise<void> {
     let checkpoint: VectorIndexCheckpointRecord | null = null;
     let caughtUpReadiness: VectorIndexReadiness = "building";
     try {
@@ -162,7 +160,7 @@ export class VectorIndexReconciler {
       const superseded = await this.options.repository
         .completeSupersededAndAdvanceCheckpoint({
           id: work.id,
-          claimedAt: work.claimedAt,
+          attemptCount: work.attemptCount,
           backendKey: this.options.backendKey,
           workspaceId: work.workspaceId,
           embeddingSpaceId: work.embeddingSpaceId,
@@ -186,7 +184,7 @@ export class VectorIndexReconciler {
         }
         checkpoint = await this.options.repository.markCompletedAndAdvanceCheckpoint({
           id: work.id,
-          claimedAt: work.claimedAt,
+          attemptCount: work.attemptCount,
           backendKey: this.options.backendKey,
           workspaceId: work.workspaceId,
           embeddingSpaceId: work.embeddingSpaceId,
@@ -225,13 +223,13 @@ export class VectorIndexReconciler {
   }
 
   private async fail(
-    work: ClaimedVectorIndexWork,
+    work: VectorIndexWorkRecord,
     errorCode: VectorIndexFailureCode,
     caughtUpReadiness: VectorIndexReadiness,
   ): Promise<VectorIndexCheckpointRecord | null> {
     const result = await this.options.repository.markFailed({
       id: work.id,
-      claimedAt: work.claimedAt,
+      attemptCount: work.attemptCount,
       errorCode,
       retryAt: new Date(this.clock().getTime() + this.options.retryDelayMs),
       maxAttempts: this.options.maxAttempts,

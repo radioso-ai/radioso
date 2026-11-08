@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type { QueryResultRow } from "pg";
 
 import type {
-  ClaimedVectorIndexWork,
   VectorIndexClaimedWorkTarget,
   VectorIndexFailureCode,
   VectorIndexFailureOutcome,
@@ -119,7 +118,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
     limit: number;
     now: Date;
     leaseMs: number;
-  }): Promise<ClaimedVectorIndexWork[]> {
+  }): Promise<VectorIndexWorkRecord[]> {
     assertBatchLimit(input.limit);
     assertLeaseMs(input.leaseMs);
     const leaseExpiredAt = new Date(input.now.getTime() - input.leaseMs);
@@ -206,7 +205,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       const order = new Map(rows.map((row, index) => [row.id, index]));
       return claimed
         .sort((left, right) => order.get(left.id)! - order.get(right.id)!)
-        .map((row) => ({ ...mapVectorIndexWork(row), claimedAt: input.now }));
+        .map((row) => mapVectorIndexWork(row));
     });
   }
 
@@ -235,7 +234,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       ) {
         throw new Error("Vector index work identity does not match claimed work");
       }
-      if (!holdsClaim(work, input.claimedAt)) {
+      if (!holdsClaim(work, input.attemptCount)) {
         return { disposition: "lease_lost", checkpoint: null };
       }
       const superseding = await trx
@@ -302,7 +301,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       ) {
         throw new Error("Vector index work identity does not match claimed work");
       }
-      if (!holdsClaim(work, input.claimedAt)) {
+      if (!holdsClaim(work, input.attemptCount)) {
         return null;
       }
       return completeWorkAndAdvanceCheckpoint(trx, work, {
@@ -332,7 +331,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       ) {
         throw new Error("Vector index work identity does not match claimed work");
       }
-      if (!holdsClaim(work, input.claimedAt)) {
+      if (!holdsClaim(work, input.attemptCount)) {
         return { disposition: "lease_lost", checkpoint: null };
       }
       const superseding = await trx
@@ -541,12 +540,10 @@ const retireOlderDeadLetterWork = async (
 };
 
 // A lease that expired mid-batch lets another runner reclaim the row. The new claim
-// rewrites `claimed_at` (or the row moves on to completed, failed, or dead_letter), so
-// a stale runner sees a mismatch here and must leave the row to its current owner.
-const holdsClaim = (work: VectorIndexWorkRow, claimedAt: Date): boolean =>
-  work.status === "processing"
-  && work.claimed_at !== null
-  && new Date(work.claimed_at).getTime() === claimedAt.getTime();
+// increments `attempt_count` (or the row moves on to completed, failed, or dead_letter),
+// so a stale runner sees a mismatch here and must leave the row to its current owner.
+const holdsClaim = (work: VectorIndexWorkRow, attemptCount: number): boolean =>
+  work.status === "processing" && Number(work.attempt_count) === attemptCount;
 
 const completeWorkAndAdvanceCheckpoint = async (
   db: Db,

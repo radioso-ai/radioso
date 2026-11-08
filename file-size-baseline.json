@@ -8,7 +8,7 @@
   "backend/src/db/repositories/documentRepository.ts": 1267,
   "backend/src/db/repositories/messageRepository.ts": 1005,
   "backend/src/db/repositories/routineDefinitionRepository.ts": 1033,
-  "backend/src/db/repositories/vectorIndexWorkRepository.ts": 1171,
+  "backend/src/db/repositories/vectorIndexWorkRepository.ts": 1168,
   "backend/src/modules/audiencePulse/services/audiencePulseService.ts": 1156,
   "backend/src/modules/auth/services/authService.ts": 1413,
   "backend/src/modules/chat/services/chatHistoryService.ts": 1670,

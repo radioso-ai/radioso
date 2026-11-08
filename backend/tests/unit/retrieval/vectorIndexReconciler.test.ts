@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
-  ClaimedVectorIndexWork,
   EmbeddingSpaceRecord,
   VectorIndexCheckpointRecord,
   VectorIndexReadiness,
+  VectorIndexWorkRecord,
 } from "../../../src/modules/embeddingProfiles/contracts/repositories.js";
 import { VectorIndexReconciler } from "../../../src/modules/retrieval/services/vectorIndexReconciler.js";
 import { InMemoryVectorAdapter } from "../../support/inMemoryVectorAdapter.js";
@@ -93,7 +93,7 @@ describe("VectorIndexReconciler", () => {
 
     expect(completeSupersededAndAdvanceCheckpoint).toHaveBeenCalledWith({
       id: work.id,
-      claimedAt: work.claimedAt,
+      attemptCount: work.attemptCount,
       backendKey: "in-memory",
       workspaceId,
       embeddingSpaceId,
@@ -140,7 +140,7 @@ describe("VectorIndexReconciler", () => {
 
     expect(markFailed).toHaveBeenCalledWith({
       id: work.id,
-      claimedAt: work.claimedAt,
+      attemptCount: work.attemptCount,
       errorCode: "adapter_unavailable",
       retryAt: new Date(now.getTime() + 5_000),
       maxAttempts: 3,
@@ -227,32 +227,21 @@ describe("VectorIndexReconciler", () => {
   it("skips work whose lease another runner took before the superseded check", async () => {
     const adapter = new InMemoryVectorAdapter();
     const applyMutations = vi.spyOn(adapter.writer, "applyMutations");
-    const markCompletedAndAdvanceCheckpoint = vi.fn();
-    const markFailed = vi.fn();
     const onCheckpointAdvanced = vi.fn();
     const onLoopError = vi.fn();
-    const reconciler = new VectorIndexReconciler({
+    const {
+      reconciler,
+      completeSupersededAndAdvanceCheckpoint,
+      markCompletedAndAdvanceCheckpoint,
+      markFailed,
+    } = reconcilerFor({
+      readiness: "exact_fallback",
       adapter,
-      backendKey: "in-memory",
-      repository: {
-        claimBatch: vi.fn().mockResolvedValue([work]),
-        markFailed,
-        markCompletedAndAdvanceCheckpoint,
-        completeSupersededAndAdvanceCheckpoint: vi.fn()
-          .mockResolvedValue({ disposition: "lease_lost", checkpoint: null }),
-        getLag: vi.fn(),
-      },
-      spaces: {
-        findEmbeddingSpaceById: vi.fn().mockResolvedValue(space),
-      },
-      batchSize: 1,
-      leaseMs: 1_000,
-      maxAttempts: 3,
-      retryDelayMs: 5_000,
-      resolveCaughtUpReadiness: vi.fn().mockResolvedValue("exact_fallback"),
       onCheckpointAdvanced,
       onLoopError,
     });
+    completeSupersededAndAdvanceCheckpoint
+      .mockResolvedValue({ disposition: "lease_lost", checkpoint: null });
 
     await expect(reconciler.runOnce()).resolves.toBe(true);
 
@@ -277,7 +266,7 @@ describe("VectorIndexReconciler", () => {
     await expect(reconciler.runOnce()).resolves.toBe(true);
 
     expect(markCompletedAndAdvanceCheckpoint).toHaveBeenCalledWith(
-      expect.objectContaining({ id: work.id, claimedAt: work.claimedAt }),
+      expect.objectContaining({ id: work.id, attemptCount: work.attemptCount }),
     );
     expect(markFailed).not.toHaveBeenCalled();
     expect(onCheckpointAdvanced).not.toHaveBeenCalled();
@@ -288,39 +277,20 @@ describe("VectorIndexReconciler", () => {
     const adapter = new InMemoryVectorAdapter();
     vi.spyOn(adapter.writer, "applyMutations")
       .mockRejectedValue(new Error("backend unavailable"));
-    const markFailed = vi.fn().mockResolvedValue({
-      disposition: "lease_lost",
-      checkpoint: null,
-    });
     const onCheckpointAdvanced = vi.fn();
     const onLoopError = vi.fn();
-    const reconciler = new VectorIndexReconciler({
+    const { reconciler, markFailed } = reconcilerFor({
+      readiness: "exact_fallback",
       adapter,
-      backendKey: "in-memory",
-      clock: () => now,
-      repository: {
-        claimBatch: vi.fn().mockResolvedValue([work]),
-        markFailed,
-        markCompletedAndAdvanceCheckpoint: vi.fn(),
-        completeSupersededAndAdvanceCheckpoint: vi.fn()
-          .mockResolvedValue(notSuperseded),
-        getLag: vi.fn(),
-      },
-      spaces: {
-        findEmbeddingSpaceById: vi.fn().mockResolvedValue(space),
-      },
-      batchSize: 1,
-      leaseMs: 1_000,
-      maxAttempts: 3,
-      retryDelayMs: 5_000,
       onCheckpointAdvanced,
       onLoopError,
     });
+    markFailed.mockResolvedValue({ disposition: "lease_lost", checkpoint: null });
 
     await expect(reconciler.runOnce()).resolves.toBe(true);
 
     expect(markFailed).toHaveBeenCalledWith(
-      expect.objectContaining({ id: work.id, claimedAt: work.claimedAt }),
+      expect.objectContaining({ id: work.id, attemptCount: work.attemptCount }),
     );
     expect(onCheckpointAdvanced).not.toHaveBeenCalled();
     expect(onLoopError).not.toHaveBeenCalled();
@@ -328,36 +298,24 @@ describe("VectorIndexReconciler", () => {
 
   it("reports a row that cannot record its failure and continues the batch", async () => {
     const failure = new Error("vector index work row is locked out");
-    const nextWork: ClaimedVectorIndexWork = {
+    const nextWork: VectorIndexWorkRecord = {
       ...work,
       id: "work-2",
       sequence: "2",
       chunkId: "chunk-2",
     };
-    const markCompletedAndAdvanceCheckpoint = vi.fn().mockResolvedValue(null);
     const onLoopError = vi.fn();
-    const reconciler = new VectorIndexReconciler({
-      adapter: new InMemoryVectorAdapter(),
-      backendKey: "in-memory",
-      clock: () => now,
-      repository: {
-        claimBatch: vi.fn().mockResolvedValue([work, nextWork]),
-        markFailed: vi.fn().mockRejectedValue(failure),
-        markCompletedAndAdvanceCheckpoint,
-        completeSupersededAndAdvanceCheckpoint: vi.fn()
-          .mockRejectedValueOnce(new Error("checkpoint lock timeout"))
-          .mockResolvedValue(notSuperseded),
-        getLag: vi.fn(),
-      },
-      spaces: {
-        findEmbeddingSpaceById: vi.fn().mockResolvedValue(space),
-      },
-      batchSize: 2,
-      leaseMs: 1_000,
-      maxAttempts: 3,
-      retryDelayMs: 5_000,
-      onLoopError,
-    });
+    const {
+      reconciler,
+      claimBatch,
+      completeSupersededAndAdvanceCheckpoint,
+      markCompletedAndAdvanceCheckpoint,
+      markFailed,
+    } = reconcilerFor({ readiness: "building", onLoopError });
+    claimBatch.mockResolvedValue([work, nextWork]);
+    completeSupersededAndAdvanceCheckpoint
+      .mockRejectedValueOnce(new Error("checkpoint lock timeout"));
+    markFailed.mockRejectedValue(failure);
 
     await expect(reconciler.runOnce()).resolves.toBe(true);
 
@@ -457,6 +415,7 @@ const reconcilerFor = (input: {
     readiness: "ready" | "exact_fallback";
   }) => Promise<void>;
   onLoopError?: (error: unknown) => void;
+  adapter?: InMemoryVectorAdapter;
 }) => {
   const checkpoint: VectorIndexCheckpointRecord = {
     backendKey: "in-memory",
@@ -469,15 +428,17 @@ const reconcilerFor = (input: {
   const markCompletedAndAdvanceCheckpoint = vi.fn()
     .mockResolvedValue(checkpoint);
   const markFailed = vi.fn();
+  const claimBatch = vi.fn().mockResolvedValue([work]);
+  const completeSupersededAndAdvanceCheckpoint = vi.fn()
+    .mockResolvedValue(notSuperseded);
   const reconciler = new VectorIndexReconciler({
-    adapter: new InMemoryVectorAdapter(),
+    adapter: input.adapter ?? new InMemoryVectorAdapter(),
     backendKey: "in-memory",
     repository: {
-      claimBatch: vi.fn().mockResolvedValue([work]),
+      claimBatch,
       markFailed,
       markCompletedAndAdvanceCheckpoint,
-      completeSupersededAndAdvanceCheckpoint: vi.fn()
-        .mockResolvedValue(notSuperseded),
+      completeSupersededAndAdvanceCheckpoint,
       getLag: vi.fn(),
     },
     spaces: {
@@ -491,7 +452,13 @@ const reconcilerFor = (input: {
     onCheckpointAdvanced: input.onCheckpointAdvanced,
     onLoopError: input.onLoopError,
   });
-  return { reconciler, markCompletedAndAdvanceCheckpoint, markFailed };
+  return {
+    reconciler,
+    claimBatch,
+    completeSupersededAndAdvanceCheckpoint,
+    markCompletedAndAdvanceCheckpoint,
+    markFailed,
+  };
 };
 
 const notSuperseded = { disposition: "not_superseded", checkpoint: null } as const;
@@ -515,7 +482,7 @@ const space: EmbeddingSpaceRecord = {
   updatedAt: now,
 };
 
-const work: ClaimedVectorIndexWork = {
+const work: VectorIndexWorkRecord = {
   id: "work-1",
   sequence: "1",
   workspaceId,

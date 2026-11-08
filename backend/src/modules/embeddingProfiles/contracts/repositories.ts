@@ -147,15 +147,12 @@ export interface VectorIndexWorkRecord {
 }
 
 /**
- * Work that `claimBatch` leased to one runner. `claimedAt` is the claim fence: the
- * complete and fail paths act only while the row still carries this exact claim.
+ * Names one claimed row. `attemptCount` is the claim fence: every claim increments it,
+ * so the complete and fail paths act only while the row still carries this claim.
  */
-export type ClaimedVectorIndexWork = VectorIndexWorkRecord & { claimedAt: Date };
-
-/** Names one claimed row; `claimedAt` must match the row's current claim. */
 export interface VectorIndexClaimedWorkTarget {
   id: string;
-  claimedAt: Date;
+  attemptCount: number;
   backendKey: string;
   workspaceId: string;
   embeddingSpaceId: string;
@@ -217,7 +214,7 @@ export interface VectorIndexWorkRepositoryPort {
     limit: number;
     now: Date;
     leaseMs: number;
-  }): Promise<ClaimedVectorIndexWork[]>;
+  }): Promise<VectorIndexWorkRecord[]>;
   /** Returns `lease_lost` without a write when another runner took over the claim. */
   markFailed(input: VectorIndexClaimedWorkTarget & {
     errorCode: VectorIndexFailureCode;

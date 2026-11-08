@@ -21,6 +21,7 @@ import { HistoryItemsRepository } from "../../src/db/repositories/historyItemsRe
 import { AuditEventAnalyticsSink } from "../../src/shared/analytics/auditEventAnalyticsSink.js";
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
 import { AuditErrorSink } from "../../src/shared/errors/auditErrorSink.js";
+import { errorReportMessage } from "../../src/shared/errors/errorReportShape.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import {
   EmbeddingGenerationService,
@@ -792,7 +793,7 @@ describeIfDatabase("persistence integration", () => {
         workspaceId: workspace.id,
         accountId: account.id,
       },
-      message: "boom",
+      message: errorReportMessage`boom`,
     });
 
     const rows = await database.query<{

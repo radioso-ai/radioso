@@ -14,6 +14,7 @@ import type {
 import { normalizeMarkdown, renderMetadataSearchText } from "../../retrieval/public.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
+import { errorSummaryOf } from "../../../shared/errors/errorReportShape.js";
 import {
   toDocumentSourceSummary,
   type DocumentSourceRecord as DocumentOriginRecord,
@@ -252,10 +253,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
           eventName: "document.ingest_failed",
           workspaceId: input.workspaceId,
           subjectType: "document",
-          properties: {
-            title: input.title,
-            reason: error instanceof Error ? error.message : "Failed to queue document processing",
-          },
+          properties: { title: input.title, reason: errorSummaryOf(error) },
           source: "backend",
         });
       } catch {

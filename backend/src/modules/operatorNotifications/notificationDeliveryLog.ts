@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import { knownAgentId } from "./knownAgentId.js";
 import {
-  knownAgentId,
   RECIPIENT_DELIVERY_OUTCOMES,
   type NotificationDeliveryRecorderPort,
   type NotificationDeliverySubject,
@@ -131,17 +131,19 @@ export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort
     await this.warnAdministrators(subject, agentId, deliveries);
   }
 
-  /** Counts and logs a notice sent to administrators in place of its configured addresses; says how many it reached. */
+  /**
+   * Counts and logs a notice sent to administrators in place of its configured addresses, and says
+   * how many it reached. Only an attempt on which every administrator's copy went out counts: an
+   * attempt with a failed copy is retried, and counting both would count one notice twice.
+   */
   private reportAdministratorFallback(subject: NotificationDeliverySubject, deliveries: readonly RecipientDelivery[]): number {
     const administrators = deliveries.filter((delivery) => delivery.via === "administrator_fallback");
-    if (administrators.length === 0) return 0;
     const sentCount = administrators.filter((delivery) => delivery.outcome === "sent").length;
-    if (sentCount > 0) {
-      this.options.metrics?.incrementCounter("notification_administrator_fallbacks_total", {
-        help: "Notices sent to workspace administrators because recipient policy left out every configured address.",
-        labels: { kind: subject.kind },
-      });
-    }
+    if (administrators.length === 0 || sentCount < administrators.length) return sentCount;
+    this.options.metrics?.incrementCounter("notification_administrator_fallbacks_total", {
+      help: "Notices sent to workspace administrators because recipient policy left out every configured address.",
+      labels: { kind: subject.kind },
+    });
     this.options.logger?.warn({
       event: "notification_administrator_fallback",
       workspaceId: subject.workspaceId,
@@ -149,7 +151,6 @@ export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort
       kind: subject.kind,
       skippedCount: deliveries.length - administrators.length,
       administratorCount: administrators.length,
-      sentCount,
     }, "Notice sent to workspace administrators in place of its configured addresses");
     return sentCount;
   }

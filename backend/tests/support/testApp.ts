@@ -1969,6 +1969,7 @@ export const createTestDependencies = (overrides: {
       eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
       skippedRecipients: [],
     }),
+    unsubscribeUrl: async () => "",
     resendConfirmation: async () => false,
     requestConfirmations: async () => undefined,
     confirm: async () => true,

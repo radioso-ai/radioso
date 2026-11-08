@@ -1,4 +1,5 @@
 import type { EmailKind } from "../mail/public.js";
+import type { NotificationAdministratorReader } from "./notificationAdministratorReader.js";
 import {
   undeliveredRecipientAlertMessage,
   type UndeliveredRecipientReason,
@@ -37,8 +38,6 @@ export interface UndeliveredRecipientAlertStore {
   claim(input: { workspaceId: string; email: string; now: Date; windowMs: number }): Promise<UndeliveredAlertClaim | null>;
   /** Gives the claim back because nothing was sent, so the next skipped notice can alert. */
   release(claim: UndeliveredAlertClaim): Promise<void>;
-  /** Active, enabled, verified owners and admins of the account the workspace belongs to. */
-  listAdministratorEmails(workspaceId: string): Promise<string[]>;
 }
 
 interface AlertMailTransport {
@@ -63,6 +62,7 @@ interface AlertMetrics {
 export class UndeliveredRecipientAlerts implements UndeliveredRecipientAlertPort {
   constructor(private readonly options: {
     store: UndeliveredRecipientAlertStore;
+    administrators: NotificationAdministratorReader;
     mailer: AlertMailTransport;
     identity: { resolve(input: { workspaceId: string; agentId: string | null }): Promise<{ workspaceName: string; agentName: string }> };
     /** The dashboard page where the agent's notifications are fixed, when the deployment has one. */
@@ -139,7 +139,7 @@ export class UndeliveredRecipientAlerts implements UndeliveredRecipientAlertPort
     signal: AbortSignal | undefined,
   ): Promise<{ administrators: number; dispatched: number; rejected: number; firstFailure: unknown }> {
     const nothingSent = (administrators: number) => ({ administrators, dispatched: 0, rejected: 0, firstFailure: undefined });
-    const administrators = await this.options.store.listAdministratorEmails(input.workspaceId);
+    const administrators = await this.options.administrators.listAdministratorEmails(input.workspaceId);
     if (administrators.length === 0 || signal?.aborted) return nothingSent(0);
     const [names, dashboardUrl] = await Promise.all([
       this.options.identity.resolve(input),

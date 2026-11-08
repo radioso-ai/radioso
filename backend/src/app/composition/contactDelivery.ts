@@ -25,6 +25,7 @@ import {
 } from "../../db/repositories/notificationRecipientStateRepository.js";
 import { NotificationDeliveryOutcomeRepository } from "../../db/repositories/notificationDeliveryOutcomeRepository.js";
 import { NotificationDeliveryRepository } from "../../db/repositories/notificationDeliveryRepository.js";
+import { NotificationAdministratorRepository } from "../../db/repositories/notificationAdministratorRepository.js";
 import { UndeliveredRecipientAlertRepository } from "../../db/repositories/undeliveredRecipientAlertRepository.js";
 import { agentSkillsPermalink } from "../../shared/domain/dashboardLinks.js";
 import type { Database } from "../../shared/infra/database.js";
@@ -140,6 +141,7 @@ export const buildNotificationDeliveryRecorder = (input: {
     store: new NotificationDeliveryRepository(input.database.kysely),
     alerts: new UndeliveredRecipientAlerts({
       store: new UndeliveredRecipientAlertRepository(input.database.kysely, states),
+      administrators: new NotificationAdministratorRepository(input.database.kysely),
       mailer: input.mailer,
       identity: new NotificationRecipientIdentityRepository(input.database.kysely),
       dashboardUrl: agentNotificationsLink(input.database, input.env),
@@ -153,16 +155,15 @@ export const buildNotificationDeliveryRecorder = (input: {
 
 /**
  * Where a notice goes when recipient policy leaves out every configured address and no webhook
- * carries it: the audience the alert above reaches, with the same link. Both senders take it.
+ * carries it: the audience the alert above reaches, with the same link, and each copy with the stop
+ * link the sender's recipient policy gives any notice copy. Both senders take it.
  */
 export const buildNotificationAdministratorFallback = (input: {
   database: Database;
   env: Pick<Env, "APP_BASE_URL">;
-  states?: NotificationRecipientStateRepository;
-}): NotificationAdministratorFallback => {
-  const states = input.states ?? new NotificationRecipientStateRepository(input.database.kysely);
-  return new NotificationAdministratorFallback({
-    administrators: new UndeliveredRecipientAlertRepository(input.database.kysely, states),
-    dashboardUrl: agentNotificationsLink(input.database, input.env),
-  });
-};
+  recipientPolicy: Pick<NotificationRecipientPolicyPort, "unsubscribeUrl">;
+}): NotificationAdministratorFallback => new NotificationAdministratorFallback({
+  administrators: new NotificationAdministratorRepository(input.database.kysely),
+  unsubscribeLinks: input.recipientPolicy,
+  dashboardUrl: agentNotificationsLink(input.database, input.env),
+});

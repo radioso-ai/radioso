@@ -28,7 +28,6 @@ import { MessageRepository } from "../../../db/repositories/messageRepository.js
 import {
   NotificationDeliveryAdmissionService,
   OperatorNotificationDispatcher,
-  type NotificationAdministratorFallbackPort,
   type NotificationDeliveryAdmissionPort,
   type NotificationDeliveryRecorderPort,
 } from "../../../modules/operatorNotifications/public.js";
@@ -100,7 +99,6 @@ const buildOperatorNotificationDispatcher = (input: {
   admission: NotificationDeliveryAdmissionPort;
   recipientPolicy: ReturnType<typeof buildNotificationRecipientPolicy>;
   recorder: NotificationDeliveryRecorderPort;
-  administratorFallback: NotificationAdministratorFallbackPort;
 }): OperatorNotificationDispatcher => {
   const recipients = buildContactDeliveryResolver(input.database);
   const conversationLinks = buildConversationLinkResolver({ database: input.database, appBaseUrl: input.env.APP_BASE_URL });
@@ -114,7 +112,7 @@ const buildOperatorNotificationDispatcher = (input: {
       input.admission,
       input.recipientPolicy,
       input.recorder,
-      input.administratorFallback,
+      buildNotificationAdministratorFallback({ database: input.database, env: input.env, recipientPolicy: input.recipientPolicy }),
     ),
     new SlackOperatorNotificationSink({
       installations: new SlackInstallationRepository(input.database.kysely),
@@ -182,7 +180,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
           recipientPolicy,
           buildNotificationDeliveryRecorder({ database, env, mailer: mailService, logger, metrics }),
-          buildNotificationAdministratorFallback({ database, env }),
+          buildNotificationAdministratorFallback({ database, env, recipientPolicy }),
         );
       },
     });
@@ -206,7 +204,6 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             admission: buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
             recipientPolicy: buildNotificationRecipientPolicy({ database, env, mailer: mailService, logger, metrics }),
             recorder: buildNotificationDeliveryRecorder({ database, env, mailer: mailService, logger, metrics }),
-            administratorFallback: buildNotificationAdministratorFallback({ database, env }),
           }),
           subjects: new RepositoryRoutineEndingNotificationSubjectResolver(
             new AgentRepository(database.kysely),
@@ -237,7 +234,6 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             admission: buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
             recipientPolicy: buildNotificationRecipientPolicy({ database, env, mailer: mailService, logger, metrics }),
             recorder: buildNotificationDeliveryRecorder({ database, env, mailer: mailService, logger, metrics }),
-            administratorFallback: buildNotificationAdministratorFallback({ database, env }),
           }),
           new ConversationRepository(database.kysely),
         );

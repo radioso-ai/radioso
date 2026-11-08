@@ -68,3 +68,107 @@ describe("content quality gate", () => {
     );
   });
 });
+
+describe("page title", () => {
+  const titleOf = (html: string): string | null =>
+    buildFetchedHtmlPage({
+      loadedUrl: "https://example.com/retreats/yoga-weekend",
+      originalHtml: html,
+      statusCode: 200,
+      headers: {}
+    }).title;
+
+  const BODY = "<main><h1>Yoga Retreat Weekend</h1><p>Two days of practice by the lake.</p></main>";
+
+  it("keeps the head title when an inline svg carries a title of its own", () => {
+    const title = titleOf(
+      `<html><head><title>Yoga Retreat Weekend – Example Site</title></head>
+       <body><svg width="0" height="0"><title>Template Page</title></svg>${BODY}</body></html>`
+    );
+
+    expect(title).toBe("Yoga Retreat Weekend – Example Site");
+  });
+
+  it("takes the first of two head titles", () => {
+    const title = titleOf(
+      `<html><head><title>Yoga Retreat Weekend – Example Site</title><title>Template Page</title></head>
+       <body>${BODY}</body></html>`
+    );
+
+    expect(title).toBe("Yoga Retreat Weekend – Example Site");
+  });
+
+  it("takes the head title when a second title sits in the body", () => {
+    const title = titleOf(
+      `<html><head><title>Yoga Retreat Weekend – Example Site</title></head>
+       <body><div><title>Template Page</title></div>${BODY}</body></html>`
+    );
+
+    expect(title).toBe("Yoga Retreat Weekend – Example Site");
+  });
+
+  it("takes the head title when a second head block opens in the body", () => {
+    const title = titleOf(
+      `<html><head><title>Yoga Retreat Weekend – Example Site</title></head>
+       <body><head><title>Template Page</title></head>${BODY}</body></html>`
+    );
+
+    expect(title).toBe("Yoga Retreat Weekend – Example Site");
+  });
+
+  it("falls back to the first title outside the head when the head has none", () => {
+    const title = titleOf(
+      `<html><head><meta charset="utf-8"></head>
+       <body><title>Yoga Retreat Weekend</title><title>Template Page</title>${BODY}</body></html>`
+    );
+
+    expect(title).toBe("Yoga Retreat Weekend");
+  });
+
+  it("does not take an svg label as the page title", () => {
+    const title = titleOf(
+      `<html><head><meta charset="utf-8"></head>
+       <body><svg><title>Company logo</title></svg>${BODY}</body></html>`
+    );
+
+    expect(title).toBeNull();
+  });
+
+  it("does not take a title from the inert contents of a template", () => {
+    const beforeHeadTitle = titleOf(
+      `<html><head><template><title>Template Page</title></template>
+       <title>Yoga Retreat Weekend – Example Site</title></head><body>${BODY}</body></html>`
+    );
+    const noOtherTitle = titleOf(
+      `<html><head><meta charset="utf-8"></head>
+       <body><template><title>Template Page</title></template>${BODY}</body></html>`
+    );
+
+    expect(beforeHeadTitle).toBe("Yoga Retreat Weekend – Example Site");
+    expect(noOtherTitle).toBeNull();
+  });
+
+  it("trims and collapses whitespace inside the title", () => {
+    const title = titleOf(
+      `<html><head><title>
+        Yoga   Retreat
+        Weekend  </title></head><body>${BODY}</body></html>`
+    );
+
+    expect(title).toBe("Yoga Retreat Weekend");
+  });
+
+  it("is null when the title is empty or only whitespace", () => {
+    expect(titleOf(`<html><head><title>   \n </title></head><body>${BODY}</body></html>`)).toBeNull();
+    expect(titleOf(`<html><head><title></title></head><body>${BODY}</body></html>`)).toBeNull();
+    expect(titleOf(`<html><head></head><body>${BODY}</body></html>`)).toBeNull();
+  });
+
+  it("skips an empty head title in favour of the next head title", () => {
+    const title = titleOf(
+      `<html><head><title> </title><title>Yoga Retreat Weekend</title></head><body>${BODY}</body></html>`
+    );
+
+    expect(title).toBe("Yoga Retreat Weekend");
+  });
+});

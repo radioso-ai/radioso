@@ -1,7 +1,7 @@
 ---
 title: "Ops Event Feed"
 description: "Push Radioso product events and errors to an HTTP endpoint as signed JSON: configuration, the envelope shape, signature verification, and what arrives."
-last_updated: 2026-10-24
+last_updated: 2026-11-08
 ---
 
 # Ops Event Feed
@@ -66,7 +66,7 @@ Both streams share one envelope, so a receiver parses a single shape and routes 
 }
 ```
 
-An error event uses `"kind": "error"`, carries the error's own severity, and puts the message, class, stack, and request context in `payload`.
+An error event uses `"kind": "error"`, carries the error's own severity, and puts the message, class, stack, and request context in `payload`. The message names the report's type and the error's class and code, such as `document.worker.tick_failed: AppError [service_unavailable]`, and the stack holds only its frames. The error's own message text stays inside Radioso, because it can quote a provider response or a visitor's words (see [OSS And SaaS Observability](oss-saas-observability.md#internal-error-event-shape)).
 
 Product events always arrive at `severity: "info"`. Whether `chat.failed` deserves a page is your policy, not Radioso's, so route on the typed `name`.
 

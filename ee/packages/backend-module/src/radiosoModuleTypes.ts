@@ -214,6 +214,7 @@ export interface ProductAnalyticsSink {
 
 export type ErrorSeverity = "info" | "warn" | "error";
 
+/** Mirrors `backend/src/shared/errors/errorTypes.ts`, which builds `message` and `stack` from safe parts, never an error's own text. */
 export interface ErrorEvent {
   errorType: string;
   timestamp: string;
@@ -223,13 +224,12 @@ export interface ErrorEvent {
   version?: string;
   message: string;
   errorClass?: string;
+  code?: string | number;
+  causes?: Array<{ errorClass: string; code?: string | number }>;
   stack?: string;
+  fingerprint: string;
   correlation?: Record<string, unknown>;
-  requestContext?: {
-    method?: string;
-    route?: string;
-    statusCode?: number;
-  };
+  requestContext?: { method?: string; route?: string; statusCode?: number };
   metadata?: Record<string, unknown>;
   tags?: Record<string, string>;
 }

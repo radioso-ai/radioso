@@ -111,13 +111,13 @@ describe("enterprise observability module", () => {
       severity: "error",
       service: "radioso-worker",
       environment: "test",
-      message: "worker exploded",
+      message: "worker.failure: WorkerError",
       errorClass: "WorkerError",
       stack: [
-        "WorkerError: worker exploded",
         "    at runJob (/app/backend/src/worker.ts:10:15)",
         "    at file:///app/backend/src/documentWorker.ts:22:3",
       ].join("\n"),
+      fingerprint: "radioso-worker:worker.failure:WorkerError",
       correlation: {
         requestId: "request-1",
       },
@@ -128,7 +128,8 @@ describe("enterprise observability module", () => {
       severity: "error",
       service: "radioso-worker",
       environment: "test",
-      message: "worker exploded",
+      message: "worker.failure: WorkerError",
+      fingerprint: "radioso-worker:worker.failure:WorkerError",
     });
 
     expect(posthogFetch).toHaveBeenCalledWith(
@@ -163,7 +164,7 @@ describe("enterprise observability module", () => {
     }));
     expect(posthogErrorBody.properties.$exception_list[0]).toEqual(expect.objectContaining({
       type: "WorkerError",
-      value: "worker exploded",
+      value: "worker.failure: WorkerError",
     }));
     expect(posthogErrorBody.properties.$exception_list[0].stacktrace.frames).toEqual(
       expect.arrayContaining([
@@ -182,6 +183,52 @@ describe("enterprise observability module", () => {
       }),
     );
     expect(String(sentryFetch.mock.calls[0]?.[1]?.body)).toContain("\"worker.failure\"");
-    expect(String(sentryFetch.mock.calls[0]?.[1]?.body)).toContain("\"worker exploded\"");
+    expect(String(sentryFetch.mock.calls[0]?.[1]?.body)).toContain("\"worker.failure: WorkerError\"");
+  });
+
+  it("sends PostHog the backend's fingerprint, the error's class, code and causes, and every frame of its stack", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const sink = new PosthogErrorSink({ apiKey: "posthog-key", host: "https://eu.i.posthog.com/", fetchImpl });
+
+    await sink.record({
+      errorType: "document.worker.tick_failed",
+      timestamp: "2026-11-08T10:00:00.000Z",
+      severity: "error",
+      service: "radioso-worker",
+      environment: "test",
+      message: "document.worker.tick_failed: AppError [service_unavailable] caused by DatabaseError [25P02]",
+      errorClass: "AppError",
+      code: "service_unavailable",
+      causes: [{ errorClass: "DatabaseError", code: "25P02" }],
+      // The backend hands a sink frames only, so a stack's first line is already a frame.
+      stack: [
+        "    at tick (/app/backend/dist/modules/documents/services/documentProcessingWorker.js:391:13)",
+        "    at async Promise.all (index 0)",
+      ].join("\n"),
+      fingerprint: "radioso-worker:document.worker.tick_failed:AppError:service_unavailable",
+    });
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(body.properties).toEqual(expect.objectContaining({
+      "$exception_fingerprint": "radioso-worker:document.worker.tick_failed:AppError:service_unavailable",
+      code: "service_unavailable",
+      causes: [{ errorClass: "DatabaseError", code: "25P02" }],
+    }));
+    expect(body.properties.$exception_list).toEqual([
+      expect.objectContaining({
+        type: "AppError",
+        value: "document.worker.tick_failed: AppError [service_unavailable] caused by DatabaseError [25P02]",
+      }),
+    ]);
+    expect(body.properties.$exception_list[0].stacktrace.frames).toEqual([
+      expect.objectContaining({
+        function: "tick",
+        filename: "/app/backend/dist/modules/documents/services/documentProcessingWorker.js",
+        lineno: 391,
+        colno: 13,
+        in_app: true,
+      }),
+      expect.objectContaining({ function: "async Promise.all" }),
+    ]);
   });
 });

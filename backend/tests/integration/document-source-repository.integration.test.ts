@@ -38,7 +38,7 @@ describeIntegration("DocumentSourceRepository (Postgres)", () => {
     await database.close().catch(() => undefined);
   });
 
-  it("upsertByExternalId inserts then merges metadata on the partial-index conflict", async () => {
+  it("upsertByExternalId inserts then merges config and metadata on the partial-index conflict", async () => {
     const first = await repository.upsertByExternalId({
       workspaceId,
       kind: "connector",
@@ -59,8 +59,101 @@ describeIntegration("DocumentSourceRepository (Postgres)", () => {
     });
     expect(second.id).toBe(first.id);
     expect(second.name).toBe("Renamed");
-    expect(second.config).toEqual({ b: 2 });
+    expect(second.config).toEqual({ a: 1, b: 2 }); // jsonb || merge
     expect(second.metadata).toEqual({ keep: true, added: 1 }); // jsonb || merge
+  });
+
+  it("upsertByExternalId keeps operator-set config keys and updates the keys a connector supplies", async () => {
+    const registered = await repository.upsertByExternalId({
+      workspaceId,
+      kind: "connector",
+      name: "blog.example",
+      externalId: "wordpress:https://blog.example",
+      config: { siteUrl: "https://blog.example" },
+      metadata: { connectorId: "wordpress" },
+    });
+
+    // An operator edits the source after the connector registered it.
+    await repository.updateConfigByIdAndWorkspaceId({
+      sourceId: registered.id,
+      workspaceId,
+      config: {
+        ...registered.config,
+        documentEnrichmentOverride: "off",
+        documentMetadata: { audience: "customers" },
+      },
+    });
+
+    // The next sync supplies only the connector's own key, with a new value.
+    const resynced = await repository.upsertByExternalId({
+      workspaceId,
+      kind: "connector",
+      name: "blog.example",
+      externalId: "wordpress:https://blog.example",
+      config: { siteUrl: "https://blog.example/news" },
+      metadata: { connectorId: "wordpress" },
+    });
+
+    expect(resynced.id).toBe(registered.id);
+    expect(resynced.config).toEqual({
+      siteUrl: "https://blog.example/news",
+      documentEnrichmentOverride: "off",
+      documentMetadata: { audience: "customers" },
+    });
+    expect((await repository.findByIdAndWorkspaceId(registered.id, workspaceId))?.config).toEqual(resynced.config);
+  });
+
+  it("upsertByExternalId without config leaves the stored config untouched", async () => {
+    const uploads = await repository.upsertByExternalId({
+      workspaceId,
+      kind: "upload",
+      name: "Uploads",
+      externalId: "workspace-uploads",
+      config: {},
+    });
+    await repository.updateConfigByIdAndWorkspaceId({
+      sourceId: uploads.id,
+      workspaceId,
+      config: { documentMetadata: { audience: "staff" } },
+    });
+
+    const again = await repository.upsertByExternalId({
+      workspaceId,
+      kind: "upload",
+      name: "Uploads",
+      externalId: "workspace-uploads",
+    });
+
+    expect(again.config).toEqual({ documentMetadata: { audience: "staff" } });
+  });
+
+  it("upsertByExternalId replaces a nested config value the caller supplies instead of deep-merging it", async () => {
+    const site = await repository.upsertByExternalId({
+      workspaceId,
+      kind: "website",
+      name: "docs.example",
+      externalId: "https://docs.example",
+      config: {
+        url: "https://docs.example",
+        limit: 50,
+        policy: { includeUrlPatterns: ["/a"], excludeUrlPatterns: ["/b"] },
+      },
+    });
+
+    const recrawled = await repository.upsertByExternalId({
+      workspaceId,
+      kind: "website",
+      name: "docs.example",
+      externalId: "https://docs.example",
+      config: { url: "https://docs.example", limit: 10, policy: { includeUrlPatterns: ["/c"] } },
+    });
+
+    expect(recrawled.id).toBe(site.id);
+    expect(recrawled.config).toEqual({
+      url: "https://docs.example",
+      limit: 10,
+      policy: { includeUrlPatterns: ["/c"] },
+    });
   });
 
   it("persists document enrichment source override in config across insert, upsert, and update", async () => {

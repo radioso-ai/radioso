@@ -259,17 +259,23 @@ export function AgentView({
   }, [loadAgents, routeState.agentId])
 
   useEffect(() => {
-    // Both events only say the list changed (a name, a created or deleted agent); the page the
-    // operator is on stays put while the switcher's list is read again.
+    // The sidebar's AgentAreaSubNav reads its own list for the switcher's label. This list drives
+    // selection, the redirect to the selected agent, the Test Chat title and the copilot label.
+    // Creating or deleting an agent navigates right after announcing it, so that load blocks until
+    // the list holds the agent the route now names. A rename leaves the route alone, so its refresh
+    // is silent and keeps the open tab, and the unsaved draft it holds, mounted.
     const handleAgentsUpdated = () => {
+      void loadAgents()
+    }
+    const handleAssistantNameUpdated = () => {
       void loadAgents({ silent: true })
     }
 
     window.addEventListener('radioso:agents-updated', handleAgentsUpdated)
-    window.addEventListener('radioso:assistant-name-updated', handleAgentsUpdated)
+    window.addEventListener('radioso:assistant-name-updated', handleAssistantNameUpdated)
     return () => {
       window.removeEventListener('radioso:agents-updated', handleAgentsUpdated)
-      window.removeEventListener('radioso:assistant-name-updated', handleAgentsUpdated)
+      window.removeEventListener('radioso:assistant-name-updated', handleAssistantNameUpdated)
     }
   }, [loadAgents])
 

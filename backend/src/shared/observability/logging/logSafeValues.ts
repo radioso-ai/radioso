@@ -18,7 +18,7 @@ const PATH_SHAPE_PATTERN = /^\/[\w\-./[\]:]*$/u;
 
 export const isUuid = (value: string): boolean => UUID_PATTERN.test(value);
 
-const isCode = (value: string): boolean => CODE_PATTERN.test(value);
+export const isCode = (value: string): boolean => CODE_PATTERN.test(value);
 
 export const isClassName = (value: string): boolean => CLASS_NAME_PATTERN.test(value);
 
@@ -28,7 +28,7 @@ export const isPathShape = (value: string): boolean => PATH_SHAPE_PATTERN.test(v
 // summarizes its error.
 const ERROR_SUMMARY_PATTERN = /^[A-Za-z_$][\w$.]{0,127}(?: \[[a-z][a-z0-9_.:-]{0,63}\])?$/u;
 
-const isErrorSummary = (value: string): boolean => ERROR_SUMMARY_PATTERN.test(value);
+export const isErrorSummary = (value: string): boolean => ERROR_SUMMARY_PATTERN.test(value);
 
 // One frame of a V8 stack, such as `    at #transformResult (file:///app/executor.js:12:5)` or
 // `    at async Promise.all (index 0)`, or of a Firefox or Safari one, such as

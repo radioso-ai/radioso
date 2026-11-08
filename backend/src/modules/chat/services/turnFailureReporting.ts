@@ -1,4 +1,6 @@
 import { isReportableFault } from "../../../shared/domain/errors.js";
+import { errorReportMessage } from "../../../shared/errors/errorReportShape.js";
+import type { ErrorReportMessage } from "../../../shared/errors/errorTypes.js";
 import { classifyLlmProviderFailure, type LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import { turnExecutionCapabilities, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AuditEventInput } from "../../audit/contracts/index.js";
@@ -44,7 +46,7 @@ const turnFailureClassificationFields = (
  */
 const boundedTurnFailureMessage = (
   providerFailure: LlmProviderFailureClassification | null,
-): string | undefined => (providerFailure ? `LLM provider call failed: ${providerFailure.kind}` : undefined);
+): ErrorReportMessage | undefined => (providerFailure ? errorReportMessage`LLM provider call failed: ${providerFailure.kind}` : undefined);
 
 const turnFailureErrorMessage = (error: unknown, providerFailure: LlmProviderFailureClassification | null): string =>
   boundedTurnFailureMessage(providerFailure) ?? (error instanceof Error ? error.message : "Unknown error");
@@ -75,7 +77,7 @@ interface TurnFailureReportMetadata extends TurnFailureClassificationFields {
 interface TurnFailureReportInput {
   errorType: "chat.turn_failed";
   error: unknown;
-  message?: string;
+  message?: ErrorReportMessage;
   metadata: TurnFailureReportMetadata;
 }
 

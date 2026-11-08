@@ -31,8 +31,17 @@ test("name, instructions, model and answer settings share one Profile page", asy
 
 test("renaming the agent keeps an unsaved Profile draft while the agent switcher refreshes", async ({ page }) => {
   await seedDashboardStorage(page);
-  const requestLog: string[] = [];
-  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), requestLog });
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
+  // The name autosaves on its own; the agent list is then read again, by the sidebar's switcher
+  // and by the agent view, so count the reads that follow the save.
+  let nameSaved = false;
+  let refreshReads = 0;
+  page.on("request", (request) => {
+    if (request.method() === "PUT" && new URL(request.url()).pathname === `/backend/api/v1/agents/${defaultAgentId}`) nameSaved = true;
+  });
+  page.on("response", (response) => {
+    if (nameSaved && response.request().method() === "GET" && new URL(response.url()).pathname === "/backend/api/v1/agents") refreshReads += 1;
+  });
 
   await page.goto(profileUrl);
   const instructions = page.locator("#assistantAnswerInstruction");
@@ -41,35 +50,14 @@ test("renaming the agent keeps an unsaved Profile draft while the agent switcher
 
   await page.getByLabel("Assistant name").fill("Renamed Desk");
 
-  // The name autosaves on its own; the agent list is then read again for the switcher's label.
-  const nameSave = `PUT /agents/${defaultAgentId}`;
-  await expect.poll(() => requestLog.includes(nameSave)).toBe(true);
-  const savedAt = requestLog.lastIndexOf(nameSave);
-  await expect.poll(() => requestLog.slice(savedAt + 1).includes("GET /agents")).toBe(true);
+  await expect.poll(() => refreshReads).toBeGreaterThanOrEqual(2);
+  await expect(page.getByRole("button", { name: "Renamed Desk", exact: true })).toBeVisible();
 
-  // The refresh must not replace the page: the unsaved draft is still on screen and still unsaved.
+  // The refreshed list is in, and it must not have replaced the page: the unsaved draft is still on
+  // screen and still unsaved.
   await expect(instructions).toHaveValue("Draft wording that is not saved yet.");
   await expect(page.getByText("Unsaved changes")).toBeVisible();
   await expect(page.getByLabel("Assistant name")).toHaveValue("Renamed Desk");
-});
-
-test("a change to the agent list elsewhere keeps an unsaved Profile draft on screen", async ({ page }) => {
-  await seedDashboardStorage(page);
-  const requestLog: string[] = [];
-  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), requestLog });
-
-  await page.goto(profileUrl);
-  const instructions = page.locator("#assistantAnswerInstruction");
-  await instructions.fill("Draft wording that is not saved yet.");
-  await expect(page.getByText("Unsaved changes")).toBeVisible();
-
-  // The sidebar announces a created or deleted agent this way.
-  const loggedBefore = requestLog.length;
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent("radioso:agents-updated")));
-  await expect.poll(() => requestLog.slice(loggedBefore).includes("GET /agents")).toBe(true);
-
-  await expect(instructions).toHaveValue("Draft wording that is not saved yet.");
-  await expect(page.getByText("Unsaved changes")).toBeVisible();
 });
 
 test("the retired identity and behavior anchors still land on Profile", async ({ page }) => {

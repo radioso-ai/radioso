@@ -310,6 +310,14 @@ To turn it on for a stack:
 
 A one-off `psql` session needs nothing extra: `psql` tries TLS first by default.
 
+## Database maintenance window
+
+Cloud SQL restarts an instance to apply its own updates, and the bundled Terraform runs a single-zone instance, so the stack has no database for the few minutes a restart takes: chat turns and worker jobs that reach it then fail. `db_maintenance_window` names the weekly hour Cloud SQL schedules that maintenance in. Left at `null`, Cloud SQL picks the time, and it can be any day and any hour.
+
+Set it per stack as `{ day = 7, hour = 2 }`. `day` runs from 1 (Monday) to 7 (Sunday) and `hour` from 0 to 23, both in UTC, so convert your quiet hour from local time; in summer time the window lands an hour later on the local clock. `update_track` picks when in Cloud SQL's rollout the instance takes each update, and defaults to `"stable"`. The environment roots under `infra/terraform/environments` each set Sunday 03:00 local winter time for their region: hour `9` for `us-central1` and hour `2` for `europe-west1`.
+
+Changing the window updates the instance in place without a restart, so it can go out with any apply. The window governs planned maintenance; Cloud SQL can still restart an instance outside it for an urgent fix.
+
 ## Conversation erasure keys
 
 The `228_conversation_erasure_*` migrations give each table that names a conversation a cascading key, one table per migration, and add the indexes the cascade and the erasers look rows up by. Each one waits at most three seconds for its table's lock; a deploy that hits that rolls back whole, and running it again is safe. `229_conversation_erasure_links_validate` then removes rows whose conversation is already gone and validates the keys without blocking reads or writes.

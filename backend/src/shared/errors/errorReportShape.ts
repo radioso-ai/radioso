@@ -67,6 +67,9 @@ export const redactedErrorFields = (input: { error?: unknown; errorClass?: strin
 
 const summaryOf = ({ errorClass, code }: ErrorIdentity): string => (code === undefined ? errorClass : `${errorClass} [${String(code)}]`);
 
+const describeChain = (identity: ErrorIdentity, causes: readonly ErrorIdentity[]): string =>
+  [summaryOf(identity), ...causes.map((cause) => `caused by ${summaryOf(cause)}`)].join(" ");
+
 /**
  * The message a report carries when its caller wrote none: the report's type, then the error's
  * class and code and each cause's, such as
@@ -76,10 +79,17 @@ export const defaultReportMessage = (
   errorType: string,
   identity: ErrorIdentity | undefined,
   causes: readonly ErrorIdentity[],
-): ErrorReportMessage =>
-  [identity ? `${errorType}: ${summaryOf(identity)}` : errorType, ...causes.map((cause) => `caused by ${summaryOf(cause)}`)].join(
-    " ",
-  ) as ErrorReportMessage;
+): ErrorReportMessage => (identity ? `${errorType}: ${describeChain(identity, causes)}` : errorType) as ErrorReportMessage;
+
+/**
+ * A caught value named the way a report names it, such as
+ * `AppError [internal_error] caused by Error [ECONNRESET]`: for a product analytics event, which
+ * leaves Radioso like an error report does, to say what failed without the error's own message.
+ */
+export const errorSummaryOf = (error: unknown): ErrorReportMessage => {
+  const { identity, causes } = redactedErrorFields({ error });
+  return (identity ? describeChain(identity, causes) : "UnknownError") as ErrorReportMessage;
+};
 
 /**
  * Groups recurrences of one failure: the service, the report's type, and the error's class and

@@ -326,6 +326,10 @@ not limited to the HTTP request path:
   same shape. Both the report's message and the matching `chat.failed` product
   analytics event carry a fixed string naming the failure kind in place of the
   provider's own error text, which can echo back the customer's rejected prompt.
+  Any other failure is named by its class and code in both, such as `TypeError`
+  or `AppError [internal_error] caused by Error [ECONNRESET]` in the event's
+  `errorMessage`. Product analytics leave Radioso the same way error reports do,
+  so `document.ingest_failed` names its `reason` the same way.
 - **Browser errors** — posted to `/api/v1/observability/frontend-errors`
   (`frontend.*.unhandled`). The report keeps the browser error's class and the
   frames of its stack and component stack. The browser's message text is left

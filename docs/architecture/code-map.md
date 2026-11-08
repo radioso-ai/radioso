@@ -900,7 +900,9 @@ Focused checks:
 Owns notifying operators outside the dashboard (email) about conversation and
 routine events: recipient confirmation and tokens, delivery admission policy,
 provider suppression handling, routine-ending notification text, the per-address
-delivery log, and the alert to owners and admins when a notice skips an address.
+delivery log, the alert to owners and admins when a notice skips an address, and
+sending the notice itself to them when recipient policy leaves out every configured
+address and no webhook is set.
 
 Public surfaces and key files:
 
@@ -910,7 +912,9 @@ Public surfaces and key files:
   `notificationRecipientPolicy.ts`
 - `backend/src/modules/operatorNotifications/routineEndingNotificationFromAction.ts`
 - `backend/src/modules/operatorNotifications/notificationEmailPlan.ts`,
-  `notificationDelivery.ts` (plan and send, recording one row per address)
+  `notificationDelivery.ts` (plan and send, recording one row per address),
+  `notificationAdministratorFallback.ts` (who gets a notice no configured address can
+  receive, and the line their copy opens with; composed in `app/composition/contactDelivery.ts`)
 - `backend/src/modules/operatorNotifications/notificationDeliveryLog.ts`,
   `undeliveredRecipientAlert.ts` (the record's writer and reader, and the throttled alert)
 - `backend/src/db/repositories/notificationDeliveryRepository.ts`,

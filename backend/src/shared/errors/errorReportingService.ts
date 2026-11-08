@@ -96,16 +96,27 @@ export class ErrorReportingService {
     return errorEvent;
   }
 
-  async reportUnhandledRequestError(input: {
-    error: unknown;
-    request: RequestCorrelationSource;
-    statusCode?: number;
+  async reportUnhandledRequestError(input: RequestFailure): Promise<ErrorEvent | null> {
+    return this.reportRequestFailure({ ...input, errorType: "http.request.unhandled" });
+  }
+
+  /**
+   * A failed request under the type its caller classified it as, such as a `databaseFailureReport`,
+   * with the same correlation and request context as an unhandled one.
+   */
+  async reportRequestFailure(input: RequestFailure & {
+    errorType: string;
+    severity?: ErrorSeverity;
+    message?: ErrorReportMessage;
+    metadata?: Record<string, unknown>;
   }): Promise<ErrorEvent | null> {
     // The matched pattern, never the URL: a path segment can hold a credential. An error raised
     // before any route matched carries no route at all.
     const route = matchedRoutePattern(input.request);
     return this.report({
-      errorType: "http.request.unhandled",
+      errorType: input.errorType,
+      severity: input.severity,
+      message: input.message,
       correlation: createRequestCorrelation(input.request),
       error: input.error,
       requestContext: {
@@ -113,6 +124,13 @@ export class ErrorReportingService {
         ...(route ? { route } : {}),
         statusCode: input.statusCode ?? 500,
       },
+      metadata: input.metadata,
     });
   }
+}
+
+interface RequestFailure {
+  error: unknown;
+  request: RequestCorrelationSource;
+  statusCode?: number;
 }

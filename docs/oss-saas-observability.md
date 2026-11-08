@@ -301,6 +301,16 @@ not limited to the HTTP request path:
   message, an Enterprise error shaped the same way, or an unexpected exception
   answered with a generic `500`. The same `isReportableFault` rule as chat turns
   (next bullet) decides what counts: anything under 500 stays a client outcome.
+  A failure to get a database connection, by itself or as the cause an error
+  wraps, is reported under its own type instead (see
+  [`backend/src/shared/errors/databaseFailureReport.ts`](../backend/src/shared/errors/databaseFailureReport.ts)):
+  `database.unavailable` at warning level, with a bounded `reason` in its
+  metadata and its message (`Database unavailable (connect_timeout): Error caused by Error`),
+  when Postgres could not be reached, so a database restart groups apart from
+  code faults; `database.pool_exhausted` at error level when every pooled
+  connection stayed checked out, which is this process holding them rather than
+  the database being down. Unless the error carries its own status, the client
+  gets `503 service_unavailable`.
   A request whose response already started (an SSE chat turn failing
   mid-stream, or any other response that started writing its body) also gets
   exactly one report there. Each failure is reported once, even when a caller
@@ -335,7 +345,10 @@ not limited to the HTTP request path:
   Any other failure is named by its class and code in both, such as `TypeError`
   or `AppError [internal_error] caused by Error [ECONNRESET]` in the event's
   `errorMessage`. Product analytics leave Radioso the same way error reports do,
-  so `document.ingest_failed` names its `reason` the same way.
+  so `document.ingest_failed` names its `reason` the same way. A turn that
+  failed for want of a database connection is reported the way such a request
+  is, as `database.unavailable` or `database.pool_exhausted`, with the turn's
+  workspace and conversation in its metadata.
 - **Browser errors** — posted to `/api/v1/observability/frontend-errors`
   (`frontend.*.unhandled`). The report keeps the browser error's class and the
   frames of its stack and component stack. The browser's message text is left

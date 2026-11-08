@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 
+import { databaseFailureReport } from "../../../shared/errors/databaseFailureReport.js";
 import type { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
 import { AppError, isReportableFault, isStructuredAppError } from "../../../shared/domain/errors.js";
 import { applyRetryAfterFromError } from "../rateLimitHeaders.js";
@@ -54,10 +55,17 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
     // an error under 500 or one marked `isExpectedOutcome` (a lost client), and anything
     // else — any 5xx, AppError or not — is reported once. A caller that already reported
     // this exact error object (e.g. ChatTurnLifecycle.recordFailure) is not reported again.
+    // A failure to get a database connection is reported as what it is, whatever the response
+    // below says: an outage of the database, or this process's own pool with none free.
+    const databaseFailure = databaseFailureReport(error);
     const reportFault = (statusCode?: number): void => {
-      if (isReportableFault(error) && !errorReportingService?.wasReported(error)) {
-        void errorReportingService?.reportUnhandledRequestError({ error, request: req, statusCode });
+      if (!isReportableFault(error) || errorReportingService?.wasReported(error)) {
+        return;
       }
+      const failure = { error, request: req, statusCode };
+      void (databaseFailure
+        ? errorReportingService?.reportRequestFailure({ ...failure, ...databaseFailure })
+        : errorReportingService?.reportUnhandledRequestError(failure));
     };
 
     if (res.headersSent) {
@@ -128,6 +136,19 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
           message: isInlineDocumentMutationRequest(req)
             ? "Document content exceeds the inline size limit. Import the file instead."
             : "Request body exceeds maximum size",
+        },
+      });
+      return;
+    }
+
+    if (databaseFailure) {
+      // The request itself was fine; the service could not get at its data, so 503 is the honest
+      // status.
+      reportFault(503);
+      res.status(503).json({
+        error: {
+          code: "service_unavailable",
+          message: "Service temporarily unavailable",
         },
       });
       return;

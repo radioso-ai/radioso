@@ -68,9 +68,9 @@ describeIntegration("DocumentSourceRepository (Postgres)", () => {
       workspaceId,
       kind: "connector",
       name: "blog.example",
-      externalId: "wordpress:https://blog.example",
-      config: { siteUrl: "https://blog.example" },
-      metadata: { connectorId: "wordpress" },
+      externalId: "example-connector:https://blog.example",
+      config: { siteUrl: "https://blog.example", syncMode: "full" },
+      metadata: { connectorId: "example-connector" },
     });
 
     // An operator edits the source after the connector registered it.
@@ -84,19 +84,20 @@ describeIntegration("DocumentSourceRepository (Postgres)", () => {
       },
     });
 
-    // The next sync supplies only the connector's own key, with a new value.
+    // The next sync supplies only the connector's own keys; one of them has a new value.
     const resynced = await repository.upsertByExternalId({
       workspaceId,
       kind: "connector",
       name: "blog.example",
-      externalId: "wordpress:https://blog.example",
-      config: { siteUrl: "https://blog.example/news" },
-      metadata: { connectorId: "wordpress" },
+      externalId: "example-connector:https://blog.example",
+      config: { siteUrl: "https://blog.example", syncMode: "incremental" },
+      metadata: { connectorId: "example-connector" },
     });
 
     expect(resynced.id).toBe(registered.id);
     expect(resynced.config).toEqual({
-      siteUrl: "https://blog.example/news",
+      siteUrl: "https://blog.example",
+      syncMode: "incremental",
       documentEnrichmentOverride: "off",
       documentMetadata: { audience: "customers" },
     });

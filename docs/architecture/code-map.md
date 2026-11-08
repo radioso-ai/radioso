@@ -918,7 +918,9 @@ Public surfaces and key files:
 - `backend/src/modules/operatorNotifications/notificationDeliveryLog.ts`,
   `undeliveredRecipientAlert.ts` (the record's writer and reader, and the throttled alert)
 - `backend/src/db/repositories/notificationDeliveryRepository.ts`,
-  `undeliveredRecipientAlertRepository.ts`
+  `undeliveredRecipientAlertRepository.ts` (the alert's throttle),
+  `notificationAdministratorRepository.ts` (the one owners-and-admins query the alert and the
+  fallback share, behind `NotificationAdministratorReader`)
 - `backend/src/app/http/routes/notificationDeliveryRoutes.ts` (`GET /api/v1/notification-deliveries`),
   `backend/src/modules/operatorCopilot/tools/notificationDeliveries.ts` (`list_notification_deliveries`)
 - `frontend/components/dashboard/settings/skills/RecentNotifications.tsx`

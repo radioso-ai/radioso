@@ -1,3 +1,4 @@
+import type { DatabaseUnavailableReason } from "../infra/databaseConnectionFailure.js";
 import type { AppLogger } from "../observability/logger.js";
 import { matchedRoutePattern } from "../observability/matchedRoute.js";
 import { createRequestCorrelation, type CorrelationFields, type RequestCorrelationSource } from "../observability/telemetry/correlation.js";
@@ -132,9 +133,19 @@ export class ErrorReportingService {
    * the request's code: the same request succeeds once the database is back. `reason` is a bounded
    * code.
    */
-  async reportDatabaseUnavailableRequest(input: RequestFailure & { reason: string }): Promise<ErrorEvent | null> {
+  async reportDatabaseUnavailableRequest(input: RequestFailure & { reason: DatabaseUnavailableReason }): Promise<ErrorEvent | null> {
     const { reason, ...failure } = input;
     return this.reportRequestFailure({ ...failure, errorType: "database.unavailable", severity: "warn", metadata: { reason } });
+  }
+
+  /**
+   * A request that failed because every pooled connection stayed checked out past the pool's
+   * connection timeout. The database may be fine; this process held its connections (a leak, a
+   * connection kept across a slow call, slow queries filling the pool), so it is an error under a
+   * type of its own rather than part of an outage.
+   */
+  async reportDatabasePoolExhaustedRequest(input: RequestFailure): Promise<ErrorEvent | null> {
+    return this.reportRequestFailure({ ...input, errorType: "database.pool_exhausted" });
   }
 
   private async reportRequestFailure(input: RequestFailure & {

@@ -2,6 +2,7 @@ import type { Kysely, RawBuilder } from "kysely";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 import type { AppLogger } from "../observability/logger.js";
+import { markConnectFailure } from "./databaseConnectionFailure.js";
 import { createKyselyDatabase } from "./kysely/kyselyDatabase.js";
 import type { DB } from "./kysely/schema.js";
 import { sessionAdvisoryUnlock, trySessionAdvisoryLock } from "./kysely/sqlHelpers.js";
@@ -40,6 +41,34 @@ const describeIdleConnectionLoss = (error: Error, applicationName?: string): Idl
   };
 };
 
+type ConnectCallback = (error: Error | undefined, client: PoolClient | undefined, done: (release?: unknown) => void) => void;
+
+/**
+ * The pool `Database` owns. Every borrowed connection comes through `connect`, including the ones
+ * `pool.query` and Kysely borrow, so a failure here is a connection that could not be had, never a
+ * statement that failed. It is marked as such for `classifyDatabaseConnectionFailure`.
+ */
+class DatabasePool extends Pool {
+  override connect(): Promise<PoolClient>;
+  override connect(callback: ConnectCallback): void;
+  override connect(callback?: ConnectCallback): Promise<PoolClient> | undefined {
+    if (callback) {
+      super.connect((error, client, done) => callback(markConnectFailure(error), client, done));
+      return undefined;
+    }
+    return this.connectMarked();
+  }
+
+  private async connectMarked(): Promise<PoolClient> {
+    try {
+      return await super.connect();
+    } catch (error) {
+      markConnectFailure(error);
+      throw error;
+    }
+  }
+}
+
 export class Database {
   readonly pool: Pool;
   #kysely?: Kysely<DB>;
@@ -50,7 +79,7 @@ export class Database {
   constructor(connectionString: string, options: DatabaseOptions = {}) {
     this.#logger = options.logger;
     this.#applicationName = options.applicationName;
-    this.pool = new Pool({
+    this.pool = new DatabasePool({
       connectionString,
       max: options.poolMax,
       idleTimeoutMillis: options.idleTimeoutMs,

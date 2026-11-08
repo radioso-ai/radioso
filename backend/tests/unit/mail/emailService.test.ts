@@ -384,7 +384,7 @@ describe("mail service", () => {
   it("logs only redacted facts about confirmation and unsubscribe-bearing notices", async () => {
     const spies = consoleSpies();
     const driver = driverOf(createMailService({ MAIL_DRIVER: "log" }));
-    const address = "francesco@example.com";
+    const address = "marta@valmora.example";
     const confirmToken = "confirm-token-that-must-not-be-logged";
     const revokeToken = "revoke-token-that-must-not-be-logged";
 

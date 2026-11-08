@@ -119,12 +119,12 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
   it("preserves uncited contact details verbatim", async () => {
     const presenter = new ChatAnswerPresenter(stubExpansionService);
     const answer =
-      "Widgets are great[[1]].\n\nReach us by phone +39 0742 813620 or email info@ananda.it.";
+      "Widgets are great[[1]].\n\nReach us by phone +39 02 5550 1234 or email info@valmora.example.";
 
     const result = await presenter.presentWithoutSuggestions(buildSession(), answer, "What is X?");
 
-    expect(result.answer).toContain("+39 0742 813620");
-    expect(result.answer).toContain("info@ananda.it");
+    expect(result.answer).toContain("+39 02 5550 1234");
+    expect(result.answer).toContain("info@valmora.example");
   });
 
   it("reports a grounded outcome by default", async () => {

@@ -1036,10 +1036,10 @@ describe("public chat contract", () => {
       },
       chatGateway: {
         async answer() {
-          return "Narayani is a teacher and author.";
+          return "Freya is a teacher and author.";
         },
         async *streamAnswer() {
-          yield "Narayani is a teacher and author.";
+          yield "Freya is a teacher and author.";
         },
       },
     });
@@ -1048,7 +1048,7 @@ describe("public chat contract", () => {
     await request(app)
       .post("/api/v1/document/")
       .set(adminSessionHeaders(session))
-      .send({ title: "Event listing", content: "Narayani leads a satsang this weekend." });
+      .send({ title: "Event listing", content: "Freya leads a satsang this weekend." });
 
     await updateRetrievalSkillSettings(dependencies, workspaceId, {
       queryRewriteEnabled: false,
@@ -1067,7 +1067,7 @@ describe("public chat contract", () => {
     const response = await request(app)
       .post(`/api/v1/public/chat/${chatToken}`)
       .set("x-radioso-public-session", publicSession.publicSessionToken)
-      .send({ message: "Who is Narayani?", stream: false });
+      .send({ message: "Who is Freya?", stream: false });
 
     expect(response.status).toBe(200);
     expect(response.body.answer).toEqual(expect.any(String));

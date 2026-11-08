@@ -15,7 +15,7 @@ const conversationId = "33333333-3333-4333-8333-333333333333";
 const conversation = {
   id: conversationId,
   agentId: defaultAgentId,
-  agentName: "Gioia",
+  agentName: "Sola",
   agentInternalName: null,
   sourceChannel: "website_embed",
   sourceOrigin: "https://www.example.test",
@@ -35,7 +35,7 @@ const conversationDetail = {
   conversationId,
   workspaceId,
   agentId: defaultAgentId,
-  agentName: "Gioia",
+  agentName: "Sola",
   sourceChannel: "website_embed",
   sourceOrigin: "https://www.example.test",
   channelContext: null,

@@ -33,8 +33,8 @@ describe("implicit citation diagnostics", () => {
 
   it("supports multilingual overlap and fails safely", () => {
     expect(diagnoseImplicitCitationSupport(
-      [{ text: "Ananda offre corsi residenziali in Italiano." }],
-      [{ documentId: "doc-3", chunkId: "chunk-3", title: "Corsi", content: "Ananda offre corsi residenziali in Italiano." }],
+      [{ text: "Valmora offre corsi residenziali in Italiano." }],
+      [{ documentId: "doc-3", chunkId: "chunk-3", title: "Corsi", content: "Valmora offre corsi residenziali in Italiano." }],
     )).toMatchObject({ eligibleSegmentCount: 1, implicitMatchCount: 1 });
 
     expect(diagnoseImplicitCitationSupport([], [])).toEqual({

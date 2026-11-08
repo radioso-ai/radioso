@@ -1510,7 +1510,7 @@ describe("WorkbenchReplayRunner", () => {
             routineId: "contact",
             stepId: "handoff",
             terminalKind: "handoff",
-            collected: { program: "A stay at Ananda", guests: 2 },
+            collected: { program: "A stay at Valmora", guests: 2 },
           },
           ...(reportsNotice
             ? {
@@ -1518,7 +1518,7 @@ describe("WorkbenchReplayRunner", () => {
                   routineId: "contact",
                   stepId: "handoff",
                   terminalKind: "handoff",
-                  collected: { program: "A stay at Ananda", guests: 2 },
+                  collected: { program: "A stay at Valmora", guests: 2 },
                 },
               }
             : {}),
@@ -1558,7 +1558,7 @@ describe("WorkbenchReplayRunner", () => {
       executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
-      query: "Please book Ananda for me",
+      query: "Please book Valmora for me",
       history: [],
       includeSlotValues: true,
     });
@@ -1567,7 +1567,7 @@ describe("WorkbenchReplayRunner", () => {
       routineId: "contact",
       stepId: "handoff",
       terminalKind: "handoff",
-      collected: { program: "A stay at Ananda", guests: 2 },
+      collected: { program: "A stay at Valmora", guests: 2 },
     });
     // No actual delivery happens for a replayed turn — only the preview the trace carries.
     expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
@@ -1581,7 +1581,7 @@ describe("WorkbenchReplayRunner", () => {
         "A conversation needs a human operator.",
       ]),
     });
-    expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
+    expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Valmora");
   });
 
   const completionNoticeReplay = (notice: { collected?: Record<string, unknown>; replyToSlot?: string } = {}) => {
@@ -1640,7 +1640,7 @@ describe("WorkbenchReplayRunner", () => {
       executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
-      query: "Please book Ananda for me",
+      query: "Please book Valmora for me",
       history: [],
       ...options,
     });

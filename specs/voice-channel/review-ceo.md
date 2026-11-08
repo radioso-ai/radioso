@@ -15,7 +15,7 @@ Code claims below were checked with narrow reads. Where a claim was not checked,
 | ID | Decision | Options | Recommended | Status | Why |
 |---|---|---|---|---|---|
 | D1 | Go or no-go on Phase 0 | (a) start now; (b) start only after a partner commits in writing; (c) shelve | (b) | PENDING (founder) | No issue, spec, or customer quote asks for voice. A written partner commitment is the cheapest demand proof. |
-| D2 | Design partner | (a) Ananda after-hours line; (b) another customer; (c) internal test line only | (a), if Ananda agrees | PENDING (founder) | Ananda routes booking to "the reception" and is phone-shaped. Its willingness is unknown. |
+| D2 | Design partner | (a) Valmora after-hours line; (b) another customer; (c) internal test line only | (a), if Valmora agrees | PENDING (founder) | Valmora routes booking to "the reception" and is phone-shaped. Its willingness is unknown. |
 | D3 | Phone or browser first | (a) phone; (b) embed microphone; (c) both | (a) | PENDING (founder) | Buyers are phone-first. The embed adds WebRTC and browser work Phase 0 avoids. |
 | D4 | Who owns the vendor account in Phase 0 | (a) partner-owned, Radioso does the setup; (b) Radioso-owned with a vendor spend cap | (a); (b) as fallback | PENDING (founder) | (a) removes Radioso's per-minute exposure and defers the minute counter. (b) needs a hard cap before any real number. |
 | D5 | First vendor | (a) ElevenLabs Agents, EU region; (b) Twilio ConversationRelay; (c) Vapi or Retell | (a), after a one-day spike | PENDING (founder) | Only vendor in the memo with real EU regions plus native SIP. The spike verifies call-id passing, timeouts, retries, and transfer semantics. |
@@ -93,7 +93,7 @@ The 10x idea is not "Radioso has voice". It is "one governed agent, every channe
 2. **The barge-in mechanism in section 6.1 is wrong.** On disconnect the turn keeps running for up to 120 s (`behaviorConfig.ts:218`). A new turn supersedes only before emission; after that it waits (`conversationTurnRegistry.ts:146-175`). History then stores an answer the caller never heard.
 3. **The "text-only gates" are governance gates.** The head carries the coverage verdict and the `answer` / `no_support` / `out_of_scope` outcome. The grounding gate holds unsourced prose. The head also precedes the answer in generation order, so skipping it saves little unless the schema is reordered.
 4. **The 1 s bridge is measured at Radioso, not at the caller.** Add vendor endpointing, transcription and speech legs, and the caller hears about 1.5 to 2.3 s of silence first. Phase 0 real answers land at about 4 to 6 s.
-5. **Ananda's dominant turns are routine turns, and routine replies are not streamed.** A slot answer like "my name is Roberta" gets a bridge and a multi-second wait. Phase 0 will measure Phase 0 latency, not voice demand, unless the learning question is restated.
+5. **Valmora's dominant turns are routine turns, and routine replies are not streamed.** A slot answer like "my name is Roberta" gets a bridge and a multi-second wait. Phase 0 will measure Phase 0 latency, not voice demand, unless the learning question is restated.
 6. **Silence cliffs exist.** The planner times out at 12 s, then runs four staged fallback calls. A human-owned conversation generates a waiting message on every utterance.
 7. **Security gaps.** The proposal puts the token in the URL path. The transfer destination must be operator-fixed to prevent toll fraud. Call ids must be scoped to the grant.
 8. **A `voice` generation surface mixes two axes.** Voice steering is a channel concern; email (#1403) is adding a channel-context variant in parallel.
@@ -108,7 +108,7 @@ The 10x idea is not "Radioso has voice". It is "one governed agent, every channe
 
 - **The real problem.** The proposal frames latency as the problem. Latency is the constraint. The buyer problem would be calls to a small business that go unanswered after hours or at peaks.
 - **Target outcome.** One partner's real calls answered by the same agent, with measured resolution, transfer rate, and hang-ups.
-- **Do-nothing cost.** Low near term: per the proposal's appendix, Ananda's 30 most recent conversations are all `website_embed`. Medium long term: Zendesk (GA September 2026), Intercom, and Decagon ship voice. "Has voice" becomes a checklist line for support buyers.
+- **Do-nothing cost.** Low near term: per the proposal's appendix, Valmora's 30 most recent conversations are all `website_embed`. Medium long term: Zendesk (GA September 2026), Intercom, and Decagon ship voice. "Has voice" becomes a checklist line for support buyers.
 - **Direct or proxy.** The proposal answers the founder's architecture question well. It solves the proxy "can Radioso talk fast enough", not the buyer pain. Phase 0 is the right instrument only if it measures answered calls and avoided transfers, not just tolerance of bridges.
 
 ### Step 0B. Existing code leverage
@@ -255,7 +255,7 @@ See the Phase 0 table in Step 0G. The rescue rule is that every turn ends audibl
 | Bridge trigger | about 900 ms | proposal section 5 |
 | First speech audio | 100 to 300 ms | proposal section 4 |
 | **Caller hears the bridge after** | **about 1.5 to 2.3 s** | sum |
-| Caller hears the real answer after (Phase 0) | about 4 to 6 s | TTFT p50 3.6 s local, 4.5 s Ananda routine turn, plus vendor legs |
+| Caller hears the real answer after (Phase 0) | about 4 to 6 s | TTFT p50 3.6 s local, 4.5 s Valmora routine turn, plus vendor legs |
 
 The 1 s bridge is credible only as a Radioso-side number. For the caller to hear something near 1 s, five things must be true. First, planner p50 under about 500 ms on the voice model with a cached prefix, measured on a real fused prompt. Today's p50 is 1.6 to 3.8 s, so that is a 3x to 7x speedup with no evidence yet. Second, `quick_reply` accuracy holds on that model under the eval gate. Third, the bridge fires at about 300 to 400 ms for turns that are not quick replies. Fourth, vendor endpointing stays under 500 ms. Fifth, time to first audio is measured from end of speech at the vendor, not from Radioso's first delta. Bypassing the head gate does not help much: the head is generated before the answer, so its cost remains unless the schema is reordered.
 
@@ -265,7 +265,7 @@ Metrics, all low cardinality: `voice_door_requests_total{status}`, `voice_first_
 
 ### Section 9. Deployment and rollout
 
-The door returns 404 unless the workspace has voice enabled and a voice-scoped grant; it is off by default in cloud and self-hosted builds. Enablement is staff-only for the design partner. Roll out in three steps: a staging number, then the partner's after-hours line with callback only, then business hours with transfer. Ananda runs in the EU stack, and the vendor region must match; the two production regions deploy separately. Minute caps: under D4(a) the partner's vendor account carries minutes, and Radioso relies on per-grant rate limits and conversation metering. Under D4(b), a hard vendor spend cap and a daily call cap must exist before a real number. Rollback is revoking the grant; the vendor falls back to voicemail. Phase 0 needs no new service and no new infrastructure secret.
+The door returns 404 unless the workspace has voice enabled and a voice-scoped grant; it is off by default in cloud and self-hosted builds. Enablement is staff-only for the design partner. Roll out in three steps: a staging number, then the partner's after-hours line with callback only, then business hours with transfer. Valmora runs in the EU stack, and the vendor region must match; the two production regions deploy separately. Minute caps: under D4(a) the partner's vendor account carries minutes, and Radioso relies on per-grant rate limits and conversation metering. Under D4(b), a hard vendor spend cap and a daily call cap must exist before a real number. Rollback is revoking the grant; the vendor falls back to voicemail. Phase 0 needs no new service and no new infrastructure secret.
 
 ### Section 10. Long-term trajectory
 
@@ -293,7 +293,7 @@ Vendor path dependency is low at the wire format and real at the edges: call-id 
 
 **UNRESOLVED DECISIONS:**
 - D1 Go or no-go on Phase 0 (recommended: only after a written partner commitment)
-- D2 Design partner (recommended: Ananda after-hours line)
+- D2 Design partner (recommended: Valmora after-hours line)
 - D3 Phone or browser first (recommended: phone)
 - D4 Vendor account owner (recommended: partner-owned, Radioso sets it up)
 - D5 First vendor (recommended: ElevenLabs EU after a one-day spike)

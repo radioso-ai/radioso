@@ -282,7 +282,7 @@ describe("unified agent skills contract", () => {
         name: "notify_bookings",
         capability: "notify",
         target: { kind: "notify_delivery", id: null },
-        config: { delivery: { recipientEmails: ["francesco@example.com"], webhook: { url: "https://hooks.example.com/secret" } } },
+        config: { delivery: { recipientEmails: ["marta@valmora.example"], webhook: { url: "https://hooks.example.com/secret" } } },
         invocationMode: "routine_named",
         enabled: true,
       });
@@ -301,8 +301,8 @@ describe("unified agent skills contract", () => {
     expect(destinations.body.skills).toEqual([{
       skillName: "notify_bookings",
       via: "named_skill",
-      recipientEmails: ["francesco@example.com"],
-      recipients: [{ email: "francesco@example.com", state: "confirmation_not_required" }],
+      recipientEmails: ["marta@valmora.example"],
+      recipients: [{ email: "marta@valmora.example", state: "confirmation_not_required" }],
       recipientsFromWorkspaceOwner: false,
       webhookConfigured: true,
     }]);
@@ -313,13 +313,13 @@ describe("unified agent skills contract", () => {
     const resend = await request(app)
       .post(`/api/v1/agents/${agentId}/notification-recipient-confirmations/resend`)
       .set(headers)
-      .send({ email: "FRANCESCO@example.com" });
+      .send({ email: "MARTA@valmora.example" });
     expect(resend.status).toBe(202);
     expect(resend.body).toEqual({ sent: true });
     expect(resendConfirmation).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: session.workspaceId,
       agentId,
-      email: "francesco@example.com",
+      email: "marta@valmora.example",
     }));
 
     const machine = await request(app)

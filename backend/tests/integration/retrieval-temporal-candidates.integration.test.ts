@@ -282,7 +282,7 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
   describe("requested range ordered by similarity to the question", () => {
     const space = { id: randomUUID(), dimensions: 3, distanceMetric: "cosine" as const };
     const week = { dateFrom: "2026-12-07", dateTo: "2026-12-13" };
-    const kriya = [1, 0, 0];
+    const valmora = [1, 0, 0];
     const hatha = [0, 1, 0];
 
     beforeAll(async () => {
@@ -337,62 +337,62 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
       // Off-topic courses come first by date; on-topic ones come later in the week.
       const [hathaMonday] = await course({ workspaceId: workspace, title: "Hatha Monday", date: "2026-12-07", vector: hatha });
       const [hathaTuesday] = await course({ workspaceId: workspace, title: "Hatha Tuesday", date: "2026-12-08", vector: hatha });
-      const [kriyaFriday] = await course({ workspaceId: workspace, title: "Kriya Friday", date: "2026-12-11", vector: [0.9, 0.1, 0] });
-      const [kriyaSaturday] = await course({ workspaceId: workspace, title: "Kriya Saturday", date: "2026-12-12", vector: kriya });
+      const [valmoraFriday] = await course({ workspaceId: workspace, title: "Valmora Friday", date: "2026-12-11", vector: [0.9, 0.1, 0] });
+      const [valmoraSaturday] = await course({ workspaceId: workspace, title: "Valmora Saturday", date: "2026-12-12", vector: valmora });
       // A perfect match outside the range never qualifies.
-      await course({ workspaceId: workspace, title: "Kriya Next Month", date: "2027-01-15", vector: kriya });
+      await course({ workspaceId: workspace, title: "Valmora Next Month", date: "2027-01-15", vector: valmora });
 
       const closest = await repository.findInWindow({
         workspaceId: workspace,
-        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: valmora } },
         topK: 2,
       });
       const all = await repository.findInWindow({
         workspaceId: workspace,
-        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: valmora } },
         topK: 10,
       });
 
-      expect(closest.map((candidate) => candidate.chunkId)).toEqual([kriyaSaturday, kriyaFriday]);
+      expect(closest.map((candidate) => candidate.chunkId)).toEqual([valmoraSaturday, valmoraFriday]);
       // The date filter is the relevance gate: off-topic passages in the range still come back,
       // below the on-topic ones, with no similarity threshold.
-      expect(all.map((candidate) => candidate.chunkId)).toEqual([kriyaSaturday, kriyaFriday, hathaMonday, hathaTuesday]);
+      expect(all.map((candidate) => candidate.chunkId)).toEqual([valmoraSaturday, valmoraFriday, hathaMonday, hathaTuesday]);
       expect(all[0]?.similarity).toBeCloseTo(1, 5);
       expect(all[2]?.similarity).toBeCloseTo(0, 5);
     });
 
     it("keeps breadth first: every event's first passage ahead of a closer second passage", async () => {
       const workspace = await createWorkspace("Similarity Breadth Workspace");
-      const [kriya0, kriya1] = await course({ workspaceId: workspace, title: "Kriya Course", date: "2026-12-09", vector: kriya, chunkCount: 2 });
+      const [valmora0, valmora1] = await course({ workspaceId: workspace, title: "Valmora Course", date: "2026-12-09", vector: valmora, chunkCount: 2 });
       const [hatha0] = await course({ workspaceId: workspace, title: "Hatha Course", date: "2026-12-10", vector: hatha });
 
       const candidates = await repository.findInWindow({
         workspaceId: workspace,
-        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: valmora } },
         topK: 3,
       });
 
-      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([kriya0, hatha0, kriya1]);
+      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([valmora0, hatha0, valmora1]);
     });
 
     it("leads each event with its passage closest to the question, whatever its position in the document", async () => {
       const workspace = await createWorkspace("Similarity Tier Workspace");
-      // The course's Kriya details sit in its fourth chunk, behind three general chunks.
-      const [, , , kriyaDetails] = await course({
+      // The course's Valmora details sit in its fourth chunk, behind three general chunks.
+      const [, , , valmoraDetails] = await course({
         workspaceId: workspace,
         title: "Weekend Course",
         date: "2026-12-12",
-        chunkVectors: [hatha, hatha, hatha, kriya],
+        chunkVectors: [hatha, hatha, hatha, valmora],
       });
       const [otherCourse] = await course({ workspaceId: workspace, title: "Other Course", date: "2026-12-08", vector: hatha });
 
       const candidates = await repository.findInWindow({
         workspaceId: workspace,
-        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: valmora } },
         topK: 2,
       });
 
-      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([kriyaDetails, otherCourse]);
+      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([valmoraDetails, otherCourse]);
       expect(candidates[0]?.content).toBe("Weekend Course part 3");
       expect(candidates[0]?.title).toBe("Weekend Course");
     });
@@ -400,13 +400,13 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
     it("keeps a requested range to the request's document scope", async () => {
       const workspace = await createWorkspace("Similarity Scope Workspace");
       const [inScope] = await course({ workspaceId: workspace, title: "In Scope", date: "2026-12-09", vector: hatha });
-      await course({ workspaceId: workspace, title: "Out Of Scope", date: "2026-12-09", vector: kriya });
+      await course({ workspaceId: workspace, title: "Out Of Scope", date: "2026-12-09", vector: valmora });
       const [scopedDocument] = await database.query<{ document_id: string }>(
         "SELECT document_id FROM chunks WHERE id = $1",
         [inScope],
       );
 
-      for (const similarTo of [{ space, queryVector: kriya }, undefined]) {
+      for (const similarTo of [{ space, queryVector: valmora }, undefined]) {
         const candidates = await repository.findInWindow({
           workspaceId: workspace,
           window: { kind: "requested_range", range: week, ...(similarTo ? { similarTo } : {}) },
@@ -421,12 +421,12 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
     it("puts passages with no current embedding after embedded ones, in date order", async () => {
       const workspace = await createWorkspace("Similarity Unembedded Workspace");
       const [unembeddedEarly] = await course({ workspaceId: workspace, title: "Unembedded Early", date: "2026-12-07" });
-      const [staleRevision] = await course({ workspaceId: workspace, title: "Stale Revision", date: "2026-12-08", vector: kriya, embeddedRevision: 2 });
+      const [staleRevision] = await course({ workspaceId: workspace, title: "Stale Revision", date: "2026-12-08", vector: valmora, embeddedRevision: 2 });
       const [embeddedLate] = await course({ workspaceId: workspace, title: "Embedded Late", date: "2026-12-12", vector: hatha });
 
       const candidates = await repository.findInWindow({
         workspaceId: workspace,
-        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: valmora } },
         topK: 10,
       });
 
@@ -437,7 +437,7 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
     it("orders a requested range by date when the question has no embedding", async () => {
       const workspace = await createWorkspace("Similarity Fallback Workspace");
       const [hathaMonday] = await course({ workspaceId: workspace, title: "Hatha Monday", date: "2026-12-07", vector: hatha });
-      const [kriyaSaturday] = await course({ workspaceId: workspace, title: "Kriya Saturday", date: "2026-12-12", vector: kriya });
+      const [valmoraSaturday] = await course({ workspaceId: workspace, title: "Valmora Saturday", date: "2026-12-12", vector: valmora });
 
       const candidates = await repository.findInWindow({
         workspaceId: workspace,
@@ -445,7 +445,7 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
         topK: 10,
       });
 
-      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([hathaMonday, kriyaSaturday]);
+      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([hathaMonday, valmoraSaturday]);
     });
 
     it("sorts the whole date-filtered set exactly even when an HNSW index would return off-range neighbours", async () => {
@@ -453,7 +453,7 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
       // Many closer neighbours outside the range: an index scan that post-filters by date
       // would run out of its search breadth before reaching the in-range passages.
       for (let index = 0; index < 60; index += 1) {
-        await course({ workspaceId: workspace, title: `Off Range ${index}`, date: "2027-02-01", vector: kriya });
+        await course({ workspaceId: workspace, title: `Off Range ${index}`, date: "2027-02-01", vector: valmora });
       }
       const inRange: string[] = [];
       for (let index = 0; index < 5; index += 1) {
@@ -475,7 +475,7 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
         await indexPreferring.query("SET enable_seqscan = off");
         const candidates = await new PgTemporalCandidateRepository(indexPreferring).findInWindow({
           workspaceId: workspace,
-          window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+          window: { kind: "requested_range", range: week, similarTo: { space, queryVector: valmora } },
           topK: 10,
         });
 

@@ -253,7 +253,7 @@ interface Agent {
   name: string;
   /**
    * Operator-only label used to tell otherwise identically-named agents apart in
-   * the dashboard (e.g. two "Claudio" agents, one EN and one IT). Never shown on
+   * the dashboard (e.g. two "Nico" agents, one EN and one IT). Never shown on
    * public surfaces — `name` remains the visitor-facing identity. Optional because
    * most agents carry no internal label and synthetic/config-materialized agents
    * have none; persisted records always populate it (NOT NULL DEFAULT '').

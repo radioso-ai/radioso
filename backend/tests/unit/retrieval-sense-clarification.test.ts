@@ -726,8 +726,8 @@ describe("retrieval sense clarification", () => {
     const answerInputs: ChatGatewayInput[] = [];
     const detector = {
       detect: vi.fn(async () => [
-        { id: "doc-hatha", label: "What Kriya Yoga is", labelStatus: "generated", relationship: "complementary", confidence: 0.61, payload: { documentIds: ["doc-hatha"] } },
-        { id: "doc-raja", label: "How to begin Kriya Yoga", labelStatus: "generated", relationship: "complementary", confidence: 0.6, payload: { documentIds: ["doc-raja"] } },
+        { id: "doc-hatha", label: "What Valmora Meditation is", labelStatus: "generated", relationship: "complementary", confidence: 0.61, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "How to begin Valmora Meditation", labelStatus: "generated", relationship: "complementary", confidence: 0.6, payload: { documentIds: ["doc-raja"] } },
       ]),
     };
     const service = makeService({
@@ -743,7 +743,7 @@ describe("retrieval sense clarification", () => {
 
     const response = await service.answer({
       workspaceId: "workspace-1",
-      query: "What is Kriya Yoga and how do I learn it?",
+      query: "What is Valmora Meditation and how do I learn it?",
       stream: false,
     });
 
@@ -770,8 +770,8 @@ describe("retrieval sense clarification", () => {
     const answerInputs: ChatGatewayInput[] = [];
     const detector = {
       detect: vi.fn(async () => [
-        { id: "doc-hatha", label: "A general overview of Ananda Yoga", labelStatus: "generated", relationship: "redundant", confidence: 0.727256, payload: { documentIds: ["doc-hatha"] } },
-        { id: "doc-raja", label: "A newer or updated Ananda Yoga page", labelStatus: "generated", relationship: "redundant", confidence: 0.719315, payload: { documentIds: ["doc-raja"] } },
+        { id: "doc-hatha", label: "A general overview of Valmora Yoga", labelStatus: "generated", relationship: "redundant", confidence: 0.727256, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "A newer or updated Valmora Yoga page", labelStatus: "generated", relationship: "redundant", confidence: 0.719315, payload: { documentIds: ["doc-raja"] } },
       ]),
     };
     const service = makeService({
@@ -787,7 +787,7 @@ describe("retrieval sense clarification", () => {
 
     const response = await service.answer({
       workspaceId: "workspace-1",
-      query: "what ananda yoga types exist?",
+      query: "what valmora yoga types exist?",
       stream: false,
     });
 

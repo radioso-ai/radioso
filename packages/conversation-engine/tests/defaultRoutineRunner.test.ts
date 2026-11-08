@@ -349,7 +349,7 @@ describe("DefaultRoutineRunner", () => {
       status: "completed",
       outputs: {
         has_context: true,
-        contexts: [{ title: "Guide", content: "Kriya is described here." }],
+        contexts: [{ title: "Guide", content: "Valmora is described here." }],
       },
     }));
     const renderer: ConversationRoutineStepRenderer = {
@@ -395,7 +395,7 @@ describe("DefaultRoutineRunner", () => {
     };
     const dispatch: ConversationRoutineSkillDispatcher["dispatch"] = vi.fn(async () => ({
       status: "context_ready",
-      outputs: { has_context: true, contexts: [{ title: "Guide", content: "Kriya is described here." }] },
+      outputs: { has_context: true, contexts: [{ title: "Guide", content: "Valmora is described here." }] },
       metadata: { retrievalResultKey: "hidden-result" },
     }));
     const renderer: ConversationRoutineStepRenderer = {
@@ -727,7 +727,7 @@ describe("DefaultRoutineRunner", () => {
       ],
       transitions: [{ from: "ask_dates", to: "done", condition: "the user gave both dates" }],
     };
-    const contextRenderer: RoutineContextRenderer = { render: vi.fn(() => "the Kriya retreat") };
+    const contextRenderer: RoutineContextRenderer = { render: vi.fn(() => "the Valmora retreat") };
     const runner = new DefaultRoutineRunner(
       [booking],
       { select: vi.fn(async () => ({ nextStepId: "ask_dates", yieldTurn: true })) },
@@ -737,7 +737,7 @@ describe("DefaultRoutineRunner", () => {
     );
 
     const result = await runner.resume({
-      turn: { ...turn, stagedContext: [{ kind: "page_context", data: { title: "Kriya" } }] },
+      turn: { ...turn, stagedContext: [{ kind: "page_context", data: { title: "Valmora" } }] },
       state: { ...state(["ask_dates"], { name: "Giulia", arrival: "2026-11-11" }), routineId: "booking" },
     });
 

@@ -136,10 +136,10 @@ describe("formatRoutineEndingNotification", () => {
   it("adds the entry page as a footer line, directly after a single blank line, when known", () => {
     const formatted = formatRoutineEndingNotification({
       ...booking,
-      conversation: { entryPageUrl: "https://ananda.example/stays" },
+      conversation: { entryPageUrl: "https://valmora.example/stays" },
     });
 
-    expect(formatted.lines.slice(-2)).toEqual(["", "Entry page: https://ananda.example/stays"]);
+    expect(formatted.lines.slice(-2)).toEqual(["", "Entry page: https://valmora.example/stays"]);
   });
 
   it("ends in a single blank line, reserved for the sink's Open link, when the entry page is not known", () => {

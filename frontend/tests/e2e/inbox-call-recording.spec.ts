@@ -17,7 +17,7 @@ const conversationId = "conversation-voice-recorded";
 const conversation = {
   id: conversationId,
   agentId: defaultAgentId,
-  agentName: "Gioia",
+  agentName: "Sola",
   agentInternalName: null,
   sourceChannel: "voice",
   sourceOrigin: null,
@@ -39,7 +39,7 @@ const conversationDetail = (recording: { available: boolean } | undefined, id = 
   conversationId: id,
   workspaceId,
   agentId: defaultAgentId,
-  agentName: "Gioia",
+  agentName: "Sola",
   sourceChannel: "voice",
   sourceOrigin: null,
   channelContext: null,

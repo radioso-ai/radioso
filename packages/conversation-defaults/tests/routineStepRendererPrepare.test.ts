@@ -27,7 +27,7 @@ const stagedTurn: TurnContext = {
   stagedContext: [{
     kind: "skill_result",
     source: "retrieval.context",
-    data: { contexts: [{ documentId: "doc_1", title: "Course Guide", content: "Kriya is introduced in the first module." }] },
+    data: { contexts: [{ documentId: "doc_1", title: "Course Guide", content: "Valmora is introduced in the first module." }] },
   }],
 };
 

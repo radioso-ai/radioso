@@ -16,7 +16,7 @@ test("the workbench Sessions table shows the generated topic title over the raw 
   const titledSession = {
     id: "session-titled",
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "authenticated_chat",
     sourceOrigin: null,
@@ -34,7 +34,7 @@ test("the workbench Sessions table shows the generated topic title over the raw 
   const untitledSession = {
     id: "session-untitled",
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "authenticated_chat",
     sourceOrigin: null,

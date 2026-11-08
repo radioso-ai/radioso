@@ -271,7 +271,7 @@ export function AssistantProfileSection({
                 value={anonSettings.internalName ?? ''}
                 maxLength={200}
                 onChange={(event) => onAssistantSettingChange('internalName', event.target.value)}
-                placeholder="e.g. Claudio (IT)"
+                placeholder="e.g. Nico (IT)"
               />
               <p className="text-xs text-muted-foreground">
                 Only you see this — it labels the agent in your dashboard to tell look-alikes

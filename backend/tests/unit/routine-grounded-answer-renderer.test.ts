@@ -25,16 +25,16 @@ import { AssistantSuggestionExpansionService } from "../../src/modules/chat/serv
 
 const retrievalResult = (): RetrievalPipelineResult =>
   ({
-    rewrittenQuery: "kriya module",
+    rewrittenQuery: "valmora module",
     contexts: [{
       documentId: "doc_1",
       chunkId: "chunk_1",
       title: "Course Guide",
-      content: "Kriya is introduced in the first module.",
+      content: "Valmora is introduced in the first module.",
       metadata: { sourceUrl: "https://example.com/guide" },
     }],
     systemPrompt: "retrieval system prompt",
-    prompt: "Result 1 (Course Guide): Source: https://example.com/guide\nKriya is introduced in the first module.",
+    prompt: "Result 1 (Course Guide): Source: https://example.com/guide\nValmora is introduced in the first module.",
     citations: [],
     responseIdentity: null,
     responseSettings: {
@@ -57,8 +57,8 @@ const session = (): PreparedSession =>
     agent: { id: "agent_1", workspaceId: "workspace_1", name: "Support", chatModelOverride: null },
     conversation: { id: "conv_1", workspaceId: "workspace_1" },
     history: [],
-    userMessage: { id: "msg_1", content: "Where is Kriya introduced?" },
-    effectiveQuery: "Where is Kriya introduced?",
+    userMessage: { id: "msg_1", content: "Where is Valmora introduced?" },
+    effectiveQuery: "Where is Valmora introduced?",
     turnRoute: "direct",
     responseLanguage: undefined,
     directiveSteering: {
@@ -80,7 +80,7 @@ const turnWithRetrieval = (retrieval: RetrievalPipelineResult): TurnContext =>
   ({
     agent: { id: "agent_1" },
     sessionId: "conv_1",
-    inputEvent: { id: "msg_1", kind: "message", content: "Where is Kriya introduced?" },
+    inputEvent: { id: "msg_1", kind: "message", content: "Where is Valmora introduced?" },
     history: [],
     stagedContext: [{
       kind: "skill_result",
@@ -107,14 +107,14 @@ const step: RoutineStep = {
 describe("createRoutineGroundedAnswerRenderer", () => {
   it("renders staged retrieval through the retrieval turn renderer with routine steering", async () => {
     const render = vi.fn(async (_outcome: TurnOutcome, _ctx: TurnRenderContext): Promise<ChatPresentedAnswer> => ({
-      answer: "Kriya is introduced in the first module. Hop!",
+      answer: "Valmora is introduced in the first module. Hop!",
       citations: [{
         documentId: "doc_1",
         chunkId: "chunk_1",
         title: "Course Guide",
         sourceUrl: "https://example.com/guide",
       }],
-      answerSegments: [{ text: "Kriya is introduced in the first module.", citationIndices: [0] }, { text: " Hop!" }],
+      answerSegments: [{ text: "Valmora is introduced in the first module.", citationIndices: [0] }, { text: " Hop!" }],
       planningCitations: [{
         documentId: "doc_1",
         chunkId: "chunk_1",
@@ -160,7 +160,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
     });
     expect(render.mock.calls[0]?.[1]).toMatchObject({
       accountId: "acct_1",
-      query: "Where is Kriya introduced?",
+      query: "Where is Valmora introduced?",
       session: {
         retrieval,
         turnRoute: "retrieval",
@@ -174,13 +174,13 @@ describe("createRoutineGroundedAnswerRenderer", () => {
       },
     });
     expect(result).toMatchObject({
-      answer: "Kriya is introduced in the first module. Hop!",
+      answer: "Valmora is introduced in the first module. Hop!",
       metadata: {
         skillName: RETRIEVAL_TURN_SKILL,
         skillOutcome: "grounded",
         skillStatus: "completed",
         answerOutcome: "grounded_success",
-        answerSegments: [{ text: "Kriya is introduced in the first module.", citationIndices: [0] }, { text: " Hop!" }],
+        answerSegments: [{ text: "Valmora is introduced in the first module.", citationIndices: [0] }, { text: " Hop!" }],
         grounding: "grounded",
         effectiveRetrieval: retrieval,
       },
@@ -194,9 +194,9 @@ describe("createRoutineGroundedAnswerRenderer", () => {
         systemPrompts.push(input.systemPrompt ?? "");
         return JSON.stringify({
           coverage: "answered_sufficient_evidence",
-          requestFocus: "where Kriya is introduced",
+          requestFocus: "where Valmora is introduced",
           outcome: "answer",
-          answer: "Kriya is introduced in the first module[[1]]. What email address can we reach you at?",
+          answer: "Valmora is introduced in the first module[[1]]. What email address can we reach you at?",
           v: 2,
           claims: [[1]],
           suggestions: [],
@@ -213,7 +213,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
       new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true }),
       { async composeNoContext() { throw new Error("the staged retrieval has context"); } },
     );
-    const stepAction = "Answer where Kriya is introduced, then ask what email address we can reach them at.";
+    const stepAction = "Answer where Valmora is introduced, then ask what email address we can reach them at.";
     const redirect = {
       id: "directive-form",
       directiveName: "contact-form-only",
@@ -259,7 +259,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
 
   describe("prepare", () => {
     const presented = (): ChatPresentedAnswer => ({
-      answer: "Kriya is introduced in the first module. Hop!",
+      answer: "Valmora is introduced in the first module. Hop!",
       skillName: RETRIEVAL_TURN_SKILL,
       skillOutcome: "grounded",
       skillStatus: "completed" as const,
@@ -315,12 +315,12 @@ describe("createRoutineGroundedAnswerRenderer", () => {
 describe("createRoutineGroundedAnswerRenderer streamed answer", () => {
   const groundedAnswer = (answer: string, extra: Record<string, unknown> = {}): string => JSON.stringify({
     coverage: "answered_sufficient_evidence",
-    requestFocus: "where Kriya is introduced",
+    requestFocus: "where Valmora is introduced",
     outcome: "answer",
     answer,
     v: 2,
     claims: [[1]],
-    suggestions: [{ text: "What comes after Kriya?", kind: "deeper", contextIndex: 1 }],
+    suggestions: [{ text: "What comes after Valmora?", kind: "deeper", contextIndex: 1 }],
     grounding: "grounded",
     ...extra,
   });
@@ -386,7 +386,7 @@ describe("createRoutineGroundedAnswerRenderer streamed answer", () => {
   };
 
   it("holds unanchored text until the model writes a valid citation, and never shows the envelope head", async () => {
-    const output = groundedAnswer("Kriya is introduced in the first module[[1]]. Hop!");
+    const output = groundedAnswer("Valmora is introduced in the first module[[1]]. Hop!");
     const anchorAt = output.indexOf("[[1]]");
     const stack = groundedStack(output, split(output, [40, anchorAt - 10, anchorAt + 2, anchorAt + 12]));
 
@@ -396,14 +396,14 @@ describe("createRoutineGroundedAnswerRenderer streamed answer", () => {
     // Nothing reaches the visitor before the delta that completes the `[[1]]` anchor.
     expect(Math.min(...shown.map((entry) => entry.modelDeltasProduced))).toBeGreaterThanOrEqual(4);
     const visible = shown.map((entry) => entry.text).join("");
-    expect(visible).toBe("Kriya is introduced in the first module. Hop!");
+    expect(visible).toBe("Valmora is introduced in the first module. Hop!");
     for (const headField of ["coverage", "requestFocus", "outcome", "{", "\"answer\""]) {
       expect(visible).not.toContain(headField);
     }
   });
 
   it("finishes with the turn render() writes, planned suggestions expanded the same way", async () => {
-    const output = groundedAnswer("Kriya is introduced in the first module[[1]]. Hop!");
+    const output = groundedAnswer("Valmora is introduced in the first module[[1]]. Hop!");
     const stack = groundedStack(output, split(output, [30, 120, 160]));
 
     const { turn } = await stack.drain();
@@ -415,7 +415,7 @@ describe("createRoutineGroundedAnswerRenderer streamed answer", () => {
   });
 
   it("shows the bounded decline when the model never cites, as render() does", async () => {
-    const unanchored = "Kriya is introduced somewhere. ".repeat(160);
+    const unanchored = "Valmora is introduced somewhere. ".repeat(160);
     const output = groundedAnswer(unanchored, { claims: [] });
     const deltas = split(output, Array.from({ length: Math.floor(output.length / 200) }, (_, index) => (index + 1) * 200));
     const stack = groundedStack(output, deltas);
@@ -430,7 +430,7 @@ describe("createRoutineGroundedAnswerRenderer streamed answer", () => {
   });
 
   it("generates under the turn's signal, so cancelling the turn stops the model", async () => {
-    const output = groundedAnswer("Kriya is introduced in the first module[[1]]. Hop!");
+    const output = groundedAnswer("Valmora is introduced in the first module[[1]]. Hop!");
     const stack = groundedStack(output, [output]);
 
     await stack.drain();
@@ -451,14 +451,14 @@ describe("presentRoutineRenderableAnswer", () => {
     } as unknown as AssistantSuggestionExpansionService);
 
     const result = presentRoutineRenderableAnswer(presenter, {
-      answer: "Kriya is introduced in the first module.",
+      answer: "Valmora is introduced in the first module.",
       citations: [{ documentId: "doc_1", chunkId: "chunk_1", title: "Course Guide" }],
       metadata: {
         skillName: RETRIEVAL_TURN_SKILL,
         skillOutcome: "grounded",
         skillStatus: "completed",
         answerOutcome: "grounded_success",
-        answerSegments: [{ text: "Kriya is introduced in the first module.", citationIndices: [0] }],
+        answerSegments: [{ text: "Valmora is introduced in the first module.", citationIndices: [0] }],
         effectiveRetrieval: retrievalResult(),
       },
     });
@@ -467,9 +467,9 @@ describe("presentRoutineRenderableAnswer", () => {
       skillName: RETRIEVAL_TURN_SKILL,
       skillOutcome: "grounded",
       answerOutcome: "grounded_success",
-      answerSegments: [{ text: "Kriya is introduced in the first module.", citationIndices: [0] }],
+      answerSegments: [{ text: "Valmora is introduced in the first module.", citationIndices: [0] }],
       effectiveRetrieval: expect.objectContaining({
-        rewrittenQuery: "kriya module",
+        rewrittenQuery: "valmora module",
         systemPrompt: "retrieval system prompt",
       }),
     });

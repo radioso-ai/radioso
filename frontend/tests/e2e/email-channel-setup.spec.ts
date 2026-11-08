@@ -916,7 +916,7 @@ test("an operator-only email conversation shows its sender and subject, and the 
   const conversation = {
     id: conversationId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     sourceChannel: "email",
     sourceOrigin: null,
     anonymousSessionId: null,

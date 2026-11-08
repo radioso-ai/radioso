@@ -9,7 +9,7 @@ import type {
   PersistedCrawlerRunRecord,
   PublicationAttemptRecord
 } from "../../src/persistence/types.js";
-import type { DocumentPublisher } from "../../src/types.js";
+import type { DocumentPublicationEnvelope, DocumentPublisher } from "../../src/types.js";
 
 const createFakePersistence = (): CrawlerPersistence & {
   state: {
@@ -361,6 +361,102 @@ describe("runAttachedCrawler", () => {
     expect(result.stats.pagesPublished).toBe(0);
     expect(publisher.upsert).not.toHaveBeenCalled();
     expect(persistence.state.publicationAttempts).toHaveLength(0);
+  });
+
+  describe("when the text is unchanged", () => {
+    const content = "hello crawler";
+
+    const seedPublishedPage = async (
+      persistence: ReturnType<typeof createFakePersistence>,
+      title: string | null
+    ) => {
+      const source = await persistence.sources.create({
+        scopeKey: "acct_123:example.com:/docs",
+        baseUrl: "https://example.com/docs",
+        mode: "attached"
+      });
+      await persistence.pages.upsert({
+        sourceId: source.id,
+        runId: "old_run",
+        frontierUrl: "https://example.com/docs",
+        fetchedUrl: "https://example.com/docs",
+        canonicalUrl: "https://example.com/docs",
+        canonicalUrlKey: "https://example.com/docs",
+        title,
+        content,
+        contentHash: createHash("sha256").update(content).digest("hex"),
+        status: "success",
+        httpStatus: 200
+      });
+      return source;
+    };
+
+    const recrawl = (
+      persistence: ReturnType<typeof createFakePersistence>,
+      source: { scopeKey: string; baseUrl: string },
+      publisher: DocumentPublisher,
+      fetched: { title: string | null; text?: string; notModified?: boolean }
+    ) =>
+      runAttachedCrawler({
+        persistence,
+        documentPublisher: publisher,
+        source: { scopeKey: source.scopeKey, baseUrl: source.baseUrl },
+        pageLimit: 1,
+        fetchPage: async () => ({
+          url: "https://example.com/docs",
+          title: fetched.title,
+          text: fetched.text ?? content,
+          html: "<html></html>",
+          httpStatus: fetched.notModified ? 304 : 200,
+          links: [],
+          notModified: fetched.notModified ?? false,
+          transportUsed: "http",
+          httpAttempted: true
+        })
+      });
+
+    const createPublisher = (): DocumentPublisher => ({
+      upsert: vi.fn(async (document: DocumentPublicationEnvelope) => ({
+        documentId: document.externalId,
+        status: "processed" as const
+      })),
+      remove: vi.fn(async () => undefined)
+    });
+
+    it("publishes a page whose title changed", async () => {
+      const persistence = createFakePersistence();
+      const source = await seedPublishedPage(persistence, "Docs Home Template Page");
+      const publisher = createPublisher();
+
+      const result = await recrawl(persistence, source, publisher, { title: "Docs Home" });
+
+      expect(result.stats.pagesPublished).toBe(1);
+      expect(result.stats.pagesUnchanged).toBe(0);
+      expect(publisher.upsert).toHaveBeenCalledWith(expect.objectContaining({ title: "Docs Home" }));
+    });
+
+    it("does not republish a page whose fetch supplied no title", async () => {
+      const persistence = createFakePersistence();
+      const source = await seedPublishedPage(persistence, "Docs Home");
+      const publisher = createPublisher();
+
+      const result = await recrawl(persistence, source, publisher, { title: null });
+
+      expect(result.stats.pagesUnchanged).toBe(1);
+      expect(publisher.upsert).not.toHaveBeenCalled();
+    });
+
+    it("does not republish after a not-modified fetch has recorded no title", async () => {
+      const persistence = createFakePersistence();
+      const source = await seedPublishedPage(persistence, "Docs Home");
+      const publisher = createPublisher();
+
+      await recrawl(persistence, source, publisher, { title: null, text: "", notModified: true });
+      const result = await recrawl(persistence, source, publisher, { title: "Docs Home" });
+
+      expect(result.stats.pagesUnchanged).toBe(1);
+      expect(publisher.upsert).not.toHaveBeenCalled();
+    });
   });
 
   it("records retryable publication failures without failing the crawl run", async () => {

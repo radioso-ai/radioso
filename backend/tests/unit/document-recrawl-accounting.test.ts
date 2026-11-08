@@ -118,7 +118,7 @@ describe("document recrawl accounting", () => {
 
     const response = await service.ingest({
       workspaceId: "workspace-1",
-      title: "Recrawl",
+      title: "Initial",
       content: "Same body",
       externalDocumentId: "page-1",
     });

@@ -38,6 +38,7 @@ import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./doc
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 import { resolveRetrievalEligibility } from "../domain/retrievalEligibility.js";
+import { isUnchangedPage } from "../domain/unchangedPage.js";
 import {
   publishEnrichmentProvenance,
   relinquishGeneratedKeys,
@@ -165,11 +166,10 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         })
       : null;
 
-    if (existingPage && existingPage.contentHash && existingPage.contentHash === indexedContent.contentHash) {
-      return {
-        documentId: existingPage.documentId,
-        status: "ready",
-      };
+    // The content hash excludes the title, so a corrected title alone must still reprocess:
+    // compare it separately rather than folding it into the hash and re-ingesting every page.
+    if (existingPage && isUnchangedPage(existingPage, { contentHash: indexedContent.contentHash, title: input.title })) {
+      return { documentId: existingPage.documentId, status: "ready" };
     }
 
     const previousBytes = existingPage?.contentSizeBytes ?? 0;

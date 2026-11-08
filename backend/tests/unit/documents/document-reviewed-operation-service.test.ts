@@ -11,8 +11,8 @@ describe("DocumentReviewedOperationService", () => {
   it("plans unchanged external ids without consuming a stored-document slot", async () => {
     const service = new DocumentReviewedOperationService(
       {
-        findActivePageState: vi.fn(async () => ({ documentId: randomUUID(), revision: 1, contentSizeBytes: 8, contentHash: "e4f7b27f1478ca3d1b1fc2c6a268b6f4b1c2b23a1d07fd30d7b23430cfe3ea23" })),
-        findPageState: vi.fn(async () => ({ documentId: randomUUID(), revision: 1, contentSizeBytes: 8, contentHash: "e4f7b27f1478ca3d1b1fc2c6a268b6f4b1c2b23a1d07fd30d7b23430cfe3ea23" })),
+        findActivePageState: vi.fn(async () => ({ documentId: randomUUID(), revision: 1, contentSizeBytes: 8, contentHash: "e4f7b27f1478ca3d1b1fc2c6a268b6f4b1c2b23a1d07fd30d7b23430cfe3ea23", title: "Stored" })),
+        findPageState: vi.fn(async () => ({ documentId: randomUUID(), revision: 1, contentSizeBytes: 8, contentHash: "e4f7b27f1478ca3d1b1fc2c6a268b6f4b1c2b23a1d07fd30d7b23430cfe3ea23", title: "Stored" })),
         listSummariesByIdsAndWorkspaceId: vi.fn(),
         findByExternalDocumentId: vi.fn(), findBySourceAndExternalDocumentId: vi.fn(), countReprocessCandidates: vi.fn(), listSummaryPageByWorkspaceId: vi.fn(), listSummaryPageBySourceId: vi.fn(),
       },
@@ -73,7 +73,7 @@ describe("DocumentReviewedOperationService", () => {
 
   it("plans a failed external id as a guarded replacement rather than a new document", async () => {
     const service = new DocumentReviewedOperationService(
-      { findActivePageState: vi.fn(async () => null), findPageState: vi.fn(async () => ({ documentId: randomUUID(), revision: 4, contentSizeBytes: 3, contentHash: "old" })), listSummariesByIdsAndWorkspaceId: vi.fn(), findByExternalDocumentId: vi.fn(), findBySourceAndExternalDocumentId: vi.fn(), countReprocessCandidates: vi.fn(), listSummaryPageByWorkspaceId: vi.fn(), listSummaryPageBySourceId: vi.fn() },
+      { findActivePageState: vi.fn(async () => null), findPageState: vi.fn(async () => ({ documentId: randomUUID(), revision: 4, contentSizeBytes: 3, contentHash: "old", title: "Failed" })), listSummariesByIdsAndWorkspaceId: vi.fn(), findByExternalDocumentId: vi.fn(), findBySourceAndExternalDocumentId: vi.fn(), countReprocessCandidates: vi.fn(), listSummaryPageByWorkspaceId: vi.fn(), listSummaryPageBySourceId: vi.fn() },
       { ingest: vi.fn() } as never, { delete: vi.fn() },
       { getDocumentCapacityUsage: vi.fn(async () => ({ storedDocuments: { used: 1, limit: 1 }, storedIndexedBytes: { used: 0, limit: null }, monthlyIndexedBytes: { used: 0, limit: null } })) },
     );
@@ -82,7 +82,7 @@ describe("DocumentReviewedOperationService", () => {
   });
 
   it("keeps a freshly prepared failed-row import fence current", async () => {
-    const state = { documentId: randomUUID(), revision: 4, contentSizeBytes: 3, contentHash: "old" };
+    const state = { documentId: randomUUID(), revision: 4, contentSizeBytes: 3, contentHash: "old", title: "Failed" };
     const service = new DocumentReviewedOperationService(
       { findActivePageState: vi.fn(async () => null), findPageState: vi.fn(async () => state), listSummariesByIdsAndWorkspaceId: vi.fn(), findByExternalDocumentId: vi.fn(), findBySourceAndExternalDocumentId: vi.fn(), countReprocessCandidates: vi.fn(), listSummaryPageByWorkspaceId: vi.fn(), listSummaryPageBySourceId: vi.fn() },
       { ingest: vi.fn() } as never, { delete: vi.fn() },

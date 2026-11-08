@@ -80,7 +80,7 @@ describe("page title", () => {
 
   const BODY = "<main><h1>Yoga Retreat Weekend</h1><p>Two days of practice by the lake.</p></main>";
 
-  it("takes the head title and ignores a second title inside an inline svg", () => {
+  it("keeps the head title when an inline svg carries a title of its own", () => {
     const title = titleOf(
       `<html><head><title>Yoga Retreat Weekend – Example Site</title></head>
        <body><svg width="0" height="0"><title>Template Page</title></svg>${BODY}</body></html>`
@@ -132,6 +132,20 @@ describe("page title", () => {
     );
 
     expect(title).toBeNull();
+  });
+
+  it("does not take a title from the inert contents of a template", () => {
+    const beforeHeadTitle = titleOf(
+      `<html><head><template><title>Template Page</title></template>
+       <title>Yoga Retreat Weekend – Example Site</title></head><body>${BODY}</body></html>`
+    );
+    const noOtherTitle = titleOf(
+      `<html><head><meta charset="utf-8"></head>
+       <body><template><title>Template Page</title></template>${BODY}</body></html>`
+    );
+
+    expect(beforeHeadTitle).toBe("Yoga Retreat Weekend – Example Site");
+    expect(noOtherTitle).toBeNull();
   });
 
   it("trims and collapses whitespace inside the title", () => {

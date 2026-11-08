@@ -245,6 +245,26 @@ const extractLinks = ($: CheerioAPI, loadedUrl: string): string[] =>
     })
     .filter((candidate: string | null): candidate is string => Boolean(candidate));
 
+// Themes and page builders sometimes emit more than one <title> (a template's head block, an
+// inline SVG label). Cheerio's `.text()` concatenates every match, so pick one element instead:
+// the first non-empty <title> in <head>, else the first one elsewhere that is not an SVG label.
+// Read from the unmodified document, before page-chrome removal can drop the element.
+const extractPageTitle = ($: CheerioAPI): string | null => {
+  const candidates = [
+    ...$("head > title").toArray(),
+    ...$("title")
+      .toArray()
+      .filter((title) => $(title).closest("svg").length === 0),
+  ];
+  for (const candidate of candidates) {
+    const title = $(candidate).text().replace(/\s+/g, " ").trim();
+    if (title) {
+      return title;
+    }
+  }
+  return null;
+};
+
 const readHeader = (headers: unknown, name: string): string | null => {
   if (!headers || typeof headers !== "object") {
     return null;
@@ -269,6 +289,7 @@ export const buildFetchedHtmlPage = (input: {
   options?: ExtractionOptions;
 }): FetchedPage => {
   const $ = load(input.originalHtml);
+  const title = extractPageTitle($);
   const originalLinks = extractLinks($, input.loadedUrl);
   const structurallyLinkDense = isStructurallyLinkDensePage($);
   removePageChrome($);
@@ -294,7 +315,7 @@ export const buildFetchedHtmlPage = (input: {
   };
   return {
     url: input.loadedUrl,
-    title: $("title").text() || null,
+    title,
     text,
     html,
     httpStatus: input.statusCode,

@@ -9,15 +9,21 @@ import { WorkspaceGrantRepository } from "../../src/db/repositories/workspaceGra
 import { NotificationDeliveryRepository } from "../../src/db/repositories/notificationDeliveryRepository.js";
 import { NotificationRecipientIdentityRepository, NotificationRecipientStateRepository } from "../../src/db/repositories/notificationRecipientStateRepository.js";
 import { UndeliveredRecipientAlertRepository } from "../../src/db/repositories/undeliveredRecipientAlertRepository.js";
+import { NotificationDeliveryOutcomeRepository } from "../../src/db/repositories/notificationDeliveryOutcomeRepository.js";
+import { buildNotificationAdministratorFallback, buildNotificationDeliveryRecorder } from "../../src/app/composition/contactDelivery.js";
 import { ContactSendActionHandler } from "../../src/modules/chat/services/actions/contactSendActionHandler.js";
+import { EmailWebhookOperatorNotificationSink } from "../../src/modules/chat/services/actions/emailWebhookSink.js";
 import {
+  NotificationDeliveryAdmissionService,
   NotificationDeliveryLog,
   NotificationDeliveryReader,
   NotificationRecipientPolicyService,
   UNDELIVERED_ALERT_WINDOW_MS,
   UndeliveredRecipientAlerts,
 } from "../../src/modules/operatorNotifications/public.js";
+import type { UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { createLogger } from "../../src/shared/observability/logger.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -479,6 +485,147 @@ describeIntegration("notification delivery log (Postgres)", () => {
       expect(outcome).toMatchObject({ name: "ActionDispatchSkippedError", reason: "workspace_daily_email_cap" });
       expect((await rows()).map((row) => [row.recipient_email, row.outcome])).toEqual([["member@example.com", "skipped_cap"]]);
       expect(sent).toEqual([]);
+    });
+  });
+
+  describe("a notice no configured address can receive, end to end", () => {
+    const APP_BASE_URL = "https://app.example.com";
+    const CONFIGURED = "reception@example.com";
+    const VISITOR = "visitor@example.com";
+    const ADMINISTRATORS = ["admin@example.com", "granted@example.com", "owner@example.com"];
+    type Mail = { to: string; kind?: string; subject: string; text: string; replyTo?: string | null; idempotencyKey?: string | null };
+
+    /** The senders as composition wires them, over this database, with a mailer that keeps what it was given. */
+    const wire = (options: { sent: Mail[]; dailyEmailLimit?: number }) => {
+      const mailer = { send: async (message: Mail) => { options.sent.push(message); return { dispatched: true }; } };
+      const env = { APP_BASE_URL };
+      const recorder = buildNotificationDeliveryRecorder({ database, env, mailer, logger: createLogger("silent"), metrics: null, states });
+      const fallback = buildNotificationAdministratorFallback({ database, env, states });
+      const usageLimits = { getNotificationEmailDailyLimit: async () => options.dailyEmailLimit ?? 100 } as unknown as UsageLimitPolicy;
+      const admission = new NotificationDeliveryAdmissionService(new NotificationDeliveryOutcomeRepository(database.kysely), usageLimits);
+      const policy = new NotificationRecipientPolicyService({ enabled: true, states, sendConfirmation: async () => ({ dispatched: false }) });
+      return {
+        contact: new ContactSendActionHandler(
+          mailer,
+          { resolve: async () => ({ emails: [CONFIGURED], webhook: null, agentId }) },
+          undefined,
+          undefined,
+          undefined,
+          admission,
+          policy,
+          recorder,
+          fallback,
+        ),
+        notice: new EmailWebhookOperatorNotificationSink(
+          mailer,
+          { resolve: async () => ({ emails: [CONFIGURED], webhook: null, agentId, via: "agent_setting", recipientsFromWorkspaceOwner: false }) },
+          undefined,
+          undefined,
+          undefined,
+          admission,
+          policy,
+          recorder,
+          fallback,
+        ),
+      };
+    };
+    const contextFor = (requestId: string) => ({
+      requestId, workspaceId, accountId, conversationId, idempotencyKey: `key-${requestId}`, attempt: 1, skillName: null,
+    });
+    const reservedEmails = async (requestId: string) => (await database.query<{ reserved_email_count: number }>(
+      "SELECT reserved_email_count FROM notification_delivery_outcomes WHERE request_id = $1",
+      [requestId],
+    )).map((row) => row.reserved_email_count);
+
+    beforeEach(async () => {
+      await removeTestUsers();
+      await database.query("UPDATE notification_recipient_confirmations SET undelivered_alert_sent_at = NULL WHERE workspace_id = $1", [workspaceId]);
+      await addUser("owner@example.com", { role: "owner" });
+      await addUser("admin@example.com", { role: "admin" });
+      await grantWorkspaceRole(workspaceId, await addUser("granted@example.com", { role: "member" }), "admin");
+      await addUser("bounced-admin@example.com", { role: "admin" });
+      await suppress("bounced-admin@example.com");
+      await addUser("unverified@example.com", { role: "admin", verified: false });
+      await addUser("member@example.com", { role: "member" });
+    });
+
+    it("sends a contact request to the verified owners and admins instead, and the log reads skipped then sent", async () => {
+      const sent: Mail[] = [];
+      const requestId = randomUUID();
+      const routeKey = (await database.query<{ public_route_key: string }>(
+        "SELECT public_route_key FROM workspaces WHERE id = $1",
+        [workspaceId],
+      ))[0]?.public_route_key;
+
+      const outcome = await wire({ sent }).contact.handle({ payload: { message: "Please call me", email: VISITOR }, context: contextFor(requestId) });
+
+      expect(outcome).toEqual({ disposition: "partial", reason: "notification_recipient_unconfirmed" });
+      expect(sent.map((mail) => mail.to).sort()).toEqual(ADMINISTRATORS);
+      expect(sent.every((mail) => mail.kind === "contact_notification" && mail.replyTo === VISITOR)).toBe(true);
+      const opening = sent[0]?.text.split("\n")[0];
+      expect(opening).toContain(CONFIGURED);
+      expect(opening).toContain(`${APP_BASE_URL}/w/${routeKey}/agents/${agentId}`);
+      expect((await rows()).map((row) => [row.recipient_email, row.outcome, row.kind])).toEqual([
+        ["admin@example.com", "sent", "contact_request"],
+        ["granted@example.com", "sent", "contact_request"],
+        ["owner@example.com", "sent", "contact_request"],
+        [CONFIGURED, "skipped_unconfirmed", "contact_request"],
+      ]);
+      expect(await reservedEmails(requestId)).toEqual([ADMINISTRATORS.length]);
+    });
+
+    it("sends an operator notice the same way", async () => {
+      const sent: Mail[] = [];
+
+      const outcome = await wire({ sent }).notice.deliver(
+        { kind: "completion", workspaceId, conversationId, agentId, reason: "routine_complete", replyTo: VISITOR },
+        contextFor(randomUUID()),
+      );
+
+      expect(outcome).toEqual({ disposition: "partial", reason: "notification_recipient_unconfirmed" });
+      expect(sent.map((mail) => [mail.to, mail.kind]).sort()).toEqual(ADMINISTRATORS.map((to) => [to, "operator_notice"]));
+      expect((await rows()).map((row) => [row.recipient_email, row.outcome, row.kind])).toEqual([
+        ["admin@example.com", "sent", "completion"],
+        ["granted@example.com", "sent", "completion"],
+        ["owner@example.com", "sent", "completion"],
+        [CONFIGURED, "skipped_unconfirmed", "completion"],
+      ]);
+    });
+
+    it("sends no separate alert when the notice reached the administrators", async () => {
+      const sent: Mail[] = [];
+
+      await wire({ sent }).contact.handle({ payload: { message: "Please call me" }, context: contextFor(randomUUID()) });
+
+      expect(sent.filter((mail) => mail.kind === "notification_alert")).toEqual([]);
+    });
+
+    it("repeats a retried request under the same keys, rows and reservation", async () => {
+      const sent: Mail[] = [];
+      const requestId = randomUUID();
+      const senders = wire({ sent });
+
+      await senders.contact.handle({ payload: { message: "Please call me" }, context: contextFor(requestId) });
+      const firstKeys = sent.map((mail) => mail.idempotencyKey);
+      await senders.contact.handle({ payload: { message: "Please call me" }, context: { ...contextFor(requestId), attempt: 2 } });
+
+      expect(sent.slice(firstKeys.length).map((mail) => mail.idempotencyKey)).toEqual(firstKeys);
+      expect(new Set(firstKeys).size).toBe(ADMINISTRATORS.length);
+      expect(await rows()).toHaveLength(ADMINISTRATORS.length + 1);
+      expect(await reservedEmails(requestId)).toEqual([ADMINISTRATORS.length]);
+    });
+
+    it("sends nothing to the administrators past the daily email cap, and alerts them as before", async () => {
+      const sent: Mail[] = [];
+
+      const outcome = await wire({ sent, dailyEmailLimit: 1 }).contact
+        .handle({ payload: { message: "Please call me" }, context: contextFor(randomUUID()) })
+        .catch((error: unknown) => error);
+
+      expect(outcome).toMatchObject({ name: "ActionDispatchSkippedError", reason: "workspace_daily_email_cap" });
+      expect(sent.filter((mail) => mail.kind === "contact_notification")).toEqual([]);
+      expect(sent.filter((mail) => mail.kind === "notification_alert").map((mail) => mail.to).sort()).toEqual(ADMINISTRATORS);
+      expect((await rows()).map((row) => [row.recipient_email, row.outcome])).toEqual([[CONFIGURED, "skipped_unconfirmed"]]);
     });
   });
 });

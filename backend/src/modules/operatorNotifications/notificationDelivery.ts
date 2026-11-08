@@ -1,12 +1,21 @@
+import { z } from "zod";
+
 import { isUndispatchedMailResult, mailDeliverySkipReason } from "../../shared/domain/mailDeliveryOutcome.js";
 import type { NotificationEmailPlan, PlannedSkip, PlannedSkipReason } from "./notificationEmailPlan.js";
 import type { OperatorNotificationSinkOutcome } from "./operatorNotification.js";
+
+const agentIdSchema = z.string().uuid();
+
+/** Some notices name their agent "unknown" when the conversation has none; that is no agent. */
+export const knownAgentId = (agentId: string | null): string | null =>
+  agentId !== null && agentIdSchema.safeParse(agentId).success ? agentId : null;
 
 /** What raised a notice: the contact routine's request, an approval, or a routine ending's hand-off or completion. */
 export type NotificationKind = "contact_request" | "approval" | "handoff" | "completion";
 
 /**
- * What happened to one configured address for one notice. `skipped_*` is a decision (an address that
+ * What happened to one address for one notice: a configured address, or an administrator the notice
+ * went to in its place. `skipped_*` is a decision (an address that
  * is unconfirmed, stopped, or bounced; or a cap), `not_dispatched` is a transport that recorded the
  * mail without sending it, and `failed` is mail that was attempted and did not go out, or an address
  * whose state could not be read.
@@ -27,6 +36,25 @@ export interface RecipientDelivery {
   /** The normalized address. */
   email: string;
   outcome: RecipientDeliveryOutcome;
+  /**
+   * Set on a workspace administrator who was sent the notice because recipient policy left out
+   * every configured address. Absent on a configured address.
+   */
+  via?: "administrator_fallback";
+}
+
+/** One copy of a notice, as a sender's transport takes it. */
+interface NotificationEmail {
+  to: string;
+  subject: string;
+  text: string;
+  idempotencyKey: string;
+  listUnsubscribeUrl?: string;
+}
+
+interface NoticeCopy {
+  email: NotificationEmail;
+  via?: RecipientDelivery["via"];
 }
 
 /** The request one notice belongs to; a retry of the same request updates its rows instead of adding. */
@@ -68,19 +96,57 @@ const emailOutcome = (result: PromiseSettledResult<unknown>): RecipientDeliveryO
 const attempt = async <T>(run: () => Promise<T>): Promise<T> => run();
 
 /**
+ * The copies a planned notice sends. An administrator's copy opens with why it came to them, and is
+ * keyed apart from any configured address's copy, so the two never collide at the provider.
+ */
+const noticeCopies = (
+  plan: Extract<NotificationEmailPlan, { dispatchAllowed: true }>,
+  message: { subject: string; text: string; idempotencyKey: string },
+): NoticeCopy[] => {
+  const configured = plan.recipients.map(({ email, listUnsubscribeUrl }): NoticeCopy => ({
+    email: {
+      to: email,
+      subject: message.subject,
+      text: message.text,
+      ...(listUnsubscribeUrl ? { listUnsubscribeUrl } : {}),
+      idempotencyKey: `${message.idempotencyKey}:email:${encodeURIComponent(email)}`,
+    },
+  }));
+  const fallback = plan.administratorFallback;
+  if (!fallback) return configured;
+  return [
+    ...configured,
+    ...fallback.recipients.map((email): NoticeCopy => ({
+      via: "administrator_fallback",
+      email: {
+        to: email,
+        subject: message.subject,
+        text: `${fallback.note}\n\n${message.text}`,
+        idempotencyKey: `${message.idempotencyKey}:administrator-fallback:${encodeURIComponent(email)}`,
+      },
+    })),
+  ];
+};
+
+/**
  * Sends a planned notice's emails and its webhook together, records what happened to each address,
  * and says how the notice went. The two senders (`contact.send` and the operator-notice sink) share
- * this so what counts as delivered, partial or skipped is decided once.
+ * this so what counts as delivered, partial or skipped is decided once, and so is what each copy
+ * says and the key it is sent under.
  *
  * Every attempt settles before anything is thrown, so the record is complete when a send fails; the
  * first failure is then rethrown unchanged for the action to retry. A retry sends to the same
- * addresses under the same idempotency keys and updates the same rows.
+ * addresses under the same idempotency keys and updates the same rows. A notice that reached only
+ * administrators settles partial with the policy reason: its configured address still missed it.
  */
 export const deliverNotification = async (input: {
   plan: NotificationEmailPlan;
   subject: NotificationDeliverySubject;
   recorder: NotificationDeliveryRecorderPort | undefined;
-  sendEmail: (recipient: { email: string; listUnsubscribeUrl: string }) => Promise<unknown>;
+  /** What every copy says, and the key each copy's idempotency key is built from. */
+  message: { subject: string; text: string; idempotencyKey: string };
+  /** Sends one copy through the sender's transport, which adds what it owns (mail kind, reply-to). */
+  sendEmail: (email: NotificationEmail) => Promise<unknown>;
   /** The webhook post, when the destination configures one. */
   postWebhook: (() => Promise<void>) | null;
   logger?: { warn(payload: Record<string, unknown>, message: string): void };
@@ -103,15 +169,20 @@ export const deliverNotification = async (input: {
     return { disposition: "skipped", reason: plan.reason };
   }
 
-  const emailCount = plan.recipients.length;
+  const copies = noticeCopies(plan, input.message);
+  const emailCount = copies.length;
   const settled = await Promise.allSettled([
-    ...plan.recipients.map((recipient) => attempt(() => input.sendEmail(recipient))),
+    ...copies.map((copy) => attempt(() => input.sendEmail(copy.email))),
     ...(input.postWebhook ? [attempt(input.postWebhook)] : []),
   ]);
   const emailResults = settled.slice(0, emailCount);
   await record([
     ...skippedDeliveries(plan.skipped),
-    ...plan.recipients.map((recipient, index) => ({ email: recipient.email, outcome: emailOutcome(emailResults[index]) })),
+    ...copies.map((copy, index) => ({
+      email: copy.email.to,
+      outcome: emailOutcome(emailResults[index]),
+      ...(copy.via ? { via: copy.via } : {}),
+    })),
   ]);
 
   const failure = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");

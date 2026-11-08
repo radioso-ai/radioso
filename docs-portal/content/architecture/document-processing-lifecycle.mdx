@@ -100,7 +100,7 @@ Document processing is revision-aware. If a document is updated while an older j
 - Uploaded files store source file details and are materialized during processing before chunking begins.
 - Website and connector sources can carry a source-level metadata extraction override. That override can inherit the workspace default, force extraction on, or force it off.
 - A source record also holds `documentMetadata`: the document tags stamped onto the chunks of every document under that source. It takes the same shape as a document's own metadata — flat key/value pairs, scalar values, 16 KB for the map — and the same key on a document overrides it.
-- A connector sync or a repeat crawl writes only the settings it owns to the source: a connector's site URL, a crawl's limit and policy. The extraction override and `documentMetadata` an operator set on the source stay as they were.
+- A connector sync or a new crawl of the same URL writes only the settings it owns to the source: the WordPress connector's site URL, a crawl's limit and policy. The extraction override and `documentMetadata` an operator set on the source stay as they were.
 - Manually added documents have no source record, so their override is a workspace ingestion setting that offers the same three choices and fills the same slot when processing resolves whether to extract. With no source record there are no source tags either, so each of those documents carries the metadata it is given.
 
 ## Queue payloads

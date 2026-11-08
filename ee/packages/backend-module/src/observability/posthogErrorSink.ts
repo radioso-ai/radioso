@@ -97,7 +97,7 @@ export class PosthogErrorSink implements ErrorSink {
         properties: {
           distinct_id: toDistinctId(event),
           "$process_person_profile": false,
-          "$exception_fingerprint": `${event.service}:${event.errorType}:${event.errorClass ?? "UnknownError"}`,
+          "$exception_fingerprint": event.fingerprint,
           "$exception_level": event.severity === "warn" ? "warning" : event.severity,
           "$exception_list": [
             {
@@ -114,6 +114,8 @@ export class PosthogErrorSink implements ErrorSink {
             },
           ],
           errorType: event.errorType,
+          code: event.code,
+          causes: event.causes,
           service: event.service,
           environment: event.environment,
           version: event.version,

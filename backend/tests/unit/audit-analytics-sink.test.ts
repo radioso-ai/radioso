@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { AuditEventAnalyticsSink } from "../../src/shared/analytics/auditEventAnalyticsSink.js";
 import { AuditErrorSink } from "../../src/shared/errors/auditErrorSink.js";
+import { errorReportMessage } from "../../src/shared/errors/errorReportShape.js";
 import { createAuditService, InMemoryAuditEventRepository } from "../support/fakes.js";
 
 describe("audit-backed analytics and error sinks", () => {
@@ -47,7 +48,9 @@ describe("audit-backed analytics and error sinks", () => {
       severity: "error",
       service: "radioso-api",
       environment: "test",
-      message: "boom",
+      message: errorReportMessage`http.request.unhandled: Error`,
+      errorClass: "Error",
+      fingerprint: "radioso-api:http.request.unhandled:Error",
       correlation: {
         workspaceId: "workspace-1",
         accountId: "account-1",

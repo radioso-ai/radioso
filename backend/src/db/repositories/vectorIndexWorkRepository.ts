@@ -3,11 +3,15 @@ import { randomUUID } from "node:crypto";
 import type { QueryResultRow } from "pg";
 
 import type {
+  ClaimedVectorIndexWork,
+  VectorIndexClaimedWorkTarget,
   VectorIndexFailureCode,
+  VectorIndexFailureOutcome,
   VectorIndexCheckpointRecord,
   VectorIndexLagRecord,
   VectorIndexOperation,
   VectorIndexReadiness,
+  VectorIndexSupersededOutcome,
   VectorIndexWorkRecord,
   VectorIndexWorkRepositoryPort,
 } from "../../modules/embeddingProfiles/contracts/repositories.js";
@@ -115,7 +119,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
     limit: number;
     now: Date;
     leaseMs: number;
-  }): Promise<VectorIndexWorkRecord[]> {
+  }): Promise<ClaimedVectorIndexWork[]> {
     assertBatchLimit(input.limit);
     assertLeaseMs(input.leaseMs);
     const leaseExpiredAt = new Date(input.now.getTime() - input.leaseMs);
@@ -202,30 +206,15 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       const order = new Map(rows.map((row, index) => [row.id, index]));
       return claimed
         .sort((left, right) => order.get(left.id)! - order.get(right.id)!)
-        .map((row) => mapVectorIndexWork(row));
+        .map((row) => ({ ...mapVectorIndexWork(row), claimedAt: input.now }));
     });
   }
 
-  async markFailed(input: {
-    id: string;
+  async markFailed(input: VectorIndexClaimedWorkTarget & {
     errorCode: VectorIndexFailureCode;
     retryAt: Date;
     maxAttempts: number;
-    backendKey: string;
-    workspaceId: string;
-    embeddingSpaceId: string;
-    chunkId: string;
-    caughtUpReadiness: VectorIndexReadiness;
-  }): Promise<
-    | {
-        disposition: "retry_scheduled" | "dead_lettered";
-        checkpoint: null;
-      }
-    | {
-        disposition: "superseded";
-        checkpoint: VectorIndexCheckpointRecord;
-      }
-  > {
+  }): Promise<VectorIndexFailureOutcome> {
     if (!Number.isInteger(input.maxAttempts) || input.maxAttempts < 1) {
       throw new Error("Vector index max attempts must be a positive integer");
     }
@@ -246,8 +235,8 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       ) {
         throw new Error("Vector index work identity does not match claimed work");
       }
-      if (work.status !== "processing") {
-        throw new Error("Vector index work is not processing");
+      if (!holdsClaim(work, input.claimedAt)) {
+        return { disposition: "lease_lost", checkpoint: null };
       }
       const superseding = await trx
         .selectFrom("vector_index_work")
@@ -293,14 +282,9 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
     });
   }
 
-  async markCompletedAndAdvanceCheckpoint(input: {
-    id: string;
-    backendKey: string;
-    workspaceId: string;
-    embeddingSpaceId: string;
-    chunkId: string;
-    caughtUpReadiness: VectorIndexReadiness;
-  }): Promise<VectorIndexCheckpointRecord> {
+  async markCompletedAndAdvanceCheckpoint(
+    input: VectorIndexClaimedWorkTarget,
+  ): Promise<VectorIndexCheckpointRecord | null> {
     return this.db.transaction().execute(async (trx) => {
       await transactionAdvisoryLock(
         `vector-index-work:${input.workspaceId}:${input.embeddingSpaceId}:${input.chunkId}`,
@@ -318,8 +302,8 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       ) {
         throw new Error("Vector index work identity does not match claimed work");
       }
-      if (work.status !== "processing" && work.status !== "completed") {
-        throw new Error("Vector index work cannot be acknowledged from its current state");
+      if (!holdsClaim(work, input.claimedAt)) {
+        return null;
       }
       return completeWorkAndAdvanceCheckpoint(trx, work, {
         backendKey: input.backendKey,
@@ -328,14 +312,9 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
     });
   }
 
-  async completeSupersededAndAdvanceCheckpoint(input: {
-    id: string;
-    backendKey: string;
-    workspaceId: string;
-    embeddingSpaceId: string;
-    chunkId: string;
-    caughtUpReadiness: VectorIndexReadiness;
-  }): Promise<VectorIndexCheckpointRecord | null> {
+  async completeSupersededAndAdvanceCheckpoint(
+    input: VectorIndexClaimedWorkTarget,
+  ): Promise<VectorIndexSupersededOutcome> {
     return this.db.transaction().execute(async (trx) => {
       await transactionAdvisoryLock(
         `vector-index-work:${input.workspaceId}:${input.embeddingSpaceId}:${input.chunkId}`,
@@ -353,8 +332,8 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       ) {
         throw new Error("Vector index work identity does not match claimed work");
       }
-      if (work.status !== "processing") {
-        throw new Error("Vector index work is not processing");
+      if (!holdsClaim(work, input.claimedAt)) {
+        return { disposition: "lease_lost", checkpoint: null };
       }
       const superseding = await trx
         .selectFrom("vector_index_work")
@@ -368,12 +347,15 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
         .limit(1)
         .executeTakeFirst();
       if (!superseding) {
-        return null;
+        return { disposition: "not_superseded", checkpoint: null };
       }
-      return completeWorkAndAdvanceCheckpoint(trx, work, {
-        backendKey: input.backendKey,
-        caughtUpReadiness: input.caughtUpReadiness,
-      });
+      return {
+        disposition: "superseded",
+        checkpoint: await completeWorkAndAdvanceCheckpoint(trx, work, {
+          backendKey: input.backendKey,
+          caughtUpReadiness: input.caughtUpReadiness,
+        }),
+      };
     });
   }
 
@@ -557,6 +539,14 @@ const retireOlderDeadLetterWork = async (
     .where("sequence", "<", work.sequence)
     .execute();
 };
+
+// A lease that expired mid-batch lets another runner reclaim the row. The new claim
+// rewrites `claimed_at` (or the row moves on to completed, failed, or dead_letter), so
+// a stale runner sees a mismatch here and must leave the row to its current owner.
+const holdsClaim = (work: VectorIndexWorkRow, claimedAt: Date): boolean =>
+  work.status === "processing"
+  && work.claimed_at !== null
+  && new Date(work.claimed_at).getTime() === claimedAt.getTime();
 
 const completeWorkAndAdvanceCheckpoint = async (
   db: Db,
@@ -882,7 +872,7 @@ export const appendVectorTombstonesForDocuments = async (
   return work;
 };
 
-export interface VectorIndexProjectionTransactionClient {
+interface VectorIndexProjectionTransactionClient {
   query<T extends QueryResultRow = QueryResultRow>(
     text: string,
     params?: unknown[],

@@ -139,6 +139,7 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
     });
     await expect(repository.markFailed({
       id: first.work.id,
+      claimedAt: reclaimed[0].claimedAt,
       errorCode: "adapter_unavailable",
       retryAt: new Date(now.getTime() + 5_000),
       maxAttempts: 3,
@@ -168,6 +169,7 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
     });
     await expect(repository.markFailed({
       id: first.work.id,
+      claimedAt: finalClaim[0].claimedAt,
       errorCode: "adapter_unavailable",
       retryAt: new Date(now.getTime() + 10_000),
       maxAttempts: 3,
@@ -185,6 +187,136 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
       now: new Date(now.getTime() + 20_000),
       leaseMs: 1_000,
     })).resolves.toEqual([]);
+  });
+
+  it("fences a stale claimant after another runner reclaims its expired lease", async () => {
+    const appended = await appendUpsert();
+    const [staleClaim] = await repository.claimBatch({
+      limit: 1,
+      now,
+      leaseMs: 1_000,
+    });
+    const [freshClaim] = await repository.claimBatch({
+      limit: 1,
+      now: new Date(now.getTime() + 1_001),
+      leaseMs: 1_000,
+    });
+    expect(freshClaim).toMatchObject({
+      id: appended.work.id,
+      claimedAt: new Date(now.getTime() + 1_001),
+    });
+    const target = {
+      id: appended.work.id,
+      backendKey: "pgvector",
+      workspaceId,
+      embeddingSpaceId: spaceId,
+      chunkId: appended.work.chunkId,
+      caughtUpReadiness: "exact_fallback",
+    } as const;
+    const staleFailure = {
+      ...target,
+      claimedAt: staleClaim.claimedAt,
+      errorCode: "adapter_unavailable",
+      retryAt: new Date(now.getTime() + 5_000),
+      maxAttempts: 3,
+    } as const;
+
+    await expect(repository.markFailed(staleFailure)).resolves.toEqual({
+      disposition: "lease_lost",
+      checkpoint: null,
+    });
+    await expect(repository.completeSupersededAndAdvanceCheckpoint({
+      ...target,
+      claimedAt: staleClaim.claimedAt,
+    })).resolves.toEqual({ disposition: "lease_lost", checkpoint: null });
+    await expect(repository.markCompletedAndAdvanceCheckpoint({
+      ...target,
+      claimedAt: staleClaim.claimedAt,
+    })).resolves.toBeNull();
+    const [whileFreshHoldsLease] = await database.query<{
+      status: string;
+      claimed_at: Date;
+    }>(
+      "SELECT status, claimed_at FROM vector_index_work WHERE id = $1",
+      [appended.work.id],
+    );
+    expect(whileFreshHoldsLease).toEqual({
+      status: "processing",
+      claimed_at: freshClaim.claimedAt,
+    });
+
+    await expect(repository.markCompletedAndAdvanceCheckpoint({
+      ...target,
+      claimedAt: freshClaim.claimedAt,
+    })).resolves.toMatchObject({
+      acknowledgedSequence: appended.work.sequence,
+    });
+    await expect(repository.markFailed(staleFailure)).resolves.toEqual({
+      disposition: "lease_lost",
+      checkpoint: null,
+    });
+    await expect(repository.completeSupersededAndAdvanceCheckpoint({
+      ...target,
+      claimedAt: staleClaim.claimedAt,
+    })).resolves.toEqual({ disposition: "lease_lost", checkpoint: null });
+  });
+
+  it("skips a row another runner reclaimed and completed while the first runner was mid-batch", async () => {
+    const appended = await appendUpsert();
+    const adapter = new InMemoryVectorAdapter();
+    const runnerOptions = {
+      adapter,
+      backendKey: "pgvector",
+      repository,
+      batchSize: 10,
+      leaseMs: 1_000,
+      maxAttempts: 3,
+      retryDelayMs: 5_000,
+      resolveCaughtUpReadiness: async () => "exact_fallback" as const,
+    };
+    const findSpace = async (id: string) =>
+      id === spaceId ? embeddingSpaceRecord(space) : null;
+    const reclaimingRunner = new VectorIndexReconciler({
+      ...runnerOptions,
+      clock: () => new Date(now.getTime() + 1_001),
+      spaces: { findEmbeddingSpaceById: findSpace },
+    });
+    let leaseExpired = false;
+    const onLoopError = vi.fn();
+    const staleRunner = new VectorIndexReconciler({
+      ...runnerOptions,
+      clock: () => now,
+      spaces: {
+        async findEmbeddingSpaceById(id) {
+          if (!leaseExpired) {
+            leaseExpired = true;
+            await expect(reclaimingRunner.runOnce()).resolves.toBe(true);
+          }
+          return findSpace(id);
+        },
+      },
+      onLoopError,
+    });
+
+    await expect(staleRunner.runOnce()).resolves.toBe(true);
+
+    expect(onLoopError).not.toHaveBeenCalled();
+    const [row] = await database.query<{
+      status: string;
+      attempt_count: number;
+    }>(
+      "SELECT status, attempt_count FROM vector_index_work WHERE id = $1",
+      [appended.work.id],
+    );
+    expect(row).toEqual({ status: "completed", attempt_count: 2 });
+    await expect(repository.findCheckpoint({
+      backendKey: "pgvector",
+      workspaceId,
+      embeddingSpaceId: spaceId,
+    })).resolves.toMatchObject({
+      acknowledgedSequence: appended.work.sequence,
+      readiness: "exact_fallback",
+    });
   });
 
   it("delivers portable mutations, acknowledges work, and advances contiguous readiness", async () => {
@@ -319,6 +451,7 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
 
       const deadLetterUpsert = () => repository.markFailed({
         id: upsert.work.id,
+        claimedAt: now,
         errorCode: "adapter_unavailable",
         retryAt: new Date(now.getTime() + 5_000),
         maxAttempts: 1,
@@ -439,6 +572,7 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
 
     await expect(repository.markCompletedAndAdvanceCheckpoint({
       id: tombstone.work.id,
+      claimedAt: now,
       backendKey: "pgvector",
       workspaceId,
       embeddingSpaceId: spaceId,
@@ -451,6 +585,7 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
 
     await expect(repository.markFailed({
       id: upsert.work.id,
+      claimedAt: now,
       errorCode: "adapter_unavailable",
       retryAt: new Date(now.getTime() + 5_000),
       maxAttempts: 1,

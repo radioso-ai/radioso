@@ -408,13 +408,15 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
       canonicalVersion: "1",
       payload: {},
     });
-    await expect(vectorIndexWorkRepository.claimBatch({
+    const [projectionClaim] = await vectorIndexWorkRepository.claimBatch({
       limit: 1,
       now: claimableNow(),
       leaseMs: 1_000,
-    })).resolves.toMatchObject([{ id: projection.work.id }]);
+    });
+    expect(projectionClaim).toMatchObject({ id: projection.work.id });
     await expect(vectorIndexWorkRepository.markFailed({
       id: projection.work.id,
+      claimedAt: projectionClaim.claimedAt,
       errorCode: "adapter_unavailable",
       retryAt: new Date(Date.now() + 5_000),
       maxAttempts: 1,
@@ -484,13 +486,15 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
       canonicalVersion: "1",
       payload: {},
     });
-    await expect(vectorIndexWorkRepository.claimBatch({
+    const [activeProjectionClaim] = await vectorIndexWorkRepository.claimBatch({
       limit: 1,
       now: claimableNow(),
       leaseMs: 1_000,
-    })).resolves.toMatchObject([{ id: activeProjection.work.id }]);
+    });
+    expect(activeProjectionClaim).toMatchObject({ id: activeProjection.work.id });
     await vectorIndexWorkRepository.markFailed({
       id: activeProjection.work.id,
+      claimedAt: activeProjectionClaim.claimedAt,
       errorCode: "adapter_unavailable",
       retryAt: new Date(Date.now() + 5_000),
       maxAttempts: 1,
@@ -555,13 +559,14 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
       canonicalVersion: "1",
       payload: {},
     });
-    await vectorIndexWorkRepository.claimBatch({
+    const [staleProjectionClaim] = await vectorIndexWorkRepository.claimBatch({
       limit: 1,
       now: claimableNow(),
       leaseMs: 1_000,
     });
     await vectorIndexWorkRepository.markFailed({
       id: staleProjection.work.id,
+      claimedAt: staleProjectionClaim.claimedAt,
       errorCode: "adapter_unavailable",
       retryAt: new Date(Date.now() + 5_000),
       maxAttempts: 1,
@@ -621,13 +626,15 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
       },
     });
 
-    await expect(vectorIndexWorkRepository.claimBatch({
+    const [replacementProjectionClaim] = await vectorIndexWorkRepository.claimBatch({
       limit: 1,
       now: claimableNow(),
       leaseMs: 1_000,
-    })).resolves.toMatchObject([{ id: replacementProjection.work.id }]);
+    });
+    expect(replacementProjectionClaim).toMatchObject({ id: replacementProjection.work.id });
     await vectorIndexWorkRepository.markCompletedAndAdvanceCheckpoint({
       id: replacementProjection.work.id,
+      claimedAt: replacementProjectionClaim.claimedAt,
       backendKey: "pgvector",
       workspaceId,
       embeddingSpaceId: pending.id,

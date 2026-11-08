@@ -1,4 +1,5 @@
 import type {
+  ClaimedVectorIndexWork,
   EmbeddingProfileRepositoryPort,
   EmbeddingSpaceRecord,
   VectorIndexCheckpointRecord,
@@ -15,7 +16,7 @@ import type {
 } from "../domain/vectorAdapter.js";
 import { normalizeVectorMetadataFilter } from "../domain/vectorFilter.js";
 
-export interface VectorIndexReconcilerOptions {
+interface VectorIndexReconcilerOptions {
   adapter: VectorAdapter;
   backendKey: string;
   repository: Pick<
@@ -66,7 +67,13 @@ export class VectorIndexReconciler {
       return false;
     }
     for (const work of claimed) {
-      await this.process(work);
+      try {
+        await this.process(work);
+      } catch (error) {
+        // The row keeps its lease and is reclaimed when the lease expires, so one
+        // row must not stop the rest of the batch or the caller's maintenance run.
+        this.options.onLoopError?.(error);
+      }
     }
     return true;
   }
@@ -131,7 +138,7 @@ export class VectorIndexReconciler {
     await this.running;
   }
 
-  private async process(work: VectorIndexWorkRecord): Promise<void> {
+  private async process(work: ClaimedVectorIndexWork): Promise<void> {
     let checkpoint: VectorIndexCheckpointRecord | null = null;
     let caughtUpReadiness: VectorIndexReadiness = "building";
     try {
@@ -152,16 +159,21 @@ export class VectorIndexReconciler {
             space,
           })
         : "building";
-      checkpoint = await this.options.repository
+      const superseded = await this.options.repository
         .completeSupersededAndAdvanceCheckpoint({
           id: work.id,
+          claimedAt: work.claimedAt,
           backendKey: this.options.backendKey,
           workspaceId: work.workspaceId,
           embeddingSpaceId: work.embeddingSpaceId,
           chunkId: work.chunkId,
           caughtUpReadiness,
         });
-      if (!checkpoint) {
+      if (superseded.disposition === "lease_lost") {
+        return;
+      }
+      checkpoint = superseded.checkpoint;
+      if (superseded.disposition === "not_superseded") {
         await this.options.adapter.admin.prepareSpace({ space: embeddingSpace });
         const mutation = toMutation(work, space);
         const result = await this.options.adapter.writer.applyMutations({
@@ -174,6 +186,7 @@ export class VectorIndexReconciler {
         }
         checkpoint = await this.options.repository.markCompletedAndAdvanceCheckpoint({
           id: work.id,
+          claimedAt: work.claimedAt,
           backendKey: this.options.backendKey,
           workspaceId: work.workspaceId,
           embeddingSpaceId: work.embeddingSpaceId,
@@ -212,12 +225,13 @@ export class VectorIndexReconciler {
   }
 
   private async fail(
-    work: VectorIndexWorkRecord,
+    work: ClaimedVectorIndexWork,
     errorCode: VectorIndexFailureCode,
     caughtUpReadiness: VectorIndexReadiness,
   ): Promise<VectorIndexCheckpointRecord | null> {
     const result = await this.options.repository.markFailed({
       id: work.id,
+      claimedAt: work.claimedAt,
       errorCode,
       retryAt: new Date(this.clock().getTime() + this.options.retryDelayMs),
       maxAttempts: this.options.maxAttempts,

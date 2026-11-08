@@ -167,8 +167,6 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         })
       : null;
 
-    // The content hash excludes the title, so a corrected title alone must still reprocess:
-    // compare it separately rather than folding it into the hash and re-ingesting every page.
     if (existingPage && isUnchangedPage(existingPage, { contentHash: indexedContent.contentHash, title: input.title })) {
       return { documentId: existingPage.documentId, status: "ready" };
     }
@@ -178,6 +176,8 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     // the EE quota lock serializes the account cap check, but two workers can
     // still observe the same previous page size before one commits.
     const deltaBytes = Math.max(0, indexedContent.contentSizeBytes - previousBytes);
+    // Reaching here with a matching hash means only the title changed: no new content to meter.
+    const monthlyIndexedBytes = existingPage?.contentHash === indexedContent.contentHash ? 0 : indexedContent.contentSizeBytes;
     let document:
       | {
           id: string;
@@ -206,7 +206,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     const monthlyReservation = await this.usageLimitPolicy.reserveMonthlyIndexedContent({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
-      contentSizeBytes: indexedContent.contentSizeBytes,
+      contentSizeBytes: monthlyIndexedBytes,
       sourceKind: "inline_text",
       externalDocumentId: input.externalDocumentId,
     }).catch(async (error) => {

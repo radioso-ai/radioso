@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import type {
   IndexedStorageReservationInput,
+  MonthlyIndexedContentReservationInput,
   UsageLimitPolicy,
   UsageLimitReservation,
 } from "../../src/shared/domain/usageLimitPolicy.js";
@@ -16,6 +17,7 @@ import {
 
 class RecordingUsageLimitPolicy implements UsageLimitPolicy {
   readonly indexedStorageCalls: IndexedStorageReservationInput[] = [];
+  readonly monthlyIndexedContentCalls: MonthlyIndexedContentReservationInput[] = [];
 
   async reserveAnswer(): Promise<UsageLimitReservation> {
     return noopReservation;
@@ -30,7 +32,8 @@ class RecordingUsageLimitPolicy implements UsageLimitPolicy {
     return noopReservation;
   }
 
-  async reserveMonthlyIndexedContent(): Promise<UsageLimitReservation> {
+  async reserveMonthlyIndexedContent(input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation> {
+    this.monthlyIndexedContentCalls.push(input);
     return noopReservation;
   }
 }
@@ -126,6 +129,69 @@ describe("document recrawl accounting", () => {
     expect(response.status).toBe("ready");
     expect(enqueueSpy).toHaveBeenCalledTimes(initialJobCount);
     expect(policy.indexedStorageCalls).toHaveLength(0);
+  });
+
+  it("charges a title-only recrawl nothing against the monthly meter and nothing against storage", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    await seedInlineDocument(documentRepository, jobRepository, {
+      workspaceId: "workspace-1",
+      externalDocumentId: "page-title",
+      content: "Same body",
+    });
+    const policy = new RecordingUsageLimitPolicy();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      policy,
+    );
+
+    const response = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Corrected title",
+      content: "Same body",
+      externalDocumentId: "page-title",
+    });
+
+    expect(response.status).not.toBe("ready");
+    expect(policy.monthlyIndexedContentCalls.map((call) => call.contentSizeBytes)).toEqual([0]);
+    expect(policy.indexedStorageCalls.map((call) => call.contentSizeBytes)).toEqual([0]);
+  });
+
+  it("charges changed content its full size against the monthly meter", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    await seedInlineDocument(documentRepository, jobRepository, {
+      workspaceId: "workspace-1",
+      externalDocumentId: "page-monthly",
+      content: "short",
+    });
+    const policy = new RecordingUsageLimitPolicy();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      policy,
+    );
+    const newContent = "much longer body for the recrawl";
+
+    await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Initial",
+      content: newContent,
+      externalDocumentId: "page-monthly",
+    });
+
+    expect(policy.monthlyIndexedContentCalls.map((call) => call.contentSizeBytes)).toEqual([
+      Buffer.byteLength(newContent, "utf8"),
+    ]);
   });
 
   it("reserves only the positive byte delta when recrawled content grows", async () => {

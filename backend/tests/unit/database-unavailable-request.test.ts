@@ -117,8 +117,8 @@ describe("a request whose database cannot be reached", () => {
   });
 
   it("names a pool whose every connection stayed busy", async () => {
-    // The longer timeout keeps the slot taken until the task's query is queued behind it, however
-    // slowly the request arrives.
+    // The longer timeout keeps the slot taken until the task's query is queued behind it, even on a
+    // loaded machine where the request takes a while to arrive.
     const database = await databaseAt("silent", { poolMax: 1, connectionTimeoutMs: 500 });
     // Takes the pool's only slot, so the task's query waits for a connection instead of opening one.
     const occupant = database.pool.connect().catch(() => undefined);

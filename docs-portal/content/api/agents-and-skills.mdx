@@ -421,7 +421,7 @@ An owner or admin can call `POST /api/v1/agents/{agentId}/notification-recipient
 
 ### Delivery log
 
-The notify skills' recipient list tells you who a notice is meant for. The delivery log tells you what happened to it: one entry for each address of each contact request or operator notice, whichever skill or default destination it went through, plus one for each owner or admin a notice went to because none of its addresses could receive it.
+The notify skills' recipient list tells you who a notice is meant for. The delivery log tells you what happened to it: one entry for each address of each contact request or operator notice, whichever skill or default destination it went through.
 
 `GET /api/v1/notification-deliveries` lists them newest first. It needs `workspace.agents.read` and a workspace session; a machine API token gets `401`, because the entries name recipient emails. Narrow the list with `agentId` or `outcome`, and page through it with `limit` (1 to 100, default 50) and the `nextCursor` of the previous page passed back as `cursor`.
 
@@ -469,7 +469,7 @@ Each of them gets the notice as written, with its subject and its `Reply-To`, so
 This notification came to you because front-desk@example.com cannot receive it: the address has not confirmed yet that it wants notifications. Fix it on the agent's page: https://app.example.com/w/acme/agents/...
 ```
 
-Their copies count against the daily email allowance like any notice email, and a retry sends each of them the same message once. The delivery log shows the address as skipped and each owner or admin as `sent`, under the same notice, and the action records `partially_dispatched` with the skip reason, because the address it was meant for still missed it.
+Each copy carries the same one-click unsubscribe link any notice email does, for the owner's or admin's own address; using it leaves them out of these copies and of the alert for that workspace. Their copies count against the daily email allowance like any notice email, and a retry sends each of them the same message once. In the delivery log, the address reads as skipped and each owner or admin appears as a `sent` entry with the same conversation, kind, and time; nothing else marks those entries. The action records `partially_dispatched` with the skip reason, because the address the notice was meant for still missed it.
 
 A notice stopped by the daily or conversation allowance stays stopped, and an email that failed in transit retries to its own address. A notice with no destination configured at all goes to the workspace owner through the destination chain above, so it never needs this step. Slack is a separate destination: a workspace with an escalation channel and an address that has not confirmed gets the notice in Slack and by email to its owners and admins.
 

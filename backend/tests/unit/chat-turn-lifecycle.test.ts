@@ -1,3 +1,4 @@
+import { DatabaseError } from "pg";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationTrace } from "@radioso/conversation-contract";
@@ -2559,6 +2560,49 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
           providerStatus: 404,
           providerCode: "DeploymentNotFound",
         }),
+      }));
+    });
+
+    it("reports a turn whose database could not be reached as a database outage, with the turn's workspace", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      const error = Object.assign(new DatabaseError("terminating connection due to administrator command", 0, "error"), { code: "57P01" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+      );
+
+      expect(report).toHaveBeenCalledOnce();
+      expect(report).toHaveBeenCalledWith(expect.objectContaining({
+        errorType: "database.unavailable",
+        severity: "warn",
+        error,
+        message: "Database unavailable (server_unavailable): error [57P01]",
+        metadata: expect.objectContaining({ workspaceId: "workspace_1", conversationId: "conv_1", stage: "chat.answer", reason: "server_unavailable" }),
+      }));
+    });
+
+    it("reports a turn that found every pooled connection busy as an exhausted pool, at error level", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      // pg-pool's own error when no pooled connection comes free within connectionTimeoutMillis.
+      const error = new Error("timeout exceeded when trying to connect");
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+      );
+
+      expect(report).toHaveBeenCalledWith(expect.objectContaining({
+        errorType: "database.pool_exhausted",
+        severity: "error",
+        message: "Database pool exhausted: Error",
+        metadata: expect.objectContaining({ workspaceId: "workspace_1", conversationId: "conv_1" }),
       }));
     });
 

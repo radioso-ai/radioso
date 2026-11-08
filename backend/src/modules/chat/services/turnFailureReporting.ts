@@ -1,6 +1,7 @@
 import { isReportableFault } from "../../../shared/domain/errors.js";
+import { databaseFailureReport } from "../../../shared/errors/databaseFailureReport.js";
 import { errorReportMessage, errorSummaryOf } from "../../../shared/errors/errorReportShape.js";
-import type { ErrorReportMessage } from "../../../shared/errors/errorTypes.js";
+import type { ErrorReportMessage, ErrorSeverity } from "../../../shared/errors/errorTypes.js";
 import { classifyLlmProviderFailure, type LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import { turnExecutionCapabilities, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AuditEventInput } from "../../audit/contracts/index.js";
@@ -74,7 +75,8 @@ interface TurnFailureReportMetadata extends TurnFailureClassificationFields {
 }
 
 interface TurnFailureReportInput {
-  errorType: "chat.turn_failed";
+  errorType: "chat.turn_failed" | "database.unavailable" | "database.pool_exhausted";
+  severity?: ErrorSeverity;
   error: unknown;
   message?: ErrorReportMessage;
   metadata: TurnFailureReportMetadata;
@@ -94,17 +96,21 @@ export const turnFailureReportInput = (input: {
   if (!isReportableFault(input.error)) {
     return null;
   }
-  const boundedMessage = boundedTurnFailureMessage(input.providerFailure);
+  // A turn that failed for want of a database connection is reported as that, the way a request is.
+  const databaseFailure = databaseFailureReport(input.error);
+  const message = databaseFailure?.message ?? boundedTurnFailureMessage(input.providerFailure);
   return {
-    errorType: "chat.turn_failed",
+    errorType: databaseFailure?.errorType ?? "chat.turn_failed",
+    ...(databaseFailure ? { severity: databaseFailure.severity } : {}),
     error: input.error,
-    ...(boundedMessage ? { message: boundedMessage } : {}),
+    ...(message ? { message } : {}),
     metadata: {
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       stage: "chat.answer",
       executionMode: input.executionMode ?? "live",
       ...turnFailureClassificationFields(input.providerFailure),
+      ...databaseFailure?.metadata,
     },
   };
 };

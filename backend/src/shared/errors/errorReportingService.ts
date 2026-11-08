@@ -1,4 +1,3 @@
-import type { DatabaseUnavailableReason } from "../infra/databaseConnectionFailure.js";
 import type { AppLogger } from "../observability/logger.js";
 import { matchedRoutePattern } from "../observability/matchedRoute.js";
 import { createRequestCorrelation, type CorrelationFields, type RequestCorrelationSource } from "../observability/telemetry/correlation.js";
@@ -102,30 +101,13 @@ export class ErrorReportingService {
   }
 
   /**
-   * A request that failed because the database could not be reached: a restart, a maintenance
-   * window, a full connection limit. Its own type keeps an outage out of the unhandled group that
-   * code faults land in, and it is a warning because the fault is the database's availability, not
-   * the request's code: the same request succeeds once the database is back. `reason` is a bounded
-   * code.
+   * A failed request under the type its caller classified it as, such as a `databaseFailureReport`,
+   * with the same correlation and request context as an unhandled one.
    */
-  async reportDatabaseUnavailableRequest(input: RequestFailure & { reason: DatabaseUnavailableReason }): Promise<ErrorEvent | null> {
-    const { reason, ...failure } = input;
-    return this.reportRequestFailure({ ...failure, errorType: "database.unavailable", severity: "warn", metadata: { reason } });
-  }
-
-  /**
-   * A request that failed because every pooled connection stayed checked out past the pool's
-   * connection timeout. The database may be fine; this process held its connections (a leak, a
-   * connection kept across a slow call, slow queries filling the pool), so it is an error under a
-   * type of its own rather than part of an outage.
-   */
-  async reportDatabasePoolExhaustedRequest(input: RequestFailure): Promise<ErrorEvent | null> {
-    return this.reportRequestFailure({ ...input, errorType: "database.pool_exhausted" });
-  }
-
-  private async reportRequestFailure(input: RequestFailure & {
+  async reportRequestFailure(input: RequestFailure & {
     errorType: string;
     severity?: ErrorSeverity;
+    message?: ErrorReportMessage;
     metadata?: Record<string, unknown>;
   }): Promise<ErrorEvent | null> {
     // The matched pattern, never the URL: a path segment can hold a credential. An error raised
@@ -134,6 +116,7 @@ export class ErrorReportingService {
     return this.report({
       errorType: input.errorType,
       severity: input.severity,
+      message: input.message,
       correlation: createRequestCorrelation(input.request),
       error: input.error,
       requestContext: {

@@ -47,6 +47,7 @@ import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import { buildConversationLinkResolver } from "../conversationLinkResolver.js";
 import {
   buildContactDeliveryResolver,
+  buildNotificationAdministratorFallback,
   buildNotificationDeliveryRecorder,
   buildNotificationRecipientPolicy,
 } from "../contactDelivery.js";
@@ -111,6 +112,7 @@ const buildOperatorNotificationDispatcher = (input: {
       input.admission,
       input.recipientPolicy,
       input.recorder,
+      buildNotificationAdministratorFallback({ database: input.database, env: input.env, recipientPolicy: input.recipientPolicy }),
     ),
     new SlackOperatorNotificationSink({
       installations: new SlackInstallationRepository(input.database.kysely),
@@ -178,6 +180,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
           recipientPolicy,
           buildNotificationDeliveryRecorder({ database, env, mailer: mailService, logger, metrics }),
+          buildNotificationAdministratorFallback({ database, env, recipientPolicy }),
         );
       },
     });

@@ -7,11 +7,12 @@ import type {
   RoutedContactDeliveryTarget,
 } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
 import { EmailWebhookOperatorNotificationSink } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
-import type {
-  NotificationDeliveryAdmissionPort,
-  NotificationDeliveryRecorderPort,
-  NotificationRecipientPolicyPort,
-  RecipientDelivery,
+import {
+  NotificationAdministratorFallback,
+  type NotificationDeliveryAdmissionPort,
+  type NotificationDeliveryRecorderPort,
+  type NotificationRecipientPolicyPort,
+  type RecipientDelivery,
 } from "../../../src/modules/operatorNotifications/public.js";
 
 type RecipientState = "confirmed" | "unconfirmed" | "revoked" | "suppressed";
@@ -36,8 +37,18 @@ const admit = (overrides: Partial<Awaited<ReturnType<NotificationDeliveryAdmissi
   admit: async () => ({ dispatchAllowed: true, emailAllowed: true, reason: null, ...overrides }),
 });
 
+interface SentMessage {
+  to: string;
+  subject: string;
+  text: string;
+  replyTo: string | null;
+  idempotencyKey: string | null;
+  listUnsubscribeUrl: string | null;
+}
+
 interface Harness {
   sent: string[];
+  messages: SentMessage[];
   webhookPosts: number;
   records: Array<{ subject: Parameters<NotificationDeliveryRecorderPort["record"]>[0]; deliveries: RecipientDelivery[] }>;
 }
@@ -52,7 +63,13 @@ interface Scenario {
   /** A transport that records the mail instead of sending it. */
   undispatched?: boolean;
   recorder?: NotificationDeliveryRecorderPort;
+  /** The workspace's administrators who can be mailed; absent leaves the fallback unwired. */
+  administrators?: string[];
 }
+
+const DASHBOARD_URL = "https://app.example.com/w/front/agents/00000000-0000-4000-8000-0000000000cc?tab=behavior";
+const VISITOR = "visitor@example.com";
+const stopLink = (email: string) => `https://api.example.com/notification-recipient-confirmations/revoke?for=${email}`;
 
 type SettledOutcome =
   | { settled: "dispatched" }
@@ -70,11 +87,19 @@ const context = {
 };
 
 const harness = (scenario: Scenario) => {
-  const state: Harness = { sent: [], webhookPosts: 0, records: [] };
+  const state: Harness = { sent: [], messages: [], webhookPosts: 0, records: [] };
   const mailer: ContactNotificationMailer = {
     send: async (message) => {
       if (scenario.rejecting?.includes(message.to)) throw new Error("provider rejected the message");
       state.sent.push(message.to);
+      state.messages.push({
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        replyTo: message.replyTo ?? null,
+        idempotencyKey: message.idempotencyKey ?? null,
+        listUnsubscribeUrl: message.listUnsubscribeUrl ?? null,
+      });
       return scenario.undispatched ? { dispatched: false, driver: "log" } : { dispatched: true };
     },
   };
@@ -89,7 +114,15 @@ const harness = (scenario: Scenario) => {
     recipientsFromWorkspaceOwner: false,
   };
   const states = scenario.states ?? Object.fromEntries(scenario.emails.map((email) => [email, "confirmed" as const]));
-  return { state, mailer, httpClient, recorder, target, policy: policyFor(states), admission: scenario.admission ?? admit() };
+  const { administrators } = scenario;
+  const fallback = administrators
+    ? new NotificationAdministratorFallback({
+      administrators: { listAdministratorEmails: async () => administrators },
+      unsubscribeLinks: { unsubscribeUrl: async (_workspaceId, email) => stopLink(email) },
+      dashboardUrl: async () => DASHBOARD_URL,
+    })
+    : undefined;
+  return { state, mailer, httpClient, recorder, target, policy: policyFor(states), admission: scenario.admission ?? admit(), fallback };
 };
 
 const settle = async (run: () => Promise<{ disposition: string; reason?: string } | void>): Promise<SettledOutcome> => {
@@ -113,7 +146,7 @@ const senders: Array<{
   {
     name: "contact.send",
     run: async (scenario) => {
-      const { state, mailer, httpClient, recorder, target, policy, admission } = harness(scenario);
+      const { state, mailer, httpClient, recorder, target, policy, admission, fallback } = harness(scenario);
       const handler = new ContactSendActionHandler(
         mailer,
         { resolve: async () => target },
@@ -123,15 +156,16 @@ const senders: Array<{
         admission,
         policy,
         recorder,
+        fallback,
       );
-      const outcome = await settle(() => handler.handle({ payload: { message: "Please call me" }, context }));
+      const outcome = await settle(() => handler.handle({ payload: { message: "Please call me", email: VISITOR }, context }));
       return { outcome, state };
     },
   },
   {
     name: "operator notice",
     run: async (scenario) => {
-      const { state, mailer, httpClient, recorder, target, policy, admission } = harness(scenario);
+      const { state, mailer, httpClient, recorder, target, policy, admission, fallback } = harness(scenario);
       const sink = new EmailWebhookOperatorNotificationSink(
         mailer,
         { resolve: async () => target },
@@ -141,6 +175,7 @@ const senders: Array<{
         admission,
         policy,
         recorder,
+        fallback,
       );
       const outcome = await settle(async () => {
         const result = await sink.deliver({
@@ -149,6 +184,7 @@ const senders: Array<{
           conversationId: context.conversationId,
           agentId: "00000000-0000-4000-8000-0000000000cc",
           reason: "customer_requested_human",
+          replyTo: VISITOR,
         }, context);
         if (result.disposition === "skipped") {
           const error = Object.assign(new Error(result.reason), { reason: result.reason });
@@ -298,6 +334,126 @@ describe.each(senders)("per-recipient delivery record: $name", ({ run }) => {
     expect(outcome).toEqual({ settled: "dispatched" });
     expect(state.sent).toEqual(["one@example.com"]);
     expect(state.webhookPosts).toBe(1);
+  });
+});
+
+describe.each(senders)("a notice no configured address can receive: $name", ({ run }) => {
+  const administrators = ["owner@example.com", "admin@example.com"];
+  const unconfirmedOnly = { emails: ["reception@example.com"], states: { "reception@example.com": "unconfirmed" as const } };
+
+  it("reaches the administrators as the same notice, opening with why it came to them", async () => {
+    const normal = await run({ emails: ["reception@example.com"] });
+    const normalCopy = normal.state.messages[0];
+
+    const { outcome, state } = await run({ ...unconfirmedOnly, administrators });
+
+    expect(outcome).toEqual({ settled: "partial", reason: "notification_recipient_unconfirmed" });
+    expect(state.messages.map((message) => message.to)).toEqual(administrators);
+    for (const message of state.messages) {
+      const [opening, blank, ...notice] = message.text.split("\n");
+      expect(opening).toContain("reception@example.com");
+      expect(opening).toContain("has not confirmed");
+      expect(opening).toContain(DASHBOARD_URL);
+      expect(blank).toBe("");
+      expect(notice.join("\n")).toBe(normalCopy.text);
+      expect(message.subject).toBe(normalCopy.subject);
+      expect(message.replyTo).toBe(VISITOR);
+      expect(message.listUnsubscribeUrl).toBe(stopLink(message.to));
+    }
+  });
+
+  it("records the configured address as skipped and each administrator as sent, under the same request", async () => {
+    const { state } = await run({ ...unconfirmedOnly, administrators });
+
+    expect(state.records).toHaveLength(1);
+    expect(state.records[0].subject.requestId).toBe(context.requestId);
+    expect(state.records[0].deliveries).toEqual([
+      { email: "reception@example.com", outcome: "skipped_unconfirmed" },
+      { email: "owner@example.com", outcome: "sent", via: "administrator_fallback" },
+      { email: "admin@example.com", outcome: "sent", via: "administrator_fallback" },
+    ]);
+  });
+
+  it("names a stopped address by its own reason", async () => {
+    const { state } = await run({ emails: ["desk@example.com"], states: { "desk@example.com": "revoked" }, administrators });
+
+    expect(state.messages[0]?.text.split("\n")[0]).toContain("stopped notifications");
+  });
+
+  it("does not fall back when another configured address receives the notice", async () => {
+    const { outcome, state } = await run({
+      emails: ["ready@example.com", "reception@example.com"],
+      states: { "ready@example.com": "confirmed", "reception@example.com": "unconfirmed" },
+      administrators,
+    });
+
+    expect(outcome).toEqual({ settled: "partial", reason: "notification_recipient_unconfirmed" });
+    expect(state.sent).toEqual(["ready@example.com"]);
+    expect(state.records[0].deliveries.some((delivery) => delivery.via)).toBe(false);
+  });
+
+  it("does not fall back when a webhook carries the notice", async () => {
+    const { outcome, state } = await run({ ...unconfirmedOnly, webhook: true, administrators });
+
+    expect(outcome).toEqual({ settled: "partial", reason: "notification_recipient_unconfirmed" });
+    expect(state.webhookPosts).toBe(1);
+    expect(state.sent).toEqual([]);
+  });
+
+  it("does not fall back past the daily email cap or the conversation cap", async () => {
+    const daily = await run({ ...unconfirmedOnly, administrators, admission: admit({ emailAllowed: false, reason: "workspace_daily_email_cap" }) });
+    const conversation = await run({
+      ...unconfirmedOnly,
+      administrators,
+      admission: admit({ dispatchAllowed: false, emailAllowed: false, reason: "conversation_dispatch_cap" }),
+    });
+
+    expect(daily.outcome).toEqual({ settled: "skipped", reason: "workspace_daily_email_cap" });
+    expect(conversation.outcome).toEqual({ settled: "skipped", reason: "conversation_dispatch_cap" });
+    expect([...daily.state.sent, ...conversation.state.sent]).toEqual([]);
+    expect(daily.state.records[0].deliveries).toEqual([{ email: "reception@example.com", outcome: "skipped_unconfirmed" }]);
+  });
+
+  it("counts the administrators' copies against the notice's email allowance", async () => {
+    const requested: number[] = [];
+    await run({
+      ...unconfirmedOnly,
+      administrators,
+      admission: { admit: async (input) => { requested.push(input.requestedEmailCount); return { dispatchAllowed: true, emailAllowed: true, reason: null }; } },
+    });
+
+    expect(requested).toEqual([administrators.length]);
+  });
+
+  it("settles skipped as before when no administrator can be mailed", async () => {
+    const { outcome, state } = await run({ ...unconfirmedOnly, administrators: [] });
+
+    expect(outcome).toEqual({ settled: "skipped", reason: "notification_recipient_unconfirmed" });
+    expect(state.sent).toEqual([]);
+  });
+
+  it("gives a retry the same key for each administrator, so a copy that went out is not sent again", async () => {
+    const first: Harness["records"] = [];
+    await expect(run({
+      ...unconfirmedOnly,
+      administrators,
+      rejecting: ["admin@example.com"],
+      recorder: { record: async (subject, deliveries) => { first.push({ subject, deliveries: [...deliveries] }); } },
+    })).rejects.toThrow("provider rejected the message");
+    expect(first[0]?.deliveries).toEqual([
+      { email: "reception@example.com", outcome: "skipped_unconfirmed" },
+      { email: "owner@example.com", outcome: "sent", via: "administrator_fallback" },
+      { email: "admin@example.com", outcome: "failed", via: "administrator_fallback" },
+    ]);
+
+    const retry = await run({ ...unconfirmedOnly, administrators });
+    const again = await run({ ...unconfirmedOnly, administrators });
+
+    const keys = retry.state.messages.map((message) => message.idempotencyKey);
+    expect(again.state.messages.map((message) => message.idempotencyKey)).toEqual(keys);
+    expect(new Set(keys).size).toBe(administrators.length);
+    // An administrator's copy never shares a key with the copy a configured address of the same name would get.
+    expect(keys).not.toContain(`${context.idempotencyKey}:email:${encodeURIComponent("owner@example.com")}`);
   });
 });
 

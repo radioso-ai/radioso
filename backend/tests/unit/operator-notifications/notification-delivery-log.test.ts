@@ -128,6 +128,86 @@ describe("NotificationDeliveryLog", () => {
   });
 });
 
+describe("NotificationDeliveryLog with the administrator fallback", () => {
+  const FALLBACK_SENT: RecipientDelivery[] = [
+    { email: "waiting@example.com", outcome: "skipped_unconfirmed" },
+    { email: "owner@example.com", outcome: "sent", via: "administrator_fallback" },
+    { email: "admin@example.com", outcome: "sent", via: "administrator_fallback" },
+  ];
+
+  it("does not alert the administrators about a skipped address when the notice itself reached them", async () => {
+    const { log, notify, upsert } = setup();
+
+    await log.record(subject(), FALLBACK_SENT);
+
+    expect(notify).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(expect.anything(), FALLBACK_SENT);
+  });
+
+  it("alerts as before when the notice reached no administrator", async () => {
+    const { log, notify } = setup();
+
+    await log.record(subject(), [
+      { email: "waiting@example.com", outcome: "skipped_unconfirmed" },
+      { email: "owner@example.com", outcome: "failed", via: "administrator_fallback" },
+    ]);
+
+    expect(notify.mock.calls.map(([call]) => [call.email, call.reason])).toEqual([["waiting@example.com", "unconfirmed"]]);
+  });
+
+  it("counts a notice that reached the administrators by its kind, and logs counts without an address", async () => {
+    const { log, metrics, logger } = setup();
+
+    await log.record(subject({ kind: "completion" }), FALLBACK_SENT);
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      "notification_administrator_fallbacks_total",
+      expect.objectContaining({ labels: { kind: "completion" } }),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "notification_administrator_fallback",
+        kind: "completion",
+        skippedCount: 1,
+        administratorCount: 2,
+      }),
+      expect.any(String),
+    );
+    expect(JSON.stringify([...logger.warn.mock.calls, ...metrics.incrementCounter.mock.calls])).not.toContain("@example.com");
+  });
+
+  it("counts a retried fallback once: on the attempt where every administrator's copy went out", async () => {
+    const { log, metrics, logger, notify } = setup();
+    const fallbackCounts = () => metrics.incrementCounter.mock.calls
+      .filter(([name]) => name === "notification_administrator_fallbacks_total").length;
+    const fallbackEvents = () => logger.warn.mock.calls
+      .filter(([payload]) => (payload as { event?: string }).event === "notification_administrator_fallback").length;
+
+    await log.record(subject(), [
+      { email: "waiting@example.com", outcome: "skipped_unconfirmed" },
+      { email: "owner@example.com", outcome: "sent", via: "administrator_fallback" },
+      { email: "admin@example.com", outcome: "failed", via: "administrator_fallback" },
+    ]);
+    expect(fallbackCounts()).toBe(0);
+    expect(fallbackEvents()).toBe(0);
+    // The owner already has the notice, so the address is not alerted about on this attempt either.
+    expect(notify).not.toHaveBeenCalled();
+
+    await log.record(subject(), FALLBACK_SENT);
+    expect(fallbackCounts()).toBe(1);
+    expect(fallbackEvents()).toBe(1);
+  });
+
+  it("counts nothing for a notice without a fallback", async () => {
+    const { log, metrics, logger } = setup();
+
+    await log.record(subject(), [{ email: "waiting@example.com", outcome: "skipped_unconfirmed" }]);
+
+    expect(metrics.incrementCounter).not.toHaveBeenCalledWith("notification_administrator_fallbacks_total", expect.anything());
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+});
+
 describe("NotificationDeliveryLog alert budget", () => {
   const WAITING = [{ email: "waiting@example.com", outcome: "skipped_unconfirmed" as const }];
 

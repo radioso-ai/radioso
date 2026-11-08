@@ -38,6 +38,11 @@ export {
 } from "./notificationRecipientPolicy.js";
 export { planNotificationEmail } from "./notificationEmailPlan.js";
 export {
+  NotificationAdministratorFallback,
+  type NotificationAdministratorFallbackPort,
+} from "./notificationAdministratorFallback.js";
+export type { NotificationAdministratorReader } from "./notificationAdministratorReader.js";
+export {
   deliverNotification,
   type NotificationDeliveryRecorderPort,
   type NotificationKind,

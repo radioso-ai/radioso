@@ -1084,6 +1084,14 @@ describe("runtime configuration", () => {
     for (const env of [stagingEnv, liveEnv, liveEuEnv]) {
       expect(env).toMatch(/db_point_in_time_recovery_enabled = var\.db_point_in_time_recovery_enabled/);
     }
+    // Without a window Cloud SQL restarts the instance for maintenance at any hour. Self-hosted
+    // stacks leave the timing to Google unless they name one; each bundled stack names a Sunday
+    // night in its own region.
+    expect(databaseTf).toMatch(/dynamic "maintenance_window" \{[\s\S]*?for_each = var\.db_maintenance_window == null \? \[\] : \[var\.db_maintenance_window\][\s\S]*?day\s+= maintenance_window\.value\.day[\s\S]*?hour\s+= maintenance_window\.value\.hour[\s\S]*?update_track = maintenance_window\.value\.update_track/);
+    expect(terraformVariables).toMatch(/variable "db_maintenance_window" \{[\s\S]*?update_track = optional\(string, "stable"\)[\s\S]*?default\s+= null/);
+    for (const env of [stagingEnv, liveEnv, liveEuEnv]) {
+      expect(env).toMatch(/db_maintenance_window\s+= \{ day = 7, hour = \d+ \}/);
+    }
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-conversation-retention",');
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-voice-recording-erasure-recovery",');
     const loggingTf = await readFile(new URL("../../../infra/terraform/logging.tf", import.meta.url), "utf8");

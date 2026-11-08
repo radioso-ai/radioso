@@ -325,7 +325,7 @@ describe("document ingestion", () => {
     );
 
     jobRepository.enqueue = async () => {
-      throw new Error("queue unavailable");
+      throw Object.assign(new Error("queue unavailable: duplicate key (title)=(Notes for visitor@example.com)"), { code: "23505" });
     };
 
     await expect(
@@ -341,8 +341,11 @@ describe("document ingestion", () => {
       expect.objectContaining({
         eventName: "document.ingest_failed",
         workspaceId: "workspace-1",
+        // Product analytics leave Radioso, so the reason names the failure by class and code only.
+        properties: expect.objectContaining({ reason: "Error [23505]" }),
       }),
     );
+    expect(JSON.stringify(analyticsService.track.mock.calls)).not.toContain("visitor@example.com");
   });
 
   it("keeps ingest successful when dispatching the queued job fails after durable queueing", async () => {

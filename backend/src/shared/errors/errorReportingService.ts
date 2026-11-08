@@ -4,7 +4,8 @@ import { matchedRoutePattern } from "../observability/matchedRoute.js";
 import { createRequestCorrelation, type CorrelationFields, type RequestCorrelationSource } from "../observability/telemetry/correlation.js";
 import { redactRecord } from "../observability/telemetry/redactionPolicy.js";
 import { errorRecordedLogFields } from "./errorRecordedLogFields.js";
-import type { ErrorEvent, ErrorRequestContext, ErrorSeverity } from "./errorTypes.js";
+import { defaultReportMessage, redactedErrorFields, reportFingerprint } from "./errorReportShape.js";
+import type { ErrorEvent, ErrorReportMessage, ErrorRequestContext, ErrorSeverity } from "./errorTypes.js";
 import type { ErrorSink } from "./errorSink.js";
 
 interface ErrorReportingServiceOptions {
@@ -20,44 +21,17 @@ interface ErrorInput {
   errorType: string;
   severity?: ErrorSeverity;
   error?: unknown;
+  /** The class to name the report by, such as a browser error's; a value not shaped like a class name is dropped. */
   errorClass?: string;
-  message?: string;
+  /** Built with `errorReportMessage`; the default names the report's type and the error's class and code. */
+  message?: ErrorReportMessage;
+  /** A stack held as text, such as a browser's; only its frames reach the report. */
   stack?: string;
   correlation?: CorrelationFields;
   requestContext?: ErrorRequestContext;
   metadata?: Record<string, unknown>;
   tags?: Record<string, string>;
 }
-
-const serializeError = (
-  error: unknown,
-): { errorClass?: string; message: string; stack?: string; metadata?: Record<string, unknown> } => {
-  if (error instanceof Error) {
-    return {
-      errorClass: error.name,
-      message: error.message,
-      stack: error.stack,
-    };
-  }
-
-  if (error && typeof error === "object") {
-    return {
-      errorClass: "NonErrorThrowable",
-      message: "Non-error throwable",
-      metadata: redactRecord(error as Record<string, unknown>),
-    };
-  }
-
-  switch (typeof error) {
-    // `typeof null === "object"`, but the object check above only returns for truthy objects,
-    // so `null` is the only value that reaches this case.
-    case "undefined":
-    case "object":
-      return { message: "Unknown error" };
-    default:
-      return { errorClass: typeof error, message: String(error) };
-  }
-};
 
 export class ErrorReportingService {
   // Identity-keyed, not content-keyed: two distinct errors with the same message must
@@ -82,7 +56,9 @@ export class ErrorReportingService {
       this.reportedErrors.add(input.error);
     }
 
-    const serializedError = serializeError(input.error);
+    // Every sink, the audit log included, gets the error's class, code, causes and frames, never
+    // its message: that text can echo a provider response, document text, SQL or a visitor's words.
+    const { identity, causes, stack } = redactedErrorFields(input);
     const errorEvent: ErrorEvent = {
       errorType: input.errorType,
       timestamp: new Date().toISOString(),
@@ -90,15 +66,14 @@ export class ErrorReportingService {
       service: this.options.service,
       environment: this.options.environment,
       version: this.options.version,
-      message: input.message ?? serializedError.message,
-      errorClass: input.errorClass ?? serializedError.errorClass,
-      stack: input.stack ?? serializedError.stack,
+      message: input.message ?? defaultReportMessage(input.errorType, identity, causes),
+      ...identity,
+      ...(causes.length > 0 ? { causes } : {}),
+      ...(stack ? { stack } : {}),
+      fingerprint: reportFingerprint(this.options.service, input.errorType, identity),
       correlation: input.correlation,
       requestContext: input.requestContext,
-      metadata: redactRecord({
-        ...serializedError.metadata,
-        ...input.metadata,
-      }),
+      metadata: redactRecord({ ...input.metadata }),
       tags: input.tags,
     };
 

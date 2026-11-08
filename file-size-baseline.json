@@ -18,7 +18,7 @@
   "backend/src/modules/chat/services/chatTurnLifecycle.ts": 1553,
   "backend/src/modules/chat/services/retrievalTurnSkill.ts": 1160,
   "backend/src/modules/chat/services/turnPlanService.ts": 1044,
-  "backend/src/modules/documents/services/documentIngestionService.ts": 1159,
+  "backend/src/modules/documents/services/documentIngestionService.ts": 1157,
   "backend/src/modules/emailChannel/persistence/emailInboundRepository.ts": 1024,
   "backend/src/modules/operatorCopilot/proposalAdapters.ts": 1656,
   "backend/src/modules/operatorCopilot/service.ts": 1100,

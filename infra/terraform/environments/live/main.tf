@@ -57,6 +57,7 @@ module "radioso" {
   db_deletion_protection            = true
   db_point_in_time_recovery_enabled = var.db_point_in_time_recovery_enabled
   db_require_encrypted_connections  = var.db_require_encrypted_connections
+  db_maintenance_window             = { day = 7, hour = 9 } # Sunday 03:00 CST in us-central1
 
   worker_task_queue_name                    = "radioso-${var.environment}-document-processing"
   worker_crawl_task_queue_name              = "radioso-${var.environment}-website-crawls"

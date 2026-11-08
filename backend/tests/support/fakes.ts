@@ -2789,7 +2789,10 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
       const updated: DocumentSourceRecord = {
         ...existing,
         name: input.name,
-        config: input.config ?? {},
+        config: {
+          ...existing.config,
+          ...(input.config ?? {}),
+        },
         metadata: {
           ...existing.metadata,
           ...(input.metadata ?? {}),

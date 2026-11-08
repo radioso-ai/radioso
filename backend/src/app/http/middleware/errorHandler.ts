@@ -3,6 +3,7 @@ import multer from "multer";
 
 import type { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
 import { AppError, isReportableFault, isStructuredAppError } from "../../../shared/domain/errors.js";
+import { classifyDatabaseUnavailable } from "../../../shared/infra/databaseUnavailable.js";
 import { applyRetryAfterFromError } from "../rateLimitHeaders.js";
 import { markHttpResponseFailed } from "./httpResponseCompletion.js";
 
@@ -54,10 +55,16 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
     // an error under 500 or one marked `isExpectedOutcome` (a lost client), and anything
     // else — any 5xx, AppError or not — is reported once. A caller that already reported
     // this exact error object (e.g. ChatTurnLifecycle.recordFailure) is not reported again.
+    // A failure that means the database could not be reached is reported as that outage instead,
+    // whatever the response below says.
+    const databaseUnavailable = classifyDatabaseUnavailable(error);
     const reportFault = (statusCode?: number): void => {
-      if (isReportableFault(error) && !errorReportingService?.wasReported(error)) {
-        void errorReportingService?.reportUnhandledRequestError({ error, request: req, statusCode });
+      if (!isReportableFault(error) || errorReportingService?.wasReported(error)) {
+        return;
       }
+      void (databaseUnavailable
+        ? errorReportingService?.reportDatabaseUnavailableRequest({ error, request: req, statusCode, reason: databaseUnavailable })
+        : errorReportingService?.reportUnhandledRequestError({ error, request: req, statusCode }));
     };
 
     if (res.headersSent) {
@@ -128,6 +135,18 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
           message: isInlineDocumentMutationRequest(req)
             ? "Document content exceeds the inline size limit. Import the file instead."
             : "Request body exceeds maximum size",
+        },
+      });
+      return;
+    }
+
+    if (databaseUnavailable) {
+      // A 503 is retried by Cloud Tasks and Cloud Scheduler and tells any other caller to try again.
+      reportFault(503);
+      res.status(503).json({
+        error: {
+          code: "service_unavailable",
+          message: "Service temporarily unavailable",
         },
       });
       return;

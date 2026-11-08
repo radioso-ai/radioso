@@ -183,6 +183,27 @@ describe("error_recorded log line", () => {
     expect(raw()).not.toContain(visitorWords);
   });
 
+  it("keeps a database outage's reason, at warning level", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const { service, line } = captureErrorLog([sink]);
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    app.post("/internal/tasks/periodic-tasks/:taskId/run", (_req, _res, next) => {
+      // pg-pool's own error when opening a connection outlasts connectionTimeoutMillis.
+      next(new Error("Connection terminated due to connection timeout", { cause: new Error("Connection terminated unexpectedly") }));
+    });
+    app.use(createErrorHandler(service));
+
+    await request(app).post("/internal/tasks/periodic-tasks/ee-usage-limit-alerts/run").expect(503);
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
+    expect(line()).toMatchObject({
+      severity: "WARNING",
+      errorEvent: { errorType: "database.unavailable", route: "/internal/tasks/periodic-tasks/:taskId/run" },
+      metadata: { reason: "connect_timeout" },
+    });
+  });
+
   it("drops correlation values that are not ids", async () => {
     const { service, line, raw } = captureErrorLog();
     const conversationId = randomUUID();

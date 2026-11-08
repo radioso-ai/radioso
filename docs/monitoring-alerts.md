@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-11-03
+last_updated: 2026-11-08
 ---
 
 # Monitoring And Alerts
@@ -211,6 +211,16 @@ To ship logs and traces through OpenTelemetry instead, see the OTel flags in [OS
 Radioso reports on itself, not on the machine underneath it. Postgres saturation is the failure that hides best: a starved instance returns no errors, it just answers slowly enough that chat turns hit their statement timeout and die. The customer sees an agent that stopped replying, and the error logs are empty.
 
 Whatever you use for host monitoring, alert on Postgres memory, CPU, disk, and connection count. If those sit near their limit, that is your answer before you go looking in the application.
+
+When Postgres can't be reached at all, during a restart, a maintenance window, or with every connection slot taken, requests answer `503 service_unavailable` so a scheduled task or a client retries them. Each one is recorded as `database.unavailable` at `WARNING`, so `radioso_errors_total{error_type="database.unavailable"}` counts outages apart from code faults, and its `reason` says what failed:
+
+| `reason` | What happened |
+|---|---|
+| `connect_timeout` | Opening a connection took longer than `DB_POOL_CONNECTION_TIMEOUT_MS` |
+| `pool_checkout_timeout` | Every pooled connection stayed busy that long; look at slow queries and `DB_POOL_MAX` before the host |
+| `connection_lost` | The server or the network closed an open connection |
+| `server_unavailable` | Postgres was shutting down or still starting |
+| `connection_limit` | Postgres refused the connection at its `max_connections` limit |
 
 ## Common failure modes
 

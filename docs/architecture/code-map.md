@@ -180,6 +180,9 @@ Primary paths:
 - `backend/src/shared/infra/database.ts` — the pg Pool wrapper; exposes `.kysely` (the
   shared `Kysely<DB>`) plus the legacy `query`/`queryOne`/`withTransaction` used by the
   migration runner and allowlisted raw-SQL adapters
+- `backend/src/shared/infra/databaseUnavailable.ts` — names a pg or pg-pool failure that means
+  the database could not be reached; the HTTP error handler answers it with a 503 and reports it
+  as `database.unavailable`
 - `backend/src/shared/infra/kysely/` — `kyselyDatabase.ts` (builds Kysely on the pool),
   generated `schema.ts` (the `DB` type), and `sqlHelpers.ts` (the only home for
   Postgres-specific fragments: pgvector, jsonb, `now()`, etc.)

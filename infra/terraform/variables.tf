@@ -126,6 +126,26 @@ variable "db_require_encrypted_connections" {
   default     = false
 }
 
+variable "db_maintenance_window" {
+  description = "Weekly hour in which Cloud SQL may restart the instance for planned maintenance. day is 1 (Monday) to 7 (Sunday) and hour is 0 to 23, both in UTC; update_track is \"stable\", \"canary\" or \"week5\". Null leaves the timing to Google, which can then restart the instance at any hour."
+  type = object({
+    day          = number
+    hour         = number
+    update_track = optional(string, "stable")
+  })
+  default = null
+
+  validation {
+    condition = var.db_maintenance_window == null || try(
+      contains([1, 2, 3, 4, 5, 6, 7], var.db_maintenance_window.day) &&
+      contains(range(0, 24), var.db_maintenance_window.hour) &&
+      contains(["stable", "canary", "week5"], var.db_maintenance_window.update_track),
+      false
+    )
+    error_message = "db_maintenance_window needs day 1-7, hour 0-23 (UTC) and update_track \"stable\", \"canary\" or \"week5\"."
+  }
+}
+
 variable "db_deletion_protection" {
   description = "Enable deletion protection on Cloud SQL instance (disable for dev/staging)"
   type        = bool

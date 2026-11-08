@@ -1,4 +1,6 @@
 import { isReportableFault } from "../../../shared/domain/errors.js";
+import { errorReportMessage, errorSummaryOf } from "../../../shared/errors/errorReportShape.js";
+import type { ErrorReportMessage } from "../../../shared/errors/errorTypes.js";
 import { classifyLlmProviderFailure, type LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import { turnExecutionCapabilities, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AuditEventInput } from "../../audit/contracts/index.js";
@@ -39,15 +41,14 @@ const turnFailureClassificationFields = (
  * classified against a provider call: a provider's error text can echo the customer's
  * rejected prompt back (see shared/infra/llm/providerErrors.ts), so a classified
  * failure's message never leaves this process. `undefined` for an unclassified
- * failure, whose own message stands — most such errors are this codebase's own, not
- * provider echoes.
+ * failure, which the error report and the analytics event name by its class and code.
  */
 const boundedTurnFailureMessage = (
   providerFailure: LlmProviderFailureClassification | null,
-): string | undefined => (providerFailure ? `LLM provider call failed: ${providerFailure.kind}` : undefined);
+): ErrorReportMessage | undefined => (providerFailure ? errorReportMessage`LLM provider call failed: ${providerFailure.kind}` : undefined);
 
 const turnFailureErrorMessage = (error: unknown, providerFailure: LlmProviderFailureClassification | null): string =>
-  boundedTurnFailureMessage(providerFailure) ?? (error instanceof Error ? error.message : "Unknown error");
+  boundedTurnFailureMessage(providerFailure) ?? errorSummaryOf(error);
 
 /** The exact `properties` for the `chat.failed` product analytics event. */
 interface TurnFailureAnalyticsProperties extends TurnFailureClassificationFields {
@@ -75,7 +76,7 @@ interface TurnFailureReportMetadata extends TurnFailureClassificationFields {
 interface TurnFailureReportInput {
   errorType: "chat.turn_failed";
   error: unknown;
-  message?: string;
+  message?: ErrorReportMessage;
   metadata: TurnFailureReportMetadata;
 }
 

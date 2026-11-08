@@ -2751,5 +2751,37 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         }),
       }));
     });
+
+    it("names an unclassified failure on chat.failed analytics by class and code, never by its own message", async () => {
+      const visitorWords = "my daughter has asthma and needs the ground floor room";
+      const auditService = {
+        record: vi.fn(async () => {}),
+        recordForLiveConversation: vi.fn(async () => {}),
+      } as unknown as AuditService;
+      const conversationRepository = { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort;
+      const messageRepository = {} as unknown as MessageRepositoryPort;
+      const track = vi.fn(async (_event: { properties?: Record<string, unknown> }) => null);
+      const lifecycle = new ChatTurnLifecycle(conversationRepository, messageRepository, auditService, { track });
+      const cause = Object.assign(new Error(`relation lookup failed near "${visitorWords}"`), { code: "ECONNRESET" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: true },
+        null,
+        undefined,
+        Object.assign(new AppError(500, "internal_error", `Could not answer "${visitorWords}"`), { cause }),
+      );
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_2", stream: false },
+        null,
+        undefined,
+        new TypeError(`Cannot read properties of "${visitorWords}"`),
+      );
+
+      expect(JSON.stringify(track.mock.calls)).not.toContain(visitorWords);
+      expect(track.mock.calls.map(([event]) => event.properties?.errorMessage)).toEqual([
+        "AppError [internal_error] caused by Error [ECONNRESET]",
+        "TypeError",
+      ]);
+    });
   });
 });

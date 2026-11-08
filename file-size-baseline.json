@@ -5,7 +5,7 @@
   "backend/src/app/server/dependencies.ts": 1538,
   "backend/src/db/repositories/agentRepository.ts": 1295,
   "backend/src/db/repositories/documentProcessingJobRepository.ts": 1156,
-  "backend/src/db/repositories/documentRepository.ts": 1267,
+  "backend/src/db/repositories/documentRepository.ts": 1254,
   "backend/src/db/repositories/messageRepository.ts": 1005,
   "backend/src/db/repositories/routineDefinitionRepository.ts": 1033,
   "backend/src/db/repositories/vectorIndexWorkRepository.ts": 1181,

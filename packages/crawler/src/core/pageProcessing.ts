@@ -174,12 +174,16 @@ export const processAttachedPage = async (input: {
       ? existing?.contentHash ?? null
       : hashContent(input.page.text);
   const missingExistingPage = input.page.status === "unchanged" && !existing;
+  // The content hash covers the text only, so a corrected title alone must still publish. A fetch
+  // that supplied no title (a 304, a page without one) is not a title change, and it leaves the
+  // stored title alone so the next fetch that does carry one is not mistaken for a change.
+  const titleChanged = !!existing && !!input.page.title && input.page.title !== existing.title;
 
   const pageStatus: "success" | "unchanged" | "failed" =
     input.page.status === "failed" || missingExistingPage
       ? "failed"
       : input.page.status === "unchanged" ||
-          (!!existing && !!contentHash && existing.contentHash === contentHash)
+          (!!existing && !!contentHash && existing.contentHash === contentHash && !titleChanged)
         ? "unchanged"
         : "success";
 
@@ -190,7 +194,7 @@ export const processAttachedPage = async (input: {
     fetchedUrl: input.page.url,
     canonicalUrl,
     canonicalUrlKey,
-    title: input.page.title,
+    title: input.page.title ?? existing?.title ?? null,
     content: input.page.text,
     contentHash,
     status: pageStatus,

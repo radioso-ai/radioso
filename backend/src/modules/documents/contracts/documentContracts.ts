@@ -256,6 +256,15 @@ export interface DocumentEnrichmentMetadataUpdateInput {
   enrichment?: Record<string, unknown> | null;
 }
 
+/** What a synced page's upsert fence reads: identity, size, and the hash and title it was last written with. */
+export interface DocumentPageState {
+  documentId: string;
+  revision: number;
+  contentSizeBytes: number | null;
+  contentHash: string | null;
+  title: string;
+}
+
 export interface DocumentRepositoryPort {
   countReprocessCandidates(input: { workspaceId: string; sourceId?: string | null; documentIds?: readonly string[] }): Promise<{ eligible: number; skipped: number }>;
   createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null, guard?: DocumentReviewedWriteGuard): Promise<DocumentRecord>;
@@ -344,23 +353,13 @@ export interface DocumentRepositoryPort {
     workspaceId: string;
     sourceId?: string | null;
     externalDocumentId: string;
-  }): Promise<{
-    documentId: string;
-    revision: number;
-    contentSizeBytes: number | null;
-    contentHash: string | null;
-  } | null>;
+  }): Promise<DocumentPageState | null>;
   /** Includes failed rows so reviewed import can fence the same upsert target as normal ingestion. */
   findPageState(input: {
     workspaceId: string;
     sourceId?: string | null;
     externalDocumentId: string;
-  }): Promise<{
-    documentId: string;
-    revision: number;
-    contentSizeBytes: number | null;
-    contentHash: string | null;
-  } | null>;
+  }): Promise<DocumentPageState | null>;
   deleteMissingPagesBySourceAndExternalIds(input: {
     workspaceId: string;
     sourceId: string;

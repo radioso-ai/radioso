@@ -12,6 +12,7 @@ import type {
   DocumentProcessingJobOptions,
   DocumentReviewedWriteGuard,
   DocumentQueueUpdateInput,
+  DocumentPageState,
   DocumentRecord,
   DocumentRepositoryPort,
   DocumentRetrievalSettingsResult,
@@ -1122,12 +1123,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     workspaceId: string;
     sourceId?: string | null;
     externalDocumentId: string;
-  }): Promise<{
-    documentId: string;
-    revision: number;
-    contentSizeBytes: number | null;
-    contentHash: string | null;
-  } | null> {
+  }): Promise<DocumentPageState | null> {
     return this.findPageStateByStatus(input, true);
   }
 
@@ -1135,12 +1131,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     workspaceId: string;
     sourceId?: string | null;
     externalDocumentId: string;
-  }): Promise<{
-    documentId: string;
-    revision: number;
-    contentSizeBytes: number | null;
-    contentHash: string | null;
-  } | null> {
+  }): Promise<DocumentPageState | null> {
     return this.findPageStateByStatus(input, false);
   }
 
@@ -1148,17 +1139,12 @@ export class DocumentRepository implements DocumentRepositoryPort {
     workspaceId: string;
     sourceId?: string | null;
     externalDocumentId: string;
-  }, activeOnly: boolean): Promise<{
-    documentId: string;
-    revision: number;
-    contentSizeBytes: number | null;
-    contentHash: string | null;
-  } | null> {
+  }, activeOnly: boolean): Promise<DocumentPageState | null> {
     const sourceId = input.sourceId ?? null;
 
     let query = this.db
       .selectFrom("documents")
-      .select(["id", "revision", "content_size_bytes", "content_hash"])
+      .select(["id", "revision", "content_size_bytes", "content_hash", "title"])
       .where("workspace_id", "=", input.workspaceId)
       .where("external_document_id", "=", input.externalDocumentId);
     if (activeOnly) query = query.where("status", "<>", "failed");
@@ -1178,6 +1164,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       revision: row.revision,
       contentSizeBytes: typeof bytes === "number" && Number.isFinite(bytes) ? bytes : null,
       contentHash: row.content_hash ?? null,
+      title: row.title,
     };
   }
 

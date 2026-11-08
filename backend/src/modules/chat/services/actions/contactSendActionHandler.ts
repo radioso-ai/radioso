@@ -12,6 +12,7 @@ import {
   deliverNotification,
   planNotificationEmail,
   validVisitorReplyTo,
+  type NotificationAdministratorFallbackPort,
   type NotificationDeliveryAdmissionPort,
   type NotificationDeliveryRecorderPort,
   type NotificationRecipientPolicyPort,
@@ -262,7 +263,8 @@ class ContactSendDeliveryFailureError extends Error {
  * Dispatch supplies the outbox idempotency key and the mail transport forwards it to
  * providers that support send de-duplication. With no recipient or webhook configured it settles
  * as skipped (a missing destination is not a failure to retry). It resolves `partial` when some
- * configured destination was left out by design, such as an address that has not confirmed.
+ * configured destination was left out by design, such as an address that has not confirmed, and
+ * when the request went to the workspace's administrators because no configured address could take it.
  */
 export class ContactSendActionHandler implements ActionHandler {
   constructor(
@@ -275,6 +277,7 @@ export class ContactSendActionHandler implements ActionHandler {
     private readonly admission: NotificationDeliveryAdmissionPort | undefined,
     private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
     private readonly recorder?: NotificationDeliveryRecorderPort,
+    private readonly administratorFallback?: NotificationAdministratorFallbackPort,
   ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<ActionDispatchOutcome> {
@@ -305,6 +308,7 @@ export class ContactSendActionHandler implements ActionHandler {
     const plan = await planNotificationEmail({
       recipientPolicy: this.recipientPolicy,
       admission: this.admission,
+      administratorFallback: this.administratorFallback,
       webhookConfigured: target.webhook !== null,
       onPreparationFailure: (error) => this.logger?.warn(
         { workspaceId: input.context.workspaceId, errorName: error instanceof Error ? error.name : "unknown" },
@@ -332,15 +336,8 @@ export class ContactSendActionHandler implements ActionHandler {
       },
       recorder: this.recorder,
       logger: this.logger,
-      sendEmail: (recipient) => this.mailer.send({
-        to: recipient.email,
-        kind: "contact_notification",
-        replyTo,
-        subject: "New contact request",
-        text: lines.join("\n"),
-        ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
-        idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
-      }),
+      message: { subject: "New contact request", text: lines.join("\n"), idempotencyKey: baseIdempotencyKey },
+      sendEmail: (email) => this.mailer.send({ ...email, kind: "contact_notification", replyTo }),
       postWebhook: webhook ? () => this.postWebhook({
         webhook,
         payload: {

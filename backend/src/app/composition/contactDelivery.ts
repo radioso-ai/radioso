@@ -9,6 +9,7 @@ import { ConversationRepository } from "../../db/repositories/conversationReposi
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
 import {
+  NotificationAdministratorFallback,
   NotificationDeliveryAdmissionService,
   NotificationDeliveryLog,
   NotificationDeliveryReader,
@@ -109,6 +110,17 @@ export const buildNotificationRecipientPolicy = (input: {
 export const buildNotificationDeliveryReader = (database: Database): NotificationDeliveryReader =>
   new NotificationDeliveryReader(new NotificationDeliveryRepository(database.kysely));
 
+/** The agent's page where its notification recipients are fixed, as the alert and the fallback both link it. */
+const agentNotificationsLink = (database: Database, env: Pick<Env, "APP_BASE_URL">) => {
+  const workspaces = new WorkspaceRepository(database.kysely);
+  return async ({ workspaceId, agentId }: { workspaceId: string; agentId: string | null }): Promise<string | null> => {
+    const workspace = await workspaces.findById(workspaceId);
+    return workspace
+      ? agentSkillsPermalink({ workspacePublicRouteKey: workspace.publicRouteKey, agentId }, env.APP_BASE_URL)
+      : null;
+  };
+};
+
 /**
  * The one place the per-address record of notices is wired: the table behind it, and the alert that
  * emails the account's verified owners and admins when a notice skips an address they can still fix.
@@ -124,23 +136,33 @@ export const buildNotificationDeliveryRecorder = (input: {
   states?: NotificationRecipientStateRepository;
 }): NotificationDeliveryLog => {
   const states = input.states ?? new NotificationRecipientStateRepository(input.database.kysely);
-  const workspaces = new WorkspaceRepository(input.database.kysely);
   return new NotificationDeliveryLog({
     store: new NotificationDeliveryRepository(input.database.kysely),
     alerts: new UndeliveredRecipientAlerts({
       store: new UndeliveredRecipientAlertRepository(input.database.kysely, states),
       mailer: input.mailer,
       identity: new NotificationRecipientIdentityRepository(input.database.kysely),
-      dashboardUrl: async ({ workspaceId, agentId }) => {
-        const workspace = await workspaces.findById(workspaceId);
-        return workspace
-          ? agentSkillsPermalink({ workspacePublicRouteKey: workspace.publicRouteKey, agentId }, input.env.APP_BASE_URL)
-          : null;
-      },
+      dashboardUrl: agentNotificationsLink(input.database, input.env),
       logger: input.logger,
       metrics: input.metrics,
     }),
     logger: input.logger,
     metrics: input.metrics,
+  });
+};
+
+/**
+ * Where a notice goes when recipient policy leaves out every configured address and no webhook
+ * carries it: the audience the alert above reaches, with the same link. Both senders take it.
+ */
+export const buildNotificationAdministratorFallback = (input: {
+  database: Database;
+  env: Pick<Env, "APP_BASE_URL">;
+  states?: NotificationRecipientStateRepository;
+}): NotificationAdministratorFallback => {
+  const states = input.states ?? new NotificationRecipientStateRepository(input.database.kysely);
+  return new NotificationAdministratorFallback({
+    administrators: new UndeliveredRecipientAlertRepository(input.database.kysely, states),
+    dashboardUrl: agentNotificationsLink(input.database, input.env),
   });
 };

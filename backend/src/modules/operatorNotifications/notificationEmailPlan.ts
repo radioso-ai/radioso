@@ -1,4 +1,5 @@
 import { normalizeRecipientEmail } from "../../shared/domain/recipientEmailAudit.js";
+import type { AdministratorFallbackPlan, NotificationAdministratorFallbackPort } from "./notificationAdministratorFallback.js";
 import type { NotificationDeliveryAdmission, NotificationDeliveryAdmissionPort } from "./notificationDeliveryAdmission.js";
 import type {
   NotificationRecipientPolicyPort,
@@ -45,6 +46,8 @@ export type NotificationEmailPlan =
        * decided; null when every configured address is emailed or none is configured.
        */
       emailSkipReason: EmailSkipReason | null;
+      /** The administrators emailed because recipient policy left out every configured address; null otherwise. */
+      administratorFallback: AdministratorFallbackPlan | null;
     };
 
 const NO_ELIGIBLE_RECIPIENTS: RecipientDecision = {
@@ -77,10 +80,15 @@ const uniqueNormalized = (emails: readonly string[]): string[] =>
  * A configured webhook still goes out when recipient state cannot be read, but email then fails
  * closed; with no webhook the failure propagates so the action retries. Every configured address
  * that is not emailed comes back in `skipped` with its reason, so the caller can record it.
+ *
+ * When recipient policy leaves out every configured address and no webhook carries the notice, the
+ * workspace's administrators are emailed it instead, inside the same caps. A cap, a transport
+ * failure, or a missing destination never sends a notice to them.
  */
 export const planNotificationEmail = async (input: {
   recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">;
   admission: NotificationDeliveryAdmissionPort | undefined;
+  administratorFallback?: NotificationAdministratorFallbackPort;
   webhookConfigured: boolean;
   onPreparationFailure: (error: unknown) => void;
   request: {
@@ -119,15 +127,27 @@ export const planNotificationEmail = async (input: {
     ...policySkipped,
   ];
 
+  const policyLeftOutEveryAddress = !input.webhookConfigured
+    && decision.eligibleRecipients.length === 0
+    && decision.skippedRecipients.length > 0;
+  const administratorFallback = policyLeftOutEveryAddress
+    ? await input.administratorFallback?.plan({
+      workspaceId: request.workspaceId,
+      agentId: request.agentId ?? null,
+      skipped: decision.skippedRecipients,
+    }) ?? null
+    : null;
+
   // Admission is keyed on the configured list, which a retry sees unchanged even when an address
-  // confirmed or lapsed in between; only the email count reserved follows confirmation.
+  // confirmed or lapsed in between; only the email count reserved follows confirmation. The
+  // administrators' copies are emails of the same notice, so they are reserved with it.
   const admission = await input.admission?.admit({
     requestId: request.requestId,
     workspaceId: request.workspaceId,
     accountId: request.accountId,
     conversationId: request.conversationId,
     recipientEmails: request.emails,
-    requestedEmailCount: decision.eligibleEmails.length,
+    requestedEmailCount: decision.eligibleEmails.length + (administratorFallback?.recipients.length ?? 0),
   });
   if (admission && !admission.dispatchAllowed) {
     return { dispatchAllowed: false, reason: admission.reason ?? "conversation_dispatch_cap", skipped: cappedSkips() };
@@ -138,6 +158,7 @@ export const planNotificationEmail = async (input: {
       recipients: [],
       skipped: cappedSkips(),
       emailSkipReason: admission.reason ?? "workspace_daily_email_cap",
+      administratorFallback: null,
     };
   }
   return {
@@ -145,5 +166,6 @@ export const planNotificationEmail = async (input: {
     recipients: decision.eligibleRecipients,
     skipped: policySkipped,
     emailSkipReason: policySkipReason(policySkipped),
+    administratorFallback,
   };
 };

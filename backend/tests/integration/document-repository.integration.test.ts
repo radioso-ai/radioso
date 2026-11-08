@@ -1012,6 +1012,7 @@ describeIntegration("DocumentRepository (Postgres)", () => {
       revision: created.revision,
       contentSizeBytes: 4096,
       contentHash: "hash-abc",
+      title: created.title,
     });
 
     await repository.setStatus({ documentId: created.id, workspaceId, status: "failed", failureReason: "x" });

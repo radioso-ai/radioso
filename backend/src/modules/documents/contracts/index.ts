@@ -14,6 +14,7 @@ export type {
   DocumentEnrichmentMetadataUpdateInput,
   DocumentInventoryListInput,
   DocumentInventoryPort,
+  DocumentPageState,
   DocumentRetrievalSettingsInput,
   DocumentQueueUpdateInput,
   DocumentRecord,

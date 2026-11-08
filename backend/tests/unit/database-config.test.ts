@@ -207,7 +207,7 @@ describe("database configuration", () => {
   it("stops watching a checked-out client's errors on release, so repeated checkouts do not accumulate listeners", async () => {
     const warn = vi.fn();
     const database = new Database("postgres://test:test@localhost:5432/test", { logger: { warn } });
-    const client = new EventEmitter();
+    const client = Object.assign(new EventEmitter(), { getTransactionStatus: () => "I" });
 
     for (let i = 0; i < 5; i += 1) {
       database.pool.emit("acquire", client);
@@ -216,6 +216,31 @@ describe("database configuration", () => {
       expect(client.listenerCount("error")).toBe(0);
     }
 
+    await database.close();
+  });
+
+  it.each([
+    { status: "T", readyForQuery: true, discarded: true },
+    { status: "E", readyForQuery: true, discarded: true },
+    { status: "I", readyForQuery: false, discarded: true },
+    { status: "I", readyForQuery: true, discarded: false },
+  ])("ends a client released with status $status and readyForQuery $readyForQuery: $discarded", async ({ status, readyForQuery, discarded }) => {
+    const warn = vi.fn();
+    const database = new Database("postgres://test:test@localhost:5432/test", { applicationName: "unit", logger: { warn } });
+    const end = vi.fn().mockResolvedValue(undefined);
+    const client = Object.assign(new EventEmitter(), { getTransactionStatus: () => status, readyForQuery, end });
+
+    database.pool.emit("acquire", client);
+    database.pool.emit("release", undefined, client);
+
+    expect(end).toHaveBeenCalledTimes(discarded ? 1 : 0);
+    expect(warn).toHaveBeenCalledTimes(discarded ? 1 : 0);
+    if (discarded) {
+      expect(warn).toHaveBeenCalledWith(
+        { applicationName: "unit", transactionStatus: status, statementInFlight: !readyForQuery },
+        "database_connection_discarded_on_release",
+      );
+    }
     await database.close();
   });
 

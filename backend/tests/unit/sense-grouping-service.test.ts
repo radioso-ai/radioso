@@ -187,15 +187,15 @@ describe("SenseGroupingService", () => {
     });
 
     const rankedCandidates = sameShapeCandidates({
-      leftTitle: "Ananda Yoga",
+      leftTitle: "Valmora Yoga",
       leftSimilarities: [0.82, 0.8],
-      rightTitle: "_ New Ananda Yoga",
+      rightTitle: "_ New Valmora Yoga",
       rightSimilarities: [0.8, 0.78],
     }).map((item) => ({ ...item, content: longChunk }));
 
     await service.detect({
       workspaceId: "workspace-1",
-      question: "what ananda yoga types exist?",
+      question: "what valmora yoga types exist?",
       rankedCandidates,
       conversationLanguage: "en",
     });
@@ -223,11 +223,11 @@ describe("SenseGroupingService", () => {
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
-      question: "what ananda yoga types exist?",
+      question: "what valmora yoga types exist?",
       rankedCandidates: sameShapeCandidates({
-        leftTitle: "Ananda Yoga",
+        leftTitle: "Valmora Yoga",
         leftSimilarities: [0.82, 0.8],
-        rightTitle: "_ New Ananda Yoga",
+        rightTitle: "_ New Valmora Yoga",
         rightSimilarities: [0.8, 0.78],
       }),
       conversationLanguage: "en",
@@ -247,18 +247,18 @@ describe("SenseGroupingService", () => {
     } as never, "Groups:\n{{groups}}");
 
     await gateway.label({
-      question: "what ananda yoga types exist?",
+      question: "what valmora yoga types exist?",
       groups: [{
         id: "doc-a",
         documentIds: ["doc-a"],
-        documents: [{ documentId: "doc-a", title: "Ananda Yoga" }],
-        excerpts: ["Ananda Yoga is a system of hatha yoga postures."],
+        documents: [{ documentId: "doc-a", title: "Valmora Yoga" }],
+        excerpts: ["Valmora Yoga is a system of hatha yoga postures."],
         share: 0.5,
         separation: 0.6,
       }],
     });
 
-    expect(completions[0]?.prompt).toContain("Ananda Yoga is a system of hatha yoga postures.");
+    expect(completions[0]?.prompt).toContain("Valmora Yoga is a system of hatha yoga postures.");
   });
 
   it("treats groups whose embeddings have different widths as unmeasurable rather than identical", async () => {
@@ -617,7 +617,7 @@ describe("SenseGroupingService", () => {
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
         id: group.id,
-        label: group.id === "doc-left" ? "What Kriya Yoga is" : "How to begin Kriya Yoga",
+        label: group.id === "doc-left" ? "What Valmora Meditation is" : "How to begin Valmora Meditation",
         relationship: "complementary" as const,
       }))),
     };
@@ -629,11 +629,11 @@ describe("SenseGroupingService", () => {
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
-      question: "What is Kriya Yoga and how do I learn it?",
+      question: "What is Valmora Meditation and how do I learn it?",
       rankedCandidates: sameShapeCandidates({
-        leftTitle: "About Kriya Yoga",
+        leftTitle: "About Valmora Meditation",
         leftSimilarities: [0.82, 0.8],
-        rightTitle: "Learning Kriya Yoga",
+        rightTitle: "Learning Valmora Meditation",
         rightSimilarities: [0.8, 0.78],
       }),
       conversationLanguage: "en",
@@ -651,7 +651,7 @@ describe("SenseGroupingService", () => {
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
         id: group.id,
-        label: group.id === "doc-left" ? "A general overview of Ananda Yoga" : "A newer or updated Ananda Yoga page",
+        label: group.id === "doc-left" ? "A general overview of Valmora Yoga" : "A newer or updated Valmora Yoga page",
         relationship: "redundant" as const,
       }))),
     };
@@ -663,11 +663,11 @@ describe("SenseGroupingService", () => {
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
-      question: "what ananda yoga types exist?",
+      question: "what valmora yoga types exist?",
       rankedCandidates: sameShapeCandidates({
-        leftTitle: "Ananda Yoga",
+        leftTitle: "Valmora Yoga",
         leftSimilarities: [0.727, 0.72],
-        rightTitle: "_ New Ananda Yoga",
+        rightTitle: "_ New Valmora Yoga",
         rightSimilarities: [0.719, 0.71],
       }),
       conversationLanguage: "en",
@@ -685,8 +685,8 @@ describe("SenseGroupingService", () => {
     // returned for it rather than being forced to a single shared value.
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async () => [
-        { id: "doc-left", label: "A general overview of Ananda Yoga", relationship: "redundant" as const },
-        { id: "doc-right", label: "How to begin an Ananda Yoga practice", relationship: "complementary" as const },
+        { id: "doc-left", label: "A general overview of Valmora Yoga", relationship: "redundant" as const },
+        { id: "doc-right", label: "How to begin an Valmora Yoga practice", relationship: "complementary" as const },
       ]),
     };
     const service = new SenseGroupingService({
@@ -697,11 +697,11 @@ describe("SenseGroupingService", () => {
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
-      question: "what ananda yoga types exist, and how do I begin?",
+      question: "what valmora yoga types exist, and how do I begin?",
       rankedCandidates: sameShapeCandidates({
-        leftTitle: "Ananda Yoga",
+        leftTitle: "Valmora Yoga",
         leftSimilarities: [0.82, 0.8],
-        rightTitle: "Learning Ananda Yoga",
+        rightTitle: "Learning Valmora Yoga",
         rightSimilarities: [0.8, 0.78],
       }),
       conversationLanguage: "en",
@@ -719,8 +719,8 @@ describe("SenseGroupingService", () => {
     // the whole set — the unlabeled (potentially exclusive) facet gets no clarity.
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async () => [
-        { id: "doc-a", label: "A general overview of Ananda Yoga", relationship: "redundant" as const },
-        { id: "doc-b", label: "A newer or updated Ananda Yoga page", relationship: "redundant" as const },
+        { id: "doc-a", label: "A general overview of Valmora Yoga", relationship: "redundant" as const },
+        { id: "doc-b", label: "A newer or updated Valmora Yoga page", relationship: "redundant" as const },
       ]),
     };
     const service = new SenseGroupingService({
@@ -739,17 +739,17 @@ describe("SenseGroupingService", () => {
     });
 
     const rankedCandidates: RetrievedCandidate[] = [
-      candidate({ chunkId: "a-1", documentId: "doc-a", title: "Ananda Yoga", similarity: 0.86 }),
-      candidate({ chunkId: "a-2", documentId: "doc-a", title: "Ananda Yoga", similarity: 0.84 }),
-      candidate({ chunkId: "b-1", documentId: "doc-b", title: "_ New Ananda Yoga", similarity: 0.82 }),
-      candidate({ chunkId: "b-2", documentId: "doc-b", title: "_ New Ananda Yoga", similarity: 0.8 }),
+      candidate({ chunkId: "a-1", documentId: "doc-a", title: "Valmora Yoga", similarity: 0.86 }),
+      candidate({ chunkId: "a-2", documentId: "doc-a", title: "Valmora Yoga", similarity: 0.84 }),
+      candidate({ chunkId: "b-1", documentId: "doc-b", title: "_ New Valmora Yoga", similarity: 0.82 }),
+      candidate({ chunkId: "b-2", documentId: "doc-b", title: "_ New Valmora Yoga", similarity: 0.8 }),
       candidate({ chunkId: "c-1", documentId: "doc-c", title: "Refund Policy", similarity: 0.78 }),
       candidate({ chunkId: "c-2", documentId: "doc-c", title: "Refund Policy", similarity: 0.76 }),
     ];
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
-      question: "what ananda yoga types exist, and what is your refund policy?",
+      question: "what valmora yoga types exist, and what is your refund policy?",
       rankedCandidates,
       conversationLanguage: "en",
     });
@@ -763,27 +763,27 @@ describe("SenseGroupingService", () => {
       async complete() {
         return {
           text: JSON.stringify([
-            { id: "doc-a", label: "A newer or updated Ananda Yoga page", relationship: "redundant" },
-            { id: "doc-b", label: "A general overview of Ananda Yoga", relationship: "redundant" },
+            { id: "doc-a", label: "A newer or updated Valmora Yoga page", relationship: "redundant" },
+            { id: "doc-b", label: "A general overview of Valmora Yoga", relationship: "redundant" },
           ]),
         };
       },
     } as never, "{{groups}}");
 
     const result = await gateway.label({
-      question: "what ananda yoga types exist?",
+      question: "what valmora yoga types exist?",
       groups: [
         {
           id: "doc-a",
           documentIds: ["doc-a"],
-          documents: [{ documentId: "doc-a", title: "_ New Ananda Yoga" }],
+          documents: [{ documentId: "doc-a", title: "_ New Valmora Yoga" }],
           share: 0.5,
           separation: 0.6,
         },
         {
           id: "doc-b",
           documentIds: ["doc-b"],
-          documents: [{ documentId: "doc-b", title: "Ananda Yoga" }],
+          documents: [{ documentId: "doc-b", title: "Valmora Yoga" }],
           share: 0.5,
           separation: 0.6,
         },
@@ -799,8 +799,8 @@ describe("SenseGroupingService", () => {
     // the whole set — the unlabeled (potentially exclusive) facet gets no clarity.
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async () => [
-        { id: "doc-a", label: "What Kriya Yoga is", relationship: "complementary" as const },
-        { id: "doc-b", label: "How to begin Kriya Yoga", relationship: "complementary" as const },
+        { id: "doc-a", label: "What Valmora Meditation is", relationship: "complementary" as const },
+        { id: "doc-b", label: "How to begin Valmora Meditation", relationship: "complementary" as const },
       ]),
     };
     const service = new SenseGroupingService({
@@ -819,17 +819,17 @@ describe("SenseGroupingService", () => {
     });
 
     const rankedCandidates: RetrievedCandidate[] = [
-      candidate({ chunkId: "a-1", documentId: "doc-a", title: "About Kriya Yoga", similarity: 0.86 }),
-      candidate({ chunkId: "a-2", documentId: "doc-a", title: "About Kriya Yoga", similarity: 0.84 }),
-      candidate({ chunkId: "b-1", documentId: "doc-b", title: "Learning Kriya Yoga", similarity: 0.82 }),
-      candidate({ chunkId: "b-2", documentId: "doc-b", title: "Learning Kriya Yoga", similarity: 0.8 }),
+      candidate({ chunkId: "a-1", documentId: "doc-a", title: "About Valmora Meditation", similarity: 0.86 }),
+      candidate({ chunkId: "a-2", documentId: "doc-a", title: "About Valmora Meditation", similarity: 0.84 }),
+      candidate({ chunkId: "b-1", documentId: "doc-b", title: "Learning Valmora Meditation", similarity: 0.82 }),
+      candidate({ chunkId: "b-2", documentId: "doc-b", title: "Learning Valmora Meditation", similarity: 0.8 }),
       candidate({ chunkId: "c-1", documentId: "doc-c", title: "Refund Policy", similarity: 0.78 }),
       candidate({ chunkId: "c-2", documentId: "doc-c", title: "Refund Policy", similarity: 0.76 }),
     ];
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
-      question: "What is Kriya Yoga, how do I begin, and what is your refund policy?",
+      question: "What is Valmora Meditation, how do I begin, and what is your refund policy?",
       rankedCandidates,
       conversationLanguage: "en",
     });
@@ -875,7 +875,7 @@ const complementaryCandidate = (
   confidence: number,
 ): RetrievalSenseClarificationCandidate => ({
   id,
-  label: id === "doc-left" ? "What Kriya Yoga is" : "How to begin Kriya Yoga",
+  label: id === "doc-left" ? "What Valmora Meditation is" : "How to begin Valmora Meditation",
   labelStatus: "generated",
   confidence,
   relationship: "complementary",
@@ -897,7 +897,7 @@ describe("evaluateRetrievalSenseClarification complementary facets", () => {
       rankedCandidates: [],
       conversationId: "conversation-1",
       messageId: "message-1",
-      originalQuery: "What is Kriya Yoga and how do I learn it?",
+      originalQuery: "What is Valmora Meditation and how do I learn it?",
       conversationLanguage: "en",
       policy: basePolicy,
       suppressAsk: false,
@@ -944,7 +944,7 @@ const redundantCandidate = (
   confidence: number,
 ): RetrievalSenseClarificationCandidate => ({
   id,
-  label: id === "doc-live" ? "A general overview of Ananda Yoga" : "A newer or updated Ananda Yoga page",
+  label: id === "doc-live" ? "A general overview of Valmora Yoga" : "A newer or updated Valmora Yoga page",
   labelStatus: "generated",
   confidence,
   relationship: "redundant",
@@ -968,7 +968,7 @@ describe("evaluateRetrievalSenseClarification redundant sources", () => {
       rankedCandidates: [],
       conversationId: "conversation-1",
       messageId: "message-1",
-      originalQuery: "what ananda yoga types exist?",
+      originalQuery: "what valmora yoga types exist?",
       conversationLanguage: "en",
       policy: basePolicy,
       suppressAsk: false,
@@ -1003,7 +1003,7 @@ describe("evaluateRetrievalSenseClarification redundant sources", () => {
       rankedCandidates: [],
       conversationId: "conversation-1",
       messageId: "message-1",
-      originalQuery: "what ananda yoga types exist?",
+      originalQuery: "what valmora yoga types exist?",
       conversationLanguage: "en",
       policy: basePolicy,
       suppressAsk: false,
@@ -1030,7 +1030,7 @@ describe("evaluateRetrievalSenseClarification redundant sources", () => {
       rankedCandidates: [],
       conversationId: "conversation-1",
       messageId: "message-1",
-      originalQuery: "what ananda yoga types exist?",
+      originalQuery: "what valmora yoga types exist?",
       conversationLanguage: "en",
       policy: basePolicy,
       suppressAsk: false,
@@ -1052,7 +1052,7 @@ describe("evaluateRetrievalSenseClarification redundant sources", () => {
       rankedCandidates: [],
       conversationId: "conversation-1",
       messageId: "message-1",
-      originalQuery: "what ananda yoga types exist?",
+      originalQuery: "what valmora yoga types exist?",
       conversationLanguage: "en",
       policy: basePolicy,
       suppressAsk: false,

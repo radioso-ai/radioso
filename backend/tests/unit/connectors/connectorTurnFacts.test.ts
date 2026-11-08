@@ -209,8 +209,8 @@ describe("connectorTurnFacts on review turns completed by the lifecycle", () => 
     // "assistant.chat" — so grounding stays `unknown`, not `not_applicable`.
     const result = await reviewedTurnFixture({
       presentation: {
-        answer: "We publish Autobiografia di uno Yogi.",
-        skillName: "ananda_edizioni",
+        answer: "We publish Diario di un Viandante.",
+        skillName: "valmora_books",
         skillOutcome: "completed",
         skillStatus: "completed",
         answerOutcome: undefined,

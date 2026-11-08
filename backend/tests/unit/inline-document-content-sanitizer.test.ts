@@ -24,28 +24,28 @@ describe("inline document content sanitizer", () => {
       "",
       "Speakers",
       "",
-      "## How to begin with meditation? 5 Tips - Kirtani",
+      "## How to begin with meditation? 5 Tips - Elio",
       "",
       "Can we use this period of quarantine to deepen the practice of meditation?",
       "",
       "#whymeditate #meditation #keepmeditating",
       "",
-      "## Next in Pearls from Ananda",
+      "## Next in Pearls from Valmora",
       "",
       "## Other recommended item",
     ].join("\n");
 
     const result = sanitizeInlineDocumentContent({
-      title: "How to begin with meditation? 5 Tips - Kirtani - Ananda Europe",
+      title: "How to begin with meditation? 5 Tips - Elio - Valmora Europe",
       sourceContent: content,
       metadata: {
-        sourceUrl: "https://anandaeurope.org/video/how-to-begin-with-meditation-5-tips-kirtani",
+        sourceUrl: "https://valmora-europe.example/video/how-to-begin-with-meditation-5-tips",
       },
     });
 
     expect(result.markdownContent).toBe(
       [
-        "## How to begin with meditation? 5 Tips - Kirtani",
+        "## How to begin with meditation? 5 Tips - Elio",
         "",
         "Can we use this period of quarantine to deepen the practice of meditation?",
       ].join("\n"),

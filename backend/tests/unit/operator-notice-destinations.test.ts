@@ -13,9 +13,9 @@ const skill = (skillName: string, overrides: { kind?: string; enabled?: boolean;
 describe("OperatorNoticeDestinationsReader", () => {
   it("shows where the default destination and each nameable notify skill send, through the delivery resolver", async () => {
     const targets: Record<string, RoutedContactDeliveryTarget> = {
-      default: { emails: ["owner@ananda.example"], webhook: null, via: "workspace_owner", recipientsFromWorkspaceOwner: true },
+      default: { emails: ["owner@valmora.example"], webhook: null, via: "workspace_owner", recipientsFromWorkspaceOwner: true },
       notify_bookings: {
-        emails: ["francesco@ananda.example"],
+        emails: ["marta@valmora.example"],
         webhook: { url: "https://hooks.example.com/secret" },
         via: "named_skill",
         recipientsFromWorkspaceOwner: false,
@@ -40,16 +40,16 @@ describe("OperatorNoticeDestinationsReader", () => {
       default: {
         skillName: null,
         via: "workspace_owner",
-        recipientEmails: ["owner@ananda.example"],
-        recipients: [{ email: "owner@ananda.example", state: "confirmation_not_required" }],
+        recipientEmails: ["owner@valmora.example"],
+        recipients: [{ email: "owner@valmora.example", state: "confirmation_not_required" }],
         recipientsFromWorkspaceOwner: true,
         webhookConfigured: false,
       },
       skills: [{
         skillName: "notify_bookings",
         via: "named_skill",
-        recipientEmails: ["francesco@ananda.example"],
-        recipients: [{ email: "francesco@ananda.example", state: "confirmation_not_required" }],
+        recipientEmails: ["marta@valmora.example"],
+        recipients: [{ email: "marta@valmora.example", state: "confirmation_not_required" }],
         recipientsFromWorkspaceOwner: false,
         webhookConfigured: true,
       }],

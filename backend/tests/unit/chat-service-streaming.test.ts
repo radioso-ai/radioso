@@ -6338,7 +6338,7 @@ describe("chat service streaming", () => {
           },
           responseSettings: {
             citationDisplayEnabled: true,
-            customInstruction: "Help visitors choose and book Ananda courses.",
+            customInstruction: "Help visitors choose and book Valmora courses.",
             responseLanguagePolicy: "match_user_question",
           },
         };
@@ -6356,7 +6356,7 @@ describe("chat service streaming", () => {
       async composeNoContext(input) {
         observedNoContextInstruction = input.answerInstructionBlock ?? "";
         return {
-          text: "I can't tell from that. I can help you choose and book Ananda courses.",
+          text: "I can't tell from that. I can help you choose and book Valmora courses.",
           declineReason: "content_gap",
         };
       },
@@ -6376,11 +6376,11 @@ describe("chat service streaming", () => {
       stream: false,
     });
 
-    expect(response.answer).toBe("I can't tell from that. I can help you choose and book Ananda courses.");
+    expect(response.answer).toBe("I can't tell from that. I can help you choose and book Valmora courses.");
     expect(observedNoContextInstruction).toContain("Stable assistant identity:");
     expect(observedNoContextInstruction).toContain("Vikram");
     expect(observedNoContextInstruction).toContain("Configured response instructions:");
-    expect(observedNoContextInstruction).toContain("Help visitors choose and book Ananda courses.");
+    expect(observedNoContextInstruction).toContain("Help visitors choose and book Valmora courses.");
   });
 
   it("excludes URL-shaped citation titles from carry-forward literals", async () => {
@@ -6483,17 +6483,17 @@ describe("chat service streaming", () => {
     const retrievalPipeline = {
       async run() {
         return {
-          rewrittenQuery: "Does Narayani work with Arudra?",
+          rewrittenQuery: "Does Freya work with Tomas?",
           contexts: [
             {
               chunkId: "chunk-1",
               documentId: "doc-1",
-              title: "Narayani",
+              title: "Freya",
               content: "full answer",
             },
           ],
           prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Narayani" }],
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Freya" }],
           diagnostics: {
             rewriteStatus: "applied",
             rerankStatus: "skipped",
@@ -6505,16 +6505,16 @@ describe("chat service streaming", () => {
             candidateFallbackApplied: false,
             fallbackApplied: false,
             rewriteProposal: {
-              rewrittenQuery: "Does Narayani work with Arudra?",
+              rewrittenQuery: "Does Freya work with Tomas?",
               turnKind: "referential_relation",
-              proposedActiveSubject: "Narayani",
-              relatedEntities: ["Arudra"],
+              proposedActiveSubject: "Freya",
+              relatedEntities: ["Tomas"],
               unresolved: true,
               confidence: 0.62,
             },
             parsedQuery: {
-              semanticQuery: "does narayani work with arudra",
-              lexicalQuery: "does narayani work with arudra",
+              semanticQuery: "does freya work with tomas",
+              lexicalQuery: "does freya work with tomas",
             },
           },
           responseSettings: {
@@ -6544,14 +6544,14 @@ describe("chat service streaming", () => {
     await service.answer({
       workspaceId: "workspace-1",
       accountId: "account-1",
-      query: "Does she work with Arudra?",
+      query: "Does she work with Tomas?",
       stream: false,
     });
 
     expect(auditService.events[0]?.metadata?.rewriteContinuityState).toEqual({
-      activeSubject: "Narayani",
+      activeSubject: "Freya",
       relatedEntities: [],
-      groundedTitles: ["Narayani"],
+      groundedTitles: ["Freya"],
     });
   });
 
@@ -7593,13 +7593,13 @@ describe("chat service streaming", () => {
     const retrievalPipeline = {
       async run() {
         return {
-          rewrittenQuery: "who is narayani",
+          rewrittenQuery: "who is freya",
           contexts: [
             {
               chunkId: "chunk-1",
               documentId: "doc-1",
               title: "Event listing",
-              content: "Narayani leads a satsang this weekend.",
+              content: "Freya leads a satsang this weekend.",
             },
           ],
           prompt: "prompt text",
@@ -7615,8 +7615,8 @@ describe("chat service streaming", () => {
             candidateFallbackApplied: false,
             fallbackApplied: false,
             parsedQuery: {
-              semanticQuery: "who is narayani",
-              lexicalQuery: "who is narayani",
+              semanticQuery: "who is freya",
+              lexicalQuery: "who is freya",
             },
           },
           responseSettings: {
@@ -7630,7 +7630,7 @@ describe("chat service streaming", () => {
         return "unused";
       },
       async *streamAnswer() {
-        yield "Narayani is a teacher";
+        yield "Freya is a teacher";
         yield " and author.";
       },
     };
@@ -7648,7 +7648,7 @@ describe("chat service streaming", () => {
     for await (const event of service.streamAnswer({
       workspaceId: "workspace-1",
       accountId: "account-1",
-      query: "Who is Narayani?",
+      query: "Who is Freya?",
       stream: true,
     })) {
       events.push(event);
@@ -7658,11 +7658,11 @@ describe("chat service streaming", () => {
       .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
       .map((event) => event.text);
 
-    expect(chunkTexts.join("")).toBe("Narayani is a teacher and author.");
+    expect(chunkTexts.join("")).toBe("Freya is a teacher and author.");
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: "Narayani is a teacher and author.",
+        answer: "Freya is a teacher and author.",
         skillOutcome: "grounded_degraded",
         activityTrace: expect.objectContaining({
           stages: expect.arrayContaining([
@@ -7761,35 +7761,35 @@ describe("chat service streaming", () => {
     const retrievalPipeline = {
       async run() {
         return {
-          rewrittenQuery: "who is mahiya",
+          rewrittenQuery: "who is nadia",
           contexts: [
             {
               chunkId: "chunk-1",
               documentId: "doc-1",
-              title: "Mahiya",
-              content: "Mahiya is a teacher and author.",
+              title: "Nadia",
+              content: "Nadia is a teacher and author.",
             },
             {
               chunkId: "chunk-2",
               documentId: "doc-2",
-              title: "God is our True Home: In Conversation with Mahiya - Ananda Europe",
-              content: "An interview about Mahiya's path and spiritual life.",
+              title: "Peace is our True Home: In Conversation with Nadia - Valmora Europe",
+              content: "An interview about Nadia's path and spiritual life.",
             },
             {
               chunkId: "chunk-3",
               documentId: "doc-3",
-              title: "Il gusto della gioia - Ananda Edizioni - ricette, consigli e ispirazioni salutari",
+              title: "Il sapore della calma - Valmora Books - ricette, consigli e ispirazioni leggere",
               content: "Her cooking book and related work.",
             },
             {
               chunkId: "chunk-4",
               documentId: "doc-4",
-              title: "Challenges and blessings go hand in hand - Interview with Mahiya (ENG) - Ananda Europe",
+              title: "Challenges and gifts go hand in hand - Interview with Nadia (ENG) - Valmora Europe",
               content: "Another interview with adjacent material.",
             },
           ],
           prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" }],
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Nadia" }],
           diagnostics: {
             rewriteStatus: "skipped",
             rerankStatus: "skipped",
@@ -7801,8 +7801,8 @@ describe("chat service streaming", () => {
             candidateFallbackApplied: false,
             fallbackApplied: false,
             parsedQuery: {
-              semanticQuery: "who is mahiya",
-              lexicalQuery: "mahiya",
+              semanticQuery: "who is nadia",
+              lexicalQuery: "nadia",
             },
           },
           responseSettings: {
@@ -7813,18 +7813,18 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
-        const answerText = "Mahiya is a teacher and author[[1]].";
+        const answerText = "Nadia is a teacher and author[[1]].";
         if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
-            { text: "What does the interview say about Mahiya's spiritual path?", kind: "deeper", contextIndex: 1 },
-            { text: "Which books or projects is Mahiya associated with?", kind: "broader", contextIndex: 2 },
-            { text: "What challenges does Mahiya describe in the other interview?", kind: "broader", contextIndex: 3 },
+            { text: "What does the interview say about Nadia's spiritual path?", kind: "deeper", contextIndex: 1 },
+            { text: "Which books or projects is Nadia associated with?", kind: "broader", contextIndex: 2 },
+            { text: "What challenges does Nadia describe in the other interview?", kind: "broader", contextIndex: 3 },
           ]);
         }
         return answerText;
       },
       async *streamAnswer() {
-        yield "Mahiya is a teacher and author[[1]].";
+        yield "Nadia is a teacher and author[[1]].";
       },
     };
     const service = makeChatService(
@@ -7846,7 +7846,7 @@ describe("chat service streaming", () => {
     const response = await service.answer({
       workspaceId: "workspace-1",
       accountId: "account-1",
-      query: "Who is Mahiya?",
+      query: "Who is Nadia?",
       stream: false,
     });
 
@@ -7871,7 +7871,7 @@ describe("chat service streaming", () => {
       }),
     ]);
     expect(response.citations).toEqual([
-      { documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" },
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Nadia" },
     ]);
   });
 
@@ -7882,23 +7882,23 @@ describe("chat service streaming", () => {
     const retrievalPipeline = {
       async run() {
         return {
-          rewrittenQuery: "who is mahiya",
+          rewrittenQuery: "who is nadia",
           contexts: [
             {
               chunkId: "chunk-1",
               documentId: "doc-1",
-              title: "Mahiya",
-              content: "Mahiya is a teacher and author.",
+              title: "Nadia",
+              content: "Nadia is a teacher and author.",
             },
             {
               chunkId: "chunk-2",
               documentId: "doc-2",
-              title: "Mahiya interview",
-              content: "An interview about Mahiya's spiritual path.",
+              title: "Nadia interview",
+              content: "An interview about Nadia's spiritual path.",
             },
           ],
           prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" }],
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Nadia" }],
           diagnostics: {
             rewriteStatus: "skipped",
             rerankStatus: "skipped",
@@ -7910,8 +7910,8 @@ describe("chat service streaming", () => {
             candidateFallbackApplied: false,
             fallbackApplied: false,
             parsedQuery: {
-              semanticQuery: "who is mahiya",
-              lexicalQuery: "mahiya",
+              semanticQuery: "who is nadia",
+              lexicalQuery: "nadia",
             },
           },
           responseSettings: {
@@ -7924,17 +7924,17 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
-        const answerText = "Mahiya is a teacher and author[[1]].";
+        const answerText = "Nadia is a teacher and author[[1]].";
         if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
-            { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
+            { text: "What does the interview say about Nadia's spiritual path?", contextIndex: 1 },
           ]);
         }
         return answerText;
       },
       async *streamAnswer() {
-        yield envelope("Mahiya is a teacher and author[[1]].", [
-          { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
+        yield envelope("Nadia is a teacher and author[[1]].", [
+          { text: "What does the interview say about Nadia's spiritual path?", contextIndex: 1 },
         ]);
       },
     };
@@ -7959,7 +7959,7 @@ describe("chat service streaming", () => {
     for await (const event of service.streamAnswer({
       workspaceId: "workspace-1",
       accountId: "account-1",
-      query: "Who is Mahiya?",
+      query: "Who is Nadia?",
       stream: true,
     })) {
       events.push(event);
@@ -7982,18 +7982,18 @@ describe("chat service streaming", () => {
     ]);
     expect(events[5]).toMatchObject({
       type: "done",
-      answer: "Mahiya is a teacher and author.",
+      answer: "Nadia is a teacher and author.",
       suggestions: undefined,
     });
     expect(events[6]).toMatchObject({
       type: "suggestions",
       suggestions: [
         {
-          text: "What does the interview say about Mahiya's spiritual path?",
+          text: "What does the interview say about Nadia's spiritual path?",
           citation: {
             documentId: "doc-1",
             chunkId: "chunk-1",
-            title: "Mahiya",
+            title: "Nadia",
           },
         },
       ],
@@ -8086,17 +8086,17 @@ describe("chat service streaming", () => {
     const retrievalPipeline = {
       async run() {
         return {
-          rewrittenQuery: "who is mahiya",
+          rewrittenQuery: "who is nadia",
           contexts: [
             {
               chunkId: "chunk-1",
               documentId: "doc-1",
-              title: "Mahiya",
-              content: "Mahiya is a teacher and author.",
+              title: "Nadia",
+              content: "Nadia is a teacher and author.",
             },
           ],
           prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Mahiya" }],
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Nadia" }],
           diagnostics: {
             rewriteStatus: "skipped",
             rerankStatus: "skipped",
@@ -8108,8 +8108,8 @@ describe("chat service streaming", () => {
             candidateFallbackApplied: false,
             fallbackApplied: false,
             parsedQuery: {
-              semanticQuery: "who is mahiya",
-              lexicalQuery: "mahiya",
+              semanticQuery: "who is nadia",
+              lexicalQuery: "nadia",
             },
           },
           responseSettings: {
@@ -8124,10 +8124,10 @@ describe("chat service streaming", () => {
       async answer() {
         // Plain text instead of a valid JSON envelope — exercises the parser's
         // tolerant fallback (answer is preserved, suggestions are empty).
-        return "Mahiya is a teacher and author[[1]].";
+        return "Nadia is a teacher and author[[1]].";
       },
       async *streamAnswer() {
-        yield "Mahiya is a teacher and author[[1]].";
+        yield "Nadia is a teacher and author[[1]].";
       },
     };
     const service = makeChatService(
@@ -8144,7 +8144,7 @@ describe("chat service streaming", () => {
     for await (const event of service.streamAnswer({
       workspaceId: "workspace-1",
       accountId: "account-1",
-      query: "Who is Mahiya?",
+      query: "Who is Nadia?",
       stream: true,
     })) {
       events.push(event);
@@ -8175,23 +8175,23 @@ describe("chat service streaming", () => {
     const retrievalPipeline = {
       async run() {
         return {
-          rewrittenQuery: "quali libri ha scritto narayani",
+          rewrittenQuery: "quali libri ha scritto freya",
           contexts: [
             {
               chunkId: "chunk-1",
               documentId: "doc-1",
-              title: "Narayani Anaya Archivi - Ananda Edizioni",
-              content: "Narayani wrote La mia anima ricorda Swami Kriyananda.",
+              title: "Freya Rennick Archivi - Valmora Books",
+              content: "Freya wrote Il mio cammino con Swami Selan.",
             },
             {
               chunkId: "chunk-2",
               documentId: "doc-2",
-              title: "Satsang with Narayani (on her upcoming book and more) &mdash; Ananda",
+              title: "Satsang with Freya (on her upcoming book and more) &mdash; Valmora",
               content: "An event about her upcoming book and more.",
             },
           ],
           prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Narayani Anaya Archivi - Ananda Edizioni" }],
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Freya Rennick Archivi - Valmora Books" }],
           diagnostics: {
             rewriteStatus: "skipped",
             rerankStatus: "skipped",
@@ -8203,8 +8203,8 @@ describe("chat service streaming", () => {
             candidateFallbackApplied: false,
             fallbackApplied: false,
             parsedQuery: {
-              semanticQuery: "quali libri ha scritto narayani",
-              lexicalQuery: "narayani libri",
+              semanticQuery: "quali libri ha scritto freya",
+              lexicalQuery: "freya libri",
             },
           },
           responseSettings: {
@@ -8215,16 +8215,16 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
-        const answerText = "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
+        const answerText = "Freya ha scritto Il mio cammino con Swami Selan[[1]].";
         if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
-            { text: "Quale altro libro o progetto è collegato a Narayani?", kind: "broader", contextIndex: 1 },
+            { text: "Quale altro libro o progetto è collegato a Freya?", kind: "broader", contextIndex: 1 },
           ]);
         }
         return answerText;
       },
       async *streamAnswer() {
-        yield "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
+        yield "Freya ha scritto Il mio cammino con Swami Selan[[1]].";
       },
     };
     const service = makeChatService(
@@ -8246,7 +8246,7 @@ describe("chat service streaming", () => {
     const response = await service.answer({
       workspaceId: "workspace-1",
       accountId: "account-1",
-      query: "quali libri ha scritto Narayani",
+      query: "quali libri ha scritto Freya",
       stream: false,
     });
 
@@ -8270,23 +8270,23 @@ describe("chat service streaming", () => {
     const retrievalPipeline = {
       async run() {
         return {
-          rewrittenQuery: "want links to the next page of assisi videos",
+          rewrittenQuery: "want links to the next page of montelago videos",
           contexts: [
             {
               chunkId: "chunk-1",
               documentId: "doc-1",
-              title: "Assisi Archives - Page 2 of 14 - Ananda Europe",
+              title: "Montelago Archives - Page 2 of 14 - Valmora Europe",
               content: "Page 2 links to the next page in the archive.",
             },
             {
               chunkId: "chunk-2",
               documentId: "doc-2",
-              title: "Assisi Archives - Page 3 of 14 - Ananda Europe",
+              title: "Montelago Archives - Page 3 of 14 - Valmora Europe",
               content: "Page 3 is part of a 14-page archive.",
             },
           ],
           prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Assisi Archives - Page 2 of 14 - Ananda Europe" }],
+          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Montelago Archives - Page 2 of 14 - Valmora Europe" }],
           diagnostics: {
             rewriteStatus: "skipped",
             rerankStatus: "skipped",
@@ -8298,8 +8298,8 @@ describe("chat service streaming", () => {
             candidateFallbackApplied: false,
             fallbackApplied: false,
             parsedQuery: {
-              semanticQuery: "assisi videos next page",
-              lexicalQuery: "assisi videos page 3",
+              semanticQuery: "montelago videos next page",
+              lexicalQuery: "montelago videos page 3",
             },
           },
           responseSettings: {
@@ -8310,20 +8310,20 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
-        const answerText = "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
+        const answerText = "Yes — here's the next page of the Montelago videos archive: https://valmora-europe.example/category/video-from-montelago/page/3/[[1]]";
         if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             // Near-paraphrase of the user's query — should be filtered.
-            { text: "Where are the next Assisi videos links?", kind: "deeper", contextIndex: 2 },
+            { text: "Where are the next Montelago videos links?", kind: "deeper", contextIndex: 2 },
             // Legitimate adjacent angle — should survive even though it shares
-            // topic vocabulary ("Assisi", "archive") with the answer.
-            { text: "How many Assisi archive pages are there?", kind: "broader", contextIndex: 2 },
+            // topic vocabulary ("Montelago", "archive") with the answer.
+            { text: "How many Montelago archive pages are there?", kind: "broader", contextIndex: 2 },
           ]);
         }
         return answerText;
       },
       async *streamAnswer() {
-        yield "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
+        yield "Yes — here's the next page of the Montelago videos archive: https://valmora-europe.example/category/video-from-montelago/page/3/[[1]]";
       },
     };
     const service = makeChatService(
@@ -8345,7 +8345,7 @@ describe("chat service streaming", () => {
     const response = await service.answer({
       workspaceId: "workspace-1",
       accountId: "account-1",
-      query: "Want links to the next page of Assisi videos?",
+      query: "Want links to the next page of Montelago videos?",
       stream: false,
     });
 

@@ -261,8 +261,8 @@ still sends without that section.
 Under **Notify the team**, the **Send with** select chooses which notify
 skill delivers the notice: **Default**, or any enabled notify skill the
 routine can name directly. The line underneath shows where that choice goes
-right now — Ananda's booking routine names its `notify_bookings` skill on the
-**Booked** ending, so the line reads `Sends to francesco@ananda.it (waiting for confirmation)` until Francesco uses the confirmation link. Confirmed addresses have no suffix; grandfathered, revoked, and bounce- or complaint-suppressed addresses carry their own status beside the address. Choosing **Default** falls
+right now — Valmora's booking routine names its `notify_bookings` skill on the
+**Booked** ending, so the line reads `Sends to marta@valmora.example (waiting for confirmation)` until Marta uses the confirmation link. Confirmed addresses have no suffix; grandfathered, revoked, and bounce- or complaint-suppressed addresses carry their own status beside the address. Choosing **Default** falls
 back to the chain above: the line then shows the `contact_human` recipients,
 the agent's own delivery setting, or the workspace owner's email, whichever
 resolves first. A **Hand off** ending offers the same select, since it always
@@ -270,7 +270,7 @@ notifies.
 
 **Replies go to** picks the email field whose address reception's reply goes
 to: any of the routine's email fields, or **No reply-to**. With
-`guest_email` chosen on Ananda's **Booked** ending, Francesco hits Reply and
+`guest_email` chosen on Valmora's **Booked** ending, Marta hits Reply and
 writes straight to the guest. Radioso uses only the field you pick — a gift
 booking that collects the buyer's address and the recipient's is answered at
 whichever one you chose. A notice you turn on, or a new **Hand off** ending,
@@ -290,7 +290,7 @@ attempts also count against the workspace's daily plan allowance; reaching it
 records `workspace_daily_email_cap` and leaves a configured webhook active.
 An external address must confirm within its workspace before it receives a
 notice. Adding it to a notify skill sends the confirmation message right away,
-so Francesco can confirm before the first booking arrives. An address configured
+so Marta can confirm before the first booking arrives. An address configured
 before confirmation existed keeps receiving notices and gets the confirmation
 message with its first one; it has 14 days from that message, and at least
 until its recorded deadline, to confirm. Every notice carries a

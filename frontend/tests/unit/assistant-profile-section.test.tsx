@@ -111,21 +111,21 @@ describe('assistant profile section', () => {
   it('edits internalName through onAssistantSettingChange when shown', () => {
     const changes: Array<[string, unknown]> = []
     renderSection({
-      anonSettings: { ...generalSettings(), internalName: 'Claudio (IT)' },
+      anonSettings: { ...generalSettings(), internalName: 'Nico (IT)' },
       showInternalName: true,
       onAssistantSettingChange: (key, value) => changes.push([key, value]),
     })
 
     const input = container.querySelector<HTMLInputElement>('#agentInternalName')
     expect(input).not.toBeNull()
-    expect(input?.value).toBe('Claudio (IT)')
+    expect(input?.value).toBe('Nico (IT)')
 
     const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
     act(() => {
-      nativeSetter?.call(input, 'Claudio (EN)')
+      nativeSetter?.call(input, 'Nico (EN)')
       input?.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    expect(changes).toContainEqual(['internalName', 'Claudio (EN)'])
+    expect(changes).toContainEqual(['internalName', 'Nico (EN)'])
   })
 
   it('updates the retrieval-miss handoff draft from its toggle', () => {

@@ -8,7 +8,7 @@ import {
 } from "./dashboard-fixtures";
 
 const websiteSourceId = "44444444-4444-4444-4444-444444444444";
-const websiteSourceName = "anandaeurope.org";
+const websiteSourceName = "valmora-europe.example";
 const sourceDocument = {
   id: "doc-1",
   title: "Course Guide",
@@ -16,14 +16,14 @@ const sourceDocument = {
   ragStatus: "processed",
   createdAt: nowIso,
   updatedAt: nowIso,
-  metadata: { sourceUrl: "https://anandaeurope.org/course-guide" },
+  metadata: { sourceUrl: "https://valmora-europe.example/course-guide" },
   sourceKind: "inline_text" as const,
   sourceId: websiteSourceId,
   source: {
     id: websiteSourceId,
     kind: "website" as const,
     name: websiteSourceName,
-    externalId: "https://anandaeurope.org",
+    externalId: "https://valmora-europe.example",
   },
 };
 
@@ -52,7 +52,7 @@ test("expanding a source reveals actions; View documents deep-links to the filte
             id: websiteSourceId,
             kind: "website",
             name: websiteSourceName,
-            externalId: "https://anandaeurope.org",
+            externalId: "https://valmora-europe.example",
             documentCount: 1,
             lastSyncedAt: nowIso,
           },
@@ -70,7 +70,7 @@ test("expanding a source reveals actions; View documents deep-links to the filte
           {
             id: "job-1",
             sourceId: websiteSourceId,
-            requestedUrl: "https://anandaeurope.org",
+            requestedUrl: "https://valmora-europe.example",
             status: "completed",
             limit: 1000,
             documentCount: 1,
@@ -267,7 +267,7 @@ test("operator toggles metadata extraction and reprocesses one source", async ({
             id: websiteSourceId,
             kind: "website",
             name: websiteSourceName,
-            externalId: "https://anandaeurope.org",
+            externalId: "https://valmora-europe.example",
             documentCount: 2,
             documentEnrichmentOverride: "inherit",
             lastSyncedAt: nowIso,
@@ -290,7 +290,7 @@ test("operator toggles metadata extraction and reprocesses one source", async ({
         id: websiteSourceId,
         kind: "website",
         name: websiteSourceName,
-        externalId: "https://anandaeurope.org",
+        externalId: "https://valmora-europe.example",
         documentCount: 2,
         documentEnrichmentOverride: "on",
         lastSyncedAt: nowIso,
@@ -373,7 +373,7 @@ test("operator edits the document tags a source stamps onto its documents", asyn
             id: websiteSourceId,
             kind: "website",
             name: websiteSourceName,
-            externalId: "https://anandaeurope.org",
+            externalId: "https://valmora-europe.example",
             documentCount: 2,
             documentEnrichmentOverride: "inherit",
             documentMetadata: { department: "outreach" },
@@ -396,7 +396,7 @@ test("operator edits the document tags a source stamps onto its documents", asyn
         id: websiteSourceId,
         kind: "website",
         name: websiteSourceName,
-        externalId: "https://anandaeurope.org",
+        externalId: "https://valmora-europe.example",
         documentCount: 2,
         documentEnrichmentOverride: "inherit",
         documentMetadata: { department: "outreach", priority: 2 },

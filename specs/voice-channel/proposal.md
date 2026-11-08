@@ -41,7 +41,7 @@ The two reviews' technical findings stand and are in the plan: barge-in must can
 
 ## 3. Where the time goes today
 
-Measured, not guessed. Sources: the turn pipeline map in this workspace, epic #856, spec 1263's benchmark, and a live Ananda turn traced today.
+Measured, not guessed. Sources: the turn pipeline map in this workspace, epic #856, spec 1263's benchmark, and a live Valmora turn traced today.
 
 | Stage | What it is | Cost | Evidence |
 |---|---|---|---|
@@ -56,7 +56,7 @@ Measured, not guessed. Sources: the turn pipeline map in this workspace, epic #8
 |---|---|---|
 | Internal time-to-first-token target | 2.5 s | `perceivedPerformance.firstTokenTargetMs` |
 | Benchmarked TTFT p50 / p95 (local, 20 turns) | 3.6 s / 4.2 s | spec 1263 validation |
-| Live Ananda routine-activation turn today | about 4.5 s wall clock | test chat trace 10:56 UTC |
+| Live Valmora routine-activation turn today | about 4.5 s wall clock | test chat trace 10:56 UTC |
 | Historical before the 2026 speed work | p50 14 s / p90 39 s | epic #856 |
 
 Three structural facts matter more than any number:
@@ -277,7 +277,7 @@ Kept from the reviews:
 Superseded by the demo goal:
 
 - **The demand gate and the call log.** Voice is a positioning bet for Web Summit, so the measure of success is leads at the stand, not after-hours call volume.
-- **Ananda as design partner and the after-hours shape.** The flagship agent is Radioso about Radioso; personalised agents come from the prospect sheet.
+- **Valmora as design partner and the after-hours shape.** The flagship agent is Radioso about Radioso; personalised agents come from the prospect sheet.
 - **`request_callback` before `transfer_call`.** The demo's best moment is the live transfer, so `transfer_call` is in and callback waits for Phase 0.
 
 ## 12. Open decisions for Dmitri
@@ -306,7 +306,7 @@ Full memo: [competitive-landscape.md](competitive-landscape.md).
 - Turn pipeline map (this workspace, 2026-10-07): planner `behaviorConfig.ts:99-145`; status stages `streamEvents.ts:14`; routine replies committed whole `chatService.ts:1483-1486`; gates `groundedAnswerHeadReader.ts:51-95`, `retrievalTurnSkill.ts:579-648`; SSE presenter `chatPresenter.ts:109-180`; MCP ask non-streaming `agentConverseService.ts:106-110`; connector port blocking `connectorChatPort.ts:24-40`; channel union `packages/conversation-contract/index.d.ts:95-106`; engine bypass note `turnSkillSelector.ts:88-95`; metering `chatService.ts:1364-1373`; provider capabilities `providerTypes.ts:9`; supersede-only-before-emission `conversationTurnRegistry.ts:146-152`; disconnect ceiling `behaviorConfig.ts:218`.
 - Epic #856: historical p50 14 s / p90 39 s; #857, #858, #859, #868, #871 shipped. Issue #507 closed as deferred 2026-06-01.
 - Spec 1263 validation: TTFT p50 3,569 ms / p95 4,183 ms baseline, 20-turn local benchmark.
-- Live Ananda test turn 2026-10-07 10:56 UTC: routine "Book accommodation" auto-picked at 0.92, about 4.5 s wall clock.
-- Ananda workspace: two agents (EN, IT) on `gpt-5.4-mini`, 11,556 embedded chunks, 30 most recent conversations all `website_embed`, Italian majority, dominated by course dates, availability and booking.
+- Live Valmora test turn 2026-10-07 10:56 UTC: routine "Book accommodation" auto-picked at 0.92, about 4.5 s wall clock.
+- Valmora workspace: two agents (EN, IT) on `gpt-5.4-mini`, about 10,000 embedded chunks, 30 most recent conversations all `website_embed`, Italian majority, dominated by course dates, availability and booking.
 - Plan catalog: Satellite `priceCents: 14900`, `monthlyConversations: 1000`.
 - No audio, speech, telephony or WebSocket-realtime code exists anywhere in the repository.

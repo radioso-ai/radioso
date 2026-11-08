@@ -34,7 +34,7 @@ Response `201`:
   "resumeToken": "optional-resume-token",
   "agent": {
     "id": "agent-id",
-    "name": "Claudio"
+    "name": "Nico"
   },
   "conversationId": "public-session-id"
 }

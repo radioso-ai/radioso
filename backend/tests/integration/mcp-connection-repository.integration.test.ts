@@ -151,7 +151,7 @@ describeIntegration("McpConnectionRepository (Postgres)", () => {
       namedAgentId,
       usageWorkspaceId,
     ]);
-    await database.query(`INSERT INTO agents (id, workspace_id, name, internal_name) VALUES ($1,$2,'Claudio','Sales IT')`, [
+    await database.query(`INSERT INTO agents (id, workspace_id, name, internal_name) VALUES ($1,$2,'Nico','Sales IT')`, [
       relabelledAgentId,
       usageWorkspaceId,
     ]);

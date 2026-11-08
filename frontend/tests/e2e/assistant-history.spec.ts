@@ -386,8 +386,8 @@ test("the All lens row shows the visitor label and location as plain text; the r
     agentName: "Marta",
     agentInternalName: "Website support",
     sourceChannel: "website_embed",
-    sourceOrigin: "https://it.ananda.eu",
-    entryPageUrl: "https://it.ananda.eu/support/getting-started?utm_source=chat",
+    sourceOrigin: "https://it.valmora.example",
+    entryPageUrl: "https://it.valmora.example/support/getting-started?utm_source=chat",
     channelContext: null,
     anonymousSessionId: "visitor-session-1",
     createdAt: nowIso,
@@ -404,8 +404,8 @@ test("the All lens row shows the visitor label and location as plain text; the r
     agentName: "Marta",
     agentInternalName: "Website support",
     sourceChannel: "website_embed",
-    sourceOrigin: "https://it.ananda.eu",
-    entryPageUrl: "https://it.ananda.eu/support/getting-started?utm_source=chat",
+    sourceOrigin: "https://it.valmora.example",
+    entryPageUrl: "https://it.valmora.example/support/getting-started?utm_source=chat",
     channelContext: null,
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -441,7 +441,7 @@ test("the All lens row shows the visitor label and location as plain text; the r
   // The location renders as plain text inside the row — the row is itself
   // one big button (the row-select control), and an <a> nested inside a
   // <button> is invalid HTML that breaks keyboard/screen-reader activation.
-  await expect(row).toContainText("it.ananda.eu/support/getting-started");
+  await expect(row).toContainText("it.valmora.example/support/getting-started");
   await expect(row.getByRole("link")).toHaveCount(0);
 
   // The real, independently clickable, tracking-stripped link lives in the
@@ -449,15 +449,15 @@ test("the All lens row shows the visitor label and location as plain text; the r
   await row.click();
   const response = page.getByLabel("Response", { exact: true });
   await expect(
-    response.getByRole("link", { name: "https://it.ananda.eu/support/getting-started" }),
-  ).toHaveAttribute("href", "https://it.ananda.eu/support/getting-started");
+    response.getByRole("link", { name: "https://it.valmora.example/support/getting-started" }),
+  ).toHaveAttribute("href", "https://it.valmora.example/support/getting-started");
 });
 
 test("conversations toolbar search narrows the visible rows", async ({ page }) => {
   const matchingConversation = {
     id: "conversation-toolbar-match",
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
@@ -474,7 +474,7 @@ test("conversations toolbar search narrows the visible rows", async ({ page }) =
   const otherConversation = {
     id: "conversation-toolbar-other",
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
@@ -544,7 +544,7 @@ test("Activity filters to conversations started by AI agents and marks the selec
   const humanConversation = {
     id: "conversation-human-caller",
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
@@ -562,7 +562,7 @@ test("Activity filters to conversations started by AI agents and marks the selec
   const agentConversation = {
     id: "conversation-agent-caller",
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "mcp",
     sourceOrigin: null,
@@ -581,7 +581,7 @@ test("Activity filters to conversations started by AI agents and marks the selec
     conversationId: agentConversation.id,
     workspaceId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     sourceChannel: "mcp",
     sourceOrigin: null,
     callerKind: "agent",
@@ -637,7 +637,7 @@ test("an All-lens row shows the generated topic title over the raw preview, and 
   const titledConversation = {
     id: "conversation-titled",
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
@@ -655,7 +655,7 @@ test("an All-lens row shows the generated topic title over the raw preview, and 
   const untitledConversation = {
     id: "conversation-untitled",
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
@@ -712,7 +712,7 @@ test("selecting a completed conversation in the All lens opens the reading pane,
   const conversation = {
     id: conversationId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
@@ -730,7 +730,7 @@ test("selecting a completed conversation in the All lens opens the reading pane,
     conversationId,
     workspaceId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
     channelContext: null,
@@ -754,7 +754,7 @@ test("selecting a completed conversation in the All lens opens the reading pane,
   const secondConversation = {
     id: secondConversationId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
@@ -772,7 +772,7 @@ test("selecting a completed conversation in the All lens opens the reading pane,
     conversationId: secondConversationId,
     workspaceId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
     channelContext: null,
@@ -842,7 +842,7 @@ test("selecting an in-progress conversation in the All lens shows a composer, an
   const conversation = {
     id: conversationId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     agentInternalName: null,
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
@@ -860,7 +860,7 @@ test("selecting an in-progress conversation in the All lens shows a composer, an
     conversationId,
     workspaceId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     sourceChannel: "website_embed",
     sourceOrigin: "https://www.example.test",
     channelContext: null,

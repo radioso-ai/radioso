@@ -103,7 +103,7 @@ describe("retrieval shape resolver", () => {
 
   it("falls back to the default hybrid shape for uncertain queries", () => {
     const selection = selectRetrievalAnswerShape({
-      query: "Narayani Arudra",
+      query: "Freya Tomas",
       });
 
     expect(selection).toMatchObject({

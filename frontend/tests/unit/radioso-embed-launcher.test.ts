@@ -426,7 +426,7 @@ describe('radioso embed launcher', () => {
         },
         copy: {
           default: {
-            launcherDefaultLabel: 'Claudio',
+            launcherDefaultLabel: 'Nico',
           },
         },
         expertOverrides: {},
@@ -465,7 +465,7 @@ describe('radioso embed launcher', () => {
 
     const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
     expect(button.children.some((child) => child.className === 'radioso-launcher-label')).toBe(false)
-    expect(button.children.some((child) => child.textContent === 'Claudio')).toBe(false)
+    expect(button.children.some((child) => child.textContent === 'Nico')).toBe(false)
     expect(button.querySelector('[data-radioso-launcher-avatar="true"]')?.style.width).toBe('3rem')
   })
 

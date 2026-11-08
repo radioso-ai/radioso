@@ -219,7 +219,7 @@ describe("notify skill contact delivery routing (enqueue through drain)", () => 
       targetType: "notify_delivery",
       invocationMode: "routine_named",
       enabled: true,
-      config: { delivery: { recipientEmails: ["francesco@example.com"], webhook: null } },
+      config: { delivery: { recipientEmails: ["marta@valmora.example"], webhook: null } },
     });
 
     // The turn that reached the ending queues its notice the way the chat turn lifecycle does:
@@ -249,6 +249,6 @@ describe("notify skill contact delivery routing (enqueue through drain)", () => 
     });
     await dispatchPending(outbox, [{ type: ending.type, handler }]);
 
-    expect(sent.map((message) => message.to)).toEqual(["francesco@example.com"]);
+    expect(sent.map((message) => message.to)).toEqual(["marta@valmora.example"]);
   });
 });

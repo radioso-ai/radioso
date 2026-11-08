@@ -14,12 +14,12 @@ const presenter = new ChatAnswerPresenter(stubExpansion);
 
 describe("ChatAnswerPresenter.presentRoutineAnswer", () => {
   it("attaches citations from routine retrieval evidence and resolves the source url", () => {
-    const result = presenter.presentRoutineAnswer("Kriya is introduced in the first module[[1]].", [
+    const result = presenter.presentRoutineAnswer("Valmora is introduced in the first module[[1]].", [
       {
         documentId: "doc_1",
         chunkId: "chunk_1",
         title: "Course Guide",
-        content: "Kriya is introduced in the first module.",
+        content: "Valmora is introduced in the first module.",
         metadata: { sourceUrl: "https://example.com/guide" },
       },
     ]);
@@ -69,8 +69,8 @@ describe("ChatAnswerPresenter.presentRoutineAnswer", () => {
   });
 
   it("does not attach routine evidence without an explicit anchor", () => {
-    const result = presenter.presentRoutineAnswer("Kriya is introduced in the first module.", [
-      { documentId: "doc_1", chunkId: "chunk_1", title: "Course Guide", content: "Kriya is introduced." },
+    const result = presenter.presentRoutineAnswer("Valmora is introduced in the first module.", [
+      { documentId: "doc_1", chunkId: "chunk_1", title: "Course Guide", content: "Valmora is introduced." },
     ]);
     expect(result.citations ?? []).toEqual([]);
   });

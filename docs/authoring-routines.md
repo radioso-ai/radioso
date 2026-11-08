@@ -346,17 +346,17 @@ for what the team receives.
 **Send with** chooses which notify skill delivers the notice — stored as
 `operatorNotice.skillName` on the ending. Leave it on **Default** and the
 notice follows the agent's usual contact chain; name a skill instead and the
-notice goes to that skill's own recipients and webhook. Ananda's booking
+notice goes to that skill's own recipients and webhook. Valmora's booking
 routine names its `notify_bookings` skill on the **Booked** ending, so the
-line under the select reads `Sends to francesco@ananda.it` — the recipient
+line under the select reads `Sends to marta@valmora.example` — the recipient
 configured on that skill, read live each time the notice sends rather than
 copied onto the routine. A **Hand off** ending offers the same select, since
 it always notifies.
 
 **Replies go to** chooses where reception's reply to the notice email lands —
 stored as `operatorNotice.replyToSlot` on the ending. It lists the routine's
-email fields, plus **No reply-to**. Pick `guest_email` on Ananda's **Booked**
-ending, and when Francesco hits Reply, his answer goes to the address the guest
+email fields, plus **No reply-to**. Pick `guest_email` on Valmora's **Booked**
+ending, and when Marta hits Reply, her answer goes to the address the guest
 gave in the chat. Radioso only ever uses the field you pick: a gift booking can
 collect the buyer's address and the recipient's, and only you know which one
 reception should answer. A notice you turn on, or a new **Hand off** ending,

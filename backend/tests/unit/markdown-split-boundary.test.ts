@@ -27,22 +27,22 @@ const anchorRanges = (markdown: string): Array<{ start: number; end: number }> =
 describe("resolveSafeSplitOffset", () => {
   describe("offsets that are already safe", () => {
     it("returns a plain-prose offset unchanged and reports no relocation", () => {
-      const markdown = "Kriya is a technique we teach in Assisi.";
+      const markdown = "Valmora is a technique we teach in Montelago.";
       const candidate = after(markdown, "technique");
 
       expect(resolveSafeSplitOffset(markdown, candidate)).toEqual({ offset: candidate });
     });
 
     it("returns an offset that sits exactly at the start of a construct", () => {
-      const markdown = "We teach **Kriya Yoga** in Assisi.";
-      const candidate = at(markdown, "**Kriya");
+      const markdown = "We teach **Valmora Meditation** in Montelago.";
+      const candidate = at(markdown, "**Valmora");
 
       expect(resolveSafeSplitOffset(markdown, candidate).offset).toBe(candidate);
     });
 
     it("returns an offset that sits exactly at the end of a construct", () => {
-      const markdown = "We teach **Kriya Yoga** in Assisi.";
-      const candidate = after(markdown, "**Kriya Yoga**");
+      const markdown = "We teach **Valmora Meditation** in Montelago.";
+      const candidate = after(markdown, "**Valmora Meditation**");
 
       expect(resolveSafeSplitOffset(markdown, candidate).offset).toBe(candidate);
     });
@@ -54,18 +54,18 @@ describe("resolveSafeSplitOffset", () => {
 
   describe("clamping", () => {
     it("clamps an offset past the end of the document", () => {
-      const markdown = "Kriya is a technique.";
+      const markdown = "Valmora is a technique.";
 
       expect(resolveSafeSplitOffset(markdown, 9_000).offset).toBe(markdown.length);
     });
 
     it("clamps a negative offset to zero", () => {
-      expect(resolveSafeSplitOffset("Kriya is a technique.", -5).offset).toBe(0);
+      expect(resolveSafeSplitOffset("Valmora is a technique.", -5).offset).toBe(0);
     });
 
     it("never returns an offset past the end even when a construct is unterminated", () => {
-      const markdown = "We teach **Kriya Yoga in Assisi";
-      const candidate = at(markdown, "Kriya");
+      const markdown = "We teach **Valmora Meditation in Montelago";
+      const candidate = at(markdown, "Valmora");
 
       expect(resolveSafeSplitOffset(markdown, candidate).offset).toBeLessThanOrEqual(markdown.length);
     });
@@ -73,7 +73,7 @@ describe("resolveSafeSplitOffset", () => {
 
   describe("emphasis and strong", () => {
     it("moves past a strong span opened with **", () => {
-      const markdown = "Kriya is **a sacred [[1]] technique**, taught in Assisi.";
+      const markdown = "Valmora is **a sacred [[1]] technique**, taught in Montelago.";
       const candidate = at(markdown, "[[1]]");
 
       expect(resolveSafeSplitOffset(markdown, candidate, anchorRanges(markdown))).toEqual({
@@ -83,7 +83,7 @@ describe("resolveSafeSplitOffset", () => {
     });
 
     it("moves past an emphasis span opened with *", () => {
-      const markdown = "Kriya is *a sacred [[1]] technique*, taught in Assisi.";
+      const markdown = "Valmora is *a sacred [[1]] technique*, taught in Montelago.";
       const candidate = at(markdown, "[[1]]");
 
       expect(resolveSafeSplitOffset(markdown, candidate, anchorRanges(markdown)).offset).toBe(
@@ -92,7 +92,7 @@ describe("resolveSafeSplitOffset", () => {
     });
 
     it("moves past an emphasis span opened with _", () => {
-      const markdown = "Kriya is _a sacred [[1]] technique_, taught in Assisi.";
+      const markdown = "Valmora is _a sacred [[1]] technique_, taught in Montelago.";
       const candidate = at(markdown, "[[1]]");
 
       expect(resolveSafeSplitOffset(markdown, candidate, anchorRanges(markdown)).offset).toBe(
@@ -101,7 +101,7 @@ describe("resolveSafeSplitOffset", () => {
     });
 
     it("moves past a strong span opened with __", () => {
-      const markdown = "Kriya is __a sacred [[1]] technique__, taught in Assisi.";
+      const markdown = "Valmora is __a sacred [[1]] technique__, taught in Montelago.";
       const candidate = at(markdown, "[[1]]");
 
       expect(resolveSafeSplitOffset(markdown, candidate, anchorRanges(markdown)).offset).toBe(
@@ -110,7 +110,7 @@ describe("resolveSafeSplitOffset", () => {
     });
 
     it("moves past the outermost span when emphasis nests", () => {
-      const markdown = "Kriya is **a *sacred [[1]] deep* technique**, taught here.";
+      const markdown = "Valmora is **a *sacred [[1]] deep* technique**, taught here.";
       const candidate = at(markdown, "[[1]]");
 
       expect(resolveSafeSplitOffset(markdown, candidate, anchorRanges(markdown)).offset).toBe(
@@ -285,7 +285,7 @@ describe("resolveSafeSplitOffset", () => {
       "",
       "| Course | Date |",
       "| --- | --- |",
-      "| Kriya [[1]] | May |",
+      "| Valmora [[1]] | May |",
       "| Yoga | June |",
       "",
       "Book early.",
@@ -330,7 +330,7 @@ describe("resolveSafeSplitOffset", () => {
     // The resolver must not read a caller-marked non-content span as markdown. Without
     // that signal the anchor's own brackets form a `[label](dest)` shape and swallow the
     // following prose, relocating a split that did not need to move.
-    const markdown = "The course[[1]](see [[2]] below) is offered in Assisi.";
+    const markdown = "The course[[1]](see [[2]] below) is offered in Montelago.";
 
     it("does not build a link out of a span the caller marked as non-content", () => {
       const candidate = at(markdown, "[[2]]");
@@ -347,7 +347,7 @@ describe("resolveSafeSplitOffset", () => {
     });
 
     it("still detects a construct that spans an ignored range", () => {
-      const spanning = "Kriya is **a sacred [[1]] technique** here.";
+      const spanning = "Valmora is **a sacred [[1]] technique** here.";
       const candidate = at(spanning, "[[1]]");
 
       expect(resolveSafeSplitOffset(spanning, candidate, anchorRanges(spanning)).offset).toBe(
@@ -356,7 +356,7 @@ describe("resolveSafeSplitOffset", () => {
     });
 
     it("accepts unsorted and overlapping ignored ranges", () => {
-      const spanning = "Kriya is **a sacred [[1]] technique** here.";
+      const spanning = "Valmora is **a sacred [[1]] technique** here.";
       const candidate = at(spanning, "[[1]]");
       const unsorted = [
         { start: at(spanning, "[[1]]") + 2, end: at(spanning, "[[1]]") + 5 },
@@ -396,7 +396,7 @@ describe("resolveSafeSplitOffset", () => {
 
   describe("findMarkdownSplitBoundaries", () => {
     it("scans once and answers repeated queries identically to the one-shot helper", () => {
-      const markdown = "Kriya is **a sacred [[1]] technique** taught in Assisi.";
+      const markdown = "Valmora is **a sacred [[1]] technique** taught in Montelago.";
       const ignored = anchorRanges(markdown);
       const boundaries = findMarkdownSplitBoundaries(markdown, ignored);
       const candidate = at(markdown, "[[1]]");

@@ -293,23 +293,23 @@ describe("chat integration", () => {
 
   it("answers from a tool's reply envelope without showing the visitor its JSON", async () => {
     const toolText = [
-      "Ananda Edizioni publishes Autobiografia di uno Yogi.",
+      "Valmora Books publishes Diario di un Viandante.",
       "",
       JSON.stringify({
         conversationId: "4d3c2b1a-0000-4000-8000-000000000001",
         answerCoverage: { status: "answered" },
         ownership: { owner: "agent" },
-        traceId: "trace-ananda-1",
+        traceId: "trace-valmora-1",
         citations: [{ documentId: "doc-1", title: "Catalogo" }],
       }, null, 2),
     ].join("\n");
-    const { gateway, calls } = recordingChatGateway("We publish Autobiografia di uno Yogi.");
+    const { gateway, calls } = recordingChatGateway("We publish Diario di un Viandante.");
     const { app, dependencies, repositories } = createTestApp({
       skillExecutorRegistry: settledSkillExecutorRegistry(toolText),
       chatGateway: gateway,
     });
     const { token, workspaceId } = await issueTestToken(app, "bound-agent-skill-envelope@example.com");
-    await bindAlwaysDirectiveToAgentSkill(app, dependencies, repositories, workspaceId, "ananda_edizioni");
+    await bindAlwaysDirectiveToAgentSkill(app, dependencies, repositories, workspaceId, "valmora_books");
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -319,7 +319,7 @@ describe("chat integration", () => {
 
     const composed = calls.find((call) => call.attemptKey === "skill_result");
     expect(composed?.prompt).toContain(`<skill_findings>\n${toolText}\n</skill_findings>`);
-    expect(response.body.answer).toBe("We publish Autobiografia di uno Yogi.");
+    expect(response.body.answer).toBe("We publish Diario di un Viandante.");
     expect(response.body.answer).not.toContain("traceId");
     expect(response.body.answer).not.toContain("conversationId");
   });
@@ -1687,10 +1687,10 @@ describe("chat integration", () => {
       queryRewriteGateway: {
         async rewrite() {
           return {
-            rewrittenQuery: "Does Narayani work with Arudra?",
+            rewrittenQuery: "Does Freya work with Tomas?",
             turnKind: "referential_relation",
-            proposedActiveSubject: "Narayani",
-            relatedEntities: ["Arudra"],
+            proposedActiveSubject: "Freya",
+            relatedEntities: ["Tomas"],
             unresolved: true,
             confidence: 0.62,
           };
@@ -1704,7 +1704,7 @@ describe("chat integration", () => {
     await request(app)
       .post("/api/v1/document/")
       .set("Authorization", authorization)
-      .send({ title: "Narayani", content: "Narayani is a teacher and speaker." });
+      .send({ title: "Freya", content: "Freya is a teacher and speaker." });
 
     await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
@@ -1716,13 +1716,13 @@ describe("chat integration", () => {
     const first = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Tell me about Narayani", stream: false, includeDebug: true });
+      .send({ message: "Tell me about Freya", stream: false, includeDebug: true });
     const second = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
       .send({
         conversationId: first.body.conversationId,
-        message: "Does she work with Arudra?",
+        message: "Does she work with Tomas?",
         stream: false,
         includeDebug: true,
       });
@@ -1742,9 +1742,9 @@ describe("chat integration", () => {
       queryRewriteGateway: {
         async rewrite() {
           return {
-            rewrittenQuery: "Can I buy Narayani's book La mia anima ricorda Swami Kriyananda?",
+            rewrittenQuery: "Can I buy Freya's book Il mio cammino con Swami Selan?",
             turnKind: "referential_followup",
-            proposedActiveSubject: "Narayani",
+            proposedActiveSubject: "Freya",
             relatedEntities: [],
             unresolved: true,
             confidence: 0.62,
@@ -1760,16 +1760,16 @@ describe("chat integration", () => {
       .post("/api/v1/document/")
       .set("Authorization", authorization)
       .send({
-        title: "Narayani Anaya Archivi - Ananda Edizioni",
+        title: "Freya Rennick Archivi - Valmora Books",
         content:
-          "Narayani Anaya. La mia anima ricorda Swami Kriyananda. Aggiungi al carrello. Prezzo 18,00 euro.",
+          "Freya Rennick. Il mio cammino con Swami Selan. Aggiungi al carrello. Prezzo 18,00 euro.",
       });
     await request(app)
       .post("/api/v1/document/")
       .set("Authorization", authorization)
       .send({
-        title: "Narayani Profile",
-        content: "Narayani is the author of La mia anima ricorda Swami Kriyananda.",
+        title: "Freya Profile",
+        content: "Freya is the author of Il mio cammino con Swami Selan.",
       });
 
     await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
@@ -1782,7 +1782,7 @@ describe("chat integration", () => {
     const first = await request(app)
       .post("/api/v1/assistant/chat")
       .set("Authorization", authorization)
-      .send({ message: "Who is Narayani?", stream: false, includeDebug: true });
+      .send({ message: "Who is Freya?", stream: false, includeDebug: true });
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -1891,7 +1891,7 @@ describe("chat integration", () => {
       },
       chatGateway: {
         async answer() {
-          return "You’re welcome. I can help with Ananda courses or booking when you’re ready.";
+          return "You’re welcome. I can help with Valmora courses or booking when you’re ready.";
         },
         async *streamAnswer() {
           yield "unused";
@@ -1911,7 +1911,7 @@ describe("chat integration", () => {
         rerankEnabled: false,
         vectorTopK: 20,
         rerankTopK: 5,
-        customInstruction: "Help users with Ananda courses and booking."
+        customInstruction: "Help users with Valmora courses and booking."
       });
 
     const response = await request(app)
@@ -2268,11 +2268,11 @@ describe("chat integration", () => {
           }
 
           return {
-            rewrittenQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
-            semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
-            lexicalQuery: "\"RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking\"",
+            rewrittenQuery: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
+            semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
+            lexicalQuery: "\"RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking\"",
             turnKind: "referential_followup" as const,
-            proposedActiveSubject: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+            proposedActiveSubject: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
             relatedEntities: [],
             unresolved: false,
             confidence: 0.88,
@@ -2288,8 +2288,8 @@ describe("chat integration", () => {
       .post("/api/v1/document/")
       .set("Authorization", authorization)
       .send({
-        title: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
-        content: "Simple Living and High Thinking explores the course themes, community ideals, and practical applications.",
+        title: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
+        content: "Calm Living and Clear Thinking explores the course themes, community ideals, and practical applications.",
       });
 
     await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
@@ -2311,7 +2311,7 @@ describe("chat integration", () => {
       workspaceId,
       role: "assistant",
       content:
-        "I couldn't verify that from your workspace documents, but I did find related material in \"RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking\" if you'd like to explore that instead.",
+        "I couldn't verify that from your workspace documents, but I did find related material in \"RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking\" if you'd like to explore that instead.",
     });
 
     const response = await request(app)
@@ -2329,7 +2329,7 @@ describe("chat integration", () => {
     expect(response.body.answer.length).toBeGreaterThan(0);
     expect(response.body.debug.activitySummary.parsedQuery).toMatchObject({
       originalQuery: "go ahead",
-      semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Yogananda - Simple Living and High Thinking",
+      semanticQuery: "RESIDENTIAL COURSE: Original Teachings of Orin - Calm Living and Clear Thinking",
     });
     expect(response.body.debug.activitySummary.rewrite).toMatchObject({
       status: "applied",
@@ -2376,14 +2376,14 @@ describe("chat integration", () => {
               },
               {
                 id: "",
-                label: "Ananda course topics",
-                semanticQuery: "Ananda course topics",
-                lexicalQuery: "\"Ananda course topics\"",
+                label: "Valmora course topics",
+                semanticQuery: "Valmora course topics",
+                lexicalQuery: "\"Valmora course topics\"",
                 responseLanguagePolicy: "match_user_question" as const,
               },
             ],
             turnKind: "ambiguous" as const,
-            relatedEntities: ["what I can do in this conversation", "how I respond to your questions", "Ananda course topics"],
+            relatedEntities: ["what I can do in this conversation", "how I respond to your questions", "Valmora course topics"],
             unresolved: false,
             confidence: 0.84,
           };
@@ -2404,8 +2404,8 @@ describe("chat integration", () => {
         content: "This document describes how the assistant responds to questions.",
       },
       {
-        title: "Ananda course topics",
-        content: "This document summarizes the available Ananda course topics.",
+        title: "Valmora course topics",
+        content: "This document summarizes the available Valmora course topics.",
       },
     ]) {
       await request(app)
@@ -2433,7 +2433,7 @@ describe("chat integration", () => {
       workspaceId,
       role: "assistant",
       content:
-        "I can’t tell you my exact instruction set. If you want, I can still help with nearby things like: what I can do in this conversation, how I respond to your questions, or a brief summary of the Ananda course topics shown here.",
+        "I can’t tell you my exact instruction set. If you want, I can still help with nearby things like: what I can do in this conversation, how I respond to your questions, or a brief summary of the Valmora course topics shown here.",
     });
 
     const response = await request(app)
@@ -2469,9 +2469,9 @@ describe("chat integration", () => {
       },
       {
         id: "subquery_3",
-        label: "Ananda course topics",
-        semanticQuery: "Ananda course topics",
-        lexicalQuery: "\"Ananda course topics\"",
+        label: "Valmora course topics",
+        semanticQuery: "Valmora course topics",
+        lexicalQuery: "\"Valmora course topics\"",
         responseLanguagePolicy: "match_user_question",
       },
     ]);

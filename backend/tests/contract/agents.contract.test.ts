@@ -1727,7 +1727,7 @@ describe("agents contract", () => {
       .put(`/api/v1/agents/${agentId}`)
       .set(adminSessionHeaders({ cookie, workspaceId }))
       .send({
-        name: "Claudio",
+        name: "Nico",
         surfaceSettings: {
           websiteEmbed: {
             enabled: true,
@@ -1738,7 +1738,7 @@ describe("agents contract", () => {
       })
       .expect(200);
 
-    expect(updated.body.name).toBe("Claudio");
+    expect(updated.body.name).toBe("Nico");
     expect(updated.body.surfaceSettings.websiteEmbed.launcherLabel).toBe("");
 
     const tokenResponse = await request(app)
@@ -1754,11 +1754,11 @@ describe("agents contract", () => {
       .expect(200);
 
     expect(config.body.launcherLabel).toBe("");
-    expect(config.body.launcherLabel).not.toBe("Claudio");
+    expect(config.body.launcherLabel).not.toBe("Nico");
     // The launcher renders the teaser bubble outside the iframe, so it needs the
     // assistant's display name from config; the launcher label is operator
     // branding and is not a substitute for it.
-    expect(config.body.assistantName).toBe("Claudio");
+    expect(config.body.assistantName).toBe("Nico");
   });
 
   it("serves a cacheable, per-origin website embed config and rejects strangers", async () => {

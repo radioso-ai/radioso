@@ -148,7 +148,7 @@ running both a selector pass and a step reply records both.
 
 On the routine's first turn the selector always reads the message, even when the
 activator already filled the first step's slot, so the rest of an opening message
-("the Kriya retreat, 11 to 14 November") is kept. When fast-forwarding stops at a
+("the Valmora retreat, 11 to 14 November") is kept. When fast-forwarding stops at a
 step that still lacks values, that step also reads the opening message once
 before it is asked, whatever it asks for and whether the routine reached it
 directly or through a tool step. It moves on only if that read fully

@@ -45,9 +45,9 @@ describe("document source content service", () => {
     const content = await service.materialize({
       id: "doc-1",
       workspaceId: "workspace-1",
-      title: "Meditation Tips - Ananda Europe",
-      sourceContent: "SEARCH\n\n## Meditation Tips\n\nHelpful body\n\n## Next in Pearls from Ananda",
-      markdownContent: "SEARCH\n\n## Meditation Tips\n\nHelpful body\n\n## Next in Pearls from Ananda",
+      title: "Meditation Tips - Valmora Europe",
+      sourceContent: "SEARCH\n\n## Meditation Tips\n\nHelpful body\n\n## Next in Pearls from Valmora",
+      markdownContent: "SEARCH\n\n## Meditation Tips\n\nHelpful body\n\n## Next in Pearls from Valmora",
       status: "queued",
       revision: 1,
       createdAt: new Date(),

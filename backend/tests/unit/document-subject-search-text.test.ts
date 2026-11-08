@@ -132,14 +132,14 @@ describe("document subject search text", () => {
     };
     const document = await documentRepository.create({
       workspaceId: "workspace-1",
-      title: "Corso Residenziale Benvenuto Ad Ananda",
+      title: "Corso Residenziale Benvenuto Ad Valmora",
       sourceContent: "Corso residenziale.",
       markdownContent: "Corso residenziale.",
       status: "queued",
       metadata: {
         dateFrom: "2026-05-01",
         dateTo: "2026-05-03",
-        sourceUrl: "https://corsi.ananda.it/edizione/example",
+        sourceUrl: "https://courses.valmora.example/edizione/example",
       },
     });
     const service = new DocumentProcessingService(
@@ -201,7 +201,7 @@ describe("document subject search text", () => {
     expect(persistedSearchTexts[0]).toContain("Month key: 2026-05");
     expect(persistedSearchTexts[0]).toContain("Month label: May 2026");
     expect(persistedSearchTexts[0]).toContain("Month label: maggio 2026");
-    expect(persistedSearchTexts[0]).toContain("URL: https://corsi.ananda.it/edizione/example");
+    expect(persistedSearchTexts[0]).toContain("URL: https://courses.valmora.example/edizione/example");
   });
 
   it("does not fold enrichment dates into search text on the vectorize path", async () => {

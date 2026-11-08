@@ -1701,7 +1701,7 @@ say the line before your greeting by starting that agent's first message with
 the variable:
 
 ```text
-{{radioso_privacy_notice}} Hi, I'm Claudio. How can I help?
+{{radioso_privacy_notice}} Hi, I'm Nico. How can I help?
 ```
 
 The embed sets the variable on every call it starts, empty when the agent has

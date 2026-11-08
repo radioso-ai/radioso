@@ -53,10 +53,10 @@ describe("projectContextForMatching", () => {
         visitor_request: {
           country: "IT",
           region: "UMB",
-          city: "Assisi",
+          city: "Montelago",
           language: "en",
           referrer: "https://partner.example",
-          entryPageUrl: "https://corsi.ananda.it/",
+          entryPageUrl: "https://courses.valmora.example/",
         },
       },
       roomyBound,
@@ -65,9 +65,9 @@ describe("projectContextForMatching", () => {
     expect(projection.context.visitor_request).toEqual({
       country: "IT",
       region: "UMB",
-      city: "Assisi",
+      city: "Montelago",
       referrer: "https://partner.example",
-      entryPageUrl: "https://corsi.ananda.it/",
+      entryPageUrl: "https://courses.valmora.example/",
     });
   });
 

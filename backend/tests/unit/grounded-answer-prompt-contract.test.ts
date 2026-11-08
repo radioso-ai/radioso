@@ -24,7 +24,7 @@ describe("grounded answer prompt contract", () => {
         {
           chunkId: "chunk-1",
           documentId: "document-1",
-          title: "Who Was Swamiji, Really?",
+          title: "Who Was Orin, Really?",
           content: "The article body does not repeat the author byline.",
           similarity: 0.9,
           retrievalSources: ["lexical"],
@@ -37,7 +37,7 @@ describe("grounded answer prompt contract", () => {
           estimatedTokenCost: 24,
           metadata: {
             author: "Mario Liguori",
-            sourceUrl: "https://example.com/who-was-swamiji",
+            sourceUrl: "https://example.com/who-was-orin",
           },
         },
       ],

@@ -52,16 +52,16 @@ describe("agent branding normalization", () => {
 
 describe("agent internal name normalization", () => {
   it("defaults internalName to an empty string when omitted", () => {
-    expect(validateAgentInput({ name: "Claudio" }).internalName).toBe("");
+    expect(validateAgentInput({ name: "Nico" }).internalName).toBe("");
   });
 
   it("trims and collapses whitespace, round-tripping an operator label", () => {
-    expect(validateAgentInput({ name: "Claudio", internalName: "  Claudio   IT " }).internalName).toBe("Claudio IT");
+    expect(validateAgentInput({ name: "Nico", internalName: "  Nico   IT " }).internalName).toBe("Nico IT");
   });
 
   it("rejects an internalName longer than 200 characters", () => {
     expect(() =>
-      validateAgentInput({ name: "Claudio", internalName: "x".repeat(201) }),
+      validateAgentInput({ name: "Nico", internalName: "x".repeat(201) }),
     ).toThrow(/internalName must not exceed 200 characters/);
   });
 });

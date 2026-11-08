@@ -44,7 +44,7 @@ Reference B independently landed on 12 topics and left 16 of 318 `null`:
 |---|---|---|
 | content_media_and_livestreams | Content discovery, videos, and livestreams | 56 |
 | retreats_events_and_visits | Retreats/events info & visiting logistics | 50 |
-| kriya_yoga_initiation_and_kriyaban | Kriya Yoga initiation & Kriyaban access | 40 |
+| valmora_meditation_initiation_and_practitioner | Valmora Meditation initiation & practitioner access | 40 |
 | spiritual_teachings_and_practice | Spiritual teachings & practice questions | 36 |
 | local_centers_and_groups | Local centers & meditation groups | 27 |
 | courses_recommendations_and_pricing | Course selection, beginners, and pricing | 24 |
@@ -56,7 +56,7 @@ Reference B independently landed on 12 topics and left 16 of 318 `null`:
 | organizational_controversy_and_safeguarding | Controversy, allegations, and trust/safety concerns | 5 |
 | *(none)* | — | 16 |
 
-The two taxonomies overlap substantially in shape (retreats/booking, Kriya
+The two taxonomies overlap substantially in shape (retreats/booking, Valmora
 Yoga, teachings, locations, courses/platform, lineage, seva, products all
 appear in both) but disagree at the edges: reference A puts most of the
 adversarial/off-topic/distressed messages in `null`; reference B carves a

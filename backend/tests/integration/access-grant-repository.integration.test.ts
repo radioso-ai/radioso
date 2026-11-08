@@ -81,7 +81,7 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     const saved = await repository.save({
       agentId,
       workspaceId,
-      label: "claudio converse",
+      label: "nico converse",
       principalKind: "agent-api",
       role: "agent",
       channel: "mcp-converse",
@@ -95,7 +95,7 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     expect(saved).toMatchObject({
       agentId,
       workspaceId,
-      label: "claudio converse",
+      label: "nico converse",
       principalKind: "agent-api",
       role: "agent",
       channel: "mcp-converse",

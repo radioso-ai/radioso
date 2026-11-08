@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-11-03
+last_updated: 2026-11-08
 ---
 
 # Monitoring And Alerts
@@ -211,6 +211,20 @@ To ship logs and traces through OpenTelemetry instead, see the OTel flags in [OS
 Radioso reports on itself, not on the machine underneath it. Postgres saturation is the failure that hides best: a starved instance returns no errors, it just answers slowly enough that chat turns hit their statement timeout and die. The customer sees an agent that stopped replying, and the error logs are empty.
 
 Whatever you use for host monitoring, alert on Postgres memory, CPU, disk, and connection count. If those sit near their limit, that is your answer before you go looking in the application.
+
+When the backend can't get a database connection, an HTTP request answers `503 service_unavailable` rather than a generic `500` (a streaming chat reply that has already started ends its stream instead), and the error report for the request, or for the chat turn, is recorded as `database.unavailable` at `WARNING`. `radioso_errors_total{error_type="database.unavailable"}` then counts outages apart from code faults, and the report's `reason` says what failed:
+
+| `reason` | What happened |
+|---|---|
+| `connect_timeout` | Opening a connection took longer than `DB_POOL_CONNECTION_TIMEOUT_MS` |
+| `connect_failed` | Opening a connection failed before Postgres answered: refused (Postgres stopped), a host name that didn't resolve, a reset; or SQLSTATE `08001` or `08004` |
+| `connection_lost` | The server closed a connection the backend was using, reported by pg as `Connection terminated unexpectedly`, or SQLSTATE `08000`, `08003`, `08006` or `08007` |
+| `server_unavailable` | Postgres was shutting down or still starting (SQLSTATE `57P01`, `57P02`, `57P03`) |
+| `connection_limit` | Postgres refused the connection at its `max_connections` limit (SQLSTATE `53300`) |
+
+A socket reset in the middle of a statement (`ECONNRESET` or `EPIPE` on a connection that was already open) isn't classified, so it stays an unhandled `500`. So do failures where Postgres answered while the connection was opening, such as wrong credentials (`28P01`) or a missing database, because those are configuration to fix rather than an outage to wait out.
+
+`database.pool_exhausted` is the other connection failure, recorded at `ERROR` with the same `503` for the caller. It means every connection in the backend's own pool stayed checked out for `DB_POOL_CONNECTION_TIMEOUT_MS`. Postgres may be healthy: look for slow queries, a connection held across a slow call, or a `DB_POOL_MAX` too small for the instance's load before you look at the host.
 
 ## Common failure modes
 

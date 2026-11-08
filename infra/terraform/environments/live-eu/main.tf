@@ -56,6 +56,7 @@ module "radioso" {
   db_deletion_protection            = true
   db_point_in_time_recovery_enabled = var.db_point_in_time_recovery_enabled
   db_require_encrypted_connections  = var.db_require_encrypted_connections
+  db_maintenance_window             = { day = 7, hour = 2 } # Sunday 03:00 CET in europe-west1
 
   secret_replication_locations = [var.region]
 

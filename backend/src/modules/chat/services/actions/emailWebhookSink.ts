@@ -5,6 +5,7 @@ import {
   planNotificationEmail,
   type OperatorNotification,
   type OperatorNotificationContext,
+  type NotificationAdministratorFallbackPort,
   type NotificationDeliveryAdmissionPort,
   type NotificationDeliveryRecorderPort,
   type OperatorNotificationSink,
@@ -73,6 +74,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     private readonly admission: NotificationDeliveryAdmissionPort | undefined,
     private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
     private readonly recorder?: NotificationDeliveryRecorderPort,
+    private readonly administratorFallback?: NotificationAdministratorFallbackPort,
   ) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
@@ -144,6 +146,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     const plan = await planNotificationEmail({
       recipientPolicy: this.recipientPolicy,
       admission: this.admission,
+      administratorFallback: this.administratorFallback,
       webhookConfigured: target.webhook !== null,
       onPreparationFailure: (error) => this.logger?.warn(
         { kind: notification.kind, workspaceId: recipientContext.workspaceId, errorName: error instanceof Error ? error.name : "unknown" },
@@ -178,14 +181,11 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       },
       recorder: this.recorder,
       logger: this.logger,
-      sendEmail: (recipient) => this.mailer.send({
-        to: recipient.email,
+      message: { subject: delivery.subject, text: delivery.text, idempotencyKey: baseIdempotencyKey },
+      sendEmail: (email) => this.mailer.send({
+        ...email,
         kind: "operator_notice",
         ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
-        subject: delivery.subject,
-        text: delivery.text,
-        ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
-        idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
       }),
       postWebhook: webhook ? () => this.postWebhook({
         webhook,

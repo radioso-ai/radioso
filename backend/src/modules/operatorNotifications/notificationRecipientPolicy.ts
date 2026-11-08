@@ -107,6 +107,11 @@ export interface NotificationRecipientPolicyPort {
     skippedRecipients: SkippedRecipient[];
   }>;
   describe(workspaceId: string, emails: readonly string[]): Promise<NotificationRecipientDescription[]>;
+  /**
+   * The one-click link that stops notifications to this address from this workspace, as every
+   * notice copy carries; empty when the deployment builds no such link.
+   */
+  unsubscribeUrl(workspaceId: string, email: string): Promise<string>;
   requestConfirmations(input: {
     workspaceId: string;
     agentId: string;
@@ -190,11 +195,9 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
 
     for (const recipient of recipients) {
       if (deliverable(recipient.state)) {
-        const recipientId = recipient.recipientId
-          ?? (await this.options.states.ensure(input.workspaceId, recipient.email)).recipientId;
         eligibleRecipients.push({
           email: recipient.email,
-          listUnsubscribeUrl: this.options.revocationUrl?.(recipientId) ?? "",
+          listUnsubscribeUrl: await this.revocationLink(input.workspaceId, recipient.email, recipient.recipientId),
         });
       } else if (recipient.state === "suppressed") {
         skippedRecipients.push({ email: recipient.email, reason: "suppressed" });
@@ -264,8 +267,18 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     return resumed;
   }
 
+  async unsubscribeUrl(workspaceId: string, email: string): Promise<string> {
+    return this.revocationLink(workspaceId, normalizeRecipientEmail(email), null);
+  }
+
   private now(): Date {
     return this.options.now?.() ?? new Date();
+  }
+
+  /** An address's stop link hangs off its own recipient row, which a first notice creates. */
+  private async revocationLink(workspaceId: string, email: string, knownRecipientId: string | null): Promise<string> {
+    const recipientId = knownRecipientId ?? (await this.options.states.ensure(workspaceId, email)).recipientId;
+    return this.options.revocationUrl?.(recipientId) ?? "";
   }
 
   private async effectiveRecipients(workspaceId: string, emails: readonly string[]): Promise<EffectiveRecipient[]> {

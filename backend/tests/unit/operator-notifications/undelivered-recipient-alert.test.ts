@@ -6,13 +6,19 @@ import {
   type UndeliveredAlertClaim,
   type UndeliveredRecipientAlertStore,
 } from "../../../src/modules/operatorNotifications/undeliveredRecipientAlert.js";
+import type { NotificationAdministratorReader } from "../../../src/modules/operatorNotifications/notificationAdministratorReader.js";
 
 const WORKSPACE = "00000000-0000-4000-8000-0000000000aa";
 const AGENT = "00000000-0000-4000-8000-0000000000cc";
 const ADDRESS = "front-desk@example.com";
 
-/** A store that throttles the way the database does: one claim per workspace and address per window. */
-const throttlingStore = (administrators: string[]): UndeliveredRecipientAlertStore & { claims: number; releases: number } => {
+/**
+ * A store that throttles the way the database does: one claim per workspace and address per window.
+ * It also lists the administrators, so a test reads one fake for both.
+ */
+const throttlingStore = (
+  administrators: string[],
+): UndeliveredRecipientAlertStore & NotificationAdministratorReader & { claims: number; releases: number } => {
   const lastClaimedAt = new Map<string, Date>();
   const store = {
     claims: 0,
@@ -54,6 +60,7 @@ const setup = (options: {
   const metrics = { incrementCounter: vi.fn() };
   const alerts = new UndeliveredRecipientAlerts({
     store,
+    administrators: store,
     mailer: {
       send: async (message) => {
         started.push(message.to);

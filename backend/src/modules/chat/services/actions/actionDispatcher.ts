@@ -1,6 +1,7 @@
 import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
+import type { ActionDispatchOutcome } from "../../../../shared/domain/actionDispatchOutcome.js";
 
-export { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
+export { ActionDispatchSkippedError, type ActionDispatchOutcome } from "../../../../shared/domain/actionDispatchOutcome.js";
 
 /** The context a handler receives alongside the action payload. */
 export interface ActionHandlerContext {
@@ -25,7 +26,12 @@ export interface ActionHandlerContext {
  * `ActionHandler` implementation never needs to know what drives it.
  */
 export interface ActionHandler {
-  handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void>;
+  /**
+   * Resolves once the action is delivered. Throws {@link ActionDispatchSkippedError} when nothing was
+   * delivered by design, and anything else to be retried. A handler with several destinations
+   * resolves with its {@link ActionDispatchOutcome} so a partial send is not recorded as a whole one.
+   */
+  handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<ActionDispatchOutcome | void>;
   recordFailureOutcome?(input: {
     payload: Record<string, unknown>;
     context: ActionHandlerContext;

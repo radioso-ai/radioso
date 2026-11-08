@@ -15,7 +15,12 @@ import {
 import { anyOf, currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
-export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "failed" | "skipped";
+/**
+ * `dispatched` means every destination the action is configured to reach was attempted.
+ * `partially_dispatched` means some were reached and the rest left out by design, with the reason in
+ * `last_error`. `skipped` means none was reached by design, with the reason in `last_error`.
+ */
+export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "partially_dispatched" | "failed" | "skipped";
 
 /**
  * The outcome of recording a dispatch failure. `superseded` means this worker's claim
@@ -221,14 +226,19 @@ export class ActionRequestRepository implements BackgroundJobStore {
    * `liveIdempotencyKeys`) — so "deleted" below means "no longer live," not a row removal.
    * `outcome` carries the handler's skip reason, when there is one: this table has its own
    * terminal `skipped` state (unlike the generic store, which just completes it as usual), so
-   * the row lands there instead of `dispatched`.
+   * the row lands there instead of `dispatched`, or in `partially_dispatched` when the outcome says
+   * some destinations were reached.
    */
   async complete(claim: BackgroundJobClaim, outcome?: BackgroundJobSkipped): Promise<BackgroundJobCompletion> {
     const result = await this.db
       .updateTable("routine_action_requests")
       .set(
         outcome
-          ? { status: "skipped", last_error: outcome.skipped, updated_at: currentTimestamp() }
+          ? {
+              status: outcome.partial ? "partially_dispatched" : "skipped",
+              last_error: outcome.skipped,
+              updated_at: currentTimestamp(),
+            }
           : { status: "dispatched", updated_at: currentTimestamp() },
       )
       .where("id", "=", claim.id)

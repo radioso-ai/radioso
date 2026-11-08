@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { conversationPermalink } from "../../../src/shared/domain/dashboardLinks.js";
+import { agentSkillsPermalink, conversationPermalink } from "../../../src/shared/domain/dashboardLinks.js";
 
 describe("conversationPermalink", () => {
   it("addresses a conversation through the workspace activity route", () => {
@@ -39,5 +39,32 @@ describe("conversationPermalink", () => {
     ));
 
     expect(url.pathname).toBe("/w/a%2F..%2F..%2Fevil/activity");
+  });
+});
+
+describe("agentSkillsPermalink", () => {
+  it("opens the agent's behavior page at its skills", () => {
+    const url = new URL(agentSkillsPermalink(
+      { workspacePublicRouteKey: "support-abc123", agentId: "agent_1" },
+      "https://app.radioso.ai",
+    ));
+
+    expect(url.origin).toBe("https://app.radioso.ai");
+    expect(url.pathname).toBe("/w/support-abc123/agents/agent_1");
+    expect(url.searchParams.get("tab")).toBe("behavior");
+    expect(url.searchParams.get("anchor")).toBe("assistant-skills");
+  });
+
+  it("opens the workspace's agents when the notice named no agent", () => {
+    const url = new URL(agentSkillsPermalink({ workspacePublicRouteKey: "support-abc123", agentId: null }, "https://app.radioso.ai"));
+
+    expect(url.pathname).toBe("/w/support-abc123/agents");
+    expect(url.search).toBe("");
+  });
+
+  it("escapes a key and an agent id so they cannot alter the path", () => {
+    const url = new URL(agentSkillsPermalink({ workspacePublicRouteKey: "a/../b", agentId: "x/../y" }, "https://app.radioso.ai"));
+
+    expect(url.pathname).toBe("/w/a%2F..%2Fb/agents/x%2F..%2Fy");
   });
 });

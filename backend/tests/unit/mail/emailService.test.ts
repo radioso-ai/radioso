@@ -418,6 +418,27 @@ describe("mail service", () => {
     }));
   });
 
+  it("logs only redacted facts about an alert that names a recipient address", async () => {
+    const spies = consoleSpies();
+    const driver = driverOf(createMailService({ MAIL_DRIVER: "log" }));
+    const alertedAddress = "front-desk@example.com";
+
+    const result = await driver.send({
+      to: "owner@example.com",
+      from: { email: "noreply@example.com" },
+      kind: "notification_alert",
+      subject: `Notifications to ${alertedAddress} are not being delivered`,
+      text: `A notification to ${alertedAddress} was not sent.`,
+      idempotencyKey: "notification-undelivered-alert:private",
+    });
+
+    expect(result).toMatchObject({ dispatched: false, driver: "log" });
+    const logged = everythingLogged(spies);
+    expect(logged).not.toContain(alertedAddress);
+    expect(logged).not.toContain("owner@example.com");
+    expect(spies[0]).toHaveBeenCalledWith("email.send", expect.objectContaining({ kind: "notification_alert" }));
+  });
+
   it("hashes a channel reply's idempotency key the same way every time", async () => {
     const spies = consoleSpies();
     const driver = driverOf(createMailService({ MAIL_DRIVER: "log" }));

@@ -14,7 +14,7 @@ const context = {
 
 describe("ApprovalRequestActionHandler", () => {
   it("does not trust workspace, conversation, or agent ids from an approval payload", async () => {
-    const dispatch = vi.fn(async () => {});
+    const dispatch = vi.fn(async () => ({ disposition: "dispatched" as const }));
     const conversations = { findByIdAndWorkspaceId: vi.fn(async () => ({ agentId: "agent_from_conversation" })) };
     const handler = new ApprovalRequestActionHandler({ dispatch }, conversations);
 
@@ -46,7 +46,7 @@ describe("ApprovalRequestActionHandler", () => {
   });
 
   it("does not query a conversation when the queued row lacks a conversation id", async () => {
-    const dispatch = vi.fn(async () => {});
+    const dispatch = vi.fn(async () => ({ disposition: "dispatched" as const }));
     const conversations = { findByIdAndWorkspaceId: vi.fn(async () => ({ agentId: "agent_1" })) };
     const handler = new ApprovalRequestActionHandler({ dispatch }, conversations);
 

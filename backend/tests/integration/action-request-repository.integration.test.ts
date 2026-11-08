@@ -299,6 +299,20 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
       expect(row?.last_error).toBe("mail_not_dispatched:driver=log");
       expect(row?.attempts).toBe(1);
     });
+
+    it("complete with a partial outcome settles the row partially_dispatched and keeps the reason", async () => {
+      await enqueue();
+      const claim = await repository.claimNext({ kinds: [{ kind: fixtureType, leaseSeconds: 300 }] });
+
+      expect(await repository.complete(claim!, { skipped: "notification_recipient_unconfirmed", partial: true })).toBe("deleted");
+
+      const row = (await database.query<{ status: string; last_error: string | null }>(
+        `SELECT status, last_error FROM routine_action_requests WHERE id = $1`,
+        [claim!.id],
+      ))[0];
+      expect(row?.status).toBe("partially_dispatched");
+      expect(row?.last_error).toBe("notification_recipient_unconfirmed");
+    });
   });
 
   // End-to-end through the real runtime (#1509): an action enqueued transactionally with other
@@ -363,6 +377,23 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
       ))[0];
       expect(row?.status).toBe("skipped");
       expect(row?.last_error).toBe("mail_not_dispatched:driver=log");
+    });
+
+    it("marks the action partially_dispatched when the handler reached some destinations only", async () => {
+      const handler: ActionHandler = {
+        handle: vi.fn(async () => ({ disposition: "partial" as const, reason: "notification_recipient_revoked" })),
+      };
+      const { dispatchPending } = createActionDispatchTestRuntime(database.kysely, [{ type: fixtureType, handler }]);
+      const { id: actionId } = await enqueue();
+
+      expect(await dispatchPending(1)).toMatchObject({ claimed: 1, completed: 1, retried: 0 });
+
+      const row = (await database.query<{ status: string; last_error: string | null }>(
+        `SELECT status, last_error FROM routine_action_requests WHERE id = $1`,
+        [actionId],
+      ))[0];
+      expect(row?.status).toBe("partially_dispatched");
+      expect(row?.last_error).toBe("notification_recipient_revoked");
     });
   });
 });

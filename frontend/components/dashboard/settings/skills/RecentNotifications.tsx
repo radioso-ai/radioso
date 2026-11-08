@@ -1,0 +1,181 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { RefreshCw } from 'lucide-react'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
+import { getApiErrorMessage } from '@/lib/api-error'
+import { routineSkillCatalogApi } from '@/lib/api-routine-skill-catalog'
+import { useOptionalAuth } from '@/lib/auth-context'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
+import {
+  appendNotificationDeliveryPage,
+  canResendConfirmation,
+  NOTIFICATION_DELIVERY_KIND_LABELS,
+  NOTIFICATION_DELIVERY_OUTCOME_LABELS,
+  type NotificationDelivery,
+  type NotificationDeliveryOutcome,
+} from '@/lib/notification-deliveries'
+import { cn } from '@/lib/utils'
+import { useWorkspaceCanManage } from '@/lib/use-workspace-can-manage'
+import { useWorkspace } from '@/lib/workspace-context'
+
+const PAGE_SIZE = 10
+
+const outcomeTone = (outcome: NotificationDeliveryOutcome) => {
+  if (outcome === 'sent') return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+  if (outcome === 'failed') return 'bg-destructive/10 text-destructive'
+  return 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+}
+
+const formatTime = (value: string) =>
+  new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
+/**
+ * What happened to each address of this agent's recent notices: when, which kind, who, and whether
+ * it was sent or why not. A skipped address that has not confirmed can be asked again from here.
+ */
+export function RecentNotifications({ agentId }: { agentId: string }) {
+  const accountId = useOptionalAuth()?.user?.accountId ?? null
+  const { activeWorkspace } = useWorkspace()
+  // Asking an address again is for owners and admins; the log itself is for anyone who can read the agent.
+  const { canManage: canManageRecipients } = useWorkspaceCanManage()
+  const conversationHref = accountId
+    ? (conversationId: string) => buildDashboardHref(accountId, {
+        section: 'activity',
+        activityTab: 'all',
+        historyFilter: 'chat',
+        historyItemKind: 'chat',
+        historyItemId: conversationId,
+        workspaceId: activeWorkspace?.id,
+        workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+      })
+    : null
+  const [items, setItems] = useState<NotificationDelivery[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // What each resend came to, by row, so the answer stays beside the address it was about.
+  const [resendResults, setResendResults] = useState<Record<string, string>>({})
+  // Rows whose resend is on its way, so a second click cannot ask the address again.
+  const resending = useRef(new Set<string>())
+  const [resendingIds, setResendingIds] = useState<ReadonlySet<string>>(new Set())
+  const loadVersion = useRef(0)
+
+  useEffect(() => {
+    const version = ++loadVersion.current
+    // Clear the previous agent's rows in the same tick that the new load starts.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new agent starts from a loading state, not the last agent's rows
+    setIsLoading(true)
+    setItems([])
+    setNextCursor(null)
+    setError(null)
+    void routineSkillCatalogApi.listNotificationDeliveries(agentId, { limit: PAGE_SIZE })
+      .then((page) => {
+        if (version !== loadVersion.current) return
+        setItems(page.items)
+        setNextCursor(page.nextCursor)
+      })
+      .catch((loadError: unknown) => {
+        if (version !== loadVersion.current) return
+        setError(getApiErrorMessage(loadError, 'Could not load recent notifications.'))
+      })
+      .finally(() => {
+        if (version === loadVersion.current) setIsLoading(false)
+      })
+  }, [agentId])
+
+  const loadMore = useCallback(() => {
+    if (!nextCursor) return
+    const version = loadVersion.current
+    setIsLoadingMore(true)
+    void routineSkillCatalogApi.listNotificationDeliveries(agentId, { cursor: nextCursor, limit: PAGE_SIZE })
+      .then((page) => {
+        if (version !== loadVersion.current) return
+        setItems((current) => appendNotificationDeliveryPage(current, page.items))
+        setNextCursor(page.nextCursor)
+      })
+      .catch((loadError: unknown) => {
+        if (version !== loadVersion.current) return
+        setError(getApiErrorMessage(loadError, 'Could not load more notifications.'))
+      })
+      .finally(() => {
+        if (version === loadVersion.current) setIsLoadingMore(false)
+      })
+  }, [agentId, nextCursor])
+
+  const resend = (item: NotificationDelivery) => {
+    if (resending.current.has(item.id)) return
+    resending.current.add(item.id)
+    setResendingIds(new Set(resending.current))
+    void routineSkillCatalogApi.resendNotificationRecipientConfirmationResult(agentId, item.recipientEmail)
+      .then((result) => setResendResults((current) => ({ ...current, [item.id]: result })))
+      .finally(() => {
+        resending.current.delete(item.id)
+        setResendingIds(new Set(resending.current))
+      })
+  }
+
+  return (
+    <section aria-labelledby="recent-notifications-heading" className="space-y-3">
+      <h3 id="recent-notifications-heading" className="text-sm font-medium text-foreground">Recent notifications</h3>
+      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="h-4 w-4" />
+          Loading notifications...
+        </div>
+      ) : null}
+      {!isLoading && !error && items.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          No notifications sent yet.
+        </p>
+      ) : null}
+      {items.length > 0 ? (
+        <ul className="space-y-2">
+          {items.map((item) => (
+            <li key={item.id}>
+              <article className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+                <div className="min-w-0 space-y-1">
+                  <p className="truncate text-sm font-medium text-foreground">{item.recipientEmail}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatTime(item.createdAt)} · {NOTIFICATION_DELIVERY_KIND_LABELS[item.kind]}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Badge className={cn(outcomeTone(item.outcome))} variant="secondary">
+                    {NOTIFICATION_DELIVERY_OUTCOME_LABELS[item.outcome]}
+                  </Badge>
+                  {canManageRecipients && canResendConfirmation(item.outcome) ? (
+                    resendResults[item.id] ? (
+                      <span className="text-xs text-muted-foreground">{resendResults[item.id]}</span>
+                    ) : (
+                      <Button type="button" variant="link" className="h-auto p-0 text-xs" disabled={resendingIds.has(item.id)} onClick={() => resend(item)}>
+                        <RefreshCw className="mr-1 h-3 w-3" /> Resend confirmation
+                      </Button>
+                    )
+                  ) : null}
+                  {conversationHref ? (
+                    <Link href={conversationHref(item.conversationId)} className="text-xs text-primary hover:underline">
+                      Open conversation
+                    </Link>
+                  ) : null}
+                </div>
+              </article>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {nextCursor ? (
+        <Button type="button" variant="outline" size="sm" onClick={loadMore} disabled={isLoadingMore}>
+          {isLoadingMore ? <Spinner className="h-4 w-4" /> : null}
+          Show more
+        </Button>
+      ) : null}
+    </section>
+  )
+}

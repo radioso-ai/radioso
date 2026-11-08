@@ -10,9 +10,12 @@ import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.j
 import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
 import {
   NotificationDeliveryAdmissionService,
+  NotificationDeliveryLog,
+  NotificationDeliveryReader,
   NotificationRecipientConfirmationMailer,
   NotificationRecipientPolicyService,
   NotificationRecipientTokenSigner,
+  UndeliveredRecipientAlerts,
   type NotificationRecipientPolicyPort,
 } from "../../modules/operatorNotifications/public.js";
 import {
@@ -20,6 +23,9 @@ import {
   NotificationRecipientStateRepository,
 } from "../../db/repositories/notificationRecipientStateRepository.js";
 import { NotificationDeliveryOutcomeRepository } from "../../db/repositories/notificationDeliveryOutcomeRepository.js";
+import { NotificationDeliveryRepository } from "../../db/repositories/notificationDeliveryRepository.js";
+import { UndeliveredRecipientAlertRepository } from "../../db/repositories/undeliveredRecipientAlertRepository.js";
+import { agentSkillsPermalink } from "../../shared/domain/dashboardLinks.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
@@ -94,6 +100,46 @@ export const buildNotificationRecipientPolicy = (input: {
     },
     revocationUrl: (recipientId) => confirmationMailer.revocationUrl(recipientId),
     identity: new NotificationRecipientIdentityRepository(input.database.kysely),
+    logger: input.logger,
+    metrics: input.metrics,
+  });
+};
+
+/** Reads the per-address record of notices for the dashboard, Ray and operator MCP. */
+export const buildNotificationDeliveryReader = (database: Database): NotificationDeliveryReader =>
+  new NotificationDeliveryReader(new NotificationDeliveryRepository(database.kysely));
+
+/**
+ * The one place the per-address record of notices is wired: the table behind it, and the alert that
+ * emails the account's verified owners and admins when a notice skips an address they can still fix.
+ * Both senders of operator-facing email take the result, so what is recorded and who is told never
+ * differs between a contact request and a routine ending's notice.
+ */
+export const buildNotificationDeliveryRecorder = (input: {
+  database: Database;
+  env: Pick<Env, "APP_BASE_URL">;
+  mailer: MailTransportPort;
+  logger: AppLogger;
+  metrics: MetricsRegistry | null;
+  states?: NotificationRecipientStateRepository;
+}): NotificationDeliveryLog => {
+  const states = input.states ?? new NotificationRecipientStateRepository(input.database.kysely);
+  const workspaces = new WorkspaceRepository(input.database.kysely);
+  return new NotificationDeliveryLog({
+    store: new NotificationDeliveryRepository(input.database.kysely),
+    alerts: new UndeliveredRecipientAlerts({
+      store: new UndeliveredRecipientAlertRepository(input.database.kysely, states),
+      mailer: input.mailer,
+      identity: new NotificationRecipientIdentityRepository(input.database.kysely),
+      dashboardUrl: async ({ workspaceId, agentId }) => {
+        const workspace = await workspaces.findById(workspaceId);
+        return workspace
+          ? agentSkillsPermalink({ workspacePublicRouteKey: workspace.publicRouteKey, agentId }, input.env.APP_BASE_URL)
+          : null;
+      },
+      logger: input.logger,
+      metrics: input.metrics,
+    }),
     logger: input.logger,
     metrics: input.metrics,
   });

@@ -206,7 +206,7 @@ export interface paths {
         put?: never;
         /**
          * Sign out of the current session
-         * @description Revokes the session named by the session cookie, so the same cookie value is refused afterwards, and clears the cookie. Only that session ends; the user's other sessions stay signed in. The call succeeds without a live session, so a repeat, a missing cookie, or an unknown one all answer 204 and still clear the cookie.
+         * @description Revokes the session named by the session cookie, so the same cookie value is refused afterwards, and clears the cookie. Only that session ends; the user's other sessions stay signed in. The call succeeds without a live session, so a repeat, a missing cookie, or an unknown one all answer 204 and still clear the cookie. Every response, failures included, carries the cookie-clearing `Set-Cookie`, so the caller no longer holds the session; after a 5xx the server-side session may still be live until its lifetime ends, which is the case for a client that kept a copy of the cookie.
          */
         post: operations["logoutAccount"];
         delete?: never;
@@ -12139,8 +12139,17 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The session could not be ended; the cookie is left in place */
+            /** @description The sign-out could not be completed; the session cookie is cleared in this response regardless */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The database is unavailable, so the session could not be revoked; the session cookie is cleared in this response regardless */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

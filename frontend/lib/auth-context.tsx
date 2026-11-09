@@ -310,8 +310,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await authApi.logout({ signal: AbortSignal.timeout(SERVER_SIGN_OUT_TIMEOUT_MS) })
     } catch (error) {
-      // This browser signs out either way; a session the server could not revoke stays
-      // usable by its cookie until it expires, which is what the log is for.
+      // This browser signs out either way (the server's response clears the cookie even when
+      // it fails); a session it could not revoke may stay live there until it expires, which
+      // is what the log is for.
       console.error('Failed to end the server session:', error)
     }
     discardSession()

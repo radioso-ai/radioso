@@ -243,15 +243,17 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
 
   // Signing out works from any state, so this reads the cookie itself instead of sitting
   // behind `requireSession`: a request with no live session still gets the cookie cleared.
-  // A revocation that fails is an error and leaves the cookie, so the browser is never told
-  // it is signed out while the server session is live. Like the other cookie-authenticated
-  // routes here, it relies on `SameSite=Lax` to keep the cookie off cross-site POSTs.
+  // The clearing cookie is set before the revoke, so it also rides on the 5xx the error
+  // handler answers when the revoke fails: the dashboard signs the browser out either way,
+  // and a cookie left behind would sign the next person back in on reload. Like the other
+  // cookie-authenticated routes here, it relies on `SameSite=Lax` to keep the cookie off
+  // cross-site POSTs.
   router.post("/logout", async (req, res, next) => {
     try {
-      const sessionToken: unknown = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
-      await dependencies.sessionSignOutService.signOut(typeof sessionToken === "string" ? sessionToken : undefined);
       res.append("Set-Cookie", serializeClearedSessionCookie(dependencies.env));
       res.setHeader("Cache-Control", "no-store");
+      const sessionToken: unknown = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
+      await dependencies.sessionSignOutService.signOut(typeof sessionToken === "string" ? sessionToken : undefined);
       res.status(204).end();
     } catch (error) {
       next(error);

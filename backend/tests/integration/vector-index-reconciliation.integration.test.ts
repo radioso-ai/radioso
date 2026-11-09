@@ -639,6 +639,7 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
     await appendUpsert();
     const callbackError = new Error("activation callback failed");
     const failingCallback = vi.fn().mockRejectedValue(callbackError);
+    const onLoopError = vi.fn();
     const exactFallbackReconciler = new VectorIndexReconciler({
       adapter,
       backendKey: "in-memory",
@@ -655,9 +656,11 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
       retryDelayMs: 5_000,
       resolveCaughtUpReadiness: async () => "exact_fallback",
       onCheckpointAdvanced: failingCallback,
+      onLoopError,
     });
 
-    await expect(exactFallbackReconciler.runOnce()).rejects.toBe(callbackError);
+    await expect(exactFallbackReconciler.runOnce()).resolves.toBe(true);
+    expect(onLoopError).toHaveBeenCalledWith(callbackError);
     expect(failingCallback).toHaveBeenCalledWith({
       workspaceId,
       embeddingSpaceId: spaceId,

@@ -165,22 +165,22 @@ describe("RoutineNextStepSelector", () => {
     expect(call.messages.at(-1)).toEqual({ role: "user", content: "alex@example.com" });
   });
 
-  it("retries once, then calls the onUnreadable observer for each unreadable attempt with the routine and step id, never the raw model text", async () => {
-    const onUnreadable = vi.fn();
+  it("retries once, then reports each unreadable completion to the onCompletion observer with the routine and step id, never the raw model text", async () => {
+    const onCompletion = vi.fn();
     // A fixed-text gateway returns the same unreadable completion on the retry too, so both
     // attempts are reported and the selector falls back to the unreadable decision.
     const gw = gateway("not json at all");
     // A fixed system prompt, so the size is a known literal: "DECIDE" plus "What is your
     // email?" and "alex@example.com".
-    const selector = new RoutineNextStepSelector(gw, { onUnreadable, promptTemplate: "DECIDE" });
+    const selector = new RoutineNextStepSelector(gw, { onCompletion, promptTemplate: "DECIDE" });
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });
     expect(gw.complete).toHaveBeenCalledTimes(2);
     expect(decision.nextStepId).toBe("ask_email");
     expect(decision.selection).toMatchObject({ unreadableReason: "no_json_object", retried: true });
-    const shape = { outputChars: 15, promptChars: 41 };
-    expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1, ...shape });
-    expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2, ...shape });
-    expect(JSON.stringify(onUnreadable.mock.calls)).not.toContain("not json at all");
+    const shape = { routineId: routine.id, stepId: currentStep.id, stepKind: "chat", sessionId: state.sessionId, unreadableReason: "no_json_object", outputChars: 15, promptChars: 41 };
+    expect(onCompletion).toHaveBeenNthCalledWith(1, { ...shape, call: "decision" });
+    expect(onCompletion).toHaveBeenNthCalledWith(2, { ...shape, call: "retry" });
+    expect(JSON.stringify(onCompletion.mock.calls)).not.toContain("not json at all");
   });
 
   it("keeps the unreadable decision, rather than throwing, when the retry call itself fails for a reason other than cancellation", async () => {
@@ -219,14 +219,14 @@ describe("RoutineNextStepSelector", () => {
     ).rejects.toBe(abortError);
   });
 
-  it("does not fail the turn when the onUnreadable observer throws", async () => {
-    const onUnreadable = vi.fn(() => {
+  it("does not fail the turn when the onCompletion observer throws", async () => {
+    const onCompletion = vi.fn(() => {
       throw new Error("observer boom");
     });
     const gw = gateway("not json at all");
 
     await expect(
-      new RoutineNextStepSelector(gw, { onUnreadable }).select({ routine, state, currentStep, transitions, turn }),
+      new RoutineNextStepSelector(gw, { onCompletion }).select({ routine, state, currentStep, transitions, turn }),
     ).resolves.toMatchObject({ nextStepId: "ask_email" });
   });
 });

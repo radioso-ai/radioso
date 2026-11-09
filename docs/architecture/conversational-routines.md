@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-11-02
+last_updated: 2026-11-09
 ---
 
 # Conversational Routines
@@ -697,6 +697,47 @@ event match the turn, the engine records the stage and does not ask the routine 
 the same message a second time; a yield from any other turn is ignored, and the routine
 is asked as usual. Radioso keeps the yield on the turn's session until `processTurn`
 answers, so a retry of a failed turn hands it back again.
+
+### After a routine ends
+
+For as long as the store keeps a completed run (30 minutes after its last update in
+Radioso), each new message first meets the correction pass, then the reentry gate, then
+activation. The correction pass lets a visitor change a value the run holds in a slot
+marked `mutable` ("Editable after completion") without running the routine again. Say a
+booking ended holding `arrival: 2027-01-05` and nothing left the conversation: "actually
+I'd arrive on 9 January" changes the held arrival to `2027-01-09`, and the reply confirms
+the change.
+
+`RoutineSlotCorrector` (`packages/conversation-defaults/src/routineSlotCorrector.ts`)
+decides whether to offer a correction, and offers one only when it would be true:
+
+- It considers only the mutable slots the run holds a value for. A run that ended holding
+  none, such as a booking that ended on its opening turn, gets no model call, and the
+  message goes on to reentry and activation.
+- It offers nothing once the run's values have left the conversation, read from the run's
+  `path` against the routine it ran (`completedRunSentValues` in
+  `packages/conversation-engine/src/routineEnding.ts`): the run passed a tool, action, or
+  approval step, or its ending notified operators, handed off (a run stuck on a step ends
+  there and hands off), or fired the completion export. A changed value would reach none
+  of those, and the ending does not run again, so the agent does not say it changed.
+- Otherwise one model call (`backend/prompts/chat/routine-slot-correction-detect.md`)
+  sees each offered slot with the value it holds, today's date in the turn's zone, and the
+  conversation, and returns an `intent`: `correction` with the slot and its new value,
+  `new_request` for a message that asks for something new, such as another booking with
+  different dates, or `other`. Only `correction` is offered; the rest go on to reentry and
+  activation like any message.
+
+The engine then checks the offered slot is held, declared, and mutable, and that the value
+fits its type (`verifySlotCorrection`), before it saves the run with the new value. A value
+that fails its type gets a reply asking for a valid one and changes nothing. The
+confirmation (`routine-slot-correction-confirm.md`) says the value was noted and never that
+anything was booked, sent, or passed on.
+
+The turn trace records a claimed correction as a `routine_slot_correction` stage, `applied`
+or `rejected` with the slot key, never the value. Every detection also sets
+`routine.slot_correction.decision` on the turn's span: `correction`, or why not —
+`not_held`, `already_sent`, `new_request`, `not_a_correction`, `no_mutable_slot`, or
+`unknown_routine`.
 
 ## Activation and clarification
 

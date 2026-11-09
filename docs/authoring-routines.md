@@ -172,8 +172,9 @@ on a later branch. Open a value's row in **Information** to set its switches:
 - **Required**, switched off when the flow may reach an ending while the value
   remains empty.
 - **Editable after completion** when a visitor may correct it after the routine
-  finishes, such as an email address or a date. Ray switches it on or off for a
-  value when you ask.
+  finishes, such as a date they gave before deciding they were only browsing.
+  Ray switches it on or off for a value when you ask. See
+  [Changes after a routine ends](#changes-after-a-routine-ends).
 - **Sensitive** when the value is something the visitor would not want copied
   around, such as an injury they mention while booking a class. See
   [Sensitive values](#sensitive-values).
@@ -231,6 +232,30 @@ of the conversation. A value the visitor gives while no step is asking for it,
 before its step or as a correction after the routine has finished, is marked only
 when the routine stores it. Once the routine has ended, a later reply that brings
 the value up again is not masked.
+
+#### Changes after a routine ends
+
+Say a visitor gives an arrival date of 5 January, then tells the booking routine
+they're only browsing, and it ends without telling anyone. If `@arrival` is
+**Editable after completion**, "actually I'd arrive on 9 January" updates the
+date the routine holds, and the agent confirms it noted the change. The agent
+reads "9 January" against today's date, so it lands in the right year.
+
+The agent offers a change only when the change is real:
+
+- **The routine holds the value.** A routine that ended before the visitor gave
+  a date holds no `@arrival`, so "I'd like to book from 8 to 10 January" is a new
+  request, not a change.
+- **Nothing the routine collected has left the conversation.** Once its ending
+  notified your team, handed off, or sent the completion export, or a skill,
+  action, or approval step ran, a changed value would reach none of them. The
+  agent then takes no change and answers the message like any other.
+- **The visitor is changing what they gave.** A message that asks for something
+  new, such as another booking with different dates, is not a change either.
+
+A message that isn't a change goes on as any message does: it can start the
+routine again if its [reentry](#reentry) setting allows. Changes last as long
+as the agent remembers the finished routine, 30 minutes after its last update.
 
 #### Read the visitor's context
 

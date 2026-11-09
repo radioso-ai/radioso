@@ -393,6 +393,16 @@ describe("model-facing descriptions", () => {
     expect(drifted).toEqual([]);
   });
 
+  it("tells the model a routine edit can switch a field's \"Editable after completion\" on or off, and only when asked", () => {
+    // Ray reads only this text for the shape of `changes`, so a field the patch accepts but the
+    // description never names is a field nobody proposes.
+    const descriptor = realCatalog().find((candidate) => candidate.name === "propose_routine_edit")!;
+
+    expect(descriptor.description).toContain("mutable");
+    expect(descriptor.description).toContain("Editable after completion");
+    expect(descriptor.description).toContain("only when the operator asks");
+  });
+
   it("keeps proposing distinguishable from applying, for the tools that say so", () => {
     // Collapsing the two descriptions dropped "it does not change configuration" from four propose
     // tools, and the live suite caught it immediately: `propose_routine_lifecycle` was left saying

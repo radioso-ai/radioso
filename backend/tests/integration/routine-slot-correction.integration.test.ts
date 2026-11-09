@@ -8,6 +8,7 @@ import type {
   ConversationTraceStage,
   ConversationRoutineSlotCorrection,
   RoutineSlotCorrectionCandidate,
+  RoutineSlotCorrectionDetection,
   RoutineState,
 } from "@radioso/conversation-contract";
 import { DefaultConversationEngine } from "@radioso/conversation-engine";
@@ -97,7 +98,8 @@ const mutableEmailSlots: RoutineSlotCorrectionCandidate["slots"] = [
 // A correction port that returns a fixed candidate (the model step is faked); the engine's
 // deterministic verify + the real RoutineStateRepository.save are what this test exercises.
 const fixedCorrection = (rawValue: string): ConversationRoutineSlotCorrection => ({
-  detect: vi.fn(async (): Promise<RoutineSlotCorrectionCandidate> => ({
+  detect: vi.fn(async (): Promise<RoutineSlotCorrectionDetection> => ({
+    kind: "correction",
     slots: mutableEmailSlots,
     slotKey: "prospect_email",
     rawValue,

@@ -360,6 +360,35 @@ describe("AbuseControlService", () => {
     expect((await repository.find("agent.channel.chat.workspace", "workspace:one:global"))?.attemptCount).toBe(1);
   });
 
+  it("keeps the store failure as the cause of the service_unavailable error on both paths", async () => {
+    const storeFailure = new Error("db unavailable");
+    const failingService = new AbuseControlService({
+      find: async () => null,
+      save: async () => {
+        throw storeFailure;
+      },
+      consume: async () => {
+        throw storeFailure;
+      },
+      consumeBatch: async () => {
+        throw storeFailure;
+      },
+      deleteExpired: async () => {},
+    });
+    const policy = { scope: "auth.login", subjectKey: "cause@example.com", limit: 1, windowMs: 60_000 };
+
+    await expect(failingService.enforce(policy)).rejects.toMatchObject({
+      statusCode: 503,
+      code: "service_unavailable",
+      cause: storeFailure,
+    });
+    await expect(failingService.enforceBatch([policy])).rejects.toMatchObject({
+      statusCode: 503,
+      code: "service_unavailable",
+      cause: storeFailure,
+    });
+  });
+
   it("wraps repository errors that expose a database-style code property", async () => {
     const failingService = new AbuseControlService({
       find: async () => {

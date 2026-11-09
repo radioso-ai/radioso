@@ -450,16 +450,15 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    // Both markers and the period share one nowrap span, so none of them can wrap
+    // The period and the markers share one nowrap span, so none of them can wrap
     // away from "corsi" and open the next line on their own.
     const cluster = html.match(/<span class="whitespace-nowrap">[\s\S]*?<\/span>(?!<\/button>)/)?.[0] ?? ''
-    expect(cluster).toContain('data-citation-index="1"')
-    expect(cluster).toContain('data-citation-index="2"')
-    expect(cluster.endsWith('.</span>')).toBe(true)
-    // U+2060 WORD JOINER glues the cluster to the preceding word.
-    expect(cluster).toMatch(/^<span class="whitespace-nowrap">⁠/)
+    expect(cluster).toContain('data-citation-group="1, 2"')
+    // U+2060 WORD JOINER glues the cluster to the preceding word; the period comes first.
+    expect(cluster).toMatch(/^<span class="whitespace-nowrap">⁠\.<button/)
+    expect(cluster.endsWith('</button></span>')).toBe(true)
     // The separator space stays outside the span so the next word can still wrap.
-    expect(html).toContain('.</span> ')
+    expect(html).toContain('</button></span> ')
     expect(cluster).not.toMatch(/\s<\/span>$/)
   })
 
@@ -486,7 +485,7 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toContain(`${terminator}</span>`)
+    expect(html).toContain(`\u2060${terminator}<button`)
     expect(html).not.toMatch(new RegExp(`<p[^>]*>\\s*\\${terminator}`))
   })
 
@@ -620,6 +619,64 @@ describe('AssistantMessageContent', () => {
     expect(html).not.toContain('&amp;amp;')
   })
 
+  // Footnote order: the marker follows the punctuation, so no gap opens between a
+  // raised pill and a period sitting on the baseline.
+  it('puts sentence punctuation before its marker', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'The retreat runs in June', citationIndices: [0] },
+          { text: '. Registration is open.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(textContent(html).replace(/\u2060/g, '')).toContain('The retreat runs in June.1 Registration is open.')
+  })
+
+  // A run of markers reads as one note, not a row of pills.
+  it('collapses adjacent markers into one pill labelled with their run', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: 'Source 2' },
+          { documentId: 'doc-3', chunkId: 'chunk-3', title: 'Source 3' },
+        ]}
+        answerSegments={[
+          { text: 'Three retreats run in February', citationIndices: [0, 1, 2] },
+          { text: '.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('aria-label="Show sources 1–3"')
+    expect(html).not.toContain('data-citation-index')
+    expect(textContent(html).replace(/\u2060/g, '')).toContain('Three retreats run in February.1–3')
+  })
+
+  it('labels a run with a gap by each number', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: 'Source 2' },
+          { documentId: 'doc-3', chunkId: 'chunk-3', title: 'Source 3' },
+        ]}
+        answerSegments={[{ text: 'Both retreats include full board', citationIndices: [0, 2] }]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('aria-label="Show sources 1, 3"')
+  })
+
   // A list the model cites item by item arrives as one segment per item. The items
   // belong in one list; rendered apart, every bullet becomes its own spaced-out list.
   it('keeps bullets cited item by item in one list, each with its marker', async () => {
@@ -714,7 +771,7 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(listItemTexts(html)).toEqual(['Event runs all day1.'])
+    expect(listItemTexts(html)).toEqual(['Event runs all day.1'])
   })
 
   it('never absorbs a cited inline continuation, which would drop its marker', async () => {
@@ -850,7 +907,7 @@ describe('AssistantMessageContent', () => {
     )
 
     // The period must not glue to the next sentence ("2026[1].The").
-    expect(textContent(html)).toContain('. The first-Valmora')
+    expect(textContent(html)).toContain('.1 The first-Valmora')
     expect(textContent(html)).not.toContain('.The first-Valmora')
   })
 
@@ -869,7 +926,7 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(textContent(html)).toContain(', and the higher-Valmora')
+    expect(textContent(html)).toContain(',1 and the higher-Valmora')
     expect(textContent(html)).not.toContain(',and the higher-Valmora')
   })
 
@@ -888,7 +945,7 @@ describe('AssistantMessageContent', () => {
       />,
     )
     expect(textContent(period)).toContain('19:30')
-    expect(textContent(period)).toContain('. We also have')
+    expect(textContent(period)).toContain('.1 We also have')
     expect(textContent(period)).not.toContain(' . We also have')
     expect(textContent(period)).not.toContain('.We also have')
 
@@ -903,7 +960,7 @@ describe('AssistantMessageContent', () => {
         onOpenDocument={async () => 'opened'}
       />,
     )
-    expect(textContent(comma)).toContain(', and the higher-Valmora')
+    expect(textContent(comma)).toContain(',1 and the higher-Valmora')
     expect(textContent(comma)).not.toContain(' ,and')
     expect(textContent(comma)).not.toContain(',and the higher')
   })
@@ -924,6 +981,8 @@ describe('AssistantMessageContent', () => {
     // seam itself: the decimal stays tight, with no injected space.
     expect(textContent(decimal)).toContain(',00 per person')
     expect(textContent(decimal)).not.toContain(', 00')
+    // The comma belongs to the number, so the marker stays before it.
+    expect(textContent(decimal).replace(/\u2060/g, '')).toContain('EUR 181,00')
 
     const version = renderToStaticMarkup(
       <AssistantMessageContent
@@ -952,7 +1011,7 @@ describe('AssistantMessageContent', () => {
         onOpenDocument={async () => 'opened'}
       />,
     )
-    expect(textContent(sentence)).toContain('. 3 sessions ran')
+    expect(textContent(sentence)).toContain('.1 3 sessions ran')
     expect(textContent(sentence)).not.toContain('.3 sessions')
   })
 

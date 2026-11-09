@@ -799,6 +799,47 @@ Priority is explicit operator arbitration. It breaks close calls only when one
 candidate has a unique highest priority. If comparable candidates also tie on
 priority, the assistant asks instead of guessing.
 
+### Start mode
+
+Steps 2 and 3 pick a routine; its authored start mode (`activation.startMode`)
+decides whether the pick starts it. `automatic` starts it. `offer` starts it only
+when the ranking also says the message directly asks for what the routine does:
+every ranking prompt that can pick such a routine (`chat/routine-ranked-activation.md`
+and the planner's `chat/turn-planning-routines.md`) returns a per-routine
+`directRequest` beside the confidence. Exploring, asking about availability, price,
+or whether something is possible, and describing plans all return `false`. The
+engine decides start or offer (`packages/conversation-engine/src/routineStart.ts`);
+the registry only reports the routine's start mode and the ranker's verdict.
+
+A routine that is not started is offered. The routine pass leaves the turn to the
+normal answer and hands the host an activation notice: the `clarification` stage
+(`decision: "offered"`, `reason: "offer_first"`) and the offer. The answer ends with
+one sentence offering to start it (`chat/routine-offer.md`, appended where a parked
+routine's lead-back would be). The offer is the turn's pending clarification row, in
+`offer` mode, with one candidate carrying the routine id and the values the ranking
+read from the message, and it expires after 30 minutes like an activation question.
+The host saves that row, and records the offer in `routine_offers`, in the
+turn's transaction, and only when the reply the visitor sees carries the closing
+offer: a routine that takes the turn over, another clarification's pending row,
+or a reply that hands the conversation to a person drops it. A conversation is
+offered each routine once: a later match that is not a direct request starts nothing
+and offers nothing (`reason: "already_offered"`), while a direct request still starts
+the routine.
+
+The next message is mapped against the offer with
+`chat/clarification-routine-offer-reply-map.md`. Accepting starts the routine holding
+the stored values, which pass the same slot check as any activation values.
+Declining or ignoring it starts nothing and the message proceeds normally. The
+mapping turn records a `clarification` stage with `decision: "mapped"` and
+`mappingOutcome` `accepted`, `declined`, or `ignored`; an Offer-first routine started
+by a direct request records `startedBy: "direct_request"` on its stage.
+
+A tie still asks which routine the visitor means, and picking one starts it: the
+question is the confirmation. A routine called as an agent tool, an explicit claim,
+and an accepted offer always start. The post-evidence coverage pass never offers,
+so the validator rejects Offer first on a coverage-gated routine
+(`start_mode_offer_requires_ungated_activation`).
+
 When the visitor answers a routine clarification, the pending choice resolves
 before the next routine attempt. A chosen option starts the selected routine at
 its first step and preserves activation variables extracted from the ambiguous

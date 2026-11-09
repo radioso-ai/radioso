@@ -248,6 +248,26 @@ describe("DefaultClarifier", () => {
     expect(vi.mocked(modelGateway.complete).mock.calls[0]?.[0].systemPrompt).not.toContain("ask prompt");
   });
 
+  it("words a routine's offer to start as an offer to act, not a choice between readings", async () => {
+    const modelGateway = gateway('{"kind":"chosen","id":"support"}');
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "unused",
+      offerReplyMapPromptTemplate: "alternatives prompt {{latestReply}}",
+      routineOfferReplyMapPromptTemplate: "start offer prompt {{latestReply}} {{options}}",
+    });
+
+    await expect(clarifier.mapReply({
+      candidates: [candidates[1]],
+      turn: turn("yes please, go ahead"),
+      mode: "offer",
+      offerKind: "start",
+    })).resolves.toEqual({ kind: "chosen", id: "support" });
+
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]?.[0].systemPrompt;
+    expect(systemPrompt).toContain("start offer prompt yes please, go ahead");
+    expect(systemPrompt).not.toContain("alternatives prompt");
+  });
+
   it("maps declined and unrelated replies", async () => {
     const declinedGateway = gateway('{"kind":"declined"}');
     const unrelatedGateway = gateway('{"kind":"unrelated"}');

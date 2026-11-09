@@ -50,7 +50,7 @@ Latest reply:
 Return only JSON:
 {"kind":"chosen","id":"<option id>"} or {"kind":"declined"} or {"kind":"unrelated"}`;
 
-export const DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT = `Map the user's latest reply after an answer offered alternative interpretations.
+const DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT = `Map the user's latest reply after an answer offered alternative interpretations.
 
 The options below are numbered in the same order they were offered to the user,
 so positional references resolve against that numbering. Judge by meaning in the
@@ -78,6 +78,33 @@ Latest reply:
 
 Return only JSON:
 {"kind":"chosen","id":"<option id>"} or {"kind":"declined"} or {"kind":"unrelated"}`;
+
+const DEFAULT_CLARIFICATION_ROUTINE_OFFER_REPLY_MAP_PROMPT = `Map the user's latest reply after an answer that ended by offering to start something for them.
+
+The offer is listed below. Judge by meaning in the conversation language.
+
+Return "chosen" with the offer's id when the reply accepts the offer: it agrees to go ahead,
+asks to start, or answers the offer with details for it. A reply that accepts and adds a
+detail or a small related question still accepts.
+
+Return "declined" when the reply turns the offer down.
+
+Return "unrelated" when the reply neither accepts nor declines: it asks about something
+else, keeps exploring, or leaves the offer unanswered.
+
+Use only the offer's label and description below.
+
+Offer:
+{{options}}
+
+Latest reply:
+{{latestReply}}
+
+Return only JSON with one of these shapes:
+
+{"kind":"chosen","id":"<option id>"}
+{"kind":"declined"}
+{"kind":"unrelated"}`;
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
@@ -241,6 +268,7 @@ export class DefaultClarifier implements ConversationClarifier {
   private readonly questionPromptTemplate: string;
   private readonly replyMapPromptTemplate: string;
   private readonly offerReplyMapPromptTemplate: string;
+  private readonly routineOfferReplyMapPromptTemplate: string;
 
   private readonly steeringOptions: RenderSteeringRulesOptions;
 
@@ -250,6 +278,7 @@ export class DefaultClarifier implements ConversationClarifier {
       questionPromptTemplate?: string;
       replyMapPromptTemplate?: string;
       offerReplyMapPromptTemplate?: string;
+      routineOfferReplyMapPromptTemplate?: string;
       steeringPromptTemplate?: string;
     } = {},
   ) {
@@ -257,6 +286,8 @@ export class DefaultClarifier implements ConversationClarifier {
     this.questionPromptTemplate = options.questionPromptTemplate ?? DEFAULT_CLARIFICATION_QUESTION_PROMPT;
     this.replyMapPromptTemplate = options.replyMapPromptTemplate ?? DEFAULT_CLARIFICATION_REPLY_MAP_PROMPT;
     this.offerReplyMapPromptTemplate = options.offerReplyMapPromptTemplate ?? DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT;
+    this.routineOfferReplyMapPromptTemplate = options.routineOfferReplyMapPromptTemplate
+      ?? DEFAULT_CLARIFICATION_ROUTINE_OFFER_REPLY_MAP_PROMPT;
   }
 
   async phraseQuestion(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<string> {
@@ -311,12 +342,7 @@ export class DefaultClarifier implements ConversationClarifier {
       }
     }
 
-    const promptName = input.mode === "offer"
-      ? "chat/clarification-offer-reply-map.md"
-      : "chat/clarification-reply-map.md";
-    const promptTemplate = input.mode === "offer"
-      ? this.offerReplyMapPromptTemplate
-      : this.replyMapPromptTemplate;
+    const [promptName, promptTemplate] = this.replyMapPrompt(input);
     const systemPrompt = renderPromptTemplate(promptName, promptTemplate, {
       options: optionsBlock(input.candidates),
       conversationLanguage: input.turn.inputEvent.locale ?? "the conversation language",
@@ -327,5 +353,18 @@ export class DefaultClarifier implements ConversationClarifier {
       systemPrompt,
     });
     return parseReplyMapping(text, new Set(input.candidates.map((candidate) => candidate.id)));
+  }
+
+  /**
+   * A routine's offer asks whether to start something for the visitor; any other offer presents
+   * other readings of what they asked. Each is mapped with its own wording.
+   */
+  private replyMapPrompt(input: ClarificationReplyMapInput): [string, string] {
+    if (input.mode !== "offer") {
+      return ["chat/clarification-reply-map.md", this.replyMapPromptTemplate];
+    }
+    return input.offerKind === "start"
+      ? ["chat/clarification-routine-offer-reply-map.md", this.routineOfferReplyMapPromptTemplate]
+      : ["chat/clarification-offer-reply-map.md", this.offerReplyMapPromptTemplate];
   }
 }

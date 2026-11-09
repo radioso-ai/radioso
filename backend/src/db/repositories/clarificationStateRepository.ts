@@ -10,7 +10,7 @@ import type {
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
-export const DEFAULT_CLARIFICATION_STATE_TTL_MS = 30 * 60 * 1000;
+const DEFAULT_CLARIFICATION_STATE_TTL_MS = 30 * 60 * 1000;
 
 interface ClarificationStateRow {
   session_id: string;

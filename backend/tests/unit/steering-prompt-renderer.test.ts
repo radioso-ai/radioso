@@ -182,3 +182,27 @@ describe("appendRoutineLeadBack", () => {
   });
 });
 
+describe("appendRoutineLeadBack with a routine offer", () => {
+  const offer = { routineId: "room_booking", label: "Room booking", description: "The visitor wants to book a room." };
+
+  it("closes the answer with the offer to start the routine, naming it as data", () => {
+    const prompt = appendRoutineLeadBack("Prompt.", [], undefined, { offer });
+
+    expect(prompt).toBe(`Prompt.\n\n${renderPromptTemplate("chat/routine-offer.md", {
+      offer: "- Room booking\n- The visitor wants to book a room.",
+      no_support_handoff: "",
+    })}`);
+  });
+
+  it("leaves the offer out of a no_support decline when that decline hands off", () => {
+    expect(appendRoutineLeadBack("Prompt.", [], undefined, { offer, noSupportHandsOff: true }))
+      .toContain(loadPromptTemplate("chat/routine-lead-back-decline-handoff.md"));
+  });
+
+  it("leads back to a parked routine's step rather than offering one", () => {
+    const pendingStep = { stepId: "ask_dates", instruction: "Ask for the dates.", missingSlotKeys: [] };
+
+    expect(appendRoutineLeadBack("Prompt.", [], pendingStep, { offer })).not.toContain("Room booking");
+  });
+});
+

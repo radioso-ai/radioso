@@ -371,6 +371,47 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(row.original_query).toBe(retained ? originalQuery : null);
   });
 
+  it("records a routine offer beside its pending row in the assistant turn transaction", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+
+    await persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Single rooms are free from 8 March. Would you like me to book one?",
+      },
+      auditEvent: { eventType: "chat.answer", eventStatus: "success", workspaceId: workspace.id, metadata: {} },
+      clarificationTransition: { kind: "clear", sessionId: conversation.id, outcome: "declined" },
+      routineOffer: {
+        routineId: "room_booking",
+        pending: {
+          sessionId: conversation.id,
+          source: "routine_activation",
+          mode: "offer",
+          candidates: [{ id: "room_booking", label: "Room booking", confidence: 0.9, payload: { routineId: "room_booking" } }],
+          status: "pending",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        },
+      },
+    });
+
+    const offers = await database.query<{ routine_id: string }>(
+      "SELECT routine_id FROM routine_offers WHERE conversation_id = $1",
+      [conversation.id],
+    );
+    expect(offers).toEqual([{ routine_id: "room_booking" }]);
+    const pending = await database.queryOne<{ source: string; mode: string; status: string }>(
+      "SELECT source, mode, status FROM clarification_states WHERE session_id = $1",
+      [conversation.id],
+    );
+    expect(pending).toEqual({ source: "routine_activation", mode: "offer", status: "pending" });
+  });
+
   it("requests ownership handoff and records ownership audit inside the assistant turn transaction", async () => {
     const { workspace, conversation } = await seedConversation();
     const assistantMessageId = randomUUID();

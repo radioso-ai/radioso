@@ -75,6 +75,8 @@ export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
 export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
 export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'
+// How a routine starts once activation picks it. Absent reads as 'automatic'.
+export type RoutineStartMode = 'automatic' | 'offer'
 export type RoutineFieldGuardOp =
   | 'is_true' | 'is_false' | 'equals' | 'not_equals' | 'in' | 'is_present' | 'is_absent'
   | 'gt' | 'gte' | 'lt' | 'lte' | 'older_than' | 'within'
@@ -127,6 +129,7 @@ export type RoutineDefinitionDraft = {
     gateRef?: string | null
     priority: number
     reentryMode?: RoutineReentryMode
+    startMode?: RoutineStartMode
     coverageCriteria?: {
       coverage: Array<'answered' | 'partial' | 'unanswered' | 'unclear'>
       reasons?: Array<'sufficient_evidence' | 'insufficient_evidence' | 'conflicting_evidence' | 'ambiguous_request' | 'intentional_scope_boundary'>

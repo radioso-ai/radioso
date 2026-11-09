@@ -79,6 +79,15 @@ describe("routine authoring edits", () => {
     expect(patched.steps).toEqual(source.steps);
   });
 
+  it("switches the start mode alone, leaving the rest of the activation as stored", () => {
+    const source = routine();
+
+    const patched = applyRoutineFieldPatch(source, routineFieldPatchSchema.parse({ activation: { startMode: "offer" } }));
+
+    expect(patched.activation).toEqual({ ...source.activation, startMode: "offer" });
+    expect(routineFieldPatchSchema.safeParse({ activation: { startMode: "sometimes" } }).success).toBe(false);
+  });
+
   it("edits slots by key and terminals by stable id, including clearing a terminal instruction", () => {
     const patched = applyRoutineFieldPatch(routine(), routineFieldPatchSchema.parse({
       slots: [{ key: "order_number", description: "The order number the customer is asking about", required: false }],
@@ -239,7 +248,7 @@ describe("routine authoring edits", () => {
     expect(projected).toEqual({
       name: "support-intake",
       enabled: true,
-      activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always" },
+      activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always", startMode: "automatic" },
       slots: {
         order_number: { type: "text", required: true, description: "The order it concerns", mutable: false, sensitivity: "normal", ordinal: 0 },
       },
@@ -407,6 +416,19 @@ describe("routine authoring edits", () => {
 });
 
 describe("routine edit descriptions", () => {
+  it("names a start mode change", () => {
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({ activation: { startMode: "offer" } }))).toBe("start mode");
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({ activation: { startMode: "automatic" } }))).toBe("start mode");
+  });
+
+  it("shows a reviewer the start mode, so a change to it reads as a change", () => {
+    const source = routine();
+    const offered = routine({ activation: { ...source.activation, startMode: "offer" } });
+
+    expect((projectRoutineForReview(offered).activation as { startMode: string }).startMode).toBe("offer");
+    expect(projectRoutineForReview(offered)).not.toEqual(projectRoutineForReview(source));
+  });
+
   it("names what an edit touches in routine vocabulary, not field paths", () => {
     expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({
       name: "support-intake-v2",

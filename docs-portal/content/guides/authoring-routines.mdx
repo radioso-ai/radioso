@@ -59,6 +59,7 @@ Open **When to trigger**, then **Starts when**, to set:
 - **Priority** — higher whole numbers win when several routines could start at
   once. Use 0 for the standard priority.
 - **Reentry** — what happens after the routine finishes in a conversation.
+- **Start mode** — whether a match starts the routine at once or offers it first.
 - **Activation trigger** — a plain-language description of when the routine
   should start.
 
@@ -82,6 +83,45 @@ later matching message does:
 - **Every time it matches** — for repeatable tasks such as looking up an order.
 - **Let the assistant decide** — the agent chooses whether to resume the run,
   start a fresh one, or leave the completed run in place.
+
+### Start mode
+
+Start mode decides what happens when the trigger matches a visitor's message. It
+sits in **Starts when**, beside Reentry.
+
+- **Start automatically** — the routine starts as soon as the agent picks it.
+  This is the default.
+- **Offer first** — the routine starts only when the visitor directly asks for
+  what it does. For any other matching message, the agent answers the message
+  and ends the answer with one short sentence offering to start the routine.
+
+A guesthouse's room-booking routine shows the difference. A guest who writes “I
+want to book a room for 8–10 March” asked for the booking itself, so the routine
+starts at once. A guest who writes “I'd like to come 8–10 March, is there a
+single room and what does it cost?” asked a question. The agent answers it and
+closes with an offer to book. If the guest accepts on the next turn, the routine
+starts already holding the dates they gave, so it does not ask for them again.
+If the guest declines or carries on with something else, nothing starts and the
+agent does not offer that routine again in the conversation. A later clear
+request to book still starts it.
+
+Choose **Offer first** when starting the routine is a real commitment, such as a
+booking or a refund request, and a matching message often just wants an answer.
+
+Some paths start the routine whatever its start mode:
+
+- The visitor picks it when the agent asks which of two or more matching
+  routines they mean. The question is the confirmation.
+- Another agent calls it as a tool (see **Expose a routine as a tool** below).
+
+**Offer first** cannot be combined with an **Answer coverage** condition. A
+routine with a coverage condition is chosen while the answer is already being
+written, so there is no answer left to end with an offer. The editor turns
+**Offer first** off while the condition is present, and validation reports
+`start_mode_offer_requires_ungated_activation` when the two are combined, for
+example in an edit made through Ray or the API. In the API the field is
+`activation.startMode`, `"automatic"` or `"offer"`; a routine without it starts
+automatically.
 
 ### Expose a routine as a tool
 
@@ -414,6 +454,9 @@ from a test that kept skills off.
 - A routine fails to start: the trigger describes the wrong situation, or a
   higher-priority routine claims the turn first. Test the trigger with
   **Test**.
+- A routine answers and offers instead of starting: its start mode is **Offer
+  first**, so it starts only when the visitor asks directly for what it does.
+  Set **Start automatically** in **Starts when** if every match should start it.
 - A coverage condition does not activate: inspect the originating turn. A
   failed or unavailable assessment is recorded as not assessed and never
   activates a coverage condition.

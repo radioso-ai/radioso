@@ -15,6 +15,7 @@ import { BackgroundJobRuntime, type BackgroundJobQueue } from "../../../shared/b
 import { PeriodicTaskRunner } from "../../composition/periodicTaskRunner.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ApprovalResumeEffectJournalRepository } from "../../../db/repositories/approvalResumeEffectJournalRepository.js";
+import { RoutineOfferRepository } from "../../../db/repositories/routineOfferRepository.js";
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -792,15 +793,13 @@ export const buildChatServices = (input: {
   const clarifierFactory = ({ session, accountId }: { session: PreparedSession; accountId?: string }) => new DefaultClarifier(
     new RoutineChatModelGateway(chatGateway, {
       workspaceContext: chatAnswerSupport.buildChatWorkspaceContext(session),
-      usageContext: {
-        ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"),
-        operation: "clarification",
-      },
+      usageContext: { ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"), operation: "clarification" },
     }),
     {
       questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
       replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
       offerReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-offer-reply-map.md"),
+      routineOfferReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-routine-offer-reply-map.md"),
       steeringPromptTemplate: loadPromptTemplate("chat/steering-clarification.md"),
     },
   );
@@ -892,6 +891,7 @@ export const buildChatServices = (input: {
     conversationOwnershipRepository: input.conversationOwnershipRepository,
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: routineStateRepository,
+    routineOfferStore: new RoutineOfferRepository(input.database.kysely),
     suspendedRoutineReader: routineStateRepository,
     // Per-conversation directive firing memory for once/cooldown lifecycle (#865).
     directiveStateStore: directiveStateRepository,

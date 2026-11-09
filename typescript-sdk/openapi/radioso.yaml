@@ -4212,6 +4212,11 @@ components:
                 - always
                 - semantic
               default: once_per_conversation
+            startMode:
+              type: string
+              enum:
+                - automatic
+                - offer
             coverageCriteria:
               type: object
               properties:
@@ -4675,6 +4680,11 @@ components:
                     - once_per_conversation
                     - always
                     - semantic
+                startMode:
+                  type: string
+                  enum:
+                    - automatic
+                    - offer
                 coverageCriteria:
                   type: object
                   properties:
@@ -5155,6 +5165,7 @@ components:
                   - exposure_tool_name_duplicate
                   - exposure_tool_name_changed
                   - exposure_requires_ungated_activation
+                  - start_mode_offer_requires_ungated_activation
                   - operator_notice_skill_unavailable
                   - operator_notice_reply_to_slot_invalid
               location:
@@ -5200,6 +5211,11 @@ components:
                 - always
                 - semantic
               default: once_per_conversation
+            startMode:
+              type: string
+              enum:
+                - automatic
+                - offer
             coverageCriteria:
               type: object
               properties:
@@ -5717,6 +5733,11 @@ components:
                     - always
                     - semantic
                   default: once_per_conversation
+                startMode:
+                  type: string
+                  enum:
+                    - automatic
+                    - offer
                 coverageCriteria:
                   type: object
                   properties:
@@ -7061,6 +7082,11 @@ components:
                     - always
                     - semantic
                   default: once_per_conversation
+                startMode:
+                  type: string
+                  enum:
+                    - automatic
+                    - offer
                 coverageCriteria:
                   type: object
                   properties:

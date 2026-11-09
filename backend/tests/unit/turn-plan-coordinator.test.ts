@@ -43,7 +43,7 @@ const plan = (overrides: Partial<TurnPlan> = {}): TurnPlan => ({
   route: "retrieval",
   framing: { isIdentityQuestion: false },
   responseLanguage: "English",
-  routineRankings: [{ routineId: "r1", confidence: 0.9, variables: { company: "Acme" } }],
+  routineRankings: [{ routineId: "r1", confidence: 0.9, directRequest: false, variables: { company: "Acme" } }],
   directiveClassifications: [
     { name: "d1", matched: true, confidence: 0.7 },
     { name: "d2", matched: false, confidence: 0.1 },
@@ -375,7 +375,7 @@ describe("planAwareRoutineActivator", () => {
     expect(resolve).toHaveBeenCalledWith(preparedRank);
     expect(registry.applyRankedDecision).toHaveBeenCalledWith(
       preparedRank,
-      [{ routineId: "r1", confidence: 0.9, variables: { company: "Acme" } }],
+      [{ routineId: "r1", confidence: 0.9, directRequest: false, variables: { company: "Acme" } }],
       { turn },
     );
     expect(result).toMatchObject({ routineId: "r1" });

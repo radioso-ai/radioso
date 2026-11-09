@@ -153,12 +153,16 @@ The detail panel shows:
 
 - `surface` — where the ambiguity came from, such as `routine_activation` or
   `retrieval_sense`
-- `decision` — `asked`, `offered`, `auto_picked`, `suppressed`, or `none`. A
-  compatible-facets turn shows `none` here; the ask-rate metric records it as
-  `not_clarified`
+- `decision` — `asked`, `offered`, `auto_picked`, `suppressed`, `mapped`, or
+  `none`. A compatible-facets turn shows `none` here; the ask-rate metric records
+  it as `not_clarified`. `mapped` is the turn that resolved a reply to an offer
 - `reason` — why the turn resolved the way it did, such as `clear_margin`,
   `priority`, `suppressed`, `all_senses_kept`, `loop_guard`, `label_fallback`,
-  `phrasing_fallback`, `compatible_facets`, or `redundant_sources`
+  `phrasing_fallback`, `compatible_facets`, `redundant_sources`, `offer_first`
+  (an Offer-first routine was offered), or `already_offered` (it was offered
+  earlier in the conversation, so it is neither offered again nor started)
+- `startedBy` — `direct_request` when an Offer-first routine started because the
+  visitor asked for it directly
 - `candidates` — candidate ids, labels, and confidence values; the chosen winner
   and offered alternatives are labels only
 - `offerOutcome` — whether an inline offer was accepted as an alternative or
@@ -205,3 +209,11 @@ deflate the true ask-rate. Turns where the system found fewer than two candidate
 never enter the counter, because they were not ambiguous. A rising ask-rate means
 the assistant is interrupting more often; compare it against `not_clarified` and
 the silent-pick reasons to see where turns are going instead.
+
+A routine set to **Offer first** adds its own decisions on the `routine_activation`
+surface. `offered` with reason `offer_first` counts a turn whose answer offered to
+start the routine instead of starting it; it reflects the routine's start mode, not
+ambiguity, so leave that reason out of a routine ask-rate. The reply to the offer
+counts once as `offer_accepted`, `offer_declined`, or `offer_ignored`, and the
+mapping turn's trace shows `decision: "mapped"` with the same outcome in
+`mappingOutcome`.

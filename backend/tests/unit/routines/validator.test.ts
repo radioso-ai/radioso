@@ -714,6 +714,50 @@ describe("validateRoutineDefinition operator notice skill", () => {
   });
 });
 
+describe("validateRoutineDefinition start mode", () => {
+  const withStartMode = (
+    startMode: "automatic" | "offer",
+    coverageCriteria?: NonNullable<RoutineDefinition["activation"]["coverageCriteria"]>,
+  ): RoutineDefinition => {
+    const definition = definitionWithTool("order.lookup");
+    return { ...definition, activation: { ...definition.activation, startMode, ...(coverageCriteria ? { coverageCriteria } : {}) } };
+  };
+  const startModeCodes = (definition: RoutineDefinition) =>
+    validateRoutineDefinition(definition).diagnostics
+      .filter((diagnostic) => diagnostic.code.startsWith("start_mode_"))
+      .map((diagnostic) => diagnostic.code);
+
+  it("accepts an offer-first routine whose activation has no coverage gate", () => {
+    expect(validateRoutineDefinition(withStartMode("offer"))).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("accepts a coverage-gated routine that starts automatically", () => {
+    expect(startModeCodes(withStartMode("automatic", { coverage: ["unanswered"] }))).toEqual([]);
+  });
+
+  it("refuses offer first together with a coverage gate, locating the start mode", () => {
+    const result = validateRoutineDefinition(withStartMode("offer", { coverage: ["unanswered"] }));
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: "start_mode_offer_requires_ungated_activation", location: "activation.startMode" }),
+    ]);
+  });
+
+  it("explains in the diagnostic why a coverage gate cannot offer", () => {
+    const [diagnostic] = validateRoutineDefinition(withStartMode("offer", { coverage: ["unanswered"] })).diagnostics;
+
+    expect(diagnostic.message).toContain("coverage");
+    expect(diagnostic.message).toContain("Start automatically");
+  });
+
+  it("names the rule in the safe diagnostic an external caller sees", () => {
+    const safe = toSafeRoutineValidationDiagnostic({ code: "start_mode_offer_requires_ungated_activation", location: "activation.startMode" });
+
+    expect(safe.message).not.toBe("The routine structure is not valid for serving.");
+  });
+});
+
 describe("toSafeRoutineValidationDiagnostic", () => {
   it("names the rule and the slot for a declared-but-unused slot, not a generic fallback", () => {
     // Issue #1371: the operator got a bare `invalid_arguments` with no way to tell which rule

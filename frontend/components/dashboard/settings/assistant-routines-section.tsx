@@ -50,6 +50,12 @@ import {
   type RoutineFormState,
 } from '@/lib/routine-form'
 import { useCopilotEntity } from '@/lib/copilot-context'
+import {
+  draftAsRoutine,
+  draftWithHeader,
+  headerFromDraft,
+  mergeDocumentHeaderChange,
+} from '@/lib/routine-draft-header'
 
 // A stable no-op: the editor's own toggle supplies request-scoped callbacks per call instead
 // (see `toggleRoutineEnabled` below), so `useRoutineEnabledToggle`'s defaults never fire here.
@@ -99,72 +105,6 @@ const draftError = (draft: RoutineDefinitionDraft): string | null => {
     return 'Completion export needs at least one terminal trigger.'
   }
   return null
-}
-
-const draftAsRoutine = (draft: RoutineDefinitionDraft, routine?: RoutineDefinition | null): RoutineDefinition => ({
-  ...draft,
-  id: routine?.id ?? 'local-draft',
-  lineageId: routine?.lineageId ?? 'local-lineage',
-  agentId: routine?.agentId ?? 'local-agent',
-  version: routine?.version ?? 1,
-  enabled: draft.enabled ?? routine?.enabled ?? true,
-  createdAt: routine?.createdAt ?? new Date(0).toISOString(),
-  updatedAt: routine?.updatedAt ?? new Date(0).toISOString(),
-})
-
-const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | RoutineFormState): RoutineDraftHeader => ({
-  name: draft.name,
-  enabled: draft.enabled ?? true,
-  activation: {
-    triggerDescription: draft.activation.triggerDescription,
-    priority: String(draft.activation.priority),
-    reentryMode: draft.activation.reentryMode ?? 'once_per_conversation',
-    coverageCriteria: draft.activation.coverageCriteria,
-  },
-})
-
-const draftWithHeader = (draft: RoutineDefinitionDraft, header: RoutineDraftHeader): RoutineDefinitionDraft => ({
-  ...draft,
-  name: header.name.trim(),
-  enabled: header.enabled,
-  activation: {
-    ...draft.activation,
-    triggerDescription: header.activation.triggerDescription.trim(),
-    priority: Number.parseInt(header.activation.priority, 10) || 0,
-    reentryMode: header.activation.reentryMode,
-    coverageCriteria: header.activation.coverageCriteria,
-  },
-})
-
-const mergeDocumentHeaderChange = (
-  nextDraft: RoutineDefinitionDraft,
-  previousDraft: RoutineDefinitionDraft | null,
-  currentHeader: RoutineDraftHeader,
-): RoutineDefinitionDraft => {
-  // Before the first emit the document was seeded from the current header state, so the
-  // header itself is the baseline; using the emitted draft as its own baseline would make
-  // the first edit undetectable and revert it.
-  const previousHeader = previousDraft ? headerFromDraft(previousDraft) : currentHeader
-  const nextHeader = headerFromDraft(nextDraft)
-  return draftWithHeader(nextDraft, {
-    // The document has no name editor, so the header always owns the name; comparing the
-    // doc-emitted name would wipe a typed name with the seed's empty string. Enabled state is
-    // never part of the document's own content either, so it always carries forward untouched.
-    name: currentHeader.name,
-    enabled: currentHeader.enabled,
-    activation: {
-      triggerDescription: nextHeader.activation.triggerDescription !== previousHeader.activation.triggerDescription
-        ? nextHeader.activation.triggerDescription
-        : currentHeader.activation.triggerDescription,
-      priority: nextHeader.activation.priority !== previousHeader.activation.priority
-        ? nextHeader.activation.priority
-        : currentHeader.activation.priority,
-      reentryMode: nextHeader.activation.reentryMode !== previousHeader.activation.reentryMode
-        ? nextHeader.activation.reentryMode
-        : currentHeader.activation.reentryMode,
-      coverageCriteria: nextHeader.activation.coverageCriteria,
-    },
-  })
 }
 
 const currentBrowserUrlMatches = (href: string) =>

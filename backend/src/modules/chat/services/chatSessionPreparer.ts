@@ -5,6 +5,7 @@ import type {
   ConversationTrace,
   MessageSource,
   RoutineState,
+  RoutineActivationNotice,
   RoutineTurnYield,
   StagedContext,
 } from "@radioso/conversation-contract";
@@ -85,6 +86,7 @@ import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import { resolveSkillEffectPolicy, type ConversationDurability, type SkillEffectPolicy, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AnswerCoverageAssessment } from "../../answerCoverage/public.js";
+import type { DeferredRoutineOffer } from "./routines/deferredRoutineOffer.js";
 import type {
   ChatAnswerCoverageAssessment,
   ChatAnswerCoverageInteractionTrace,
@@ -197,24 +199,23 @@ export interface PreparedSession {
    * engine records the yield on the turn's trace. Absent on every other turn.
    */
   routineYield?: RoutineTurnYield;
-  /**
-   * What became of the tool call this turn carried, set by the routine turn (or the bypass
-   * report) and forwarded in the reply envelope. Absent on every message turn.
-   */
+  /** The routine pass's notice on a turn it left to the answer (an offer, a reply to one); handed back to the engine. */
+  routineActivationNotice?: RoutineActivationNotice;
+  /** The offer this turn's answer may close with, and whether the reply shows it (`routineClosing.ts`). */
+  routineOffer?: DeferredRoutineOffer;
+  /** What became of the tool call this turn carried, forwarded in the reply envelope; absent on message turns. */
   routineInvocationReport?: ChatRoutineInvocationReport;
   /**
-   * Rolling conversation summary text (issue #866), loaded once at prepare from the
-   * per-conversation summary store. Absent for new/short conversations. Injected
-   * alongside the recent-message window into turn interpretation and answer
-   * composition; renders nothing when absent.
+   * Rolling conversation summary text (issue #866), loaded once at prepare from the per-conversation
+   * summary store. Absent for new/short conversations. Injected alongside the recent-message window
+   * into turn interpretation and answer composition; renders nothing when absent.
    */
   conversationSummary?: string;
   /** Retrieval-sense alternatives to offer in the current grounded answer; labels only, never alternative chunks. */
   retrievalSenseOfferAlternatives?: ClarificationCandidate[];
   /**
-   * Neutral staged outcomes for this turn (A1, issue #482). Retrieval contributes
-   * one entry; the turn-outcome builder reads these instead of `retrieval`, so the
-   * outcome is a generic conversation outcome rather than a retrieval-shaped one.
+   * Neutral staged outcomes for this turn (A1, issue #482). Retrieval contributes one entry; the turn-outcome
+   * builder reads these instead of `retrieval`, so the outcome is a generic conversation outcome.
    */
   stagedContext: StagedContext[];
   /**
@@ -223,10 +224,7 @@ export interface PreparedSession {
    * persists; its `staged` entries are also merged into `stagedContext` for the matcher.
    */
   resolvedContext: ResolvedTurnContext;
-  /**
-   * Pre-answer dispatch trace (neutral `ConversationTrace`) that rides on the turn
-   * outcome. Distinct from the lifecycle's post-answer `ActivityTrace`.
-   */
+  /** Pre-answer dispatch trace (neutral `ConversationTrace`) on the turn outcome; not the post-answer `ActivityTrace`. */
   turnTrace: ConversationTrace;
   /** Optional caller-owned usage attribution shared by every model call in this turn. */
   usageAttribution?: ModelCallUsageAttribution;

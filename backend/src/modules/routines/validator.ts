@@ -43,6 +43,7 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   node_id_collision: "A step or terminal identifier is used more than once.",
   missing_terminal: "The routine needs at least one terminal.",
   declared_unused_slot: declaredUnusedSlotMessage,
+  start_mode_offer_requires_ungated_activation: "A routine that offers first cannot also have a coverage gate on its activation.",
   operator_notice_skill_unavailable: "An ending's operator notice is sent with a skill that is not one of this agent's enabled notify skills.",
   operator_notice_reply_to_slot_invalid: "An ending's operator notice sends replies to a field that is not one of this routine's email fields, or to one marked sensitive.",
 };
@@ -249,6 +250,16 @@ export const validateRoutineDefinition = (
         message: `exposure requires ungated activation: routine "${definition.name}" has an activation gate, and a tool call would bypass it; remove the gate or keep the routine reachable through conversation only.`,
       });
     }
+  }
+
+  // A coverage-gated routine is chosen while its answer is already being written, so there is no
+  // answer left to end with an offer to start it.
+  if (definition.activation.startMode === "offer" && definition.activation.coverageCriteria) {
+    diagnostics.push({
+      code: "start_mode_offer_requires_ungated_activation",
+      location: "activation.startMode",
+      message: `start mode offer requires ungated activation: routine "${definition.name}" has a coverage gate, which is decided while the answer is written, so the answer cannot end with an offer to start it; set the start mode to Start automatically or remove the coverage gate.`,
+    });
   }
 
   if (definition.completionExport?.enabled && definition.completionExport.destinationRef.trim().length === 0) {

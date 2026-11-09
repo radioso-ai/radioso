@@ -110,6 +110,22 @@ describe("routine reentry mode (issue #746)", () => {
   });
 });
 
+describe("routine start mode (issue #1716)", () => {
+  it("compiles an offer-first start mode onto the routine's typed activation", () => {
+    const definition = baseDefinition();
+    definition.activation.startMode = "offer";
+    expect(compileRoutineDefinition(definition).activation?.startMode).toBe("offer");
+  });
+
+  it("leaves the compiled activation without a start mode for an automatic routine, which the engine reads as automatic", () => {
+    const automatic = baseDefinition();
+    automatic.activation.startMode = "automatic";
+
+    expect(compileRoutineDefinition(baseDefinition()).activation).not.toHaveProperty("startMode");
+    expect(compileRoutineDefinition(automatic).activation).not.toHaveProperty("startMode");
+  });
+});
+
 describe("routine mutable slots (issue #746)", () => {
   it("parses an authored mutable slot and leaves legacy slots immutable", () => {
     const parsed = routineDefinitionDraftInputSchema.parse({

@@ -101,7 +101,16 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `conversationEngineChatTurn.ts` drops it from the session once `processTurn` answers.
   The grounded, grounded-miss, direct, and skill-result composers end their prompt with
   `appendRoutineLeadBack` (`shared/infra/prompts/steeringPromptRenderer.ts`) so the reply
-  closes by asking for what the pending step still needs. On an agent that hands
+  closes by asking for what the pending step still needs. When the routine pass offered
+  an Offer-first routine instead of starting it, the routine activation sink records the
+  engine's notice on `PreparedSession.routineActivationNotice`, `createChatProcessTurnInput`
+  hands it back to `processTurn` (which records its `clarification` stages, as for a yield),
+  and the same seam closes the reply with `chat/routine-offer.md`; `routineClosing.ts`
+  picks lead-back or offer. `routines/deferredRoutineOffer.ts` holds the offer for the turn
+  (`PreparedSession.routineOffer`, over `RoutineOfferRepository` and `routine_offers`): the
+  lifecycle saves its pending row and records it, in the turn's transaction, only when the
+  reply was composed with the closing, no routine took the turn over, no other clarification
+  saved a pending row, and the reply does not hand off. On an agent that hands
   retrieval misses to a person, `retrievalTurnSkill.ts` gives a composed decline no
   lead-back, and the grounded prompt adds `chat/routine-lead-back-decline-handoff.md`
   so a `no_support` answer leaves it out.

@@ -90,3 +90,40 @@ describe('slot flags in the routine text', () => {
   })
 })
 
+describe('start mode in the routine text (#1716)', () => {
+  const write = (startMode?: 'automatic' | 'offer') => serializeProseDoc({
+    name: 'Book a room',
+    trigger: 'A guest wants to book a room',
+    ...(startMode ? { startMode } : {}),
+    variables: [],
+    paragraphs: [{ segments: [{ kind: 'text', text: 'Ask for the dates.' }] }],
+  })
+
+  it('writes `start: offer` and reads it back', () => {
+    const text = write('offer')
+
+    expect(text).toContain('start: offer')
+    expect(parseProseDoc(text, () => false).startMode).toBe('offer')
+  })
+
+  it('writes nothing for an automatic start, which is what an absent line reads as', () => {
+    expect(write('automatic')).not.toContain('start:')
+    expect(write()).not.toContain('start:')
+    expect(parseProseDoc(write('automatic'), () => false).startMode).toBe('automatic')
+  })
+
+  it('ignores a start line it does not recognise and keeps the routine automatic', () => {
+    const text = write('offer').replace('start: offer', 'start: sometimes')
+
+    expect(parseProseDoc(text, () => false).startMode).toBe('automatic')
+  })
+
+  it('reads on past a header line it does not recognise', () => {
+    const text = write('offer').replace('start: offer', 'start: sometimes\nreentry: whenever\nstart: offer')
+
+    const parsed = parseProseDoc(text, () => false)
+    expect(parsed.startMode).toBe('offer')
+    expect(parsed.reentryMode).toBe('once_per_conversation')
+  })
+})
+

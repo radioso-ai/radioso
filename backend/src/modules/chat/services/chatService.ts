@@ -10,7 +10,6 @@ import {
 } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type {
   ConversationEngine,
-  ConversationClarificationStore,
   ConversationClarifier,
   ConversationRoutineStore,
   ConversationTrace,
@@ -115,7 +114,8 @@ import {
   ApprovalResumeTurn,
   type SuspendedRoutineReader,
 } from "./approvalResumeTurn.js";
-import { DeferredClarificationStore } from "./clarification/deferredClarificationStore.js";
+import { DeferredClarificationStore, type ChatClarificationStore } from "./clarification/deferredClarificationStore.js";
+import type { RoutineOfferStore } from "./routines/deferredRoutineOffer.js";
 import {
   resolvePendingClarification,
   type PendingClarificationResolution,
@@ -138,6 +138,7 @@ import {
 import { detectTurnResponseLanguage } from "./turnResponseLanguage.js";
 import { steeringDirectivesFromAuthored } from "../../agents/public.js";
 import {
+  clarificationResolutionMetric,
   type ClarificationMetricDecision,
   type ClarificationMetricReason,
 } from "./clarification/clarificationMetrics.js";
@@ -247,6 +248,8 @@ export interface ChatServiceOptions {
   conversationOwnershipRepository?: ConversationOwnershipRepository;
   /** Optional: durable per-session routine state store (with {@link routineProvider}). */
   routineStore?: ConversationRoutineStore;
+  /** Which routines each conversation was shown an offer to start (#1716). */
+  routineOfferStore?: RoutineOfferStore;
   /** Optional: detects parked routines so fresh visitor messages answer normally. */
   suspendedRoutineReader?: SuspendedRoutineReader;
   /** Optional: detects human-owned conversations so visitor turns do not start AI work. */
@@ -259,7 +262,7 @@ export interface ChatServiceOptions {
   handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
   clarifier?: ConversationClarifier;
   clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
-  clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
+  clarificationStore?: ChatClarificationStore;
   recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision; reason?: ClarificationMetricReason }) => void;
   retrievalSenseDetector?: RetrievalSenseDetectorPort;
   retrievalSenseClarificationPolicy?: ClarificationPolicy;
@@ -408,7 +411,7 @@ export class ChatService {
   private readonly conversationOwnershipReader?: ConversationOwnershipReader;
   private readonly clarifier?: ConversationClarifier;
   private readonly clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
-  private readonly clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
+  private readonly clarificationStore?: ChatClarificationStore;
   private readonly recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision; reason?: ClarificationMetricReason }) => void;
   private readonly retrievalSenseDetector?: RetrievalSenseDetectorPort;
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
@@ -456,6 +459,7 @@ export class ChatService {
       facetExtractionJobs,
       conversationOwnershipRepository,
       routineStore,
+      routineOfferStore,
       suspendedRoutineReader,
       conversationOwnershipReader,
       routineProvider,
@@ -545,6 +549,7 @@ export class ChatService {
       chatSessionPreparer: this.chatSessionPreparer,
       directiveStateStore,
       routineStore,
+      routineOfferStore,
       coverageHeadRecorder,
       coverageShadowAssessor,
     }) ?? new ChatTurnAssembly({
@@ -559,6 +564,7 @@ export class ChatService {
       turnRouter,
       turnInterpreter,
       routineStore,
+      routineOfferStore,
       routineProvider,
       clarifier,
       recordClarificationDecision,
@@ -721,20 +727,9 @@ export class ChatService {
       clarifier,
       turn: buildChatTurnContext(session),
     });
-    if (resolution.resolvedPending) {
-      const offerOutcome = "offerOutcome" in resolution ? resolution.offerOutcome : undefined;
-      const resolutionSource = "source" in resolution ? resolution.source : undefined;
-      const decision = offerOutcome === "accepted_alternative"
-        ? "offer_accepted_alternative"
-        : offerOutcome === "ignored"
-          ? "offer_ignored"
-          : resolution.kind === "routine_activation" || resolution.kind === "retrieval_sense"
-            ? "mapped"
-            : (resolution.outcome ?? "declined");
-      const surface = resolution.kind === "retrieval_sense" || resolutionSource === "retrieval_sense"
-        ? "retrieval_sense"
-        : "routine_activation";
-      this.recordClarificationDecision?.({ surface, decision });
+    const resolutionMetric = clarificationResolutionMetric(resolution);
+    if (resolutionMetric) {
+      this.recordClarificationDecision?.(resolutionMetric);
     }
     return { store, resolution, clarifier };
   }

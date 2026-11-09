@@ -2,7 +2,11 @@ import type {
   ClarificationClearOutcome,
   ConversationClarificationStore,
   PendingClarification,
+  RecentClarificationReader,
 } from "@radioso/conversation-contract";
+
+/** The clarification persistence chat is given; the recent-row reader is optional. */
+export type ChatClarificationStore = ConversationClarificationStore & Partial<RecentClarificationReader>;
 
 export type CapturedClarificationTransition =
   | { kind: "save"; pending: PendingClarification }

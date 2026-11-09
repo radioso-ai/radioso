@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import type { RoutineState } from "@radioso/conversation-contract";
 
+import { recordRoutineOffer } from "../../../db/repositories/routineOfferRepository.js";
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { MessageRepository, type MessageRecord } from "../../../db/repositories/messageRepository.js";
@@ -329,6 +330,11 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         )
         : null;
       await applyClarificationTransition(db, input.clarificationTransition);
+      // A routine offer the reply shows becomes the pending row, after any clear of the last one.
+      if (input.routineOffer) {
+        await saveClarificationState(db, input.routineOffer.pending);
+        await recordRoutineOffer(db, { sessionId: input.routineOffer.pending.sessionId, routineId: input.routineOffer.routineId });
+      }
       await markSensitiveVisitorMessage(db, input);
 
       const messageId = input.assistantMessage.id ?? randomUUID();

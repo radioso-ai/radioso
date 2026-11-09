@@ -218,7 +218,34 @@ describe("resolvePendingClarification", () => {
       source: "routine_activation",
       offerOutcome: "ignored",
       outcome: "declined",
+      mappingOutcome: "ignored",
+      mappingStage: expect.objectContaining({ outputs: expect.objectContaining({ decision: "mapped", mappingOutcome: "ignored" }) }),
     });
+  });
+
+  it("starts an accepted routine offer with the values it was offered with, and says it was accepted", async () => {
+    const offered = [candidates[0]];
+    const resolved = await resolvePendingClarification({
+      store: storeWith(pending({ mode: "offer", candidates: offered })),
+      clarifier: { phraseQuestion: vi.fn(), mapReply: vi.fn(async () => ({ kind: "chosen" as const, id: "demo" })) },
+      turn: turn("yes please"),
+    });
+
+    expect(resolved).toMatchObject({ kind: "routine_activation", mappingOutcome: "accepted" });
+    expect(resolved.kind === "routine_activation" ? resolved.mappingStage?.outputs : undefined)
+      .toMatchObject({ surface: "routine_activation", decision: "mapped", mappingOutcome: "accepted", chosenCandidateId: "demo" });
+    const activation = resolved.kind === "routine_activation" ? await resolved.activator.activate({ turn: turn("yes please") }) : null;
+    expect(activation).toEqual({ kind: "activate", routineId: "demo", variables: { company: "Acme" } });
+  });
+
+  it("tells a declined routine offer from an ignored one", async () => {
+    const resolved = await resolvePendingClarification({
+      store: storeWith(pending({ mode: "offer", candidates: [candidates[0]] })),
+      clarifier: { phraseQuestion: vi.fn(), mapReply: vi.fn(async () => ({ kind: "declined" as const })) },
+      turn: turn("no thanks"),
+    });
+
+    expect(resolved).toMatchObject({ kind: "normal", source: "routine_activation", mappingOutcome: "declined" });
   });
 
   it("surfaces recently ignored offer candidate ids for loop guard", async () => {

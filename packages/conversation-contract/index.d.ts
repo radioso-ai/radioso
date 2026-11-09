@@ -769,107 +769,43 @@ export type {
   ConversationModelStopReason,
 } from "./modelGateway.js";
 
-/**
- * A detector-supplied option for a generic clarification decision. The payload is
- * opaque to the Clarifier and is interpreted only by the originating surface.
- */
-export interface ClarificationCandidate {
-  id: string;
-  label: string;
-  description?: string;
-  /** Ordinal confidence within this candidate set only; never compare across sets. */
-  confidence: number;
-  payload: unknown;
-}
-
-/** Per-surface policy for deciding whether candidates are clear enough to avoid asking. */
-export interface ClarificationPolicy {
-  /** Minimum confidence required for a candidate to remain in the decision set. */
-  floor: number;
-  /** Top-vs-runner-up gap that counts as a clear winner. */
-  margin: number;
-  /**
-   * Inner ask boundary for the two-band policy. Values are expected to be less
-   * than or equal to `margin`; when absent this defaults to `margin`, leaving an
-   * empty soft-pick band and preserving the single-margin behavior.
-   */
-  askMargin?: number;
-  /** Maximum number of candidates presented in a clarifying question. */
-  maxOptions: number;
-}
-
-export type ClarificationAutoPickReason = "clear_margin" | "priority" | "suppressed" | "loop_guard";
-
-/** Pure clarification decision returned by engine-layer policy evaluation. */
-export type ClarificationDecision =
-  | { kind: "auto_pick"; candidate: ClarificationCandidate; reason: ClarificationAutoPickReason }
-  | { kind: "soft_pick"; candidate: ClarificationCandidate; alternatives: ClarificationCandidate[] }
-  | { kind: "ask"; candidates: ClarificationCandidate[] }
-  | { kind: "none" };
-
-export interface RoutineActivationDecisionMetadata {
-  consideredCandidates: ClarificationCandidate[];
-  decision: ClarificationDecision;
-  reason?: string;
-  margin?: number;
-}
-
-export type PendingClarificationStatus = "pending" | "resolved" | "declined" | "expired";
-export type PendingClarificationMode = "ask" | "offer";
-
-/** Conversation-scoped pending clarification row, including the presented opaque candidates. */
-export interface PendingClarification {
-  sessionId: string;
-  source: string;
-  /** Originating user message; nulled by stores once the row leaves pending status. */
-  originalQuery?: string;
-  /** `offer` stores answer-first alternatives that may be accepted on the next turn. */
-  mode?: PendingClarificationMode;
-  candidates: ClarificationCandidate[];
-  askedEventId?: string;
-  status: PendingClarificationStatus;
-  expiresAt: string | Date;
-}
-
-export type ClarificationClearOutcome = "resolved" | "declined" | "expired";
-
-/** Durable port for the at-most-one pending clarification in a conversation. */
-export interface ConversationClarificationStore {
-  loadPending(input: { sessionId: string }): Promise<PendingClarification | null>;
-  save(pending: PendingClarification): Promise<void>;
-  clear(input: { sessionId: string; outcome?: ClarificationClearOutcome }): Promise<void>;
-}
-
-/**
- * Optional read-side companion for clarification stores. It lives with the store
- * port because hosts own persistence/indexing; the engine only consumes the
- * capability when a host provides it.
- */
-export interface RecentClarificationReader {
-  loadRecent(input: { sessionId: string }): Promise<PendingClarification | null>;
-}
-
-export type ClarificationReplyMapping =
-  | { kind: "chosen"; id: string }
-  | { kind: "declined" }
-  | { kind: "unrelated" };
-
-export interface ClarificationReplyMapInput {
-  candidates: ClarificationCandidate[];
-  turn: TurnContext;
-  /**
-   * Pending clarification mode. Omitted callers keep the historical blocking
-   * clarification behavior; `offer` asks clarifiers to accept only selection-only
-   * replies and treat substantive follow-up requests as unrelated.
-   */
-  mode?: PendingClarificationMode;
-}
-
-/** LLM-backed clarifier port for phrasing questions and mapping free-text replies. */
-export interface ConversationClarifier {
-  phraseQuestion(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<string>;
-  mapReply(input: ClarificationReplyMapInput): Promise<ClarificationReplyMapping>;
-}
+export type {
+  ClarificationAutoPickReason,
+  ClarificationCandidate,
+  ClarificationClearOutcome,
+  ClarificationDecision,
+  ClarificationOfferKind,
+  ClarificationOfferMappingOutcome,
+  ClarificationPolicy,
+  ClarificationReplyMapInput,
+  ClarificationReplyMapping,
+  ConversationClarificationStore,
+  ConversationClarifier,
+  PendingClarification,
+  PendingClarificationMode,
+  PendingClarificationStatus,
+  RecentClarificationReader,
+  RoutineActivationDecisionMetadata,
+} from "./clarification.js";
+import type {
+  ClarificationCandidate,
+  ConversationClarificationStore,
+  ConversationClarifier,
+  RoutineActivationDecisionMetadata,
+} from "./clarification.js";
+export type {
+  ConversationRoutineActivationSink,
+  ConversationRoutineOfferMemory,
+  RoutineActivationNotice,
+  RoutineStartMode,
+  RoutineStartOffer,
+} from "./routineOffer.js";
+import type {
+  ConversationRoutineActivationSink,
+  ConversationRoutineOfferMemory,
+  RoutineActivationNotice,
+  RoutineStartMode,
+} from "./routineOffer.js";
 
 export interface ConversationSkillDispatcher {
   dispatch(input: {
@@ -1205,6 +1141,8 @@ export interface RoutineActivation {
   triggerDescription: string;
   priority: number;
   reentryMode: RoutineReentryMode;
+  /** Absent reads as `automatic`. */
+  startMode?: RoutineStartMode;
   /** Optional skill/gate the host consults before offering the routine. */
   gateRef?: string;
   /** Optional typed semantic gate; absent retains the historical activation path. */
@@ -1689,6 +1627,12 @@ export interface ConversationRoutineActivator {
         routineId: string;
         variables?: Record<string, unknown>;
         decisionMetadata?: RoutineActivationDecisionMetadata;
+        /**
+         * The picked routine's authored start mode and the ranker's verdict on whether the
+         * visitor directly asked for it. Set by a ranked pick only; absent starts the routine.
+         */
+        startMode?: RoutineStartMode;
+        directRequest?: boolean;
       }
     | { kind: "clarify"; candidates: ClarificationCandidate[] }
     | null
@@ -1758,6 +1702,8 @@ export interface ProcessTurnInput {
    * message again; otherwise it ignores it and attempts the routine as usual.
    */
   routineYield?: RoutineTurnYield;
+  /** The host's own routine pass noticed this; its stages are recorded only on the turn it names. */
+  routineActivationNotice?: RoutineActivationNotice;
 }
 
 export interface ConversationCoverageReactionRecorder {
@@ -1830,6 +1776,14 @@ export interface AttemptRoutineInput {
   progress?: ConversationProgressPort;
   /** Told when the active routine yields the turn, so the host can carry its pending step into the answer. */
   routineYieldSink?: ConversationRoutineYieldSink;
+  /**
+   * Required for an Offer-first routine to be offered; without it such a routine starts only on a
+   * direct request. The host records an offer itself, once the answer that ends with it is shown.
+   */
+  routineOfferMemory?: ConversationRoutineOfferMemory;
+  routineActivationSink?: ConversationRoutineActivationSink;
+  /** The host resolved a reply to a pending offer this turn; the turn's trace records this stage. */
+  clarificationMappingStage?: ConversationTraceStage;
 }
 
 export interface ResumeAwaitingDecisionInput {
@@ -2030,6 +1984,8 @@ export interface RankedRoutineMatch {
   routineId: string;
   confidence: number;
   variables?: Record<string, unknown>;
+  /** The latest message directly asks for what the routine does, rather than exploring it. */
+  directRequest?: boolean;
 }
 
 /**

@@ -1502,6 +1502,7 @@ Public surfaces and contracts:
 - `packages/conversation-contract/index.d.ts`
 - `packages/conversation-contract/modelGateway.d.ts` (the model port a host implements: request, completion with its stop reason, and `ConversationModelGateway`; re-exported from `index.d.ts`)
 - `packages/conversation-contract/routineTrace.d.ts` (the routine sub-trace: per-step entries, captured and replaced slot keys, opt-in slot values; re-exported from `index.d.ts`)
+- `packages/conversation-contract/clarification.d.ts` (candidates, the ask/offer decision, the pending row, the clarifier port) and `routineOffer.d.ts` (a routine's start mode, the offer memory port, the activation notice); both re-exported from `index.d.ts`
 - `packages/conversation-contract/index.js` (runtime values of the `declare const` code lists; change the two together)
 
 Useful searches:
@@ -1544,6 +1545,14 @@ Primary internals:
   coverage verdict: directive applicability from the head, coverage routine
   candidate evaluation and ranked activation, and reaction recording all run
   from here, returning `proceed` or `yield_turn` — #1260)
+- `packages/conversation-engine/src/routineStart.ts` (whether a ranked pick of an
+  Offer-first routine starts or is offered, the pending offer row the host saves
+  once the reply shows the offer, the once-per-conversation offer memory check, and
+  the stages an unclaimed pass hands the host as a `RoutineActivationNotice` — #1716;
+  the backend side is `chat/services/routines/deferredRoutineOffer.ts` over
+  `db/repositories/routineOfferRepository.ts`; types in
+  `packages/conversation-contract/routineOffer.d.ts`, generic clarification types in
+  `clarification.d.ts`)
 - `packages/conversation-engine/src/skillFallback.ts` (the skill a selection's
   `fallbackSkillName` dispatches when the selected skill fails, and
   the dispatch stage's `failureReason` and `fallbackFor` outputs)
@@ -1926,7 +1935,10 @@ Related docs and specs:
 
 Owns the authoring side of multi-step routines: the definition data model, the
 compiler that turns a definition into the conversation-engine routine graph, the
-validator (author-facing diagnostics), and the per-agent repository. A routine is
+validator (author-facing diagnostics), and the per-agent repository. An authored
+`activation.startMode` (`automatic` or `offer`) rides on the definition and the
+compiled routine; `start_mode_offer_requires_ungated_activation` refuses `offer`
+on a coverage-gated activation. A routine is
 authored as data into the agent's draft, and reaches customers through the agent
 revision the operator publishes; the chat runtime loads an agent's enabled
 routines per turn and runs them through the engine. The runtime itself —

@@ -8,13 +8,10 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionDeleteDraftResult,
-  type RoutineApprovalOption,
   type RoutineFieldGuardOp,
   type RoutineFieldGuardUnit,
-  type RoutineGuardKind,
   type RoutineReentryMode,
   type RoutineSlotType,
-  type RoutineStepKind,
   type RoutineTerminalKind,
 } from "../../modules/routines/public.js";
 import {
@@ -31,6 +28,21 @@ import {
   selectCanonicalRoutineDefinitions,
 } from "../../modules/routines/draftProjection.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
+import {
+  asArray,
+  asRecord,
+  normalizeGuardKind,
+  normalizeStepKind,
+  readApprovalOptions,
+  readBoolean,
+  readFieldValue,
+  readFieldValues,
+  readMetadata,
+  readNullableString,
+  readNumber,
+  readOperatorNotice,
+  readString,
+} from "./routineDefinitionRowReaders.js";
 
 interface RoutineDefinitionRow {
   id: string;
@@ -43,6 +55,7 @@ interface RoutineDefinitionRow {
   activation_gate_ref: string | null;
   activation_priority: number;
   activation_reentry_mode: string;
+  activation_start_mode: string;
   activation_coverage_criteria: unknown;
   slots: unknown;
   steps: unknown;
@@ -106,86 +119,6 @@ const matchesExpectedUpdatedAt = (expectedUpdatedAt: Date) =>
 const nextAuthoredUpdatedAt = () =>
   sql<Date>`greatest(now(), updated_at + interval '1 millisecond')`;
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-
-const readString = (record: Record<string, unknown>, key: string): string =>
-  typeof record[key] === "string" ? record[key] : "";
-
-const readNullableString = (record: Record<string, unknown>, key: string): string | null =>
-  typeof record[key] === "string" ? record[key] : null;
-
-const readNumber = (record: Record<string, unknown>, key: string): number =>
-  typeof record[key] === "number" ? record[key] : 0;
-
-const readBoolean = (record: Record<string, unknown>, key: string): boolean =>
-  typeof record[key] === "boolean" ? record[key] : false;
-
-const readOperatorNotice = (
-  terminal: Record<string, unknown>,
-): NonNullable<RoutineDefinition["terminals"][number]["operatorNotice"]> => {
-  const skillName = readNullableString(terminal, "operatorNoticeSkillName");
-  const replyToSlot = readNullableString(terminal, "operatorNoticeReplyToSlot");
-  const includeAiSummary = readBoolean(terminal, "operatorNoticeIncludeAiSummary");
-  return {
-    subject: readNullableString(terminal, "operatorNoticeSubject"),
-    intro: readNullableString(terminal, "operatorNoticeIntro"),
-    ...(skillName ? { skillName } : {}),
-    ...(replyToSlot ? { replyToSlot } : {}),
-    ...(includeAiSummary ? { includeAiSummary: true } : {}),
-  };
-};
-
-const readMetadata = (record: Record<string, unknown>, key: string): Record<string, unknown> =>
-  asRecord(record[key]);
-
-// A field guard's comparison value is a string, number, or boolean (or absent). It rides
-// in a jsonb column, so it arrives already typed — pass it through, drop anything else.
-const readFieldValue = (record: Record<string, unknown>, key: string): string | number | boolean | null => {
-  const value = record[key];
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? value : null;
-};
-
-const readFieldValues = (record: Record<string, unknown>, key: string): (string | number | boolean)[] | null => {
-  const value = record[key];
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const primitives = value.filter((entry): entry is string | number | boolean =>
-    typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean",
-  );
-  // An empty list is not a valid `in` guard (the domain enforces min(1)); surface it as
-  // absent rather than a never-matching `values: []` the compiler would still spread.
-  return primitives.length > 0 ? primitives : null;
-};
-
-const asArray = (value: unknown): Record<string, unknown>[] =>
-  Array.isArray(value) ? value.map(asRecord) : [];
-
-// An approval step's options ride in a jsonb column. Read back the {id,label,description?}
-// shape the domain expects, dropping anything malformed. Absent for non-approval steps.
-const readApprovalOptions = (record: Record<string, unknown>, key: string): RoutineApprovalOption[] | null => {
-  const value = record[key];
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const options = value
-    .map(asRecord)
-    .filter((option) => typeof option.id === "string" && typeof option.label === "string")
-    .map((option) => ({
-      id: option.id as string,
-      label: option.label as string,
-      description: typeof option.description === "string" ? option.description : null,
-    }));
-  return options.length > 0 ? options : null;
-};
-
-const normalizeStepKind = (kind: string): RoutineStepKind =>
-  kind === "fork" ? "chat" : kind as RoutineStepKind;
-
-const normalizeGuardKind = (kind: string): RoutineGuardKind =>
-  kind === "always" || kind === "fallback" ? "default" : kind as RoutineGuardKind;
-
 // The full definition projection: a routine plus its children rolled up via json_agg in
 // LATERAL subqueries. Expressed with the Kysely `sql` tag (the sanctioned escape hatch for
 // complex read SQL) rather than the builder — the LATERAL/json_build_object shape would be
@@ -204,6 +137,7 @@ const definitionSelect = sql`
     d.activation_gate_ref,
     d.activation_priority,
     d.activation_reentry_mode,
+    d.activation_start_mode,
     d.activation_coverage_criteria,
     COALESCE(slots.items, '[]'::json) AS slots,
     COALESCE(steps.items, '[]'::json) AS steps,
@@ -304,6 +238,8 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     reentryMode: routineReentryModes.includes(row.activation_reentry_mode as RoutineReentryMode)
       ? (row.activation_reentry_mode as RoutineReentryMode)
       : "once_per_conversation",
+    // Only an offer-first routine carries the key, so an automatic row reads back as it did before the column.
+    ...(row.activation_start_mode === "offer" ? { startMode: "offer" as const } : {}),
     ...(answerCoverageCriteriaSchema.safeParse(row.activation_coverage_criteria).success
       ? { coverageCriteria: answerCoverageCriteriaSchema.parse(row.activation_coverage_criteria) }
       : {}),
@@ -457,6 +393,7 @@ export class RoutineDefinitionRepository {
         activation_gate_ref: draft.activation.gateRef,
         activation_priority: draft.activation.priority,
         activation_reentry_mode: draft.activation.reentryMode,
+        activation_start_mode: draft.activation.startMode ?? "automatic",
         activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
         ...exposureColumns(draft),
         lineage_id: id,
@@ -487,6 +424,7 @@ export class RoutineDefinitionRepository {
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
+          activation_start_mode: draft.activation.startMode ?? "automatic",
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
           ...exposureColumns(draft),
           updated_at: nextAuthoredUpdatedAt(),
@@ -684,6 +622,7 @@ export class RoutineDefinitionRepository {
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
+          activation_start_mode: draft.activation.startMode ?? "automatic",
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
           ...exposureColumns(draft),
           lineage_id: id,
@@ -721,6 +660,7 @@ export class RoutineDefinitionRepository {
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
+          activation_start_mode: draft.activation.startMode ?? "automatic",
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
           ...exposureColumns(draft),
           updated_at: nextAuthoredUpdatedAt(),

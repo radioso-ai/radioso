@@ -7,10 +7,12 @@ import type {
   PendingRenderableTurn,
   ProcessTurnResult,
   RenderableTurn,
+  RoutineStartOffer,
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
 import { clarificationStage } from "./clarification.js";
+import { offerRoutine, offersInsteadOfStarting, startedRoutineStage } from "./routineStart.js";
 import { correctableSlots, verifySlotCorrection } from "./slotCorrection.js";
 import { buildResolvedSteering, knownAnswerCoverage, steeringForKnownVerdict } from "./steering.js";
 import { claimRoutineResume } from "./routineResume.js";
@@ -235,6 +237,7 @@ const claimActivationClarification = async (
   baseTurn: TurnContext,
   history: ConversationMessage[],
   candidates: ClarificationCandidate[],
+  leadingStages: ConversationTraceStage[],
 ): Promise<ConversationRoutineTurnClaim | null> => {
   const { clarifier, clarificationStore } = input;
   if (!clarifier || !clarificationStore) {
@@ -306,6 +309,7 @@ const claimActivationClarification = async (
             },
           }),
           historyGatherStage(history),
+          ...leadingStages,
           clarificationStage({
             surface: "routine_activation",
             decision: { kind: "ask", candidates },
@@ -317,9 +321,39 @@ const claimActivationClarification = async (
   };
 };
 
+/**
+ * What an activation pass records whether or not it claims the turn: the clarification stages
+ * (a reply to an earlier offer, the activation's own decision) and an offer the answer ends with.
+ */
+interface ActivationPassRecord {
+  stages: ConversationTraceStage[];
+  offer?: RoutineStartOffer;
+}
+
+/** A pass that leaves the turn to the answer still hands the host what it recorded. */
 const claimRoutineWithMode = async (
   input: AttemptRoutineInput,
   mode: "normal" | "activation_only",
+): Promise<ConversationRoutineTurnClaim | null> => {
+  const record: ActivationPassRecord = {
+    stages: input.clarificationMappingStage ? [input.clarificationMappingStage] : [],
+  };
+  const claim = await claimRoutineTurn(input, mode, record);
+  if (!claim && (record.stages.length > 0 || record.offer)) {
+    input.routineActivationSink?.noticed({
+      sessionId: input.sessionId,
+      ...(input.inputEvent.id ? { inputEventId: input.inputEvent.id } : {}),
+      stages: record.stages,
+      ...(record.offer ? { offer: record.offer } : {}),
+    });
+  }
+  return claim;
+};
+
+const claimRoutineTurn = async (
+  input: AttemptRoutineInput,
+  mode: "normal" | "activation_only",
+  record: ActivationPassRecord,
 ): Promise<ConversationRoutineTurnClaim | null> => {
   if (!input.routineStore || !input.routineRunner) {
     return null;
@@ -339,7 +373,6 @@ const claimRoutineWithMode = async (
     ...(input.referenceTimeZone ? { referenceTimeZone: input.referenceTimeZone } : {}),
   };
   let state = resuming ? active : null;
-  let activationClarificationStage: ConversationTraceStage | null = null;
   const completedStates = state ? [] : ((await input.routineStore.loadCompleted?.({ sessionId: input.sessionId })) ?? []);
   if (!state) {
     if (mode === "normal") {
@@ -369,17 +402,26 @@ const claimRoutineWithMode = async (
     if (!activation) {
       return null;
     }
-    if (activation.kind === "activate" && activation.decisionMetadata) {
-      activationClarificationStage = clarificationStage({
+    if (activation.kind === "clarify") {
+      return claimActivationClarification(input, baseTurn, history, activation.candidates, record.stages);
+    }
+    // The coverage pass decides after the answer is underway, so it never offers.
+    if (mode === "normal" && offersInsteadOfStarting(activation)) {
+      const offered = await offerRoutine(input, activation);
+      record.stages.push(offered.stage);
+      if (offered.offer) {
+        record.offer = offered.offer;
+      }
+      return null;
+    }
+    if (activation.decisionMetadata) {
+      record.stages.push(startedRoutineStage(clarificationStage({
         surface: "routine_activation",
         decision: activation.decisionMetadata.decision,
         consideredCandidates: activation.decisionMetadata.consideredCandidates,
         reason: activation.decisionMetadata.reason,
         margin: activation.decisionMetadata.margin,
-      });
-    }
-    if (activation.kind === "clarify") {
-      return claimActivationClarification(input, baseTurn, history, activation.candidates);
+      }), activation));
     }
     state = {
       sessionId: input.sessionId,
@@ -399,7 +441,7 @@ const claimRoutineWithMode = async (
       state,
       resuming,
       history,
-      activationClarificationStage,
+      activationStages: record.stages,
     });
   } catch (error) {
     throw new RoutineActivationFailure("resume", error);

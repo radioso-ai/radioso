@@ -1,6 +1,8 @@
 import type {
   ClarificationCandidate,
   ClarificationDecision,
+  ClarificationOfferKind,
+  ClarificationOfferMappingOutcome,
   ClarificationPolicy,
   ConversationClarificationStore,
   ConversationClarifier,
@@ -9,6 +11,9 @@ import type {
   RecentClarificationReader,
   TurnContext,
 } from "@radioso/conversation-contract";
+
+/** The surface a routine activation's clarifications and offers are saved and traced under. */
+export const ROUTINE_ACTIVATION_SURFACE = "routine_activation";
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -26,6 +31,9 @@ export interface PendingClarificationResolution {
   offerOutcome?: "accepted_alternative" | "ignored";
   outcome?: "resolved" | "declined" | "expired";
   chosen?: { source: string; candidate: ClarificationCandidate; originalQuery?: string };
+  /** How a reply to an `offer` row resolved, and the stage the turn's trace records for it. */
+  mappingOutcome?: ClarificationOfferMappingOutcome;
+  mappingStage?: ConversationTraceStage;
 }
 
 const candidatePriority = (
@@ -64,6 +72,10 @@ const sameCandidateSet = (left: string[], right: string[]): boolean => {
 const isExpired = (pending: PendingClarification): boolean =>
   new Date(pending.expiresAt).getTime() <= Date.now();
 
+/** A routine activation's offer is an offer to start something; any other offer presents readings. */
+const offerKindOf = (pending: PendingClarification): ClarificationOfferKind =>
+  pending.source === ROUTINE_ACTIVATION_SURFACE ? "start" : "alternatives";
+
 const candidateIds = (pending: PendingClarification): string[] =>
   pending.candidates.map((candidate) => candidate.id);
 
@@ -94,17 +106,20 @@ export const resolvePendingClarification = async (input: {
   const mapping = await input.clarifier.mapReply({
     candidates: pending.candidates,
     turn: input.turn,
-    ...(mode === "offer" ? { mode } : {}),
+    ...(mode === "offer" ? { mode, offerKind: offerKindOf(pending) } : {}),
   });
   if (mapping.kind !== "chosen") {
     await input.store.clear({ sessionId: pending.sessionId, outcome: "declined" });
     if (mode === "offer") {
+      const mappingOutcome = mapping.kind === "declined" ? "declined" : "ignored";
       return {
         resolvedPending: true,
         source: pending.source,
         outcome: "declined",
         offerOutcome: "ignored",
         loopGuardCandidateIds: candidateIds(pending),
+        mappingOutcome,
+        mappingStage: clarificationMappingStage({ surface: pending.source, candidates: pending.candidates, mappingOutcome }),
       };
     }
     return {
@@ -123,6 +138,17 @@ export const resolvePendingClarification = async (input: {
     suppressNewClarification: true,
     outcome: "resolved",
     ...(mode === "offer" && candidateIndex > 0 ? { offerOutcome: "accepted_alternative" as const } : {}),
+    ...(mode === "offer"
+      ? {
+          mappingOutcome: "accepted" as const,
+          mappingStage: clarificationMappingStage({
+            surface: pending.source,
+            candidates: pending.candidates,
+            mappingOutcome: "accepted",
+            chosenCandidateId: mapping.id,
+          }),
+        }
+      : {}),
     ...(candidate
       ? {
           chosen: {
@@ -197,7 +223,7 @@ const decisionName = (decision: ClarificationDecision): string => {
   if (decision.kind === "ask") {
     return "asked";
   }
-  if (decision.kind === "soft_pick") {
+  if (decision.kind === "soft_pick" || decision.kind === "offer") {
     return "offered";
   }
   if (decision.kind === "auto_pick") {
@@ -213,7 +239,7 @@ const decisionCandidates = (decision: ClarificationDecision): ClarificationCandi
   if (decision.kind === "soft_pick") {
     return [decision.candidate, ...decision.alternatives];
   }
-  if (decision.kind === "auto_pick") {
+  if (decision.kind === "auto_pick" || decision.kind === "offer") {
     return [decision.candidate];
   }
   return [];
@@ -230,9 +256,7 @@ export const clarificationStage = (input: {
   const timestamp = nowIso();
   const reason = input.reason ?? (input.decision.kind === "auto_pick" ? input.decision.reason : undefined);
   const consideredCandidates = input.consideredCandidates ?? decisionCandidates(input.decision);
-  const chosenCandidateId = input.decision.kind === "auto_pick" || input.decision.kind === "soft_pick"
-    ? input.decision.candidate.id
-    : undefined;
+  const chosenCandidateId = "candidate" in input.decision ? input.decision.candidate.id : undefined;
   return {
     id: "clarification",
     kind: "clarification",
@@ -247,6 +271,33 @@ export const clarificationStage = (input: {
       ...(chosenCandidateId ? { chosenCandidateId } : {}),
       candidates: traceCandidates(consideredCandidates),
       ...(input.mappingOutcome ? { mappingOutcome: input.mappingOutcome } : {}),
+    },
+  };
+};
+
+/**
+ * The stage a turn records when it resolves a reply to an `offer` row: what was offered and
+ * whether the visitor accepted it, said no, or moved on. Ids, labels and confidences only.
+ */
+export const clarificationMappingStage = (input: {
+  surface: string;
+  candidates: ClarificationCandidate[];
+  mappingOutcome: ClarificationOfferMappingOutcome;
+  chosenCandidateId?: string;
+}): ConversationTraceStage => {
+  const timestamp = nowIso();
+  return {
+    id: "clarification",
+    kind: "clarification",
+    status: "applied",
+    startedAt: timestamp,
+    completedAt: timestamp,
+    outputs: {
+      surface: input.surface,
+      decision: "mapped",
+      mappingOutcome: input.mappingOutcome,
+      ...(input.chosenCandidateId ? { chosenCandidateId: input.chosenCandidateId } : {}),
+      candidates: traceCandidates(input.candidates),
     },
   };
 };

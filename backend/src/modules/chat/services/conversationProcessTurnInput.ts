@@ -9,6 +9,7 @@ import type {
   ConversationModelGateway,
   ConversationProgressPort,
   ConversationRoutineActivator,
+  ConversationRoutineOfferMemory,
   ConversationRoutineReentryGate,
   ConversationRoutineSlotCorrection,
   ConversationRoutineRunner,
@@ -16,6 +17,7 @@ import type {
   ConversationRetrievalWorkPort,
   ConversationSkillDispatcher,
   ConversationSkillSelector,
+  ConversationTraceStage,
   ConversationTurnInterpreter,
   ConversationTurnComposer,
   ConversationTurnStreamComposer,
@@ -327,6 +329,7 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
     ...(options.suppressNewClarification ? { suppressNewClarification: options.suppressNewClarification } : {}),
     ...(readSession().routineYield ? { routineYield: readSession().routineYield } : {}),
+    ...(readSession().routineActivationNotice ? { routineActivationNotice: readSession().routineActivationNotice } : {}),
   };
 };
 
@@ -355,6 +358,8 @@ interface AttemptRoutineInputOptions {
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
   progress?: ConversationProgressPort;
+  routineOfferMemory?: ConversationRoutineOfferMemory;
+  clarificationMappingStage?: ConversationTraceStage;
 }
 
 /**
@@ -392,9 +397,18 @@ export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): 
     ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
     ...(options.suppressNewClarification ? { suppressNewClarification: options.suppressNewClarification } : {}),
     ...(options.progress ? { progress: options.progress } : {}),
+    ...(options.routineOfferMemory ? { routineOfferMemory: options.routineOfferMemory } : {}),
+    ...(options.clarificationMappingStage ? { clarificationMappingStage: options.clarificationMappingStage } : {}),
     routineYieldSink: {
       yielded(routineYield) {
         options.session.routineYield = routineYield;
+      },
+    },
+    // An offer, or a reply to one, on a turn the routine pass left to the answer: the answer
+    // closes with the offer, and `createChatProcessTurnInput` hands the stages to the engine.
+    routineActivationSink: {
+      noticed(notice) {
+        options.session.routineActivationNotice = notice;
       },
     },
   };

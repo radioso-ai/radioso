@@ -74,6 +74,7 @@ import {
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import type { ChatRoutineTurnReporter, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
+import type { ShownRoutineOffer } from "./routines/deferredRoutineOffer.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
 import { conversationSummaryRefreshRequest } from "./summary/conversationSummaryRefreshJob.js";
 import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../shared/background-jobs/index.js";
@@ -265,6 +266,8 @@ export interface AssistantTurnPersistencePort {
     routineStateTransition?: CapturedRoutineTransition | null;
     pendingDecisionTransition?: PendingDecisionCreateInput | null;
     clarificationTransition?: CapturedClarificationTransition | null;
+    /** A routine offer the reply shows (#1716): its pending row and the routine it remembers. */
+    routineOffer?: ShownRoutineOffer | null;
     /** Exact request whose provisional coverage assessment this reply commits. */
     answerCoverageRequestMessageId?: string;
     /**
@@ -296,23 +299,8 @@ export interface AssistantTurnPersistencePort {
   }): Promise<boolean>;
 }
 
-/** The heard part of a reply a newer input cut off mid-stream, and the records of the cut. */
-export interface CutReplyStoreInput {
-  workspaceId: string;
-  conversationId: string;
-  /** Already marked cut short. */
-  assistantMessage: MessageCreateInput & { id: string };
-  /** The turn's cancelled `chat.answer` event naming the message, then the channel's own record of the cut. */
-  auditEvents: readonly AuditEventInput[];
-}
-
-/**
- * Where the heard part of a cut-off reply is kept: the message, the conversation's touch and the
- * audit events in one transaction, so the part is never stored without its records.
- */
-export interface CutReplyStore {
-  storeCutReply(input: CutReplyStoreInput): Promise<void>;
-}
+export type { CutReplyStore, CutReplyStoreInput } from "./cutReplyStore.js";
+import type { CutReplyStore } from "./cutReplyStore.js";
 
 interface PendingDecisionWriterPort {
   create(input: PendingDecisionCreateInput): Promise<unknown>;
@@ -876,6 +864,11 @@ export class ChatTurnLifecycle {
     // capabilities below drop only customer- and operator-facing effects.
     const actions = capabilities.turnActions === "enqueue" ? input.actions : undefined;
     const ownershipHandoff = capabilities.ownershipHandoff === "apply" ? input.ownershipHandoff : undefined;
+    const routineOffer = input.session.routineOffer?.shown({
+      routineRan: Boolean(input.routineStateTransition),
+      clarification: input.clarificationTransition,
+      handsOff: Boolean(input.ownershipHandoff),
+    }) ?? null;
     const recordsBookkeeping = capabilities.turnBookkeeping === "record";
     const additionalAuditEvent = recordsBookkeeping ? input.additionalAuditEvent : undefined;
     // The rolling conversation summary (#866) is regenerated in the worker, never on this turn's
@@ -958,6 +951,7 @@ export class ChatTurnLifecycle {
         routineStateTransition: input.routineStateTransition,
         pendingDecisionTransition: input.pendingDecisionTransition,
         clarificationTransition: input.clarificationTransition,
+        routineOffer,
         answerCoverageRequestMessageId: input.session.userMessage.id,
         ...(sensitiveSlotKeys.length > 0
           ? { sensitiveVisitorMessage: { id: input.session.userMessage.id, sensitiveSlotKeys } }
@@ -1018,6 +1012,9 @@ export class ChatTurnLifecycle {
           reason: ownershipHandoff.reason,
         })
         : null;
+      if (routineOffer) {
+        await input.session.routineOffer?.commit(routineOffer);
+      }
       await input.commitClarificationState?.();
       await this.conversationRepository.touch(presentation.successInput.conversationId, input.workspaceId);
       await this.enqueueBackgroundJobs(backgroundJobs, input.session.conversation.id);

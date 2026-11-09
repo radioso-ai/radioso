@@ -9,7 +9,6 @@ import type {
   ConversationRoutineStore,
   ConversationTrace,
   ConversationTurnInterpreter,
-  AnswerCoverageAssessment,
   ClarificationCandidate,
   ClarificationPolicy,
   PendingClarification,
@@ -67,11 +66,12 @@ import {
   type CapturedRoutineTransition,
 } from "./routines/deferredRoutineStore.js";
 import { DeferredCoverageReactionRecorder } from "./answerCoverage/deferredCoverageReactionRecorder.js";
+import { DeferredRoutineOffer, type RoutineOfferStore } from "./routines/deferredRoutineOffer.js";
 import {
   DeferredClarificationStore,
   type CapturedClarificationTransition,
 } from "./clarification/deferredClarificationStore.js";
-import type { PendingClarificationResolution } from "./clarification/pendingClarificationResolver.js";
+import { offerMappingStage, type PendingClarificationResolution } from "./clarification/pendingClarificationResolver.js";
 import {
   evaluateRetrievalSenseClarification,
   phraseRetrievalSenseAsk,
@@ -90,10 +90,10 @@ import { buildChatTurnContext } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
-import type { AnswerCoverageRecord } from "../../answerCoverage/public.js";
 import type { RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
 import { admitsPageEvidence, freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
+import { applyCoverageAssessment, applyCoverageInteractionTrace } from "./answerCoverage/coverageAssessmentSession.js";
 
 const CLARIFICATION_TURN_SKILL = builtInAnswerSkills.clarification;
 
@@ -127,62 +127,6 @@ const clarificationTraceStage = (
   turn?.kind === "continue"
     ? turn.stage
     : turn?.engineTrace.stages.find((stage) => stage.kind === "clarification");
-
-export const applyCoverageAssessment = (
-  session: Pick<PreparedSession, "answerCoverage" | "answerCoverageDebug" | "answerCoverageInteractionTrace" | "effectiveQuery" | "userMessage">,
-  input: { assessment: AnswerCoverageAssessment; record?: AnswerCoverageRecord },
-): void => {
-  session.answerCoverage = input.assessment;
-  const record = input.record;
-  session.answerCoverageDebug = {
-    availability: input.assessment.availability,
-    contextualizedRequest: record?.contextualizedRequest ?? session.effectiveQuery ?? session.userMessage.content,
-    originatingTurnId: record?.originatingTurnId ?? session.userMessage.id,
-    originatingRequestId: record?.requestMessageId ?? session.userMessage.id,
-    ...(record
-      ? { schemaVersion: record.schemaVersion, assessedAt: record.assessedAt.toISOString() }
-      : input.assessment.availability === "assessed" ? { schemaVersion: input.assessment.schemaVersion } : {}),
-    ...(input.assessment.availability === "assessed" ? {
-      coverage: input.assessment.coverage,
-      reason: input.assessment.reason,
-      ...(input.assessment.unresolvedRequest ? { unresolvedRequest: input.assessment.unresolvedRequest } : {}),
-    } : {}),
-  };
-  // Persisted assessments whose reaction pass has not yet completed project as
-  // `not_evaluated` in history. Set the same live state before the recorder runs;
-  // only its success callback below is allowed to replace it with `evaluated`.
-  session.answerCoverageInteractionTrace = input.assessment.availability === "assessed" && record?.availability === "assessed"
-    ? { state: "not_evaluated", decisions: [] }
-    : undefined;
-};
-
-export const applyCoverageInteractionTrace = (
-  session: Pick<PreparedSession, "answerCoverageInteractionTrace" | "userMessage">,
-  reaction: Parameters<ConversationCoverageReactionRecorder["record"]>[0],
-): void => {
-  session.answerCoverageInteractionTrace = {
-    state: reaction.evaluationState === "evaluated" ? "evaluated" : "not_evaluated",
-    ...(reaction.assessment.availability === "assessed" ? {
-      consumedAssessment: {
-        coverage: reaction.assessment.coverage,
-        reason: reaction.assessment.reason,
-      },
-    } : {}),
-    decisions: reaction.reactions.flatMap((entry) => {
-      const target = entry.directiveId
-        ? { target: "directive" as const, targetId: entry.directiveId }
-        : entry.routineId ? { target: "routine" as const, targetId: entry.routineId } : null;
-      return target ? [{
-        assessmentRequestId: session.userMessage.id,
-        ...target,
-        decision: entry.decision,
-        reasonCode: entry.reasonCode,
-        ...(entry.routineExecutionId ? { routineExecutionId: entry.routineExecutionId } : {}),
-        targetMessageId: session.userMessage.id,
-      }] : [];
-    }),
-  };
-};
 
 /**
  * Aligns an "offer" clarification's persisted candidates with what the visitor was
@@ -296,6 +240,8 @@ export interface ChatTurnAssemblyOptions {
   turnRouter: TurnRouter;
   turnInterpreter?: ChatConversationTurnInterpreter;
   routineStore?: ConversationRoutineStore;
+  /** Which routines each conversation was shown an offer for; replay keeps none. */
+  routineOfferStore?: RoutineOfferStore;
   routineProvider?: ChatRoutineProvider;
   clarifier?: ConversationClarifier;
   recordClarificationDecision?: (input: {
@@ -325,13 +271,14 @@ export interface ChatTurnAssemblyOptions {
 
 type ChatTurnAssemblySharedOptions = Omit<
   ChatTurnAssemblyOptions,
-  "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "includeSlotValues"
+  "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "routineOfferStore" | "includeSlotValues"
 >;
 
 interface ChatTurnAssemblyEffectPorts {
   chatSessionPreparer: ChatSessionPreparer;
   directiveStateStore: DirectiveStateStore;
   routineStore?: ConversationRoutineStore;
+  routineOfferStore?: RoutineOfferStore;
   coverageHeadRecorder?: AnswerCoverageHeadRecorder;
   coverageShadowAssessor?: AnswerCoverageShadowAssessor;
   includeSlotValues?: boolean;
@@ -474,6 +421,11 @@ export class ChatTurnAssembly {
       : session.userMessage.id;
     const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
+    // An offer needs the pending row a later reply is mapped against, so it needs the turn's store.
+    const routineOffer = deferredClarificationStore
+      ? new DeferredRoutineOffer(this.options.routineOfferStore, deferredClarificationStore)
+      : undefined;
+    session.routineOffer = routineOffer;
     input.coordination?.checkpoint("routing");
     const routineRunner = pageReadAwareRoutineRunner({
       session,
@@ -499,6 +451,8 @@ export class ChatTurnAssembly {
         : undefined,
       suppressNewClarification: input.clarification?.resolution?.suppressNewClarification,
       progress: input.progress,
+      routineOfferMemory: routineOffer,
+      clarificationMappingStage: offerMappingStage(input.clarification?.resolution),
       presentRoutineReply: (response) =>
         presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, response),
     });
@@ -512,6 +466,10 @@ export class ChatTurnAssembly {
     };
     if (!claim) {
       reportInvocation();
+      this.recordTraceClarificationDecisions(session.routineActivationNotice);
+      if (session.routineActivationNotice?.offer) {
+        routineOffer?.hold(session.routineActivationNotice.offer);
+      }
       // A direct invocation the activator declined leaves no routine state; the
       // turn answers normally and the envelope still names the completed routine.
       const declinedRoutine = routineTurnPorts.reporter?.describeDeclined() ?? null;
@@ -1332,7 +1290,8 @@ export class ChatTurnAssembly {
         ...input.session.usageAttribution,
       },
       policy: this.options.retrievalSenseClarificationPolicy,
-      suppressAsk: input.activeRoutineAtTurnStart || suppressAskForPageCapture,
+      // A routine offered this turn holds the one pending row the answer's closing offer needs.
+      suppressAsk: input.activeRoutineAtTurnStart || suppressAskForPageCapture || Boolean(input.session.routineActivationNotice?.offer),
       ...(suppressAskForPageCapture
         ? { suppressAskReason: "page_capture" as const }
         : {}),
@@ -1388,7 +1347,7 @@ export class ChatTurnAssembly {
     };
   }
 
-  private recordTraceClarificationDecisions(trace?: ConversationTrace): void {
+  private recordTraceClarificationDecisions(trace?: Pick<ConversationTrace, "stages">): void {
     if (!trace || !this.options.recordClarificationDecision) {
       return;
     }

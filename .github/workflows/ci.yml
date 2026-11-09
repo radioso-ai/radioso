@@ -213,10 +213,11 @@ jobs:
         # packages have to exist before linting or those rules silently see `any`.
         run: pnpm --filter "./packages/*" --filter "./ee/packages/*" run build
 
-      - name: Typecheck conversation package tests
+      - name: Typecheck package tests
         # Each package's build compiles `src/` only; `typecheck` covers its tests too, which
-        # no test runner checks.
-        run: pnpm --filter @radioso/conversation-engine --filter @radioso/conversation-defaults run typecheck
+        # no test runner checks. Every package that defines `typecheck` runs here, so a new
+        # one is covered without editing this list.
+        run: pnpm --filter "./packages/*" run typecheck
 
       - name: Select base for the dead-code ratchet
         env:

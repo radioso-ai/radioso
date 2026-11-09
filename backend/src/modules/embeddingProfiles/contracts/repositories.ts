@@ -146,6 +146,40 @@ export interface VectorIndexWorkRecord {
   updatedAt: Date;
 }
 
+/**
+ * Names one claimed row. `attemptCount` is the claim fence: every claim increments it,
+ * so the complete and fail paths act only while the row still carries this claim.
+ */
+export interface VectorIndexClaimedWorkTarget {
+  id: string;
+  attemptCount: number;
+  backendKey: string;
+  workspaceId: string;
+  embeddingSpaceId: string;
+  chunkId: string;
+  caughtUpReadiness: VectorIndexReadiness;
+}
+
+export type VectorIndexFailureOutcome =
+  | {
+      disposition: "retry_scheduled" | "dead_lettered" | "lease_lost";
+      checkpoint: null;
+    }
+  | {
+      disposition: "superseded";
+      checkpoint: VectorIndexCheckpointRecord;
+    };
+
+export type VectorIndexSupersededOutcome =
+  | {
+      disposition: "not_superseded" | "lease_lost";
+      checkpoint: null;
+    }
+  | {
+      disposition: "superseded";
+      checkpoint: VectorIndexCheckpointRecord;
+    };
+
 export interface VectorIndexCheckpointRecord {
   backendKey: string;
   workspaceId: string;
@@ -181,43 +215,20 @@ export interface VectorIndexWorkRepositoryPort {
     now: Date;
     leaseMs: number;
   }): Promise<VectorIndexWorkRecord[]>;
-  markFailed(input: {
-    id: string;
+  /** Returns `lease_lost` without a write when another runner took over the claim. */
+  markFailed(input: VectorIndexClaimedWorkTarget & {
     errorCode: VectorIndexFailureCode;
     retryAt: Date;
     maxAttempts: number;
-    backendKey: string;
-    workspaceId: string;
-    embeddingSpaceId: string;
-    chunkId: string;
-    caughtUpReadiness: VectorIndexReadiness;
-  }): Promise<
-    | {
-        disposition: "retry_scheduled" | "dead_lettered";
-        checkpoint: null;
-      }
-    | {
-        disposition: "superseded";
-        checkpoint: VectorIndexCheckpointRecord;
-      }
-  >;
+  }): Promise<VectorIndexFailureOutcome>;
   markCompleted(id: string): Promise<void>;
-  markCompletedAndAdvanceCheckpoint(input: {
-    id: string;
-    backendKey: string;
-    workspaceId: string;
-    embeddingSpaceId: string;
-    chunkId: string;
-    caughtUpReadiness: VectorIndexReadiness;
-  }): Promise<VectorIndexCheckpointRecord>;
-  completeSupersededAndAdvanceCheckpoint(input: {
-    id: string;
-    backendKey: string;
-    workspaceId: string;
-    embeddingSpaceId: string;
-    chunkId: string;
-    caughtUpReadiness: VectorIndexReadiness;
-  }): Promise<VectorIndexCheckpointRecord | null>;
+  /** Returns null without a write when another runner took over the claim. */
+  markCompletedAndAdvanceCheckpoint(
+    input: VectorIndexClaimedWorkTarget,
+  ): Promise<VectorIndexCheckpointRecord | null>;
+  completeSupersededAndAdvanceCheckpoint(
+    input: VectorIndexClaimedWorkTarget,
+  ): Promise<VectorIndexSupersededOutcome>;
   ensureCheckpoint(input: {
     backendKey: string;
     workspaceId: string;

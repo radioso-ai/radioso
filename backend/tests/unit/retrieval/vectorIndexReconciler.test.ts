@@ -66,7 +66,7 @@ describe("VectorIndexReconciler", () => {
     const markCompletedAndAdvanceCheckpoint = vi.fn();
     const markFailed = vi.fn();
     const completeSupersededAndAdvanceCheckpoint = vi.fn()
-      .mockResolvedValue(checkpoint);
+      .mockResolvedValue({ disposition: "superseded", checkpoint });
     const onCheckpointAdvanced = vi.fn();
     const reconciler = new VectorIndexReconciler({
       adapter,
@@ -93,6 +93,7 @@ describe("VectorIndexReconciler", () => {
 
     expect(completeSupersededAndAdvanceCheckpoint).toHaveBeenCalledWith({
       id: work.id,
+      attemptCount: work.attemptCount,
       backendKey: "in-memory",
       workspaceId,
       embeddingSpaceId,
@@ -123,7 +124,7 @@ describe("VectorIndexReconciler", () => {
         markFailed,
         markCompletedAndAdvanceCheckpoint: vi.fn(),
         completeSupersededAndAdvanceCheckpoint: vi.fn()
-          .mockResolvedValue(null),
+          .mockResolvedValue(notSuperseded),
         getLag: vi.fn(),
       },
       spaces: {
@@ -139,6 +140,7 @@ describe("VectorIndexReconciler", () => {
 
     expect(markFailed).toHaveBeenCalledWith({
       id: work.id,
+      attemptCount: work.attemptCount,
       errorCode: "adapter_unavailable",
       retryAt: new Date(now.getTime() + 5_000),
       maxAttempts: 3,
@@ -176,7 +178,7 @@ describe("VectorIndexReconciler", () => {
         markFailed,
         markCompletedAndAdvanceCheckpoint: vi.fn(),
         completeSupersededAndAdvanceCheckpoint: vi.fn()
-          .mockResolvedValue(null),
+          .mockResolvedValue(notSuperseded),
         getLag: vi.fn(),
       },
       spaces: {
@@ -207,16 +209,122 @@ describe("VectorIndexReconciler", () => {
   it("surfaces notification failures without marking persisted work as failed", async () => {
     const callbackError = new Error("activation callback failed");
     const onCheckpointAdvanced = vi.fn().mockRejectedValue(callbackError);
+    const onLoopError = vi.fn();
     const { reconciler, markCompletedAndAdvanceCheckpoint, markFailed } =
       reconcilerFor({
         readiness: "exact_fallback",
         onCheckpointAdvanced,
+        onLoopError,
       });
 
-    await expect(reconciler.runOnce()).rejects.toBe(callbackError);
+    await expect(reconciler.runOnce()).resolves.toBe(true);
 
+    expect(onLoopError).toHaveBeenCalledWith(callbackError);
     expect(markCompletedAndAdvanceCheckpoint).toHaveBeenCalledOnce();
     expect(markFailed).not.toHaveBeenCalled();
+  });
+
+  it("skips work whose lease another runner took before the superseded check", async () => {
+    const adapter = new InMemoryVectorAdapter();
+    const applyMutations = vi.spyOn(adapter.writer, "applyMutations");
+    const onCheckpointAdvanced = vi.fn();
+    const onLoopError = vi.fn();
+    const {
+      reconciler,
+      completeSupersededAndAdvanceCheckpoint,
+      markCompletedAndAdvanceCheckpoint,
+      markFailed,
+    } = reconcilerFor({
+      readiness: "exact_fallback",
+      adapter,
+      onCheckpointAdvanced,
+      onLoopError,
+    });
+    completeSupersededAndAdvanceCheckpoint
+      .mockResolvedValue({ disposition: "lease_lost", checkpoint: null });
+
+    await expect(reconciler.runOnce()).resolves.toBe(true);
+
+    expect(applyMutations).not.toHaveBeenCalled();
+    expect(markCompletedAndAdvanceCheckpoint).not.toHaveBeenCalled();
+    expect(markFailed).not.toHaveBeenCalled();
+    expect(onCheckpointAdvanced).not.toHaveBeenCalled();
+    expect(onLoopError).not.toHaveBeenCalled();
+  });
+
+  it("skips work whose lease another runner took before acknowledgement", async () => {
+    const onCheckpointAdvanced = vi.fn();
+    const onLoopError = vi.fn();
+    const { reconciler, markCompletedAndAdvanceCheckpoint, markFailed } =
+      reconcilerFor({
+        readiness: "exact_fallback",
+        onCheckpointAdvanced,
+        onLoopError,
+      });
+    markCompletedAndAdvanceCheckpoint.mockResolvedValue(null);
+
+    await expect(reconciler.runOnce()).resolves.toBe(true);
+
+    expect(markCompletedAndAdvanceCheckpoint).toHaveBeenCalledWith(
+      expect.objectContaining({ id: work.id, attemptCount: work.attemptCount }),
+    );
+    expect(markFailed).not.toHaveBeenCalled();
+    expect(onCheckpointAdvanced).not.toHaveBeenCalled();
+    expect(onLoopError).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when the lease is lost before a failure is recorded", async () => {
+    const adapter = new InMemoryVectorAdapter();
+    vi.spyOn(adapter.writer, "applyMutations")
+      .mockRejectedValue(new Error("backend unavailable"));
+    const onCheckpointAdvanced = vi.fn();
+    const onLoopError = vi.fn();
+    const { reconciler, markFailed } = reconcilerFor({
+      readiness: "exact_fallback",
+      adapter,
+      onCheckpointAdvanced,
+      onLoopError,
+    });
+    markFailed.mockResolvedValue({ disposition: "lease_lost", checkpoint: null });
+
+    await expect(reconciler.runOnce()).resolves.toBe(true);
+
+    expect(markFailed).toHaveBeenCalledWith(
+      expect.objectContaining({ id: work.id, attemptCount: work.attemptCount }),
+    );
+    expect(onCheckpointAdvanced).not.toHaveBeenCalled();
+    expect(onLoopError).not.toHaveBeenCalled();
+  });
+
+  it("reports a row that cannot record its failure and continues the batch", async () => {
+    const failure = new Error("vector index work row is locked out");
+    const nextWork: VectorIndexWorkRecord = {
+      ...work,
+      id: "work-2",
+      sequence: "2",
+      chunkId: "chunk-2",
+    };
+    const onLoopError = vi.fn();
+    const {
+      reconciler,
+      claimBatch,
+      completeSupersededAndAdvanceCheckpoint,
+      markCompletedAndAdvanceCheckpoint,
+      markFailed,
+    } = reconcilerFor({ readiness: "building", onLoopError });
+    claimBatch.mockResolvedValue([work, nextWork]);
+    completeSupersededAndAdvanceCheckpoint
+      .mockRejectedValueOnce(new Error("checkpoint lock timeout"));
+    markFailed.mockRejectedValue(failure);
+
+    await expect(reconciler.runOnce()).resolves.toBe(true);
+
+    expect(onLoopError).toHaveBeenCalledOnce();
+    expect(onLoopError).toHaveBeenCalledWith(failure);
+    expect(markCompletedAndAdvanceCheckpoint).toHaveBeenCalledOnce();
+    expect(markCompletedAndAdvanceCheckpoint).toHaveBeenCalledWith(
+      expect.objectContaining({ id: nextWork.id }),
+    );
   });
 
   it("drains until idle or the validated batch bound", async () => {
@@ -306,6 +414,8 @@ const reconcilerFor = (input: {
     embeddingSpaceId: string;
     readiness: "ready" | "exact_fallback";
   }) => Promise<void>;
+  onLoopError?: (error: unknown) => void;
+  adapter?: InMemoryVectorAdapter;
 }) => {
   const checkpoint: VectorIndexCheckpointRecord = {
     backendKey: "in-memory",
@@ -318,14 +428,17 @@ const reconcilerFor = (input: {
   const markCompletedAndAdvanceCheckpoint = vi.fn()
     .mockResolvedValue(checkpoint);
   const markFailed = vi.fn();
+  const claimBatch = vi.fn().mockResolvedValue([work]);
+  const completeSupersededAndAdvanceCheckpoint = vi.fn()
+    .mockResolvedValue(notSuperseded);
   const reconciler = new VectorIndexReconciler({
-    adapter: new InMemoryVectorAdapter(),
+    adapter: input.adapter ?? new InMemoryVectorAdapter(),
     backendKey: "in-memory",
     repository: {
-      claimBatch: vi.fn().mockResolvedValue([work]),
+      claimBatch,
       markFailed,
       markCompletedAndAdvanceCheckpoint,
-      completeSupersededAndAdvanceCheckpoint: vi.fn().mockResolvedValue(null),
+      completeSupersededAndAdvanceCheckpoint,
       getLag: vi.fn(),
     },
     spaces: {
@@ -337,9 +450,18 @@ const reconcilerFor = (input: {
     retryDelayMs: 5_000,
     resolveCaughtUpReadiness: vi.fn().mockResolvedValue(input.readiness),
     onCheckpointAdvanced: input.onCheckpointAdvanced,
+    onLoopError: input.onLoopError,
   });
-  return { reconciler, markCompletedAndAdvanceCheckpoint, markFailed };
+  return {
+    reconciler,
+    claimBatch,
+    completeSupersededAndAdvanceCheckpoint,
+    markCompletedAndAdvanceCheckpoint,
+    markFailed,
+  };
 };
+
+const notSuperseded = { disposition: "not_superseded", checkpoint: null } as const;
 
 const space: EmbeddingSpaceRecord = {
   id: embeddingSpaceId,

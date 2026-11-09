@@ -30,6 +30,10 @@ acknowledged high-water mark. A workspace transition may be promoted only after
 the repository rechecks canonical coverage, generation-pinned work, target
 quarantine state, and vector-backend readiness in the promotion transaction.
 
+Each `vector_index_work` claim is fenced on its `attempt_count`. When a lease
+expires and another runner reclaims the row, the complete and fail calls of the
+earlier runner return a lost-lease outcome and write nothing.
+
 ## Public Surface
 
 - `public.ts`: contracts, identity and lifecycle rules, and vector validation.

@@ -9,6 +9,24 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.29.0] - 2026-11-09
+
+### Added
+
+- **infra:** schedule Cloud SQL maintenance for Sunday night ([#1724](https://github.com/radioso-ai/radioso/pull/1724))
+
+### Fixed
+
+- **routines:** take a change after a routine ends only for a value it holds and never sent ([#1728](https://github.com/radioso-ai/radioso/pull/1728))
+- **operator-mcp:** let routine edits switch a field's "Editable after completion" on or off ([#1726](https://github.com/radioso-ai/radioso/pull/1726))
+- **observability:** answer a request the database cannot serve with a 503 and report it as an outage ([#1722](https://github.com/radioso-ai/radioso/pull/1722))
+- **crawler:** take the page's own title instead of concatenating every <title> ([#1719](https://github.com/radioso-ai/radioso/pull/1719))
+- **privacy:** send error sinks the redacted shape, never raw error text ([#1721](https://github.com/radioso-ai/radioso/pull/1721))
+- **frontend:** keep unsaved Profile draft when an agent is renamed ([#1723](https://github.com/radioso-ai/radioso/pull/1723))
+- **connectors:** keep operator-set source config when a connector re-syncs ([#1720](https://github.com/radioso-ai/radioso/pull/1720))
+
+[1.29.0]: https://github.com/radioso-ai/radioso/compare/v1.28.0...v1.29.0
+
 ## [1.28.0] - 2026-11-08
 
 ### Added

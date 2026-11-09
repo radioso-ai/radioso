@@ -1,8 +1,10 @@
 import type {
   ConversationRoutineResumeResult,
   ProcessTurnResult,
+  Routine,
   RoutineOperatorNoticeEffect,
   RoutineState,
+  RoutineStep,
 } from "@radioso/conversation-contract";
 
 /**
@@ -80,4 +82,38 @@ const operatorNoticeFor = (
       ...terminal.operatorNotice,
     },
   };
+};
+
+/** Steps that hand the run's values to someone outside the conversation the moment they run. */
+const STEPS_THAT_SEND: ReadonlySet<RoutineStep["kind"]> = new Set(["skill", "action", "await"]);
+
+/** Whether the terminal a run ended on told someone outside the conversation what it held. */
+const endingSends = (routine: Routine, terminal: RoutineStep): boolean => {
+  if (terminal.metadata?.terminalKind === "handoff") {
+    return true;
+  }
+  const notice = terminal.metadata?.operatorNotice;
+  if (typeof notice === "object" && notice !== null) {
+    return true;
+  }
+  const completionExport = routine.completionExport;
+  return completionExport?.enabled === true && completionExport.triggerKinds.includes("complete");
+};
+
+/**
+ * Whether a completed run already sent the values it held outside the conversation (#1714):
+ * it passed a tool, action, or approval step, or the ending it reached notified operators,
+ * handed off (a run stuck on a chat step ends there, handing off), or fired the routine's
+ * completion export. A record that names a step the routine lacks reads as sent, since nothing
+ * shows the values stayed in. Read from the run's `path` and the routine it ran, so it holds for
+ * a host that keeps no `metadata` on the record.
+ */
+export const completedRunSentValues = (routine: Routine, state: RoutineState): boolean => {
+  const stepsById = new Map(routine.steps.map((step) => [step.id, step]));
+  const visited = state.path.map((stepId) => stepsById.get(stepId));
+  const landed = visited.at(-1);
+  if (!landed || visited.some((step) => step === undefined || STEPS_THAT_SEND.has(step.kind))) {
+    return true;
+  }
+  return landed.kind !== "terminal" || endingSends(routine, landed);
 };

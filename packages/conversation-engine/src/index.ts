@@ -680,6 +680,7 @@ export {
   type SlotCorrectionResult,
   type SlotCorrectionRejection,
 } from "./slotCorrection.js";
+export { completedRunSentValues } from "./routineEnding.js";
 export { checkSlotValue } from "./slotValue.js";
 export {
   clarificationStage,

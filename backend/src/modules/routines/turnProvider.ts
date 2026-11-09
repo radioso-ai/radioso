@@ -138,6 +138,23 @@ interface RoutineTurnProvider {
 
 const routineActivationPolicy = { floor: 0.4, margin: 0.15, askMargin: 0.15, maxOptions: 4 };
 
+/**
+ * Records on the turn spine whether a message after a routine ended was taken as a correction
+ * to it, and if not why (#1714): `correction` or the skip reason (`not_held`, `already_sent`,
+ * `new_request`, ...). An attribute on the active span, never a new span; never a value.
+ */
+const tracedSlotCorrection = (corrector: ConversationRoutineSlotCorrection): ConversationRoutineSlotCorrection => ({
+  detect: async (input) => {
+    const detection = await corrector.detect(input);
+    setTraceAttributes({
+      "routine.slot_correction.decision": detection.kind === "correction" ? "correction" : detection.reason,
+    });
+    return detection;
+  },
+  confirm: (input) => corrector.confirm(input),
+  rejectInvalid: (input) => corrector.rejectInvalid(input),
+});
+
 const coverageCriteriaMatches = (criteria: AnswerCoverageCriteria, turn: TurnContext): boolean => {
   const assessment = turn.metadata?.answerCoverage;
   if (!assessment || typeof assessment !== "object" || !("availability" in assessment)) {
@@ -574,11 +591,11 @@ export const createRoutineTurnProvider = (
         : {}),
       slotCorrection: dependencies.turnPlanAdapters.slotCorrection({
         handle: turnPlan,
-        fallback: new RoutineSlotCorrector(routines, modelGateway, {
+        fallback: tracedSlotCorrection(new RoutineSlotCorrector(routines, modelGateway, {
           detectPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-detect.md"),
           confirmPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-confirm.md"),
           invalidPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-invalid.md"),
-        }),
+        })),
       }),
       reentryGate: preEvidenceReentryGate,
       runner,

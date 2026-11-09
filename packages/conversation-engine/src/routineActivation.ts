@@ -124,6 +124,9 @@ const buildSlotCorrectionTurn = async (
   });
 };
 
+const holdsValue = (variables: Record<string, unknown>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(variables, key);
+
 const claimCompletedRoutineCorrection = async (
   input: AttemptRoutineInput,
   baseTurn: TurnContext,
@@ -138,7 +141,9 @@ const claimCompletedRoutineCorrection = async (
     return null;
   }
   const candidate = await routineSlotCorrection.detect({ turn: baseTurn, completedState });
-  if (!candidate) {
+  // A correction changes a value the run holds. Anything else, a request for something new
+  // included, goes on to reentry and activation (#1714).
+  if (candidate.kind !== "correction" || !holdsValue(completedState.variables, candidate.slotKey)) {
     return null;
   }
   const verdict = verifySlotCorrection({

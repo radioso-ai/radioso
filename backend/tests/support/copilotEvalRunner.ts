@@ -320,10 +320,10 @@ const fixtureRoutine = () => ({
   enabled: true,
   name: COPILOT_EVAL_ROUTINE_NAME,
   activation: { triggerDescription: "When a customer asks where their order is", gateRef: null, priority: 10, reentryMode: "always" as const },
-  slots: [],
+  slots: [{ stableSlotId: "slot_order_number", key: "order_number", type: "text" as const, required: true, description: "The order the customer is asking about", mutable: true, ordinal: 0 }],
   steps: [{ stableStepId: "ask_order_number", kind: "chat" as const, instruction: "Ask for the order number.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
   transitions: [{ fromStep: "ask_order_number", toRef: "done", guardKind: "default" as const, guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
-  terminals: [{ stableStepId: "done", kind: "complete" as const, instruction: "Give the status.", ordinal: 0 }],
+  terminals: [{ stableStepId: "done", kind: "complete" as const, instruction: "Give the status of order {{slot.order_number}}.", ordinal: 0 }],
   createdAt: evalDate("2026-08-20T09:00:00.000Z"),
   updatedAt: evalDate("2026-08-25T09:00:00.000Z"),
 });

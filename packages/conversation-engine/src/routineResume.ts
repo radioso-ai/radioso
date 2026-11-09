@@ -61,7 +61,7 @@ export const claimRoutineResume = async (input: {
   state: RoutineState;
   resuming: boolean;
   history: ConversationMessage[];
-  activationClarificationStage?: ConversationTraceStage | null;
+  activationStages?: ConversationTraceStage[];
 }): Promise<ConversationRoutineTurnClaim | null> => {
   const { request, baseTurn, state, resuming } = input;
   const turn: TurnContext = {
@@ -144,7 +144,7 @@ interface ClaimedRoutineTurn {
   state: RoutineState;
   resuming: boolean;
   history: ConversationMessage[];
-  activationClarificationStage?: ConversationTraceStage | null;
+  activationStages?: ConversationTraceStage[];
   turn: TurnContext;
   effects: ConversationRoutineRunEffects;
   ending: ReturnType<typeof routineEndingEffects>;
@@ -207,15 +207,13 @@ const settleRoutineTurn = async (claimed: ClaimedRoutineTurn, response: Renderab
     },
     ...(result.trace ? { subTrace: { namespace: "routine", version: 1, payload: result.trace } } : {}),
   });
-  const routineTraceStages = claimed.activationClarificationStage
-    ? [
-        messageStage,
-        historyGatherStage(history),
-        claimed.activationClarificationStage,
-        routineStage,
-        directiveSteeringStage,
-      ]
-    : [messageStage, historyGatherStage(history), routineStage, directiveSteeringStage];
+  const routineTraceStages = [
+    messageStage,
+    historyGatherStage(history),
+    ...(claimed.activationStages ?? []),
+    routineStage,
+    directiveSteeringStage,
+  ];
 
   return createProcessTurnResult({
     sessionId: request.sessionId,

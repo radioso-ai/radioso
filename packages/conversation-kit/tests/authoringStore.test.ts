@@ -336,6 +336,45 @@ describe("file authoring store round-trips the full authoring contract", () => {
     expect(saveAndReloadRoutine(routine)).toEqual(routine);
   });
 
+  it("preserves an offer-first start mode and keeps an absent one absent", () => {
+    const routine: Routine = {
+      id: "routine_start_mode",
+      rootStepId: "done",
+      steps: [{ id: "done", kind: "terminal", action: "Done." }],
+      transitions: [],
+      activation: {
+        triggerDescription: "the visitor wants to book a room",
+        priority: 10,
+        reentryMode: "always",
+        startMode: "offer",
+      },
+    };
+    const withoutMode: Routine = {
+      ...routine,
+      id: "routine_start_mode_absent",
+      activation: { triggerDescription: "x", priority: 1, reentryMode: "always" },
+    };
+
+    expect(saveAndReloadRoutine(routine)).toEqual(routine);
+    expect(saveAndReloadRoutine(withoutMode)?.activation?.startMode).toBeUndefined();
+  });
+
+  it("drops a routine whose start mode is neither automatic nor offer", () => {
+    const store = loadRawSnapshot({
+      agents: [],
+      directives: [],
+      routines: [{
+        id: "routine_bad_start_mode",
+        rootStepId: "start",
+        steps: [{ id: "start", kind: "chat", action: "Start." }],
+        transitions: [],
+        activation: { triggerDescription: "x", priority: 1, reentryMode: "always", startMode: "sometimes" },
+      }],
+    });
+
+    expect(store.listRoutines()).toEqual([]);
+  });
+
   it("preserves a null agent model preference", () => {
     const path = authoringStatePath();
     const first = new FileConversationKitAuthoringStore({ path });

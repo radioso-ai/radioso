@@ -174,6 +174,7 @@ export type {
 export {
   InMemoryConversationRoutineStore,
   InMemoryConversationStores,
+  InMemoryRoutineOfferMemory,
   type InMemoryConversationRoutineStoreOptions,
 } from "./inMemoryStores.js";
 export { parseScopeTag, scopeTag, type ParsedScopeTag } from "./scopeTags.js";

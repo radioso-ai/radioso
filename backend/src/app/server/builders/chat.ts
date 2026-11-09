@@ -792,15 +792,13 @@ export const buildChatServices = (input: {
   const clarifierFactory = ({ session, accountId }: { session: PreparedSession; accountId?: string }) => new DefaultClarifier(
     new RoutineChatModelGateway(chatGateway, {
       workspaceContext: chatAnswerSupport.buildChatWorkspaceContext(session),
-      usageContext: {
-        ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"),
-        operation: "clarification",
-      },
+      usageContext: { ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"), operation: "clarification" },
     }),
     {
       questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
       replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
       offerReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-offer-reply-map.md"),
+      routineOfferReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-routine-offer-reply-map.md"),
       steeringPromptTemplate: loadPromptTemplate("chat/steering-clarification.md"),
     },
   );

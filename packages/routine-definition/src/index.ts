@@ -28,6 +28,10 @@ export const ROUTINE_DEFINITION_LIMITS = {
 // (a completed instance suppresses re-activation). `semantic` is reserved for a later
 // slice and currently resolves like the default at activation time.
 export const routineReentryModes = ["once_per_conversation", "always", "semantic"] as const;
+// How a routine starts once activation picks it (issue #1716). `automatic` starts it on the
+// match. `offer` starts it only when the visitor directly asked for what it does; otherwise the
+// turn is answered normally and the answer offers to start it.
+export const routineStartModes = ["automatic", "offer"] as const;
 export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
 /**
  * Whether a slot's value may leave the conversation as the visitor gave it. Authored, never
@@ -80,6 +84,7 @@ export const routineValidationCodes = [
   "exposure_tool_name_duplicate",
   "exposure_tool_name_changed",
   "exposure_requires_ungated_activation",
+  "start_mode_offer_requires_ungated_activation",
   "operator_notice_skill_unavailable",
   "operator_notice_reply_to_slot_invalid",
 ] as const;
@@ -489,6 +494,8 @@ const routineDefinitionDraftSchema = <
     gateRef: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.gateRef),
     priority: z.number().int(),
     reentryMode: z.enum(routineReentryModes).default("once_per_conversation"),
+    // Absent reads as `automatic`, so a routine authored before start modes keeps starting on the match.
+    startMode: z.enum(routineStartModes).optional(),
     coverageCriteria: answerCoverageCriteriaSchema.optional(),
   }).strict(),
   slots,
@@ -563,6 +570,7 @@ export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend(
 }).strict();
 
 export type RoutineReentryMode = typeof routineReentryModes[number];
+export type RoutineStartMode = typeof routineStartModes[number];
 export type RoutineSlotType = typeof routineSlotTypes[number];
 export type RoutineSlotSensitivity = typeof routineSlotSensitivities[number];
 export type RoutineStepKind = typeof routineStepKinds[number];

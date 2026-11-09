@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import {
   clarificationDecisionMetric,
+  clarificationResolutionMetric,
   recordClarificationDecision,
 } from "../../src/modules/chat/services/clarification/clarificationMetrics.js";
 
@@ -76,5 +77,40 @@ describe("clarification metrics", () => {
     expect(rendered).not.toContain("candidate");
     expect(rendered).not.toContain("payload");
     expect(rendered).not.toContain("How do I upload a document via the REST API?");
+  });
+
+  it("counts how a routine offer was answered, beside the other resolutions", () => {
+    const stage = { id: "clarification", kind: "clarification", status: "applied" as const, startedAt: "", completedAt: "", outputs: {} };
+    expect(clarificationResolutionMetric({
+      kind: "routine_activation",
+      resolvedPending: true,
+      suppressNewClarification: true,
+      activator: { activate: async () => null },
+      mappingOutcome: "accepted",
+      mappingStage: stage,
+    })).toEqual({ surface: "routine_activation", decision: "offer_accepted" });
+    for (const mappingOutcome of ["declined", "ignored"] as const) {
+      expect(clarificationResolutionMetric({
+        kind: "normal",
+        resolvedPending: true,
+        source: "routine_activation",
+        offerOutcome: "ignored",
+        outcome: "declined",
+        mappingOutcome,
+      })).toEqual({ surface: "routine_activation", decision: `offer_${mappingOutcome}` });
+    }
+    expect(clarificationResolutionMetric({
+      kind: "normal",
+      resolvedPending: true,
+      source: "retrieval_sense",
+      offerOutcome: "ignored",
+      outcome: "declined",
+      mappingOutcome: "declined",
+    })).toEqual({ surface: "retrieval_sense", decision: "offer_ignored" });
+    expect(clarificationResolutionMetric({ kind: "normal", resolvedPending: false })).toBeNull();
+  });
+
+  it("counts a routine offer under its own reason", () => {
+    expect(clarificationDecisionMetric("offered", "offer_first")).toEqual({ decision: "offered", reason: "offer_first" });
   });
 });

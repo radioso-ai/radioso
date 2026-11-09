@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import type { RoutineState } from "@radioso/conversation-contract";
 
+import { recordRoutineOffers } from "../../../db/repositories/clarificationStateRepository.js";
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { MessageRepository, type MessageRecord } from "../../../db/repositories/messageRepository.js";
@@ -226,6 +227,7 @@ const applyClarificationTransition = async (
   }
   if (transition.kind === "save") {
     await saveClarificationState(db, transition.pending);
+    await recordRoutineOffers(db, transition.pending.sessionId, transition.offeredRoutineIds ?? []);
     return;
   }
   const outcome = transition.outcome ?? "resolved";

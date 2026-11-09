@@ -21,6 +21,7 @@ import type {
   ResumeAwaitingDecisionInput,
   ConversationRoutineDecisionResult,
   ConversationRoutineTurnClaim,
+  RoutineActivationNotice,
   RoutineTurnYield,
   SelectionDecision,
   SkillDefinition,
@@ -135,37 +136,48 @@ const coverageVerdictSinkDeps = (
   composeStartedAt,
 });
 
+type UnclaimedRoutinePass = { routineYield?: RoutineTurnYield; activationNotice?: RoutineActivationNotice };
+
 type OpenedTurn =
   | { claimed: ProcessTurnResult }
-  | { claimed: null; routineYield?: RoutineTurnYield };
+  | ({ claimed: null } & UnclaimedRoutinePass);
 
-/** A handed-back yield counts only for the turn it was taken on. */
-const isYieldForTurn = (routineYield: RoutineTurnYield, input: ProcessTurnInput | ProcessTurnStreamInput): boolean =>
-  routineYield.sessionId === input.sessionId
-  && routineYield.inputEventId !== undefined
-  && routineYield.inputEventId === input.inputEvent.id;
+/** A handed-back yield or activation notice counts only for the turn it was taken on. */
+const namesThisTurn = (
+  named: { sessionId: string; inputEventId?: string },
+  input: ProcessTurnInput | ProcessTurnStreamInput,
+): boolean =>
+  named.sessionId === input.sessionId
+  && named.inputEventId !== undefined
+  && named.inputEventId === input.inputEvent.id;
 
 export class DefaultConversationEngine implements ConversationEngine {
   /**
    * The routine pass that opens a turn. A host that ran it before preparing the turn
    * passes the yield in, so the routine is not asked about the same message twice; a
-   * yield taken on any other turn is ignored and the routine is asked as usual.
+   * yield taken on any other turn is ignored and the routine is asked as usual. An activation
+   * notice handed back the same way (an offer, or a reply to one) means the pass already ran.
    */
   private async openTurn(input: ProcessTurnInput | ProcessTurnStreamInput): Promise<OpenedTurn> {
-    if (input.routineYield && isYieldForTurn(input.routineYield, input)) {
-      return { claimed: null, routineYield: input.routineYield };
+    const routineYield = input.routineYield && namesThisTurn(input.routineYield, input) ? input.routineYield : undefined;
+    const activationNotice = input.routineActivationNotice && namesThisTurn(input.routineActivationNotice, input)
+      ? input.routineActivationNotice
+      : undefined;
+    if (routineYield || activationNotice) {
+      return { claimed: null, ...(routineYield ? { routineYield } : {}), ...(activationNotice ? { activationNotice } : {}) };
     }
-    const observed: { routineYield?: RoutineTurnYield } = {};
+    const observed: UnclaimedRoutinePass = {};
     const claimed = await this.attemptRoutine({
       ...input,
-      routineYieldSink: { yielded: (routineYield) => { observed.routineYield = routineYield; } },
+      routineYieldSink: { yielded: (yielded) => { observed.routineYield = yielded; } },
+      routineActivationSink: { noticed: (notice) => { observed.activationNotice = notice; } },
     });
     return claimed ? { claimed } : { claimed: null, ...observed };
   }
 
   private async prepareTurn(
     input: ProcessTurnInput | ProcessTurnStreamInput,
-    routineYield?: RoutineTurnYield,
+    { routineYield, activationNotice }: UnclaimedRoutinePass = {},
   ): Promise<PreparedTurnRun> {
     const stages: ConversationTraceStage[] = [];
     const events: ConversationEvent[] = [];
@@ -204,6 +216,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     if (routineYield) {
       stages.push(routineYieldStage(routineYield));
     }
+    stages.push(...(activationNotice?.stages ?? []));
 
     const interpretationStartedAt = Date.now();
     if (input.turnInterpreter) {
@@ -511,7 +524,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     if (opened.claimed) {
       return opened.claimed;
     }
-    const prepared = await this.prepareTurn(input, opened.routineYield);
+    const prepared = await this.prepareTurn(input, opened);
     const composeStartedAt = Date.now();
     const coverageVerdict = createCoverageVerdictSink(coverageVerdictSinkDeps(input, prepared, composeStartedAt));
     const response = await input.composer.compose({
@@ -573,7 +586,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       yield { type: "final", result: resumed };
       return;
     }
-    const prepared = await this.prepareTurn(input, opened.routineYield);
+    const prepared = await this.prepareTurn(input, opened);
     let response: RenderableTurn | null = null;
     let finalMetadata: Record<string, unknown> | undefined;
     const composeStartedAt = Date.now();
@@ -683,7 +696,9 @@ export {
 } from "./slotCorrection.js";
 export { completedRunSentValues } from "./routineEnding.js";
 export { checkSlotValue } from "./slotValue.js";
+export { ROUTINE_ACTIVATION_SURFACE } from "./routineStart.js";
 export {
+  clarificationMappingStage,
   clarificationStage,
   decideClarification,
   orderClarificationCandidates,

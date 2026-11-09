@@ -3634,11 +3634,24 @@ CREATE TABLE public.routine_definition (
     exposure_enabled boolean DEFAULT false NOT NULL,
     exposure_tool_name text,
     exposure_description text,
+    activation_start_mode text DEFAULT 'automatic'::text NOT NULL,
     CONSTRAINT routine_definition_activation_reentry_mode_check CHECK ((activation_reentry_mode = ANY (ARRAY['once_per_conversation'::text, 'always'::text, 'semantic'::text]))),
+    CONSTRAINT routine_definition_activation_start_mode_check CHECK ((activation_start_mode = ANY (ARRAY['automatic'::text, 'offer'::text]))),
     CONSTRAINT routine_definition_activation_trigger_description_check CHECK ((NULLIF(btrim(activation_trigger_description), ''::text) IS NOT NULL)),
     CONSTRAINT routine_definition_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL)),
     CONSTRAINT routine_definition_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'superseded'::text, 'archived'::text]))),
     CONSTRAINT routine_definition_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: routine_offers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.routine_offers (
+    conversation_id uuid NOT NULL,
+    routine_id text NOT NULL,
+    offered_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -6205,6 +6218,14 @@ ALTER TABLE ONLY public.routine_definition
 
 ALTER TABLE ONLY public.routine_definition
     ADD CONSTRAINT routine_definition_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: routine_offers routine_offers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_offers
+    ADD CONSTRAINT routine_offers_pkey PRIMARY KEY (conversation_id, routine_id);
 
 
 --
@@ -12221,6 +12242,14 @@ ALTER TABLE ONLY public.routine_completion_export
 
 ALTER TABLE ONLY public.routine_definition
     ADD CONSTRAINT routine_definition_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: routine_offers routine_offers_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_offers
+    ADD CONSTRAINT routine_offers_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --

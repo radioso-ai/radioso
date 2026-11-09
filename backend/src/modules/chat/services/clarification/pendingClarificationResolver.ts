@@ -1,7 +1,9 @@
 import type {
+  ClarificationOfferMappingOutcome,
   ConversationClarificationStore,
   ConversationClarifier,
   ConversationRoutineActivator,
+  ConversationTraceStage,
   RecentClarificationReader,
   TurnContext,
 } from "@radioso/conversation-contract";
@@ -17,6 +19,8 @@ export type PendingClarificationResolution =
       resolvedPending: true;
       suppressNewClarification: true;
       activator: ConversationRoutineActivator;
+      mappingOutcome?: "accepted";
+      mappingStage?: ConversationTraceStage;
     }
   | {
       kind: "retrieval_sense";
@@ -34,6 +38,9 @@ export type PendingClarificationResolution =
       source?: string;
       offerOutcome?: "ignored";
       outcome?: "declined" | "expired";
+      /** How a reply to an offer resolved, and the stage the turn records for it. */
+      mappingOutcome?: ClarificationOfferMappingOutcome;
+      mappingStage?: ConversationTraceStage;
     };
 
 export const resolvePendingClarification = async (input: {
@@ -51,6 +58,8 @@ export const resolvePendingClarification = async (input: {
         resolvedPending: true,
         suppressNewClarification: true,
         activator,
+        ...(resolution.mappingOutcome === "accepted" ? { mappingOutcome: resolution.mappingOutcome } : {}),
+        ...(resolution.mappingStage ? { mappingStage: resolution.mappingStage } : {}),
       };
     }
   }
@@ -79,5 +88,11 @@ export const resolvePendingClarification = async (input: {
     ...(resolution.outcome === "declined" || resolution.outcome === "expired"
       ? { outcome: resolution.outcome }
       : {}),
+    ...(resolution.mappingOutcome ? { mappingOutcome: resolution.mappingOutcome } : {}),
+    ...(resolution.mappingStage ? { mappingStage: resolution.mappingStage } : {}),
   };
 };
+
+/** The trace stage of a reply to a pending offer, when this turn resolved one. */
+export const offerMappingStage = (resolution?: PendingClarificationResolution): ConversationTraceStage | undefined =>
+  resolution && "mappingStage" in resolution ? resolution.mappingStage : undefined;

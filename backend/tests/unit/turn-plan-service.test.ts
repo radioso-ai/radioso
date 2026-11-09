@@ -48,6 +48,7 @@ const validPlanJson = (overrides: Record<string, unknown> = {}): string =>
     routineRankings: [{
       routineId: "r1",
       confidence: 0.2,
+      directRequest: false,
       variables: [
         { field: "company", value: "Acme" },
         { field: "seats", value: "25" },
@@ -111,6 +112,7 @@ describe("parseTurnPlan", () => {
     expect(plan?.routineRankings).toEqual([{
       routineId: "book-call",
       confidence: 0.2,
+      directRequest: false,
       variables: { company: "Acme", seats: "25" },
     }]);
     expect(plan?.directiveClassifications).toEqual([{ name: "refund-tone", matched: true, confidence: 0.8 }]);
@@ -570,7 +572,14 @@ describe("buildTurnPlanResponseFormat", () => {
     expect(variables.type).toBe("array");
     const pairItem = variables.items as Record<string, unknown>;
     expect(pairItem.required).toEqual(["field", "value"]);
-    expect(rankingItems.required).toEqual(["routineId", "confidence", "variables"]);
+    expect(rankingItems.required).toEqual(["routineId", "confidence", "directRequest", "variables"]);
+    expect((rankingItems.properties as Record<string, Record<string, unknown>>).directRequest).toEqual({ type: "boolean" });
+  });
+
+  it("rejects a routine ranking whose direct-request verdict is not a boolean", () => {
+    expect(
+      parseTurnPlan(validPlanJson({ routineRankings: [{ routineId: "r1", confidence: 0.6, directRequest: "yes" }] }), candidates),
+    ).toBeNull();
   });
 
   it("omits ranking/classification properties (and required entries) when a list is empty", () => {
@@ -911,7 +920,7 @@ describe("buildTurnPlanningPrompt", () => {
     }));
     expect(prompt).toContain("Output Shape Rules");
     expect(prompt).toContain("Do not wrap in markdown fences");
-    expect(prompt).toContain('"routineRankings":[{"routineId":"string","confidence":0.0,"variables":[{"field":"string","value":"string"}]}]');
+    expect(prompt).toContain('"routineRankings":[{"routineId":"string","confidence":0.0,"directRequest":false,"variables":[{"field":"string","value":"string"}]}]');
     expect(prompt).toContain('"directiveClassifications":[{"name":"string","matched":false,"confidence":0.0}]');
     expect(prompt).toContain("field/value pairs");
   });

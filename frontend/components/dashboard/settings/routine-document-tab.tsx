@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineGuardKind, RoutineReentryMode, RoutineSlotType, RoutineStepKind, RoutineValidationDiagnostic } from '@/lib/api'
+import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineGuardKind, RoutineReentryMode, RoutineSlotType, RoutineStartMode, RoutineStepKind, RoutineValidationDiagnostic } from '@/lib/api'
 import {
   compatibleAnswerCoverageReasons,
   type AnswerCoverageValue,
@@ -114,6 +114,14 @@ function RoutineActivationEditor({ doc, apply, onDone }: {
     </div>
     <div className="flex flex-wrap gap-2">
       <label className="min-w-56 flex-1 text-xs">Reentry<select aria-label="Reentry" value={doc.activation.reentryMode ?? 'once_per_conversation'} onChange={(event) => apply((current) => updateActivation(current, { reentryMode: event.target.value as RoutineReentryMode }))} className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"><option value="once_per_conversation">Once per conversation</option><option value="always">Every time it matches</option><option value="semantic">Let the assistant decide</option></select></label>
+      <div className="min-w-56 flex-1 space-y-1">
+        <Label htmlFor="routine-start-mode" className="text-xs">Start mode</Label>
+        <select id="routine-start-mode" aria-describedby="routine-start-mode-help" value={doc.activation.startMode ?? 'automatic'} onChange={(event) => apply((current) => updateActivation(current, { startMode: event.target.value as RoutineStartMode }))} className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm">
+          <option value="automatic">Start automatically</option>
+          <option value="offer" disabled={Boolean(criteria)}>Offer first</option>
+        </select>
+        <p id="routine-start-mode-help" className="text-xs text-muted-foreground">{criteria ? 'Offer first is not available with an answer coverage condition.' : 'Offer first: starts when asked directly; otherwise the answer offers it.'}</p>
+      </div>
       <div className="min-w-32 flex-1 space-y-1">
         <Label htmlFor="routine-activation-priority" className="text-xs">Priority</Label>
         <Input id="routine-activation-priority" aria-label="Priority" type="number" step="1" value={doc.activation.priority} onChange={(event) => apply((current) => updateActivation(current, { priority: Number(event.target.value) || 0 }))} />

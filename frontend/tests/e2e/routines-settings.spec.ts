@@ -153,6 +153,42 @@ test("routine coverage criteria round-trip through the authored API payload", as
   });
 });
 
+test("a routine's start mode is chosen in the editor, saved, and still chosen after a reload", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+  const routine = {
+    ...baseRoutine,
+    id: "55555555-5555-4555-9555-000000000116",
+    enabled: true,
+    version: 1,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates, routines: [routine] });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${routine.id}`);
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  const startMode = page.getByRole("combobox", { name: "Start mode" });
+  await expect(startMode).toHaveValue("automatic");
+
+  await startMode.selectOption({ label: "Offer first" });
+  await expect(startMode).toHaveValue("offer");
+  await expect.poll(
+    () => routineUpdates.filter((entry) => entry.method === "PATCH").at(-1)?.body?.activation?.startMode,
+    { timeout: 15_000 },
+  ).toBe("offer");
+
+  await page.reload();
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Start mode" })).toHaveValue("offer");
+
+  await page.getByRole("combobox", { name: "Start mode" }).selectOption({ label: "Start automatically" });
+  await expect.poll(
+    () => routineUpdates.filter((entry) => entry.method === "PATCH").at(-1)?.body?.activation?.startMode,
+    { timeout: 15_000 },
+  ).toBe("automatic");
+});
+
 test("agent routines settings create, validate, and persist", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

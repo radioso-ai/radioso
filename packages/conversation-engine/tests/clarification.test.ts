@@ -387,6 +387,11 @@ describe("resolvePendingClarification", () => {
       source: "test_surface",
       offerOutcome: "ignored",
       loopGuardCandidateIds: ["alpha", "beta"],
+      mappingOutcome: "ignored",
+      mappingStage: expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({ surface: "test_surface", decision: "mapped", mappingOutcome: "ignored" }),
+      }),
     });
 
     const recentReader: RecentClarificationReader = {
@@ -426,14 +431,16 @@ describe("resolvePendingClarification", () => {
       candidates: current.candidates,
       turn: expect.objectContaining({ sessionId: "session_1" }),
       mode: "offer",
+      source: "test_surface",
     });
     expect(store.clear).toHaveBeenCalledWith({ sessionId: "session_1", outcome: "declined" });
-    expect(resolved).toEqual({
+    expect(resolved).toMatchObject({
       resolvedPending: true,
       outcome: "declined",
       source: "test_surface",
       offerOutcome: "ignored",
       loopGuardCandidateIds: ["alpha", "beta"],
+      mappingOutcome: "ignored",
     });
   });
 

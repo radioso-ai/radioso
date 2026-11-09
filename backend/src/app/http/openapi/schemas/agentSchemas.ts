@@ -593,7 +593,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "RoutineDefinitionUpdateRequest",
     z.union([
       z.object({ enabled: z.boolean() }).strict(),
-      // No defaults on `enabled`, `activation.reentryMode`, or any `completionExport` field
+      // No defaults on `enabled`, `activation.reentryMode`, `activation.startMode`, or any `completionExport` field
       // here, unlike the create schema: an update payload that omits one must carry the
       // stored value forward rather than silently resetting it. Mirrors
       // `routineDefinitionPatchBodySchema` in `../routes/agentRoutes.ts`.

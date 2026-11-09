@@ -108,7 +108,7 @@ const mergeDefinedFields = <T extends Record<string, unknown>>(base: T, incoming
  *
  * The same reset can happen one level deeper: a caller-sent `activation` or `completionExport`
  * object can itself omit one of its own optional-with-default subfields
- * (`activation.reentryMode`; every `completionExport` field), which — same root cause —
+ * (`activation.reentryMode`, `activation.startMode`; every `completionExport` field), which — same root cause —
  * `RoutineDefinitionDraftUpdateInputSchema` keeps genuinely `undefined` rather than defaulted.
  * Merge those two nested objects field-by-field too, not just replace them wholesale. `activation`
  * is always present on a routine (required, never itself omitted); `completionExport` can be

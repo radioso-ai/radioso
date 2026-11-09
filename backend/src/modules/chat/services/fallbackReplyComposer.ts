@@ -7,6 +7,7 @@ import type {
 } from "../../../shared/infra/llm/providerTypes.js";
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import type { RoutineStartOffer } from "@radioso/conversation-contract";
 import type { RoutinePendingStep, SteeringRule } from "../../../shared/domain/steeringRule.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
@@ -23,6 +24,8 @@ export interface FallbackReplyInput {
   steering?: SteeringRule[];
   /** The step a routine that yielded this turn still waits on; the decline closes by pointing back to it. */
   pendingRoutineStep?: RoutinePendingStep;
+  /** An Offer-first routine this turn offered instead of starting; the answer closes by offering it. */
+  routineOffer?: RoutineStartOffer;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
   signal?: AbortSignal;
@@ -158,6 +161,7 @@ const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
     ),
     input.steering,
     input.pendingRoutineStep,
+    { offer: input.routineOffer },
   );
 
 export class ModelFallbackReplyComposer implements FallbackReplyComposer {

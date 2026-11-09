@@ -184,6 +184,17 @@ describe("AgentBundleExportService", () => {
     expect(routine.definition.steps[0].toolRef).toBe("crm.create_lead");
   });
 
+  it("carries an offer-first start mode with the routine, so an imported agent offers the way the source does (#1716)", async () => {
+    const offered = exportableRoutine({
+      activation: { ...exportableRoutine().activation, startMode: "offer" },
+    });
+
+    const bundle = await service({ routines: [offered, exportableRoutine({ id: "routine-2", name: "plain" })] }).export("workspace-1", "agent-1");
+
+    expect(bundle.routines[0].definition.activation.startMode).toBe("offer");
+    expect(bundle.routines[1].definition.activation.startMode).toBeUndefined();
+  });
+
   it("never carries the contact-request destination out of the workspace", async () => {
     const agent = baseAgent();
     agent.contactRequestsEnabled = true;

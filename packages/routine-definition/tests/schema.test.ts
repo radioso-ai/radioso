@@ -19,6 +19,7 @@ import {
   routineValidationCodes,
   routineSlotSchema,
   routineSlotSensitivities,
+  routineStartModes,
   routineStepSchema,
   routineTerminalSchema,
   routineTransitionSchema,
@@ -366,6 +367,7 @@ describe("routine exposure", () => {
       "exposure_tool_name_duplicate",
       "exposure_tool_name_changed",
       "exposure_requires_ungated_activation",
+      "start_mode_offer_requires_ungated_activation",
     ]) {
       expect(routineValidationCodes).toContain(code);
     }
@@ -651,5 +653,45 @@ describe("endingSendsCollectedValues", () => {
     expect(endingSendsCollectedValues({ kind: "complete" }, exportTo("crm"))).toBe(true);
     expect(endingSendsCollectedValues({ kind: "complete" }, exportTo(" "))).toBe(false);
     expect(endingSendsCollectedValues({ kind: "complete" }, exportTo("crm", false))).toBe(false);
+  });
+});
+
+describe("routine start mode", () => {
+  const draft = {
+    name: "Book a room",
+    activation: { triggerDescription: "A guest wants to book a room", gateRef: null, priority: 0 },
+    slots: [],
+    steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask for the dates.", toolRef: null, actionType: null, captureKey: null, ordinal: 0, metadata: {} }],
+    transitions: [],
+    terminals: [validTerminal],
+  };
+
+  it("names the two start modes", () => {
+    expect(routineStartModes).toEqual(["automatic", "offer"]);
+  });
+
+  it("leaves an omitted mode absent, which reads as automatic, so a routine authored before start modes is unchanged", () => {
+    expect(routineDefinitionDraftInputSchema.parse(draft).activation.startMode).toBeUndefined();
+    expect(routineDefinitionDraftEditingInputSchema.parse(draft).activation.startMode).toBeUndefined();
+  });
+
+  it("carries an offer-first mode through the draft, editing, update, and definition schemas", () => {
+    const offer = { ...draft, activation: { ...draft.activation, startMode: "offer" } };
+    expect(routineDefinitionDraftInputSchema.parse(offer).activation.startMode).toBe("offer");
+    expect(routineDefinitionDraftEditingInputSchema.parse(offer).activation.startMode).toBe("offer");
+    expect(routineDefinitionDraftUpdateInputSchema.parse(offer).activation.startMode).toBe("offer");
+    expect(routineDefinitionSchema.parse({
+      ...offer, id: "r1", agentId: "a1", lineageId: "l1", version: 1, createdAt: new Date(), updatedAt: new Date(),
+    }).activation.startMode).toBe("offer");
+  });
+
+  it("rejects a mode that is neither automatic nor offer", () => {
+    expect(routineDefinitionDraftInputSchema.safeParse({ ...draft, activation: { ...draft.activation, startMode: "sometimes" } }).success).toBe(false);
+  });
+
+  it("carries an explicit automatic mode through the update schema, so a switch back from offer is not lost", () => {
+    const parsed = routineDefinitionDraftUpdateInputSchema.parse({ ...draft, activation: { ...draft.activation, startMode: "automatic" } });
+    expect(parsed.activation.startMode).toBe("automatic");
+    expect(routineDefinitionDraftUpdateInputSchema.parse({ ...draft, name: "Renamed" }).activation.startMode).toBeUndefined();
   });
 });

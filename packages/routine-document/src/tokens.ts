@@ -25,14 +25,33 @@ import type {
   RoutineStepMode,
 } from './types.js'
 import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF } from './types.js'
-import type { RoutineReentryMode } from '@radioso/routine-definition'
+import type { RoutineReentryMode, RoutineStartMode } from '@radioso/routine-definition'
 import { ROUTINE_DEFINITION_LIMITS, routineIdentifierPattern } from '@radioso/routine-definition'
+import {
+  grammarVersionDiagnostic,
+  invalidReentryDiagnostic,
+  invalidStartModeDiagnostic,
+  invalidPriorityDiagnostic,
+  unknownFrontmatterKeyDiagnostic,
+  invalidExportDiagnostic,
+  invalidFrontmatterDiagnostic,
+  invalidVarDeclarationDiagnostic,
+  duplicateVarDeclarationDiagnostic,
+  unknownBracketTokenDiagnostic,
+  invalidGuardTokenDiagnostic,
+  invalidActionTokenDiagnostic,
+  invalidGateTokenDiagnostic,
+  invalidTargetTokenDiagnostic,
+  invalidSkillBindingSuffixDiagnostic,
+  conflictingGuardAndCounterDiagnostic,
+} from './parseDiagnostics.js'
 
 
 export type ParsedProseDoc = {
   name: string | null
   trigger: string | null
   reentryMode: RoutineReentryMode
+  startMode: RoutineStartMode
   priority: number
   completionExport?: RoutineCompletionExport
   terminals?: ProseTerminalConfig
@@ -44,7 +63,7 @@ export type ParsedProseDoc = {
   hadFrontmatter: boolean
 }
 
-const FRONTMATTER_KEYS = new Set(['grammar', 'name', 'trigger', 'vars', 'reentry', 'priority', 'export', 'end', 'handoff'])
+const FRONTMATTER_KEYS = new Set(['grammar', 'name', 'trigger', 'vars', 'reentry', 'start', 'priority', 'export', 'end', 'handoff'])
 const EXPORT_TRIGGER_KINDS = new Set(['complete', 'handoff'])
 
 // The chip fields the token serializer reads. Both a ProseSegment chip and a live
@@ -270,6 +289,7 @@ export const serializeProseDoc = (input: {
   name: string
   trigger: string
   reentryMode?: RoutineReentryMode
+  startMode?: RoutineStartMode
   priority?: number
   completionExport?: RoutineCompletionExport | null
   terminals?: ProseTerminalConfig | null
@@ -290,6 +310,9 @@ export const serializeProseDoc = (input: {
   const front = [FENCE, `grammar: ${GRAMMAR_VERSION}`, `name: ${input.name}`, `trigger: ${input.trigger}`]
   if (input.reentryMode && input.reentryMode !== 'once_per_conversation') {
     front.push(`reentry: ${input.reentryMode}`)
+  }
+  if (input.startMode && input.startMode !== 'automatic') {
+    front.push(`start: ${input.startMode}`)
   }
   if (input.priority != null && input.priority !== 0) {
     front.push(`priority: ${input.priority}`)
@@ -394,6 +417,9 @@ const parseTerminalFrontmatter = (value: string): { id: string; instruction?: st
     ...(match[2] != null ? { instruction: unescapeQuoted(match[2]) } : {}),
   }
 }
+
+const parseStartMode = (value: string): RoutineStartMode | null =>
+  value === 'automatic' || value === 'offer' ? value : null
 
 const parseReentryMode = (value: string): RoutineReentryMode | null => {
   if (value === 'once') return 'once_per_conversation'
@@ -703,6 +729,7 @@ export const parseProseDoc = (
   let name: string | null = null
   let trigger: string | null = null
   let reentryMode: RoutineReentryMode = 'once_per_conversation'
+  let startMode: RoutineStartMode = 'automatic'
   let priority = 0
   let completionExport: RoutineCompletionExport | undefined
   let terminals: ProseTerminalConfig | undefined
@@ -730,9 +757,17 @@ export const parseProseDoc = (
         else if (key === 'trigger') { trigger = value; hadFrontmatter = true }
         else if (key === 'reentry') {
           const parsed = parseReentryMode(value)
-          if (!parsed) continue
-          reentryMode = parsed
-          hadFrontmatter = true
+          if (parsed) {
+            reentryMode = parsed
+            hadFrontmatter = true
+          }
+        }
+        else if (key === 'start') {
+          const parsed = parseStartMode(value)
+          if (parsed) {
+            startMode = parsed
+            hadFrontmatter = true
+          }
         }
         else if (key === 'priority') {
           const parsed = Number(value)
@@ -818,98 +853,8 @@ export const parseProseDoc = (
   }))
 
   void grammarVersion
-  return { name, trigger, reentryMode, priority, ...(completionExport ? { completionExport } : {}), ...(terminals ? { terminals } : {}), variables, paragraphs, hadFrontmatter }
+  return { name, trigger, reentryMode, startMode, priority, ...(completionExport ? { completionExport } : {}), ...(terminals ? { terminals } : {}), variables, paragraphs, hadFrontmatter }
 }
-
-const grammarVersionDiagnostic = (version: number, line: number): ParseDiagnostic => ({
-  line,
-  code: 'unsupported_grammar_version',
-  message: `Unsupported routine grammar version: ${version}`,
-})
-
-const invalidReentryDiagnostic = (value: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_reentry',
-  message: `Unsupported routine reentry mode: ${value}`,
-})
-
-const invalidPriorityDiagnostic = (value: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_priority',
-  message: `Routine priority must be an integer: ${value}`,
-})
-
-const unknownFrontmatterKeyDiagnostic = (key: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'unknown_frontmatter_key',
-  message: `Unknown routine frontmatter key: ${key}`,
-})
-
-const invalidExportDiagnostic = (line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_export',
-  message: 'Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff',
-})
-
-const invalidFrontmatterDiagnostic = (key: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_frontmatter',
-  message: `Invalid ${key} frontmatter: expected "<id>" or "<id> (\\"message\\")"`,
-})
-
-const invalidVarDeclarationDiagnostic = (declaration: string, reason: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_var_declaration',
-  message: `Invalid vars declaration "${declaration}": ${reason}`,
-})
-
-const duplicateVarDeclarationDiagnostic = (key: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'duplicate_var_declaration',
-  message: `Duplicate vars declaration for "${key}"`,
-})
-
-const unknownBracketTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'unknown_bracket_token',
-  message: `Unknown routine bracket token: ${token}`,
-})
-
-const invalidGuardTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_guard_token',
-  message: `Invalid guard token: ${token}`,
-})
-
-const invalidActionTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_action_token',
-  message: `Invalid action token: ${token}`,
-})
-
-const invalidGateTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_gate_token',
-  message: `Invalid gate token: ${token}`,
-})
-
-const invalidTargetTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_target_token',
-  message: `Invalid target token: ${token}`,
-})
-
-const invalidSkillBindingSuffixDiagnostic = (refId: string, suffix: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'invalid_skill_binding_suffix',
-  message: `Invalid skill binding suffix for "#${refId}": [${suffix}]`,
-})
-
-const conflictingGuardAndCounterDiagnostic = (target: string, limit: string, line: number): ParseDiagnostic => ({
-  line,
-  code: 'conflicting_guard_and_counter',
-  message: `Branch line combines a guard token with a counter limit; use "-> step:${target} (max ${limit})" without another guard for a bounded loop`,
-})
 
 type BracketTokenFamily = 'if' | 'outcome' | 'filled' | 'action' | 'decision' | 'approval'
 
@@ -1104,6 +1049,10 @@ const readFrontmatterDiagnostics = (text: string): { version: number; bodyStart:
       } else if (key === 'reentry') {
         if (!parseReentryMode(value)) {
           diagnostics.push(invalidReentryDiagnostic(value, cursor + 1))
+        }
+      } else if (key === 'start') {
+        if (!parseStartMode(value)) {
+          diagnostics.push(invalidStartModeDiagnostic(value, cursor + 1))
         }
       } else if (key === 'priority') {
         const parsed = Number(value)

@@ -116,6 +116,48 @@ describe("agent revision snapshot schema", () => {
   });
 });
 
+describe("agent revision start mode (#1716)", () => {
+  const withActivation = (activation: Record<string, unknown>) => routineSnapshot({
+    activation: {
+      triggerDescription: "customer asks where their order is",
+      gateRef: null,
+      priority: 50,
+      reentryMode: "once_per_conversation",
+      ...activation,
+    },
+  });
+
+  it("reads a revision frozen before start modes as one that starts automatically", () => {
+    const parsed = parseAgentRevisionSnapshot(snapshotWith([routineSnapshot()]));
+
+    expect(parsed.routines[0].activation.startMode).toBeUndefined();
+    expect(() => assertCandidateSnapshotIsRunnable(parsed, { agentDefaultLocale: "en" })).not.toThrow();
+  });
+
+  it("carries an offer-first start mode through the snapshot", () => {
+    const parsed = parseAgentRevisionSnapshot(snapshotWith([withActivation({ startMode: "offer" })]));
+
+    expect(parsed.routines[0].activation.startMode).toBe("offer");
+    expect(() => assertCandidateSnapshotIsRunnable(parsed, { agentDefaultLocale: "en" })).not.toThrow();
+  });
+
+  it("refuses to release an offer-first routine that also has a coverage gate", () => {
+    const candidate = parseAgentRevisionSnapshot(snapshotWith([
+      withActivation({ startMode: "offer", coverageCriteria: { coverage: ["unanswered"] } }),
+    ]));
+    let thrown: unknown;
+    try {
+      assertCandidateSnapshotIsRunnable(candidate, { agentDefaultLocale: "en" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({ statusCode: 422, code: "revision_invalid" });
+    expect((thrown as { details: { diagnostics: Array<{ code: string }> } }).details.diagnostics.map((diagnostic) => diagnostic.code))
+      .toEqual(["start_mode_offer_requires_ungated_activation"]);
+  });
+});
+
 describe("agent revision exposure gate", () => {
   const exposed = (id: string, lineageId: string, toolName: string, enabled = true) => routineSnapshot({
     id, lineageId, exposure: { enabled, toolName, description: "" },

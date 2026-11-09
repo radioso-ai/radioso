@@ -270,6 +270,9 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
       // Default keeps definitions authored before reentry modes existed suppressing
       // on completion (the historical, safe behaviour).
       reentryMode: definition.activation.reentryMode ?? "once_per_conversation",
+      // Only an offer-first routine carries the field; absent reads as automatic in the engine, so a
+      // routine authored before start modes compiles exactly as it always did.
+      ...(definition.activation.startMode === "offer" ? { startMode: "offer" as const } : {}),
       ...(definition.activation.coverageCriteria ? { coverageCriteria: definition.activation.coverageCriteria } : {}),
     },
     metadata: {

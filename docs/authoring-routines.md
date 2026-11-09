@@ -262,9 +262,10 @@ matches** it starts a new booking. Changes last as long as the agent remembers
 the finished routine, 30 minutes after its last update.
 
 When a routine can't end without sending what it collected, **Editable after
-completion** does nothing on its fields. Ray's `validate_routine` reports each
-such field as `mutable_slot_not_correctable`, which never stops the routine from
-saving or publishing.
+completion** does nothing on its fields. The field's row says so beside the
+switch, and Ray's `validate_routine` reports each such field as
+`mutable_slot_not_correctable`. Neither stops the routine from saving or
+publishing.
 
 #### Read the visitor's context
 

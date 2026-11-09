@@ -179,6 +179,19 @@ for. A step that asks for a name and email asks for them even when an
 **Always** directive tells open answers to send booking questions to
 reception. See [Directives on a routine turn](/guides/authoring-directives#directives-on-a-routine-turn).
 
+A chat step's reply takes its facts from the step's own instruction, including
+any **Visitor context** chip placed in it, and from the sources it has on that
+turn: the text of the page the visitor is on, when the step references
+**Current page** and the embed sends page content, and the documents a
+**Retrieval context** step fetched earlier in the same turn. A chat step
+searches no documents itself. When a step says "tell them the edition dates
+from the page" and the visitor isn't on a course page, the reply is told it has
+no page text and no documents, so it asks the visitor for their dates instead
+of stating the course's. A visitor's own dates, such as "I'm free between the
+17th and 27th", reach it as the visitor's words, not as a source. Put a fact
+every visitor needs in the instruction itself, or in a page or document the
+step reads.
+
 ### Sensitive values
 
 Say a class-booking routine asks "Any injuries we should know about?" and keeps

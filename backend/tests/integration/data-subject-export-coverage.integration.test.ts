@@ -49,6 +49,7 @@ const coverage: Record<string, ExportCoverage> = {
   held_replies: excluded("A draft awaiting a teammate's review. A released draft is exported as the message it became; one discarded never reached the subject."),
   pending_decisions: excluded("A teammate's approval of a routine step: the options the routine's author wrote and the decision, on values routine_values carries."),
   clarification_states: excluded("A clarification in progress: the subject's question again, which the export carries as a message, and the candidates offered."),
+  routine_offers: excluded("Which routines the subject was offered to start: a routine id and a time, no content of the subject's, deleted with the conversation. The offer itself is the reply the export carries as a message."),
   directive_states: excluded("Which of the workspace's directives fired on which turn: rule ids and counters."),
   answer_coverage_assessments: excluded("The platform's verdict on whether the workspace's documents covered a request, beside a restatement of the question the export carries as a message."),
   answer_coverage_reaction_traces: excluded("How the agent reacted to a coverage verdict: rule ids and decisions."),

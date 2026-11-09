@@ -1256,6 +1256,12 @@ export interface RoutineNextStepDecision {
    * holding the tool step could run its tool again.
    */
   hold?: boolean;
+  /**
+   * Set when the selector could not read its decision, so it judged no exit this turn (#1715):
+   * `read` when a slot-only reading still read the message, `unread` when nothing did. A step
+   * with an exit a model must judge then takes no exit, its rule and default exits included.
+   */
+  exitsUnjudged?: "read" | "unread";
   rationale?: string;
   /** What the model returned, for the debug trace. Absent when no model call ran. */
   selection?: RoutineSelectionTrace;
@@ -1320,6 +1326,8 @@ export interface ConversationRoutineNextStepSelector {
     transitions: RoutineTransition[];
     turn: TurnContext;
     skillResult?: RoutineSkillResult;
+    /** False when the message is a structured call that states no slot values: only the exit is kept. */
+    messageStatesSlotValues?: boolean;
   }): Promise<RoutineNextStepDecision>;
 }
 

@@ -40,9 +40,10 @@ export interface RoutineSelectionTrace {
   /**
    * Set when the retry came back unreadable too on a step that collects slots, so the selector
    * read the message once more for slot values only: `read` when that completion could be read
-   * (its values are `returnedSlotKeys`), `unreadable` when it could not.
+   * (its values are `returnedSlotKeys`), `authority_claim` when it read text posing as a system
+   * notice (no values kept, the step held), `unreadable` when it could not be read.
    */
-  slotFallback?: "read" | "unreadable";
+  slotFallback?: "read" | "authority_claim" | "unreadable";
 }
 
 /**

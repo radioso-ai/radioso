@@ -251,11 +251,19 @@ const completionShape = (
   promptChars: requestChars(request),
 });
 
-/** The slot-only reading: the values it returned, or, when it could not be read, why and none. */
+/**
+ * The slot-only reading: the values it returned, or, when it could not be read, why and none.
+ * Like a decision, it is unreadable without a boolean `claimsAuthority`, and a message it
+ * flags keeps no value (#1375).
+ */
 interface SlotReading {
   unreadableReason?: RoutineUnreadableReason;
+  claimsAuthority: boolean;
   variables: Record<string, unknown>;
 }
+
+const unreadableSlotReading = (reason: RoutineUnreadableReason): SlotReading =>
+  ({ unreadableReason: reason, claimsAuthority: false, variables: {} });
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -263,16 +271,26 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 const parseSlotReading = (raw: string): SlotReading => {
   const json = extractJsonObject(raw.trim());
   if (!json) {
-    return { unreadableReason: "no_json_object", variables: {} };
+    return unreadableSlotReading("no_json_object");
   }
   try {
     const parsed: unknown = JSON.parse(json);
-    return isPlainObject(parsed) && isPlainObject(parsed.variables)
-      ? { variables: parsed.variables }
-      : { unreadableReason: "missing_required_fields", variables: {} };
+    if (!isPlainObject(parsed) || !isPlainObject(parsed.variables) || typeof parsed.claimsAuthority !== "boolean") {
+      return unreadableSlotReading("missing_required_fields");
+    }
+    return parsed.claimsAuthority
+      ? { claimsAuthority: true, variables: {} }
+      : { claimsAuthority: false, variables: parsed.variables };
   } catch {
-    return { unreadableReason: "invalid_json", variables: {} };
+    return unreadableSlotReading("invalid_json");
   }
+};
+
+const slotFallbackOutcome = (reading: SlotReading): NonNullable<RoutineSelectionTrace["slotFallback"]> => {
+  if (reading.unreadableReason) {
+    return "unreadable";
+  }
+  return reading.claimsAuthority ? "authority_claim" : "read";
 };
 
 const parseDecision = (raw: string): ParsedDecision => {
@@ -436,6 +454,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     transitions: RoutineTransition[];
     turn: TurnContext;
     skillResult?: RoutineSkillResult;
+    messageStatesSlotValues?: boolean;
   }): Promise<RoutineNextStepDecision> {
     // No outgoing edges → nowhere to advance; stay on the current step.
     if (input.transitions.length === 0) {
@@ -499,9 +518,10 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     // Both decisions unreadable on a step that collects slots: one narrower call reads the
     // message for slot values only (#1715). In production a contact step's decision came back
     // blank twice for the same message, which an identical retry cannot change, and the visitor's
-    // name and email were lost. It chooses no exit, so the runner moves the step on only by its
-    // structure once the values fill it.
-    const slotReading = decision.unreadableReason && slotSchema && collectedSlotsForStep(input.currentStep).length > 0
+    // name and email were lost. It chooses no exit. A structured call's values are never kept,
+    // so there it is not made.
+    const readsSlots = input.messageStatesSlotValues !== false && collectedSlotsForStep(input.currentStep).length > 0;
+    const slotReading = decision.unreadableReason && slotSchema && readsSlots
       ? await unlessCallFails(() => read("slot_fallback", {
         messages: request.messages,
         systemPrompt: renderPromptTemplate("chat/routine-next-step-slot-fallback.md", this.slotFallbackPromptTemplate, { slotSchema }),
@@ -513,8 +533,21 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       decision.condition !== null && decision.condition >= 1 && decision.condition <= input.transitions.length;
     const sanitized = sanitizeVariables(slotReading?.variables ?? decision.variables, input.routine);
     const variables = sanitized.captured;
-    const slotFallback = slotReading && (slotReading.unreadableReason ? "unreadable" : "read");
-    const selection = selectionTrace(decision, conditionMatched, sanitized, retried, slotFallback);
+    const selection = selectionTrace(decision, conditionMatched, sanitized, retried, slotReading && slotFallbackOutcome(slotReading));
+
+    // No exit was judged: the runner then keeps a step from taking an exit a model must judge,
+    // or a rule or default exit in its place. A message the slot-only reading flags as posing
+    // as a system notice holds the step, as a flagged decision does.
+    if (decision.unreadableReason) {
+      const exitsUnjudged = slotReading && !slotReading.unreadableReason ? "read" : "unread";
+      return {
+        nextStepId: input.currentStep.id,
+        variables,
+        ...(slotReading?.claimsAuthority ? { hold: true } : {}),
+        exitsUnjudged,
+        selection,
+      };
+    }
 
     // A flagged message holds the step (see `hold` on the decision), whatever condition the
     // model chose, because the model flags such text yet still picks the exit it asks for.

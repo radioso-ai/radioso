@@ -99,7 +99,8 @@ const answerOnce = async (host: RoutineChatGateway, request: ChatGatewayInput): 
   const completionRecord: ChatGatewayCompletionRecord = {};
   const described = (text: string): ConversationModelCompletion => {
     const stopReason = toConversationStopReason(completionRecord.stopReason);
-    return { text, ...(stopReason ? { stopReason } : {}) };
+    const { model } = completionRecord;
+    return { text, ...(stopReason ? { stopReason } : {}), ...(model ? { model } : {}) };
   };
   try {
     return { completion: described(await host.answer({ ...request, completionRecord })), blank: false };

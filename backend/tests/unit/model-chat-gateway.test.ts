@@ -165,7 +165,7 @@ describe("ModelChatGateway", () => {
     expect(requests[0]?.signal).toBe(controller.signal);
   });
 
-  it("records why the provider stopped on a caller-supplied completion record", async () => {
+  it("records why the provider stopped, and which model answered, on a caller-supplied completion record", async () => {
     const gateway = new ModelChatGateway(new ModelInferencePipelineService({
       metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
       async complete() {
@@ -179,10 +179,10 @@ describe("ModelChatGateway", () => {
 
     await gateway.answer({ query: "Question", history: [], prompt: "User prompt", usageContext, completionRecord });
 
-    expect(completionRecord).toEqual({ stopReason: "output_limit" });
+    expect(completionRecord).toEqual({ stopReason: "output_limit", model: "test-chat" });
   });
 
-  it("records a blank completion's stop reason before failing it as blank", async () => {
+  it("records a blank completion's stop reason and model before failing it as blank", async () => {
     const gateway = new ModelChatGateway(new ModelInferencePipelineService({
       metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
       async complete() {
@@ -197,7 +197,7 @@ describe("ModelChatGateway", () => {
     await expect(
       gateway.answer({ query: "Question", history: [], prompt: "User prompt", usageContext, completionRecord }),
     ).rejects.toBeInstanceOf(BlankChatAnswerError);
-    expect(completionRecord).toEqual({ stopReason: "output_limit" });
+    expect(completionRecord).toEqual({ stopReason: "output_limit", model: "test-chat" });
   });
 
   it("overwrites a reused completion record, so a provider that gives no stop reason leaves none", async () => {

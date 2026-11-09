@@ -265,6 +265,23 @@ describe("RoutineChatModelGateway", () => {
     });
   });
 
+  describe("model (#1715)", () => {
+    it("returns the model the host gateway records for the completion, a blank one included", async () => {
+      const gateway = new RoutineChatModelGateway({
+        async answer(input) {
+          if (input.completionRecord) {
+            input.completionRecord.stopReason = "completed";
+            input.completionRecord.model = "gpt-5.4-mini";
+          }
+          throw new BlankChatAnswerError();
+        },
+      }, turnContext);
+
+      await expect(gateway.complete({ messages: [{ role: "user", content: "si" }], returnBlank: true }))
+        .resolves.toEqual({ text: "", stopReason: "completed", model: "gpt-5.4-mini" });
+    });
+  });
+
   describe("streaming", () => {
     it("offers a stream only when the host gateway can stream", () => {
       const answerOnly: Pick<ChatGateway, "answer"> = { answer: async () => "ok" };

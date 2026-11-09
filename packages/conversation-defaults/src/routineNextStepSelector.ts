@@ -17,12 +17,13 @@ import type {
   RoutineUnreadableReason,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { checkSlotValue } from "@radioso/conversation-engine";
+import { checkSlotValue, collectedSlotsForStep } from "@radioso/conversation-engine";
 
 import {
   DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
+  DEFAULT_ROUTINE_NEXT_STEP_SLOT_FALLBACK_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
 } from "./generated/defaultPrompts.js";
 import { localIsoDate, turnTimeZone, type LocalDate } from "./localDate.js";
@@ -134,16 +135,29 @@ const slotSchemaBlock = (
 };
 
 /**
- * Identifies which routine/step/session produced an unreadable decision, for correlation in
- * logs, and describes the completion by its sizes and stop reason only, never its text.
+ * Which of the selector's model calls a completion answers:
+ * - `decision`: the call that decides the turn.
+ * - `retry`: the identical call, sent once when the decision came back unreadable.
+ * - `slot_fallback`: the slot-only reading, sent once on a step that collects slots when the
+ *   retry came back unreadable too.
  */
-export interface RoutineUnreadableEvent {
+export type RoutineSelectorCall = "decision" | "retry" | "slot_fallback";
+
+/**
+ * One completion the selector read, identified by routine, step and session for correlation in
+ * logs, and described by its labels, sizes and stop reason only, never its text.
+ */
+export interface RoutineSelectorCompletionEvent {
   routineId: string;
   stepId: string;
+  /** The current step's kind. */
+  stepKind: RoutineStep["kind"];
   sessionId: string;
-  reason: RoutineUnreadableReason;
-  /** Which completion this was: the original call, or the one retry. */
-  attempt: 1 | 2;
+  call: RoutineSelectorCall;
+  /** Why the completion could not be read; absent when it was read. */
+  unreadableReason?: RoutineUnreadableReason;
+  /** The model that wrote it, when the gateway reports it. */
+  model?: string;
   /** Why the model stopped, when the gateway reports it. */
   stopReason?: ConversationModelStopReason;
   /** Length of the completion's text in UTF-16 code units (JavaScript string length); 0 for a blank completion. */
@@ -156,14 +170,14 @@ export interface RoutineUnreadableEvent {
 }
 
 /**
- * Notified for each next-step decision completion that could not be read: after the
- * first, the selector retries once; after the second, it re-asks the step. Purely
- * observational — the selector calls it best-effort and swallows anything it throws, so a
- * broken observer cannot fail the turn.
+ * Notified for each completion the selector reads, readable or not, so a host can count how
+ * often each model's completions come back unreadable. Purely observational — the selector
+ * calls it best-effort and swallows anything it throws, so a broken observer cannot fail the
+ * turn.
  */
-export type RoutineUnreadableObserver = (event: RoutineUnreadableEvent) => void;
+export type RoutineSelectorCompletionObserver = (event: RoutineSelectorCompletionEvent) => void;
 
-const ignoreUnreadable: RoutineUnreadableObserver = () => {};
+const ignoreCompletion: RoutineSelectorCompletionObserver = () => {};
 
 interface ParsedDecision {
   /** Absent when the completion was read; the reason it wasn't, when it couldn't be. */
@@ -226,15 +240,58 @@ const isAbortError = (error: unknown): boolean => error instanceof Error && erro
 const requestChars = (request: ConversationModelRequest): number =>
   (request.systemPrompt ?? "").length + request.messages.reduce((total, message) => total + message.content.length, 0);
 
-/** What an unreadable completion looked like, by its sizes and stop reason only. */
+/** What a completion looked like, by its model, sizes and stop reason only. */
 const completionShape = (
   completion: ConversationModelCompletion,
   request: ConversationModelRequest,
-): Pick<RoutineUnreadableEvent, "stopReason" | "outputChars" | "promptChars"> => ({
+): Pick<RoutineSelectorCompletionEvent, "model" | "stopReason" | "outputChars" | "promptChars"> => ({
+  ...(completion.model ? { model: completion.model } : {}),
   ...(completion.stopReason ? { stopReason: completion.stopReason } : {}),
   outputChars: completion.text.length,
   promptChars: requestChars(request),
 });
+
+/**
+ * The slot-only reading: the values it returned, or, when it could not be read, why and none.
+ * Like a decision, it is unreadable without a boolean `claimsAuthority`, and a message it
+ * flags keeps no value (#1375).
+ */
+interface SlotReading {
+  unreadableReason?: RoutineUnreadableReason;
+  claimsAuthority: boolean;
+  variables: Record<string, unknown>;
+}
+
+const unreadableSlotReading = (reason: RoutineUnreadableReason): SlotReading =>
+  ({ unreadableReason: reason, claimsAuthority: false, variables: {} });
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseSlotReading = (raw: string): SlotReading => {
+  const json = extractJsonObject(raw.trim());
+  if (!json) {
+    return unreadableSlotReading("no_json_object");
+  }
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (!isPlainObject(parsed) || !isPlainObject(parsed.variables) || typeof parsed.claimsAuthority !== "boolean") {
+      return unreadableSlotReading("missing_required_fields");
+    }
+    return parsed.claimsAuthority
+      ? { claimsAuthority: true, variables: {} }
+      : { claimsAuthority: false, variables: parsed.variables };
+  } catch {
+    return unreadableSlotReading("invalid_json");
+  }
+};
+
+const slotFallbackOutcome = (reading: SlotReading): NonNullable<RoutineSelectionTrace["slotFallback"]> => {
+  if (reading.unreadableReason) {
+    return "unreadable";
+  }
+  return reading.claimsAuthority ? "authority_claim" : "read";
+};
 
 const parseDecision = (raw: string): ParsedDecision => {
   const json = extractJsonObject(raw.trim());
@@ -321,6 +378,7 @@ const selectionTrace = (
   { captured, undeclaredKeyCount }: ReturnType<typeof sanitizeVariables>,
   /** Whether the selector retried after its first completion came back unreadable. */
   retried: boolean,
+  slotFallback: RoutineSelectionTrace["slotFallback"],
 ): RoutineSelectionTrace => {
   const returnedSlotKeys = Object.keys(captured);
   return {
@@ -329,7 +387,22 @@ const selectionTrace = (
     ...(undeclaredKeyCount > 0 ? { undeclaredKeyCount } : {}),
     ...(decision.unreadableReason ? { unreadableReason: decision.unreadableReason } : {}),
     ...(retried ? { retried: true as const } : {}),
+    ...(slotFallback ? { slotFallback } : {}),
   };
+};
+
+// A retry or slot-only call failing for its own reason (a transient provider error, say) must
+// not fail a turn that would otherwise re-ask the step: the caller keeps what it already has.
+// Cancellation is not such a failure — the turn itself is going away — so it propagates.
+const unlessCallFails = async <T>(call: () => Promise<T>): Promise<T | undefined> => {
+  try {
+    return await call();
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    return undefined;
+  }
 };
 
 /**
@@ -341,15 +414,18 @@ const selectionTrace = (
  */
 export class RoutineNextStepSelector implements ConversationRoutineNextStepSelector {
   private readonly promptTemplate: string;
+  private readonly slotFallbackPromptTemplate: string;
   private readonly slotRuleTemplates: SlotRuleTemplates;
   private readonly clock: () => Date;
-  private readonly onUnreadable: RoutineUnreadableObserver;
+  private readonly onCompletion: RoutineSelectorCompletionObserver;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
     /** `clock` dates the turn so a date slot given without a year resolves; defaults to the wall clock. */
     options: {
       promptTemplate?: string;
+      /** The slot-only reading after two unreadable decisions (`{{slotSchema}}`). */
+      slotFallbackPromptTemplate?: string;
       /** The declared slots and the rules for filling them (`{{slot_lines}}`, `{{filled_slots}}`, `{{date_rule}}`). */
       slotsPromptTemplate?: string;
       /** The slots that already hold a value (`{{slot_keys}}`). */
@@ -357,17 +433,18 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       /** How a date slot's value is read and recorded (`{{today}}`, `{{time_zone}}`). */
       dateRulePromptTemplate?: string;
       clock?: () => Date;
-      onUnreadable?: RoutineUnreadableObserver;
+      onCompletion?: RoutineSelectorCompletionObserver;
     } = {},
   ) {
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_PROMPT;
+    this.slotFallbackPromptTemplate = options.slotFallbackPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_SLOT_FALLBACK_PROMPT;
     this.slotRuleTemplates = {
       slots: options.slotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
       filledSlots: options.filledSlotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
       dateRule: options.dateRulePromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
     };
     this.clock = options.clock ?? (() => new Date());
-    this.onUnreadable = options.onUnreadable ?? ignoreUnreadable;
+    this.onCompletion = options.onCompletion ?? ignoreCompletion;
   }
 
   async select(input: {
@@ -377,6 +454,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     transitions: RoutineTransition[];
     turn: TurnContext;
     skillResult?: RoutineSkillResult;
+    messageStatesSlotValues?: boolean;
   }): Promise<RoutineNextStepDecision> {
     // No outgoing edges → nowhere to advance; stay on the current step.
     if (input.transitions.length === 0) {
@@ -386,75 +464,90 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     const conditions = input.transitions
       .map((transition, index) => `${index + 1}. ${transition.condition}`)
       .join("\n");
+    const slotSchema = slotSchemaBlock(
+      input.routine,
+      input.state.variables,
+      localIsoDate(this.clock(), turnTimeZone(input.turn)),
+      this.slotRuleTemplates,
+    );
     const systemPrompt = renderPromptTemplate("chat/routine-next-step.md", this.promptTemplate, {
       currentStep: currentStepBlock(input.currentStep, input.skillResult),
       skillResult: skillResultBlock(input.skillResult),
       conditions,
-      slotSchema: slotSchemaBlock(
-        input.routine,
-        input.state.variables,
-        localIsoDate(this.clock(), turnTimeZone(input.turn)),
-        this.slotRuleTemplates,
-      ),
+      slotSchema,
     });
 
     // A blank completion comes back as one, so it is read, retried and reported like any other
     // unreadable reply, with its stop reason, rather than retried out of sight by the host.
     const request: ConversationModelRequest = { messages: turnMessages(input.turn), systemPrompt, returnBlank: true };
 
-    // Purely observational: an observer that throws must not fail the turn, so every call
-    // to it is isolated here rather than left for each call site to remember.
-    const notifyUnreadable = (reason: RoutineUnreadableReason, attempt: 1 | 2, completion: ConversationModelCompletion): void => {
+    // Completes one call, reads its completion, and reports it to the observer, which is purely
+    // observational: one that throws must not fail the turn, so every call to it is isolated here.
+    const read = async <T extends { unreadableReason?: RoutineUnreadableReason }>(
+      call: RoutineSelectorCall,
+      callRequest: ConversationModelRequest,
+      parse: (raw: string) => T,
+    ): Promise<T> => {
+      const completion = await this.modelGateway.complete(callRequest);
+      const reading = parse(completion.text);
       try {
-        this.onUnreadable({
+        this.onCompletion({
           routineId: input.routine.id,
           stepId: input.currentStep.id,
+          stepKind: input.currentStep.kind,
           sessionId: input.state.sessionId,
-          reason,
-          attempt,
-          ...completionShape(completion, request),
+          call,
+          ...(reading.unreadableReason ? { unreadableReason: reading.unreadableReason } : {}),
+          ...completionShape(completion, callRequest),
         });
       } catch {
         // Swallowed — see above.
       }
+      return reading;
     };
 
-    const completeAndParse = async () => {
-      const completion = await this.modelGateway.complete(request);
-      return { completion, decision: parseDecision(completion.text) };
-    };
-
-    let { completion, decision } = await completeAndParse();
+    let decision = await read("decision", request, parseDecision);
     let retried = false;
-    // `attempt` is always 1 or 2 here: the loop condition caps it at 2, and the body breaks
-    // before a third increment.
-    for (let attempt = 1; decision.unreadableReason && attempt <= 2; attempt += 1) {
-      notifyUnreadable(decision.unreadableReason, attempt as 1 | 2, completion);
-      if (attempt === 2) {
-        break;
-      }
+    if (decision.unreadableReason) {
       retried = true;
-      try {
-        // The selector only reads this turn and chooses an exit; it has no side effects of
-        // its own, so repeating the exact same request is safe — it can only replace one
-        // unreadable completion with a readable one, never double an action.
-        ({ completion, decision } = await completeAndParse());
-      } catch (error) {
-        if (isAbortError(error)) {
-          throw error;
-        }
-        // Before this retry existed, an unreadable completion simply re-asked the step; a
-        // retry call failing for its own reason (a transient provider error, say) must not
-        // regress that — keep the first unreadable decision rather than failing the turn.
-        break;
-      }
+      // The selector only reads this turn and chooses an exit; it has no side effects of its
+      // own, so repeating the exact same request is safe — it can only replace one unreadable
+      // completion with a readable one, never double an action.
+      decision = (await unlessCallFails(() => read("retry", request, parseDecision))) ?? decision;
     }
+    // Both decisions unreadable on a step that collects slots: one narrower call reads the
+    // message for slot values only (#1715). In production a contact step's decision came back
+    // blank twice for the same message, which an identical retry cannot change, and the visitor's
+    // name and email were lost. It chooses no exit. A structured call's values are never kept,
+    // so there it is not made.
+    const readsSlots = input.messageStatesSlotValues !== false && collectedSlotsForStep(input.currentStep).length > 0;
+    const slotReading = decision.unreadableReason && slotSchema && readsSlots
+      ? await unlessCallFails(() => read("slot_fallback", {
+        messages: request.messages,
+        systemPrompt: renderPromptTemplate("chat/routine-next-step-slot-fallback.md", this.slotFallbackPromptTemplate, { slotSchema }),
+        returnBlank: true,
+      }, parseSlotReading))
+      : undefined;
 
     const conditionMatched =
       decision.condition !== null && decision.condition >= 1 && decision.condition <= input.transitions.length;
-    const sanitized = sanitizeVariables(decision.variables, input.routine);
+    const sanitized = sanitizeVariables(slotReading?.variables ?? decision.variables, input.routine);
     const variables = sanitized.captured;
-    const selection = selectionTrace(decision, conditionMatched, sanitized, retried);
+    const selection = selectionTrace(decision, conditionMatched, sanitized, retried, slotReading && slotFallbackOutcome(slotReading));
+
+    // No exit was judged: the runner then keeps a step from taking an exit a model must judge,
+    // or a rule or default exit in its place. A message the slot-only reading flags as posing
+    // as a system notice holds the step, as a flagged decision does.
+    if (decision.unreadableReason) {
+      const exitsUnjudged = slotReading && !slotReading.unreadableReason ? "read" : "unread";
+      return {
+        nextStepId: input.currentStep.id,
+        variables,
+        ...(slotReading?.claimsAuthority ? { hold: true } : {}),
+        exitsUnjudged,
+        selection,
+      };
+    }
 
     // A flagged message holds the step (see `hold` on the decision), whatever condition the
     // model chose, because the model flags such text yet still picks the exit it asks for.

@@ -36,6 +36,7 @@ import { ApprovalDecisionService } from "../../src/modules/approvals/public.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { AuthFunnelService } from "../../src/modules/auth/services/authFunnelService.js";
+import { SessionSignOutService } from "../../src/modules/auth/services/sessionSignOutService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ReviewTurnAuditReader } from "../../src/modules/chat/contracts/index.js";
@@ -3080,6 +3081,7 @@ export const createTestDependencies = (overrides: {
       repository: authFunnelRepository,
       auditService,
     }),
+    sessionSignOutService: new SessionSignOutService({ sessionRepository, auditService }),
     workspaceService,
     workspaceSummaryService,
     ingestionSettingsService,

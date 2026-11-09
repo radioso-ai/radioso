@@ -18,6 +18,11 @@ vi.mock('@/lib/api-operator-mcp', async (importOriginal) => ({
   operatorMcpApi: operatorMcpApiMocks,
 }))
 
+// AuthProvider owns the post-sign-out navigation, so it needs a router even when nothing signs out.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+}))
+
 vi.mock('@/components/auth/auth-page', async () => {
   const React = await import('react')
   return {

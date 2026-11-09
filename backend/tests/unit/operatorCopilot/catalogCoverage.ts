@@ -320,6 +320,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "acceptAccountInvitation",
     "acceptAccountInvitationAsCurrentUser",
     "getCurrentSession",
+    "logoutAccount",
   ], authOrRegistration),
   ...coverage([
     "getUserProfile",

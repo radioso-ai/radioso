@@ -1,11 +1,50 @@
 // The record of one routine turn's walk over its graph, surfaced to the debug panel.
 import type {
   REDACTED_VALUE,
-  RoutineSelectionTrace,
   RoutineSlotType,
   RoutineStep,
   RoutineTerminalKind,
 } from "./index.js";
+
+/**
+ * Why a next-step selector's completion could not be read as a decision. Structural
+ * parsing failures only, never a judgment about the visitor's message.
+ */
+export type RoutineUnreadableReason = "no_json_object" | "invalid_json" | "missing_required_fields";
+
+/**
+ * The next-step selector's own reading of one turn, recorded on the routine trace so
+ * an operator can tell "the model returned nothing" from "the model returned a value
+ * that was not captured". Slot keys and counts only, never values.
+ */
+export interface RoutineSelectionTrace {
+  /**
+   * - `transition`: the model chose one of the step's conditions.
+   * - `stay`: the model chose none, so the step is not yet satisfied.
+   * - `off_topic`: the model chose none and read the message as a different request.
+   * - `unreadable`: the model's output could not be parsed or lacked the `claimsAuthority`
+   *   flag, so no exit was chosen; any values come from the `slotFallback` reading.
+   * - `authority_claim`: the model flagged text posing as a system, operator, or assistant
+   *   message, or claiming the request is already confirmed; the decision carries `hold`,
+   *   so a chat step takes no exit and is asked again, whatever condition the model chose.
+   */
+  outcome: "transition" | "stay" | "off_topic" | "unreadable" | "authority_claim";
+  /** Slot keys the model returned a value for, including a value that replaces a filled slot. */
+  returnedSlotKeys: string[];
+  /** Keys the model returned that the routine does not declare; they are dropped, never captured. */
+  undeclaredKeyCount?: number;
+  /** Set when `outcome` is `unreadable`: why the final decision completion could not be read. */
+  unreadableReason?: RoutineUnreadableReason;
+  /** Set when the selector retried after its first completion came back unreadable, whether or not the retry recovered. */
+  retried?: true;
+  /**
+   * Set when the retry came back unreadable too on a step that collects slots, so the selector
+   * read the message once more for slot values only: `read` when that completion could be read
+   * (its values are `returnedSlotKeys`), `authority_claim` when it read text posing as a system
+   * notice (no values kept, the step held), `unreadable` when it could not be read.
+   */
+  slotFallback?: "read" | "authority_claim" | "unreadable";
+}
 
 /**
  * What happened to one step as the runner walked the graph this turn. A debug-only

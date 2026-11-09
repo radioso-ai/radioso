@@ -111,7 +111,7 @@ describe("routine turn provider slot values", () => {
     transitions: [{ from: "ask_email", to: "done", condition: "a valid email was provided" }],
   };
 
-  it("warns with the routine, step, session id, workspace, and attempt, never the raw model text, when the next-step decision is still unreadable after the selector's retry", async () => {
+  it("warns with the routine, step, session id, workspace, and call, never the raw model text, when the next-step decision is still unreadable after the selector's retry", async () => {
     const deps = dependencies();
     deps.publishedRoutineSource.load.mockResolvedValue([
       { routine: llmRoutedRoutine, trigger: { description: "Collect an email", priority: 1 } },
@@ -138,7 +138,7 @@ describe("routine turn provider slot values", () => {
         stepId: "ask_email",
         sessionId: turn.sessionId,
         reason: "no_json_object",
-        attempt: 1,
+        call: "decision",
       }),
       expect.any(String),
     );
@@ -150,7 +150,7 @@ describe("routine turn provider slot values", () => {
         stepId: "ask_email",
         sessionId: turn.sessionId,
         reason: "no_json_object",
-        attempt: 2,
+        call: "retry",
       }),
       expect.any(String),
     );

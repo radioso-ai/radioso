@@ -141,8 +141,8 @@ Routine model calls (selector and step replies) go through the chat gateway for
 the turn's workspace model. A blank step reply is retried once, recorded under
 its own usage attempt; a second blank fails the turn. The selector asks for a
 blank completion back (`returnBlank` on the request) and reads it as an
-unreadable reply, so its own single retry covers it and a second blank re-asks
-the step instead of failing the turn. A turn that makes more than
+unreadable reply, so its own retry and slot-only reading cover it, and a blank
+that neither recovers re-asks the step instead of failing the turn. A turn that makes more than
 one routine model call meters each call under its own usage attempt, so a turn
 running both a selector pass and a step reply records both.
 
@@ -644,7 +644,11 @@ step the selector judged also records the selector's `selection`: its
 output could not be parsed or lacked `claimsAuthority`, or `authority_claim`
 when the message posed as a system notice and the step was held), the
 `returnedSlotKeys` the model gave a value for, and `undeclaredKeyCount` for
-keys it returned that the routine does not declare. The two signals answer
+keys it returned that the routine does not declare. On an `unreadable` outcome,
+`slotFallback` says whether the slot-only reading described under "Changing the
+routine prompts" was read (`read`, and its values are the `returnedSlotKeys`),
+found text posing as a system notice (`authority_claim`, nothing kept), or came
+back unreadable too (`unreadable`). The two signals answer
 different questions: `undeclaredKeyCount` is what the next-step selector
 already filtered out of its own response before returning it, while an
 `undeclared` entry in `rejectedSlots` is what the runner itself dropped —
@@ -716,6 +720,73 @@ event match the turn, the engine records the stage and does not ask the routine 
 the same message a second time; a yield from any other turn is ignored, and the routine
 is asked as usual. Radioso keeps the yield on the turn's session until `processTurn`
 answers, so a retry of a failed turn hands it back again.
+
+### After a routine ends
+
+For as long as the store keeps a completed run (30 minutes after its last update in
+Radioso), each new message first meets the correction pass, then the reentry gate, then
+activation. The correction pass lets a visitor change a value the run holds in a slot
+marked `mutable` ("Editable after completion") without running the routine again. Say a
+booking ended holding `arrival: 2027-01-05` and nothing left the conversation: "actually
+I'd arrive on 9 January" changes the held arrival to `2027-01-09`, and the reply confirms
+the change.
+
+`RoutineSlotCorrector` (`packages/conversation-defaults/src/routineSlotCorrector.ts`)
+decides whether to offer a correction, and offers one only when it would be true:
+
+- It considers only the slots `correctableSlots` returns: declared, `mutable`, and holding
+  a value in the run. A run that ended holding none, such as a booking that ended on its
+  opening turn, gets no model call, and the message goes on to reentry and activation.
+- It offers nothing once the run's values have left the conversation, read from the run's
+  `path` against the routine it ran (`completedRunSentValues` in
+  `packages/conversation-engine/src/routineEnding.ts`): the run passed a tool, action, or
+  approval step, or its ending notified operators, handed off (a run stuck on a step ends
+  there and hands off), or fired the completion export. A changed value would reach none
+  of those, and the ending does not run again, so the agent does not say it changed. Every
+  tool step counts, a read-only lookup included: the run record keeps which steps ran, not
+  what each skill did outside the conversation. Whether the ending exported is decided by
+  `firingCompletionExport`, the rule the runner emits the export by, applied to the routine
+  as this turn loads it.
+- Otherwise one model call (`backend/prompts/chat/routine-slot-correction-detect.md`)
+  sees each offered slot with the value it holds, today's date in the turn's zone, and the
+  conversation, and returns an `intent`: `correction` with the slot and its new value,
+  `new_request` for a message that asks for something new, such as another booking with
+  different dates, or `other`. Only `correction` is offered; the rest go on to reentry and
+  activation like any message.
+
+The engine claims a correction only to a slot `correctableSlots` returns for the run, the
+same rule the corrector offers by, then checks the value fits the slot's type
+(`verifySlotCorrection`) before it saves the run with the new value. A value that fails its
+type gets a reply asking for a valid one and changes nothing. The confirmation
+(`routine-slot-correction-confirm.md`) says the value was noted and never that anything was
+booked, sent, or passed on.
+
+A message that is not a correction goes where the routine's reentry setting sends it. Under
+`once_per_conversation`, the default, the ended routine stays out of activation, so a new
+request such as "I'd like to book from 8 to 10 January" is answered normally rather than
+starting the booking again; under `always` it starts a new run, and under `semantic` the
+reentry gate decides.
+
+A run the semantic reentry gate reopens with `resume_existing` starts again from its first
+step with the values it held, and its record keeps only the second part's `path`. If the
+first part notified the team and the reopened run ends quietly, a later correction is
+offered although the team holds the earlier value. The run record has no place to carry the
+first part's verdict across the reopening.
+
+The turn trace records a claimed correction as a `routine_slot_correction` stage, `applied`
+or `rejected` with the slot key, never the value. Every detection also sets
+`routine.slot_correction.decision` on the turn's span to the final outcome: `correction`,
+`invalid_value` when the new value failed its type, or why no correction was offered —
+`not_held`, `already_sent`, `new_request`, `not_a_correction`, `no_mutable_slot`, or
+`unknown_routine`.
+
+At authoring time, `routineAdvisories` in `@radioso/routine-definition` reports
+`mutable_slot_not_correctable` for each `mutable` slot of a routine that can't end without
+sending what it collected: no route from its first step reaches an ending that sends
+nothing (`endingSendsCollectedValues`) without crossing a tool, action, or approval step.
+The advisory never blocks saving or publishing. Ray's `validate_routine` and routine
+proposals report it, and a backend test compares it against `completedRunSentValues` over
+every route through the compiled routine.
 
 ## Activation and clarification
 
@@ -882,13 +953,16 @@ The next-step selector
 `routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` for
 the declared slots and the rules for filling them) extracts slot values and
 picks an exit, retrying its own model call once when a completion comes back
-unreadable. The step renderer (`routineStepRenderer.ts` with
+unreadable; `routine-next-step-slot-fallback.md` is its slot-only reading when
+the retry is unreadable too. The step renderer (`routineStepRenderer.ts` with
 `backend/prompts/chat/routine-step-reply.md`, `routine-step-progress.md` on a
 chat step, `routine-step-context-evidence.md` around the visitor's page,
 `routine-step-sources.md` and `routine-step-sources-none.md` for the quoted
-sources the step has, and `routine-step-reask.md` with its `-gap`, `-exhausted-gap`, `-missing-slots`, and
+sources the step has, and `routine-step-reask.md` with its `-unanswered` or
+`-unreadable` opening and its `-gap`, `-exhausted-gap`, `-missing-slots`, and
 `-exhausted` pieces on a re-ask) writes the reply. A routine turn therefore
-makes two or three model calls, all on the workspace chat model at reasoning
+makes two or three model calls, and up to two more when the selector's
+completions come back unreadable, all on the workspace chat model at reasoning
 effort `none`, so small wording and layout changes move their behavior a lot.
 Each template reaches the selector or renderer as a template option, so a host
 can replace one, and
@@ -914,27 +988,78 @@ produced a measured failure on gpt-5.4-mini:
 
 The prompt's JSON instructions are a request, not a guarantee:
 `ConversationModelGateway.complete`/`stream` take only free text, and a model
-occasionally returns prose that `parseDecision` cannot read at all — a single
-captured answer such as a visitor's full name goes unread and the step
-re-asks it. The selector retries once, with the identical request, when a
-completion comes back unreadable: a readable retry recovers the turn's
-captured slots and chosen exit, while an unreadable retry — or a retry call
-that itself fails — keeps the step's original re-ask. The selector's
-optional `onUnreadable` observer reports, for each unreadable completion,
-why it failed (`no_json_object`, `invalid_json`, or
-`missing_required_fields`), which attempt it was, the model's stop reason
-when the gateway reports one, and two sizes in UTF-16 code units (JavaScript
-string length): `promptChars`, the system prompt plus every message's content
-the selector sent, and `outputChars`, the completion's text. Neither is the size
-of the serialized request, and neither carries the prompt or completion text.
-`createRoutineTurnProvider` wires it to a `logger.warn` carrying the routine,
-step, and session id. A short `outputChars` with `stopReason: "completed"` is a
-reply the model finished in prose. `output_limit` says only that the provider
+occasionally returns a completion that `parseDecision` cannot read at all:
+prose written to the visitor, or nothing. The selector then works through
+three calls, each one only if the one before came back unreadable:
+
+1. **The decision.** The full prompt: exits, values, and the `claimsAuthority`
+   check.
+2. **The retry.** The identical request, once. A readable retry recovers the
+   turn's values and chosen exit.
+3. **The slot-only reading.** On a step that collects slots, one call with
+   `routine-next-step-slot-fallback.md`: the same slot lines, filled-slot list,
+   and slot rules as the decision, and a `{"variables": {...}, "claimsAuthority":
+   ...}` reply. It has no exits and no step instruction. Its values go through
+   the same declared-key filter and type checks as a decision's. Like a
+   decision, it is unreadable without a boolean `claimsAuthority`, and when it
+   flags text posing as a system notice it keeps no value and holds the step. On
+   a structured call, whose values the runner never keeps, it is not made.
+
+Whatever the third call reads, no exit was judged that turn, and the decision
+says so with `exitsUnjudged` (`read` when the slot-only reading read the
+message, `unread` when nothing did). The runner then moves the step on only
+when every exit a model would judge is a compiler slot gate, which asks only
+whether the step's slots hold values: a step that now holds them moves on by
+its structure. A step with an AI-decides exit its author wrote is held instead,
+keeping the values: its rule and default exits mean none of the author's
+conditions held, and nobody judged that. A contact step whose author sends
+"call me instead" to a callback and everything else to a submit action
+therefore submits nothing on a turn whose decision went unread.
+
+The third call exists because a retry cannot change a deterministic failure. In
+production, a contact step collecting a full name and an email read a complete
+answer ("name, email") as unreadable twice: both completions came back blank,
+with the provider reporting it had finished normally (`completed`,
+`outputChars: 0`), and the visitor was asked for their name again. On the same
+kind of turn on gpt-5.4-mini, the slot-only reading returned both values in 2 of
+2 live samples. A retry or slot-only call that itself fails keeps what the
+selector already had; a cancelled one propagates.
+
+When no call reads the message, or the step is held with its exits unjudged,
+the step is asked again and the runner tells the renderer so: the re-ask
+carries `replyUnreadable: true`, and the reply opens with
+`routine-step-reask-unreadable.md` in place of
+`routine-step-reask-unanswered.md`. The model says the visitor's message could
+not be recorded and asks for it again, rather than suggesting it fell short. On
+the live sample above it wrote "Sorry, your last message couldn't be recorded.
+Could you send your full name and email address again?" On a compiler slot gate,
+a slot-only reading that was read counts as reading the reply, so a re-ask for
+what it still lacks is an ordinary one.
+
+The selector's optional `onCompletion` observer reports every completion it
+reads: the `call` (`decision`, `retry`, or `slot_fallback`), the step's kind,
+`unreadableReason` when it could not be read (`no_json_object`, `invalid_json`,
+or `missing_required_fields`), the model and stop reason when the gateway
+reports them, and two sizes in UTF-16 code units (JavaScript string length):
+`promptChars`, the system prompt plus every message's content the selector
+sent, and `outputChars`, the completion's text. Neither is the size of the
+serialized request, and neither carries the prompt or completion text.
+`createRoutineTurnProvider` wires it to `selectorCompletionTelemetry`, which
+counts every completion in `radioso_routine_next_step_completions_total`,
+labelled `model` (a catalog model id, `other` for an id outside the catalog,
+`unreported` when the gateway gives none), `step_kind`, `call`, and `result`
+(`read` or the unreadable reason), so the share of a model's completions that
+come back unreadable is visible without reading turn traces. An unreadable one
+is also logged as a warning, `Routine next-step selector completion was unreadable`,
+carrying the agent, workspace, routine, step, and session id with the same
+fields. A short `outputChars` with `stopReason: "completed"` is a reply the
+model finished in prose; `outputChars: 0` with `completed` is a model that
+stopped without writing anything. `output_limit` says only that the provider
 stopped at the output cap; on a reasoning model hidden reasoning counts toward
-that cap, so it often comes with `outputChars: 0`, a blank completion. The same
-reason, and a `retried` flag,
-land on the turn's `selection` trace, so an operator can read them from
-`turn_trace` without reproducing the conversation.
+that cap, so it often comes with `outputChars: 0`, a blank completion. The
+reason, the `retried` flag, and `slotFallback` land on the turn's `selection`
+trace, so an operator can read them from `turn_trace` without reproducing the
+conversation.
 
 To test a change to either prompt, run the old and new code side by side on the
 same inputs against the production model and settings (gpt-5.4-mini, effort

@@ -10,6 +10,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 // `clearWorkspaceStorage` are asserted on via their actual localStorage side effects below.
 const apiMocks = vi.hoisted(() => ({
   getCurrentSession: vi.fn(),
+  logout: vi.fn(),
+}))
+// AuthProvider owns the post-sign-out navigation, so it needs a router; the test only watches where it goes.
+const routerMocks = vi.hoisted(() => ({ router: { replace: vi.fn() } }))
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => routerMocks.router,
 }))
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -19,6 +26,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     authApi: {
       ...actual.authApi,
       getCurrentSession: apiMocks.getCurrentSession,
+      logout: apiMocks.logout,
     },
   }
 })
@@ -38,13 +46,13 @@ beforeAll(() => {
 
 // Renders as plain DOM attributes so assertions can read bootstrap state without a testing
 // library, matching this repo's manual createRoot/act component-test convention.
-type AuthActions = Pick<ReturnType<typeof useAuth>, 'login' | 'setDisplayName'>
+type AuthActions = Pick<ReturnType<typeof useAuth>, 'login' | 'logout' | 'discardSession' | 'setDisplayName'>
 
 function AuthProbe({ actionsRef }: { actionsRef?: { current: AuthActions | null } }) {
-  const { user, isAuthenticated, isBootstrapping, login, setDisplayName } = useAuth()
+  const { user, isAuthenticated, isBootstrapping, login, logout, discardSession, setDisplayName } = useAuth()
   useEffect(() => {
-    if (actionsRef) actionsRef.current = { login, setDisplayName }
-  }, [actionsRef, login, setDisplayName])
+    if (actionsRef) actionsRef.current = { login, logout, discardSession, setDisplayName }
+  }, [actionsRef, login, logout, discardSession, setDisplayName])
   return (
     <div
       data-testid="auth-probe"
@@ -182,6 +190,8 @@ describe('AuthProvider bootstrap effect', () => {
 
   beforeEach(() => {
     apiMocks.getCurrentSession.mockReset()
+    apiMocks.logout.mockReset()
+    routerMocks.router.replace.mockReset()
     window.localStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -380,6 +390,77 @@ describe('AuthProvider bootstrap effect', () => {
     expect(JSON.parse(window.localStorage.getItem('radioso.activeWorkspaceSelection') ?? 'null')).toEqual({
       workspaceId: sessionFixture.workspaceId,
       workspacePublicRouteKey: sessionFixture.workspacePublicRouteKey,
+    })
+  })
+
+  describe('signing out', () => {
+    const signInStoredUser = async () => {
+      window.localStorage.setItem('radioso.authUser', JSON.stringify({
+        userId: 'user-1',
+        accountId: 'account-1',
+        email: 'ada@example.com',
+        displayName: 'Ada Lovelace',
+      }))
+      window.localStorage.setItem('radioso.lastAccountId', 'account-1')
+      return renderWithActions()
+    }
+
+    it('ends the session on the server, forgets the user, and lands on the signed-out home', async () => {
+      apiMocks.logout.mockResolvedValueOnce(undefined)
+      const actionsRef = await signInStoredUser()
+
+      await act(async () => {
+        await actionsRef.current?.logout()
+      })
+
+      expect(apiMocks.logout).toHaveBeenCalledOnce()
+      expect(probe()?.dataset.authenticated).toBe('false')
+      expect(window.localStorage.getItem('radioso.authUser')).toBeNull()
+      expect(window.localStorage.getItem('radioso.lastAccountId')).toBeNull()
+      expect(routerMocks.router.replace).toHaveBeenCalledExactlyOnceWith('/')
+    })
+
+    it('signs this browser out and says why when the server call fails', async () => {
+      const failure = new Error('network down')
+      apiMocks.logout.mockRejectedValueOnce(failure)
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const actionsRef = await signInStoredUser()
+
+      await act(async () => {
+        await actionsRef.current?.logout()
+      })
+
+      expect(probe()?.dataset.authenticated).toBe('false')
+      expect(window.localStorage.getItem('radioso.authUser')).toBeNull()
+      expect(routerMocks.router.replace).toHaveBeenCalledExactlyOnceWith('/')
+      expect(logged).toHaveBeenCalledWith('Failed to end the server session:', failure)
+      logged.mockRestore()
+    })
+
+    it('stays on the page for a caller that reacts to being signed out itself', async () => {
+      apiMocks.logout.mockResolvedValueOnce(undefined)
+      const actionsRef = await signInStoredUser()
+
+      await act(async () => {
+        await actionsRef.current?.logout({ redirectTo: null })
+      })
+
+      expect(apiMocks.logout).toHaveBeenCalledOnce()
+      expect(probe()?.dataset.authenticated).toBe('false')
+      expect(routerMocks.router.replace).not.toHaveBeenCalled()
+    })
+
+    it('discards a session the server already refused without calling the server', async () => {
+      const actionsRef = await signInStoredUser()
+
+      await act(async () => {
+        actionsRef.current?.discardSession()
+      })
+
+      expect(apiMocks.logout).not.toHaveBeenCalled()
+      expect(probe()?.dataset.authenticated).toBe('false')
+      expect(window.localStorage.getItem('radioso.authUser')).toBeNull()
+      expect(routerMocks.router.replace).not.toHaveBeenCalled()
     })
   })
 

@@ -239,6 +239,7 @@ const harness = (scenario: ParityScenario) => {
             detect: async () => {
               calls.push("correction.detect");
               return {
+                kind: "correction",
                 slots: [{ id: "slot_email", key: "email", type: "email", required: true, mutable: true }],
                 slotKey: "email",
                 rawValue: "new@example.com",

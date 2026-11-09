@@ -1,5 +1,6 @@
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { ActiveSession, SessionRepositoryPort } from "../../modules/auth/services/authService.js";
+import type { EndedSession, SessionSignOutRepositoryPort } from "../../modules/auth/services/sessionSignOutService.js";
 
 interface SessionRow {
   id: string;
@@ -25,7 +26,7 @@ const mapSession = (row: SessionRow): ActiveSession => ({
   userCredentialGeneration: row.credential_generation,
 });
 
-export class SessionRepository implements SessionRepositoryPort {
+export class SessionRepository implements SessionRepositoryPort, SessionSignOutRepositoryPort {
   constructor(private readonly db: Db) {}
 
   // The user's credential generation comes from the same statement that finds
@@ -62,6 +63,19 @@ export class SessionRepository implements SessionRepositoryPort {
       .set({ last_seen_at: lastSeenAt })
       .where("id", "=", sessionId)
       .execute();
+  }
+
+  // Only a session not yet revoked is touched, so a repeat finds nothing to end.
+  async revokeByTokenHash(sessionTokenHash: string, revokedAt: Date): Promise<EndedSession | null> {
+    const row = await this.db
+      .updateTable("sessions")
+      .set({ revoked_at: revokedAt })
+      .where("session_token_hash", "=", sessionTokenHash)
+      .where("revoked_at", "is", null)
+      .returning(["id", "user_id", "account_id"])
+      .executeTakeFirst();
+
+    return row ? { sessionId: row.id, userId: row.user_id, accountId: row.account_id } : null;
   }
 
   async revokeAllForUser(userId: string, revokedAt: Date): Promise<number> {

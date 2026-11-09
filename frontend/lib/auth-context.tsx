@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import { authApi, clearWorkspaceStorage, seedWorkspaceSession } from '@/lib/api'
 
 interface User {
@@ -21,12 +22,20 @@ interface SignedInUser {
   displayName: string | null
 }
 
+interface LogoutOptions {
+  /** Where to go once signed out; `null` stays put, for a page that reacts to being signed out itself. */
+  redirectTo?: string | null
+}
+
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   isBootstrapping: boolean
   login: (signedIn: SignedInUser) => Promise<void>
-  logout: () => void
+  /** Ends the session on the server, signs this browser out, and goes to the signed-out landing page. */
+  logout: (options?: LogoutOptions) => Promise<void>
+  /** Drops this browser's signed-in state without a server call, for a session the server already refused or ended. */
+  discardSession: () => void
   setDisplayName: (displayName: string | null) => void
 }
 
@@ -34,6 +43,10 @@ const AuthContext = createContext<AuthContextType | null>(null)
 const AUTH_STORAGE_KEY = 'radioso.authUser'
 const LAST_ACCOUNT_STORAGE_KEY = 'radioso.lastAccountId'
 const ORGANIZATION_NAME_CACHE_KEY = 'radioso.accountOrganizationNames'
+/** The root route renders sign-in when nobody is signed in. */
+const SIGNED_OUT_LANDING_PATH = '/'
+/** How long sign-out waits on the server before this browser signs out without it. */
+const SERVER_SIGN_OUT_TIMEOUT_MS = 5_000
 
 const normalizeStoredOrganizationName = (value: unknown): string | undefined => {
   if (typeof value !== 'string') {
@@ -180,6 +193,7 @@ const persistAuthUser = (
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   // The latest user, for callbacks that must read it without being re-created on every change.
@@ -281,7 +295,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [commitUser])
 
-  const logout = useCallback(() => {
+  const discardSession = useCallback(() => {
     userRef.current = null
     setUser(null)
     if (typeof window !== 'undefined') {
@@ -292,6 +306,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearWorkspaceStorage()
   }, [])
 
+  const logout = useCallback(async ({ redirectTo = SIGNED_OUT_LANDING_PATH }: LogoutOptions = {}) => {
+    try {
+      await authApi.logout({ signal: AbortSignal.timeout(SERVER_SIGN_OUT_TIMEOUT_MS) })
+    } catch (error) {
+      // This browser signs out either way (the server's response clears the cookie even when
+      // it fails); a session it could not revoke may stay live there until it expires, which
+      // is what the log is for.
+      console.error('Failed to end the server session:', error)
+    }
+    discardSession()
+    if (redirectTo !== null) {
+      router.replace(redirectTo)
+    }
+  }, [discardSession, router])
+
   return (
     <AuthContext.Provider
       value={{
@@ -300,6 +329,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isBootstrapping,
         login,
         logout,
+        discardSession,
         setDisplayName,
       }}
     >

@@ -407,6 +407,34 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     ],
   },
   {
+    id: "routine-field-correction-proposal",
+    name: "Stopping corrections to a collected field becomes a field edit",
+    description: "Tool selection and proposal shape: switching a field's \"Editable after completion\" off goes to propose_routine_edit as `mutable: false` on that field, never to a redraft or a wording edit.",
+    tags: ["tool_selection", "proposal_quality"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "In the Order status routine, a visitor must not be able to change the order number once the routine is complete. Turn off editing it after completion.",
+    requires: ["routine"],
+    plan: [
+      { tool: "routine_definition", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID } },
+      {
+        tool: "propose_routine_edit",
+        input: {
+          agentId: COPILOT_EVAL_AGENT_ID,
+          routineId: COPILOT_EVAL_ROUTINE_ID,
+          changes: { slots: [{ key: "order_number", mutable: false }] },
+        },
+      },
+    ],
+    finalMessage: "I drafted an edit that makes the order number field no longer editable after completion, for you to review.",
+    assertions: [
+      { type: "tool_call_order", tools: ["routine_definition", "propose_routine_edit"] },
+      { type: "proposal_drafted", targetType: "routine" },
+      { type: "tool_not_called", tool: "propose_routine" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
     id: "routine-exposure-proposal",
     name: "\"Let agents start returns directly\" becomes a tool exposure, not a wording edit",
     description: "Tool selection among the routine write tools: offering a routine to calling AI agents as a named tool goes to propose_routine_exposure, never to a wording edit or a redraft (spec 1290 AS-10).",

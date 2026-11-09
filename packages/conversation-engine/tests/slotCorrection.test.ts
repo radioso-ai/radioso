@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { RoutineSlotSchema } from "@radioso/conversation-contract";
 
-import { verifySlotCorrection } from "../src/index.js";
+import { correctableSlots, verifySlotCorrection } from "../src/index.js";
 
 const slots: RoutineSlotSchema[] = [
   { id: "s_email", key: "email", type: "email", required: true, mutable: true },
@@ -80,5 +80,17 @@ describe("verifySlotCorrection", () => {
     // An immutable slot with an invalid value still reports immutable, not invalid_value.
     expect(verifySlotCorrection({ slots, slotKey: "locked", rawValue: "" }))
       .toEqual({ ok: false, reason: "immutable" });
+  });
+});
+
+describe("correctableSlots (#1714)", () => {
+  it("keeps the declared mutable slots that hold a value, in declared order", () => {
+    const held = { note: "late check-in", email: "old@example.com", locked: "x", count: 0 };
+    expect(correctableSlots(slots, held).map((slot) => slot.key)).toEqual(["email", "count", "note"]);
+  });
+
+  it("keeps none when the run holds no value in a mutable slot", () => {
+    expect(correctableSlots(slots, { locked: "x", legacy: "y" })).toEqual([]);
+    expect(correctableSlots(slots, {})).toEqual([]);
   });
 });

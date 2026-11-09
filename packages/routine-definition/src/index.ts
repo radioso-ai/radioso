@@ -715,14 +715,22 @@ export const endingNotifiesOperators = (terminal: {
  * enum so a transport cannot confuse the two kinds of finding, and so the contract test pinning
  * `routineValidationCodes` to the OpenAPI enum never has to carry one of these.
  */
-export const routineAdvisoryCodes = ["operator_notice_reply_to_unset", "sensitive_slot_unbound_skill_input"] as const;
+export const routineAdvisoryCodes = [
+  "operator_notice_reply_to_unset",
+  "sensitive_slot_unbound_skill_input",
+  "mutable_slot_not_correctable",
+] as const;
 export type RoutineAdvisoryCode = typeof routineAdvisoryCodes[number];
 
 export interface RoutineAdvisory {
   readonly code: RoutineAdvisoryCode;
   readonly location: string;
-  readonly stableStepId: string;
-  /** `sensitive_slot_unbound_skill_input`: the sensitive field the skill's input reads. */
+  /** The step or ending the advisory is about; absent on one about a field (`mutable_slot_not_correctable`). */
+  readonly stableStepId?: string;
+  /**
+   * `sensitive_slot_unbound_skill_input`: the sensitive field the skill's input reads.
+   * `mutable_slot_not_correctable`: the field marked editable after completion.
+   */
   readonly slotKey?: string;
   /** `sensitive_slot_unbound_skill_input`: the skill the step runs. */
   readonly skillName?: string;
@@ -759,9 +767,78 @@ const unboundSensitiveSkillInputAdvisories = (
 interface RoutineAdvisoryStep {
   readonly stableStepId: string;
   readonly kind: RoutineStepKind;
+  /** Where the step sits; the lowest is where the routine starts. */
+  readonly ordinal?: number;
   readonly toolRef?: string | null;
   readonly metadata?: { readonly inputBindings?: Readonly<Record<string, unknown>> } | null;
 }
+
+interface RoutineAdvisoryTerminal {
+  readonly stableStepId: string;
+  readonly kind: RoutineTerminalKind;
+  // Only presence and `replyToSlot` are read, so an editing draft's partial notice qualifies too.
+  readonly operatorNotice?: Readonly<Partial<RoutineOperatorNotice>>;
+}
+
+// Partial, since a pre-parse draft leaves fields to Zod's defaults: off, no kinds, no destination.
+type RoutineAdvisoryCompletionExport = Readonly<Partial<Pick<RoutineCompletionExport, "enabled" | "triggerKinds" | "destinationRef">>>;
+
+/** Step kinds that hand the routine's values to someone outside the conversation when they run. */
+const stepKindsThatSendValues: ReadonlySet<RoutineStepKind> = new Set(["tool", "action", "approval"]);
+
+/**
+ * Whether ending here sends what the routine collected outside the conversation: the ending
+ * notifies operators (see {@link endingNotifiesOperators}), or the completion export fires on
+ * its kind. A run that ended this way, or ran a tool, action, or approval step on its way, can
+ * take no correction afterwards, since a changed value would reach none of those (#1714). The
+ * engine's `completedRunSentValues` applies the same rule to a finished run; a parity test in
+ * the backend keeps the two in step.
+ */
+export const endingSendsCollectedValues = (
+  terminal: Pick<RoutineAdvisoryTerminal, "kind" | "operatorNotice">,
+  completionExport?: RoutineAdvisoryCompletionExport | null,
+): boolean =>
+  endingNotifiesOperators(terminal) ||
+  (completionExport?.enabled === true &&
+    (completionExport.destinationRef ?? "").trim().length > 0 &&
+    (completionExport.triggerKinds ?? []).includes(terminal.kind));
+
+/**
+ * Whether some way through the routine reaches an ending that sends nothing without passing a
+ * step that sends: the only kind of run a visitor's change can still reach after it ends.
+ * Every exit counts, whatever its condition, so an exit no run takes can hide the advisory.
+ */
+const routineCanEndQuietly = (
+  steps: ReadonlyArray<RoutineAdvisoryStep>,
+  transitions: ReadonlyArray<{ readonly fromStep: string; readonly toRef: string }>,
+  terminals: ReadonlyArray<RoutineAdvisoryTerminal>,
+  completionExport: RoutineAdvisoryCompletionExport | null | undefined,
+): boolean => {
+  const first = [...steps].sort((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0))[0];
+  if (!first) {
+    return true;
+  }
+  const stepsById = new Map(steps.map((step) => [step.stableStepId, step]));
+  const terminalsById = new Map(terminals.map((terminal) => [terminal.stableStepId, terminal]));
+  const reached = new Set([first.stableStepId]);
+  const queue = [first.stableStepId];
+  for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+    const terminal = terminalsById.get(id);
+    if (terminal) {
+      if (!endingSendsCollectedValues(terminal, completionExport)) return true;
+      continue;
+    }
+    const step = stepsById.get(id);
+    if (!step || stepKindsThatSendValues.has(step.kind)) continue;
+    for (const transition of transitions) {
+      if (transition.fromStep === id && !reached.has(transition.toRef)) {
+        reached.add(transition.toRef);
+        queue.push(transition.toRef);
+      }
+    }
+  }
+  return false;
+};
 
 /**
  * Non-blocking findings; none affects compile, validation, or publish. The input is narrow so a
@@ -775,16 +852,28 @@ interface RoutineAdvisoryStep {
  * - `sensitive_slot_unbound_skill_input`: a skill step with no input bindings whose skill reads
  *   an input keyed like a sensitive field, which it receives as `[redacted]`. Reported only when
  *   the caller supplies `skillInputKeys`.
+ * - `mutable_slot_not_correctable`: a field marked editable after completion on a routine that
+ *   can't end without sending what it collected — every way through it passes a tool, action,
+ *   or approval step or reaches an ending that notifies, hands off, or exports — so no change
+ *   the visitor makes after it ends is ever taken. Reported only when the caller supplies the
+ *   routine's `steps` and `transitions`. `completionExport` in `options` is the export the routine
+ *   runs with when it differs from the one on the definition.
  */
 export const routineAdvisories = (definition: {
-  readonly slots: ReadonlyArray<{ readonly key: string; readonly type: RoutineSlotType; readonly sensitivity?: RoutineSlotSensitivity }>;
-  readonly steps?: ReadonlyArray<RoutineAdvisoryStep>;
-  readonly terminals: ReadonlyArray<{
-    readonly stableStepId: string;
-    readonly kind: RoutineTerminalKind;
-    readonly operatorNotice?: { readonly replyToSlot?: string };
+  readonly slots: ReadonlyArray<{
+    readonly key: string;
+    readonly type: RoutineSlotType;
+    readonly sensitivity?: RoutineSlotSensitivity;
+    readonly mutable?: boolean;
   }>;
-}, options: { readonly skillInputKeys?: RoutineSkillInputKeys } = {}): RoutineAdvisory[] => {
+  readonly steps?: ReadonlyArray<RoutineAdvisoryStep>;
+  readonly transitions?: ReadonlyArray<{ readonly fromStep: string; readonly toRef: string }>;
+  readonly terminals: ReadonlyArray<RoutineAdvisoryTerminal>;
+  readonly completionExport?: RoutineAdvisoryCompletionExport | null;
+}, options: {
+  readonly skillInputKeys?: RoutineSkillInputKeys;
+  readonly completionExport?: RoutineAdvisoryCompletionExport | null;
+} = {}): RoutineAdvisory[] => {
   const advisories: RoutineAdvisory[] = [];
   if (definition.slots.some((slot) => slot.type === "email" && slot.sensitivity !== "sensitive")) {
     for (const terminal of definition.terminals) {
@@ -799,6 +888,24 @@ export const routineAdvisories = (definition: {
   if (options.skillInputKeys) {
     const sensitiveKeys = new Set(definition.slots.filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key));
     advisories.push(...unboundSensitiveSkillInputAdvisories(definition.steps ?? [], sensitiveKeys, options.skillInputKeys));
+  }
+  const mutableKeys = definition.slots.filter((slot) => slot.mutable === true).map((slot) => slot.key);
+  if (
+    mutableKeys.length > 0 &&
+    definition.steps &&
+    definition.transitions &&
+    !routineCanEndQuietly(
+      definition.steps,
+      definition.transitions,
+      definition.terminals,
+      options.completionExport !== undefined ? options.completionExport : definition.completionExport,
+    )
+  ) {
+    advisories.push(...mutableKeys.map((key): RoutineAdvisory => ({
+      code: "mutable_slot_not_correctable",
+      location: `slot:${key}.mutable`,
+      slotKey: key,
+    })));
   }
   return advisories;
 };

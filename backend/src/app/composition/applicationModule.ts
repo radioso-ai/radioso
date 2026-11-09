@@ -1,4 +1,4 @@
-import type { Router } from "express";
+import type { ErrorRequestHandler, Router } from "express";
 import type { ConnectorPlugin } from "@radioso/connector-api";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { QueryResultRow } from "pg";
@@ -83,6 +83,12 @@ interface ApplicationDatabaseMigrator {
 export interface ApplicationRouteMount {
   path: string;
   createRouter(dependencies: AppDependencies): Router;
+  /**
+   * Answers errors raised on this path before its router ran, such as a body that did not parse,
+   * for a protocol that names its own (A2A's JSON-RPC parse error). It passes every other error on
+   * to the shared handler.
+   */
+  createErrorHandler?(dependencies: AppDependencies): ErrorRequestHandler;
 }
 
 type ApplicationUsageLimitPolicyRegistration =

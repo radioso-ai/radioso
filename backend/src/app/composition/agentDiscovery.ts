@@ -2,9 +2,11 @@ import { readProductDoc } from "@radioso/product-docs";
 
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { AgentPublicProfile, AgentPublicProfilePort } from "../../modules/agentDiscovery/public.js";
-import { agentMcpEndpointUrl } from "../../modules/agentDiscovery/public.js";
+import { agentA2aEndpointUrl, agentMcpEndpointUrl } from "../../modules/agentDiscovery/public.js";
 import type { AgentRevisionRuntimeReaderPort } from "../../modules/agents/public.js";
 import type { AgentToolCatalogPort } from "../../modules/routines/public.js";
+import type { Env } from "../config/env.js";
+import { publicApiBaseUrl } from "./publicApiBase.js";
 
 /**
  * The guide a discovery document sends a calling agent to read. Its published URL comes
@@ -18,21 +20,25 @@ const connectGuideUrl = (): string | null => readProductDoc(CONNECT_GUIDE_SLUG)?
 /**
  * The profile a public document renders from: the live agent row decides whether there is
  * anything to publish, the current published release decides what it says, and the public
- * MCP endpoint is deployment configuration. The discovery module owns the document shapes
- * and learns none of this.
+ * MCP endpoint and the public API base the A2A endpoint hangs on are deployment configuration.
+ * The discovery module owns the document shapes and learns none of this.
  */
 export const createAgentPublicProfileComposition = (input: {
   agentRepository: Pick<AgentRepositoryPort, "findByPublicId">;
   agentRevisionReader: AgentRevisionRuntimeReaderPort;
   agentToolCatalog: AgentToolCatalogPort;
-  /** Public base URL of the MCP endpoint, e.g. `https://mcp.example.com/mcp`. */
-  mcpBaseUrl?: string;
+  /**
+   * `PUBLIC_MCP_CONVERSE_URL` is the public base of the MCP endpoint, e.g. `https://mcp.example.com/mcp`.
+   * The A2A endpoint hangs on the public API base the other public links already use.
+   */
+  env: Pick<Env, "PUBLIC_MCP_CONVERSE_URL" | "APP_BASE_URL" | "CONNECTOR_PUBLIC_BASE_URL" | "PORT">;
 }): AgentPublicProfilePort => ({
   async load(publicId: string): Promise<AgentPublicProfile | null> {
-    if (!input.mcpBaseUrl) {
-      // Refusing is the safe failure. A card without `url` is not an A2A card, and a card
-      // with a guessed one sends callers somewhere that does not answer — either way the
-      // caller's next move fails further from the cause. A 500 names the misconfiguration.
+    const mcpBaseUrl = input.env.PUBLIC_MCP_CONVERSE_URL;
+    if (!mcpBaseUrl) {
+      // Refusing is the safe failure. A card that omits the MCP endpoint its extension names is
+      // not a card, and one that guesses sends callers somewhere that does not answer — either
+      // way the caller's next move fails further from the cause. A 500 names the misconfiguration.
       throw new Error("PUBLIC_MCP_CONVERSE_URL is not configured; agent discovery documents cannot name an endpoint.");
     }
     const agent = await input.agentRepository.findByPublicId(publicId);
@@ -57,7 +63,8 @@ export const createAgentPublicProfileComposition = (input: {
       // The catalog already applied the "blank is absent" rule to the same field; reading its
       // answer keeps the card and the composed `ask_agent` description from ever disagreeing.
       description: catalog.agent.description,
-      mcpEndpointUrl: agentMcpEndpointUrl(input.mcpBaseUrl, publicId),
+      mcpEndpointUrl: agentMcpEndpointUrl(mcpBaseUrl, publicId),
+      a2aEndpointUrl: agentA2aEndpointUrl(publicApiBaseUrl(input.env), publicId),
       documentationUrl: connectGuideUrl(),
       walkInEnabled: agent.publicAgentAccessEnabled,
       tools: catalog.tools,

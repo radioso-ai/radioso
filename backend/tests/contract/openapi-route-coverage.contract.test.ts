@@ -58,6 +58,11 @@ const undocumentedRouteExclusions: Record<string, string> = {
   "POST /api/v1/operator-mcp/oauth/token": "OAuth protocol: token endpoint, RFC 6749 request/response shape",
   "POST /api/v1/operator-mcp/oauth/revoke": "OAuth protocol: RFC 7009 token revocation endpoint",
 
+  // --- A2A protocol endpoint. The A2A v1.0 JSON-RPC binding a published agent's card names: its
+  // request and response shapes are the A2A specification's, not a Radioso API operation, and an
+  // A2A client reads them from the card rather than from the SDK (spec a2a-protocol-binding, FR-061).
+  "POST /a2a/{param}": "A2A protocol: the A2A v1.0 JSON-RPC binding; its contract is the A2A specification, and the agent card names it",
+
   // --- Internal service-to-service RPC. Signed calls between the backend and the standalone
   // operator-copilot MCP process, authenticated with an internal shared secret or the MCP source
   // proof; never reachable with an operator session or an issued API credential.

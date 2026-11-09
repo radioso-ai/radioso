@@ -23,6 +23,7 @@ export const suppressedHumanOwnedResponse = (
     agentId: session.agent.id,
     agentName: session.agent.name,
     assistantMessageId: "",
+    requestMessageId: session.userMessage.id,
     route: {
       type: "direct",
       reason: "social_only",

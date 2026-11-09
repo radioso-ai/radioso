@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
-last_updated: 2026-10-24
+last_updated: 2026-11-09
 ---
 
 # MCP Client Setup
@@ -351,9 +351,9 @@ GET https://api.radioso.ai/.well-known/mcp/server-card/{publicId}.json
 GET https://api.radioso.ai/.well-known/ai-catalog/{publicId}.json
 ```
 
-The agent card is an A2A Agent Card. It names the agent, the MCP endpoint to connect to, the security schemes that endpoint accepts, and one `skills[]` entry per exposed routine. The server card is the same agent in MCP's server document shape, with the endpoint under `remotes`; the standalone server also answers it one segment past the endpoint, at `GET /mcp/a/{publicId}/server-card`, which is the path an MCP client dereferences when it starts from an endpoint URL rather than a hostname. The catalog entry carries the agent, its endpoint, its authentication, and its tools in one object.
+The agent card is an A2A v1.0 Agent Card. It names the agent, the A2A endpoint under `supportedInterfaces` (`/a2a/{publicId}`, JSON-RPC, protocol 1.0), the bearer scheme under `securitySchemes`, and the skills: `ask_agent` first, then one `skills[]` entry per exposed routine. Its Radioso extension, listed under `capabilities.extensions`, carries what an MCP client needs: `params.mcp.url` is the agent's MCP endpoint, `params.mcp.serverCardUrl` is its MCP server card, and `params.tools` lists each exposed routine with the JSON Schema of its input. An A2A client reaches the agent through the card's own endpoint; [Connect an A2A client](https://docs.radioso.ai/guides/a2a-converse) covers it. The server card is the same agent in MCP's server document shape, with the endpoint under `remotes`; the standalone server also answers it one segment past the endpoint, at `GET /mcp/a/{publicId}/server-card`, which is the path an MCP client dereferences when it starts from an endpoint URL rather than a hostname. The catalog entry carries the agent, its endpoint, its authentication, and its tools in one object.
 
-A caller reads `security` on the agent card to learn what it must bring. An empty requirement object means the endpoint accepts a caller with no `Authorization` header; `{ "bearer": [] }` means an operator-minted credential is required. Both are listed when credential-free access is on.
+A caller reads `securityRequirements` on the agent card to learn what it must bring. With credential-free access off, the card requires `bearer`, an operator-minted credential. With credential-free access on, `securityRequirements` is absent: the endpoint accepts a caller with no `Authorization` header, and a caller that holds a credential can still send it as a bearer.
 
 Every document is served with `Cache-Control: max-age=300` and an `ETag`; send `If-None-Match` to revalidate. A public id that is unknown, has its card switched off, belongs to an unpublished agent, or belongs to a deleted one answers `404` with an identical body.
 
@@ -383,7 +383,7 @@ Each connection gets its own conversation. The server names it in the `Mcp-Sessi
 
 The public id is a routing key, not a secret — it appears in the agent card, in the embed's page markup, and in whatever config the caller saves. It grants exactly what the operator has published: a conversation with that one agent. Rotating it from the dashboard, or turning walk-in access off, refuses the next request on every connection opened against it.
 
-Walk-in traffic is budgeted twice: per calling source, and per agent. The per-agent budget defaults to 60 new conversations an hour and is adjustable on the same card. A caller over either budget gets `429` with `Retry-After` and the `RateLimit-*` headers, which is the signal to back off and retry rather than reconnect. Walk-in conversations are metered on the workspace's conversation quota like every other channel.
+Walk-in traffic is budgeted twice: per calling source, and per agent. MCP and A2A callers draw on the same budgets. The per-agent budget defaults to 60 new conversations an hour and is adjustable on the same card. A caller over either budget gets `429` with `Retry-After` and the `RateLimit-*` headers, which is the signal to back off and retry rather than reconnect. Walk-in conversations are metered on the workspace's conversation quota like every other channel.
 
 The shared `/mcp` endpoint is unchanged and still requires an MCP credential.
 

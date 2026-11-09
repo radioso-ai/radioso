@@ -18,7 +18,7 @@ export const registerAgentCardSchemas = (registry: OpenAPIRegistry, schemas: Ope
   const A2aAgentCardSchema = registry.register(
     "A2aAgentCard",
     a2aAgentCardSchema.openapi({
-      description: "An A2A Agent Card for one agent: who it is, where its MCP endpoint is, how a caller authenticates, and one skill per exposed routine.",
+      description: "An A2A v1.0 Agent Card for one agent: who it is, the JSON-RPC interface an A2A client sends messages to, how a caller authenticates, an `ask_agent` skill plus one skill per exposed routine, and under `capabilities.extensions` the Radioso converse extension, which names the agent's MCP endpoint and each routine's input schema. `securityRequirements` is absent while the agent accepts callers with no credential.",
     }),
   );
 

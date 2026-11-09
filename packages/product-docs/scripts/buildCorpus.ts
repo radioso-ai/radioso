@@ -31,6 +31,7 @@ const SECTION_LABELS: Record<string, string> = {
   guides: "Guides",
   operators: "Operator guides",
   quickstarts: "Quickstarts",
+  reference: "Reference",
   sdk: "TypeScript SDK",
   "why-radioso": "Why Radioso",
 };

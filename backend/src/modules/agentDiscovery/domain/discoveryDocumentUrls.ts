@@ -23,6 +23,25 @@ export const endpointRelativeServerCardUrl = (mcpEndpointUrl: string): string =>
 export const agentMcpEndpointUrl = (mcpBaseUrl: string, publicId: string): string =>
   `${mcpBaseUrl.replace(/\/+$/u, "")}/a/${publicId}`;
 
+/** Where every agent's A2A endpoint sits. One constant, so the URL a card names and the path the router answers cannot differ. */
+const A2A_ENDPOINT_PATH_PREFIX = "/a2a";
+
+/**
+ * The Express path the A2A endpoint is mounted at. Exported for composition, which owns the
+ * mount, so the router and the URL `agentA2aEndpointUrl` builds cannot drift apart.
+ */
+export const A2A_ENDPOINT_MOUNT_PATH = `${A2A_ENDPOINT_PATH_PREFIX}/:publicId`;
+
+/**
+ * The per-agent A2A endpoint, hung on the deployment's public API base. Unlike
+ * `buildAgentCardUrl`, this keeps any path the base is served under: behind the dashboard's
+ * `/backend` proxy the base is `https://app.example.com/backend`, and resolving an absolute
+ * path against it would silently drop that prefix and send callers somewhere that does not
+ * answer.
+ */
+export const agentA2aEndpointUrl = (publicApiBase: string, publicId: string): string =>
+  `${publicApiBase.replace(/\/+$/u, "")}${A2A_ENDPOINT_PATH_PREFIX}/${encodeURIComponent(publicId)}`;
+
 /** An absolute card URL for a caller that has a base URL to hang it on. */
 export const buildAgentCardUrl = (baseUrl: string, publicId: string): string =>
   new URL(agentCardPath(publicId), baseUrl).toString();

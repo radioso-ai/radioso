@@ -143,7 +143,7 @@ The long versions: [Conversational directives](./docs/architecture/conversationa
 
 ## Talking to your agent
 
-Five ways in: the web app, the REST API, the TypeScript SDK, an MCP client, and the website embed.
+Six ways in: the web app, the REST API, the TypeScript SDK, an MCP client, an [A2A client](https://docs.radioso.ai/guides/a2a-converse), and the website embed.
 
 **Choose the credential for the job.** Personal tokens carry the issuing user's live workspace membership and expire within 90 days. Service accounts are stable workspace identities for CI and unattended workloads; create them under **Settings → API access**, and give each credential an expiry of at most 365 days. Their credentials authorize eligible role-aware workspace APIs.
 

@@ -51,6 +51,26 @@ export interface AgentConverseAskResult extends AgentReplyEnvelopeCore {
   };
 }
 
+/**
+ * One converse turn, for the in-process caller that serialises it: the `reply` a door sends, and
+ * turn facts no door sends. They never go on the wire: a door serialises `reply` alone.
+ */
+export interface AgentConverseTurnResult {
+  reply: AgentConverseAskResult;
+  /** The conversation the turn ran in: its row id, never the caller's public session id `reply` names. */
+  conversationId: string;
+  /**
+   * The concrete routine run `reply.routine` describes (null when the turn reported none, or a
+   * declined call named a completed routine), so a door that keeps a record per run can tell a new
+   * run from the one it follows.
+   */
+  routineExecutionId: string | null;
+  /** The caller's message this turn stored. */
+  requestMessageId: string | null;
+  /** The reply this turn stored; null when it generated none (a person owns the thread). */
+  replyMessageId: string | null;
+}
+
 /** Only a credential-bound session names a grant; a walk-in one has none. */
 const converseGrantId = (principal: AgentConversePrincipal): string | null =>
   principal.origin.kind === "grant" ? principal.origin.grantId : null;
@@ -75,7 +95,7 @@ export class AgentConverseService {
    * and only then runs the turn. A conversation not yet pinned (first turn)
    * resolves against the current release, which is what the turn pins it to.
    */
-  async askAgent(principal: AgentConversePrincipal, body: AgentConverseTurnBody): Promise<AgentConverseAskResult> {
+  async askAgent(principal: AgentConversePrincipal, body: AgentConverseTurnBody): Promise<AgentConverseTurnResult> {
     try {
       const getOrCreateConversation =
         this.dependencies.conversationRepository.getOrCreateByAnonymousSession?.bind(
@@ -89,7 +109,7 @@ export class AgentConverseService {
       const conversation = await getOrCreateConversation({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
-        sourceChannel: "mcp",
+        sourceChannel: principal.sourceChannel,
         anonymousSessionId: principal.publicSessionId,
         sourceOrigin: null,
       });
@@ -99,6 +119,7 @@ export class AgentConverseService {
       const input = await resolveAgentTurnInput(this.dependencies.agentToolCatalog, {
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
+        channel: principal.sourceChannel,
         ...(conversation.record.agentRevisionId ? { agentRevisionId: conversation.record.agentRevisionId } : {}),
         body,
       }, { metrics: this.dependencies.metrics, logger: this.dependencies.logger });
@@ -110,7 +131,7 @@ export class AgentConverseService {
         stream: false,
         conversationId: conversation.record.id,
         anonymousSessionId: principal.publicSessionId,
-        sourceChannel: "mcp",
+        sourceChannel: principal.sourceChannel,
         sourceOrigin: null,
         verifiedCustomerId: verifiedIdentity?.customerId,
         verifiedIdentity: verifiedIdentity
@@ -129,23 +150,32 @@ export class AgentConverseService {
       await this.dependencies.audit?.recordAskOutcome({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
+        sourceChannel: principal.sourceChannel,
         grantId: converseGrantId(principal),
         publicSessionId: principal.publicSessionId,
         status: "success",
       });
 
       return {
-        ...buildAgentReplyEnvelope(response),
-        conversationId: principal.publicSessionId,
-        answer: {
-          text: response.answer,
-          citations: response.citations ?? [],
+        reply: {
+          ...buildAgentReplyEnvelope(response),
+          conversationId: principal.publicSessionId,
+          answer: {
+            text: response.answer,
+            citations: response.citations ?? [],
+          },
         },
+        conversationId: conversation.record.id,
+        routineExecutionId: response.routineExecutionId ?? null,
+        requestMessageId: response.requestMessageId ?? null,
+        // A turn a person owns stores the caller's message and generates no reply.
+        replyMessageId: response.assistantMessageId || null,
       };
     } catch (error) {
       await this.dependencies.audit?.recordAskOutcome({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
+        sourceChannel: principal.sourceChannel,
         grantId: converseGrantId(principal),
         publicSessionId: principal.publicSessionId,
         status: "failure",

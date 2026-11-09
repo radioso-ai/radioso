@@ -2,6 +2,7 @@ const meta = {
   authentication: 'Authentication',
   'mcp-server': 'MCP server',
   'agent-converse': 'Connect a calling agent',
+  'a2a-converse': 'Connect an A2A client',
   'publish-an-agent': 'Publish and open an agent',
   'document-upload': 'Document upload',
   'document-metadata': 'Extract document metadata',

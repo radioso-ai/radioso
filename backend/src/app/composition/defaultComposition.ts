@@ -69,6 +69,7 @@ import { createAnswerFeedbackApplicationModule } from "./builtIn/answerFeedbackM
 import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModule.js";
 import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
 import { createMcpConverseApplicationModule } from "./builtIn/mcpConverseModule.js";
+import { createA2aApplicationModule } from "./builtIn/a2aModule.js";
 import { createQualityApplicationModule } from "./builtIn/qualityModule.js";
 import { createAudiencePulseApplicationModule } from "./builtIn/audiencePulseModule.js";
 import { createUsageReportingApplicationModule } from "./builtIn/usageReportingModule.js";
@@ -174,6 +175,7 @@ export const createDefaultApplicationComposition = (options: {
     createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
     createAgentWizardApplicationModule(),
     createMcpConverseApplicationModule(),
+    createA2aApplicationModule(),
     createUsageReportingApplicationModule(),
     createQualityApplicationModule(),
     createAudiencePulseApplicationModule(),

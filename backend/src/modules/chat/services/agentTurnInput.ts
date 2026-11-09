@@ -1,14 +1,16 @@
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { AgentSourceChannel } from "../../../shared/domain/conversationSource.js";
 import { validateRoutineInvocation } from "../../routines/public.js";
 import type { AgentToolCatalogPort, AgentToolDescriptor, RoutineInvocation } from "../contracts/routineInvocation.js";
 
 /**
  * What a calling agent sent for one turn, resolved once before any turn state
  * exists: either a message, or a tool call already validated against the
- * release's catalog. Both agent-facing doors (MCP converse `ask` and the REST
- * agent chat route) call this, so neither transport validates on its own.
+ * release's catalog. Every agent-facing door (the converse service behind MCP
+ * `ask` and A2A, and the REST agent chat route) calls this, so no transport
+ * validates on its own.
  */
 export type AgentTurnInput =
   | { kind: "message"; message: string }
@@ -23,6 +25,8 @@ export interface AgentTurnInputBody {
 interface AgentTurnInputRequest {
   workspaceId: string;
   agentId: string;
+  /** The door the turn came through, for the turn counter. */
+  channel: AgentSourceChannel;
   /** The release the conversation is pinned to; absent resolves against the current published one. */
   agentRevisionId?: string;
   body: AgentTurnInputBody;
@@ -36,10 +40,14 @@ interface AgentTurnInputObservability {
 const CONVERSE_TURNS_TOTAL = "converse_turns_total";
 const ROUTINE_INVOCATIONS_TOTAL = "routine_invocations_total";
 
-const countTurn = (observability: AgentTurnInputObservability, inputKind: AgentTurnInput["kind"]): void => {
+const countTurn = (
+  observability: AgentTurnInputObservability,
+  channel: AgentSourceChannel,
+  inputKind: AgentTurnInput["kind"],
+): void => {
   observability.metrics?.incrementCounter(CONVERSE_TURNS_TOTAL, {
-    help: "Agent-facing converse turns by input kind.",
-    labels: { input_kind: inputKind },
+    help: "Agent-facing converse turns by channel and input kind.",
+    labels: { channel, input_kind: inputKind },
   });
 };
 
@@ -61,7 +69,7 @@ export const resolveAgentTurnInput = async (
     if (!message) {
       throw badRequest("message is required unless a routine is invoked");
     }
-    countTurn(observability, "message");
+    countTurn(observability, request.channel, "message");
     return { kind: "message", message };
   }
 
@@ -94,7 +102,7 @@ export const resolveAgentTurnInput = async (
       errors: validation.errors,
     });
   }
-  countTurn(observability, "routine_invocation");
+  countTurn(observability, request.channel, "routine_invocation");
   return { kind: "routine_invocation", invocation: validation.invocation, descriptor };
 };
 

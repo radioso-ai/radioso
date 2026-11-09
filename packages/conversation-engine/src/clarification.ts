@@ -1,6 +1,7 @@
 import type {
   ClarificationCandidate,
   ClarificationDecision,
+  ClarificationOfferKind,
   ClarificationOfferMappingOutcome,
   ClarificationPolicy,
   ConversationClarificationStore,
@@ -10,6 +11,9 @@ import type {
   RecentClarificationReader,
   TurnContext,
 } from "@radioso/conversation-contract";
+
+/** The surface a routine activation's clarifications and offers are saved and traced under. */
+export const ROUTINE_ACTIVATION_SURFACE = "routine_activation";
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -68,6 +72,10 @@ const sameCandidateSet = (left: string[], right: string[]): boolean => {
 const isExpired = (pending: PendingClarification): boolean =>
   new Date(pending.expiresAt).getTime() <= Date.now();
 
+/** A routine activation's offer is an offer to start something; any other offer presents readings. */
+const offerKindOf = (pending: PendingClarification): ClarificationOfferKind =>
+  pending.source === ROUTINE_ACTIVATION_SURFACE ? "start" : "alternatives";
+
 const candidateIds = (pending: PendingClarification): string[] =>
   pending.candidates.map((candidate) => candidate.id);
 
@@ -98,7 +106,7 @@ export const resolvePendingClarification = async (input: {
   const mapping = await input.clarifier.mapReply({
     candidates: pending.candidates,
     turn: input.turn,
-    ...(mode === "offer" ? { mode, source: pending.source } : {}),
+    ...(mode === "offer" ? { mode, offerKind: offerKindOf(pending) } : {}),
   });
   if (mapping.kind !== "chosen") {
     await input.store.clear({ sessionId: pending.sessionId, outcome: "declined" });

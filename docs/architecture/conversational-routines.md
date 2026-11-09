@@ -818,7 +818,10 @@ one sentence offering to start it (`chat/routine-offer.md`, appended where a par
 routine's lead-back would be). The offer is the turn's pending clarification row, in
 `offer` mode, with one candidate carrying the routine id and the values the ranking
 read from the message, and it expires after 30 minutes like an activation question.
-`routine_offers` records the offer in the same transaction, and a conversation is
+The host saves that row, and records the offer in `routine_offers`, in the
+turn's transaction, and only when the reply the visitor sees carries the closing
+offer: a routine that takes the turn over, another clarification's pending row,
+or a reply that hands the conversation to a person drops it. A conversation is
 offered each routine once: a later match that is not a direct request starts nothing
 and offers nothing (`reason: "already_offered"`), while a direct request still starts
 the routine.

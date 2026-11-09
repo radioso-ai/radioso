@@ -15,8 +15,12 @@ export interface RoutineClosing {
  * at most one of the two.
  */
 export const routineClosing = (
-  session: Pick<PreparedSession, "routineYield" | "routineActivationNotice">,
-): RoutineClosing => ({
-  ...(session.routineYield?.pendingStep ? { pendingRoutineStep: session.routineYield.pendingStep } : {}),
-  ...(session.routineActivationNotice?.offer ? { routineOffer: session.routineActivationNotice.offer } : {}),
-});
+  session: Pick<PreparedSession, "routineYield" | "routineOffer">,
+): RoutineClosing => {
+  // Taking the offer marks the reply as composed with it; a reply composed without it drops it.
+  const routineOffer = session.routineOffer?.closing();
+  return {
+    ...(session.routineYield?.pendingStep ? { pendingRoutineStep: session.routineYield.pendingStep } : {}),
+    ...(routineOffer ? { routineOffer } : {}),
+  };
+};

@@ -15,6 +15,7 @@ import { BackgroundJobRuntime, type BackgroundJobQueue } from "../../../shared/b
 import { PeriodicTaskRunner } from "../../composition/periodicTaskRunner.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ApprovalResumeEffectJournalRepository } from "../../../db/repositories/approvalResumeEffectJournalRepository.js";
+import { RoutineOfferRepository } from "../../../db/repositories/routineOfferRepository.js";
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -890,6 +891,7 @@ export const buildChatServices = (input: {
     conversationOwnershipRepository: input.conversationOwnershipRepository,
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: routineStateRepository,
+    routineOfferStore: new RoutineOfferRepository(input.database.kysely),
     suspendedRoutineReader: routineStateRepository,
     // Per-conversation directive firing memory for once/cooldown lifecycle (#865).
     directiveStateStore: directiveStateRepository,

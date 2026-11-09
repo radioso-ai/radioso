@@ -6,10 +6,7 @@ import type {
   RoutineStartOffer,
 } from "@radioso/conversation-contract";
 
-import { clarificationStage } from "./clarification.js";
-
-/** The surface a routine activation's clarifications and offers are saved and traced under. */
-export const ROUTINE_ACTIVATION_SURFACE = "routine_activation";
+import { clarificationStage, ROUTINE_ACTIVATION_SURFACE } from "./clarification.js";
 
 /** An offer stays acceptable for as long as an activation question does. */
 const OFFER_TTL_MS = 30 * 60 * 1000;
@@ -50,11 +47,12 @@ const pickedCandidate = (activation: RoutineActivateOutcome): ClarificationCandi
 };
 
 /**
- * Offers the picked routine instead of starting it. The pending offer holds the routine and the
- * values the ranker read from this message, so accepting it starts the routine holding them. A
- * conversation is offered a routine once: when it already had the offer, or the host keeps no
- * pending row or offer memory, nothing is offered and the routine waits for a direct request.
- * Returns the stage the turn records and, when the answer ends with one, the offer.
+ * Offers the picked routine instead of starting it. The offer's pending row holds the routine and
+ * the values the ranker read from this message, so accepting it starts the routine holding them.
+ * Nothing is saved here: the host saves the row and records the offer once the answer that ends
+ * with it is the reply shown. A conversation is offered a routine once: when it already had the
+ * offer, or the host keeps no offer memory, nothing is offered and the routine waits for a direct
+ * request. Returns the stage the turn records and, when the answer ends with one, the offer.
  */
 export const offerRoutine = async (
   input: AttemptRoutineInput,
@@ -71,24 +69,13 @@ export const offerRoutine = async (
     });
     return { stage: { ...stage, outputs: { ...stage.outputs, chosenCandidateId: candidate.id } } };
   };
-  const { clarificationStore, routineOfferMemory } = input;
-  if (!clarificationStore || !routineOfferMemory) {
+  if (!input.routineOfferMemory) {
     return held("offer_unavailable");
   }
-  const offered = await routineOfferMemory.loadOffered({ sessionId: input.sessionId });
+  const offered = await input.routineOfferMemory.loadOffered({ sessionId: input.sessionId });
   if (offered.includes(activation.routineId)) {
     return held("already_offered");
   }
-  await clarificationStore.save({
-    sessionId: input.sessionId,
-    source: ROUTINE_ACTIVATION_SURFACE,
-    originalQuery: input.inputEvent.content,
-    mode: "offer",
-    candidates: [candidate],
-    status: "pending",
-    expiresAt: new Date(Date.now() + OFFER_TTL_MS),
-  });
-  await routineOfferMemory.recordOffered({ sessionId: input.sessionId, routineId: activation.routineId });
   return {
     stage: clarificationStage({
       surface: ROUTINE_ACTIVATION_SURFACE,
@@ -100,6 +87,15 @@ export const offerRoutine = async (
       routineId: activation.routineId,
       label: candidate.label,
       ...(candidate.description ? { description: candidate.description } : {}),
+      pending: {
+        sessionId: input.sessionId,
+        source: ROUTINE_ACTIVATION_SURFACE,
+        originalQuery: input.inputEvent.content,
+        mode: "offer",
+        candidates: [candidate],
+        status: "pending",
+        expiresAt: new Date(Date.now() + OFFER_TTL_MS),
+      },
     },
   };
 };

@@ -260,7 +260,7 @@ describe("DefaultClarifier", () => {
       candidates: [candidates[1]],
       turn: turn("yes please, go ahead"),
       mode: "offer",
-      source: "routine_activation",
+      offerKind: "start",
     })).resolves.toEqual({ kind: "chosen", id: "support" });
 
     const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]?.[0].systemPrompt;

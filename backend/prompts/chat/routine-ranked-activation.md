@@ -9,6 +9,8 @@ For each match:
 - `directRequest`: true only when the latest user message directly asks for what the routine does, to have it done now; false when the user is exploring, asking questions about it, asking about availability, price, or whether something is possible, or describing plans
 - `variables`: optional object containing only activation variables clearly extractable from the latest message
 
+`directRequest` is a separate verdict and never changes `confidence`: score `confidence` exactly as you would if `directRequest` did not exist, so a question about what a routine does keeps the confidence it would otherwise get.
+
 Registered routines:
 {{routines}}
 

@@ -86,6 +86,7 @@ import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import { resolveSkillEffectPolicy, type ConversationDurability, type SkillEffectPolicy, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AnswerCoverageAssessment } from "../../answerCoverage/public.js";
+import type { DeferredRoutineOffer } from "./routines/deferredRoutineOffer.js";
 import type {
   ChatAnswerCoverageAssessment,
   ChatAnswerCoverageInteractionTrace,
@@ -198,11 +199,10 @@ export interface PreparedSession {
    * engine records the yield on the turn's trace. Absent on every other turn.
    */
   routineYield?: RoutineTurnYield;
-  /**
-   * Set by the routine turn when it left the turn to the answer with stages to record: an Offer-first
-   * routine it offered (the answer closes by offering it) or held back, or a reply to an earlier offer.
-   */
+  /** The routine pass's notice on a turn it left to the answer (an offer, a reply to one); handed back to the engine. */
   routineActivationNotice?: RoutineActivationNotice;
+  /** The offer this turn's answer may close with, and whether the reply shows it (`routineClosing.ts`). */
+  routineOffer?: DeferredRoutineOffer;
   /** What became of the tool call this turn carried, forwarded in the reply envelope; absent on message turns. */
   routineInvocationReport?: ChatRoutineInvocationReport;
   /**

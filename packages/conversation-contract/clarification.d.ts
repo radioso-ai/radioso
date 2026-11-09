@@ -90,6 +90,7 @@ export interface RecentClarificationReader {
 
 /** How a reply to an `offer` row resolved: took an offered option, said no, or moved on. */
 export type ClarificationOfferMappingOutcome = "accepted" | "declined" | "ignored";
+export type ClarificationOfferKind = "alternatives" | "start";
 
 export type ClarificationReplyMapping =
   | { kind: "chosen"; id: string }
@@ -105,8 +106,11 @@ export interface ClarificationReplyMapInput {
    * replies and treat substantive follow-up requests as unrelated.
    */
   mode?: PendingClarificationMode;
-  /** The surface that saved the pending row, so a clarifier can word each surface's offer. */
-  source?: string;
+  /**
+   * What an `offer` row offered: other readings of the request (`alternatives`, the default) or
+   * to start something for the visitor (`start`). Each is mapped with its own wording.
+   */
+  offerKind?: ClarificationOfferKind;
 }
 
 /** LLM-backed clarifier port for phrasing questions and mapping free-text replies. */

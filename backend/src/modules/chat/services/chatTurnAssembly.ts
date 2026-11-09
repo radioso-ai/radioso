@@ -66,6 +66,7 @@ import {
   type CapturedRoutineTransition,
 } from "./routines/deferredRoutineStore.js";
 import { DeferredCoverageReactionRecorder } from "./answerCoverage/deferredCoverageReactionRecorder.js";
+import { DeferredRoutineOffer, type RoutineOfferStore } from "./routines/deferredRoutineOffer.js";
 import {
   DeferredClarificationStore,
   type CapturedClarificationTransition,
@@ -239,6 +240,8 @@ export interface ChatTurnAssemblyOptions {
   turnRouter: TurnRouter;
   turnInterpreter?: ChatConversationTurnInterpreter;
   routineStore?: ConversationRoutineStore;
+  /** Which routines each conversation was shown an offer for; replay keeps none. */
+  routineOfferStore?: RoutineOfferStore;
   routineProvider?: ChatRoutineProvider;
   clarifier?: ConversationClarifier;
   recordClarificationDecision?: (input: {
@@ -268,13 +271,14 @@ export interface ChatTurnAssemblyOptions {
 
 type ChatTurnAssemblySharedOptions = Omit<
   ChatTurnAssemblyOptions,
-  "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "includeSlotValues"
+  "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "routineOfferStore" | "includeSlotValues"
 >;
 
 interface ChatTurnAssemblyEffectPorts {
   chatSessionPreparer: ChatSessionPreparer;
   directiveStateStore: DirectiveStateStore;
   routineStore?: ConversationRoutineStore;
+  routineOfferStore?: RoutineOfferStore;
   coverageHeadRecorder?: AnswerCoverageHeadRecorder;
   coverageShadowAssessor?: AnswerCoverageShadowAssessor;
   includeSlotValues?: boolean;
@@ -417,6 +421,11 @@ export class ChatTurnAssembly {
       : session.userMessage.id;
     const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
+    // An offer needs the pending row a later reply is mapped against, so it needs the turn's store.
+    const routineOffer = deferredClarificationStore
+      ? new DeferredRoutineOffer(this.options.routineOfferStore, deferredClarificationStore)
+      : undefined;
+    session.routineOffer = routineOffer;
     input.coordination?.checkpoint("routing");
     const routineRunner = pageReadAwareRoutineRunner({
       session,
@@ -442,7 +451,7 @@ export class ChatTurnAssembly {
         : undefined,
       suppressNewClarification: input.clarification?.resolution?.suppressNewClarification,
       progress: input.progress,
-      routineOfferMemory: deferredClarificationStore,
+      routineOfferMemory: routineOffer,
       clarificationMappingStage: offerMappingStage(input.clarification?.resolution),
       presentRoutineReply: (response) =>
         presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, response),
@@ -458,6 +467,9 @@ export class ChatTurnAssembly {
     if (!claim) {
       reportInvocation();
       this.recordTraceClarificationDecisions(session.routineActivationNotice);
+      if (session.routineActivationNotice?.offer) {
+        routineOffer?.hold(session.routineActivationNotice.offer);
+      }
       // A direct invocation the activator declined leaves no routine state; the
       // turn answers normally and the envelope still names the completed routine.
       const declinedRoutine = routineTurnPorts.reporter?.describeDeclined() ?? null;

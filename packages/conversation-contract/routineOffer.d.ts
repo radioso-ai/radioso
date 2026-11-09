@@ -1,4 +1,5 @@
 // A routine's start mode, and the offer an Offer-first routine makes instead of starting.
+import type { PendingClarification } from "./clarification.js";
 import type { ConversationTraceStage } from "./index.js";
 
 /**
@@ -8,11 +9,16 @@ import type { ConversationTraceStage } from "./index.js";
  */
 export type RoutineStartMode = "automatic" | "offer";
 
-/** The routine a turn's answer offers to start: its name and what it is for. */
+/**
+ * The routine a turn's answer offers to start: its name and what it is for, and the pending row
+ * that lets the next turn accept it. The host saves `pending` and records the offer only once the
+ * reply that ends with the offer is the reply the visitor sees.
+ */
 export interface RoutineStartOffer {
   routineId: string;
   label: string;
   description?: string;
+  pending: PendingClarification;
 }
 
 /**
@@ -39,5 +45,4 @@ export interface ConversationRoutineActivationSink {
  */
 export interface ConversationRoutineOfferMemory {
   loadOffered(input: { sessionId: string }): Promise<readonly string[]>;
-  recordOffered(input: { sessionId: string; routineId: string }): Promise<void>;
 }

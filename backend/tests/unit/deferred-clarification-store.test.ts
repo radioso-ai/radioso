@@ -57,29 +57,4 @@ describe("DeferredClarificationStore", () => {
     expect(store.consumeTransition()).toEqual({ kind: "save", pending });
     expect(store.consumeTransition()).toBeNull();
   });
-
-  it("keeps a routine offer with the pending row it accompanies, so both commit together", async () => {
-    const inner = innerStore();
-    const offerMemory = { loadOffered: vi.fn(async () => ["table_booking"]), recordOffered: vi.fn(async () => {}) };
-    const store = new DeferredClarificationStore(inner, offerMemory);
-
-    await store.save(pending);
-    await store.recordOffered({ sessionId: "conv_1", routineId: "room_booking" });
-
-    await expect(store.loadOffered({ sessionId: "conv_1" })).resolves.toEqual(["table_booking", "room_booking"]);
-    expect(offerMemory.recordOffered).not.toHaveBeenCalled();
-    expect(store.getTransition()).toEqual({ kind: "save", pending, offeredRoutineIds: ["room_booking"] });
-
-    await store.commit();
-    expect(inner.save).toHaveBeenCalledWith(pending);
-    expect(offerMemory.recordOffered).toHaveBeenCalledExactlyOnceWith({ sessionId: "conv_1", routineId: "room_booking" });
-  });
-
-  it("remembers this turn's offers when the host keeps no offer memory, as a replayed turn does", async () => {
-    const store = new DeferredClarificationStore(innerStore());
-
-    await store.recordOffered({ sessionId: "conv_1", routineId: "room_booking" });
-
-    await expect(store.loadOffered({ sessionId: "conv_1" })).resolves.toEqual(["room_booking"]);
-  });
 });

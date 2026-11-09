@@ -774,6 +774,7 @@ export type {
   ClarificationCandidate,
   ClarificationClearOutcome,
   ClarificationDecision,
+  ClarificationOfferKind,
   ClarificationOfferMappingOutcome,
   ClarificationPolicy,
   ClarificationReplyMapInput,
@@ -1703,8 +1704,6 @@ export interface ProcessTurnInput {
   routineYield?: RoutineTurnYield;
   /** The host's own routine pass noticed this; its stages are recorded only on the turn it names. */
   routineActivationNotice?: RoutineActivationNotice;
-  routineOfferMemory?: ConversationRoutineOfferMemory;
-  clarificationMappingStage?: ConversationTraceStage;
 }
 
 export interface ConversationCoverageReactionRecorder {
@@ -1777,7 +1776,10 @@ export interface AttemptRoutineInput {
   progress?: ConversationProgressPort;
   /** Told when the active routine yields the turn, so the host can carry its pending step into the answer. */
   routineYieldSink?: ConversationRoutineYieldSink;
-  /** Required for an Offer-first routine to be offered; without it such a routine starts only on a direct request. */
+  /**
+   * Required for an Offer-first routine to be offered; without it such a routine starts only on a
+   * direct request. The host records an offer itself, once the answer that ends with it is shown.
+   */
   routineOfferMemory?: ConversationRoutineOfferMemory;
   routineActivationSink?: ConversationRoutineActivationSink;
   /** The host resolved a reply to a pending offer this turn; the turn's trace records this stage. */

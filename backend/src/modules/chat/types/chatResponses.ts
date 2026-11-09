@@ -81,6 +81,14 @@ export interface ChatResponse {
   handoff?: ChatTurnHandoff;
   /** Where this turn left the routine it touched; absent when no routine ran. */
   routine?: ChatRoutineTurnState;
+  /**
+   * The concrete run `routine` describes, when the turn knows one. In-process only, like `handoff`:
+   * the HTTP presenters leave it out of every response and the agent reply envelope does not carry
+   * it; a door that keeps a record per routine run reads it to tell a new run from the one it follows.
+   */
+  routineExecutionId?: string;
+  /** The caller's message this turn stored. In-process only, like `routineExecutionId`. */
+  requestMessageId?: string;
   /** What became of the tool call this turn carried; absent on a message turn. */
   invocation?: ChatRoutineInvocationReport;
   /**

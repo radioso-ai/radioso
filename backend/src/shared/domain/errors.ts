@@ -79,6 +79,17 @@ export const isReportableFault = (error: unknown): boolean => {
   return error.statusCode >= 500;
 };
 
+/**
+ * A request body that declared JSON and did not parse. It answers exactly as `badRequest` does; the
+ * type lets a protocol that names its own parse error (A2A's JSON-RPC binding) recognise it.
+ */
+export class RequestBodyParseError extends AppError {
+  constructor() {
+    super(400, "bad_request", "Invalid JSON request body");
+    this.name = "RequestBodyParseError";
+  }
+}
+
 export const badRequest = (message: string, details?: unknown): AppError =>
   new AppError(400, "bad_request", message, details);
 

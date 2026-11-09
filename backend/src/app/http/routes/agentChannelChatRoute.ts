@@ -78,6 +78,7 @@ export const registerAgentChannelChatRoute = (
           : await resolveAgentTurnInput(dependencies.agentToolCatalog, {
               workspaceId: agentChannelGrant.workspaceId,
               agentId: agentChannelGrant.agentId,
+              channel: "agent_api",
               agentRevisionId: await pinnedRevisionIdFor(dependencies, agentChannelGrant.workspaceId, req.body.conversationId),
               body: req.body,
             }, { metrics: dependencies.metricsRegistry, logger: dependencies.logger });

@@ -46,6 +46,11 @@ const coverage: Record<string, ErasureCoverage> = {
   "email_inbound_deliveries.message_id": { kind: "row_cascades_with", column: "conversation_id" },
   "eval_snapshots.source_message_id": { kind: "row_cascades_with", column: "source_conversation_id" },
   "held_replies.released_message_id": { kind: "row_cascades_with", column: "conversation_id" },
+  "a2a_tasks.opening_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The first message of the task's history, in the same conversation." },
+  "a2a_tasks.caller_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The calling agent's latest message on the task, in the same conversation." },
+  "a2a_tasks.shown_through_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The last message the calling agent was shown, in the same conversation." },
+  "a2a_tasks.status_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The reply the task's status carries, in the same conversation." },
+  "a2a_tasks.artifact_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The reply the task's artifact carries, in the same conversation." },
   "routine_states.started_message_id": { kind: "row_cascades_with", column: "session_id", reason: "The visitor message that started the current routine execution, in the same conversation." },
   "voice_sessions.conversation_id": {
     kind: "eraser",

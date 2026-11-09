@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { AgentConverseService } from "../../src/modules/chat/services/agentConverseService.js";
 import type { AgentConversePrincipal } from "../../src/modules/settings/contracts/agentConverseSession.js";
+import type { AgentConverseTurnResult } from "../../src/modules/chat/contracts/index.js";
 import type { ChatResponse } from "../../src/modules/chat/types/chatResponses.js";
 import type { AgentToolCatalogPort } from "../../src/modules/chat/contracts/routineInvocation.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -50,6 +52,9 @@ const startReturnCatalog = () => ({
   })),
 });
 
+/** The routine-state read after a turn, for a conversation with no run in flight. */
+const noActiveRoutineRun = { loadActive: vi.fn(async () => null) };
+
 describe("AgentConverseService", () => {
   it("publishes MCP conversation.created only for the create-once result", async () => {
     const publisher: WorkspaceInvalidationPublisher = {
@@ -62,6 +67,7 @@ describe("AgentConverseService", () => {
       conversationRepository: { getOrCreateByAnonymousSession },
       assistantChatService: { answer: vi.fn(async () => chatResponse()) },
       agentToolCatalog: startReturnCatalog(),
+      activeRoutineRuns: noActiveRoutineRun,
       publisher,
     });
 
@@ -84,6 +90,7 @@ describe("AgentConverseService", () => {
       },
       assistantChatService: { answer },
       agentToolCatalog: catalog,
+      activeRoutineRuns: noActiveRoutineRun,
     });
 
     const result = await service.askAgent(principal, { routine: { toolName: "start_return", input: { orderId: "A-1" } } });
@@ -93,7 +100,7 @@ describe("AgentConverseService", () => {
       routineInvocation: { toolName: "start_return", input: { orderId: "A-1" } },
       conversationId: "conversation-1",
     }));
-    expect(result.conversationId).toBe("session-1");
+    expect(result.reply.conversationId).toBe("session-1");
   });
 
   it("answers routine_tool_unknown from the pinned release and records no turn", async () => {
@@ -110,6 +117,7 @@ describe("AgentConverseService", () => {
       },
       assistantChatService: { answer },
       agentToolCatalog: catalog,
+      activeRoutineRuns: noActiveRoutineRun,
       audit: audit as never,
     });
 
@@ -128,10 +136,145 @@ describe("AgentConverseService", () => {
       },
       assistantChatService: { answer: vi.fn(async () => chatResponse()) },
       agentToolCatalog: catalog,
+      activeRoutineRuns: noActiveRoutineRun,
     });
 
     await service.askAgent(principal, { routine: { toolName: "start_return", input: { orderId: "A-1" } } });
 
     expect(catalog.load).toHaveBeenCalledWith({ workspaceId: "workspace-1", agentId: "agent-1" });
+  });
+
+  it("runs an A2A principal's turn on the a2a channel end to end: conversation, turn, audit, and metric", async () => {
+    const getOrCreateByAnonymousSession = vi.fn(async () => ({ record: { id: "conversation-1", agentRevisionId: null }, created: true }));
+    const answer = vi.fn(async () => chatResponse());
+    const audit = { recordAskOutcome: vi.fn(async () => {}) };
+    const metrics = new MetricsRegistry();
+    const service = new AgentConverseService({
+      conversationRepository: { getOrCreateByAnonymousSession },
+      assistantChatService: { answer },
+      agentToolCatalog: startReturnCatalog(),
+      activeRoutineRuns: noActiveRoutineRun,
+      audit: audit as never,
+      metrics,
+    });
+
+    await service.askAgent({ ...principal, sourceChannel: "a2a" }, { message: "hello" });
+
+    expect(getOrCreateByAnonymousSession).toHaveBeenCalledWith(expect.objectContaining({ sourceChannel: "a2a" }));
+    expect(answer).toHaveBeenCalledWith(expect.objectContaining({ sourceChannel: "a2a" }));
+    expect(audit.recordAskOutcome).toHaveBeenCalledWith(expect.objectContaining({ sourceChannel: "a2a", status: "success" }));
+    expect(metrics.renderPrometheus()).toContain('radioso_converse_turns_total{channel="a2a",input_kind="message"} 1');
+  });
+
+  it("keeps an MCP principal's turn on the mcp channel", async () => {
+    const getOrCreateByAnonymousSession = vi.fn(async () => ({ record: { id: "conversation-1", agentRevisionId: null }, created: true }));
+    const answer = vi.fn(async () => chatResponse());
+    const service = new AgentConverseService({
+      conversationRepository: { getOrCreateByAnonymousSession },
+      assistantChatService: { answer },
+      agentToolCatalog: startReturnCatalog(),
+      activeRoutineRuns: noActiveRoutineRun,
+    });
+
+    await service.askAgent(principal, { message: "hello" });
+
+    expect(getOrCreateByAnonymousSession).toHaveBeenCalledWith(expect.objectContaining({ sourceChannel: "mcp" }));
+    expect(answer).toHaveBeenCalledWith(expect.objectContaining({ sourceChannel: "mcp" }));
+  });
+
+  it("hands an in-process caller the routine run beside the reply, never inside it", async () => {
+    const service = new AgentConverseService({
+      conversationRepository: {
+        getOrCreateByAnonymousSession: vi.fn(async () => ({ record: { id: "conversation-1", agentRevisionId: null }, created: false })),
+      },
+      assistantChatService: {
+        answer: vi.fn(async () => ({
+          ...chatResponse(),
+          routine: { name: "Returns", status: "waiting_for_input" as const, pendingInput: [] },
+          routineExecutionId: "execution-1",
+        })),
+      },
+      agentToolCatalog: startReturnCatalog(),
+      activeRoutineRuns: noActiveRoutineRun,
+    });
+
+    const result: AgentConverseTurnResult = await service.askAgent(principal, { message: "I want to return an order" });
+
+    expect(result.routineExecutionId).toBe("execution-1");
+    expect(result.reply.routine).toEqual({ name: "Returns", status: "waiting_for_input", pendingInput: [] });
+    expect(JSON.stringify(result.reply)).not.toContain("execution-1");
+    expect(result.reply).not.toHaveProperty("routineExecutionId");
+  });
+
+  it("reads the routine run still active after the turn, and reports it beside the reply", async () => {
+    const answer = vi.fn(async () => chatResponse());
+    const loadActive = vi.fn(async () => ({ executionId: "execution-2" }));
+    const service = new AgentConverseService({
+      conversationRepository: {
+        getOrCreateByAnonymousSession: vi.fn(async () => ({ record: { id: "conversation-1", agentRevisionId: null }, created: false })),
+      },
+      assistantChatService: { answer },
+      agentToolCatalog: startReturnCatalog(),
+      activeRoutineRuns: { loadActive },
+    });
+
+    // A routine that yielded to an off-topic message: the turn reports no routine, yet the run is active.
+    const result = await service.askAgent(principal, { message: "What are your hours?" });
+
+    expect(loadActive).toHaveBeenCalledWith({ sessionId: "conversation-1" });
+    expect(loadActive.mock.invocationCallOrder[0]).toBeGreaterThan(answer.mock.invocationCallOrder[0] ?? Infinity);
+    expect(result.reply).not.toHaveProperty("routine");
+    expect(result.activeRoutineExecutionId).toBe("execution-2");
+    expect(JSON.stringify(result.reply)).not.toContain("execution-2");
+  });
+
+  it("reports no active routine run once none is in flight after the turn (ended or expired)", async () => {
+    const service = new AgentConverseService({
+      conversationRepository: {
+        getOrCreateByAnonymousSession: vi.fn(async () => ({ record: { id: "conversation-1", agentRevisionId: null }, created: false })),
+      },
+      assistantChatService: { answer: vi.fn(async () => chatResponse()) },
+      agentToolCatalog: startReturnCatalog(),
+      activeRoutineRuns: noActiveRoutineRun,
+    });
+
+    expect((await service.askAgent(principal, { message: "hello" })).activeRoutineExecutionId).toBeNull();
+  });
+
+  it("hands an in-process caller the turn's own request and reply message ids, never inside the reply", async () => {
+    const answer = vi.fn(async () => ({ ...chatResponse(), assistantMessageId: "reply-1", requestMessageId: "request-1" }));
+    const service = new AgentConverseService({
+      conversationRepository: {
+        getOrCreateByAnonymousSession: vi.fn(async () => ({ record: { id: "conversation-1", agentRevisionId: null }, created: false })),
+      },
+      assistantChatService: { answer },
+      agentToolCatalog: startReturnCatalog(),
+      activeRoutineRuns: noActiveRoutineRun,
+    });
+
+    const result = await service.askAgent(principal, { message: "hello" });
+
+    expect(result).toMatchObject({ requestMessageId: "request-1", replyMessageId: "reply-1" });
+    expect(JSON.stringify(result.reply)).not.toContain("request-1");
+    expect(JSON.stringify(result.reply)).not.toContain("reply-1");
+
+    // A person owns the thread: the caller's message is stored and no reply is generated.
+    answer.mockResolvedValueOnce({ ...chatResponse(), assistantMessageId: "", requestMessageId: "request-2" });
+    expect(await service.askAgent(principal, { message: "hello again" })).toMatchObject({ requestMessageId: "request-2", replyMessageId: null });
+  });
+
+  it("reports no routine run when the turn touched none", async () => {
+    const service = new AgentConverseService({
+      conversationRepository: {
+        getOrCreateByAnonymousSession: vi.fn(async () => ({ record: { id: "conversation-1", agentRevisionId: null }, created: false })),
+      },
+      assistantChatService: { answer: vi.fn(async () => chatResponse()) },
+      agentToolCatalog: startReturnCatalog(),
+      activeRoutineRuns: noActiveRoutineRun,
+    });
+
+    const result = await service.askAgent(principal, { message: "hello" });
+
+    expect(result.routineExecutionId).toBeNull();
   });
 });

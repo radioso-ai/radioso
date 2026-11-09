@@ -1,4 +1,4 @@
-import type { RequestHandler } from "express";
+import type { RequestHandler, Response } from "express";
 
 import { AppError } from "../../../shared/domain/errors.js";
 import type { AgentConverseSessionPort } from "../../../modules/settings/contracts/agentConverseSession.js";
@@ -35,6 +35,17 @@ const invalidConverseSession = (): AppError => new AppError(
   { code: "invalid_session" },
 );
 
+/**
+ * Publishes an admitted converse principal where the converse turn and read limiters and the
+ * public chat permission checks read it, whichever door admitted it: an MCP session token, or an
+ * A2A context.
+ */
+export const publishConversePrincipal = (res: Response, principal: AgentConversePrincipal): void => {
+  res.locals.mcpConversePrincipal = principal;
+  res.locals.workspaceId = principal.workspaceId;
+  res.locals.authPrincipal = principal.authPrincipal;
+};
+
 export const requireMcpConverseSession = (
   sessionService: Pick<AgentConverseSessionPort, "validate">,
 ): RequestHandler => async (req, res, next) => {
@@ -44,10 +55,7 @@ export const requireMcpConverseSession = (
       throw invalidConverseSession();
     }
 
-    const principal = await sessionService.validate(token);
-    res.locals.mcpConversePrincipal = principal;
-    res.locals.workspaceId = principal.workspaceId;
-    res.locals.authPrincipal = principal.authPrincipal;
+    publishConversePrincipal(res, await sessionService.validate(token));
     next();
   } catch (error) {
     next(error);

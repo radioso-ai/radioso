@@ -149,10 +149,10 @@ import { createConversationActivityComposition } from "../composition/conversati
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
 import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
-import { ConversationErasureService, DataSubjectAccessService, PrivacySettingsService } from "../../modules/privacy/public.js";
+import { ConversationErasureService, PrivacySettingsService } from "../../modules/privacy/public.js";
 import { conversationRetentionPeriodicTask, createConversationRetentionSweep } from "../composition/conversationRetention.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
-import { createPostgresDataSubjectReadUnitOfWork } from "../composition/dataSubjectAccess.js";
+import { createPostgresDataSubjectAccess } from "../composition/dataSubjectAccess.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
 import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
@@ -1431,11 +1431,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatBootstrapService: chat.chatBootstrapService,
     agentStarterPromptReader: chat.agentStarterPromptReader,
     agentToolCatalog,
+    activeRoutineRuns: new RoutineStateRepository(infrastructure.database.kysely),
     agentPublicProfile: createAgentPublicProfileComposition({
       agentRepository: repositories.agentRepository,
       agentRevisionReader: publishedRevisionReader,
       agentToolCatalog,
-      mcpBaseUrl: env.PUBLIC_MCP_CONVERSE_URL,
+      env,
     }),
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,
@@ -1459,12 +1460,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationErasure,
     privacySettingsService,
     timeZoneSettingsService: settings.timeZoneSettingsService,
-    dataSubjectAccess: new DataSubjectAccessService({
-      reads: createPostgresDataSubjectReadUnitOfWork({ db: infrastructure.database.kysely }),
-      erasure: conversationErasure,
-      audit: infrastructure.auditService,
-      logger,
-    }),
+    dataSubjectAccess: createPostgresDataSubjectAccess({ db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService, logger }),
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,
     retrievalDefaultsProvider,

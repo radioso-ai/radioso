@@ -1,12 +1,12 @@
 ---
 title: "Connect a calling agent"
-description: "Read the reply envelope ask_agent returns, call an exposed routine as a typed tool, and come back for a human's reply after a handoff."
-last_updated: 2026-10-18
+description: "Read the reply envelope ask_agent returns, call an exposed routine as a typed tool, come back for a human's reply after a handoff, and reach the agent from an A2A client."
+last_updated: 2026-11-09
 ---
 
 # Connect a calling agent
 
-Another AI agent can hold a conversation with one of yours and act on what comes back. It sends a message through `ask_agent`, or calls a routine you have exposed as a named tool, and gets a structured reply envelope beside the prose: what the answer covered, who owns the conversation, and where a routine landed. That envelope is what lets a calling model decide its next move instead of parsing sentences.
+Another AI agent can hold a conversation with one of yours and act on what comes back. It sends a message through `ask_agent`, or calls a routine you have exposed as a named tool, and gets a structured reply envelope beside the prose: what the answer covered, who owns the conversation, and where a routine landed. That envelope is what lets a calling model decide its next move instead of parsing sentences. A client that speaks A2A reaches the same agent over JSON-RPC, [covered below](#connect-an-a2a-client).
 
 Start with [MCP server](/guides/mcp-server) to issue the credential and point a client at the server, or with [Publish and open an agent](/guides/publish-an-agent) if you want callers to reach the agent with no credential at all. This page covers what the client does once it is connected.
 
@@ -78,9 +78,143 @@ When a turn hands off to a person, `ownership.state` becomes `human_owned` and t
 
 Over standalone MCP the session must survive between calls. The server returns an `Mcp-Session-Id` header on first contact; echo it on every later request to stay in the same conversation. A client that drops it gets a fresh conversation each call.
 
+## Connect an A2A client
+
+A client that speaks [A2A](https://a2a-protocol.org) v1.0 reaches the agent over JSON-RPC, with no MCP client and no Radioso-specific code. It reads the agent's card, sends a message, and gets back either an answer or a task that tracks a routine or a handoff. The agent needs a [public id](/guides/publish-an-agent#the-agents-public-id); the examples use `ag_7Qb3nT1xK9wZs2Pv0Lm4Rd`.
+
+### Find the endpoint
+
+The card sits at `/.well-known/agent-card/{publicId}.json` on the API host. Its `supportedInterfaces` holds one entry, and that entry is the endpoint:
+
+```json
+{
+  "url": "https://api.radioso.ai/a2a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd",
+  "protocolBinding": "JSONRPC",
+  "protocolVersion": "1.0"
+}
+```
+
+An A2A SDK reads this itself from the card URL. You only need the endpoint when you call it by hand. The card also lists the skills the agent offers: `ask_agent` for a plain message, then one skill per exposed routine. See [Publish and open an agent](/guides/publish-an-agent#where-an-agent-publishes-itself) for the whole card.
+
+### Send a message
+
+Every request is a `POST` of a JSON-RPC 2.0 body to the endpoint with `Content-Type: application/json` and an `A2A-Version: 1.0` header. A client that can't set headers puts `?A2A-Version=1.0` on the endpoint URL instead; when a request carries both, the header counts. A request that names no version, or any other value, fails with `-32009`.
+
+Access works as it does over MCP:
+
+- **Walk-in.** When the operator turns on **Allow connecting without a credential**, send no `Authorization` header. Opening a conversation draws on the [walk-in budgets](/guides/publish-an-agent#the-budget), which MCP and A2A callers share.
+- **Access grant.** When open access is off, or when you want a caller the operator chose, send the grant an operator creates for the agent under **Channels → MCP** as `Authorization: Bearer <secret>`. The card declares it as the `bearer` scheme in `securitySchemes`, and lists it under `securityRequirements` when open access is off. A walk-in refusal tells the caller no more than the card does.
+
+A first message looks like this:
+
+```bash
+curl https://api.radioso.ai/a2a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd \
+  -H 'Content-Type: application/json' \
+  -H 'A2A-Version: 1.0' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "SendMessage",
+    "params": {
+      "message": {
+        "messageId": "4f0c1a52-9e0b-4b8e-a7a5-0d6f0f6f2a10",
+        "role": "ROLE_USER",
+        "parts": [{ "text": "How long do I have to return an order?" }]
+      }
+    }
+  }'
+```
+
+A plain answer comes back as a `message`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "message": {
+      "messageId": "b81d6c0e-2f4a-4c77-9f0e-3f2d5a7c1e44",
+      "contextId": "Zk3xQm…",
+      "role": "ROLE_AGENT",
+      "parts": [{ "text": "You can return an order within 30 days of delivery." }]
+    }
+  }
+}
+```
+
+Message parts are text only: `{ "text": "…" }`. A file, raw, URL, or data part fails with `-32005`, and a JSON-RPC batch fails with `-32600`.
+
+### Reuse the `contextId`
+
+The reply carries a `contextId`. Send it back as `message.contextId` on every later message in the same conversation. A send without one opens a new conversation, counts it on the workspace's conversation quota, and draws one from the walk-in budget, so a client that drops the `contextId` gets a fresh conversation per question. That is fine for a single question and wrong for a booking.
+
+Treat the `contextId` as opaque, and as the key to the conversation: for a walk-in caller it is the only thing that continues it. A walk-in context lasts 12 hours. A context opened with an access grant lasts as long as that grant stays valid. If the operator rotates the public id, turns open access off, or revokes the grant, the next request in the context fails. A `contextId` the server cannot continue, whether expired, unknown, or issued to someone else, answers `-32602` with reason `CONTEXT_NOT_FOUND`; start again without one.
+
+### Messages and tasks
+
+A reply is a `message` when the agent answered and nothing else is in flight. It is a `task` when the turn started or continued a routine, when a person owns the conversation, or when a person wrote something you have not seen yet. A task carries a `taskId`, the `contextId`, and a `status.state`:
+
+| State | What it means | What to do |
+|---|---|---|
+| `TASK_STATE_INPUT_REQUIRED` | The agent is waiting for you. `status.message` is its question, or the reply a person wrote. | Send the answer with the `taskId`, or with just the `contextId`. |
+| `TASK_STATE_WORKING` | A person owns the conversation, or a routine waits for an operator's decision. `status.message` is the turn's reply, if there was one. | Poll `GetTask`. The wait has no upper bound. |
+| `TASK_STATE_COMPLETED` | The routine finished and its final reply is the task's artifact, or a person handed the conversation back to the agent. | Continue the conversation with a new message. |
+| `TASK_STATE_CANCELED` | The routine ended before it finished, for example because it expired after 30 minutes without an answer (reason `routine_ended`), or another routine replaced it (reason `routine_replaced`). `status.message` is the reply to your message. | Read the reply; a new task opens when the next routine starts. |
+
+A2A's task status has no reason field. With the [Radioso converse extension](/reference/a2a-converse-extension/v1) activated, the reason is in `metadata["https://docs.radioso.ai/reference/a2a-converse-extension/v1"].reason`.
+
+A routine that needs an email address and a date, for example, answers the first message with an input-required task:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "task": {
+      "id": "8e1b0c3a5d94…",
+      "contextId": "Zk3xQm…",
+      "status": {
+        "state": "TASK_STATE_INPUT_REQUIRED",
+        "message": {
+          "messageId": "1c5a9d20-6b7e-4f43-8a11-7d0e2b9c3f68",
+          "role": "ROLE_AGENT",
+          "parts": [{ "text": "Which email address should I send the booking to?" }]
+        },
+        "timestamp": "2026-11-09T10:14:02.117Z"
+      }
+    }
+  }
+}
+```
+
+A context holds one open task at a time. A message that starts a different routine ends the open task as `TASK_STATE_CANCELED` and opens a new one; the response is the task the turn ended in. A message addressed to a task that has already ended fails with `-32004`.
+
+### Poll a task
+
+`GetTask` with `{ "id": "<taskId>" }` returns the task's current state and its history, which holds only that task's messages. Caller messages are `ROLE_USER`; agent replies and a person's replies are both `ROLE_AGENT`. After a `TASK_STATE_WORKING` response, poll `GetTask`. When a person replies in the Inbox, the next poll returns `TASK_STATE_INPUT_REQUIRED` with their reply as the status message, without you sending anything. A person who replies after a walk-in context's 12 hours cannot reach the caller.
+
+`ListTasks` returns the tasks of one context, newest first, and needs `contextId` in its params. Called without one it returns an empty list. It never crosses contexts.
+
+### Retry a message
+
+A repeated `messageId` in the same context returns the original result and runs no second turn, so a client that did not see the first response can send it again. Pick the `messageId` once per message and keep it across retries. A message sent without a `contextId` is the exception: each attempt opens its own conversation, so a retry of it opens a second one. If the first attempt is still running, the retry answers reason `TURN_IN_PROGRESS`. Send one message at a time per context: a second message that arrives while a turn runs supersedes the first, which answers reason `TURN_SUPERSEDED`.
+
+### What the endpoint does not offer
+
+- **Streaming and push notifications.** The card sets `capabilities.streaming` and `capabilities.pushNotifications` to `false`. `SendStreamingMessage` and `SubscribeToTask` fail with `-32004`, and the push-notification config methods fail with `-32003`. `SendMessage` returns when the turn finishes, and a client waiting on a person polls `GetTask`.
+- **Cancelling a task.** `CancelTask` fails with `-32002` for a task that exists and `-32001` for one that does not.
+- **The extended agent card.** `GetExtendedAgentCard` fails with `-32004`.
+
+A request over a rate limit gets HTTP `429` with `Retry-After` and the `RateLimit-*` headers before any JSON-RPC handling. Errors carry a `google.rpc.ErrorInfo` entry in `error.data`; its `reason` names the cause, and it holds no message text or ids.
+
+### Get the reply envelope
+
+A client that wants the reply envelope that `ask_agent` returns, which is answer coverage, ownership, routine status, and citations, activates the Radioso extension with an `A2A-Extensions` header. The card lists it under `capabilities.extensions`. The [extension reference](/reference/a2a-converse-extension/v1) lists the fields.
+
 ## Read next
 
 - [Publish and open an agent](/guides/publish-an-agent) — the agent's public id, its discovery documents, and credential-free access.
+- [A2A converse extension](/reference/a2a-converse-extension/v1) — the card parameters and reply metadata an A2A client reads.
 - [MCP server](/guides/mcp-server) — issue the agent credential, connect a client, and run the standalone server.
 - [Author a routine](/guides/authoring-routines#expose-a-routine-as-a-tool) — expose a routine so a calling agent can start it by name.
 - [Agents and skills](/api/agents-and-skills) — configure the agent behind the conversation.

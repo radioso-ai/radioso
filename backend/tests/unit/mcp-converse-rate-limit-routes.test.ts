@@ -75,7 +75,9 @@ const createApp = (dependencies = createDependencies()) => {
     recordSuccessfulUse: vi.fn(),
     permissions: vi.fn().mockReturnValue([]),
   };
-  const converseService = { askAgent: vi.fn().mockResolvedValue({ answer: "Hello" }) };
+  const converseService = {
+    askAgent: vi.fn().mockResolvedValue({ reply: { answer: { text: "Hello", citations: [] } }, routineExecutionId: "execution-1" }),
+  };
   const walkInObserver = { record: vi.fn() };
   const conversationUpdateReader = {
     read: vi.fn().mockResolvedValue({ messages: [], cursor: null, ownership: { state: "ai_owned" } }),
@@ -163,6 +165,19 @@ describe("MCP converse ask rate limiting", () => {
     ]);
     expect(converseService.askAgent).toHaveBeenCalledOnce();
     expect(sessionService.recordSuccessfulUse).toHaveBeenCalledWith(principal);
+  });
+
+  it("answers MCP ask with the reply alone, never the in-process routine run", async () => {
+    const { app } = createApp();
+
+    const response = await request(app)
+      .post("/api/v1/mcp/converse/ask")
+      .set("Authorization", "Bearer session-token")
+      .send({ message: "Hello" })
+      .expect(200);
+
+    expect(response.body).toEqual({ answer: { text: "Hello", citations: [] } });
+    expect(response.text).not.toContain("execution-1");
   });
 
   it("spends a source budget before validating a cached MCP session", async () => {

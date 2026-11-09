@@ -238,7 +238,7 @@ The operator copies a ready-made "connect your agent" snippet (endpoint, card UR
 
 ## Non-goals
 
-- **Full A2A protocol** (task lifecycle, streaming, push notifications). Only the Agent Card is adopted; the transport stays MCP + REST.
+- **Full A2A protocol** (task lifecycle, streaming, push notifications). Only the Agent Card is adopted; the transport stays MCP + REST. *(Revisited 2026-11-09: `specs/a2a-protocol-binding/` (Draft) proposes the A2A v1.0 JSON-RPC binding with task lifecycle; streaming and push stay out.)*
 - **WebMCP / in-page tool exposure.** Tracked separately once the W3C work stabilises.
 - **Structured tool outputs.** v1 returns the envelope; mapping routine variables to a JSON `outputSchema` is a follow-up.
 - **Per-skill tools.** Routines are the unit of operator control; skills stay behind them.

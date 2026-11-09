@@ -37,6 +37,7 @@ import {
 export type McpConverseRouteDependencies = Pick<
   AppDependencies,
   | "accessGrantService"
+  | "activeRoutineRuns"
   | "accountAccessService"
   | "agentRepository"
   | "agentConverseSessionMappingRepository"
@@ -187,9 +188,10 @@ export const createMcpConverseRoutes = (
         const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
         // The converse service binds the session's conversation and validates a tool
         // call against the release it is pinned to before any turn state is written.
-        const result = await converseService.askAgent(mcpConversePrincipal, req.body);
+        const turn = await converseService.askAgent(mcpConversePrincipal, req.body);
         onSuccessfulHttpResponse(res, () => sessionService.recordSuccessfulUse(mcpConversePrincipal));
-        res.status(200).json(result);
+        // The reply alone: the rest of the turn result is in-process only.
+        res.status(200).json(turn.reply);
       } catch (error) {
         next(error);
       }

@@ -3195,11 +3195,12 @@ export const createTestDependencies = (overrides: {
     chatBootstrapService,
     agentStarterPromptReader,
     agentToolCatalog,
+    activeRoutineRuns: routineStateStore,
     agentPublicProfile: createAgentPublicProfileComposition({
       agentRepository,
       agentRevisionReader: publishedAgentRevisions,
       agentToolCatalog,
-      mcpBaseUrl: env.PUBLIC_MCP_CONVERSE_URL,
+      env,
     }),
     chatHistoryService,
     assistantChatService,

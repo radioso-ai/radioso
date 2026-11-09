@@ -9575,33 +9575,57 @@ export interface components {
             cursor: string | null;
             ownership: components["schemas"]["ConverseOwnershipState"];
         };
-        /** @description An A2A Agent Card for one agent: who it is, where its MCP endpoint is, how a caller authenticates, and one skill per exposed routine. */
+        /** @description An A2A v1.0 Agent Card for one agent: who it is, the JSON-RPC interface an A2A client sends messages to, how a caller authenticates, an `ask_agent` skill plus one skill per exposed routine, and under `capabilities.extensions` the Radioso converse extension, which names the agent's MCP endpoint and each routine's input schema. `securityRequirements` is absent while the agent accepts callers with no credential. */
         A2aAgentCard: {
-            protocolVersion: string;
             name: string;
             description: string;
-            url: string;
-            preferredTransport: string;
+            supportedInterfaces: {
+                url: string;
+                protocolBinding: string;
+                protocolVersion: string;
+            }[];
             version: string;
             documentationUrl?: string;
             capabilities: {
                 streaming: boolean;
                 pushNotifications: boolean;
-                stateTransitionHistory: boolean;
+                extendedAgentCard: boolean;
+                extensions: {
+                    uri: string;
+                    description: string;
+                    required: boolean;
+                    params: {
+                        mcp: {
+                            url: string;
+                            serverCardUrl: string;
+                        };
+                        tools: {
+                            toolName: string;
+                            description: string;
+                            inputSchema: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                }[];
             };
-            defaultInputModes: string[];
-            defaultOutputModes: string[];
             securitySchemes: {
                 [key: string]: {
-                    /** @enum {string} */
-                    type: "http";
-                    scheme: string;
-                    description?: string;
+                    httpAuthSecurityScheme: {
+                        scheme: string;
+                        description?: string;
+                    };
                 };
             };
-            security: {
-                [key: string]: string[];
+            securityRequirements?: {
+                schemes: {
+                    [key: string]: {
+                        list: string[];
+                    };
+                };
             }[];
+            defaultInputModes: string[];
+            defaultOutputModes: string[];
             skills: {
                 id: string;
                 name: string;

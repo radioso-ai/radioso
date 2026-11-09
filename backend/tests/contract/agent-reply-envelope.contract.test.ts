@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
 import { createMcpConverseRoutes } from "../../src/app/http/routes/mcpConverseRoutes.js";
@@ -45,6 +45,20 @@ const jsonResponseSchema = (document: ReturnType<typeof createOpenApiDocument>, 
     throw new Error(`No JSON 200 response schema registered for POST ${path}`);
   }
   return schema;
+};
+
+/** The routine run and request message a turn reports in-process; no HTTP response or OpenAPI schema may carry them. */
+const PROBE_EXECUTION_ID = "routine-execution-leak-probe";
+const PROBE_REQUEST_MESSAGE_ID = "request-message-leak-probe";
+
+/** Makes every turn report a routine run and its request message, as a routine turn does, without needing a routine. */
+const reportRoutineRunOnEveryTurn = (dependencies: ReturnType<typeof createAppWithMcpConverse>["dependencies"]) => {
+  const service = dependencies.assistantChatService;
+  const answer = service.answer.bind(service);
+  vi.spyOn(service, "answer").mockImplementation(async (input) => {
+    const response = await answer(input);
+    return response ? { ...response, routineExecutionId: PROBE_EXECUTION_ID, requestMessageId: PROBE_REQUEST_MESSAGE_ID } : response;
+  });
 };
 
 const createAppWithMcpConverse = () =>
@@ -211,5 +225,77 @@ describe("agent reply envelope contract (SC-004)", () => {
       answerCoverage: { availability: expect.any(String) },
       ownership: { state: "ai_owned", suppressed: false },
     });
+  });
+
+  it("keeps the internal turn facts (routine runs, the request and reply message ids) out of both agent operations' OpenAPI responses", () => {
+    const published = JSON.stringify([
+      schemas.AgentReplyEnvelopeCore,
+      schemas.RoutineTurnState,
+      schemas.RoutineInvocationReport,
+      schemas.AgentChannelChatTurnResponse,
+      resolve(schemas, jsonResponseSchema(document, "/api/v1/mcp/converse/ask")),
+    ]);
+    for (const turnFact of ["executionId", "ExecutionId", "requestMessageId", "replyMessageId"]) {
+      expect(published).not.toContain(turnFact);
+    }
+  });
+
+  it("never serialises the internal routine execution id on a REST agent chat turn", async () => {
+    const { app, dependencies } = createAppWithMcpConverse();
+    reportRoutineRunOnEveryTurn(dependencies);
+    const session = await issueTestSession(app);
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    const credential = await dependencies.accessGrantService.issueGrant({
+      agentId: agent.id,
+      workspaceId: session.workspaceId,
+      principalKind: "agent-api",
+      channel: "agent-api",
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const response = await request(app)
+      .post(`/api/v1/agents/${agent.id}/chat`)
+      .set("Authorization", `Bearer ${credential.token}`)
+      .send({ message: "Hello", stream: false });
+
+    expect(response.status).toBe(200);
+    expect(dependencies.assistantChatService.answer).toHaveBeenCalled();
+    expect(response.text).not.toContain(PROBE_EXECUTION_ID);
+    expect(response.text).not.toContain(PROBE_REQUEST_MESSAGE_ID);
+    expect(response.body).not.toHaveProperty("routineExecutionId");
+    expect(response.body).not.toHaveProperty("requestMessageId");
+  });
+
+  it("never serialises the internal routine execution id on an MCP converse ask", async () => {
+    const { app, dependencies } = createAppWithMcpConverse();
+    reportRoutineRunOnEveryTurn(dependencies);
+    const session = await issueTestSession(app);
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    const issued = await dependencies.accessGrantService.issueGrant({
+      agentId: agent.id,
+      workspaceId: session.workspaceId,
+      principalKind: "agent-api",
+      channel: "mcp-converse",
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const exchange = await request(app)
+      .post("/api/v1/mcp/converse/session")
+      .send({ launchToken: issued.token });
+
+    const ask = await request(app)
+      .post("/api/v1/mcp/converse/ask")
+      .set("Authorization", `Bearer ${exchange.body.sessionToken}`)
+      .send({ message: "Hello" });
+
+    expect(ask.status).toBe(200);
+    expect(dependencies.assistantChatService.answer).toHaveBeenCalled();
+    expect(ask.body).toMatchObject({ answer: { text: expect.any(String) } });
+    expect(ask.text).not.toContain(PROBE_EXECUTION_ID);
+    expect(ask.text).not.toContain(PROBE_REQUEST_MESSAGE_ID);
+    for (const turnFact of ["routineExecutionId", "activeRoutineExecutionId", "requestMessageId", "replyMessageId", "reply"]) {
+      expect(ask.body).not.toHaveProperty(turnFact);
+    }
   });
 });

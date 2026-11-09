@@ -31,6 +31,9 @@ const meta = {
   operators: {
     title: 'Operators',
   },
+  reference: {
+    title: 'Reference',
+  },
   'api-reference': {
     title: 'API Reference',
     href: '/api-reference',

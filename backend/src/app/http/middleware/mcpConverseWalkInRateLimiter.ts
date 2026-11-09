@@ -1,4 +1,4 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { AgentConverseWalkInObserver } from "../../../modules/settings/contracts/agentConverseSession.js";
@@ -50,7 +50,18 @@ interface McpConverseWalkInRateLimiterDependencies {
   auditService: RateLimitAuditPort;
 }
 
-const walkInPublicId = (body: unknown): string | null => {
+/**
+ * One credential-free door into an agent: how a request names the agent it opens a walk-in
+ * conversation on, and what the throttle audit event calls the door. Every door spends the same
+ * budgets, so MCP and A2A walk-ins count against one per-agent `walkInConversationsPerHour`.
+ */
+interface WalkInDoor {
+  /** The public id this request opens a walk-in conversation on; null when it opens none. */
+  walkInPublicId(req: Request): string | null;
+  surface: string;
+}
+
+const mcpWalkInPublicId = (body: unknown): string | null => {
   if (!body || typeof body !== "object") {
     return null;
   }
@@ -58,8 +69,13 @@ const walkInPublicId = (body: unknown): string | null => {
   return typeof candidate === "string" && candidate.length > 0 ? candidate : null;
 };
 
+const MCP_WALK_IN_DOOR: WalkInDoor = {
+  walkInPublicId: (req) => mcpWalkInPublicId(req.body),
+  surface: "mcp_converse_walk_in",
+};
+
 /**
- * Three budgets on the credential-free exchange (FR-032), spent in widening order.
+ * Three budgets on opening a credential-free conversation (FR-032), spent in widening order.
  *
  * The first is per calling source across every agent, as anonymous chat has. The second is
  * the operator's per-agent allowance **subdivided by source**: that subdivision is what
@@ -73,16 +89,18 @@ const walkInPublicId = (body: unknown): string | null => {
  * `Retry-After` and `RateLimit-*` headers come from the shared error handler; nothing here
  * writes a header.
  */
-export const createMcpConverseWalkInRateLimiter = (
+export const createWalkInConversationRateLimiter = (
   dependencies: McpConverseWalkInRateLimiterDependencies,
+  door: WalkInDoor,
   observer?: AgentConverseWalkInObserver,
 ): RequestHandler => async (req, res, next) => {
-  const publicId = walkInPublicId(req.body);
+  const publicId = door.walkInPublicId(req);
   if (!publicId) {
     next();
     return;
   }
 
+  // Published for the door's handler to read back with `readPreAuthSourceDigest`.
   const sourceDigest = publishPreAuthSourceDigest(res, readPreAuthSourceDigest(res) ?? resolvedPreAuthSourceDigest(
     req,
     res,
@@ -90,6 +108,8 @@ export const createMcpConverseWalkInRateLimiter = (
   ));
   (res.locals as typeof res.locals & McpConverseWalkInLocals).mcpConverseSourceDigest = sourceDigest;
 
+  // The scopes keep their MCP-era names: they are the budget keys every door spends, and
+  // renaming them would reset every live window.
   let throttledAgentId: string | null = null;
   let throttledWorkspaceId: string | null = null;
   let spentScope = "mcp.converse.walkin.source";
@@ -139,7 +159,7 @@ export const createMcpConverseWalkInRateLimiter = (
         eventStatus: statusCode === 429 ? "success" : "failure",
         metadata: {
           scope: spentScope,
-          surface: "mcp_converse_walk_in",
+          surface: door.surface,
           sourceDigest,
           ...(throttledAgentId ? { agentId: throttledAgentId } : {}),
         },
@@ -151,3 +171,9 @@ export const createMcpConverseWalkInRateLimiter = (
     next(error);
   }
 };
+
+/** The MCP exchange's door: `POST /session` with a `publicId` body opens a walk-in conversation. */
+export const createMcpConverseWalkInRateLimiter = (
+  dependencies: McpConverseWalkInRateLimiterDependencies,
+  observer?: AgentConverseWalkInObserver,
+): RequestHandler => createWalkInConversationRateLimiter(dependencies, MCP_WALK_IN_DOOR, observer);

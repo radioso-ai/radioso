@@ -255,6 +255,47 @@ describe("agent reply envelope (US1)", () => {
     expect(response.body.ownership).toEqual({ state: "ai_owned", suppressed: false });
   });
 
+  it("hands an in-process caller the routine run a turn saved, and keeps it out of both HTTP bodies", async () => {
+    const ctx = createApp(routineGateway);
+    const rest = await issueRestCredential(ctx);
+    await ctx.dependencies.routineDefinitionService.createDraft(rest.workspaceId, rest.agent.id, supportIntakeRoutineDraft());
+
+    const restTurn = await restChat(ctx, rest.agent.id, rest.token, { message: "I need support intake", stream: false });
+    const restRun = ctx.routineStateStore.states.get(restTurn.body.conversationId as string)?.executionId;
+
+    expect(restTurn.body.routine).toMatchObject({ status: "waiting_for_input" });
+    expect(restRun).toEqual(expect.any(String));
+    expect(restTurn.text).not.toContain(restRun);
+    expect(restTurn.body).not.toHaveProperty("routineExecutionId");
+
+    const mcpCtx = createApp(routineGateway);
+    const converse = await openConverseSession(mcpCtx);
+    await mcpCtx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, supportIntakeRoutineDraft());
+    const mcpTurn = await converseAsk(mcpCtx, converse.sessionToken, "I need support intake");
+    const mcpRuns = [...mcpCtx.routineStateStore.states.values()].map((state) => state.executionId);
+
+    expect(mcpTurn.body.routine).toMatchObject({ status: "waiting_for_input" });
+    expect(mcpRuns).toEqual([expect.any(String)]);
+    expect(mcpTurn.text).not.toContain(mcpRuns[0]);
+    expect(mcpTurn.body).not.toHaveProperty("routineExecutionId");
+
+    const services = buildMcpConverseServices(mcpCtx.dependencies);
+    const principal = await services.sessionService.validate(converse.sessionToken);
+    const inProcess = await services.converseService.askAgent(principal, { message: "Still deciding" });
+
+    expect(inProcess.reply.routine).toMatchObject({ status: "waiting_for_input" });
+    expect(inProcess.routineExecutionId).toBe(mcpRuns[0]);
+    expect(inProcess.activeRoutineExecutionId).toBe(mcpRuns[0]);
+    expect(JSON.stringify(inProcess.reply)).not.toContain(mcpRuns[0]);
+    // The turn's own stored messages are named in-process too, and never on the MCP body.
+    const stored = await mcpCtx.repositories.messageRepository.listByConversationId(converse.workspaceId, [...mcpCtx.routineStateStore.states.keys()][0] ?? "");
+    expect(stored.find((message) => message.id === inProcess.requestMessageId)?.content).toBe("Still deciding");
+    expect(stored.find((message) => message.id === inProcess.replyMessageId)?.role).toBe("assistant");
+    for (const turnFact of ["routineExecutionId", "activeRoutineExecutionId", "requestMessageId", "replyMessageId"]) {
+      expect(mcpTurn.body).not.toHaveProperty(turnFact);
+    }
+  });
+
   it("carries the same envelope core in the SSE done frame (AS-5)", async () => {
     const ctx = createApp(routineGateway);
     const rest = await issueRestCredential(ctx);

@@ -22,6 +22,10 @@ const SOURCE_BADGES: Record<string, ConversationSourceBadge> = {
     className: 'rounded-full bg-emerald-500/15 px-2.5 py-1 text-emerald-700 dark:text-emerald-300',
     label: 'MCP',
   },
+  a2a: {
+    className: 'rounded-full bg-indigo-500/15 px-2.5 py-1 text-indigo-700 dark:text-indigo-300',
+    label: 'A2A',
+  },
   voice: {
     className: 'rounded-full bg-rose-500/15 px-2.5 py-1 text-rose-700 dark:text-rose-300',
     label: 'Voice',
@@ -144,6 +148,8 @@ export const formatConversationLocation = (
       return { text: 'No page recorded', href: null, title: null }
     case 'mcp':
       return { text: 'No page recorded', href: null, title: null }
+    case 'a2a':
+      return { text: 'No page recorded', href: null, title: null }
     case 'voice':
       return { text: 'Voice session', href: null, title: null }
     case 'authenticated_chat':
@@ -175,6 +181,10 @@ export function formatConversationSource(
 
   if (sourceChannel === 'mcp') {
     return 'MCP'
+  }
+
+  if (sourceChannel === 'a2a') {
+    return 'A2A'
   }
 
   if (sourceChannel === 'voice') {

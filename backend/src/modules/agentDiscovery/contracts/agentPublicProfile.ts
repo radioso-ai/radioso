@@ -18,6 +18,8 @@ export interface AgentPublicProfile {
   description: string | null;
   /** Where a calling agent connects. Injected configuration, never derived from a request. */
   mcpEndpointUrl: string;
+  /** Where an A2A client sends JSON-RPC. Injected configuration, never derived from a request. */
+  a2aEndpointUrl: string;
   /** The connect guide; null when the deployment publishes no docs URL. */
   documentationUrl: string | null;
   /** True when the agent takes callers with no credential. */

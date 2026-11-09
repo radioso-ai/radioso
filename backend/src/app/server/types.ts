@@ -109,6 +109,7 @@ import type {
   ApplicationRouteMount,
 } from "../composition/applicationModule.js";
 import type {
+  ActiveRoutineRunReader,
   ContactHistoryProviderPort,
   ConversationIngestPort,
   PublicChatActionAdvertiserPort,
@@ -375,6 +376,8 @@ export interface AppDependencies {
   agentStarterPromptReader: AgentStarterPromptReader;
   /** Exposed-routine descriptors a calling agent lists and both agent-facing doors validate tool calls against. */
   agentToolCatalog: AgentToolCatalogPort;
+  /** The routine run each conversation has in flight, never an expired one; the converse doors read it after a turn. */
+  activeRoutineRuns: ActiveRoutineRunReader;
   /** Public id to published profile, for the unauthenticated discovery documents. */
   agentPublicProfile: AgentPublicProfilePort;
   chatHistoryService: ChatHistoryService;

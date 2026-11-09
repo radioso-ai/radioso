@@ -468,6 +468,57 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: a2a_message_receipts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.a2a_message_receipts (
+    conversation_id uuid NOT NULL,
+    message_digest text NOT NULL,
+    workspace_id uuid NOT NULL,
+    state text NOT NULL,
+    claim_token text,
+    result jsonb,
+    claimed_at timestamp with time zone NOT NULL,
+    completed_at timestamp with time zone,
+    expires_at timestamp with time zone,
+    CONSTRAINT a2a_message_receipts_check CHECK (((state = 'completed'::text) = ((result IS NOT NULL) AND (completed_at IS NOT NULL)))),
+    CONSTRAINT a2a_message_receipts_check1 CHECK (((state <> 'in_flight'::text) OR (claim_token IS NOT NULL))),
+    CONSTRAINT a2a_message_receipts_message_digest_check CHECK (((length(message_digest) >= 16) AND (length(message_digest) <= 128))),
+    CONSTRAINT a2a_message_receipts_state_check CHECK ((state = ANY (ARRAY['in_flight'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: a2a_tasks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.a2a_tasks (
+    id text NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    context_token text NOT NULL,
+    context_expires_at timestamp with time zone,
+    routine_execution_id text,
+    opening_message_id uuid,
+    caller_message_id uuid,
+    cursor text,
+    shown_through_message_id uuid,
+    status_message_id uuid,
+    artifact_message_id uuid,
+    envelope jsonb,
+    state text NOT NULL,
+    reason text,
+    human_stretch boolean DEFAULT false NOT NULL,
+    state_at timestamp with time zone NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT a2a_tasks_id_check CHECK (((length(id) >= 16) AND (length(id) <= 128))),
+    CONSTRAINT a2a_tasks_state_check CHECK ((state = ANY (ARRAY['submitted'::text, 'working'::text, 'input_required'::text, 'auth_required'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'rejected'::text]))),
+    CONSTRAINT a2a_tasks_version_check CHECK ((version >= 1))
+);
+
+
+--
 -- Name: abuse_control_entries; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4608,6 +4659,22 @@ ALTER TABLE ONLY public.vector_index_work ALTER COLUMN sequence SET DEFAULT next
 
 
 --
+-- Name: a2a_message_receipts a2a_message_receipts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.a2a_message_receipts
+    ADD CONSTRAINT a2a_message_receipts_pkey PRIMARY KEY (conversation_id, message_digest);
+
+
+--
+-- Name: a2a_tasks a2a_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.a2a_tasks
+    ADD CONSTRAINT a2a_tasks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: abuse_control_entries abuse_control_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6621,6 +6688,34 @@ ALTER TABLE ONLY public.workspaces
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: a2a_message_receipts_expires_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX a2a_message_receipts_expires_at_idx ON public.a2a_message_receipts USING btree (expires_at) WHERE (expires_at IS NOT NULL);
+
+
+--
+-- Name: a2a_tasks_context_expires_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX a2a_tasks_context_expires_at_idx ON public.a2a_tasks USING btree (context_expires_at) WHERE (context_expires_at IS NOT NULL);
+
+
+--
+-- Name: a2a_tasks_conversation_state_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX a2a_tasks_conversation_state_at_idx ON public.a2a_tasks USING btree (conversation_id, state_at DESC, id DESC);
+
+
+--
+-- Name: a2a_tasks_one_open_per_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX a2a_tasks_one_open_per_conversation ON public.a2a_tasks USING btree (conversation_id) WHERE (state = ANY (ARRAY['submitted'::text, 'working'::text, 'input_required'::text, 'auth_required'::text]));
 
 
 --
@@ -10317,6 +10412,38 @@ CREATE TRIGGER trg_workspace_webhook_destinations_block_agent_skill_reference BE
 --
 
 CREATE TRIGGER trg_workspace_webhook_destinations_block_published_reference BEFORE DELETE ON public.workspace_webhook_destinations FOR EACH ROW EXECUTE FUNCTION public.block_webhook_destination_delete_if_published_reference();
+
+
+--
+-- Name: a2a_message_receipts a2a_message_receipts_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.a2a_message_receipts
+    ADD CONSTRAINT a2a_message_receipts_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: a2a_message_receipts a2a_message_receipts_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.a2a_message_receipts
+    ADD CONSTRAINT a2a_message_receipts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: a2a_tasks a2a_tasks_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.a2a_tasks
+    ADD CONSTRAINT a2a_tasks_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: a2a_tasks a2a_tasks_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.a2a_tasks
+    ADD CONSTRAINT a2a_tasks_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

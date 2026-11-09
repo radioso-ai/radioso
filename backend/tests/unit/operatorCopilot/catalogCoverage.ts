@@ -278,6 +278,9 @@ export const internalRuntimeCoverageExclusions = {
   activityCallerKindFilter: permanent(
     "Permanent exclusion: caller kind is a read-only Activity view control. conversation_history_search already reads the underlying conversation data, including caller kind; Ray cannot operate a dashboard filter.",
   ),
+  a2aSourceMarker: permanent(
+    "Permanent exclusion: the A2A source marker in Activity and Inbox is a read-only label on conversations opened through the A2A endpoint. conversation_history_search already reads the underlying source channel and caller kind, and the walk-in setting that governs A2A access is the one propose_agent_setting already covers for MCP, so there is no new operator setting for a tool to carry.",
+  ),
   needsYouQueueFilters: permanent(
     "Permanent exclusion: Needs-you escalation, agent, and channel filters are read-only Inbox view controls. Ray's needs-attention reader already composes the same work queue; it cannot operate a dashboard filter.",
   ),

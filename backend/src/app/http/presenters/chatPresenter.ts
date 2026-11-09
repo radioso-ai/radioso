@@ -52,10 +52,16 @@ type ChatPayload = {
   invocation?: ChatRoutineInvocationReport;
   /** For the channel that delivers the reply in-process; no HTTP response carries it. */
   handoff?: ChatTurnHandoff;
+  /** For the doors that track routine runs and turn messages in-process; no HTTP response carries them. */
+  routineExecutionId?: string;
+  requestMessageId?: string;
 };
 
 type PresentedChatPayload =
-  Omit<ChatPayload, "route" | "activitySummary" | "activityTrace" | "turnTrace" | "routine" | "invocation" | "handoff"> & {
+  Omit<
+    ChatPayload,
+    "route" | "activitySummary" | "activityTrace" | "turnTrace" | "routine" | "invocation" | "handoff" | "routineExecutionId" | "requestMessageId"
+  > & {
     debug?: ChatDiagnosticPayload;
   };
 
@@ -91,6 +97,8 @@ export const presentChatPayload = (payload: ChatPayload, options: { includeDebug
     routine: _routine,
     invocation: _invocation,
     handoff: _handoff,
+    routineExecutionId: _routineExecutionId,
+    requestMessageId: _requestMessageId,
     ...publicPayload
   } = payload;
 

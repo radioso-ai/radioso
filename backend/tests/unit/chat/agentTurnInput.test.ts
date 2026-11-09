@@ -23,17 +23,18 @@ const catalogWith = (tools: AgentToolDescriptor[]) => {
 };
 
 const scope = { workspaceId: "ws-1", agentId: "agent-1", agentRevisionId: "rev-3" };
+const turn = { ...scope, channel: "mcp" as const };
 
 describe("resolveAgentTurnInput", () => {
   it("passes a plain message through without consulting the catalog", async () => {
     const { catalog, load } = catalogWith([startReturn]);
     const metrics = new MetricsRegistry();
 
-    const resolved = await resolveAgentTurnInput(catalog, { ...scope, body: { message: "  hello  " } }, { metrics });
+    const resolved = await resolveAgentTurnInput(catalog, { ...turn, body: { message: "  hello  " } }, { metrics });
 
     expect(resolved).toEqual({ kind: "message", message: "hello" });
     expect(load).not.toHaveBeenCalled();
-    expect(metrics.renderPrometheus()).toContain('radioso_converse_turns_total{input_kind="message"} 1');
+    expect(metrics.renderPrometheus()).toContain('radioso_converse_turns_total{channel="mcp",input_kind="message"} 1');
   });
 
   it("resolves a tool call against the release's catalog and returns the typed invocation with its descriptor", async () => {
@@ -42,7 +43,7 @@ describe("resolveAgentTurnInput", () => {
 
     const resolved = await resolveAgentTurnInput(
       catalog,
-      { ...scope, body: { routine: { toolName: "start_return", input: { orderId: "A-1001" } } } },
+      { ...turn, body: { routine: { toolName: "start_return", input: { orderId: "A-1001" } } } },
       { metrics },
     );
 
@@ -52,7 +53,21 @@ describe("resolveAgentTurnInput", () => {
       invocation: { toolName: "start_return", input: { orderId: "A-1001" } },
       descriptor: startReturn,
     });
-    expect(metrics.renderPrometheus()).toContain('radioso_converse_turns_total{input_kind="routine_invocation"} 1');
+    expect(metrics.renderPrometheus()).toContain('radioso_converse_turns_total{channel="mcp",input_kind="routine_invocation"} 1');
+  });
+
+  it("labels each turn with the door it came through", async () => {
+    const { catalog } = catalogWith([startReturn]);
+    const metrics = new MetricsRegistry();
+
+    for (const channel of ["mcp", "agent_api", "a2a"] as const) {
+      await resolveAgentTurnInput(catalog, { ...scope, channel, body: { message: "hello" } }, { metrics });
+    }
+
+    const rendered = metrics.renderPrometheus();
+    expect(rendered).toContain('radioso_converse_turns_total{channel="mcp",input_kind="message"} 1');
+    expect(rendered).toContain('radioso_converse_turns_total{channel="agent_api",input_kind="message"} 1');
+    expect(rendered).toContain('radioso_converse_turns_total{channel="a2a",input_kind="message"} 1');
   });
 
   it("refuses an unknown tool with 404 routine_tool_unknown", async () => {
@@ -61,7 +76,7 @@ describe("resolveAgentTurnInput", () => {
 
     await expect(resolveAgentTurnInput(
       catalog,
-      { ...scope, body: { routine: { toolName: "cancel_order", input: {} } } },
+      { ...turn, body: { routine: { toolName: "cancel_order", input: {} } } },
       { metrics },
     )).rejects.toMatchObject({ statusCode: 404, details: { code: "routine_tool_unknown", toolName: "cancel_order" } });
     expect(metrics.renderPrometheus()).toContain('radioso_routine_invocations_total{outcome="unknown_tool"} 1');
@@ -74,7 +89,7 @@ describe("resolveAgentTurnInput", () => {
 
     await expect(resolveAgentTurnInput(
       catalog,
-      { ...scope, body: { routine: { toolName: "start_return", input: { reason: 42, extra: "secret-value" } } } },
+      { ...turn, body: { routine: { toolName: "start_return", input: { reason: 42, extra: "secret-value" } } } },
       { metrics, logger },
     )).rejects.toMatchObject({
       statusCode: 400,
@@ -98,8 +113,8 @@ describe("resolveAgentTurnInput", () => {
   it("refuses a body that names neither a message nor a routine", async () => {
     const { catalog } = catalogWith([startReturn]);
 
-    await expect(resolveAgentTurnInput(catalog, { ...scope, body: {} })).rejects.toMatchObject({ statusCode: 400 });
-    await expect(resolveAgentTurnInput(catalog, { ...scope, body: { message: "   " } })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(resolveAgentTurnInput(catalog, { ...turn, body: {} })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(resolveAgentTurnInput(catalog, { ...turn, body: { message: "   " } })).rejects.toMatchObject({ statusCode: 400 });
   });
 });
 

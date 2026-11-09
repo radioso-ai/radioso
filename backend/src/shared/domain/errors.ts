@@ -7,6 +7,8 @@ interface AppErrorOptions {
    * misconfiguration or a rejected platform credential — those ARE faults.
    */
   isExpectedOutcome?: boolean;
+  /** The failure this AppError stands for, kept so error reporting can name it. */
+  cause?: unknown;
 }
 
 export class AppError extends Error {
@@ -16,7 +18,7 @@ export class AppError extends Error {
   readonly isExpectedOutcome: boolean;
 
   constructor(statusCode: number, code: string, message: string, details?: unknown, options?: AppErrorOptions) {
-    super(message);
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = "AppError";
     this.statusCode = statusCode;
     this.code = code;
@@ -103,5 +105,5 @@ export const tooManyRequests = (message: string, details?: unknown): AppError =>
 export const usageLimitExceeded = (message: string, details?: unknown): AppError =>
   new AppError(429, "usage_limit_exceeded", message, details);
 
-export const serviceUnavailable = (message: string, details?: unknown): AppError =>
-  new AppError(503, "service_unavailable", message, details);
+export const serviceUnavailable = (message: string, details?: unknown, options?: AppErrorOptions): AppError =>
+  new AppError(503, "service_unavailable", message, details, options);

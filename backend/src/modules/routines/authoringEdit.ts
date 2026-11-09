@@ -73,10 +73,13 @@ export const routineFieldPatchSchema = z.object({
     // Whether the field's value may leave the conversation (#1543). Only ever the operator's
     // choice: an edit sets it because they asked, never because of what the field is called.
     sensitivity: z.enum(routineSlotSensitivities).optional(),
-  }).strict().refine((slot) => slot.description !== undefined || slot.required !== undefined || slot.sensitivity !== undefined, {
+    // Whether the visitor may correct the value after the routine completes ("Editable after
+    // completion" in the routine editor). Only ever the operator's choice, like sensitivity.
+    mutable: z.boolean().optional(),
+  }).strict().refine((slot) => slot.description !== undefined || slot.required !== undefined || slot.sensitivity !== undefined || slot.mutable !== undefined, {
     // An entry that names a field and changes nothing about it would still produce a card to apply
     // and a write that only moves the routine's version.
-    message: "an information field edit must set a description, a required flag, or a sensitivity",
+    message: "an information field edit must set a description, a required flag, a sensitivity, or whether it is editable after completion",
   })).min(1), (slot) => slot.key, "information field").optional(),
   // How the routine is offered to a calling agent as a tool. The whole block is replaced: a
   // tool name is frozen once published, so an edit that changes it is refused at publish, not
@@ -192,6 +195,14 @@ const withSensitivity = (slot: DraftSlot, sensitivity: DraftSlot["sensitivity"])
   return sensitivity === "sensitive" ? { ...rest, sensitivity } : rest;
 };
 
+// Not editable is the absence of the flag, as a stored slot reads back, so a field switched back
+// projects exactly as it did before it was ever opened to corrections.
+const withMutable = (slot: DraftSlot, mutable: boolean | undefined): DraftSlot => {
+  if (mutable === undefined) return slot;
+  const { mutable: _previous, ...rest } = slot;
+  return mutable ? { ...rest, mutable } : rest;
+};
+
 export const applyRoutineFieldPatch = (
   routine: RoutineDefinition,
   rawPatch: RoutineFieldPatch,
@@ -215,11 +226,11 @@ export const applyRoutineFieldPatch = (
     slots: draft.slots?.map((slot) => {
       const edit = slotEdits.get(slot.key);
       if (!edit) return slot;
-      return withSensitivity({
+      return withMutable(withSensitivity({
         ...slot,
         ...(edit.description === undefined ? {} : { description: edit.description }),
         ...(edit.required === undefined ? {} : { required: edit.required }),
-      }, edit.sensitivity);
+      }, edit.sensitivity), edit.mutable);
     }),
     steps: draft.steps.map((step) => {
       const edit = stepEdits.get(step.stableStepId);
@@ -280,7 +291,7 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
     type: slot.type,
     required: slot.required,
     description: slot.description ?? null,
-    mutable: slot.mutable ?? null,
+    mutable: slot.mutable ?? false,
     sensitivity: slot.sensitivity ?? "normal",
     ordinal: slot.ordinal,
   }]))),

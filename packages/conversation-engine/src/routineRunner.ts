@@ -30,6 +30,7 @@ import type {
 } from "@radioso/conversation-contract";
 import { redactSensitiveValues } from "@radioso/conversation-contract";
 
+import { firingCompletionExport, terminalKindFor } from "./routineEnding.js";
 import { filledCollectedSlot, reaskFor, rejectedCollectedKeys } from "./routineReask.js";
 import {
   foldStepEntry,
@@ -361,14 +362,6 @@ const isCompilerSlotGate = (transition: RoutineTransition): boolean =>
 const isAuthoredLlmExit = (transition: RoutineTransition): boolean =>
   isLlmTransition(transition) && !isCompilerSlotGate(transition);
 
-const terminalKindFor = (step: RoutineStep): RoutineAuthoredTerminalKind | null => {
-  if (step.kind !== "terminal") {
-    return null;
-  }
-  const kind = step.metadata?.terminalKind;
-  return kind === "handoff" || kind === "action" || kind === "complete" ? kind : "complete";
-};
-
 /**
  * Whether the author routed some path of this routine to a hand-off end — people take its
  * conversations over, so a visitor stuck on a step can go to one (#1384). A routine no exit
@@ -425,13 +418,8 @@ const completionExportActionFor = (
   terminalKind: RoutineAuthoredTerminalKind | null,
   variables: Record<string, unknown>,
 ): RoutineActionRequest | null => {
-  const completionExport = routine.completionExport;
-  if (
-    !completionExport?.enabled ||
-    !completionExport.destinationRef ||
-    (terminalKind !== "complete" && terminalKind !== "handoff") ||
-    !completionExport.triggerKinds.includes(terminalKind)
-  ) {
+  const completionExport = firingCompletionExport(routine, terminalKind);
+  if (!completionExport) {
     return null;
   }
 

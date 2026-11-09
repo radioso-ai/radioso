@@ -403,10 +403,7 @@ export function WorkspaceAssistantChannelsTab({
       await accountApi.deleteOrganization()
       setDeleteOrgDialogOpen(false)
       setDeleteOrgConfirmName('')
-      // The backend already cleared the session cookie; drop the local session
-      // and land on the root route, which renders sign-in when signed out.
-      logout()
-      router.replace('/')
+      await logout()
     } catch (error) {
       setDeleteOrgError(getApiErrorMessage(error, 'Failed to delete the organization.'))
       setIsDeletingOrg(false)

@@ -5,6 +5,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { requireSession, sessionCredentialGeneration, type SessionDependencies } from "../middleware/requireSession.js";
 import { requireAccountPermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
+import { serializeClearedSessionCookie } from "../../../modules/auth/domain/authPrimitives.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 
 export const createAccountInvitationSchema = z.object({
@@ -211,10 +212,7 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
       try {
         const { accountId, userId } = res.locals as { accountId: string; userId: string };
         await dependencies.authService.deleteOrganization({ accountId, userId });
-        res.setHeader(
-          "Set-Cookie",
-          `${dependencies.env.SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
-        );
+        res.setHeader("Set-Cookie", serializeClearedSessionCookie(dependencies.env));
         res.status(204).end();
       } catch (error) {
         next(error);

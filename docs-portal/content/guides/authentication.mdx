@@ -1,7 +1,7 @@
 ---
 title: "Authentication"
 description: "Session, workspace automation, Operator MCP, agent chat, public-chat, and Enterprise embed access patterns in Radioso."
-last_updated: 2026-10-25
+last_updated: 2026-11-09
 ---
 
 import { Steps } from 'nextra/components'
@@ -44,6 +44,8 @@ The documented development entrypoints enable `AUTH_AUTO_VERIFY_EMAIL`, which pe
 The backend also sets the session cookie on successful login, invitation acceptance, and password reset confirmation. Invitation acceptance has two entry points — one that takes a password and one that takes the session of an already signed-in invitee — and [Accept an invitation](/api/accounts-and-users#accept-an-invitation) covers which to call. Normal password sign-in requires a verified email address.
 
 Sign-in paths that redirect the browser hand back a cookie and no body. `GET /api/v1/auth/session` reports who the current cookie belongs to — the user's id and email, the account it lands on, and that account's workspace — so a client can recover the signed-in identity without asking for a credential. It answers `401` when there is no live session.
+
+Signing out calls `POST /api/v1/auth/logout`, which revokes the session server-side and clears the cookie. The session is dead for anyone who replays the cookie value, not only for the browser that signed out. See [Sign out](/api/auth-and-sessions#sign-out).
 
 ### Provider sign-in
 

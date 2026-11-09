@@ -2683,6 +2683,91 @@ describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)",
     }));
   });
 
+  describe("a reply the selector could not read (#1715)", () => {
+    const unreadable = { outcome: "unreadable" as const, returnedSlotKeys: [], unreadableReason: "no_json_object" as const, retried: true as const };
+
+    it("tells the renderer the re-ask follows a reply that could not be read", async () => {
+      const renderer = freshRenderer();
+      const runner = new DefaultRoutineRunner(
+        [bookingRoutine],
+        { select: vi.fn(async () => ({ nextStepId: "program", variables: {}, selection: unreadable })) },
+        renderer,
+      );
+
+      await runner.resume({ turn, state: state(["program"]) });
+
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+        step: expect.objectContaining({ id: "program" }),
+        reask: { missingSlots: [bookingRoutine.slots![0]], replyUnreadable: true },
+      }));
+    });
+
+    it("signals a re-ask after an unreadable reply even when the step already holds its slots", async () => {
+      const withCancel: Routine = {
+        ...bookingRoutine,
+        transitions: [...bookingRoutine.transitions, { from: "dates", to: "done", condition: "The user wants to stop." }],
+      };
+      const renderer = freshRenderer();
+      const runner = new DefaultRoutineRunner(
+        [withCancel],
+        { select: vi.fn(async () => ({ nextStepId: "dates", variables: {}, selection: unreadable })) },
+        renderer,
+      );
+
+      await runner.resume({ turn, state: state(["program", "dates"], { program: "Retreat", arrival: "2026-11-11", departure: "2026-11-14" }) });
+
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+        reask: { missingSlots: [], replyUnreadable: true },
+      }));
+    });
+
+    it("re-asks as usual when the selector's slot-only reading read the reply", async () => {
+      const renderer = freshRenderer();
+      const runner = new DefaultRoutineRunner(
+        [bookingRoutine],
+        {
+          select: vi.fn(async () => ({
+            nextStepId: "dates",
+            variables: { arrival: "2026-11-11" },
+            selection: { ...unreadable, returnedSlotKeys: ["arrival"], slotFallback: "read" as const },
+          })),
+        },
+        renderer,
+      );
+
+      await runner.resume({ turn, state: state(["program", "dates"], { program: "Retreat" }) });
+
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+        reask: { missingSlots: [bookingRoutine.slots![2]] },
+      }));
+    });
+
+    it("moves a compiler slot gate on when the slot-only reading filled every slot the decision could not read", async () => {
+      const gated: Routine = {
+        ...bookingRoutine,
+        transitions: bookingRoutine.transitions.map((transition) => ({ ...transition, origin: "compiler_slot_gate" as const })),
+      };
+      const renderer = freshRenderer();
+      const runner = new DefaultRoutineRunner(
+        [gated],
+        {
+          select: vi.fn(async () => ({
+            nextStepId: "dates",
+            variables: { arrival: "2026-11-11", departure: "2026-11-14" },
+            selection: { ...unreadable, returnedSlotKeys: ["arrival", "departure"], slotFallback: "read" as const },
+          })),
+        },
+        renderer,
+      );
+
+      const result = await runner.resume({ turn, state: state(["program", "dates"], { program: "Retreat" }) });
+
+      expect(result.nextState).toBeNull();
+      expect(result.trace?.terminalKind).toBe("complete");
+      expect(vi.mocked(renderer.render).mock.calls[0][0].step.id).toBe("done");
+    });
+  });
+
   it("lists only the step's slots that this turn left unfilled", async () => {
     const renderer = freshRenderer();
     const runner = new DefaultRoutineRunner(

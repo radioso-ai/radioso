@@ -51,6 +51,20 @@ export const isKnownModelForProvider = (provider: LlmProviderName, model: string
   return knownModelsByProvider[provider].includes(model);
 };
 
+const catalogModelIds: ReadonlySet<string> = new Set(Object.values(knownModelsByProvider).flat());
+
+/**
+ * A model id as a metric label: a catalog id as it is, `other` for any id outside the catalog
+ * (an openai-compatible endpoint serves free-form ids, which would make the label unbounded),
+ * and `unreported` when the caller does not know the model.
+ */
+export const metricModelLabel = (model: string | undefined): string => {
+  if (model === undefined) {
+    return "unreported";
+  }
+  return catalogModelIds.has(model) ? model : "other";
+};
+
 const GPT_5_MODEL_PATTERN = /^gpt-5(?:(?:\.(\d+))|[.-]|$)/i;
 const MODERN_GPT_5_MINOR = 4;
 

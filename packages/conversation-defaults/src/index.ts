@@ -133,8 +133,9 @@ export {
 export {
   DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
   RoutineNextStepSelector,
-  type RoutineUnreadableEvent,
-  type RoutineUnreadableObserver,
+  type RoutineSelectorCall,
+  type RoutineSelectorCompletionEvent,
+  type RoutineSelectorCompletionObserver,
   type RoutineUnreadableReason,
 } from "./routineNextStepSelector.js";
 export {

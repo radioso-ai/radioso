@@ -30,6 +30,7 @@ import type {
 } from "@radioso/conversation-contract";
 import { redactSensitiveValues } from "@radioso/conversation-contract";
 
+import { reaskFor } from "./routineReask.js";
 import {
   foldStepEntry,
   runSlotKeyFields,
@@ -234,28 +235,6 @@ const hasTypedSlotSchema = (routine: Routine): boolean =>
 
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
-
-/**
- * What a re-rendered step still lacks: its required collected slots that are unfilled, and
- * any collected slot whose value this turn was rejected for not fitting its type, as
- * declared schema — never values. `null` when the step collects required slots, holds them
- * all, and rejected nothing: it stayed for another reason, and telling the renderer the reply
- * "fell short" made it ask again for values it already had. An optional slot counts as
- * missing only when its value was rejected.
- */
-const reaskFor = (
-  routine: Routine,
-  step: RoutineStep,
-  variables: Record<string, unknown>,
-  rejectedKeys: ReadonlySet<string>,
-): RoutineStepReask | null => {
-  const collected = new Set(collectedSlotsForStep(step));
-  const required = requiredCollectedSlots(routine, step);
-  const missingSlots = (routine.slots ?? []).filter((slot) =>
-    collected.has(slot.key) && (rejectedKeys.has(slot.key) || (slot.required && !hasVariable(variables, slot.key))),
-  );
-  return required.length > 0 && missingSlots.length === 0 ? null : { missingSlots };
-};
 
 /**
  * Consecutive no-progress re-asks of one step before the reply is told to ask differently
@@ -1382,11 +1361,11 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       : baseSteering;
 
     // Rendering the chat step the user was answering means their reply did not satisfy
-    // it. The renderer must know, or it reads a bare "yes" to a confirmation question as
-    // the flow being done (#1369). On the activation turn the step is asked for the first time.
+    // it, or could not be read. The renderer must know, or it reads a bare "yes" to a confirmation
+    // question as the flow being done (#1369). On the activation turn the step is asked for the first time.
     const missing =
       !input.activationTurn && step.kind === "chat" && step.id === currentStepId
-        ? reaskFor(routine, step, variables, rejectedCollectedKeys(step, resumeStepRejected))
+        ? reaskFor(routine, step, variables, rejectedCollectedKeys(step, resumeStepRejected), startEntry?.selection)
         : null;
     // Past the re-ask limit the renderer is always told, even when the step holds its slots.
     const reask: RoutineStepReask | null = reaskExhausted

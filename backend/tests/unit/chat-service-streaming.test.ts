@@ -5008,6 +5008,7 @@ describe("chat service streaming", () => {
       agentId: "workspace-1",
       agentName: "",
       assistantMessageId: expect.any(String),
+      requestMessageId: expect.any(String),
       route: {
         type: "retrieval",
         reason: "evidence_required",

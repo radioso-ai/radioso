@@ -27,6 +27,40 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface A2aMessageReceipts {
+  claim_token: string | null;
+  claimed_at: Timestamp;
+  completed_at: Timestamp | null;
+  conversation_id: string;
+  expires_at: Timestamp | null;
+  message_digest: string;
+  result: Json | null;
+  state: string;
+  workspace_id: string;
+}
+
+export interface A2aTasks {
+  artifact_message_id: string | null;
+  caller_message_id: string | null;
+  context_expires_at: Timestamp | null;
+  context_token: string;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  cursor: string | null;
+  envelope: Json | null;
+  human_stretch: Generated<boolean>;
+  id: string;
+  opening_message_id: string | null;
+  reason: string | null;
+  routine_execution_id: string | null;
+  shown_through_message_id: string | null;
+  state: string;
+  state_at: Timestamp;
+  status_message_id: string | null;
+  version: Generated<number>;
+  workspace_id: string;
+}
+
 export interface AbuseControlEntries {
   attempt_count: Generated<number>;
   blocked_until: Timestamp | null;
@@ -2163,6 +2197,8 @@ export interface WorkspaceWebhookDestinations {
 }
 
 export interface DB {
+  a2a_message_receipts: A2aMessageReceipts;
+  a2a_tasks: A2aTasks;
   abuse_control_entries: AbuseControlEntries;
   account_invitations: AccountInvitations;
   account_memberships: AccountMemberships;

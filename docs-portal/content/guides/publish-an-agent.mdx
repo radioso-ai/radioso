@@ -1,7 +1,7 @@
 ---
 title: "Publish and open an agent"
 description: "Give an agent a public id, publish its agent card, MCP server card, and catalog entry, and let a visiting agent connect with no credential at all."
-last_updated: 2026-09-22
+last_updated: 2026-11-09
 ---
 
 # Publish and open an agent
@@ -34,24 +34,90 @@ https://api.radioso.ai/.well-known/mcp/server-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.jso
 https://api.radioso.ai/.well-known/ai-catalog/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json
 ```
 
-The first is an [A2A Agent Card](https://a2a-protocol.org): the agent's name, the operator's description, the MCP endpoint to connect to, how to authenticate, and one entry in `skills[]` per exposed routine, keyed by the tool name a caller invokes.
+The first is an [A2A Agent Card](https://a2a-protocol.org), version 1.0: the agent's name, the operator's description, the A2A endpoint a client sends messages to, how to authenticate, and the skills the agent offers. The first skill is always `ask_agent`, a plain message to the agent. One more follows for each exposed routine, keyed by the tool name a caller invokes. Every skill's `tags` repeat its `id`.
 
 ```json
 {
-  "protocolVersion": "0.3.0",
   "name": "Valmora support",
   "description": "Answers questions about bookings, rooms, and retreats.",
-  "url": "https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd",
-  "preferredTransport": "MCP",
+  "supportedInterfaces": [
+    {
+      "url": "https://api.radioso.ai/a2a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
   "version": "7",
   "documentationUrl": "https://docs.radioso.ai/guides/agent-converse",
-  "securitySchemes": { "bearer": { "type": "http", "scheme": "bearer" } },
-  "security": [{}, { "bearer": [] }],
-  "skills": [{ "id": "book_table", "name": "book_table", "description": "Book a table for a date and party size.", "tags": [] }]
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false,
+    "extensions": [
+      {
+        "uri": "https://docs.radioso.ai/reference/a2a-converse-extension/v1",
+        "description": "Radioso conversation extension. params.mcp names this agent's MCP endpoint and server card; params.tools lists each exposed routine with the JSON Schema of its input.",
+        "required": false,
+        "params": {
+          "mcp": {
+            "url": "https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd",
+            "serverCardUrl": "https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd/server-card"
+          },
+          "tools": [
+            {
+              "toolName": "book_table",
+              "description": "Book a table for a date and party size.",
+              "inputSchema": {
+                "type": "object",
+                "properties": { "date": { "type": "string" }, "partySize": { "type": "integer" } },
+                "required": ["date", "partySize"]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "securitySchemes": {
+    "bearer": {
+      "httpAuthSecurityScheme": {
+        "scheme": "bearer",
+        "description": "An access grant token an operator mints for this agent."
+      }
+    }
+  },
+  "skills": [
+    {
+      "id": "ask_agent",
+      "name": "Valmora support",
+      "description": "Answers questions about bookings, rooms, and retreats.",
+      "tags": ["ask_agent"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["text/plain"]
+    },
+    {
+      "id": "book_table",
+      "name": "book_table",
+      "description": "Book a table for a date and party size.",
+      "tags": ["book_table"],
+      "inputModes": ["text/plain"],
+      "outputModes": ["text/plain"]
+    }
+  ]
 }
 ```
 
-`security` is where a caller reads what it needs to bring. The empty requirement `{}` is there when credential-free access is on, and it means exactly that: connect with no `Authorization` header. With credential-free access off the list is `[{ "bearer": [] }]` alone, and the card is still worth publishing — "this agent exists, here is its endpoint, ask the operator for a credential" is useful to the agent reading it.
+`supportedInterfaces` holds one entry: the JSON-RPC endpoint at `/a2a/{publicId}`, speaking protocol 1.0. [Connect an A2A client](/guides/a2a-converse) walks through sending it a message. `capabilities` says what the endpoint does not do: it does not stream and does not push notifications. The Radioso extension under `capabilities.extensions` points an MCP-only client at the agent's MCP endpoint and carries each routine's input schema, which an A2A skill has no field for; the [extension reference](/reference/a2a-converse-extension/v1) lists its parameters.
+
+`securitySchemes` declares the access grant as an HTTP bearer scheme. `securityRequirements` is where a caller reads what it must bring. With credential-free access off, the card carries a requirement for `bearer`, and the card is still worth publishing: "this agent exists, here is its endpoint, ask the operator for a credential" is useful to the agent reading it.
+
+```json
+"securityRequirements": [{ "schemes": { "bearer": { "list": [] } } }]
+```
+
+With credential-free access on, `securityRequirements` is absent: a caller connects with no `Authorization` header, and a caller that holds a grant can still send it as a bearer.
 
 The second document is the same agent in MCP's server shape, with the endpoint under `remotes`. An MCP client that already has the endpoint URL finds it one segment away, at `https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd/server-card`, without knowing anything about Radioso's hostnames. The third is the catalog entry: the agent, its endpoint, how to authenticate, and its tools in one object, for an index that lists several agents.
 
@@ -102,7 +168,7 @@ The `<link>` appears once the agent publishes a card. The `/.well-known` paths a
 https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd
 ```
 
-That is the `url` the agent card already publishes. A client points at it, sends no `Authorization` header, and gets the same session a credential buys: `ask_agent`, the documentation tools, and one tool per exposed routine.
+The agent card carries this URL as `params.mcp.url` in its Radioso extension. A client points at it, sends no `Authorization` header, and gets the same session a credential buys: `ask_agent`, the documentation tools, and one tool per exposed routine.
 
 ```json
 {
@@ -128,7 +194,7 @@ Rotating the id, or switching walk-in access off, refuses the **next** request o
 
 ### The budget
 
-Walk-in traffic is spent against three hourly budgets before anything about the agent is resolved:
+Walk-in traffic, over MCP or A2A, is spent against three hourly budgets before anything about the agent is resolved. The two protocols draw on the same budgets:
 
 | Budget | Limit |
 |---|---|
@@ -161,5 +227,7 @@ The turn becomes a verified turn: `verifiedCustomerId` is set on the conversatio
 ## Read next
 
 - [Connect a calling agent](/guides/agent-converse) — `ask_agent`, the reply envelope, routines as typed tools, and coming back after a handoff.
+- [Connect an A2A client](/guides/a2a-converse) — send a message to the agent's A2A endpoint, keep the `contextId`, and follow a task.
+- [A2A converse extension](/reference/a2a-converse-extension/v1) — the card parameters and reply metadata an A2A client reads.
 - [MCP server](/guides/mcp-server) — issue an agent credential and run the standalone server.
 - [WordPress connector](/operators/wordpress-connector) — answer the `.well-known` paths from your own WordPress site.

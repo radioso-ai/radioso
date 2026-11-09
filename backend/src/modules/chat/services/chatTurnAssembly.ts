@@ -401,7 +401,7 @@ export class ChatTurnAssembly {
     }
     const described = reporter.describe({ state: suspendedRoutine, awaitingDecision: true });
     if (described) {
-      session.suspendedRoutine = described;
+      session.suspendedRoutine = { routine: described, executionId: suspendedRoutine.executionId };
     }
     const invocationReport = reporter.describeInvocation();
     if (invocationReport) {
@@ -516,7 +516,7 @@ export class ChatTurnAssembly {
       // turn answers normally and the envelope still names the completed routine.
       const declinedRoutine = routineTurnPorts.reporter?.describeDeclined() ?? null;
       if (declinedRoutine) {
-        session.declinedRoutine = declinedRoutine;
+        session.declinedRoutine = { routine: declinedRoutine };
       }
       return null;
     }

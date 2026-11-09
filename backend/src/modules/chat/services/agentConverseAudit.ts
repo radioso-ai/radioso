@@ -1,8 +1,18 @@
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { AccessGrant } from "../../accessGrants/public.js";
 import type { ConverseChatSessionPayload } from "../../settings/contracts/publicChatSession.js";
+import type { AgentConverseChannel } from "../../settings/contracts/agentConverseSession.js";
 
 type GrantAuditFields = Pick<AccessGrant, "id" | "workspaceId" | "agentId" | "principalKind" | "channel" | "role">;
+
+/**
+ * One turn event type per door, so the security feed says which one a turn came through. MCP's
+ * predates the A2A door and keeps its name; anything filtering on it sees no change.
+ */
+const ASK_EVENT_TYPES: Record<AgentConverseChannel, string> = {
+  mcp: "mcp_converse.ask",
+  a2a: "a2a.ask",
+};
 
 const grantMetadata = (grant?: GrantAuditFields | null) => ({
   grantId: grant?.id ?? null,
@@ -59,6 +69,7 @@ export class AgentConverseAudit {
   async recordAskOutcome(input: {
     workspaceId: string;
     agentId: string;
+    sourceChannel: AgentConverseChannel;
     grantId: string | null;
     publicSessionId: string;
     status: "success" | "failure";
@@ -66,9 +77,10 @@ export class AgentConverseAudit {
   }) {
     await this.auditService.record({
       workspaceId: input.workspaceId,
-      eventType: "mcp_converse.ask",
+      eventType: ASK_EVENT_TYPES[input.sourceChannel],
       eventStatus: input.status,
       metadata: {
+        sourceChannel: input.sourceChannel,
         agentId: input.agentId,
         grantId: input.grantId,
         publicSessionId: input.publicSessionId,

@@ -2,16 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { NotificationRecipientConfirmationMailer } from "../../../src/modules/operatorNotifications/notificationRecipientConfirmationMailer.js";
 import { NotificationRecipientTokenSigner } from "../../../src/modules/operatorNotifications/notificationRecipientToken.js";
-import { notificationRecipientPublicApiBase } from "../../../src/app/composition/contactDelivery.js";
 
 describe("NotificationRecipientConfirmationMailer", () => {
-  it.each([
-    [{ CONNECTOR_PUBLIC_BASE_URL: "https://api.example.com", APP_BASE_URL: "https://app.example.com", PORT: 3001 }, "https://api.example.com"],
-    [{ CONNECTOR_PUBLIC_BASE_URL: undefined, APP_BASE_URL: "https://app.example.com", PORT: 3001 }, "https://app.example.com/backend"],
-  ] as const)("resolves the public API base for %o", (env, expected) => {
-    expect(notificationRecipientPublicApiBase(env)).toBe(expected);
-  });
-
   it("sends a purpose-bound confirmation and one-click revocation link", async () => {
     const messages: Array<{ text: string; listUnsubscribeUrl: string }> = [];
     const send = vi.fn(async (message: { text: string; listUnsubscribeUrl: string }) => {

@@ -10,6 +10,14 @@ import type { AgentConverseOrigin } from "../contracts/agentConverseSession.js";
  * extend a session indefinitely by staying busy (FR-031a).
  */
 const PUBLIC_CHAT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * When a converse session, or a walk-in opening a door keeps without a session token, issued now
+ * stops working: the same absolute lifetime either way, so neither door outlives the other.
+ */
+export const converseSessionExpiresAt = (now: number = Date.now()): string =>
+  new Date(now + PUBLIC_CHAT_SESSION_TTL_MS).toISOString();
+
 const LAUNCH_TOKEN_BINDING_KEY_LABEL = "radioso/public-chat-session-launch-token/v1";
 const PUBLIC_CHAT_RESUME_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const RESUME_TOKEN_SIGNING_KEY_LABEL = "radioso/public-chat-session-resume/v1";
@@ -153,7 +161,7 @@ export const issueConverseChatSession = (
     ...input,
     sourceChannel: "mcp",
     sourceOrigin: null,
-    expiresAt: new Date(Date.now() + PUBLIC_CHAT_SESSION_TTL_MS).toISOString(),
+    expiresAt: converseSessionExpiresAt(),
   };
 
   const encodedPayload = toBase64Url(JSON.stringify(payload));

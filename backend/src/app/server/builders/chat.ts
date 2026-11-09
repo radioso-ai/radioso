@@ -83,7 +83,6 @@ import {
   planAwareRoutineReentryGate,
   planAwareRoutineSlotCorrection,
   AgentConverseAudit,
-  AgentConverseService,
   CONTACT_SEND_ACTION_TYPE,
   type PreparedSession,
 } from "../../../modules/chat/composition.js";
@@ -162,6 +161,7 @@ import {
   createAgentConverseWalkInIssuer,
   createAgentConverseWalkInObserver,
 } from "../../composition/agentConverseOrigins.js";
+import { createAgentConverseService } from "../../composition/agentConverse.js";
 import { createConverseVisitorIdentityVerifier } from "../../composition/converseVisitorIdentity.js";
 import { createConversationUpdatesComposition } from "../../composition/conversationUpdates.js";
 
@@ -188,15 +188,9 @@ export const buildMcpConverseServices = (
     publicChatSessionSecret: dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
     audit,
   });
-  const converseService = new AgentConverseService({
-    assistantChatService: dependencies.assistantChatService,
-    conversationRepository: dependencies.conversationRepository,
-    agentToolCatalog: dependencies.agentToolCatalog,
+  const converseService = createAgentConverseService(dependencies, {
     audit,
     visitorIdentity: createConverseVisitorIdentityVerifier(dependencies),
-    publisher: dependencies.workspaceInvalidationPublisher,
-    metrics: dependencies.metricsRegistry,
-    logger: dependencies.logger,
   });
   const conversationUpdates = createConversationUpdatesComposition(dependencies);
   return {

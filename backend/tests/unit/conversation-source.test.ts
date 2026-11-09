@@ -52,10 +52,16 @@ describe("conversationSource", () => {
   });
 
   it("reads the machine-driven channels as agent callers", () => {
-    expect(AGENT_SOURCE_CHANNELS).toEqual(["mcp", "agent_api"]);
+    expect(AGENT_SOURCE_CHANNELS).toEqual(["mcp", "agent_api", "a2a"]);
     for (const channel of AGENT_SOURCE_CHANNELS) {
       expect(callerKindForSourceChannel(channel)).toBe("agent");
     }
+  });
+
+  it("reads an A2A caller as an agent, exactly as an MCP caller", () => {
+    expect(callerKindForSourceChannel("a2a")).toBe(callerKindForSourceChannel("mcp"));
+    expect(callerKindForSourceChannel("a2a")).toBe("agent");
+    expect(isOperatorTestSourceChannel("a2a")).toBe(false);
   });
 
   it("reads every channel a person speaks through as a human caller", () => {
@@ -68,7 +74,7 @@ describe("conversationSource", () => {
     // An email sender is a person writing from a mail client; automated mail is dropped by the
     // inbound classification before any turn, so it never needs an agent caller kind.
     expect(callerKindForSourceChannel("email")).toBe("human");
-    expect(AGENT_SOURCE_CHANNELS).toEqual(["mcp", "agent_api"]);
+    expect(AGENT_SOURCE_CHANNELS).toEqual(["mcp", "agent_api", "a2a"]);
     expect(AGENT_SOURCE_CHANNELS).not.toContain("email");
   });
 

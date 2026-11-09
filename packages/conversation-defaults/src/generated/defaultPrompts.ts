@@ -186,43 +186,55 @@ Rules:
 - If no directive applies, return an empty array: []
 - Return only the JSON array, with no other text.`;
 
-export const DEFAULT_ROUTINE_SLOT_CORRECTION_DETECT_PROMPT = `You decide whether the user's latest message changes a value they already gave during a
-task that has finished, and if so, which value and the new content.
+export const DEFAULT_ROUTINE_SLOT_CORRECTION_DETECT_PROMPT = `You decide what the user's latest message means for a task that has already finished: does it
+change a value the task holds, or ask for something new?
 
-You are given the list of changeable fields. Each has a key, a type, and a description.
+Today is {{today}} ({{time_zone}}).
+
+What the finished task holds and can change. Each value has a key, a type, sometimes a
+description, and what it holds now:
+{{slots}}
 
 Return only JSON, with no extra text:
-{"slotKey": "<one of the field keys, or null>", "value": "<the new value, or null>"}
+{"intent": "other", "slotKey": null, "value": null}
+
+The intent must be one of:
+
+- "correction": the latest message asks to change one of the values above to a new value the
+  user states. Return that value's key and the new value.
+- "new_request": the latest message asks for something new, such as another booking, order, or
+  request, even one that names dates, amounts, or details like the ones above. Asking for the
+  same kind of thing with different details is a new request unless the user clearly says to
+  change what they gave before.
+- "other": a question, thanks, small talk, or anything else. Choose it when unsure.
 
 Rules:
 
-- Return a slotKey ONLY when the latest user message clearly asks to change the value of
-  one of the changeable fields below. If the message is a new request, a question, small
-  talk, or anything else, return {"slotKey": null, "value": null}.
 - Judge by meaning, in any language. Do not rely on specific trigger words.
-- Choose at most one field — the one the user is correcting.
-- Return the new value the user stated for that field. Do NOT judge whether the value is
-  valid or well-formed — that is checked separately. If the user clearly gives a new value,
-  return it even if it looks incomplete or wrong (e.g. an email missing the domain).
+- Return "correction" only when the user means a value the task holds and states its new
+  content. If they want to change something but give no new value, return "other".
+- Choose at most one key. For "new_request" and "other", return null for slotKey and value.
+- Return the new value the user stated. Do NOT judge whether it is valid or well-formed; that is
+  checked separately. If the user clearly gives a new value, return it even if it looks
+  incomplete or wrong (e.g. an email missing the domain).
 - Normalize only the shape, keeping the user's content:
   - boolean → exactly "true" or "false"
-  - date → ISO calendar format YYYY-MM-DD when the date is unambiguous
+  - date → YYYY-MM-DD; a date given without a year is its next occurrence on or after today
   - number → digits only
-  - email or text → the literal value the user gave
-- Never invent a value the user did not mention at all. If they want to change a field but
-  did not state any new value, return {"slotKey": null, "value": null}.
-
-Changeable fields:
-{{slots}}`;
+  - email or text → the literal value the user gave`;
 
 export const DEFAULT_ROUTINE_SLOT_CORRECTION_CONFIRM_PROMPT = `You are the assistant. The user just corrected one piece of information they had given
-earlier, and it has now been updated. Write one short, friendly confirmation message.
+earlier, and your record of it now holds the new value. Write one short, friendly confirmation
+message.
 
 Reply in the same language the user is writing in.
 
 Speak naturally, as the assistant talking to a person. Do not expose internal mechanics:
 do not say "slot", "field", "routine", "variable", or "state". Just confirm the change in
 plain language, referring to what was updated.
+
+Confirm only that you noted the new value. Do not say that anything was booked, sent,
+confirmed, or passed on to anyone, and do not promise that anyone will act on it.
 
 What was updated: {{slotKey}}
 The new value: {{value}}`;

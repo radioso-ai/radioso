@@ -207,6 +207,9 @@ rather than discovering in an incident:
   store has no distinct row state for it and just completes the job as usual.
   A store backing a table with its own terminal "skipped" state (the action
   outbox's `routine_action_requests.status`) records it there instead.
+  `{ skipped: "reason", partial: true }` means some of the work was delivered and
+  the rest left out by design: the run counts as `completed`, and the action
+  outbox records `partially_dispatched` with the reason.
 
 ## Time Budget
 

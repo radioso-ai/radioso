@@ -11,7 +11,7 @@ import {
 } from '@/lib/operator-notice-destinations'
 
 const destination = (overrides: Partial<OperatorNoticeDestination> = {}): OperatorNoticeDestination => {
-  const recipientEmails = overrides.recipientEmails ?? ['owner@ananda.it']
+  const recipientEmails = overrides.recipientEmails ?? ['owner@valmora.example']
   return {
     skillName: null,
     via: 'workspace_owner',
@@ -25,14 +25,14 @@ const destination = (overrides: Partial<OperatorNoticeDestination> = {}): Operat
 
 const destinations: OperatorNoticeDestinations = {
   default: destination(),
-  skills: [destination({ skillName: 'notify_bookings', via: 'named_skill', recipientEmails: ['francesco@ananda.it', 'desk@ananda.it'], recipientsFromWorkspaceOwner: false })],
+  skills: [destination({ skillName: 'notify_bookings', via: 'named_skill', recipientEmails: ['marta@valmora.example', 'desk@valmora.example'], recipientsFromWorkspaceOwner: false })],
   dailyEmailAllowance: { limit: 100, sentToday: 12, reachedToday: false },
 }
 
 describe('describeNoticeDestination', () => {
   it('names the recipients of the default destination and of a named skill', () => {
-    expect(describeNoticeDestination(destinations, undefined)).toBe('Sends to owner@ananda.it (workspace owner)')
-    expect(describeNoticeDestination(destinations, 'notify_bookings')).toBe('Sends to francesco@ananda.it, desk@ananda.it')
+    expect(describeNoticeDestination(destinations, undefined)).toBe('Sends to owner@valmora.example (workspace owner)')
+    expect(describeNoticeDestination(destinations, 'notify_bookings')).toBe('Sends to marta@valmora.example, desk@valmora.example')
   })
 
   it('shows waiting and suppressed recipient states in the Sends to line', () => {
@@ -49,7 +49,7 @@ describe('describeNoticeDestination', () => {
 
   it('mentions a webhook without naming it, and says when nothing is sent', () => {
     expect(describeNoticeDestination({ ...destinations, default: destination({ webhookConfigured: true }) }, undefined))
-      .toBe('Sends to owner@ananda.it (workspace owner) and a webhook')
+      .toBe('Sends to owner@valmora.example (workspace owner) and a webhook')
     expect(describeNoticeDestination({ ...destinations, default: destination({ recipientEmails: [], recipientsFromWorkspaceOwner: false, webhookConfigured: true, via: 'agent_setting' }) }, undefined))
       .toBe('Sends to a webhook')
     expect(describeNoticeDestination({ ...destinations, default: destination({ via: 'contact_human_off', recipientEmails: [], recipientsFromWorkspaceOwner: false }) }, undefined))
@@ -59,7 +59,7 @@ describe('describeNoticeDestination', () => {
   })
 
   it('says a skill that is no longer available falls back to the default destination', () => {
-    expect(describeNoticeDestination(destinations, 'notify_gone')).toBe('Unavailable, so it sends to the default: owner@ananda.it (workspace owner)')
+    expect(describeNoticeDestination(destinations, 'notify_gone')).toBe('Unavailable, so it sends to the default: owner@valmora.example (workspace owner)')
   })
 
   it('shows nothing until the destinations load', () => {
@@ -103,9 +103,9 @@ describe('recipient states in the Sends to line', () => {
   it('adds nothing when the deployment does not ask recipients to confirm', () => {
     const unconfirmedDeployment = {
       ...destinations,
-      default: destination({ recipients: [{ email: 'owner@ananda.it', state: 'confirmation_not_required' }] }),
+      default: destination({ recipients: [{ email: 'owner@valmora.example', state: 'confirmation_not_required' }] }),
     }
-    expect(describeNoticeDestination(unconfirmedDeployment, undefined)).toBe('Sends to owner@ananda.it (workspace owner)')
+    expect(describeNoticeDestination(unconfirmedDeployment, undefined)).toBe('Sends to owner@valmora.example (workspace owner)')
   })
 })
 

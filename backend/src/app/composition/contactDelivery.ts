@@ -9,10 +9,14 @@ import { ConversationRepository } from "../../db/repositories/conversationReposi
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
 import {
+  NotificationAdministratorFallback,
   NotificationDeliveryAdmissionService,
+  NotificationDeliveryLog,
+  NotificationDeliveryReader,
   NotificationRecipientConfirmationMailer,
   NotificationRecipientPolicyService,
   NotificationRecipientTokenSigner,
+  UndeliveredRecipientAlerts,
   type NotificationRecipientPolicyPort,
 } from "../../modules/operatorNotifications/public.js";
 import {
@@ -20,6 +24,10 @@ import {
   NotificationRecipientStateRepository,
 } from "../../db/repositories/notificationRecipientStateRepository.js";
 import { NotificationDeliveryOutcomeRepository } from "../../db/repositories/notificationDeliveryOutcomeRepository.js";
+import { NotificationDeliveryRepository } from "../../db/repositories/notificationDeliveryRepository.js";
+import { NotificationAdministratorRepository } from "../../db/repositories/notificationAdministratorRepository.js";
+import { UndeliveredRecipientAlertRepository } from "../../db/repositories/undeliveredRecipientAlertRepository.js";
+import { agentSkillsPermalink } from "../../shared/domain/dashboardLinks.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
@@ -98,3 +106,64 @@ export const buildNotificationRecipientPolicy = (input: {
     metrics: input.metrics,
   });
 };
+
+/** Reads the per-address record of notices for the dashboard, Ray and operator MCP. */
+export const buildNotificationDeliveryReader = (database: Database): NotificationDeliveryReader =>
+  new NotificationDeliveryReader(new NotificationDeliveryRepository(database.kysely));
+
+/** The agent's page where its notification recipients are fixed, as the alert and the fallback both link it. */
+const agentNotificationsLink = (database: Database, env: Pick<Env, "APP_BASE_URL">) => {
+  const workspaces = new WorkspaceRepository(database.kysely);
+  return async ({ workspaceId, agentId }: { workspaceId: string; agentId: string | null }): Promise<string | null> => {
+    const workspace = await workspaces.findById(workspaceId);
+    return workspace
+      ? agentSkillsPermalink({ workspacePublicRouteKey: workspace.publicRouteKey, agentId }, env.APP_BASE_URL)
+      : null;
+  };
+};
+
+/**
+ * The one place the per-address record of notices is wired: the table behind it, and the alert that
+ * emails the account's verified owners and admins when a notice skips an address they can still fix.
+ * Both senders of operator-facing email take the result, so what is recorded and who is told never
+ * differs between a contact request and a routine ending's notice.
+ */
+export const buildNotificationDeliveryRecorder = (input: {
+  database: Database;
+  env: Pick<Env, "APP_BASE_URL">;
+  mailer: MailTransportPort;
+  logger: AppLogger;
+  metrics: MetricsRegistry | null;
+  states?: NotificationRecipientStateRepository;
+}): NotificationDeliveryLog => {
+  const states = input.states ?? new NotificationRecipientStateRepository(input.database.kysely);
+  return new NotificationDeliveryLog({
+    store: new NotificationDeliveryRepository(input.database.kysely),
+    alerts: new UndeliveredRecipientAlerts({
+      store: new UndeliveredRecipientAlertRepository(input.database.kysely, states),
+      administrators: new NotificationAdministratorRepository(input.database.kysely),
+      mailer: input.mailer,
+      identity: new NotificationRecipientIdentityRepository(input.database.kysely),
+      dashboardUrl: agentNotificationsLink(input.database, input.env),
+      logger: input.logger,
+      metrics: input.metrics,
+    }),
+    logger: input.logger,
+    metrics: input.metrics,
+  });
+};
+
+/**
+ * Where a notice goes when recipient policy leaves out every configured address and no webhook
+ * carries it: the audience the alert above reaches, with the same link, and each copy with the stop
+ * link the sender's recipient policy gives any notice copy. Both senders take it.
+ */
+export const buildNotificationAdministratorFallback = (input: {
+  database: Database;
+  env: Pick<Env, "APP_BASE_URL">;
+  recipientPolicy: Pick<NotificationRecipientPolicyPort, "unsubscribeUrl">;
+}): NotificationAdministratorFallback => new NotificationAdministratorFallback({
+  administrators: new NotificationAdministratorRepository(input.database.kysely),
+  unsubscribeLinks: input.recipientPolicy,
+  dashboardUrl: agentNotificationsLink(input.database, input.env),
+});

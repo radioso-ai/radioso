@@ -29,6 +29,7 @@ import {
   NotificationDeliveryAdmissionService,
   OperatorNotificationDispatcher,
   type NotificationDeliveryAdmissionPort,
+  type NotificationDeliveryRecorderPort,
 } from "../../../modules/operatorNotifications/public.js";
 import type { AuditService } from "../../../modules/audit/contracts/index.js";
 import type { UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
@@ -44,7 +45,12 @@ import type { Env } from "../../config/env.js";
 import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import { buildConversationLinkResolver } from "../conversationLinkResolver.js";
-import { buildContactDeliveryResolver, buildNotificationRecipientPolicy } from "../contactDelivery.js";
+import {
+  buildContactDeliveryResolver,
+  buildNotificationAdministratorFallback,
+  buildNotificationDeliveryRecorder,
+  buildNotificationRecipientPolicy,
+} from "../contactDelivery.js";
 
 /** Reads the per-agent contact-requests flag and delivery config for the advertiser. */
 interface AgentContactFlagLookup {
@@ -92,6 +98,7 @@ const buildOperatorNotificationDispatcher = (input: {
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
   admission: NotificationDeliveryAdmissionPort;
   recipientPolicy: ReturnType<typeof buildNotificationRecipientPolicy>;
+  recorder: NotificationDeliveryRecorderPort;
 }): OperatorNotificationDispatcher => {
   const recipients = buildContactDeliveryResolver(input.database);
   const conversationLinks = buildConversationLinkResolver({ database: input.database, appBaseUrl: input.env.APP_BASE_URL });
@@ -104,6 +111,8 @@ const buildOperatorNotificationDispatcher = (input: {
       conversationLinks,
       input.admission,
       input.recipientPolicy,
+      input.recorder,
+      buildNotificationAdministratorFallback({ database: input.database, env: input.env, recipientPolicy: input.recipientPolicy }),
     ),
     new SlackOperatorNotificationSink({
       installations: new SlackInstallationRepository(input.database.kysely),
@@ -170,6 +179,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           errorReporter,
           buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
           recipientPolicy,
+          buildNotificationDeliveryRecorder({ database, env, mailer: mailService, logger, metrics }),
+          buildNotificationAdministratorFallback({ database, env, recipientPolicy }),
         );
       },
     });
@@ -192,6 +203,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             assertPublicWebsiteUrl,
             admission: buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
             recipientPolicy: buildNotificationRecipientPolicy({ database, env, mailer: mailService, logger, metrics }),
+            recorder: buildNotificationDeliveryRecorder({ database, env, mailer: mailService, logger, metrics }),
           }),
           subjects: new RepositoryRoutineEndingNotificationSubjectResolver(
             new AgentRepository(database.kysely),
@@ -221,6 +233,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             assertPublicWebsiteUrl,
             admission: buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
             recipientPolicy: buildNotificationRecipientPolicy({ database, env, mailer: mailService, logger, metrics }),
+            recorder: buildNotificationDeliveryRecorder({ database, env, mailer: mailService, logger, metrics }),
           }),
           new ConversationRepository(database.kysely),
         );

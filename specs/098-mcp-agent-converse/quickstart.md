@@ -5,14 +5,14 @@ This quickstart is for validating the implemented feature. It is not executable 
 ## Prerequisites
 
 - Radioso backend, frontend, database, and worker running through the normal dev stack.
-- A workspace with one test agent named `Claudio`.
+- A workspace with one test agent named `Nico`.
 - The agent has persona/directives/routines configured so parity with in-product chat is visible.
 - For US2, the agent has non-default retrieval settings and at least two documents where only one is in the agent's visible scope.
 - For US4, an MCP OAuth-capable connector or test harness.
 
 ## US1: Launch Token Exchange and `ask_agent`
 
-1. Issue an MCP converse grant for `Claudio`.
+1. Issue an MCP converse grant for `Nico`.
 2. Confirm the grant row has:
    - `principal_kind = public-launch`
    - `channel = mcp-converse`
@@ -37,7 +37,7 @@ This quickstart is for validating the implemented feature. It is not executable 
 
 ## US2: Agent-Aware Grounded Answer and Resources
 
-1. Configure `Claudio` with non-default retrieval settings: narrowed source scope, rerank enabled, citations enabled.
+1. Configure `Nico` with non-default retrieval settings: narrowed source scope, rerank enabled, citations enabled.
 2. Ask the same grounded question through in-product chat and through MCP `answer_grounded`.
 3. Verify retrieved evidence and citation behavior match the agent's configured behavior.
 4. Disable citation display for the agent and verify MCP grounded answer omits citations.

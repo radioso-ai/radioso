@@ -22,7 +22,7 @@ const context = {
 describe("RoutineEndingNotifyActionHandler", () => {
   it("dispatches a handoff operator notification", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff,
       dispatcher: { dispatch },
@@ -57,7 +57,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
   });
 
   it("adds a background AI summary only when the ending opted in", async () => {
-    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue({ disposition: "dispatched" });
     const generate = vi.fn(async () => "Visitor requested a late arrival and vegetarian meals.");
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
@@ -76,7 +76,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
   });
 
   it("leaves the notice unchanged and never calls the generator when the ending did not opt in", async () => {
-    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue({ disposition: "dispatched" });
     const generate = vi.fn(async () => "Should never be used.");
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
@@ -92,7 +92,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
   });
 
   it("sends the notice when AI summary generation fails", async () => {
-    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue({ disposition: "dispatched" });
     const warn = vi.fn();
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
@@ -112,7 +112,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
   });
 
   it("aborts timed-out generation and still sends the notice without a summary", async () => {
-    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue({ disposition: "dispatched" });
     const warn = vi.fn();
     let receivedSignal: AbortSignal | undefined;
     const generate = vi.fn<RoutineEndingNoticeSummaryGenerator["generate"]>(async (generateInput) => {
@@ -139,7 +139,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
   });
 
   it("skips generation when a legacy payload has no ending message id", async () => {
-    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue({ disposition: "dispatched" });
     const generate = vi.fn(async () => "Should never be used.");
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
@@ -155,7 +155,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
   });
 
   it("uses a conversation-language instruction for legacy queued payloads without a language", async () => {
-    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue();
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue({ disposition: "dispatched" });
     const generate = vi.fn<RoutineEndingNoticeSummaryGenerator["generate"]>(async () => "Summary.");
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
@@ -171,7 +171,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
 
   it("forwards the notify skill the queued row names to the sinks", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete,
       dispatcher: { dispatch },
@@ -185,7 +185,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
 
   it("forwards the routine id, resolved names, and the scalar collected values", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const resolve = vi.fn(async () => ({ agentId: "agent_1", agentName: "Retreat desk", routineName: "Book accommodation" }));
     const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff, dispatcher: { dispatch }, subjects: { resolve } });
 
@@ -220,7 +220,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
 
   it("dispatches with null names when the resolver finds nothing", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff,
       dispatcher: { dispatch },
@@ -240,7 +240,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
 
   it("omits the routine when the payload carries none (retrieval miss)", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const resolve = vi.fn(async () => ({ agentId: "agent_1", agentName: "Retreat desk", routineName: null }));
     const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff, dispatcher: { dispatch }, subjects: { resolve } });
 
@@ -258,7 +258,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
 
   it("routes and looks up by the queued row's own ids, ignoring differing ids on the payload", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const resolve = vi.fn(async () => ({ agentId: "agent_from_conversation", agentName: "Retreat desk", routineName: "Book accommodation" }));
     const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff, dispatcher: { dispatch }, subjects: { resolve } });
 
@@ -290,7 +290,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
     ["completion", ROUTINE_ENDING_NOTICE_ACTIONS.complete, "routine_completed"],
   ] as const)("falls back to context and its ending's defaults for missing payload fields (%s)", async (kind, ending, reason) => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const handler = new RoutineEndingNotifyActionHandler({
       ending,
       dispatcher: { dispatch },
@@ -310,7 +310,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
 
   it("delivers once with the unknown agent sentinel when the trusted conversation is missing", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const resolve = vi.fn(async () => ({ agentId: null, agentName: null, routineName: null }));
     const handler = new RoutineEndingNotifyActionHandler({
       ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff,
@@ -327,12 +327,12 @@ describe("RoutineEndingNotifyActionHandler", () => {
 
   it("dispatches a completion notice with its authored text and the conversation facts, never touching ownership", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const resolve = vi.fn(async () => ({
       agentId: "agent_1",
       agentName: "Retreat desk",
       routineName: "Book accommodation",
-      conversation: { entryPageUrl: "https://ananda.example/stays" },
+      conversation: { entryPageUrl: "https://valmora.example/stays" },
     }));
     const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete, dispatcher: { dispatch }, subjects: { resolve } });
 
@@ -360,13 +360,13 @@ describe("RoutineEndingNotifyActionHandler", () => {
       routine: { id: "routine_1", name: "Book accommodation" },
       collected: { name: "Ada" },
       notice: { subject: "Booking: {{slot.name}}" },
-      conversation: { entryPageUrl: "https://ananda.example/stays" },
+      conversation: { entryPageUrl: "https://valmora.example/stays" },
     }, expect.objectContaining({ idempotencyKey: "routine-action:conv_1:completion.notify" }));
   });
 
   it("delivers the collected values in the order the routine declares its slots, whatever order the queue stored them in", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
-    dispatch.mockResolvedValue();
+    dispatch.mockResolvedValue({ disposition: "dispatched" });
     const resolve = vi.fn(async () => ({
       agentId: "agent_1",
       agentName: null,

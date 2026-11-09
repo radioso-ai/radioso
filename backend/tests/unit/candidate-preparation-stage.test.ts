@@ -152,7 +152,7 @@ describe("candidate preparation stage", () => {
     const boostedCandidate = semanticChunk(candidateCount + 10, {
       chunkId: "future-family-camp",
       documentId: "future-family-camp-doc",
-      title: "International Ananda Family Camp",
+      title: "International Valmora Family Camp",
       content: "Family camp in July 2026",
       searchText: "Family camp in July 2026",
       similarity: 0.75,

@@ -2,17 +2,19 @@ import { hasConfiguredContactDestination, readNotifyContactDelivery } from "../.
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
 import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
 import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeliveryRoute.js";
-import { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
-import { mailDeliverySkipReason } from "../../../../shared/domain/mailDeliveryOutcome.js";
+import { ActionDispatchSkippedError, type ActionDispatchOutcome } from "../../../../shared/domain/actionDispatchOutcome.js";
 import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import {
   boundedVisitorText,
   CONTACT_MESSAGE_MAX_LENGTH,
   CONTACT_NAME_MAX_LENGTH,
   REPLY_TO_MAX_LENGTH,
+  deliverNotification,
   planNotificationEmail,
   validVisitorReplyTo,
+  type NotificationAdministratorFallbackPort,
   type NotificationDeliveryAdmissionPort,
+  type NotificationDeliveryRecorderPort,
   type NotificationRecipientPolicyPort,
 } from "../../../operatorNotifications/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
@@ -43,6 +45,8 @@ export interface ContactNotificationMailer {
 interface ContactDeliveryTarget {
   emails: string[];
   webhook: AgentContactWebhook | null;
+  /** The agent the destination was resolved for, when the request had one. */
+  agentId?: string | null;
 }
 
 export interface RoutedContactDeliveryTarget extends ContactDeliveryTarget {
@@ -160,6 +164,14 @@ export class ConfiguredContactDeliveryResolver implements RoutedContactRecipient
     agentId: string;
     skillName: string | null;
   }): Promise<RoutedContactDeliveryTarget> {
+    return { ...await this.routeForAgent(input), agentId: input.agentId };
+  }
+
+  private async routeForAgent(input: {
+    workspaceId: string;
+    agentId: string;
+    skillName: string | null;
+  }): Promise<RoutedContactDeliveryTarget> {
     // The skill a request names (an outbox row's skill_name, or the notify skill an ending's notice
     // names) wins over the `contact_human` lookup below: two notify skills on one agent must be
     // able to deliver to different recipients, not collide on one shared config.
@@ -248,9 +260,11 @@ class ContactSendDeliveryFailureError extends Error {
  * Generic and self-contained — it reads the routine's variables off the payload and
  * sends through an injected mailer; it knows nothing about routines or the engine.
  *
-   * Dispatch supplies the outbox idempotency key and the mail transport forwards it to
-   * providers that support send de-duplication. With no recipient configured it no-ops
-   * (a missing destination is not a failure to retry).
+ * Dispatch supplies the outbox idempotency key and the mail transport forwards it to
+ * providers that support send de-duplication. With no recipient or webhook configured it settles
+ * as skipped (a missing destination is not a failure to retry). It resolves `partial` when some
+ * configured destination was left out by design, such as an address that has not confirmed, and
+ * when the request went to the workspace's administrators because no configured address could take it.
  */
 export class ContactSendActionHandler implements ActionHandler {
   constructor(
@@ -262,16 +276,18 @@ export class ContactSendActionHandler implements ActionHandler {
     private readonly errorReporter: ErrorReporter | undefined,
     private readonly admission: NotificationDeliveryAdmissionPort | undefined,
     private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
+    private readonly recorder?: NotificationDeliveryRecorderPort,
+    private readonly administratorFallback?: NotificationAdministratorFallbackPort,
   ) {}
 
-  async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
+  async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<ActionDispatchOutcome> {
     const target = await this.recipients.resolve(input.context);
     if (target.emails.length === 0 && !target.webhook) {
       this.logger?.warn(
         { workspaceId: input.context.workspaceId, conversationId: input.context.conversationId },
         "contact.send: no recipient configured for workspace; skipping",
       );
-      return;
+      throw new ActionDispatchSkippedError("contact_destination_not_configured");
     }
     if (!input.context.workspaceId) {
       throw new ActionDispatchSkippedError("contact_destination_not_configured");
@@ -292,6 +308,7 @@ export class ContactSendActionHandler implements ActionHandler {
     const plan = await planNotificationEmail({
       recipientPolicy: this.recipientPolicy,
       admission: this.admission,
+      administratorFallback: this.administratorFallback,
       webhookConfigured: target.webhook !== null,
       onPreparationFailure: (error) => this.logger?.warn(
         { workspaceId: input.context.workspaceId, errorName: error instanceof Error ? error.name : "unknown" },
@@ -302,28 +319,27 @@ export class ContactSendActionHandler implements ActionHandler {
         workspaceId: input.context.workspaceId,
         accountId: input.context.accountId,
         conversationId: input.context.conversationId,
+        agentId: target.agentId ?? null,
         emails: target.emails,
         idempotencyKey: baseIdempotencyKey,
       },
     });
-    if (!plan.dispatchAllowed) {
-      throw new ActionDispatchSkippedError(plan.reason);
-    }
-
-    const [emailResults] = await Promise.all([
-      Promise.all(plan.recipients.map((recipient) =>
-        this.mailer.send({
-          to: recipient.email,
-          kind: "contact_notification",
-          replyTo,
-          subject: "New contact request",
-          text: lines.join("\n"),
-          ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
-          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
-        })),
-      ),
-      target.webhook ? this.postWebhook({
-        webhook: target.webhook,
+    const webhook = target.webhook;
+    const outcome = await deliverNotification({
+      plan,
+      subject: {
+        workspaceId: input.context.workspaceId,
+        agentId: target.agentId ?? null,
+        conversationId: input.context.conversationId,
+        requestId: input.context.requestId,
+        kind: "contact_request",
+      },
+      recorder: this.recorder,
+      logger: this.logger,
+      message: { subject: "New contact request", text: lines.join("\n"), idempotencyKey: baseIdempotencyKey },
+      sendEmail: (email) => this.mailer.send({ ...email, kind: "contact_notification", replyTo }),
+      postWebhook: webhook ? () => this.postWebhook({
+        webhook,
         payload: {
           name,
           email,
@@ -333,14 +349,14 @@ export class ContactSendActionHandler implements ActionHandler {
           requestId: input.context.requestId,
         },
         idempotencyKey: `${baseIdempotencyKey}:webhook`,
-      }) : Promise.resolve(),
-    ]);
-    if (!target.webhook) {
-      const skipReason = plan.emailSkipReason ?? mailDeliverySkipReason(emailResults);
-      if (skipReason) {
-        throw new ActionDispatchSkippedError(skipReason);
-      }
+      }) : null,
+    });
+    if (outcome.disposition === "skipped") {
+      throw new ActionDispatchSkippedError(outcome.reason);
     }
+    return outcome.disposition === "partial"
+      ? { disposition: "partial", reason: outcome.reason }
+      : { disposition: "dispatched" };
   }
 
   private async postWebhook(input: {

@@ -10,7 +10,7 @@ describe("renderA2aAgentCard", () => {
     const card = renderA2aAgentCard(profileFixture());
 
     expect(card).toMatchObject({
-      name: "Ananda support",
+      name: "Valmora support",
       description: "Answers questions about bookings, rooms, and retreats.",
       url: "https://mcp.radioso.ai/mcp/a/ag_QmFzZTY0dXJsSWRlbnQxMg",
       version: "7",

@@ -14,7 +14,7 @@ const allowedRecipientPolicy = {
   prepareDelivery: async (input: { emails: readonly string[] }) => ({
     eligibleEmails: [...input.emails],
     eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
-    skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+    skippedRecipients: [],
   }),
 };
 
@@ -117,7 +117,7 @@ describe("ContactSendActionHandler", () => {
         prepareDelivery: async () => ({
           eligibleEmails: [],
           eligibleRecipients: [],
-          skipped: { unconfirmed: 1, suppressed: 0, revoked: 0 },
+          skippedRecipients: [{ email: "waiting@example.com", reason: "unconfirmed" }],
         }),
       },
     );
@@ -160,7 +160,11 @@ describe("ContactSendActionHandler", () => {
       policy,
     );
 
-    await expect(handler.handle({ payload: { message: "Please call me" }, context })).resolves.toBeUndefined();
+    // The webhook and one address went out; the unconfirmed address did not, and the action says so.
+    await expect(handler.handle({ payload: { message: "Please call me" }, context })).resolves.toEqual({
+      disposition: "partial",
+      reason: "notification_recipient_unconfirmed",
+    });
     expect(sent.map((message) => message.to)).toEqual(["ready@example.com"]);
     expect(requests).toHaveLength(1);
     expect(states.releaseConfirmationSend).toHaveBeenCalledTimes(1);
@@ -179,7 +183,10 @@ describe("ContactSendActionHandler", () => {
       { prepareDelivery: async () => { throw new Error("identity lookup unavailable"); } },
     );
 
-    await expect(handler.handle({ payload: { message: "Please call me" }, context })).resolves.toBeUndefined();
+    await expect(handler.handle({ payload: { message: "Please call me" }, context })).resolves.toEqual({
+      disposition: "partial",
+      reason: "notification_recipient_state_unavailable",
+    });
     expect(sent).toEqual([]);
     expect(requests).toHaveLength(1);
   });
@@ -241,7 +248,7 @@ describe("ContactSendActionHandler", () => {
     expect(requests).toHaveLength(1);
   });
 
-  it("no-ops (does not send, does not throw) when no recipient is configured", async () => {
+  it("settles as skipped, sending nothing, when no recipient and no webhook is configured", async () => {
     const { mailer, sent } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();
     const warn = vi.fn();
@@ -252,7 +259,8 @@ describe("ContactSendActionHandler", () => {
       httpClient,
     );
 
-    await handler.handle({ payload: { email: "alex@example.com", message: "hi" }, context });
+    await expect(handler.handle({ payload: { email: "alex@example.com", message: "hi" }, context }))
+      .rejects.toMatchObject({ name: "ActionDispatchSkippedError", reason: "contact_destination_not_configured" });
 
     expect(sent).toHaveLength(0);
     expect(requests).toHaveLength(0);
@@ -605,6 +613,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve(context)).resolves.toEqual({
       emails: ["sales@example.com"],
       webhook: { url: "https://hooks.example.com/contact" },
+      agentId: "agent_1",
       via: "agent_setting",
       recipientsFromWorkspaceOwner: false,
     });
@@ -627,6 +636,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve(context)).resolves.toEqual({
       emails: ["owner@example.com"],
       webhook: null,
+      agentId: "agent_1",
       via: "workspace_owner",
       recipientsFromWorkspaceOwner: true,
     });
@@ -661,6 +671,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve(context)).resolves.toEqual({
       emails: ["sales@example.com"],
       webhook: { url: "https://hooks.example.com/contact" },
+      agentId: "agent_1",
       via: "contact_human",
       recipientsFromWorkspaceOwner: false,
     });
@@ -692,6 +703,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve(context)).resolves.toEqual({
       emails: [],
       webhook: null,
+      agentId: "agent_1",
       via: "contact_human_off",
       recipientsFromWorkspaceOwner: false,
     });
@@ -733,6 +745,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: "contact_sales" })).resolves.toEqual({
       emails: ["sales@example.com"],
       webhook: { url: "https://hooks.example.com/sales" },
+      agentId: "agent_1",
       via: "named_skill",
       recipientsFromWorkspaceOwner: false,
     });
@@ -762,6 +775,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: "contact_sales" })).resolves.toEqual({
       emails: ["owner@example.com"],
       webhook: { url: "https://hooks.example.com/sales" },
+      agentId: "agent_1",
       via: "named_skill",
       recipientsFromWorkspaceOwner: true,
     });
@@ -796,6 +810,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: "contact_sales" })).resolves.toEqual({
       emails: ["legacy@example.com"],
       webhook: null,
+      agentId: "agent_1",
       via: "agent_setting",
       recipientsFromWorkspaceOwner: false,
     });
@@ -817,6 +832,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: "renamed_or_deleted_skill" })).resolves.toEqual({
       emails: ["legacy@example.com"],
       webhook: null,
+      agentId: "agent_1",
       via: "agent_setting",
       recipientsFromWorkspaceOwner: false,
     });
@@ -838,6 +854,7 @@ describe("ConfiguredContactDeliveryResolver", () => {
     await expect(resolver.resolve({ ...context, skillName: null })).resolves.toEqual({
       emails: ["generic@example.com"],
       webhook: null,
+      agentId: "agent_1",
       via: "contact_human",
       recipientsFromWorkspaceOwner: false,
     });
@@ -875,6 +892,7 @@ describe("ConfiguredContactDeliveryResolver.resolveForAgent", () => {
     await expect(resolver.resolveForAgent(forAgent("notify_bookings"))).resolves.toEqual({
       emails: ["bookings@example.com"],
       webhook: null,
+      agentId: "agent_1",
       via: "named_skill",
       recipientsFromWorkspaceOwner: false,
     });
@@ -934,6 +952,7 @@ describe("ConfiguredContactDeliveryResolver.resolveForAgent", () => {
       .resolveForAgent(forAgent(null))).resolves.toEqual({
       emails: ["owner@example.com"],
       webhook: null,
+      agentId: "agent_1",
       via: "workspace_owner",
       recipientsFromWorkspaceOwner: true,
     });
@@ -942,6 +961,7 @@ describe("ConfiguredContactDeliveryResolver.resolveForAgent", () => {
       .resolveForAgent(forAgent(null))).resolves.toEqual({
       emails: [],
       webhook: null,
+      agentId: "agent_1",
       via: "none",
       recipientsFromWorkspaceOwner: false,
     });

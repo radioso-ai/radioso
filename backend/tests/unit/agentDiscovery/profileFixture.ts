@@ -24,7 +24,7 @@ const requestCallbackTool: AgentToolDescriptor = {
 
 export const profileFixture = (overrides: Partial<AgentPublicProfile> = {}): AgentPublicProfile => ({
   publicId: "ag_QmFzZTY0dXJsSWRlbnQxMg",
-  name: "Ananda support",
+  name: "Valmora support",
   description: "Answers questions about bookings, rooms, and retreats.",
   mcpEndpointUrl: "https://mcp.radioso.ai/mcp/a/ag_QmFzZTY0dXJsSWRlbnQxMg",
   documentationUrl: "https://docs.radioso.ai/guides/agent-converse",

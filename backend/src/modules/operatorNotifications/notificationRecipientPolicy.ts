@@ -45,6 +45,14 @@ export interface ConfirmationReservation {
   previousSentAt: Date | null;
 }
 
+/** Why policy, rather than a cap or the transport, leaves an address out of a notice. */
+export type RecipientPolicySkipReason = "unconfirmed" | "revoked" | "suppressed";
+
+export interface SkippedRecipient {
+  email: string;
+  reason: RecipientPolicySkipReason;
+}
+
 export interface NotificationRecipientStateStore {
   read(input: {
     workspaceId: string;
@@ -95,9 +103,15 @@ export interface NotificationRecipientPolicyPort {
   prepareDelivery(input: ConfirmationRequestContext & { emails: readonly string[] }): Promise<{
     eligibleEmails: string[];
     eligibleRecipients: Array<{ email: string; listUnsubscribeUrl: string }>;
-    skipped: { unconfirmed: number; suppressed: number; revoked: number };
+    /** The configured addresses left out, each with the policy reason, so a record can name them. */
+    skippedRecipients: SkippedRecipient[];
   }>;
   describe(workspaceId: string, emails: readonly string[]): Promise<NotificationRecipientDescription[]>;
+  /**
+   * The one-click link that stops notifications to this address from this workspace, as every
+   * notice copy carries; empty when the deployment builds no such link.
+   */
+  unsubscribeUrl(workspaceId: string, email: string): Promise<string>;
   requestConfirmations(input: {
     workspaceId: string;
     agentId: string;
@@ -172,27 +186,25 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
   async prepareDelivery(input: ConfirmationRequestContext & { emails: readonly string[] }): Promise<{
     eligibleEmails: string[];
     eligibleRecipients: Array<{ email: string; listUnsubscribeUrl: string }>;
-    skipped: { unconfirmed: number; suppressed: number; revoked: number };
+    skippedRecipients: SkippedRecipient[];
   }> {
     const recipients = await this.effectiveRecipients(input.workspaceId, input.emails);
     const identity = lazyIdentity(() => this.identityFor(input));
     const eligibleRecipients: Array<{ email: string; listUnsubscribeUrl: string }> = [];
-    const skipped = { unconfirmed: 0, suppressed: 0, revoked: 0 };
+    const skippedRecipients: SkippedRecipient[] = [];
 
     for (const recipient of recipients) {
       if (deliverable(recipient.state)) {
-        const recipientId = recipient.recipientId
-          ?? (await this.options.states.ensure(input.workspaceId, recipient.email)).recipientId;
         eligibleRecipients.push({
           email: recipient.email,
-          listUnsubscribeUrl: this.options.revocationUrl?.(recipientId) ?? "",
+          listUnsubscribeUrl: await this.revocationLink(input.workspaceId, recipient.email, recipient.recipientId),
         });
       } else if (recipient.state === "suppressed") {
-        skipped.suppressed += 1;
+        skippedRecipients.push({ email: recipient.email, reason: "suppressed" });
       } else if (recipient.state === "revoked") {
-        skipped.revoked += 1;
+        skippedRecipients.push({ email: recipient.email, reason: "revoked" });
       } else {
-        skipped.unconfirmed += 1;
+        skippedRecipients.push({ email: recipient.email, reason: "unconfirmed" });
       }
 
       if (this.options.enabled && awaitingConfirmation(recipient.state) && !recipient.alreadyAsked) {
@@ -200,11 +212,11 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
       }
     }
 
-    this.recordSkipped(input.workspaceId, skipped);
+    this.recordSkipped(input.workspaceId, skippedRecipients);
     return {
       eligibleEmails: eligibleRecipients.map((recipient) => recipient.email),
       eligibleRecipients,
-      skipped,
+      skippedRecipients,
     };
   }
 
@@ -255,8 +267,18 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     return resumed;
   }
 
+  async unsubscribeUrl(workspaceId: string, email: string): Promise<string> {
+    return this.revocationLink(workspaceId, normalizeRecipientEmail(email), null);
+  }
+
   private now(): Date {
     return this.options.now?.() ?? new Date();
+  }
+
+  /** An address's stop link hangs off its own recipient row, which a first notice creates. */
+  private async revocationLink(workspaceId: string, email: string, knownRecipientId: string | null): Promise<string> {
+    const recipientId = knownRecipientId ?? (await this.options.states.ensure(workspaceId, email)).recipientId;
+    return this.options.revocationUrl?.(recipientId) ?? "";
   }
 
   private async effectiveRecipients(workspaceId: string, emails: readonly string[]): Promise<EffectiveRecipient[]> {
@@ -384,9 +406,10 @@ export class NotificationRecipientPolicyService implements NotificationRecipient
     this.options.logger?.info({ event: `notification_recipient_${event}` }, `Notification recipient ${event}`);
   }
 
-  private recordSkipped(workspaceId: string, skipped: { unconfirmed: number; suppressed: number; revoked: number }): void {
-    for (const [reason, count] of Object.entries(skipped)) {
-      if (count === 0) continue;
+  private recordSkipped(workspaceId: string, skippedRecipients: readonly SkippedRecipient[]): void {
+    const counts = new Map<RecipientPolicySkipReason, number>();
+    for (const { reason } of skippedRecipients) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    for (const [reason, count] of counts) {
       this.options.metrics?.incrementCounter("notification_recipient_delivery_skipped_total", {
         help: "Notification recipients skipped by confirmation and suppression policy.",
         labels: { reason },

@@ -97,8 +97,8 @@ describe('routineSkillCatalogApi', () => {
   it('preserves unified skill categories from newer catalog responses', () => {
     const skills = parseSkillAuthoringCatalogResponse({
       skills: [{
-        skillName: 'contact_mayadevi',
-        displayName: 'Contact Mayadevi',
+        skillName: 'contact_lina',
+        displayName: 'Contact Lina',
         category: 'notify',
         inputs: [{ key: 'message', type: 'text', required: true }],
         outcomes: [{ name: 'delivered', displayName: 'delivered', status: 'completed' }],

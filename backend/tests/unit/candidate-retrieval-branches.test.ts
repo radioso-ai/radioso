@@ -77,7 +77,7 @@ describe("candidate retrieval branches", () => {
     const result = await stage.execute({
       request: {
         workspaceId: "w1",
-        query: "who is narayani and arudra?",
+        query: "who is freya and tomas?",
         history: [],
       },
       settings: {
@@ -102,40 +102,40 @@ describe("candidate retrieval branches", () => {
         selectionReason: "no-history",
       },
       originalParsedQuery: {
-        originalQuery: "who is narayani and arudra?",
-        semanticQuery: "who is narayani and arudra?",
-        lexicalQuery: "who is narayani and arudra?",
+        originalQuery: "who is freya and tomas?",
+        semanticQuery: "who is freya and tomas?",
+        lexicalQuery: "who is freya and tomas?",
       },
       originalPreparedQuery: {
-        originalQuery: "who is narayani and arudra?",
-        semanticQuery: "who is narayani and arudra?",
-        lexicalQuery: "who is narayani and arudra?",
+        originalQuery: "who is freya and tomas?",
+        semanticQuery: "who is freya and tomas?",
+        lexicalQuery: "who is freya and tomas?",
       },
       rewrittenQuery: {
-        originalQuery: "who is narayani and arudra?",
-        rewrittenQuery: "who is narayani and arudra?",
-        effectiveQuery: "who is narayani and arudra?",
-        semanticQuery: "who is narayani and arudra?",
-        lexicalQuery: "who is narayani and arudra?",
+        originalQuery: "who is freya and tomas?",
+        rewrittenQuery: "who is freya and tomas?",
+        effectiveQuery: "who is freya and tomas?",
+        semanticQuery: "who is freya and tomas?",
+        lexicalQuery: "who is freya and tomas?",
         retrievalSubqueries: [
-          { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
-          { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
+          { id: "subquery_1", label: "Freya", semanticQuery: "who is freya", lexicalQuery: "freya" },
+          { id: "subquery_2", label: "Tomas", semanticQuery: "who is tomas", lexicalQuery: "tomas" },
         ],
         rewriteApplied: true,
         retrievalEligible: true,
         status: "applied",
         confidence: 0.9,
       },
-      activeQuery: "who is narayani and arudra?",
+      activeQuery: "who is freya and tomas?",
       activeParsedQuery: {
-        originalQuery: "who is narayani and arudra?",
-        semanticQuery: "who is narayani and arudra?",
-        lexicalQuery: "who is narayani and arudra?",
+        originalQuery: "who is freya and tomas?",
+        semanticQuery: "who is freya and tomas?",
+        lexicalQuery: "who is freya and tomas?",
       },
-      activeSemanticQuery: "who is narayani and arudra?",
+      activeSemanticQuery: "who is freya and tomas?",
       activeRetrievalSubqueries: [
-        { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
-        { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
+        { id: "subquery_1", label: "Freya", semanticQuery: "who is freya", lexicalQuery: "freya" },
+        { id: "subquery_2", label: "Tomas", semanticQuery: "who is tomas", lexicalQuery: "tomas" },
       ],
       triggerAnalysis: {
         status: "skipped_not_configured",
@@ -166,9 +166,9 @@ describe("candidate retrieval branches", () => {
         notExpiredAt: now.toISOString(),
       },
     ]);
-    expect(lexicalQueries).toEqual(["narayani", "arudra"]);
+    expect(lexicalQueries).toEqual(["freya", "tomas"]);
     expect(result.retrievalBranches).toHaveLength(2);
-    expect(result.retrievalBranches.map((branch) => branch.label)).toEqual(["Narayani", "Arudra"]);
+    expect(result.retrievalBranches.map((branch) => branch.label)).toEqual(["Freya", "Tomas"]);
     expect(result.rewrittenContexts).toHaveLength(2);
     expect(result.lexicalContexts).toHaveLength(2);
   });

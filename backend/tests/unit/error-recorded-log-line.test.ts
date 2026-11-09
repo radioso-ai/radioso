@@ -5,6 +5,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import { createErrorHandler } from "../../src/app/http/middleware/errorHandler.js";
+import { errorReportMessage } from "../../src/shared/errors/errorReportShape.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { createMatchedRouteRecorder } from "../../src/shared/observability/matchedRoute.js";
@@ -105,7 +106,6 @@ describe("error_recorded log line", () => {
     await service.report({
       errorType: "frontend.react.unhandled",
       errorClass: "TypeError",
-      message: visitorWords,
       stack: [
         `TypeError: ${visitorWords}`,
         "    at Dashboard (/w/[workspaceKey]/chat:1:2)",
@@ -161,7 +161,7 @@ describe("error_recorded log line", () => {
       // grouping every kind and failure into one issue.
       errorType: "background_job.dead_lettered.document.process",
       errorClass: "AppError",
-      message: "document.process dead-lettered: AppError [document_not_found]",
+      message: errorReportMessage`document.process dead-lettered: AppError [document_not_found]`,
       metadata: { kind: "document.process", attempt: 5, jobId, lastError: "AppError [document_not_found]", hookError: "AppError [conflict]" },
     });
     await service.report({
@@ -181,6 +181,27 @@ describe("error_recorded log line", () => {
     // A top-level errorClass that is not a class-name shape (the second report above) never
     // reaches a log line at all, visitor words included.
     expect(raw()).not.toContain(visitorWords);
+  });
+
+  it("keeps a database outage's reason, at warning level", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const { service, line } = captureErrorLog([sink]);
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    app.post("/internal/tasks/periodic-tasks/:taskId/run", (_req, _res, next) => {
+      // pg-pool's own error when opening a connection outlasts connectionTimeoutMillis.
+      next(new Error("Connection terminated due to connection timeout", { cause: new Error("Connection terminated unexpectedly") }));
+    });
+    app.use(createErrorHandler(service));
+
+    await request(app).post("/internal/tasks/periodic-tasks/ee-usage-limit-alerts/run").expect(503);
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
+    expect(line()).toMatchObject({
+      severity: "WARNING",
+      errorEvent: { errorType: "database.unavailable", route: "/internal/tasks/periodic-tasks/:taskId/run" },
+      metadata: { reason: "connect_timeout" },
+    });
   });
 
   it("drops correlation values that are not ids", async () => {
@@ -247,8 +268,9 @@ describe("error_recorded log line", () => {
     expect(line().errorEvent).toMatchObject({ method: "POST", route: "/api/v1/auth/invitations/:token/accept" });
     const reported = vi.mocked(sink.record).mock.calls[0]?.[0];
     expect(JSON.stringify(reported)).not.toContain("super-secret-invite-token");
+    expect(JSON.stringify(reported)).not.toContain(visitorWords);
     expect(reported).toMatchObject({
-      message: `Could not accept the invitation for ${visitorWords}`,
+      message: "http.request.unhandled: Error",
       requestContext: { route: "/api/v1/auth/invitations/:token/accept" },
       correlation: { route: "/api/v1/auth/invitations/:token/accept" },
     });
@@ -283,20 +305,23 @@ describe("error_recorded log line", () => {
     expect(line().errorEvent).toMatchObject({ errorType: "process.unhandledRejection", errorClass: "NonErrorThrowable" });
   });
 
-  it("still hands the full error to its sinks", async () => {
+  it("hands its sinks the same class and frames the line keeps, never the error's message", async () => {
     const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
-    const { service } = captureErrorLog([sink]);
+    const { service, line } = captureErrorLog([sink]);
 
     await service.report({
       errorType: "chat.turn.failed",
       error: new Error(`Could not parse "${visitorWords}"`),
-      metadata: { reason: visitorWords },
+      metadata: { attempt: 2, stage: "chat.answer", token: "secret-value", cause: new Error(`retry of "${visitorWords}" failed`) },
     });
 
-    expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
-      message: `Could not parse "${visitorWords}"`,
-      stack: expect.stringContaining(visitorWords),
-      metadata: { reason: visitorWords },
-    }));
+    const reported = vi.mocked(sink.record).mock.calls[0]?.[0];
+    expect(JSON.stringify(reported)).not.toContain(visitorWords);
+    expect(JSON.stringify(reported)).not.toContain("secret-value");
+    expect(reported).toMatchObject({ errorClass: "Error", message: "chat.turn.failed: Error", stack: line().stack });
+    // A sink gets the caller's metadata, key-redacted and with an error reduced to its class and
+    // frames; the line keeps only what is shaped like a count, flag, id or code.
+    expect(reported?.metadata).toMatchObject({ attempt: 2, stage: "chat.answer", token: "[REDACTED]", cause: { name: "Error" } });
+    expect(line().metadata).toEqual({ attempt: 2 });
   });
 });

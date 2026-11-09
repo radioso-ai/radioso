@@ -23,7 +23,7 @@ const partialTooltip = "Cut off while speaking. Only what was heard is stored.";
 const conversation = {
   id: conversationId,
   agentId: defaultAgentId,
-  agentName: "Gioia",
+  agentName: "Sola",
   agentInternalName: null,
   sourceChannel: "voice",
   sourceOrigin: null,
@@ -60,7 +60,7 @@ const conversationDetail = (marked: boolean, reply: ReturnType<typeof cutReply> 
   conversationId,
   workspaceId,
   agentId: defaultAgentId,
-  agentName: "Gioia",
+  agentName: "Sola",
   sourceChannel: "voice",
   sourceOrigin: null,
   channelContext: null,

@@ -170,8 +170,8 @@ test("an ending's notice names the notify skill that sends it, and shows who tha
       hasDataOutputs: false,
     }],
     operatorNoticeDestinations: {
-      default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@ananda.it"], recipients: [{ email: "owner@ananda.it", state: "confirmed" }], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
-      skills: [{ skillName: "notify_bookings", via: "named_skill", recipientEmails: ["francesco@ananda.it"], recipients: [{ email: "francesco@ananda.it", state: "waiting_for_confirmation" }], recipientsFromWorkspaceOwner: false, webhookConfigured: false }],
+      default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@valmora.example"], recipients: [{ email: "owner@valmora.example", state: "confirmed" }], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
+      skills: [{ skillName: "notify_bookings", via: "named_skill", recipientEmails: ["marta@valmora.example"], recipients: [{ email: "marta@valmora.example", state: "waiting_for_confirmation" }], recipientsFromWorkspaceOwner: false, webhookConfigured: false }],
       dailyEmailAllowance: { limit: 100, sentToday: 100, reachedToday: true },
     },
   });
@@ -184,13 +184,13 @@ test("an ending's notice names the notify skill that sends it, and shows who tha
   // The default names where it goes, down to the address.
   const sendWith = documentEditor.getByRole("combobox", { name: "Send with" });
   await expect(sendWith).toContainText("Default (workspace owner)");
-  await expect(documentEditor.getByText("Sends to owner@ananda.it (workspace owner)")).toBeVisible();
+  await expect(documentEditor.getByText("Sends to owner@valmora.example (workspace owner)")).toBeVisible();
   // Nothing else would tell the author why today's notices stopped arriving.
   await expect(documentEditor.getByText("The daily email limit stopped a notice email today (100 of 100 sent).", { exact: false })).toBeVisible();
 
   await sendWith.click();
   await page.getByRole("option", { name: "Notify bookings" }).click();
-  await expect(documentEditor.getByText("Sends to francesco@ananda.it (waiting for confirmation)")).toBeVisible();
+  await expect(documentEditor.getByText("Sends to marta@valmora.example (waiting for confirmation)")).toBeVisible();
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   await expect.poll(

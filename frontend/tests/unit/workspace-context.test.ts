@@ -15,7 +15,7 @@ describe('resolveBootstrapWorkspaceId', () => {
   it('prefers the stored workspace when it is still available', () => {
     expect(resolveBootstrapWorkspaceId([
       workspace('workspace-1', 'Teataja'),
-      workspace('workspace-2', 'Ananda'),
+      workspace('workspace-2', 'Valmora'),
     ], 'workspace-1')).toBe('workspace-1')
   })
 
@@ -23,14 +23,14 @@ describe('resolveBootstrapWorkspaceId', () => {
     expect(resolveBootstrapWorkspaceId([
       workspace('workspace-1', 'Teataja'),
       workspace('workspace-2', 'Default'),
-      workspace('workspace-3', 'Ananda'),
+      workspace('workspace-3', 'Valmora'),
     ], null)).toBe('workspace-2')
   })
 
   it('otherwise falls back to the newest workspace in the list', () => {
     expect(resolveBootstrapWorkspaceId([
       workspace('workspace-1', 'Teataja'),
-      workspace('workspace-2', 'Ananda'),
+      workspace('workspace-2', 'Valmora'),
     ], null)).toBe('workspace-2')
   })
 })

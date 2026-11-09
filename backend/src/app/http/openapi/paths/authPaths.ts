@@ -356,6 +356,37 @@ export const registerAuthPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/auth/logout",
+    tags: ["Auth"],
+    summary: "Sign out of the current session",
+    description:
+      "Revokes the session named by the session cookie, so the same cookie value is refused afterwards, and clears the cookie. Only that session ends; the user's other sessions stay signed in. The call succeeds without a live session, so a repeat, a missing cookie, or an unknown one all answer 204 and still clear the cookie. Every response, failures included, carries the cookie-clearing `Set-Cookie`, so the caller no longer holds the session; after a 5xx the server-side session may still be live until its lifetime ends, which is the case for a client that kept a copy of the cookie.",
+    operationId: "logoutAccount",
+    responses: {
+      204: {
+        description: "Session ended, or none was live; the session cookie is cleared",
+      },
+      500: {
+        description: "The sign-out could not be completed; the session cookie is cleared in this response regardless",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      503: {
+        description: "The database is unavailable, so the session could not be revoked; the session cookie is cleared in this response regardless",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/auth/profile",
     tags: ["Auth"],

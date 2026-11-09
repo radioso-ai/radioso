@@ -1,7 +1,7 @@
 ---
 title: "Deleting conversation data"
 description: "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps."
-last_updated: 2026-10-26
+last_updated: 2026-11-07
 ---
 
 # Deleting conversation data
@@ -54,6 +54,7 @@ Deleting a conversation removes:
 - a voice call's recording, which ElevenLabs keeps: Radioso asks ElevenLabs to delete it once the conversation is gone (see below);
 - the WhatsApp message log of the number whose latest conversation it is (see below);
 - routine actions and notices queued for it and not yet sent;
+- the [delivery log](/api/agents-and-skills#delivery-log) entries for the notices it raised, with the recipient addresses they name;
 - email skill activity, including its recipient summary;
 - session-scoped context values for a chat session no other conversation uses;
 - the visitor record, when this was an anonymous visitor's last conversation;

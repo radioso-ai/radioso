@@ -238,13 +238,13 @@ describe('AssistantMessageContent', () => {
           },
           { text: 'This remembrance can change how you respond. ' },
           { text: 'You can read more in [Discover Who You Are!](' },
-          { text: 'https://corsi.ananda.it/en/blog/discover-who-you-are)\n' },
+          { text: 'https://courses.valmora.example/en/blog/find-your-calm)\n' },
           {
             text: '- Practice inner calm: through simple meditation and breath, you can steady the mind. ',
             citationIndices: [2],
           },
           {
-            text: 'Learn more at [Ananda](https://www.ananda.org)\n',
+            text: 'Learn more at [Valmora](https://www.valmora.example)\n',
             citationIndices: [3],
           },
         ]}
@@ -780,15 +780,15 @@ describe('AssistantMessageContent', () => {
         ]}
         answerSegments={[
           { text: 'all from 21 to 23 August 2026', citationIndices: [0] },
-          { text: '. The first-Kriya programs are limited.' },
+          { text: '. The first-Valmora programs are limited.' },
         ]}
         onOpenDocument={async () => 'opened'}
       />,
     )
 
     // The period must not glue to the next sentence ("2026[1].The").
-    expect(textContent(html)).toContain('. The first-Kriya')
-    expect(textContent(html)).not.toContain('.The first-Kriya')
+    expect(textContent(html)).toContain('. The first-Valmora')
+    expect(textContent(html)).not.toContain('.The first-Valmora')
   })
 
   it('keeps a space between a citation marker and a following clause after a comma', async () => {
@@ -800,14 +800,14 @@ describe('AssistantMessageContent', () => {
         ]}
         answerSegments={[
           { text: 'initiated at that level', citationIndices: [0] },
-          { text: ', and the higher-Kriya weekend is separate.' },
+          { text: ', and the higher-Valmora weekend is separate.' },
         ]}
         onOpenDocument={async () => 'opened'}
       />,
     )
 
-    expect(textContent(html)).toContain(', and the higher-Kriya')
-    expect(textContent(html)).not.toContain(',and the higher-Kriya')
+    expect(textContent(html)).toContain(', and the higher-Valmora')
+    expect(textContent(html)).not.toContain(',and the higher-Valmora')
   })
 
   it('normalizes seam spacing the model or anchor removal mangled', async () => {
@@ -835,12 +835,12 @@ describe('AssistantMessageContent', () => {
         citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
         answerSegments={[
           { text: 'initiated at that level', citationIndices: [0] },
-          { text: ' ,and the higher-Kriya weekend is separate.' },
+          { text: ' ,and the higher-Valmora weekend is separate.' },
         ]}
         onOpenDocument={async () => 'opened'}
       />,
     )
-    expect(textContent(comma)).toContain(', and the higher-Kriya')
+    expect(textContent(comma)).toContain(', and the higher-Valmora')
     expect(textContent(comma)).not.toContain(' ,and')
     expect(textContent(comma)).not.toContain(',and the higher')
   })
@@ -939,7 +939,7 @@ describe('AssistantMessageContent', () => {
       <AssistantMessageContent
         content="unused"
         citations={[
-          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Aryavan McSweeney &mdash; Ananda &amp; Co.' },
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Ravi Halden &mdash; Valmora &amp; Co.' },
         ]}
         answerSegments={[
           { text: 'See bio', citationIndices: [0] },
@@ -949,7 +949,7 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toContain('Aryavan McSweeney — Ananda &amp; Co.')
+    expect(html).toContain('Ravi Halden — Valmora &amp; Co.')
     expect(html).not.toContain('&mdash;')
   })
 

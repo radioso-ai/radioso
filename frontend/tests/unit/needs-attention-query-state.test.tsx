@@ -323,7 +323,7 @@ describe('Needs Attention query state', () => {
       title: `Title of ${conversationId}`,
       updatedAt: '2026-06-19T10:00:00.000Z',
       agentId: 'agent-email',
-      agentName: 'Gioia',
+      agentName: 'Sola',
       agentInternalName: null,
       ownership: undefined,
     }) as never)

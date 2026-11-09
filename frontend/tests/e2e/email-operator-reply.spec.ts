@@ -111,7 +111,7 @@ const installEmailReplyBackend = async (
   const summary = () => ({
     id: conversationId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     sourceChannel: "email",
     sourceOrigin: null,
     anonymousSessionId: null,

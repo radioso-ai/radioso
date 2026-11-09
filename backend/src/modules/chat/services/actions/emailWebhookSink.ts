@@ -1,10 +1,13 @@
 import type { AgentContactWebhook } from "../../../agents/public.js";
 import {
+  deliverNotification,
   formatRoutineEndingNotification,
   planNotificationEmail,
   type OperatorNotification,
   type OperatorNotificationContext,
+  type NotificationAdministratorFallbackPort,
   type NotificationDeliveryAdmissionPort,
+  type NotificationDeliveryRecorderPort,
   type OperatorNotificationSink,
   type OperatorNotificationSinkOutcome,
   type RoutineEndingOperatorNotification,
@@ -14,7 +17,6 @@ import {
   resolveConversationLink,
   type ConversationLinkResolver,
 } from "../../../../shared/domain/conversationLinkResolver.js";
-import { mailDeliverySkipReason } from "../../../../shared/domain/mailDeliveryOutcome.js";
 import type {
   ContactNotificationMailer,
   ContactWebhookHttpClient,
@@ -71,6 +73,8 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     private readonly conversationLinks: ConversationLinkResolver | undefined,
     private readonly admission: NotificationDeliveryAdmissionPort | undefined,
     private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
+    private readonly recorder?: NotificationDeliveryRecorderPort,
+    private readonly administratorFallback?: NotificationAdministratorFallbackPort,
   ) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
@@ -105,7 +109,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId, via: target.via },
         `${actionType}: no recipient configured for workspace; skipping`,
       );
-      return { disposition: "skipped", reason: "contact_destination_not_configured" };
+      return { disposition: "not_applicable", reason: "contact_destination_not_configured" };
     }
     const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
     const conversationUrl = await resolveConversationLink(
@@ -142,6 +146,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     const plan = await planNotificationEmail({
       recipientPolicy: this.recipientPolicy,
       admission: this.admission,
+      administratorFallback: this.administratorFallback,
       webhookConfigured: target.webhook !== null,
       onPreparationFailure: (error) => this.logger?.warn(
         { kind: notification.kind, workspaceId: recipientContext.workspaceId, errorName: error instanceof Error ? error.name : "unknown" },
@@ -157,40 +162,38 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         idempotencyKey: baseIdempotencyKey,
       },
     });
-    if (!plan.dispatchAllowed) {
-      return { disposition: "skipped", reason: plan.reason };
+    if (plan.dispatchAllowed) {
+      this.logger?.info(
+        { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
+        "operator_notice_routed",
+      );
     }
-    this.logger?.info(
-      { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
-      "operator_notice_routed",
-    );
 
-    const [emailResults] = await Promise.all([
-      Promise.all(plan.recipients.map((recipient) =>
-        this.mailer.send({
-          to: recipient.email,
-          kind: "operator_notice",
-          ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
-          subject: delivery.subject,
-          text: delivery.text,
-          ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
-          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
-        })),
-      ),
-      target.webhook ? this.postWebhook({
-        webhook: target.webhook,
+    const webhook = target.webhook;
+    return deliverNotification({
+      plan,
+      subject: {
+        workspaceId: recipientContext.workspaceId,
+        agentId: notification.agentId,
+        conversationId: recipientContext.conversationId,
+        requestId: context.requestId,
+        kind: notification.kind,
+      },
+      recorder: this.recorder,
+      logger: this.logger,
+      message: { subject: delivery.subject, text: delivery.text, idempotencyKey: baseIdempotencyKey },
+      sendEmail: (email) => this.mailer.send({
+        ...email,
+        kind: "operator_notice",
+        ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
+      }),
+      postWebhook: webhook ? () => this.postWebhook({
+        webhook,
         payload: delivery.webhookPayload,
         idempotencyKey: `${baseIdempotencyKey}:webhook`,
         missingClientMessage: TRANSPORT_TEXT_BY_KIND[notification.kind].missingWebhookClientMessage,
-      }) : Promise.resolve(),
-    ]);
-    if (!target.webhook) {
-      const skipReason = plan.emailSkipReason ?? mailDeliverySkipReason(emailResults);
-      if (skipReason) {
-        return { disposition: "skipped", reason: skipReason };
-      }
-    }
-    return { disposition: "delivered" };
+      }) : null,
+    });
   }
 
   /**

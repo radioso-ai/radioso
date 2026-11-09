@@ -166,15 +166,15 @@ const report = (name: string, detected: unknown[], effect: unknown) => {
 describe.skipIf(!apiKey)("LIVE retrieval-sense clarification", () => {
   it("S1: the production repro ANSWERS instead of asking", async () => {
     const prod = JSON.parse(
-      readFileSync(path.join(repoRoot, ".context/verify/ananda-docs.json"), "utf8"),
+      readFileSync(path.join(repoRoot, ".context/verify/valmora-docs.json"), "utf8"),
     ) as Record<string, { title: string; content: string; metadata: Record<string, unknown> }>;
 
     const { detected, effect } = await runDetection(
       [
-        { documentId: "doc-new", title: prod.new_ananda_yoga.title, metadata: prod.new_ananda_yoga.metadata, content: prod.new_ananda_yoga.content, chunks: 4 },
-        { documentId: "doc-live", title: prod.ananda_yoga.title, metadata: prod.ananda_yoga.metadata, content: prod.ananda_yoga.content, chunks: 4 },
+        { documentId: "doc-new", title: prod.new_valmora_yoga.title, metadata: prod.new_valmora_yoga.metadata, content: prod.new_valmora_yoga.content, chunks: 4 },
+        { documentId: "doc-live", title: prod.valmora_yoga.title, metadata: prod.valmora_yoga.metadata, content: prod.valmora_yoga.content, chunks: 4 },
       ],
-      "what ananda yoga types exist?",
+      "what valmora yoga types exist?",
     );
     report("S1 production repro (duplicate WordPress pages)", detected, effect);
 
@@ -187,10 +187,10 @@ describe.skipIf(!apiKey)("LIVE retrieval-sense clarification", () => {
     // never reached — that distinction matters and must not be hidden by a green test.
     const forced = await runDetection(
       [
-        { documentId: "doc-new", title: prod.new_ananda_yoga.title, metadata: prod.new_ananda_yoga.metadata, content: prod.new_ananda_yoga.content, chunks: 4 },
-        { documentId: "doc-live", title: prod.ananda_yoga.title, metadata: prod.ananda_yoga.metadata, content: prod.ananda_yoga.content, chunks: 4 },
+        { documentId: "doc-new", title: prod.new_valmora_yoga.title, metadata: prod.new_valmora_yoga.metadata, content: prod.new_valmora_yoga.content, chunks: 4 },
+        { documentId: "doc-live", title: prod.valmora_yoga.title, metadata: prod.valmora_yoga.metadata, content: prod.valmora_yoga.content, chunks: 4 },
       ],
-      "what ananda yoga types exist?",
+      "what valmora yoga types exist?",
       { ...POLICY, separationThreshold: 0 },
     );
     report("S1b separation filter disabled (forces the labelling path)", forced.detected, forced.effect);

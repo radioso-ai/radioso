@@ -65,7 +65,7 @@ interface ActionHandlerResolver {
  * consumer of this event is assumed best-effort (a cache invalidation, not a correctness path):
  * over-reporting on a claim a concurrent worker goes on to steal is harmless.
  */
-export type ActionDispatchPersistedOutcome = "claimed" | "dispatched" | "skipped" | "retry" | "failed";
+export type ActionDispatchPersistedOutcome = "claimed" | "dispatched" | "partially_dispatched" | "skipped" | "retry" | "failed";
 
 export interface ActionDispatchJobHandlerOptions {
   onPersistedOutcome?: (input: { request: ActionDispatchJobPayload; outcome: ActionDispatchPersistedOutcome }) => void;
@@ -117,7 +117,8 @@ const toHandlerContext = (
  * Adapts one claimed action request to the `ActionHandler` registry — the whole reason this job
  * kind exists, so `ActionHandler` implementations never change. Resolves the row's own `type` (not
  * `ACTION_DISPATCH_JOB.kind`, which names this one generic job for every type), runs it, and turns
- * a thrown `ActionDispatchSkippedError` into the runtime's `skipped` outcome instead of a retry. An
+ * a thrown `ActionDispatchSkippedError` into the runtime's `skipped` outcome instead of a retry, and a
+ * handler's `partial` outcome into a completion that keeps its reason. An
  * unregistered type fails the run (retried, then dead-lettered, by the generic policy) without
  * calling `recordFailureOutcome` — there is no handler to call it on, matching
  * `ActionDispatcher`'s prior behaviour. `recordFailureOutcome` otherwise rides the per-attempt hook
@@ -159,8 +160,9 @@ export const createActionDispatchJobHandler = (
       if (!handler) {
         throw new Error(`no_handler_for_type:${payload.type}`);
       }
+      let outcome: Awaited<ReturnType<ActionHandler["handle"]>>;
       try {
-        await handler.handle({
+        outcome = await handler.handle({
           payload: payload.payload,
           context: toHandlerContext(payload, context.jobId, context.attempt),
         });
@@ -170,6 +172,10 @@ export const createActionDispatchJobHandler = (
           return { skipped: error.reason };
         }
         throw error;
+      }
+      if (outcome?.disposition === "partial") {
+        observe(payload, "partially_dispatched");
+        return { skipped: outcome.reason, partial: true };
       }
       observe(payload, "dispatched");
     },

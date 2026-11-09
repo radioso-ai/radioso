@@ -393,7 +393,7 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
 
   it("persists the first entry page even when page reading is not required and preserves it later", async () => {
     const { preparer, agent, conversationRepository } = await preparerWith();
-    const firstPageUrl = "https://it.ananda.eu/pricing?source=chat";
+    const firstPageUrl = "https://it.valmora.example/pricing?source=chat";
 
     const first = await preparer.prepare({
       workspaceId: "ws-1",
@@ -412,7 +412,7 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
       agentId: agent.id,
       conversationId: first.conversation.id,
       query: "What about the next page?",
-      pageContext: { pageUrl: "https://it.ananda.eu/contact" },
+      pageContext: { pageUrl: "https://it.valmora.example/contact" },
     });
 
     expect(first.pageReadOutcome?.gate).toEqual({ kind: "not_required" });

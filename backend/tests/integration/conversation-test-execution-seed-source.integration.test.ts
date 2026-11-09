@@ -67,7 +67,7 @@ describeIntegration("ConversationTestExecutionSeedSource (Postgres)", () => {
     // same repositories a committed turn uses.
     await routineStateRepository.save({
       sessionId: conversationId,
-      routineId: "kriya-courses",
+      routineId: "valmora-courses",
       path: ["start", "collect_date"],
       variables: { date: "2026-07" },
       attempts: { collect_date: 1 },
@@ -107,7 +107,7 @@ describeIntegration("ConversationTestExecutionSeedSource (Postgres)", () => {
     expect(seed?.continuation).toMatchObject({
       version: 1,
       routineState: {
-        routineId: "kriya-courses",
+        routineId: "valmora-courses",
         path: ["start", "collect_date"],
         variables: { date: "2026-07" },
         attempts: { collect_date: 1 },

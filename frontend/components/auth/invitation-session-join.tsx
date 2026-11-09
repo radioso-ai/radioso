@@ -26,10 +26,14 @@ export function InvitationSessionJoin({
   signedInEmail: string
 }) {
   const router = useRouter()
-  const { login, logout } = useAuth()
+  const { login, logout, discardSession } = useAuth()
   const riseSun = useAuthSunrise()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // The invitation page answers being signed out with the credential form, so it stays
+  // here rather than landing on the signed-out home.
+  const switchAccount = () => void logout({ redirectTo: null })
 
   const handleJoin = async () => {
     setError(null)
@@ -49,7 +53,7 @@ export function InvitationSessionJoin({
       // session cookie. Dropping it hands the visitor back to the credential
       // form instead of stranding them on a button that keeps failing.
       if (getApiErrorStatus(nextError) === 401) {
-        logout()
+        discardSession()
         return
       }
       setError(getApiErrorMessage(nextError, 'Failed to accept invitation.'))
@@ -65,7 +69,7 @@ export function InvitationSessionJoin({
           You are signed in as <span className="font-medium text-foreground">{signedInEmail}</span>,
           but this invitation is for <span className="font-medium text-foreground">{invitedEmail}</span>.
         </p>
-        <Button type="button" variant="outline" className="w-full" onClick={logout}>
+        <Button type="button" variant="outline" className="w-full" onClick={switchAccount}>
           Use a different account
         </Button>
       </div>
@@ -84,7 +88,7 @@ export function InvitationSessionJoin({
       <p className="text-center text-sm">
         <button
           type="button"
-          onClick={logout}
+          onClick={switchAccount}
           className="font-medium text-primary hover:underline"
           disabled={isSubmitting}
         >

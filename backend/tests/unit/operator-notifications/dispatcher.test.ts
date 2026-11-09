@@ -78,6 +78,83 @@ describe("OperatorNotificationDispatcher", () => {
     const delivered: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
     const dispatcher = new OperatorNotificationDispatcher([skipped, delivered]);
 
-    await expect(dispatcher.dispatch(notification, context)).resolves.toBeUndefined();
+    // Slack delivered, but the email it was configured to send was left out: that is a partial send.
+    await expect(dispatcher.dispatch(notification, context)).resolves.toEqual({
+      disposition: "partial",
+      reason: "mail_not_dispatched:driver=log",
+    });
+  });
+
+  it("settles a send partial when the only email address is unconfirmed and another sink delivered", async () => {
+    const email: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "skipped", reason: "notification_recipient_unconfirmed" } as const)),
+    };
+    const slack: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
+
+    await expect(new OperatorNotificationDispatcher([email, slack]).dispatch(notification, context)).resolves.toEqual({
+      disposition: "partial",
+      reason: "notification_recipient_unconfirmed",
+    });
+    for (const reason of ["workspace_daily_email_cap", "conversation_dispatch_cap", "notification_recipient_revoked", "notification_recipient_suppressed"] as const) {
+      const capped: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "skipped", reason } as const)) };
+      await expect(new OperatorNotificationDispatcher([capped, slack]).dispatch(notification, context))
+        .resolves.toEqual({ disposition: "partial", reason });
+    }
+  });
+
+  it("stays dispatched when the sink that had nothing to deliver was not applicable", async () => {
+    const delivered: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
+    // Whatever its reason, the sink's own disposition says nothing was left undelivered.
+    for (const reason of ["contact_destination_not_configured", "slack_not_installed", "slack_approval_not_pending", "workspace_daily_email_cap"] as const) {
+      const notApplicable: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "not_applicable", reason } as const)) };
+      await expect(new OperatorNotificationDispatcher([notApplicable, delivered]).dispatch(notification, context))
+        .resolves.toEqual({ disposition: "dispatched" });
+    }
+  });
+
+  it("decides partial from the disposition alone, not from the reason a sink gives", async () => {
+    const delivered: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
+    // A reason that names a missing destination is still a skip when the sink says it set one up.
+    const skipped: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "skipped", reason: "slack_not_installed" } as const)),
+    };
+
+    await expect(new OperatorNotificationDispatcher([skipped, delivered]).dispatch(notification, context))
+      .resolves.toEqual({ disposition: "partial", reason: "slack_not_installed" });
+  });
+
+  it("skips the action, naming the first sink's reason, when no sink delivered and none applied", async () => {
+    const email: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "not_applicable", reason: "contact_destination_not_configured" } as const)),
+    };
+    const slack: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "not_applicable", reason: "slack_not_installed" } as const)),
+    };
+
+    await expect(new OperatorNotificationDispatcher([email, slack]).dispatch(notification, context))
+      .rejects.toMatchObject({ name: "ActionDispatchSkippedError", reason: "contact_destination_not_configured" });
+  });
+
+  it("reports a sink that reached only some of its destinations as a partial send", async () => {
+    const partial: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "partial", reason: "notification_recipient_unconfirmed" } as const)),
+    };
+    const delivered: OperatorNotificationSink = { deliver: vi.fn(async () => ({ disposition: "delivered" } as const)) };
+    const dispatcher = new OperatorNotificationDispatcher([delivered, partial]);
+
+    await expect(dispatcher.dispatch(notification, context)).resolves.toEqual({
+      disposition: "partial",
+      reason: "notification_recipient_unconfirmed",
+    });
+  });
+
+  it("still retries when a sink fails even though another sink was partial", async () => {
+    const partial: OperatorNotificationSink = {
+      deliver: vi.fn(async () => ({ disposition: "partial", reason: "notification_recipient_revoked" } as const)),
+    };
+    const failing: OperatorNotificationSink = { deliver: vi.fn(async () => { throw new Error("sink_down"); }) };
+    const dispatcher = new OperatorNotificationDispatcher([partial, failing]);
+
+    await expect(dispatcher.dispatch(notification, context)).rejects.toThrow();
   });
 });

@@ -41,6 +41,7 @@ const catalogToolCoverage = {
   deleteDocument: "propose_document_removal",
   listAgentSkills: "agent_skills",
   listOperatorNoticeDestinations: "operator_notice_destinations",
+  listNotificationDeliveries: "list_notification_deliveries",
   listAgentSkillCapabilities: "agent_skills",
   listMcpConnections: "agent_skills",
   getMcpConnection: "agent_skills",
@@ -319,6 +320,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "acceptAccountInvitation",
     "acceptAccountInvitationAsCurrentUser",
     "getCurrentSession",
+    "logoutAccount",
   ], authOrRegistration),
   ...coverage([
     "getUserProfile",

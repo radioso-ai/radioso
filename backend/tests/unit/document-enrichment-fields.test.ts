@@ -212,14 +212,14 @@ describe("extracted field ownership", () => {
   it("skips a key the source stamps on every chunk and counts the collision", () => {
     const result = applyExtractedFields({
       documentMetadata: {},
-      chunks: [chunk(0, { venue: "Assisi" })],
+      chunks: [chunk(0, { venue: "Montelago" })],
       fields: [{ key: "venue", value: "Rome" }, { key: "price", value: 10 }],
       previousGeneratedKeys: [],
-      sourceMetadata: { venue: "Assisi" },
+      sourceMetadata: { venue: "Montelago" },
     });
 
     expect(result.documentMetadata).toEqual({ price: 10 });
-    expect(result.chunks[0]?.metadata).toEqual({ venue: "Assisi", price: 10 });
+    expect(result.chunks[0]?.metadata).toEqual({ venue: "Montelago", price: 10 });
     expect(result.generatedKeys).toEqual(["price"]);
     expect(result.skippedCollision).toBe(1);
   });

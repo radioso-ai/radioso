@@ -115,7 +115,7 @@ describe('ChatMessageThread', () => {
           {
             id: 'assistant-1',
             role: 'assistant',
-            content: '- **[Ananda Yoga in silenzio - 3 Giorni](https://example.com/course)**',
+            content: '- **[Valmora Yoga in silenzio - 3 Giorni](https://example.com/course)**',
             createdAt: '2026-04-02T10:00:00.000Z',
           },
         ]}
@@ -124,7 +124,7 @@ describe('ChatMessageThread', () => {
     )
 
     expect(html.match(/<li/g)?.length).toBe(1)
-    expect(html).toContain('Ananda Yoga in silenzio - 3 Giorni')
+    expect(html).toContain('Valmora Yoga in silenzio - 3 Giorni')
   })
 
   it('adds Radioso UTM attribution to assistant-authored answer links', () => {
@@ -251,7 +251,7 @@ describe('ChatMessageThread', () => {
             id: 'assistant-1',
             role: 'assistant',
             content:
-              'If you want, I can help with: - a simple yoga or meditation routine - what gear is useful for practice - Ananda Yoga topics and recordings',
+              'If you want, I can help with: - a simple yoga or meditation routine - what gear is useful for practice - Valmora Yoga topics and recordings',
             createdAt: '2026-04-02T10:00:00.000Z',
           },
         ]}
@@ -271,7 +271,7 @@ describe('ChatMessageThread', () => {
             id: 'assistant-1',
             role: 'assistant',
             content:
-              'Ananda offers several ways to explore **Ananda Yoga**:\n\n- A **3-day intensive residential course**, **[Ananda Yoga in silenzio - 3 Giorni](https://corsi.ananda.it/corso/0008136-corso-residenziale-intensivo-ananda-yoga-in-silenzio-3-giorni)**, focused on deeper practice.\n- For learning more, see **[Ananda Yoga videos](https://anandaeurope.org/video/guided-ananda-yoga)**.',
+              'Valmora offers several ways to explore **Valmora Yoga**:\n\n- A **3-day intensive residential course**, **[Valmora Yoga in silenzio - 3 Giorni](https://courses.valmora.example/corso/0004390-corso-residenziale-intensivo-valmora-yoga-in-silenzio-3-giorni)**, focused on deeper practice.\n- For learning more, see **[Valmora Yoga videos](https://valmora-europe.example/video/guided-valmora-yoga)**.',
             createdAt: '2026-04-02T10:00:00.000Z',
           },
         ]}
@@ -280,7 +280,7 @@ describe('ChatMessageThread', () => {
     )
 
     expect(html.match(/<li/g)?.length).toBe(2)
-    expect(html).toContain('Ananda Yoga in silenzio - 3 Giorni')
+    expect(html).toContain('Valmora Yoga in silenzio - 3 Giorni')
     expect(html).not.toContain('3 Giorni]</li>')
   })
 

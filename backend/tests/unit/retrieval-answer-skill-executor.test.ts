@@ -19,10 +19,10 @@ const sampleResult = (): RetrievalPipelineResult =>
       documentId: "doc_1",
       chunkId: "chunk_1",
       title: "Course Guide",
-      content: "Kriya is introduced in the first module.",
+      content: "Valmora is introduced in the first module.",
       metadata: { sourceUrl: "https://example.com/guide" },
       retrievalSources: ["semantic_original"],
-      retrievalText: "Kriya is introduced in the first module.",
+      retrievalText: "Valmora is introduced in the first module.",
       semanticScore: 0.9,
       lexicalScore: 0,
       similarity: 0.9,
@@ -106,7 +106,7 @@ describe("RetrievalAnswerSkillExecutor", () => {
         documentId: "doc_1",
         chunkId: "chunk_1",
         title: "Course Guide",
-        content: "Kriya is introduced in the first module.",
+        content: "Valmora is introduced in the first module.",
       }],
       citations: [{ documentId: "doc_1", chunkId: "chunk_1", title: "Course Guide" }],
     });
@@ -238,7 +238,7 @@ describe("RetrievalAnswerSkillExecutor", () => {
       workspaceId: "w1",
       turn: {
         sessionId: "conversation-1",
-        inputEvent: { id: "message-2", kind: "message", content: "What is Kriya?", locale: "en" },
+        inputEvent: { id: "message-2", kind: "message", content: "What is Valmora?", locale: "en" },
         agent: {
           id: "agent-1",
           metadata: {
@@ -261,7 +261,7 @@ describe("RetrievalAnswerSkillExecutor", () => {
 
     expect(controller.run).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: "w1",
-      query: "What is Kriya?",
+      query: "What is Valmora?",
       responseLanguage: "en",
       agentSkillSettings: {
         "retrieval.answer": { vectorTopK: 4 },

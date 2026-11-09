@@ -1,4 +1,6 @@
 import { request } from './api-client'
+import { getApiErrorMessage } from './api-error'
+import { parseNotificationDeliveryPage, type NotificationDeliveryPage } from './notification-deliveries'
 import {
   parseNotificationRecipients,
   parseOperatorNoticeDestinations,
@@ -173,5 +175,24 @@ export const routineSkillCatalogApi = {
       method: 'POST',
       body: JSON.stringify({ email }),
     }, { withSession: true })
+  },
+  /** Asks the address to confirm again and says, in the words the dashboard shows, what came of it. */
+  async resendNotificationRecipientConfirmationResult(agentId: string, email: string): Promise<string> {
+    try {
+      const result = await routineSkillCatalogApi.resendNotificationRecipientConfirmation(agentId, email)
+      return result.sent ? 'Confirmation sent' : 'Not sent: already confirmed, asked recently, limit reached, or mail unavailable'
+    } catch (resendError) {
+      return getApiErrorMessage(resendError, 'Could not resend the confirmation')
+    }
+  },
+  /** GET /notification-deliveries: what happened to each address of this agent's notices, newest first. */
+  async listNotificationDeliveries(agentId: string, options: { cursor?: string | null; limit?: number } = {}): Promise<NotificationDeliveryPage> {
+    const params = new URLSearchParams({ agentId })
+    if (options.cursor) params.set('cursor', options.cursor)
+    if (options.limit) params.set('limit', String(options.limit))
+    const payload = await request<unknown>(`/notification-deliveries?${params.toString()}`, {
+      method: 'GET',
+    }, { withSession: true })
+    return parseNotificationDeliveryPage(payload)
   },
 }

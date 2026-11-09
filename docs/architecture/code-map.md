@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-02
+last_updated: 2026-11-08
 ---
 
 # Code Map
@@ -180,6 +180,11 @@ Primary paths:
 - `backend/src/shared/infra/database.ts` — the pg Pool wrapper; exposes `.kysely` (the
   shared `Kysely<DB>`) plus the legacy `query`/`queryOne`/`withTransaction` used by the
   migration runner and allowlisted raw-SQL adapters
+- `backend/src/shared/infra/databaseConnectionFailure.ts` — names a failure to get a database
+  connection: an unreachable database or an exhausted pool. `Database`'s pool marks failures
+  raised while borrowing a connection. `backend/src/shared/errors/databaseFailureReport.ts` turns
+  either kind into its report (`database.unavailable` or `database.pool_exhausted`), which the
+  HTTP error handler (with a 503) and a failed chat turn's report both use
 - `backend/src/shared/infra/kysely/` — `kyselyDatabase.ts` (builds Kysely on the pool),
   generated `schema.ts` (the `DB` type), and `sqlHelpers.ts` (the only home for
   Postgres-specific fragments: pgvector, jsonb, `now()`, etc.)
@@ -899,7 +904,10 @@ Focused checks:
 
 Owns notifying operators outside the dashboard (email) about conversation and
 routine events: recipient confirmation and tokens, delivery admission policy,
-provider suppression handling, and routine-ending notification text.
+provider suppression handling, routine-ending notification text, the per-address
+delivery log, the alert to owners and admins when a notice skips an address, and
+sending the notice itself to them when recipient policy leaves out every configured
+address and no webhook is set.
 
 Public surfaces and key files:
 
@@ -908,10 +916,25 @@ Public surfaces and key files:
 - `backend/src/modules/operatorNotifications/notificationRecipientConfirmationMailer.ts`,
   `notificationRecipientPolicy.ts`
 - `backend/src/modules/operatorNotifications/routineEndingNotificationFromAction.ts`
+- `backend/src/modules/operatorNotifications/notificationEmailPlan.ts`,
+  `notificationDelivery.ts` (plan and send, recording one row per address),
+  `notificationAdministratorFallback.ts` (who gets a notice no configured address can
+  receive, and the line their copy opens with; composed in `app/composition/contactDelivery.ts`)
+- `backend/src/modules/operatorNotifications/notificationDeliveryLog.ts`,
+  `undeliveredRecipientAlert.ts` (the record's writer and reader, and the throttled alert)
+- `backend/src/db/repositories/notificationDeliveryRepository.ts`,
+  `undeliveredRecipientAlertRepository.ts` (the alert's throttle),
+  `notificationAdministratorRepository.ts` (the one owners-and-admins query the alert and the
+  fallback share, behind `NotificationAdministratorReader`)
+- `backend/src/app/http/routes/notificationDeliveryRoutes.ts` (`GET /api/v1/notification-deliveries`),
+  `backend/src/modules/operatorCopilot/tools/notificationDeliveries.ts` (`list_notification_deliveries`)
+- `frontend/components/dashboard/settings/skills/RecentNotifications.tsx`
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/operator-notifications`
+- `cd backend && pnpm exec vitest run tests/unit/operator-notifications tests/contract/notification-deliveries.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/notification-delivery-log.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec playwright test tests/e2e/notification-deliveries.spec.ts`
 
 ## Agent Bundle (portable agent export/import)
 

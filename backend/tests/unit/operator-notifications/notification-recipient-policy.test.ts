@@ -53,7 +53,10 @@ describe("NotificationRecipientPolicyService", () => {
         { email: "member@example.com", listUnsubscribeUrl: "" },
         { email: "legacy@example.com", listUnsubscribeUrl: "" },
       ],
-      skipped: { unconfirmed: 1, suppressed: 1, revoked: 0 },
+      skippedRecipients: [
+        { email: "waiting@example.com", reason: "unconfirmed" },
+        { email: "bounced@example.com", reason: "suppressed" },
+      ],
     });
     expect(sendConfirmation).toHaveBeenCalledTimes(2);
     expect(sendConfirmation.mock.calls.map(([call]) => call.email)).toEqual([
@@ -94,7 +97,7 @@ describe("NotificationRecipientPolicyService", () => {
       agentName: "Concierge",
       emails: ["waiting@example.com"],
       idempotencyKey: "request-id",
-    })).resolves.toMatchObject({ skipped: { unconfirmed: 1, suppressed: 0, revoked: 0 } });
+    })).resolves.toMatchObject({ skippedRecipients: [{ email: "waiting@example.com", reason: "unconfirmed" }] });
     // A thrown send may still have reached the provider, so its daily slot stays spent.
     expect(states.releaseConfirmationSend).toHaveBeenCalledWith(
       { recipientId: "recipient:waiting@example.com", generation: 1, reservedAt: NOW, previousSentAt: null },
@@ -129,7 +132,7 @@ describe("NotificationRecipientPolicyService", () => {
     await expect(service.prepareDelivery({
       workspaceId: "workspace-id", workspaceName: "Acme", agentName: "Concierge",
       emails: ["stopped@example.com"], idempotencyKey: "request-id",
-    })).resolves.toMatchObject({ eligibleEmails: [], skipped: { unconfirmed: 0, suppressed: 0, revoked: 1 } });
+    })).resolves.toMatchObject({ eligibleEmails: [], skippedRecipients: [{ email: "stopped@example.com", reason: "revoked" }] });
   });
 
   it("looks up workspace and agent names only for a confirmation it will actually send", async () => {

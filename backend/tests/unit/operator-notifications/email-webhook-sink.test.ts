@@ -22,7 +22,7 @@ const allowedRecipientPolicy = {
   prepareDelivery: async (input: { emails: readonly string[] }) => ({
     eligibleEmails: [...input.emails],
     eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
-    skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+    skippedRecipients: [],
   }),
 };
 
@@ -185,12 +185,15 @@ describe("EmailWebhookOperatorNotificationSink", () => {
             email: "ready@example.com",
             listUnsubscribeUrl: "https://api.example.com/revoke?token=signed",
           }],
-          skipped: { unconfirmed: 1, suppressed: 0, revoked: 0 },
+          skippedRecipients: [{ email: "waiting@example.com", reason: "unconfirmed" }],
         }),
       },
     );
 
-    await expect(sink.deliver(notification, context)).resolves.toEqual({ disposition: "delivered" });
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "partial",
+      reason: "notification_recipient_unconfirmed",
+    });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
       to: "ready@example.com",
@@ -242,7 +245,10 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       { prepareDelivery: async () => { throw new Error("recipient reservation unavailable"); } },
     );
 
-    await expect(sink.deliver(notification, context)).resolves.toEqual({ disposition: "delivered" });
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "partial",
+      reason: "notification_recipient_state_unavailable",
+    });
     expect(sent).toEqual([]);
     expect(requests).toHaveLength(1);
   });
@@ -321,6 +327,17 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     });
     expect(sent).toHaveLength(0);
     expect(requests).toHaveLength(0);
+  });
+
+  it("is not applicable when the destination has neither a recipient nor a webhook", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(mailer, { resolve: async () => routedTo([]) });
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "not_applicable",
+      reason: "contact_destination_not_configured",
+    });
+    expect(sent).toEqual([]);
   });
 
   it("leaves an email-only notice to retry when recipient preparation fails", async () => {
@@ -533,14 +550,14 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     routine: { id: "routine_1", name: "Book accommodation" },
     collected: { name: "Ada Lovelace", arrival_date: "2026-10-12" },
     notice: { subject: "New booking: {{slot.name}}", intro: "Confirm {{slot.arrival_date}} with the guest." },
-    conversation: { entryPageUrl: "https://ananda.example/stays" },
+    conversation: { entryPageUrl: "https://valmora.example/stays" },
   };
 
   it("emails a completion notice in plain text with the authored subject and intro and every collected value", async () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(
       mailer,
-      { resolve: async () => routedTo(["reception@ananda.example"]) },
+      { resolve: async () => routedTo(["reception@valmora.example"]) },
       undefined,
       undefined,
       { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?itemId=conv_1" },
@@ -550,7 +567,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0].subject).toBe("New booking: Ada Lovelace");
-    expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:completion.notify:email:reception%40ananda.example");
+    expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:completion.notify:email:reception%40valmora.example");
     expect(sent[0].text).toBe([
       "A visitor completed a request in chat.",
       "Confirm 2026-10-12 with the guest.",
@@ -559,7 +576,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       "  Name: Ada Lovelace",
       "  Arrival date: 2026-10-12",
       "",
-      "Entry page: https://ananda.example/stays",
+      "Entry page: https://valmora.example/stays",
       "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
     ].join("\n"));
   });
@@ -610,14 +627,14 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       const { mailer, sent } = recordingMailer();
       const sink = new EmailWebhookOperatorNotificationSink(
         mailer,
-        { resolve: async () => routedTo(["reception@ananda.example", "owner@ananda.example"]) },
+        { resolve: async () => routedTo(["reception@valmora.example", "owner@valmora.example"]) },
       );
 
       await sink.deliver(giftNotification(), { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
 
       expect(sent.map((message) => [message.to, message.replyTo])).toEqual([
-        ["reception@ananda.example", "grace@example.com"],
-        ["owner@ananda.example", "grace@example.com"],
+        ["reception@valmora.example", "grace@example.com"],
+        ["owner@valmora.example", "grace@example.com"],
       ]);
     });
 
@@ -637,7 +654,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     it("sends with no reply-to when the notice has none", async () => {
       const { mailer, sent } = recordingMailer();
-      const sink = new EmailWebhookOperatorNotificationSink(mailer, { resolve: async () => routedTo(["reception@ananda.example"]) });
+      const sink = new EmailWebhookOperatorNotificationSink(mailer, { resolve: async () => routedTo(["reception@valmora.example"]) });
 
       await sink.deliver(completionNotification, { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
 

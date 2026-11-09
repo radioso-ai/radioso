@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-11-03
+last_updated: 2026-11-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -104,7 +104,7 @@ Lettermint is an alternative to Resend for transactional mail and the email chan
 
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`. Without `RESEND_MAIL_API_KEY` or `LETTERMINT_PROJECT_TOKEN`, the backend writes outbound mail to the log instead of sending it, so password resets, email verification, and [user invitations](/api/accounts-and-users#invite-a-user) reach nobody.
 
-`NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED` defaults to `true`. Keep it on for shared or multi-tenant deployments: an external contact or operator-notice address confirms before it receives notification content. A single-tenant self-hosted deployment can set it to `false`; recipient status then reads `confirmation_not_required`, while hard-bounce and complaint suppression still applies. Confirmation and unsubscribe links use `CONNECTOR_PUBLIC_BASE_URL` when it is set, then `APP_BASE_URL`; configure one of those as the public HTTPS origin that reaches the backend.
+`NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED` defaults to `true`. Keep it on for shared or multi-tenant deployments: an external contact or operator-notice address confirms before it receives notification content. A single-tenant self-hosted deployment can set it to `false`; recipient status then reads `confirmation_not_required`, while hard-bounce and complaint suppression still applies. Confirmation and unsubscribe links use `CONNECTOR_PUBLIC_BASE_URL` when it is set, then `APP_BASE_URL`; configure one of those as the public HTTPS origin that reaches the backend. When a notice skips an address that has not confirmed, stopped notifications, or bounced, Radioso also emails the organization's owners and admins, and a workspace's grant admins, through the same mail transport, with a link built from `APP_BASE_URL`. When no address or webhook can take the notice at all, that email is the notice itself, so the request still reaches a person (see [When no address can receive a notice](/api/agents-and-skills#when-no-address-can-receive-a-notice)).
 
 When transactional mail uses Resend, subscribe the existing `/api/connectors/email/webhook` endpoint to `email.bounced` and `email.complained`. When it uses Lettermint, subscribe the same endpoint to `message.hard_bounced` and `message.spam_complaint` instead. Either way Radioso verifies the requests with `EMAIL_CHANNEL_WEBHOOK_SECRET` and records permanent bounces and complaints for notification-tagged messages. With the email channel off, the route checks signatures for the provider `MAIL_DRIVER` resolves to; with it on, the channel's provider checks them, so transactional mail must use the channel's provider (see [Email channel](/operators/email-channel)). Log and noop drivers have no provider webhook, so their notification delivery continues without automatic bounce or complaint suppression.
 
@@ -309,6 +309,14 @@ To turn it on for a stack:
 4. Run the check again.
 
 A one-off `psql` session needs nothing extra: `psql` tries TLS first by default.
+
+## Database maintenance window
+
+Cloud SQL restarts an instance to apply its own updates, and the bundled Terraform runs a single-zone instance, so the stack has no database for the few minutes a restart takes: chat turns and worker jobs that reach it then fail. `db_maintenance_window` names the weekly hour Cloud SQL schedules that maintenance in. Left at `null`, Cloud SQL picks the time, and it can be any day and any hour.
+
+Set it per stack as `{ day = 7, hour = 2 }`. `day` runs from 1 (Monday) to 7 (Sunday) and `hour` from 0 to 23, both in UTC, so convert your quiet hour from local time; in summer time the window lands an hour later on the local clock. `update_track` picks when in Cloud SQL's rollout the instance takes each update, and defaults to `"stable"`. The environment roots under `infra/terraform/environments` each set Sunday 03:00 local winter time for their region: hour `9` for `us-central1` and hour `2` for `europe-west1`.
+
+Changing the window updates the instance in place without a restart, so it can go out with any apply. The window governs planned maintenance; Cloud SQL can still restart an instance outside it for an urgent fix.
 
 ## Conversation erasure keys
 

@@ -56,6 +56,12 @@ export const authApi = {
     }
   },
 
+  // Revokes the session the cookie names and clears the cookie. Succeeds without a
+  // live session, so it is safe to call from any signed-in or signed-out state.
+  async logout(options: { signal?: AbortSignal } = {}): Promise<void> {
+    await request<void>('/auth/logout', { method: 'POST', signal: options.signal }, { withSession: true })
+  },
+
   async getProfile(): Promise<UserProfile> {
     return request<UserProfile>('/auth/profile', { method: 'GET' }, { withSession: true })
   },

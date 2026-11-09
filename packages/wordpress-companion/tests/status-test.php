@@ -110,10 +110,10 @@ $GLOBALS['object_taxonomies']['autore'] = (object) [
     'name' => 'autore', 'public' => true, 'object_type' => ['product'],
     'labels' => (object) ['singular_name' => 'Autore'],
 ];
-$GLOBALS['post_terms']['502:autore'] = [(object) ['name' => 'Swami Kriyananda']];
+$GLOBALS['post_terms']['502:autore'] = [(object) ['name' => 'Swami Selan']];
 $GLOBALS['wp_options'][RADIOSO_OPT_AUTHOR_TAXONOMY] = 'autore';
 assert_true(
-    radioso_author_payload($catalogue_post) === ['name' => 'Swami Kriyananda'],
+    radioso_author_payload($catalogue_post) === ['name' => 'Swami Selan'],
     'a configured taxonomy supplies the author with no WordPress user id'
 );
 
@@ -137,7 +137,7 @@ $GLOBALS['wc_products'][502] = new WC_Product_Stub(502, 'AEY0112', 'Esaurito', [
 ], 0, '17', 'simple', [], '20', '17', 'outofstock');
 
 $facts = radioso_facts_html($catalogue_post);
-assert_true(strpos($facts, 'Autore: Swami Kriyananda') !== false, 'facts carry taxonomy terms');
+assert_true(strpos($facts, 'Autore: Swami Selan') !== false, 'facts carry taxonomy terms');
 assert_true(
     strpos($facts, 'Categoria: Libri, Yoga &amp; &lt;Meditazione&gt;') !== false,
     'facts escape term names'
@@ -322,7 +322,7 @@ assert_true(radioso_product_fields($plain_post) === [], 'a page carries no produ
 radioso_dispatch('updated', $catalogue_post);
 $body = json_decode($GLOBALS['last_webhook_body'], true);
 assert_true(
-    $body['post']['author']['name'] === 'Swami Kriyananda',
+    $body['post']['author']['name'] === 'Swami Selan',
     'dispatch publishes the taxonomy author'
 );
 assert_true(!isset($body['post']['author']['id']), 'taxonomy author carries no WordPress user id');

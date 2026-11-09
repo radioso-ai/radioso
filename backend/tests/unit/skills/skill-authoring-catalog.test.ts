@@ -39,12 +39,12 @@ const agentSkill = (overrides: Partial<AgentSkillSpine> = {}): AgentSkillSpine =
   id: randomUUID(),
   workspaceId: "workspace_1",
   agentId: "agent_1",
-  skillName: "contact_mayadevi",
+  skillName: "contact_lina",
   kind: "notify",
   targetType: "notify_delivery",
   targetId: null,
   config: {
-    delivery: { recipientEmails: ["mayadevi@example.com"], webhook: null },
+    delivery: { recipientEmails: ["lina@valmora.example"], webhook: null },
     exposedInputs: { message: true, email: true },
   },
   invocationMode: "routine_named",
@@ -223,11 +223,11 @@ describe("SkillAuthoringCatalogService", () => {
 
     expect(descriptors.map((descriptor) => descriptor.skillName)).toEqual([
       "retrieval.context",
-      "contact_mayadevi",
+      "contact_lina",
     ]);
-    expect(descriptors.find((descriptor) => descriptor.skillName === "contact_mayadevi")).toMatchObject({
-      skillName: "contact_mayadevi",
-      displayName: "Contact Mayadevi",
+    expect(descriptors.find((descriptor) => descriptor.skillName === "contact_lina")).toMatchObject({
+      skillName: "contact_lina",
+      displayName: "Contact Lina",
       category: "notify",
       inputs: [
         { key: "message", type: "text", required: true },

@@ -36,6 +36,7 @@ import { ApprovalDecisionService } from "../../src/modules/approvals/public.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { AuthFunnelService } from "../../src/modules/auth/services/authFunnelService.js";
+import { SessionSignOutService } from "../../src/modules/auth/services/sessionSignOutService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ReviewTurnAuditReader } from "../../src/modules/chat/contracts/index.js";
@@ -242,6 +243,7 @@ import {
 } from "../../src/shared/agent-runtime/index.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../../src/app/composition/copilotToolCatalog.js";
 import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
+import { NotificationDeliveryReader } from "../../src/modules/operatorNotifications/public.js";
 import { createDocumentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
@@ -977,6 +979,8 @@ export const createTestDependencies = (overrides: {
   emailChannel?: AppDependencies["emailChannel"];
   /** Delivery failures and the decisions on them; omitted means an empty in-memory store no channel resolves. */
   deliveryFailures?: AppDependencies["deliveryFailures"];
+  /** What happened to each address of each notice; omitted means a workspace that has sent none. */
+  notificationDeliveries?: AppDependencies["notificationDeliveries"];
   /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
   conversationErasure?: AppDependencies["conversationErasure"];
   /** Data subject lookup, export and erasure; omitted means a workspace where a lookup finds nobody. */
@@ -1322,7 +1326,7 @@ export const createTestDependencies = (overrides: {
           rewrittenQuery: input.query.trim(),
           turnKind: "referential_relation",
           proposedActiveSubject: normalizedContext,
-          relatedEntities: ["Arudra"],
+          relatedEntities: ["Tomas"],
           unresolved: true,
           confidence: 0.75,
         };
@@ -1964,8 +1968,9 @@ export const createTestDependencies = (overrides: {
     prepareDelivery: async (input: { emails: readonly string[] }) => ({
       eligibleEmails: [...input.emails],
       eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
-      skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+      skippedRecipients: [],
     }),
+    unsubscribeUrl: async () => "",
     resendConfirmation: async () => false,
     requestConfirmations: async () => undefined,
     confirm: async () => true,
@@ -1980,6 +1985,7 @@ export const createTestDependencies = (overrides: {
       providerEventId: string;
     }) => undefined,
   };
+  const notificationDeliveries = new NotificationDeliveryReader({ list: async () => [] });
   const operatorNoticeDestinations = new OperatorNoticeDestinationsReader({
     skills: agentSkillRepository,
     resolver: new ConfiguredContactDeliveryResolver(
@@ -2731,6 +2737,7 @@ export const createTestDependencies = (overrides: {
     agentSkillsService,
     skillCapabilityRegistry,
     operatorNoticeDestinations,
+    notificationDeliveries,
     contextVariables: contextVariableService,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
@@ -3027,6 +3034,7 @@ export const createTestDependencies = (overrides: {
     skillCapabilityRegistry,
     agentSkillsService,
     operatorNoticeDestinations,
+    notificationDeliveries: overrides.notificationDeliveries ?? notificationDeliveries,
     notificationRecipientPolicy,
     notificationRecipientSuppressions,
     emailSkillActivityRepository,
@@ -3073,6 +3081,7 @@ export const createTestDependencies = (overrides: {
       repository: authFunnelRepository,
       auditService,
     }),
+    sessionSignOutService: new SessionSignOutService({ sessionRepository, auditService }),
     workspaceService,
     workspaceSummaryService,
     ingestionSettingsService,
@@ -3354,6 +3363,7 @@ export const createTestApp = (overrides: {
   agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
   emailChannel?: AppDependencies["emailChannel"];
   deliveryFailures?: AppDependencies["deliveryFailures"];
+  notificationDeliveries?: AppDependencies["notificationDeliveries"];
   conversationErasure?: AppDependencies["conversationErasure"];
   dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;

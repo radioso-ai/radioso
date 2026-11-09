@@ -69,7 +69,7 @@ import {
 } from "./builders/infra.js";
 import {
   buildAccessServices,
-  buildAuthFunnelService,
+  buildAuthSessionServices,
   buildAuthService,
   buildEmailVerificationService,
   buildPasswordResetService,
@@ -158,7 +158,7 @@ import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolve
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
-import { buildNotificationRecipientPolicy, buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
+import { buildNotificationDeliveryReader, buildNotificationRecipientPolicy, buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import { NotificationRecipientStateRepository } from "../../db/repositories/notificationRecipientStateRepository.js";
@@ -289,11 +289,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookDestinations,
     webhookSkillDefinitionService,
   } = integrations;
-  const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(
-    infrastructure.database,
-    notificationRecipientPolicy,
-    infrastructure.usageLimitPolicy,
-  );
+  const notificationDeliveries = buildNotificationDeliveryReader(infrastructure.database);
+  const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(infrastructure.database, notificationRecipientPolicy, infrastructure.usageLimitPolicy);
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
     composition,
     env,
@@ -482,7 +479,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
-  const authFunnelService = buildAuthFunnelService({
+  const authSessionServices = buildAuthSessionServices({
     auditService: infrastructure.auditService,
     env,
     repositories,
@@ -1089,6 +1086,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillsService,
     skillCapabilityRegistry,
     operatorNoticeDestinations: { read: (input) => operatorNoticeDestinations.read(input) },
+    notificationDeliveries,
     contextVariables: contextVariableService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
@@ -1354,7 +1352,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     accessGrantService: access.accessGrantService,
     passwordResetService,
     emailVerificationService,
-    authFunnelService,
+    ...authSessionServices,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
     apiPrincipalAuthenticator: access.apiPrincipalAuthenticator,
@@ -1501,6 +1499,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillCapabilityRegistry,
     agentSkillsService,
     operatorNoticeDestinations,
+    notificationDeliveries,
     notificationRecipientPolicy,
     notificationRecipientSuppressions,
     accountRepository: repositories.accountRepository,

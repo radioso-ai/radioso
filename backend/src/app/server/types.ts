@@ -45,6 +45,7 @@ import type {
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
 import type { AuthFunnelService } from "../../modules/auth/services/authFunnelService.js";
+import type { SessionSignOutService } from "../../modules/auth/services/sessionSignOutService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AgentPublicationReader, AgentRevisionService } from "../../modules/agents/public.js";
@@ -137,7 +138,11 @@ import type { AgentWizardService } from "../../modules/agentWizard/service.js";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import type { LlmCapabilityResolver } from "../../shared/infra/llm/capabilityResolver.js";
 import type { EmailService } from "../../modules/mail/public.js";
-import type { NotificationRecipientPolicyPort, NotificationSuppressionStore } from "../../modules/operatorNotifications/public.js";
+import type {
+  NotificationDeliveryReaderPort,
+  NotificationRecipientPolicyPort,
+  NotificationSuppressionStore,
+} from "../../modules/operatorNotifications/public.js";
 import type {
   EvalCaseService,
   EvalMessageCaseService,
@@ -221,6 +226,7 @@ export interface AppDependencies {
   passwordResetService: PasswordResetService;
   emailVerificationService: EmailVerificationService;
   authFunnelService: AuthFunnelService;
+  sessionSignOutService: SessionSignOutService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   apiPrincipalAuthenticator: ApiPrincipalAuthenticator;
@@ -415,6 +421,8 @@ export interface AppDependencies {
   agentSkillsService: AgentSkillsService;
   /** Where routine ending notices go; names recipient emails, so it serves workspace sessions only. */
   operatorNoticeDestinations: Pick<OperatorNoticeDestinationsReader, "read">;
+  /** What happened to each address of each notice; names recipient emails, so it serves workspace sessions only. */
+  notificationDeliveries: NotificationDeliveryReaderPort;
   notificationRecipientPolicy: NotificationRecipientPolicyPort;
   notificationRecipientSuppressions: NotificationSuppressionStore;
   agentService: AgentService;

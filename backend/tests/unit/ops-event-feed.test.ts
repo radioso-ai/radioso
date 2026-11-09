@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ProductAnalyticsEvent } from "../../src/shared/analytics/productAnalyticsTypes.js";
+import { errorReportMessage, stackFramesOf } from "../../src/shared/errors/errorReportShape.js";
 import type { ErrorEvent } from "../../src/shared/errors/errorTypes.js";
 import {
   toOpsEventFromAnalytics,
@@ -39,9 +40,10 @@ const errorEvent = (overrides: Partial<ErrorEvent> = {}): ErrorEvent => ({
   severity: "error",
   service: "radioso-api",
   environment: "live",
-  message: "boom",
+  message: errorReportMessage`http.request.unhandled: TypeError`,
   errorClass: "TypeError",
-  stack: "TypeError: boom\n    at handler",
+  stack: stackFramesOf("TypeError: boom\n    at handler (/app/dist/handler.js:1:2)"),
+  fingerprint: "radioso-api:http.request.unhandled:TypeError",
   ...overrides,
 });
 
@@ -80,7 +82,7 @@ describe("ops event envelope", () => {
       name: "http.request.unhandled",
       severity: "warn",
     });
-    expect(envelope.payload).toMatchObject({ errorClass: "TypeError", message: "boom" });
+    expect(envelope.payload).toMatchObject({ errorClass: "TypeError", message: "http.request.unhandled: TypeError" });
   });
 });
 

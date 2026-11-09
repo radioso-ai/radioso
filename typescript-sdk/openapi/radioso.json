@@ -23266,6 +23266,97 @@
         ],
         "additionalProperties": false
       },
+      "NotificationDelivery": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Null when the notice names no agent, or its agent was deleted."
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The conversation that raised the notice."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "contact_request",
+              "approval",
+              "handoff",
+              "completion"
+            ],
+            "description": "What raised the notice: a contact request, an approval, or a routine ending's hand-off or completion."
+          },
+          "recipientEmail": {
+            "type": "string",
+            "description": "The normalized address the notice was meant for."
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "skipped_unconfirmed",
+              "skipped_revoked",
+              "skipped_suppressed",
+              "skipped_cap",
+              "not_dispatched",
+              "failed"
+            ],
+            "description": "`sent`: the mail provider accepted it. `skipped_unconfirmed`: the address has not confirmed. `skipped_revoked`: its owner stopped notifications. `skipped_suppressed`: an earlier mail bounced or was reported as spam. `skipped_cap`: a daily or per-conversation limit stopped it. `not_dispatched`: the deployment records mail without sending it. `failed`: the mail was attempted and did not go out, or the address's state could not be read."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the notice was first handled."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When its latest attempt settled."
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "conversationId",
+          "kind",
+          "recipientEmail",
+          "outcome",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "NotificationDeliveryPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationDelivery"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass back as `cursor` for the next page; null on the last one."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
       "DataSubjectIdentity": {
         "type": "object",
         "properties": {
@@ -26962,6 +27053,41 @@
           },
           "401": {
             "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Sign out of the current session",
+        "description": "Revokes the session named by the session cookie, so the same cookie value is refused afterwards, and clears the cookie. Only that session ends; the user's other sessions stay signed in. The call succeeds without a live session, so a repeat, a missing cookie, or an unknown one all answer 204 and still clear the cookie. Every response, failures included, carries the cookie-clearing `Set-Cookie`, so the caller no longer holds the session; after a 5xx the server-side session may still be live until its lifetime ends, which is the case for a client that kept a copy of the cookie.",
+        "operationId": "logoutAccount",
+        "responses": {
+          "204": {
+            "description": "Session ended, or none was live; the session cookie is cleared"
+          },
+          "500": {
+            "description": "The sign-out could not be completed; the session cookie is cleared in this response regardless",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unavailable, so the session could not be revoked; the session cookie is cleared in this response regardless",
             "content": {
               "application/json": {
                 "schema": {
@@ -50679,6 +50805,110 @@
           },
           "404": {
             "description": "Agent or skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notification-deliveries": {
+      "get": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "List notification deliveries",
+        "description": "What happened to each address of each notice, newest first: when it was handled, which kind of notice, which conversation, which address, and whether it was sent or why it was skipped. Recipient emails are personal data, so this route accepts workspace sessions only.",
+        "operationId": "listNotificationDeliveries",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sent",
+                "skipped_unconfirmed",
+                "skipped_revoked",
+                "skipped_suppressed",
+                "skipped_cap",
+                "not_dispatched",
+                "failed"
+              ]
+            },
+            "required": false,
+            "name": "outcome",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification deliveries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationDeliveryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid query or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
             "content": {
               "application/json": {
                 "schema": {

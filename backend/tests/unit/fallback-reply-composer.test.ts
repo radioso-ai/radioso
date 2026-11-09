@@ -369,12 +369,12 @@ describe("grounded miss response composer", () => {
     await composer.composeNoContext({
       query: "I like potato chips",
       usageContext,
-      answerInstructionBlock: "Configured response instructions:\nHelp visitors choose and book Ananda courses.",
+      answerInstructionBlock: "Configured response instructions:\nHelp visitors choose and book Valmora courses.",
     });
 
     expect(observedPrompt).toContain("Configured answer instructions:");
     expect(observedPrompt).toContain("Do not refer to yourself");
-    expect(observedPrompt).toContain("Help visitors choose and book Ananda courses.");
+    expect(observedPrompt).toContain("Help visitors choose and book Valmora courses.");
     expect(observedPrompt).toContain("Redirect to a concrete configured topic");
     expect(observedPrompt).toContain("do not merely ask for a narrower question");
     expect(observedPrompt).toContain("Do not identify, describe, summarize, compare, or explain");
@@ -593,7 +593,7 @@ describe("grounded miss response composer", () => {
   it("keeps a scoped no-context response instead of discarding it as boilerplate-worthy", async () => {
     const scopedResponse = [
       "That is outside what I can help with here.",
-      "I can help with Ananda Europe, meditation, Kriya Yoga, retreats, satsangs, events, books, videos, news, and the Ananda Assisi retreat center.",
+      "I can help with Valmora Europe, meditation, Valmora Meditation, retreats, satsangs, events, books, videos, news, and the Valmora Montelago retreat center.",
       "If you are exploring spiritual practice, ask about a course, retreat, or upcoming online event.",
       "For example, I can help you find a beginner-friendly meditation option or point you toward the official calendar.",
     ].join(" ");

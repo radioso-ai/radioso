@@ -277,6 +277,115 @@ test("marks an information field sensitive, saves it, and reads it back after a 
   ).not.toHaveProperty("sensitivity");
 });
 
+test("turns a field's Editable after completion on and off, saves it, and reads it back after a reload", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Book a class");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor wants to book a class.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for the @email");
+  await page.getByRole("option", { name: /Create variable “email”/ }).click();
+
+  // The chip menu shows the flag but the field row owns it, so the menu item is not offered as a
+  // control that does nothing.
+  await documentEditor.locator("[data-routine-chip='variable']").first().click();
+  await expect(page.getByRole("menuitemcheckbox", { name: "Editable after completion" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  const savedMutable = () => routineUpdates
+    .filter((update) => update.method === "POST" || update.method === "PATCH")
+    .at(-1)?.body?.slots?.find((slot) => slot.key === "email")?.mutable;
+
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "email", exact: true }).click();
+  const editable = documentEditor.getByRole("switch", { name: "Slot email editable after completion" });
+  await expect(editable).not.toBeChecked();
+  await editable.click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(documentEditor.getByRole("button", { name: "email", exact: true })).toContainText("editable after completion");
+  await expect.poll(savedMutable, { timeout: 15_000 }).toBe(true);
+
+  await page.reload();
+  const reloadedEditor = page.getByRole("article", { name: "Routine document editor" });
+  await reloadedEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await expect(reloadedEditor.getByRole("button", { name: "email", exact: true })).toContainText("editable after completion");
+
+  // Switched back off, the saved field says so and a reload keeps it off.
+  await reloadedEditor.getByRole("button", { name: "email", exact: true }).click();
+  const reloadedSwitch = reloadedEditor.getByRole("switch", { name: "Slot email editable after completion" });
+  await expect(reloadedSwitch).toBeChecked();
+  await reloadedSwitch.click();
+  await reloadedEditor.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(savedMutable, { timeout: 15_000 }).toBe(false);
+
+  await page.reload();
+  const offEditor = page.getByRole("article", { name: "Routine document editor" });
+  await offEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await expect(offEditor.getByRole("button", { name: "email", exact: true })).not.toContainText("editable after completion");
+  await offEditor.getByRole("button", { name: "email", exact: true }).click();
+  await expect(offEditor.getByRole("switch", { name: "Slot email editable after completion" })).not.toBeChecked();
+});
+
+test("says Editable after completion has no effect once every ending of the routine sends what it collects", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates: [] });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Book a stay");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for the @arrival");
+  await page.getByRole("option", { name: /Create variable “arrival”/ }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  const hint = documentEditor.getByText("No effect: this routine always sends it on before it ends.");
+  const editable = documentEditor.getByRole("switch", { name: "Slot arrival editable after completion" });
+
+  // The routine finishes without telling anyone, so a visitor can still change the date.
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "arrival", exact: true }).click();
+  await editable.click();
+  await expect(editable).toBeChecked();
+  await expect(hint).toBeHidden();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  // Once its only ending hands off, the team already has the date, so the switch does nothing.
+  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+  await documentEditor.getByLabel("complete kind").selectOption("handoff");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "arrival", exact: true }).click();
+  await expect(editable).toBeChecked();
+  await expect(hint).toBeVisible();
+
+  // The hint goes with the switch.
+  await editable.click();
+  await expect(hint).toBeHidden();
+});
+
 const addChatStep = async (page: Page, documentEditor: Locator, text: string) => {
   await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
   await page.getByRole("menuitem", { name: "Chat" }).click();
@@ -410,7 +519,7 @@ test("a step instruction offers only the variable menu, never a skill or flow-ta
   // through a tool step, never through step text.
   const instruction = documentEditor.getByLabel("Step 1 instruction");
   await instruction.click();
-  await instruction.pressSequentially("Ask via #ananda_edizioni_mcp");
+  await instruction.pressSequentially("Ask via #valmora_books_mcp");
   await expect(page.getByRole("listbox")).toHaveCount(0);
 
   // `@` still opens the variable menu, undisturbed by `#` finding nothing.
@@ -428,7 +537,7 @@ test("a step instruction offers only the variable menu, never a skill or flow-ta
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   // The `#` text was never converted to a chip: it reads back exactly as typed.
-  await expect(documentEditor).toContainText("Ask via #ananda_edizioni_mcp then @order_total on Current page");
+  await expect(documentEditor).toContainText("Ask via #valmora_books_mcp then @order_total on Current page");
 });
 
 // Whether the page's selection covers the element whole, not just part of it.

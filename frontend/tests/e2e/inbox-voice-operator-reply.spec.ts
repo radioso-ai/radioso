@@ -47,7 +47,7 @@ const installCallBackend = async (page: Page) => {
   const summary = () => ({
     id: conversationId,
     agentId: defaultAgentId,
-    agentName: "Gioia",
+    agentName: "Sola",
     sourceChannel: "voice",
     sourceOrigin: null,
     anonymousSessionId: null,

@@ -35,6 +35,7 @@ import { registerConversationRecordingPaths } from "./paths/conversationRecordin
 import { registerAccountVoiceRecordingPaths } from "./paths/accountVoiceRecordingPaths.js";
 import { registerAgentVoiceConnectionPaths } from "./paths/agentVoiceConnectionPaths.js";
 import { registerDeliveryFailurePaths } from "./paths/deliveryFailurePaths.js";
+import { registerNotificationDeliveryPaths } from "./paths/notificationDeliveryPaths.js";
 import { registerHeldReplyPaths } from "./paths/heldReplyPaths.js";
 import { registerDecisionPaths } from "./paths/decisionPaths.js";
 import { registerConnectorsPaths } from "./paths/connectorsPaths.js";
@@ -78,6 +79,7 @@ export const registerOpenApiPaths = (
   registerWebhookSkillsPaths(registry, schemas, security);
   registerSlackSkillsPaths(registry, schemas, security);
   registerAgentSkillsPaths(registry, schemas, security);
+  registerNotificationDeliveryPaths(registry, schemas, security);
   registerRetrievalAnswerPaths(registry, schemas, security);
   registerDocumentsPaths(registry, schemas, security);
   registerDocumentChunksPaths(registry, schemas, security);

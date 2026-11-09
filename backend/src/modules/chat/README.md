@@ -593,6 +593,21 @@ imports from `services/`.
   `operator_notice_destinations` tool. Recipient emails are personal data: the HTTP route
   serves workspace sessions only, and the tool answers the signed-in operator's own Ray or
   Operator MCP client. Neither returns a webhook URL.
+  Both senders of operator-facing email (`contactSendActionHandler.ts` and
+  `emailWebhookSink.ts`) plan through `operatorNotifications`' `planNotificationEmail`
+  and hand the plan to `deliverNotification`, which builds each copy's text and
+  idempotency key, sends, records one `notification_deliveries` row per address
+  (`NotificationDeliveryRecorderPort`, composed in `app/composition/contactDelivery.ts`),
+  and returns whether the notice was delivered, partial or skipped. The sender supplies
+  only what its transport owns: the mail kind and the reply-to. When recipient policy
+  leaves out every configured address and no webhook is set, the plan sends the notice to
+  the workspace's administrators instead (`NotificationAdministratorFallbackPort`, composed
+  as `buildNotificationAdministratorFallback`), each copy opening with one line on why it
+  came to them. A handler resolves `ActionDispatchOutcome`: `partial` settles the
+  outbox row as `partially_dispatched` with the reason in `last_error` (a notice only the
+  administrators received is partial), a skip as `skipped`, and `contact.send` with no
+  recipient and no webhook is a skip like the operator-notice sink's. Recording and the
+  administrators' alert never fail a delivery.
   An authored notice can also carry `replyToSlot`, the key of the email slot replies go
   to. Unlike `skillName` it is content, not routing, so it rides the payload's `notice`
   next to `subject` and `intro` (`operatorNoticeActionPayload`). At delivery

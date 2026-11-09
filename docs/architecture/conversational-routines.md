@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-11-02
+last_updated: 2026-11-09
 ---
 
 # Conversational Routines
@@ -148,7 +148,7 @@ running both a selector pass and a step reply records both.
 
 On the routine's first turn the selector always reads the message, even when the
 activator already filled the first step's slot, so the rest of an opening message
-("the Kriya retreat, 11 to 14 November") is kept. When fast-forwarding stops at a
+("the Valmora retreat, 11 to 14 November") is kept. When fast-forwarding stops at a
 step that still lacks values, that step also reads the opening message once
 before it is asked, whatever it asks for and whether the routine reached it
 directly or through a tool step. It moves on only if that read fully
@@ -697,6 +697,73 @@ event match the turn, the engine records the stage and does not ask the routine 
 the same message a second time; a yield from any other turn is ignored, and the routine
 is asked as usual. Radioso keeps the yield on the turn's session until `processTurn`
 answers, so a retry of a failed turn hands it back again.
+
+### After a routine ends
+
+For as long as the store keeps a completed run (30 minutes after its last update in
+Radioso), each new message first meets the correction pass, then the reentry gate, then
+activation. The correction pass lets a visitor change a value the run holds in a slot
+marked `mutable` ("Editable after completion") without running the routine again. Say a
+booking ended holding `arrival: 2027-01-05` and nothing left the conversation: "actually
+I'd arrive on 9 January" changes the held arrival to `2027-01-09`, and the reply confirms
+the change.
+
+`RoutineSlotCorrector` (`packages/conversation-defaults/src/routineSlotCorrector.ts`)
+decides whether to offer a correction, and offers one only when it would be true:
+
+- It considers only the slots `correctableSlots` returns: declared, `mutable`, and holding
+  a value in the run. A run that ended holding none, such as a booking that ended on its
+  opening turn, gets no model call, and the message goes on to reentry and activation.
+- It offers nothing once the run's values have left the conversation, read from the run's
+  `path` against the routine it ran (`completedRunSentValues` in
+  `packages/conversation-engine/src/routineEnding.ts`): the run passed a tool, action, or
+  approval step, or its ending notified operators, handed off (a run stuck on a step ends
+  there and hands off), or fired the completion export. A changed value would reach none
+  of those, and the ending does not run again, so the agent does not say it changed. Every
+  tool step counts, a read-only lookup included: the run record keeps which steps ran, not
+  what each skill did outside the conversation. Whether the ending exported is decided by
+  `firingCompletionExport`, the rule the runner emits the export by, applied to the routine
+  as this turn loads it.
+- Otherwise one model call (`backend/prompts/chat/routine-slot-correction-detect.md`)
+  sees each offered slot with the value it holds, today's date in the turn's zone, and the
+  conversation, and returns an `intent`: `correction` with the slot and its new value,
+  `new_request` for a message that asks for something new, such as another booking with
+  different dates, or `other`. Only `correction` is offered; the rest go on to reentry and
+  activation like any message.
+
+The engine claims a correction only to a slot `correctableSlots` returns for the run, the
+same rule the corrector offers by, then checks the value fits the slot's type
+(`verifySlotCorrection`) before it saves the run with the new value. A value that fails its
+type gets a reply asking for a valid one and changes nothing. The confirmation
+(`routine-slot-correction-confirm.md`) says the value was noted and never that anything was
+booked, sent, or passed on.
+
+A message that is not a correction goes where the routine's reentry setting sends it. Under
+`once_per_conversation`, the default, the ended routine stays out of activation, so a new
+request such as "I'd like to book from 8 to 10 January" is answered normally rather than
+starting the booking again; under `always` it starts a new run, and under `semantic` the
+reentry gate decides.
+
+A run the semantic reentry gate reopens with `resume_existing` starts again from its first
+step with the values it held, and its record keeps only the second part's `path`. If the
+first part notified the team and the reopened run ends quietly, a later correction is
+offered although the team holds the earlier value. The run record has no place to carry the
+first part's verdict across the reopening.
+
+The turn trace records a claimed correction as a `routine_slot_correction` stage, `applied`
+or `rejected` with the slot key, never the value. Every detection also sets
+`routine.slot_correction.decision` on the turn's span to the final outcome: `correction`,
+`invalid_value` when the new value failed its type, or why no correction was offered —
+`not_held`, `already_sent`, `new_request`, `not_a_correction`, `no_mutable_slot`, or
+`unknown_routine`.
+
+At authoring time, `routineAdvisories` in `@radioso/routine-definition` reports
+`mutable_slot_not_correctable` for each `mutable` slot of a routine that can't end without
+sending what it collected: no route from its first step reaches an ending that sends
+nothing (`endingSendsCollectedValues`) without crossing a tool, action, or approval step.
+The advisory never blocks saving or publishing. Ray's `validate_routine` and routine
+proposals report it, and a backend test compares it against `completedRunSentValues` over
+every route through the compiled routine.
 
 ## Activation and clarification
 

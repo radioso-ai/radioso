@@ -163,7 +163,7 @@ describe("wordpressWebhookRouter", () => {
     const { app, ingest } = setupApp();
     const body = JSON.stringify({
       event: "published",
-      post: { ...validPost, author: { name: "Swami Kriyananda" } },
+      post: { ...validPost, author: { name: "Swami Selan" } },
     });
     const res = await request(app)
       .post("/api/connectors/wordpress/ws-1/webhook")
@@ -175,7 +175,7 @@ describe("wordpressWebhookRouter", () => {
     const firstCallArgs = ingest.mock.calls[0] as unknown as [
       { metadata: Record<string, unknown> },
     ];
-    expect(firstCallArgs[0].metadata).toMatchObject({ author: "Swami Kriyananda" });
+    expect(firstCallArgs[0].metadata).toMatchObject({ author: "Swami Selan" });
   });
 
   it("forwards scalar fields as indexed fields", async () => {

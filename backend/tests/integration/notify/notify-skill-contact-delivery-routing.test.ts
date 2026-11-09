@@ -31,7 +31,7 @@ import type { ActionRequestRecord, EnqueueActionRequestInput } from "../../../sr
 
 const allowedRecipientPolicy = {
   prepareDelivery: async (input: { emails: readonly string[] }) => ({
-    eligibleEmails: [...input.emails], eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })), skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+    eligibleEmails: [...input.emails], eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })), skippedRecipients: [],
   }),
 };
 class ContactSendActionHandler extends ContactSendActionHandlerBase {
@@ -219,7 +219,7 @@ describe("notify skill contact delivery routing (enqueue through drain)", () => 
       targetType: "notify_delivery",
       invocationMode: "routine_named",
       enabled: true,
-      config: { delivery: { recipientEmails: ["francesco@example.com"], webhook: null } },
+      config: { delivery: { recipientEmails: ["marta@valmora.example"], webhook: null } },
     });
 
     // The turn that reached the ending queues its notice the way the chat turn lifecycle does:
@@ -249,6 +249,6 @@ describe("notify skill contact delivery routing (enqueue through drain)", () => 
     });
     await dispatchPending(outbox, [{ type: ending.type, handler }]);
 
-    expect(sent.map((message) => message.to)).toEqual(["francesco@example.com"]);
+    expect(sent.map((message) => message.to)).toEqual(["marta@valmora.example"]);
   });
 });

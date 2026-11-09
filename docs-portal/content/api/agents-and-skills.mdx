@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-11-07
+last_updated: 2026-11-08
 ---
 
 # Agents and skills
@@ -343,7 +343,7 @@ Configure delivery in the notify skill config:
 
 An agent can have more than one `notify` skill — for example `contact_sales` and `contact_support`, each with its own `delivery` config. A routine step that calls a specific skill by name (`#contact_sales`) delivers through that skill's own recipients and webhook. A routine step that reaches the chat-only contact flow without naming a skill, or names a skill that turns out to be disabled or missing, delivers through the `contact_human` skill when one is configured, then through the agent's own delivery setting, then through the workspace owner.
 
-An external recipient confirms before it receives a contact request or operator notice. Radioso sends the confirmation message as soon as an address is added to a notify skill or the agent's contact settings, so the address can confirm before the first notice is due; an address that missed that message gets it at its first notice instead, and that notice is skipped. Confirmation applies to one normalized address in one workspace. A verified login address for an active workspace member counts as confirmed for as long as that person stays a member. The Skills form shows **Waiting for confirmation**, **Confirmed**, **Notifications stopped by the recipient**, or **Suppressed after a bounce or complaint** beside each address; owners and admins can resend a waiting confirmation from there, at most once a day per address. Every confirmation message, including a resend, counts against a daily allowance of 25 per workspace and 50 across all workspaces of an account. A confirmation the mail transport never dispatched does not count and leaves the earlier link working.
+An external recipient confirms before it receives a contact request or operator notice. Radioso sends the confirmation message as soon as an address is added to a notify skill or the agent's contact settings, so the address can confirm before the first notice is due; an address that missed that message gets it at its first notice instead, and that notice skips the address. When no other address or webhook can take the notice, it goes to the workspace's owners and admins instead (see [When no address can receive a notice](#when-no-address-can-receive-a-notice)). Confirmation applies to one normalized address in one workspace. A verified login address for an active workspace member counts as confirmed for as long as that person stays a member. The Skills form shows **Waiting for confirmation**, **Confirmed**, **Notifications stopped by the recipient**, or **Suppressed after a bounce or complaint** beside each address; owners and admins can resend a waiting confirmation from there, at most once a day per address. Every confirmation message, including a resend, counts against a daily allowance of 25 per workspace and 50 across all workspaces of an account. A confirmation the mail transport never dispatched does not count and leaves the earlier link working.
 
 Addresses grandfathered by the confirmation rollout carry a recorded 14-day deadline. Their first notice also sends the confirmation message, and they keep receiving notices until they confirm or until both the recorded deadline and 14 days after that message have passed, so a quiet agent's address is never cut off before it was asked. After that, an address that has not confirmed is skipped; its link keeps working. Every delivered contact or notice email includes a one-click unsubscribe link; using it stops notifications to that address only in the workspace that sent the message. The page that confirms the stop offers **Resume notifications**. Radioso never asks a stopped address to confirm again, so only the recipient can resume.
 
@@ -395,12 +395,14 @@ Planet, and 100 by default on self-hosted installations. When the daily email
 allowance is exhausted, Radioso skips email but still calls the configured
 webhook. When the conversation allowance is exhausted, it skips both. Each skip
 records `workspace_daily_email_cap` or `conversation_dispatch_cap` for the
-operator without recording an address. Once the daily allowance stops an email,
+operator without recording an address. A notice that goes to the owners and
+admins in place of its addresses counts one email per owner or admin against the
+same daily allowance. Once the daily allowance stops an email,
 the routine editor says so under the notice's destination, and the destinations
 endpoint and the Operator MCP `operator_notice_destinations` tool report
 `dailyEmailAllowance.reachedToday`.
 
-Resend hard-bounce and complaint events add the address to the deployment-wide notification suppression list. Suppression applies to contact messages, operator notices, and recipient confirmations. Authentication mail such as password resets and login-address verification keeps its separate delivery path. When every email recipient is skipped, the delivery outcome names why: `notification_recipient_unconfirmed` while any address still has to confirm, then `notification_recipient_revoked` when a recipient stopped notifications, then `notification_recipient_suppressed`. Logs and metrics carry only the reason and recipient count.
+Resend hard-bounce and complaint events add the address to the deployment-wide notification suppression list. Suppression applies to contact messages, operator notices, and recipient confirmations. Authentication mail such as password resets and login-address verification keeps its separate delivery path. When some of the addresses are skipped, the others still receive the email and the [delivery log](#delivery-log) records each address on its own. When every email recipient is skipped, the delivery outcome names why: `notification_recipient_unconfirmed` while any address still has to confirm, then `notification_recipient_revoked` when a recipient stopped notifications, then `notification_recipient_suppressed`. Logs and metrics carry only the reason and recipient count.
 
 Visitor content is bounded before delivery: contact names use at most 200
 characters, contact messages 4,000, and each routine slot value in a notice
@@ -416,6 +418,66 @@ Radioso also tells a person when a conversation needs one, or when a routine fin
 `GET /api/v1/agents/{agentId}/skills/{skillId}/notification-recipients` returns the same `recipients` list, with `email` and `state`, for one notify skill whatever its invocation mode; it takes the same permission and workspace session.
 
 An owner or admin can call `POST /api/v1/agents/{agentId}/notification-recipient-confirmations/resend` with `{ "email": "support@example.com" }`. The address must be the agent's default destination or a recipient of one of its notify skills. A `202` response returns `{ "sent": true }` when the confirmation was admitted, or `false` when confirmation is disabled, the recipient is already confirmed, stopped notifications, or is suppressed, the address was asked within the last 24 hours, or the daily confirmation allowance is exhausted.
+
+### Delivery log
+
+The notify skills' recipient list tells you who a notice is meant for. The delivery log tells you what happened to it: one entry for each address of each contact request or operator notice, whichever skill or default destination it went through.
+
+`GET /api/v1/notification-deliveries` lists them newest first. It needs `workspace.agents.read` and a workspace session; a machine API token gets `401`, because the entries name recipient emails. Narrow the list with `agentId` or `outcome`, and page through it with `limit` (1 to 100, default 50) and the `nextCursor` of the previous page passed back as `cursor`.
+
+```json
+{
+  "items": [
+    {
+      "id": "...",
+      "agentId": "...",
+      "conversationId": "...",
+      "kind": "handoff",
+      "recipientEmail": "front-desk@example.com",
+      "outcome": "skipped_unconfirmed",
+      "createdAt": "2026-11-07T10:00:00.000Z",
+      "updatedAt": "2026-11-07T10:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+`kind` says what raised the notice: `contact_request`, `approval`, `handoff`, or `completion`. `outcome` is one of:
+
+| Outcome | What happened |
+|---|---|
+| `sent` | The mail provider accepted the email. |
+| `skipped_unconfirmed` | The address has not confirmed yet. |
+| `skipped_revoked` | Its owner stopped notifications from the workspace. |
+| `skipped_suppressed` | An earlier email to it bounced or was reported as spam. |
+| `skipped_cap` | The daily email allowance or the conversation's dispatch allowance stopped it. |
+| `not_dispatched` | The deployment has no mail provider, so the email was written to the log. |
+| `failed` | The email was attempted and did not go out, or the address's state could not be read. |
+
+A retry of the same notice updates its entries rather than adding new ones, so an address that failed and then went out reads `sent`; an entry that reads `sent` is never changed afterwards. The log lists email only: a webhook post is not an entry. A notice for a conversation with no agent, or whose agent has since been deleted, has `agentId` set to `null`. Entries go with their conversation, so [deleting a conversation](/operators/deleting-conversation-data), or a retention window erasing it, deletes them too.
+
+In the dashboard, the same entries show under **Recent notifications** at the bottom of the agent's Skills page, with a link to the conversation and, for an address that has not confirmed, **Resend confirmation**. Ray reads them with `list_notification_deliveries`, and so does an Operator MCP client.
+
+#### When no address can receive a notice
+
+A request still reaches a person while its address waits to be fixed. When every address of a contact request or operator notice is skipped because it is waiting for confirmation, stopped notifications, or is suppressed, and no webhook is configured, Radioso emails the notice to the people who can fix the address: the organization's owners and admins, and members who are admins of that workspace through a workspace grant. These are the people the [alert](#alert-to-owners-and-admins) below reaches, chosen the same way.
+
+Each of them gets the notice as written, with its subject and its `Reply-To`, so a reply still goes to the visitor. One line on top says why it came to them:
+
+```text
+This notification came to you because front-desk@example.com cannot receive it: the address has not confirmed yet that it wants notifications. Fix it on the agent's page: https://app.example.com/w/acme/agents/...
+```
+
+Each copy carries the same one-click unsubscribe link any notice email does, for the owner's or admin's own address; using it leaves them out of these copies and of the alert for that workspace. Their copies count against the daily email allowance like any notice email, and a retry sends each of them the same message once. In the delivery log, the address reads as skipped and each owner or admin appears as a `sent` entry with the same conversation, kind, and time; nothing else marks those entries. The action records `partially_dispatched` with the skip reason, because the address the notice was meant for still missed it.
+
+A notice stopped by the daily or conversation allowance stays stopped, and an email that failed in transit retries to its own address. A notice with no destination configured at all goes to the workspace owner through the destination chain above, so it never needs this step. Slack is a separate destination: a workspace with an escalation channel and an address that has not confirmed gets the notice in Slack and by email to its owners and admins.
+
+#### Alert to owners and admins
+
+When a notice skips an address because it has not confirmed, its owner stopped notifications, or it bounced, Radioso emails the people who can fix it: the organization's owners and admins, and members who are admins of that workspace through a workspace grant. The email names the address, says why it was skipped, names the agent, and links to the agent's Skills page, where the address can be replaced or asked again. Only active members with a verified login address receive it, and an address that itself bounced, or whose owner stopped notifications from the workspace, is left out. When the notice itself went to them because no address could receive it, that copy already names the address and why, so no separate alert follows.
+
+Each address triggers at most one alert a day for a workspace, however many notices it misses. A skip because of a daily allowance, and an email that failed in transit, send no alert: neither is something the address's owner or the operator fixes by changing the recipient. The alert uses the deployment's mail transport. Without a mail provider it is not sent, the log shows only that an alert was due, and the day's alert is spent anyway, since a retry would send nothing either.
 
 Each notice is emailed to the resolved recipients as plain text and, when a webhook is configured, posted to it as JSON. Here is the notice a "Book accommodation" routine sends when it finishes with a notice of its own:
 

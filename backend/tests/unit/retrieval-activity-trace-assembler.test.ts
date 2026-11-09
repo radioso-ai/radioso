@@ -23,8 +23,8 @@ describe("activity trace assembler", () => {
       }),
     );
     expect(trace.summary?.retrievalSubqueries).toEqual([
-      expect.objectContaining({ label: "Narayani", lexicalQuery: "narayani", responseLanguagePolicy: "match_user_question" }),
-      expect.objectContaining({ label: "Arudra", lexicalQuery: "arudra", responseLanguagePolicy: "match_user_question" }),
+      expect.objectContaining({ label: "Freya", lexicalQuery: "freya", responseLanguagePolicy: "match_user_question" }),
+      expect.objectContaining({ label: "Tomas", lexicalQuery: "tomas", responseLanguagePolicy: "match_user_question" }),
     ]);
     expect(trace.summary?.responseLanguagePolicy).toBe("match_user_question");
     expect(trace.summary?.triggerAnalysis).toMatchObject({
@@ -53,8 +53,8 @@ describe("activity trace assembler", () => {
       {
         ...first,
         lexicalContexts: [
-          { chunkId: "ln1", documentId: "d1", title: "Narayani", content: "Narayani profile", similarity: 1, lexicalTermCoverage: "all_terms" },
-          { chunkId: "ln2", documentId: "d1", title: "Narayani", content: "Narayani dates", similarity: 0.5, lexicalTermCoverage: "some_terms" },
+          { chunkId: "ln1", documentId: "d1", title: "Freya", content: "Freya profile", similarity: 1, lexicalTermCoverage: "all_terms" },
+          { chunkId: "ln2", documentId: "d1", title: "Freya", content: "Freya dates", similarity: 0.5, lexicalTermCoverage: "some_terms" },
         ],
         lexicalSomeTermsPass: { outcome: "ran", durationMs: 42 },
       },
@@ -272,12 +272,12 @@ describe("activity trace assembler", () => {
     const candidate: RetrievedCandidate = {
       chunkId: "n1",
       documentId: "d1",
-      title: "Narayani",
-      content: "Narayani profile",
+      title: "Freya",
+      content: "Freya profile",
       similarity: 0.93,
       fusedScore: 0.93,
       retrievalSources: ["semantic_rewritten", "lexical"],
-      retrievalText: "Narayani profile",
+      retrievalText: "Freya profile",
       semanticScore: 0.9,
       lexicalScore: 1,
       lexicalRankScore: 0.4,
@@ -314,8 +314,8 @@ describe("activity trace assembler", () => {
     const assembler = new ActivityTraceAssembler();
     const input = baseInput();
     input.prompt.rewrittenQuery.structuredResult = {
-      resolutionNote: "the user is still asking about narayani, so keep that subject",
-      rewrittenQuery: "who is narayani and arudra?",
+      resolutionNote: "the user is still asking about freya, so keep that subject",
+      rewrittenQuery: "who is freya and tomas?",
       turnKind: "referential_followup",
       relatedEntities: [],
       unresolved: false,
@@ -330,7 +330,7 @@ describe("activity trace assembler", () => {
     } | undefined;
 
     expect(outputs?.turnKind).toBe("referential_followup");
-    expect(outputs?.resolutionNote).toBe("the user is still asking about narayani, so keep that subject");
+    expect(outputs?.resolutionNote).toBe("the user is still asking about freya, so keep that subject");
   });
 
   it("omits resolutionNote from the interpretation stage output when the rewrite has none", () => {

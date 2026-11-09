@@ -8,7 +8,7 @@ import {
 import { CHAT_TURN_ROUTE } from "../../src/shared/domain/chatTurnRoute.js";
 
 const FINDINGS = [
-  "Ananda Edizioni publishes [Autobiografia di uno Yogi](https://example.com/autobiografia).",
+  "Valmora Books publishes [Diario di un Viandante](https://example.com/autobiografia).",
   "",
   JSON.stringify({ conversationId: "conversation-9", traceId: "trace-9", ownership: { owner: "agent" } }, null, 2),
 ].join("\n");
@@ -24,7 +24,7 @@ const historyMessage = (role: MessageRecord["role"], content: string): MessageRe
 
 const base = {
   route: CHAT_TURN_ROUTE.RETRIEVAL,
-  answerInstructionBlock: "Configured response instructions:\nHelp visitors find Ananda books.",
+  answerInstructionBlock: "Configured response instructions:\nHelp visitors find Valmora books.",
   history: [historyMessage("user", "Hello"), historyMessage("assistant", "Hi! How can I help?")],
   query: "Which books do you publish on yoga?",
 };

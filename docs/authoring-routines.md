@@ -171,7 +171,8 @@ on a later branch. In **Information**, you can also mark a value:
 
 - **Optional** when the flow may reach an ending while the value remains empty.
 - **Editable after completion** when a visitor may correct it after the routine
-  finishes, such as an email address or a date.
+  finishes, such as an email address or a date. Ray switches it on or off for a
+  value when you ask.
 - **Sensitive** when the value is something the visitor would not want copied
   around, such as an injury they mention while booking a class. See
   [Sensitive values](#sensitive-values).

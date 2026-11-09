@@ -1,4 +1,5 @@
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
+import type { PendingClarificationResolution } from "./pendingClarificationResolver.js";
 
 export type ClarificationMetricDecision =
   | "asked"
@@ -8,6 +9,8 @@ export type ClarificationMetricDecision =
   | "not_clarified"
   | "mapped"
   | "offer_accepted_alternative"
+  | "offer_accepted"
+  | "offer_declined"
   | "offer_ignored"
   | "declined"
   | "expired";
@@ -29,7 +32,8 @@ export type ClarificationMetricReason =
   | "label_fallback"
   | "compatible_facets"
   | "redundant_sources"
-  | "phrasing_fallback";
+  | "phrasing_fallback"
+  | "offer_first";
 
 const METRIC_REASONS: ReadonlySet<ClarificationMetricReason> = new Set([
   "ask",
@@ -44,6 +48,7 @@ const METRIC_REASONS: ReadonlySet<ClarificationMetricReason> = new Set([
   "compatible_facets",
   "redundant_sources",
   "phrasing_fallback",
+  "offer_first",
 ]);
 
 const asMetricReason = (
@@ -96,4 +101,31 @@ export const recordClarificationDecision = (
       ...(input.reason ? { reason: input.reason } : {}),
     },
   });
+};
+
+/**
+ * The decision a resolved pending clarification counts as. A reply to a routine's offer counts as
+ * accepted, declined, or ignored; a retrieval-sense offer keeps its accepted-alternative and
+ * ignored labels. Null when no pending row was resolved this turn.
+ */
+export const clarificationResolutionMetric = (
+  resolution: PendingClarificationResolution,
+): { surface: string; decision: ClarificationMetricDecision } | null => {
+  if (!resolution.resolvedPending) {
+    return null;
+  }
+  if (resolution.kind === "retrieval_sense") {
+    return {
+      surface: "retrieval_sense",
+      decision: resolution.offerOutcome === "accepted_alternative" ? "offer_accepted_alternative" : "mapped",
+    };
+  }
+  if (resolution.kind === "routine_activation") {
+    return { surface: "routine_activation", decision: resolution.mappingOutcome ? "offer_accepted" : "mapped" };
+  }
+  const surface = resolution.source === "retrieval_sense" ? "retrieval_sense" : "routine_activation";
+  if (surface === "routine_activation" && resolution.mappingOutcome) {
+    return { surface, decision: `offer_${resolution.mappingOutcome}` };
+  }
+  return { surface, decision: resolution.offerOutcome === "ignored" ? "offer_ignored" : (resolution.outcome ?? "declined") };
 };

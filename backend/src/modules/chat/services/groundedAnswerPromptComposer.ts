@@ -1,4 +1,5 @@
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import type { RoutineStartOffer } from "@radioso/conversation-contract";
 import type { RoutinePendingStep, SteeringRule } from "../../../shared/domain/steeringRule.js";
 import {
   formatConversationIntentSnapshot,
@@ -22,6 +23,8 @@ interface GroundedAnswerSystemPromptInput {
   steering?: SteeringRule[];
   /** The step a routine that yielded this turn still waits on; the answer closes by pointing back to it. */
   pendingRoutineStep?: RoutinePendingStep;
+  /** An Offer-first routine this turn offered instead of starting; the answer closes by offering it. */
+  routineOffer?: RoutineStartOffer;
   /** The agent hands a `no_support` decline to a person, so that decline leaves the lead-back out. */
   noSupportHandsOff?: boolean;
   /** Labels/descriptions for retrieval-sense alternatives to offer after the grounded answer. */
@@ -102,6 +105,7 @@ export const composeGroundedAnswerSystemPrompt = (
   const withLeadBack = (prompt: string): string =>
     appendRoutineLeadBack(prompt, input.steering ?? [], input.pendingRoutineStep, {
       noSupportHandsOff: input.noSupportHandsOff,
+      offer: input.routineOffer,
     });
   if (!suggestionsExpected) {
     return resultWithReusablePrefix(standing, withLeadBack(withTurnBlocks), {

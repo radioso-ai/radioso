@@ -15,6 +15,7 @@ import type {
   RoutineReentryMode,
   RoutineSlotSchema,
   RoutineSlotType,
+  RoutineStartMode,
   RoutineStep,
   RoutineStepMode,
   RoutineTransition,
@@ -457,19 +458,24 @@ const parseRoutineReentryMode = literalUnionParser<RoutineReentryMode>([
   "semantic",
 ]);
 
+const parseRoutineStartMode = literalUnionParser<RoutineStartMode>(["automatic", "offer"]);
+
 const parseRoutineActivation: Parser<RoutineActivation> = (value) => {
   if (!isRecord(value) || typeof value.triggerDescription !== "string") {
     return INVALID;
   }
   const priority = parseFiniteNumber(value.priority);
   const reentryMode = parseRoutineReentryMode(value.reentryMode);
-  if (isInvalid(priority) || isInvalid(reentryMode)) {
+  // Absent stays absent; the contract reads an absent start mode as automatic.
+  const startMode = parseOptional(value.startMode, parseRoutineStartMode);
+  if (isInvalid(priority) || isInvalid(reentryMode) || isInvalid(startMode)) {
     return INVALID;
   }
   return {
     triggerDescription: value.triggerDescription,
     priority,
     reentryMode,
+    ...(startMode ? { startMode } : {}),
     gateRef: typeof value.gateRef === "string" ? value.gateRef : undefined,
   };
 };

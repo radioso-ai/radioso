@@ -1671,6 +1671,7 @@ export interface RoutineDefinition {
   activation_gate_ref: string | null;
   activation_priority: Generated<number>;
   activation_reentry_mode: Generated<string>;
+  activation_start_mode: Generated<string>;
   activation_trigger_description: string;
   agent_id: string;
   created_at: Generated<Timestamp>;
@@ -1687,6 +1688,12 @@ export interface RoutineDefinition {
   trigger_embedding_model: string | null;
   updated_at: Generated<Timestamp>;
   version: number;
+}
+
+export interface RoutineOffers {
+  conversation_id: string;
+  offered_at: Generated<Timestamp>;
+  routine_id: string;
 }
 
 export interface RoutineSlot {
@@ -2272,6 +2279,7 @@ export interface DB {
   routine_action_requests: RoutineActionRequests;
   routine_completion_export: RoutineCompletionExport;
   routine_definition: RoutineDefinition;
+  routine_offers: RoutineOffers;
   routine_slot: RoutineSlot;
   routine_states: RoutineStates;
   routine_step: RoutineStep;

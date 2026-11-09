@@ -403,6 +403,20 @@ describe("model-facing descriptions", () => {
     expect(descriptor.description).toContain("only when the operator asks");
   });
 
+  it("keeps every description under the MCP cap, past which tools/list comes back empty", () => {
+    const overCap = realCatalog()
+      .filter((descriptor) => descriptor.description.length >= 2_048)
+      .map((descriptor) => descriptor.name);
+
+    expect(overCap).toEqual([]);
+  });
+
+  it("tells Ray the start mode it can set on a routine", () => {
+    const description = realCatalog().find((descriptor) => descriptor.name === "propose_routine_edit")!.description;
+
+    expect(description).toContain("startMode? (automatic|offer)");
+  });
+
   it("keeps proposing distinguishable from applying, for the tools that say so", () => {
     // Collapsing the two descriptions dropped "it does not change configuration" from four propose
     // tools, and the live suite caught it immediately: `propose_routine_lifecycle` was left saying

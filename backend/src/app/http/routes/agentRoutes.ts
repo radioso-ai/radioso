@@ -76,7 +76,7 @@ const routineDefinitionBodySchema = routineDefinitionDraftInputSchema;
 // hold the authored graph. Requiring the full draft to flip the flag would force the caller to
 // resend steps it never read — and rewrite them on the way through.
 const routineEnabledPatchSchema = z.object({ enabled: z.boolean() }).strict();
-// The full-body PATCH variant must NOT default `enabled` (or `activation.reentryMode`, or any
+// The full-body PATCH variant must NOT default `enabled` (or `activation.reentryMode`/`startMode`, or any
 // `completionExport` field) the way the create schema does. `validateBody`
 // (../middleware/validate.js) replaces `req.body` with the parsed result, defaults included,
 // before the route handler or `RoutineDefinitionService.updateDraft`'s omission-preserving

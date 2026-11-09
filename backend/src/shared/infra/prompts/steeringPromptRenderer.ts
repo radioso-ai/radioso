@@ -1,3 +1,5 @@
+import type { RoutineStartOffer } from "@radioso/conversation-contract";
+
 import { GENERATION_SURFACE, type GenerationSurface } from "../../domain/generationSurface.js";
 import {
   appendSteeringRules,
@@ -84,7 +86,22 @@ interface RoutineLeadBackOptions {
    * follows the instruction; nothing in code removes the sentence.
    */
   noSupportHandsOff?: boolean;
+  /**
+   * An Offer-first routine this turn offered instead of starting (#1716). With no parked routine
+   * to lead back to, the answer closes by offering to start it (`chat/routine-offer.md`).
+   */
+  offer?: RoutineStartOffer;
 }
+
+const noSupportHandoff = (options: RoutineLeadBackOptions): string =>
+  options.noSupportHandsOff ? `\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}` : "";
+
+/** The routine's name and what it is for, as the operator wrote them; one line each. */
+const renderRoutineOffer = (offer: RoutineStartOffer, options: RoutineLeadBackOptions): string =>
+  renderPromptTemplate("chat/routine-offer.md", {
+    offer: [`- ${offer.label}`, ...(offer.description ? [`- ${offer.description}`] : [])].join("\n"),
+    no_support_handoff: noSupportHandoff(options),
+  });
 
 const renderRoutineLeadBack = (pendingStep: RoutinePendingStep, options: RoutineLeadBackOptions): string =>
   renderPromptTemplate("chat/routine-lead-back.md", {
@@ -94,9 +111,7 @@ const renderRoutineLeadBack = (pendingStep: RoutinePendingStep, options: Routine
         slot_keys: pendingStep.missingSlotKeys.join(", "),
       })}`
       : "",
-    no_support_handoff: options.noSupportHandsOff
-      ? `\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}`
-      : "",
+    no_support_handoff: noSupportHandoff(options),
   });
 
 /**
@@ -116,7 +131,7 @@ export const appendRoutineLeadBack = (
   options: RoutineLeadBackOptions = {},
 ): string => {
   if (!pendingStep || (!pendingStep.instruction && pendingStep.missingSlotKeys.length === 0)) {
-    return prompt;
+    return options.offer ? `${prompt}\n\n${renderRoutineOffer(options.offer, options)}` : prompt;
   }
   if (partitionRoutineStepSteering(surfaceRules(steering, {})).instructions.length > 0) {
     return prompt;

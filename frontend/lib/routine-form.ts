@@ -9,6 +9,7 @@ import type {
   RoutineOperatorNotice,
   RoutineReentryMode,
   RoutineSlotType,
+  RoutineStartMode,
   RoutineStepKind,
   RoutineTerminalKind,
   RoutineTransition,
@@ -80,6 +81,7 @@ export type RoutineFormState = {
     triggerDescription: string
     priority: string
     reentryMode: RoutineReentryMode
+    startMode: RoutineStartMode
     coverageCriteria?: {
       coverage: Array<'answered' | 'partial' | 'unanswered' | 'unclear'>
       reasons?: Array<'sufficient_evidence' | 'insufficient_evidence' | 'conflicting_evidence' | 'ambiguous_request' | 'intentional_scope_boundary'>
@@ -181,6 +183,7 @@ export const createEmptyRoutineForm = (): RoutineFormState => ({
     triggerDescription: '',
     priority: '0',
     reentryMode: 'once_per_conversation',
+    startMode: 'automatic',
   },
   slots: [],
   steps: [{
@@ -247,6 +250,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       triggerDescription: routine.activation.triggerDescription,
       priority: String(routine.activation.priority),
       reentryMode: routine.activation.reentryMode ?? 'once_per_conversation',
+      startMode: routine.activation.startMode ?? 'automatic',
       coverageCriteria: routine.activation.coverageCriteria,
     },
     slots: [...routine.slots].sort((left, right) => left.ordinal - right.ordinal).map((slot) => ({
@@ -330,6 +334,7 @@ export const formToRoutineDraft = (
       triggerDescription: header.activation.triggerDescription.trim(),
       priority: Number.parseInt(header.activation.priority, 10) || 0,
       reentryMode: header.activation.reentryMode,
+      startMode: header.activation.startMode,
       ...(header.activation.coverageCriteria ? { coverageCriteria: header.activation.coverageCriteria } : {}),
     },
     slots: form.slots.map((slot, index) => {

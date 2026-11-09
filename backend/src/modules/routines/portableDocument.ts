@@ -10,14 +10,14 @@ import type { RoutineDefinition } from "./domain.js";
 // The routine text projection the operator copilot reads. One direction only: a routine
 // becomes readable text. Nothing parses that text back, so the grammar version records what
 // the serializer wrote rather than a contract a caller negotiates.
-export const PORTABLE_GRAMMAR_VERSION = 1;
+const PORTABLE_GRAMMAR_VERSION = 1;
 
-export interface PortableRoutineDocumentEnvelope {
+interface PortableRoutineDocumentEnvelope {
   grammarVersion: number;
   content: string;
 }
 
-export type PortableRoutineDocumentProjectionResult =
+type PortableRoutineDocumentProjectionResult =
   | { ok: true; envelope: PortableRoutineDocumentEnvelope }
   | { ok: false; diagnostics: ParseDiagnostic[] };
 
@@ -56,6 +56,7 @@ export const projectRoutineToPortableDocument = (routine: RoutineDefinition): Po
         name: routine.name,
         trigger: routine.activation.triggerDescription,
         reentryMode: routine.activation.reentryMode,
+        startMode: routine.activation.startMode,
         priority: routine.activation.priority,
         completionExport: routine.completionExport,
         terminals: readProseTerminals(routine),
@@ -64,13 +65,5 @@ export const projectRoutineToPortableDocument = (routine: RoutineDefinition): Po
       }),
     },
   };
-};
-
-export const routineToPortableDocument = (routine: RoutineDefinition): PortableRoutineDocumentEnvelope => {
-  const result = projectRoutineToPortableDocument(routine);
-  if (!result.ok) {
-    throw new Error(result.diagnostics[0]?.message ?? "Routine definition cannot be represented as portable markdown");
-  }
-  return result.envelope;
 };
 

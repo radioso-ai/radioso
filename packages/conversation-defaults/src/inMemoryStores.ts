@@ -1,6 +1,7 @@
 import type {
   ConversationEvent,
   ConversationMessage,
+  ConversationRoutineOfferMemory,
   ConversationRoutineStore,
   ConversationStores,
   RoutineState,
@@ -114,5 +115,20 @@ export class InMemoryConversationRoutineStore implements ConversationRoutineStor
 
   private isExpired(stored: StoredRoutineState): boolean {
     return this.ttlMs !== undefined && this.now() - stored.savedAtMs >= this.ttlMs;
+  }
+}
+
+/** Keeps which routines each session was offered for as long as the process lives. */
+export class InMemoryRoutineOfferMemory implements ConversationRoutineOfferMemory {
+  private readonly offered = new Map<string, Set<string>>();
+
+  async loadOffered(input: { sessionId: string }): Promise<readonly string[]> {
+    return [...(this.offered.get(input.sessionId) ?? [])];
+  }
+
+  async recordOffered(input: { sessionId: string; routineId: string }): Promise<void> {
+    const routineIds = this.offered.get(input.sessionId) ?? new Set<string>();
+    routineIds.add(input.routineId);
+    this.offered.set(input.sessionId, routineIds);
   }
 }

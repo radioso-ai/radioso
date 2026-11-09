@@ -107,6 +107,20 @@ describe('routine block document', () => {
     })
   })
 
+  it('carries an offer-first start mode through the document and back', () => {
+    const input: RoutineDefinitionDraftAuthoringInput = {
+      name: 'Book a room',
+      activation: { triggerDescription: 'A guest wants to book a room', gateRef: null, priority: 0, startMode: 'offer' },
+      slots: [],
+    }
+
+    const projected = routineToBlockDoc(input)
+
+    expect(projected).toMatchObject({ ok: true, doc: { activation: { startMode: 'offer' } } })
+    if (!projected.ok) return
+    expect(draftFromBlockDoc(projected.doc)).toMatchObject({ activation: { startMode: 'offer' } })
+  })
+
   it('projects and round-trips the new-routine seed with empty authoring text', () => {
     const input = {
       name: 'New routine',

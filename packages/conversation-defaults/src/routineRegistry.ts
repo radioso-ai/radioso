@@ -1,5 +1,6 @@
 import type {
   ClarificationCandidate,
+  ClarificationDecision,
   ClarificationPolicy,
   ConversationMessage,
   ConversationModelGateway,
@@ -17,13 +18,6 @@ import { decideClarification } from "@radioso/conversation-engine";
 
 import { renderPromptTemplate } from "./promptTemplate.js";
 
-/**
- * Reentry policy now lives on the compiled routine (`Routine.activation`), which is
- * the single source of truth both this registry and the reentry gate read. Re-exported
- * here so existing importers of this module keep resolving it.
- */
-export type { RoutineReentryMode } from "@radioso/conversation-contract";
-
 // Ranked-activation contracts now live in @radioso/conversation-contract so a host planner
 // can conform to them without depending on this default registry; re-exported here because
 // this module is their primary implementation.
@@ -39,19 +33,15 @@ export type {
   RoutineRegistration,
 } from "@radioso/conversation-contract";
 
-export const DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT = `Rank whether the latest user message wants to start any registered routine.
+const DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT = `Rank whether the latest user message wants to start any registered routine.
+For each match, directRequest is true only when the message directly asks for what the routine does,
+and false when the user is exploring, asking about it, or describing plans.
 
 Return only JSON:
-{"matches":[{"routineId":"<id>","confidence":0.0,"variables":{}}]}
+{"matches":[{"routineId":"<id>","confidence":0.0,"directRequest":false,"variables":{}}]}
 
 Routines:
 {{routines}}`;
-
-export interface RoutineRegistryOptions {
-  policy: ClarificationPolicy;
-  promptTemplate?: string;
-  activationPrefilter?: RoutineActivationPrefilter;
-}
 
 /** The activate arm of {@link RoutineActivationResult}. */
 type RoutineActivateOutcome = Extract<RoutineActivationResult, { kind: "activate" }>;
@@ -151,9 +141,13 @@ const parseRankedMatches = (raw: string, knownIds: Set<string>): RankedRoutineMa
       if (typeof item.confidence !== "number" || !Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1) {
         return null;
       }
+      if (item.directRequest !== undefined && typeof item.directRequest !== "boolean") {
+        return null;
+      }
       matches.push({
         routineId: item.routineId,
         confidence: item.confidence,
+        ...(typeof item.directRequest === "boolean" ? { directRequest: item.directRequest } : {}),
         ...(isRecord(item.variables)
           ? { variables: item.variables }
           : isRecord(item.activationVariables)
@@ -180,7 +174,11 @@ export class RoutineRegistry {
 
   constructor(
     private readonly registrations: readonly RoutineRegistration[],
-    options: RoutineRegistryOptions = { policy: { floor: 0.4, margin: 0.15, maxOptions: 4 } },
+    options: {
+      policy: ClarificationPolicy;
+      promptTemplate?: string;
+      activationPrefilter?: RoutineActivationPrefilter;
+    } = { policy: { floor: 0.4, margin: 0.15, maxOptions: 4 } },
   ) {
     this.policy = options.policy;
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT;
@@ -297,26 +295,29 @@ export class RoutineRegistry {
     if (decision.kind === "ask") {
       return { kind: "clarify", candidates: decision.candidates };
     }
-    if (decision.kind === "soft_pick") {
-      // Slice 4 implements offer behavior; band is empty in slice 3 so this
-      // is unreachable at runtime.
-      const activation = await this.pickActivation(decision.candidate, options.turn);
-      return {
-        ...activation,
-        decisionMetadata: {
-          consideredCandidates: candidates,
-          decision,
-        },
-      };
+    if (decision.kind !== "auto_pick" && decision.kind !== "soft_pick") {
+      return null;
     }
+    // A routine has no alternatives to offer beside the one it starts, so a soft pick (a band
+    // the default policy leaves empty) starts its leader like any pick. "Offered" stays the
+    // word for a routine the visitor was offered instead of started.
+    const picked: ClarificationDecision = decision.kind === "soft_pick"
+      ? { kind: "auto_pick", candidate: decision.candidate, reason: "soft_band" }
+      : decision;
     const activation = await this.pickActivation(decision.candidate, options.turn);
+    const registration = byId.get(decision.candidate.id);
+    const match = rankings.find((ranking) => ranking.routineId === decision.candidate.id);
+    const startMode = registration?.routine.activation?.startMode;
     return {
       ...activation,
       decisionMetadata: {
         consideredCandidates: candidates,
-        decision,
-        reason: decision.reason,
+        decision: picked,
+        reason: picked.reason,
       },
+      // The engine decides whether an Offer-first pick starts; the registry reports its facts.
+      ...(startMode === "offer" ? { startMode } : {}),
+      ...(startMode === "offer" && typeof match?.directRequest === "boolean" ? { directRequest: match.directRequest } : {}),
     };
   }
 

@@ -510,6 +510,7 @@ const rankedMatchesFromPlan = (plan: TurnPlan): RankedRoutineMatch[] =>
   plan.routineRankings.map((ranking) => ({
     routineId: ranking.routineId,
     confidence: ranking.confidence,
+    ...(ranking.directRequest !== undefined ? { directRequest: ranking.directRequest } : {}),
     ...(ranking.variables ? { variables: ranking.variables } : {}),
   }));
 

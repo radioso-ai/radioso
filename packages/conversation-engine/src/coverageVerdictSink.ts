@@ -189,6 +189,8 @@ export const createCoverageVerdictSink = (deps: CoverageVerdictSinkDeps): Covera
               // a step, so this pass reports no yield: the host's sink hears only the
               // pre-evidence pass, whose pending step the turn's answer leads back to.
               routineYieldSink: undefined,
+              // The pre-evidence pass already recorded any reply to an offer on this turn.
+              clarificationMappingStage: undefined,
             });
           } catch (error) {
             evaluationFailed = true;

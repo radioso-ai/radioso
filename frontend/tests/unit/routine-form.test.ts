@@ -95,6 +95,7 @@ describe('routine form transforms', () => {
         triggerDescription: routine.activation.triggerDescription,
         priority: 10,
         reentryMode: 'always',
+        startMode: 'automatic',
       },
       slots: routine.slots,
       steps: routine.steps,
@@ -122,6 +123,27 @@ describe('routine form transforms', () => {
 
     expect(form.enabled).toBe(false)
     expect(formToRoutineDraft(form)).toMatchObject({ enabled: false })
+  })
+
+  it('carries an offer-first start mode through the form and back (#1716)', () => {
+    const offered: RoutineDefinition = { ...routine, activation: { ...routine.activation, startMode: 'offer' } }
+
+    const form = routineToForm(offered)
+
+    expect(form.activation.startMode).toBe('offer')
+    expect(formToRoutineDraft(form).activation.startMode).toBe('offer')
+  })
+
+  it('reads a routine with no start mode as starting automatically, and a new routine too', () => {
+    expect(routineToForm(routine).activation.startMode).toBe('automatic')
+    expect(createEmptyRoutineForm().activation.startMode).toBe('automatic')
+  })
+
+  it('sends the start mode explicitly when it is switched back to automatic, so the stored offer is replaced', () => {
+    const form = routineToForm({ ...routine, activation: { ...routine.activation, startMode: 'offer' } })
+    form.activation.startMode = 'automatic'
+
+    expect(formToRoutineDraft(form).activation.startMode).toBe('automatic')
   })
 
   it('strips enabled from the content-update payload so it cannot race the toggle', () => {
@@ -588,7 +610,7 @@ export const PRODUCIBLE_DIAGNOSTIC_LOCATIONS: {
 const anchoredForm = (): RoutineFormState => ({
   name: 'Collect intake',
   enabled: true,
-  activation: { triggerDescription: 'Visitor asks for a quote', priority: '0', reentryMode: 'always' },
+  activation: { triggerDescription: 'Visitor asks for a quote', priority: '0', reentryMode: 'always', startMode: 'automatic' },
   slots: [
     { stableSlotId: 'slot_email', key: 'email', type: 'email', required: true, description: '', mutable: false, sensitive: false },
     { stableSlotId: 'slot_name', key: 'customer name', type: 'text', required: false, description: '', mutable: false, sensitive: false },

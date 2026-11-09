@@ -8,6 +8,7 @@ import type {
   ConversationInputEvent,
   ConversationModelGateway,
   ConversationRetrievalWorkPort,
+  ConversationRoutineOfferMemory,
   ConversationRoutineReentryGate,
   ConversationRoutineNextStepSelector,
   ConversationRoutineRunner,
@@ -34,6 +35,7 @@ import {
   createDirectiveCoherenceGate,
   InMemoryConversationRoutineStore,
   InMemoryConversationStores,
+  InMemoryRoutineOfferMemory,
   RoutineNextStepSelector,
   RoutineRegistry,
   RoutineStepRenderer,
@@ -131,6 +133,8 @@ export interface CreateConversationKitOptions extends ConversationKitModelGatewa
   routineSlotCorrection?: ConversationRoutineSlotCorrection;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
+  /** Which routines each session was offered; defaults to process memory. */
+  routineOfferMemory?: ConversationRoutineOfferMemory;
   authoringStore?: ConversationKitAuthoringStore;
   skills?: SkillDefinition[];
   localSkills?: LocalSkillRegistry;
@@ -186,6 +190,7 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
   const modelGateway = createConversationKitModelGateway(options);
   const stores = options.stores ?? new InMemoryConversationStores();
   const routineStore = options.routineStore ?? new InMemoryConversationRoutineStore();
+  const routineOfferMemory = options.routineOfferMemory ?? new InMemoryRoutineOfferMemory();
   const engine = options.engine ?? new DefaultConversationEngine();
   const agent = options.agent ?? defaultAgent();
   const directives = (options.directives ?? []).map(directiveWithId);
@@ -266,6 +271,7 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
         ...(options.routineSlotCorrection ? { routineSlotCorrection: options.routineSlotCorrection } : {}),
         ...(options.clarifier ? { clarifier: options.clarifier } : {}),
         ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
+        routineOfferMemory,
       });
     },
     listEvents(sessionId) {

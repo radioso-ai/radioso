@@ -4,7 +4,7 @@ import type { PreparedSession } from "../../src/modules/chat/services/chatSessio
 import {
   applyCoverageAssessment,
   applyCoverageInteractionTrace,
-} from "../../src/modules/chat/services/chatTurnAssembly.js";
+} from "../../src/modules/chat/services/answerCoverage/coverageAssessmentSession.js";
 
 const session = () => ({
   effectiveQuery: "Can I attend for one day?",

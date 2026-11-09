@@ -1,4 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { RoutineStartOffer } from "@radioso/conversation-contract";
 import type { RoutinePendingStep, SteeringRule } from "../../../shared/domain/steeringRule.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
@@ -25,6 +26,8 @@ export interface AssistantReplyPromptInput {
   steering?: SteeringRule[];
   /** The step a routine that yielded this turn still waits on; the reply closes by pointing back to it. */
   pendingRoutineStep?: RoutinePendingStep;
+  /** An Offer-first routine this turn offered instead of starting; the answer closes by offering it. */
+  routineOffer?: RoutineStartOffer;
 }
 
 /** The answer instructions, visitor context, summary, history, and question every reply prompt carries. */
@@ -47,7 +50,9 @@ const turnSectionVariables = (input: AssistantReplyPromptInput): Record<string, 
 
 /** Closes a reply prompt with the turn's steering and, when a routine yielded the turn, the lead-back to its step. */
 const withTurnSteering = (prompt: string, input: AssistantReplyPromptInput): string =>
-  appendRoutineLeadBack(appendSteeringBlock(prompt, input.steering), input.steering, input.pendingRoutineStep);
+  appendRoutineLeadBack(appendSteeringBlock(prompt, input.steering), input.steering, input.pendingRoutineStep, {
+    offer: input.routineOffer,
+  });
 
 export const buildAssistantReplyPrompt = (input: AssistantReplyPromptInput): string =>
   withTurnSteering(renderPromptTemplate("chat/non-retrieval-answer.md", {

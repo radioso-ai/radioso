@@ -9,6 +9,7 @@ import type {
   ConversationClarifier,
   Directive,
   ConversationRoutineActivator,
+  ConversationRoutineOfferMemory,
   ConversationRoutineReentryGate,
   ConversationRoutineSlotCorrection,
   ConversationRoutineRunner,
@@ -18,6 +19,7 @@ import type {
   ConversationSkillDispatcher,
   AttemptRoutineInput,
   ConversationTrace,
+  ConversationTraceStage,
   ConversationTurnInterpreter,
   ProcessTurnResult,
   RenderableTurn,
@@ -228,6 +230,7 @@ const turnSkillDispatch = (
 const releaseRoutineYield = (...sessions: PreparedSession[]): void => {
   for (const session of sessions) {
     delete session.routineYield;
+    delete session.routineActivationNotice;
   }
 };
 
@@ -618,6 +621,8 @@ export const claimRoutineTurnWithConversationEngine = async (input: {
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
   progress?: ConversationProgressPort;
+  routineOfferMemory?: ConversationRoutineOfferMemory;
+  clarificationMappingStage?: ConversationTraceStage;
   presentRoutineReply: (response: RenderableTurn) => ChatPresentedAnswer;
 }): Promise<RoutineTurnWithConversationEngineClaim | null> => {
   const attemptInput = createAttemptRoutineInput({
@@ -636,6 +641,8 @@ export const claimRoutineTurnWithConversationEngine = async (input: {
     loopGuardCandidateIds: input.loopGuardCandidateIds,
     suppressNewClarification: input.suppressNewClarification,
     progress: input.progress,
+    routineOfferMemory: input.routineOfferMemory,
+    clarificationMappingStage: input.clarificationMappingStage,
   });
   const claim = input.engine.claimRoutine
     ? await input.engine.claimRoutine(attemptInput)

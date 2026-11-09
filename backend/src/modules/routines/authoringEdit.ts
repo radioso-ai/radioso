@@ -4,6 +4,7 @@ import {
   ROUTINE_DEFINITION_LIMITS,
   routineExposureSchema,
   routineReentryModes,
+  routineStartModes,
   routineSlotSensitivities,
   type RoutineDefinition,
   type RoutineDefinitionDraftAuthoringInput,
@@ -41,6 +42,7 @@ export const routineFieldPatchSchema = z.object({
     triggerDescription: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.triggerDescription).optional(),
     priority: z.number().int().optional(),
     reentryMode: z.enum(routineReentryModes).optional(),
+    startMode: z.enum(routineStartModes).optional(),
     coverageCriteria: answerCoverageCriteriaSchema.optional(),
   }).strict().partial().refine((activation) => Object.keys(activation).length > 0, {
     message: "activation must change at least one field",
@@ -259,6 +261,7 @@ export const describeRoutineFieldPatch = (patch: RoutineFieldPatch): string => {
   if (patch.activation?.triggerDescription) parts.push("trigger");
   if (patch.activation?.priority !== undefined) parts.push("priority");
   if (patch.activation?.reentryMode) parts.push("re-entry");
+  if (patch.activation?.startMode) parts.push("start mode");
   if (patch.activation?.coverageCriteria) parts.push(describeCoverageCriteria(patch.activation.coverageCriteria));
   for (const step of patch.steps ?? []) parts.push(`step ${step.stableStepId}`);
   for (const terminal of patch.terminals ?? []) parts.push(`ending ${terminal.stableStepId}`);
@@ -286,6 +289,7 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
     gateRef: routine.activation.gateRef ?? null,
     priority: routine.activation.priority,
     reentryMode: routine.activation.reentryMode ?? "once_per_conversation",
+    startMode: routine.activation.startMode ?? "automatic",
   },
   slots: Object.fromEntries(uniquelyKeyed((routine.slots ?? []).map((slot) => [slot.key, {
     type: slot.type,

@@ -283,7 +283,7 @@ const turnPlanOutputShapeBlock = (input: {
     optionalFields.push('"pageRead":{"required":false,"operation":"metadata|lookup|summarize|transform|null","resolvedRequest":"string|null"}');
   }
   if (input.hasRoutineCandidates) {
-    optionalFields.push('"routineRankings":[{"routineId":"string","confidence":0.0,"variables":[{"field":"string","value":"string"}]}]');
+    optionalFields.push('"routineRankings":[{"routineId":"string","confidence":0.0,"directRequest":false,"variables":[{"field":"string","value":"string"}]}]');
   }
   if (input.hasDirectiveCandidates) {
     optionalFields.push('"directiveClassifications":[{"name":"string","matched":false,"confidence":0.0}]');
@@ -475,10 +475,7 @@ const rewriteSchema = z.object({
 // activation seams consume. The schema constrains `value` to a string, matching how
 // the staged ranked-activation parser also treats extracted slot values as verbatim
 // strings — planner slot values are strings by construction.
-const variablePairSchema = z.object({
-  field: z.string(),
-  value: z.string(),
-}).strict();
+const variablePairSchema = z.object({ field: z.string(), value: z.string() }).strict();
 
 // `routineRankings`/`directiveClassifications` are absent from the provider schema
 // when their candidate list is empty, so both are optional here; parse treats an
@@ -496,6 +493,7 @@ const rawTurnPlanSchema = z.object({
   routineRankings: z.array(z.object({
     routineId: z.string().min(1),
     confidence: confidenceSchema,
+    directRequest: z.boolean().optional(),
     variables: z.array(variablePairSchema).optional(),
   }).strict()).optional(),
   directiveClassifications: z.array(z.object({
@@ -669,10 +667,11 @@ export const buildTurnPlanResponseFormat = (candidates: {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["routineId", "confidence", "variables"],
+        required: ["routineId", "confidence", "directRequest", "variables"],
         properties: {
           routineId: { type: "string", enum: [...ROUTINE_ALIASES] },
           confidence: confidenceJsonSchema,
+          directRequest: { type: "boolean" },
           variables: {
             type: "array",
             items: {
@@ -915,6 +914,7 @@ export const parseTurnPlan = (
     routineRankings.push({
       routineId,
       confidence: entry.confidence,
+      ...(entry.directRequest !== undefined ? { directRequest: entry.directRequest } : {}),
       ...(variables ? { variables } : {}),
     });
   }

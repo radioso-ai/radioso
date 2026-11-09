@@ -345,4 +345,54 @@ describe("RoutineRegistry ranked activation", () => {
       variables: { source: "button" },
     });
   });
+
+  it("reports an Offer-first pick with the ranker's direct-request verdict, so the engine decides whether to start", async () => {
+    const offerFirst = registration("room_booking", { description: "The visitor wants to book a room" }, "Room booking");
+    offerFirst.routine.activation = { triggerDescription: "The visitor wants to book a room", priority: 0, reentryMode: "once_per_conversation", startMode: "offer" };
+    const gw = gateway(rankedJson([
+      { routineId: "room_booking", confidence: 0.92, directRequest: false, variables: { arrival: "2027-03-08" } },
+    ]));
+
+    const result = await new RoutineRegistry([offerFirst], { policy }).activator(gw).activate({ turn });
+
+    expect(result).toMatchObject({
+      kind: "activate",
+      routineId: "room_booking",
+      variables: { arrival: "2027-03-08" },
+      startMode: "offer",
+      directRequest: false,
+    });
+  });
+
+  it("leaves an automatic pick without a start mode, so it starts as before", async () => {
+    const gw = gateway(rankedJson([{ routineId: "demo", confidence: 0.92, directRequest: false }]));
+
+    const result = await new RoutineRegistry([registration("demo")], { policy }).activator(gw).activate({ turn });
+
+    expect(result).toMatchObject({ kind: "activate", routineId: "demo" });
+    expect(result).not.toHaveProperty("startMode");
+  });
+
+  it("rejects a ranking whose direct-request verdict is not a boolean", async () => {
+    const gw = gateway(rankedJson([{ routineId: "demo", confidence: 0.92, directRequest: "yes" }]));
+
+    expect(await new RoutineRegistry([registration("demo")], { policy }).activator(gw).activate({ turn })).toBeNull();
+  });
+
+  it("starts a soft-band pick as an auto-pick, so 'offered' only ever means the visitor was offered something", async () => {
+    const gw = gateway(rankedJson([
+      { routineId: "demo", confidence: 0.9 },
+      { routineId: "support", confidence: 0.8 },
+    ]));
+
+    const result = await new RoutineRegistry([registration("demo"), registration("support")], {
+      policy: { ...policy, askMargin: 0.05 },
+    }).activator(gw).activate({ turn });
+
+    expect(result).toMatchObject({
+      kind: "activate",
+      routineId: "demo",
+      decisionMetadata: { decision: { kind: "auto_pick", reason: "soft_band" }, reason: "soft_band" },
+    });
+  });
 });

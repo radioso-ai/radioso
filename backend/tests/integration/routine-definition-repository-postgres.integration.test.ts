@@ -128,6 +128,8 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       activation_priority INTEGER NOT NULL DEFAULT 0,
       activation_reentry_mode TEXT NOT NULL DEFAULT 'once_per_conversation',
       activation_coverage_criteria JSONB NULL,
+      -- Mirrors migration 253_routine_start_mode.sql.
+      activation_start_mode TEXT NOT NULL DEFAULT 'automatic' CHECK (activation_start_mode IN ('automatic', 'offer')),
       -- Mirrors migration 194_routine_definition_exposure.sql.
       exposure_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       exposure_tool_name TEXT NULL,
@@ -513,6 +515,41 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     // The persisted gate still validates clean: the decision field guards resolve against
     // the recovered capture key (a dropped captureKey would surface field_guard_unknown_reference).
     expect(validateRoutineDefinition(reloaded!)).toMatchObject({ ok: true });
+  });
+
+  it("round-trips an offer-first start mode, and reads an automatic or unset one back without the key (#1716)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const base = draftInput("start-mode-roundtrip");
+    const created = await repository.createDraft(agentId, { ...base, activation: { ...base.activation, startMode: "offer" } });
+    const storedMode = async (id: string) => (await database.queryOne<{ activation_start_mode: string }>(
+      `SELECT activation_start_mode FROM routine_definition WHERE id = $1`,
+      [id],
+    )).activation_start_mode;
+
+    expect((await repository.findById(agentId, created.id))?.activation.startMode).toBe("offer");
+    expect(await storedMode(created.id)).toBe("offer");
+
+    const automatic = await repository.updateDraft(agentId, created.id, { ...base, activation: { ...base.activation, startMode: "automatic" } });
+    expect(automatic.activation).not.toHaveProperty("startMode");
+    expect(await storedMode(created.id)).toBe("automatic");
+
+    await repository.updateDraft(agentId, created.id, { ...base, activation: { ...base.activation, startMode: "offer" } });
+    const unset = await repository.updateDraft(agentId, created.id, base);
+    expect(unset.activation).not.toHaveProperty("startMode");
+    expect(await storedMode(created.id)).toBe("automatic");
+
+    const legacyId = randomUUID();
+    await database.execute(
+      `INSERT INTO routine_definition (id, agent_id, lineage_id, version, name, status, activation_trigger_description)
+       VALUES ($1, $2, $1, 1, 'start-mode-legacy', 'published', 'When asked.')`,
+      [legacyId, agentId],
+    );
+    expect((await repository.findById(agentId, legacyId))?.activation).not.toHaveProperty("startMode");
+
+    await expect(database.execute(
+      `UPDATE routine_definition SET activation_start_mode = 'sometimes' WHERE id = $1`,
+      [created.id],
+    )).rejects.toMatchObject({ code: "23514" });
   });
 
   it("round-trips a slot's sensitivity, reading a normal slot back without the field (#1543)", async () => {

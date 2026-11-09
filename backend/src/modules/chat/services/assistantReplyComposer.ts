@@ -6,6 +6,7 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import { buildAssistantReplyPrompt, type AssistantReplyPromptInput } from "./assistantReplyPromptBuilder.js";
 import type { TurnStreamResult } from "./turnOutcome.js";
+import { routineClosing } from "./routineClosing.js";
 
 /**
  * Writes one capability's reply prompt from the turn the composer reads and, for a reply
@@ -57,7 +58,7 @@ export class AssistantReplyComposer {
       pageContextCondition: this.support.pageContextCondition(session),
       conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
-      pendingRoutineStep: session.routineYield?.pendingStep,
+      ...routineClosing(session),
     }, skillFindings);
   }
 
@@ -120,7 +121,7 @@ export class AssistantReplyComposer {
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: session.directiveSteering?.rules ?? [],
-      pendingRoutineStep: session.routineYield?.pendingStep,
+      ...routineClosing(session),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `${this.config.outcomeKind}_miss`),
     });
@@ -176,7 +177,7 @@ export class AssistantReplyComposer {
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: session.directiveSteering?.rules ?? [],
-      pendingRoutineStep: session.routineYield?.pendingStep,
+      ...routineClosing(session),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}_miss`),
       signal,

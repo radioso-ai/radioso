@@ -10,7 +10,7 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 import { redactSensitiveValues } from "@radioso/conversation-contract";
-import { completedRunSentValues } from "@radioso/conversation-engine";
+import { completedRunSentValues, correctableSlots } from "@radioso/conversation-engine";
 
 import {
   DEFAULT_ROUTINE_SLOT_CORRECTION_CONFIRM_PROMPT,
@@ -27,9 +27,6 @@ const turnMessages = (turn: TurnContext): ConversationMessage[] => [
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
-
-const holdsValue = (variables: Record<string, unknown>, key: string): boolean =>
-  Object.prototype.hasOwnProperty.call(variables, key);
 
 const none = (reason: RoutineSlotCorrectionSkipReason): RoutineSlotCorrectionDetection => ({ kind: "none", reason });
 
@@ -124,11 +121,10 @@ export class RoutineSlotCorrector implements ConversationRoutineSlotCorrection {
       return none("unknown_routine");
     }
     const slots = routine.slots ?? [];
-    const mutableSlots = slots.filter((slot) => slot.mutable);
-    if (mutableSlots.length === 0) {
+    if (!slots.some((slot) => slot.mutable)) {
       return none("no_mutable_slot");
     }
-    const heldSlots = mutableSlots.filter((slot) => holdsValue(completedState.variables, slot.key));
+    const heldSlots = correctableSlots(slots, completedState.variables);
     if (heldSlots.length === 0) {
       return none("not_held");
     }

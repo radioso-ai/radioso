@@ -95,19 +95,21 @@ export const bookStayRoutine: RoutineDefinition = {
   ],
 };
 
-const registration = (): RoutineRegistration => ({
-  routine: compileRoutineDefinition(bookStayRoutine),
+type ReentryMode = RoutineDefinition["activation"]["reentryMode"];
+
+const registration = (reentryMode: ReentryMode): RoutineRegistration => ({
+  routine: compileRoutineDefinition({ ...bookStayRoutine, activation: { ...bookStayRoutine.activation, reentryMode } }),
   trigger: { description: bookStayRoutine.activation.triggerDescription, priority: bookStayRoutine.activation.priority },
 });
 
-const turnProvider = () => createRoutineTurnProvider({
+const turnProvider = (reentryMode: ReentryMode) => createRoutineTurnProvider({
   agentSkillRepository: { listByAgent: async () => [] },
   capabilityPolicy: { can: async () => ({ allowed: true }) },
   clusteringEmbeddings: {},
   embeddingModelForWorkspace: async () => "unused",
   logger: { debug: () => undefined, warn: () => undefined },
   publishedRoutineSource: {
-    load: async () => [registration()],
+    load: async () => [registration(reentryMode)],
     loadPinned: async () => [],
     loadPreview: async () => [],
   },
@@ -136,7 +138,12 @@ export const NORMAL_ANSWER = "A double room is 120 euro a night, breakfast inclu
 
 export const startBookingConversation = async (
   modelGateway: ConversationModelGateway,
-  seed: { completed?: RoutineState; history?: Array<{ role: "user" | "assistant"; content: string }> } = {},
+  seed: {
+    completed?: RoutineState;
+    history?: Array<{ role: "user" | "assistant"; content: string }>;
+    /** The booking's reentry setting; absent, it starts again every time it matches. */
+    reentryMode?: ReentryMode;
+  } = {},
 ): Promise<BookingConversation> => {
   const stores = new InMemoryConversationStores();
   const routineStore = new InMemoryConversationRoutineStore();
@@ -158,7 +165,7 @@ export const startBookingConversation = async (
   for (const message of seed.history ?? []) {
     await append(message.role, message.content);
   }
-  const provider = turnProvider();
+  const provider = turnProvider(seed.reentryMode ?? bookStayRoutine.activation.reentryMode);
   const engine = new DefaultConversationEngine();
 
   return {

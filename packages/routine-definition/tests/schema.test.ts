@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectContextVariableRefs,
   endingNotifiesOperators,
+  endingSendsCollectedValues,
   mapRoutineOperatorNoticeText,
   ROUTINE_DEFINITION_LIMITS,
   routineAdvisories,
@@ -568,5 +569,87 @@ describe("routineAdvisories", () => {
       { code: "operator_notice_reply_to_unset", location: "step:end_a.operatorNotice.replyToSlot", stableStepId: "end_a" },
       { code: "operator_notice_reply_to_unset", location: "step:end_b.operatorNotice.replyToSlot", stableStepId: "end_b" },
     ]);
+  });
+});
+
+describe("mutable_slot_not_correctable advisory (#1714)", () => {
+  const slots = [
+    { key: "arrival", type: "date" as const, mutable: true },
+    { key: "departure", type: "date" as const, mutable: true },
+    { key: "guest_name", type: "text" as const },
+  ];
+  const chat = (stableStepId: string, ordinal: number) => ({ stableStepId, kind: "chat" as const, ordinal });
+  const edge = (fromStep: string, toRef: string) => ({ fromStep, toRef });
+  const notified = { stableStepId: "requested", kind: "complete" as const, operatorNotice: { subject: "New stay request", intro: null } };
+  const quiet = { stableStepId: "just_looking", kind: "complete" as const };
+  const notCorrectable = (key: string) => ({ code: "mutable_slot_not_correctable", location: `slot:${key}.mutable`, slotKey: key });
+  const bothDates = [notCorrectable("arrival"), notCorrectable("departure")];
+
+  it("flags every editable field when each ending of the routine notifies the team", () => {
+    expect(routineAdvisories({
+      slots,
+      steps: [chat("dates", 0)],
+      transitions: [edge("dates", "requested")],
+      terminals: [notified],
+    })).toEqual(bothDates);
+  });
+
+  it("reports nothing while some way through ends without sending what it collected", () => {
+    expect(routineAdvisories({
+      slots,
+      steps: [chat("dates", 0)],
+      transitions: [edge("dates", "requested"), edge("dates", "just_looking")],
+      terminals: [notified, quiet],
+    })).toEqual([]);
+  });
+
+  it("flags the fields when the only quiet ending lies past a tool, action, or approval step", () => {
+    for (const kind of ["tool", "action", "approval"] as const) {
+      expect(routineAdvisories({
+        slots,
+        steps: [chat("dates", 0), { stableStepId: "lookup", kind, ordinal: 1 }],
+        transitions: [edge("dates", "lookup"), edge("lookup", "just_looking")],
+        terminals: [quiet],
+      })).toEqual(bothDates);
+    }
+  });
+
+  it("counts a hand-off, and an ending the completion export fires on, as sending", () => {
+    const definition = {
+      slots,
+      steps: [chat("dates", 0)],
+      transitions: [edge("dates", "just_looking")],
+      terminals: [quiet],
+    };
+    const exportOn = (triggerKinds: Array<"complete" | "handoff">) => ({ enabled: true, triggerKinds, destinationRef: "crm" });
+
+    expect(routineAdvisories({ ...definition, terminals: [{ stableStepId: "just_looking", kind: "handoff" as const }] })).toEqual(bothDates);
+    expect(routineAdvisories({ ...definition, completionExport: exportOn(["complete"]) })).toEqual(bothDates);
+    expect(routineAdvisories({ ...definition, completionExport: exportOn(["handoff"]) })).toEqual([]);
+    // The export the routine runs with, when the caller knows it, decides over the definition's.
+    expect(routineAdvisories(definition, { completionExport: exportOn(["complete"]) })).toEqual(bothDates);
+    expect(routineAdvisories({ ...definition, completionExport: exportOn(["complete"]) }, { completionExport: null })).toEqual([]);
+  });
+
+  it("reports nothing without editable fields, or without the routine's steps and exits to judge", () => {
+    expect(routineAdvisories({
+      slots: [{ key: "guest_name", type: "text" as const }],
+      steps: [chat("dates", 0)],
+      transitions: [edge("dates", "requested")],
+      terminals: [notified],
+    })).toEqual([]);
+    expect(routineAdvisories({ slots, terminals: [notified] })).toEqual([]);
+  });
+});
+
+describe("endingSendsCollectedValues", () => {
+  it("is true for an ending that notifies operators, and for one the completion export fires on", () => {
+    const exportTo = (destinationRef: string, enabled = true) => ({ enabled, triggerKinds: ["complete" as const], destinationRef });
+    expect(endingSendsCollectedValues({ kind: "handoff" })).toBe(true);
+    expect(endingSendsCollectedValues({ kind: "complete", operatorNotice: {} })).toBe(true);
+    expect(endingSendsCollectedValues({ kind: "complete" })).toBe(false);
+    expect(endingSendsCollectedValues({ kind: "complete" }, exportTo("crm"))).toBe(true);
+    expect(endingSendsCollectedValues({ kind: "complete" }, exportTo(" "))).toBe(false);
+    expect(endingSendsCollectedValues({ kind: "complete" }, exportTo("crm", false))).toBe(false);
   });
 });

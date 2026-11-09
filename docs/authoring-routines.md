@@ -249,13 +249,22 @@ The agent offers a change only when the change is real:
 - **Nothing the routine collected has left the conversation.** Once its ending
   notified your team, handed off, or sent the completion export, or a skill,
   action, or approval step ran, a changed value would reach none of them. The
-  agent then takes no change and answers the message like any other.
+  agent then takes no change and answers the message like any other. Every
+  skill step counts, even one that only looks something up.
 - **The visitor is changing what they gave.** A message that asks for something
   new, such as another booking with different dates, is not a change either.
 
-A message that isn't a change goes on as any message does: it can start the
-routine again if its [reentry](#reentry) setting allows. Changes last as long
-as the agent remembers the finished routine, 30 minutes after its last update.
+A message that isn't a change goes on as any message does, and the routine's
+[reentry](#reentry) setting decides what happens to it. Under **Once per
+conversation**, the default, the finished routine doesn't start again, so "I'd
+like to book from 8 to 10 January" gets a normal answer. Under **Every time it
+matches** it starts a new booking. Changes last as long as the agent remembers
+the finished routine, 30 minutes after its last update.
+
+When a routine can't end without sending what it collected, **Editable after
+completion** does nothing on its fields. Ray's `validate_routine` reports each
+such field as `mutable_slot_not_correctable`, which never stops the routine from
+saving or publishing.
 
 #### Read the visitor's context
 
@@ -419,7 +428,10 @@ field that is no longer an email field gets `operator_notice_reply_to_slot_inval
 and its select shows that field as **(not an email field)**.
 
 The **Replies go to** reminder (`operator_notice_reply_to_unset`) sits outside
-these validation notes and never stops the routine from saving or publishing.
+these validation notes and never stops the routine from saving or publishing, and
+so does `mutable_slot_not_correctable`, Ray's note on a field marked **Editable
+after completion** that no visitor can change (see
+[Changes after a routine ends](#changes-after-a-routine-ends)).
 
 ## Map
 

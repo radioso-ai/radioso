@@ -139,20 +139,25 @@ interface RoutineTurnProvider {
 const routineActivationPolicy = { floor: 0.4, margin: 0.15, askMargin: 0.15, maxOptions: 4 };
 
 /**
- * Records on the turn spine whether a message after a routine ended was taken as a correction
- * to it, and if not why (#1714): `correction` or the skip reason (`not_held`, `already_sent`,
- * `new_request`, ...). An attribute on the active span, never a new span; never a value.
+ * Records on the turn spine what became of a message after a routine ended (#1714): `correction`,
+ * `invalid_value` when the engine refused the new value for its type, or why no correction was
+ * offered (`not_held`, `already_sent`, `new_request`, ...). The engine claims every correction
+ * the corrector offers, since both read the slot through `correctableSlots`, so the value type
+ * is the one check left that can turn an offer down, and it always does so through
+ * `rejectInvalid`. An attribute on the active span, never a new span; never a value.
  */
+const SLOT_CORRECTION_DECISION = "routine.slot_correction.decision";
 const tracedSlotCorrection = (corrector: ConversationRoutineSlotCorrection): ConversationRoutineSlotCorrection => ({
   detect: async (input) => {
     const detection = await corrector.detect(input);
-    setTraceAttributes({
-      "routine.slot_correction.decision": detection.kind === "correction" ? "correction" : detection.reason,
-    });
+    setTraceAttributes({ [SLOT_CORRECTION_DECISION]: detection.kind === "correction" ? "correction" : detection.reason });
     return detection;
   },
   confirm: (input) => corrector.confirm(input),
-  rejectInvalid: (input) => corrector.rejectInvalid(input),
+  rejectInvalid: (input) => {
+    setTraceAttributes({ [SLOT_CORRECTION_DECISION]: "invalid_value" });
+    return corrector.rejectInvalid(input);
+  },
 });
 
 const coverageCriteriaMatches = (criteria: AnswerCoverageCriteria, turn: TurnContext): boolean => {

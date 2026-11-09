@@ -676,6 +676,7 @@ export {
   steeringForKnownVerdict,
 } from "./steering.js";
 export {
+  correctableSlots,
   verifySlotCorrection,
   type SlotCorrectionResult,
   type SlotCorrectionRejection,

@@ -14,6 +14,7 @@ import type {
 import { normalizeMarkdown, renderMetadataSearchText } from "../../retrieval/public.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
+import { errorSummaryOf } from "../../../shared/errors/errorReportShape.js";
 import {
   toDocumentSourceSummary,
   type DocumentSourceRecord as DocumentOriginRecord,
@@ -38,6 +39,7 @@ import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./doc
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 import { resolveRetrievalEligibility } from "../domain/retrievalEligibility.js";
+import { isUnchangedPage } from "../domain/unchangedPage.js";
 import {
   publishEnrichmentProvenance,
   relinquishGeneratedKeys,
@@ -165,11 +167,8 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         })
       : null;
 
-    if (existingPage && existingPage.contentHash && existingPage.contentHash === indexedContent.contentHash) {
-      return {
-        documentId: existingPage.documentId,
-        status: "ready",
-      };
+    if (existingPage && isUnchangedPage(existingPage, { contentHash: indexedContent.contentHash, title: input.title })) {
+      return { documentId: existingPage.documentId, status: "ready" };
     }
 
     const previousBytes = existingPage?.contentSizeBytes ?? 0;
@@ -177,6 +176,8 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     // the EE quota lock serializes the account cap check, but two workers can
     // still observe the same previous page size before one commits.
     const deltaBytes = Math.max(0, indexedContent.contentSizeBytes - previousBytes);
+    // Reaching here with a matching hash means only the title changed: no new content to meter.
+    const monthlyIndexedBytes = existingPage?.contentHash === indexedContent.contentHash ? 0 : indexedContent.contentSizeBytes;
     let document:
       | {
           id: string;
@@ -205,7 +206,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     const monthlyReservation = await this.usageLimitPolicy.reserveMonthlyIndexedContent({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
-      contentSizeBytes: indexedContent.contentSizeBytes,
+      contentSizeBytes: monthlyIndexedBytes,
       sourceKind: "inline_text",
       externalDocumentId: input.externalDocumentId,
     }).catch(async (error) => {
@@ -252,10 +253,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
           eventName: "document.ingest_failed",
           workspaceId: input.workspaceId,
           subjectType: "document",
-          properties: {
-            title: input.title,
-            reason: error instanceof Error ? error.message : "Failed to queue document processing",
-          },
+          properties: { title: input.title, reason: errorSummaryOf(error) },
           source: "backend",
         });
       } catch {

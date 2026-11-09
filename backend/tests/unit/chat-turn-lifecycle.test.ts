@@ -1,3 +1,4 @@
+import { DatabaseError } from "pg";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationTrace } from "@radioso/conversation-contract";
@@ -2562,6 +2563,49 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       }));
     });
 
+    it("reports a turn whose database could not be reached as a database outage, with the turn's workspace", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      const error = Object.assign(new DatabaseError("terminating connection due to administrator command", 0, "error"), { code: "57P01" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+      );
+
+      expect(report).toHaveBeenCalledOnce();
+      expect(report).toHaveBeenCalledWith(expect.objectContaining({
+        errorType: "database.unavailable",
+        severity: "warn",
+        error,
+        message: "Database unavailable (server_unavailable): error [57P01]",
+        metadata: expect.objectContaining({ workspaceId: "workspace_1", conversationId: "conv_1", stage: "chat.answer", reason: "server_unavailable" }),
+      }));
+    });
+
+    it("reports a turn that found every pooled connection busy as an exhausted pool, at error level", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      // pg-pool's own error when no pooled connection comes free within connectionTimeoutMillis.
+      const error = new Error("timeout exceeded when trying to connect");
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+      );
+
+      expect(report).toHaveBeenCalledWith(expect.objectContaining({
+        errorType: "database.pool_exhausted",
+        severity: "error",
+        message: "Database pool exhausted: Error",
+        metadata: expect.objectContaining({ workspaceId: "workspace_1", conversationId: "conv_1" }),
+      }));
+    });
+
     it("passes no explicit message override when there is no provider classification (the raw error's own message stands)", async () => {
       const report = vi.fn().mockResolvedValue(undefined);
       const { lifecycle } = harness(undefined, { report });
@@ -2750,6 +2794,38 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
           errorMessage: "LLM provider call failed: rate_limited",
         }),
       }));
+    });
+
+    it("names an unclassified failure on chat.failed analytics by class and code, never by its own message", async () => {
+      const visitorWords = "my daughter has asthma and needs the ground floor room";
+      const auditService = {
+        record: vi.fn(async () => {}),
+        recordForLiveConversation: vi.fn(async () => {}),
+      } as unknown as AuditService;
+      const conversationRepository = { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort;
+      const messageRepository = {} as unknown as MessageRepositoryPort;
+      const track = vi.fn(async (_event: { properties?: Record<string, unknown> }) => null);
+      const lifecycle = new ChatTurnLifecycle(conversationRepository, messageRepository, auditService, { track });
+      const cause = Object.assign(new Error(`relation lookup failed near "${visitorWords}"`), { code: "ECONNRESET" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: true },
+        null,
+        undefined,
+        Object.assign(new AppError(500, "internal_error", `Could not answer "${visitorWords}"`), { cause }),
+      );
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_2", stream: false },
+        null,
+        undefined,
+        new TypeError(`Cannot read properties of "${visitorWords}"`),
+      );
+
+      expect(JSON.stringify(track.mock.calls)).not.toContain(visitorWords);
+      expect(track.mock.calls.map(([event]) => event.properties?.errorMessage)).toEqual([
+        "AppError [internal_error] caused by Error [ECONNRESET]",
+        "TypeError",
+      ]);
     });
   });
 });

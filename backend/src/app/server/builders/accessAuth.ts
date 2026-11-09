@@ -13,6 +13,7 @@ import { AuthService } from "../../../modules/auth/services/authService.js";
 import { PostgresOrganizationProvisioner } from "../../../modules/auth/infra/postgresOrganizationProvisioner.js";
 import { EmailVerificationService } from "../../../modules/auth/services/emailVerificationService.js";
 import { AuthFunnelService } from "../../../modules/auth/services/authFunnelService.js";
+import { SessionSignOutService } from "../../../modules/auth/services/sessionSignOutService.js";
 import { PasswordResetService } from "../../../modules/auth/services/passwordResetService.js";
 import { WorkspaceSessionService } from "../../../modules/auth/services/workspaceSessionService.js";
 import {
@@ -312,12 +313,19 @@ export const buildEmailVerificationService = (input: {
     logger: input.logger,
   });
 
-export const buildAuthFunnelService = (input: {
+/** The services that begin a session outside a password sign-in (the verification funnel) and end one (sign-out). */
+export const buildAuthSessionServices = (input: {
   auditService: AuditService;
   env: Env;
   repositories: ReturnType<typeof buildRepositories>;
-}): AuthFunnelService => new AuthFunnelService({
-  env: input.env,
-  repository: input.repositories.authFunnelRepository,
-  auditService: input.auditService,
+}): { authFunnelService: AuthFunnelService; sessionSignOutService: SessionSignOutService } => ({
+  authFunnelService: new AuthFunnelService({
+    env: input.env,
+    repository: input.repositories.authFunnelRepository,
+    auditService: input.auditService,
+  }),
+  sessionSignOutService: new SessionSignOutService({
+    sessionRepository: input.repositories.sessionRepository,
+    auditService: input.auditService,
+  }),
 });

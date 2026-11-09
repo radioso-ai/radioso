@@ -1,4 +1,7 @@
 import { isReportableFault } from "../../../shared/domain/errors.js";
+import { databaseFailureReport } from "../../../shared/errors/databaseFailureReport.js";
+import { errorReportMessage, errorSummaryOf } from "../../../shared/errors/errorReportShape.js";
+import type { ErrorReportMessage, ErrorSeverity } from "../../../shared/errors/errorTypes.js";
 import { classifyLlmProviderFailure, type LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import { turnExecutionCapabilities, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AuditEventInput } from "../../audit/contracts/index.js";
@@ -39,15 +42,14 @@ const turnFailureClassificationFields = (
  * classified against a provider call: a provider's error text can echo the customer's
  * rejected prompt back (see shared/infra/llm/providerErrors.ts), so a classified
  * failure's message never leaves this process. `undefined` for an unclassified
- * failure, whose own message stands — most such errors are this codebase's own, not
- * provider echoes.
+ * failure, which the error report and the analytics event name by its class and code.
  */
 const boundedTurnFailureMessage = (
   providerFailure: LlmProviderFailureClassification | null,
-): string | undefined => (providerFailure ? `LLM provider call failed: ${providerFailure.kind}` : undefined);
+): ErrorReportMessage | undefined => (providerFailure ? errorReportMessage`LLM provider call failed: ${providerFailure.kind}` : undefined);
 
 const turnFailureErrorMessage = (error: unknown, providerFailure: LlmProviderFailureClassification | null): string =>
-  boundedTurnFailureMessage(providerFailure) ?? (error instanceof Error ? error.message : "Unknown error");
+  boundedTurnFailureMessage(providerFailure) ?? errorSummaryOf(error);
 
 /** The exact `properties` for the `chat.failed` product analytics event. */
 interface TurnFailureAnalyticsProperties extends TurnFailureClassificationFields {
@@ -73,9 +75,10 @@ interface TurnFailureReportMetadata extends TurnFailureClassificationFields {
 }
 
 interface TurnFailureReportInput {
-  errorType: "chat.turn_failed";
+  errorType: "chat.turn_failed" | "database.unavailable" | "database.pool_exhausted";
+  severity?: ErrorSeverity;
   error: unknown;
-  message?: string;
+  message?: ErrorReportMessage;
   metadata: TurnFailureReportMetadata;
 }
 
@@ -93,17 +96,21 @@ export const turnFailureReportInput = (input: {
   if (!isReportableFault(input.error)) {
     return null;
   }
-  const boundedMessage = boundedTurnFailureMessage(input.providerFailure);
+  // A turn that failed for want of a database connection is reported as that, the way a request is.
+  const databaseFailure = databaseFailureReport(input.error);
+  const message = databaseFailure?.message ?? boundedTurnFailureMessage(input.providerFailure);
   return {
-    errorType: "chat.turn_failed",
+    errorType: databaseFailure?.errorType ?? "chat.turn_failed",
+    ...(databaseFailure ? { severity: databaseFailure.severity } : {}),
     error: input.error,
-    ...(boundedMessage ? { message: boundedMessage } : {}),
+    ...(message ? { message } : {}),
     metadata: {
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       stage: "chat.answer",
       executionMode: input.executionMode ?? "live",
       ...turnFailureClassificationFields(input.providerFailure),
+      ...databaseFailure?.metadata,
     },
   };
 };

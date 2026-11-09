@@ -195,16 +195,15 @@ export function RoutineInstructionEditor({
     [variables],
   )
   // A variable's type, required, and mutable flags are owned by the Document row's own
-  // controls; the chips here read them and never write back.
+  // controls; the chips here read them and never write back. The required and mutable setters
+  // are left out, so the chip menu shows those two disabled rather than as controls that do nothing.
   const variablesContext = useMemo(
     () => ({
       variables,
       getType: (refId: string): RoutineSlotType => variables.find((variable) => variable.id === refId)?.type ?? 'text',
       setType: () => undefined,
       getRequired: (refId: string): boolean => variables.find((variable) => variable.id === refId)?.required ?? true,
-      setRequired: () => undefined,
       getMutable: (refId: string): boolean => variables.find((variable) => variable.id === refId)?.mutable ?? false,
-      setMutable: () => undefined,
       // A skill named here runs as a step of this routine, so its chip offers input and
       // output binding — unlike a skill merely mentioned in a directive action.
       supportsStepBindings: true,

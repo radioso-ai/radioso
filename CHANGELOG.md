@@ -9,6 +9,53 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.29.0] - 2026-11-09
+
+### Added
+
+- **infra:** schedule Cloud SQL maintenance for Sunday night ([#1724](https://github.com/radioso-ai/radioso/pull/1724))
+
+### Fixed
+
+- **routines:** take a change after a routine ends only for a value it holds and never sent ([#1728](https://github.com/radioso-ai/radioso/pull/1728))
+- **operator-mcp:** let routine edits switch a field's "Editable after completion" on or off ([#1726](https://github.com/radioso-ai/radioso/pull/1726))
+- **observability:** answer a request the database cannot serve with a 503 and report it as an outage ([#1722](https://github.com/radioso-ai/radioso/pull/1722))
+- **crawler:** take the page's own title instead of concatenating every <title> ([#1719](https://github.com/radioso-ai/radioso/pull/1719))
+- **privacy:** send error sinks the redacted shape, never raw error text ([#1721](https://github.com/radioso-ai/radioso/pull/1721))
+- **frontend:** keep unsaved Profile draft when an agent is renamed ([#1723](https://github.com/radioso-ai/radioso/pull/1723))
+- **connectors:** keep operator-set source config when a connector re-syncs ([#1720](https://github.com/radioso-ai/radioso/pull/1720))
+
+[1.29.0]: https://github.com/radioso-ai/radioso/compare/v1.28.0...v1.29.0
+
+## [1.28.0] - 2026-11-08
+
+### Added
+
+- **notifications:** record each notice's outcome per address and alert when one is skipped ([#1708](https://github.com/radioso-ai/radioso/pull/1708))
+- **skills:** make MCP connections belong to the workspace ([#1697](https://github.com/radioso-ai/radioso/pull/1697))
+- **wordpress:** keep a resync going from the settings page when WP-Cron cannot fire ([#1691](https://github.com/radioso-ai/radioso/pull/1691))
+
+### Fixed
+
+- **notifications:** send a notice no configured address can receive to the workspace's administrators ([#1712](https://github.com/radioso-ai/radioso/pull/1712))
+- **db:** never return a connection to the pool inside a transaction ([#1706](https://github.com/radioso-ai/radioso/pull/1706))
+- **agents:** save greeting wording with the agent draft and let it publish on its own ([#1695](https://github.com/radioso-ai/radioso/pull/1695))
+- **wordpress:** accept companion pushes from every site the workspace has connected ([#1693](https://github.com/radioso-ai/radioso/pull/1693))
+- **security:** prune batch rate-limit counters on the batch's own clock ([#1692](https://github.com/radioso-ai/radioso/pull/1692))
+
+### Internal
+
+- use invented examples in tests, fixtures, prompts and docs ([#1709](https://github.com/radioso-ai/radioso/pull/1709))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `251_mcp_connections_workspace_owned.sql`
+- `252_notification_deliveries.sql`
+
+[1.28.0]: https://github.com/radioso-ai/radioso/compare/v1.27.0...v1.28.0
+
 ## [1.27.0] - 2026-11-03
 
 ### Added

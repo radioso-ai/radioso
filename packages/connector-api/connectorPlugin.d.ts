@@ -149,7 +149,14 @@ export interface ConnectorPublicHttpPort {
 export interface ConnectorSourceDescriptor {
   externalId: string;
   name: string;
+  /**
+   * Merged over the stored config at the top level on every ingest, delete, and
+   * `ensureSource`: keys you supply win; keys you omit, including settings an
+   * operator set on the source, are kept. A nested value you supply replaces
+   * the stored one as a whole.
+   */
   config?: Record<string, unknown>;
+  /** Merged over the stored metadata the same way as `config`. */
   metadata?: Record<string, unknown>;
 }
 
@@ -249,6 +256,8 @@ export interface ConnectorIngestionPort {
    * Upsert the document source row for a connector channel without ingesting
    * any documents. Used by connector lifecycle hooks (e.g. onEnable) so the
    * Sources view reflects the wired channel before the first document arrives.
+   * On an existing source the descriptor's `config` and `metadata` merge over
+   * the stored ones, so a re-run keeps settings an operator set on the source.
    */
   ensureSource(input: {
     workspaceId: string;

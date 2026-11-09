@@ -7,6 +7,7 @@ import {
   normalizeText,
   type ExtractionOptions,
 } from "./htmlProcessing.js";
+import { normalizePageTitle } from "./pageTitle.js";
 
 const ALWAYS_NON_CONTENT_SELECTOR = [
   "script",
@@ -245,6 +246,39 @@ const extractLinks = ($: CheerioAPI, loadedUrl: string): string[] =>
     })
     .filter((candidate: string | null): candidate is string => Boolean(candidate));
 
+const NON_PAGE_TITLE_ANCESTORS = new Set(["svg", "template"]);
+
+// Walks parent links by hand: a template's contents hang off a detached root node, which
+// Cheerio's `closest()` does not cross.
+type NodeWithParent = { parent: NodeWithParent | null };
+
+const isInsideNonPageTitleAncestor = (title: NodeWithParent): boolean => {
+  for (let node = title.parent; node; node = node.parent) {
+    if (NON_PAGE_TITLE_ANCESTORS.has(elementName(node))) {
+      return true;
+    }
+  }
+  return false;
+};
+
+// Themes and page builders sometimes emit more than one <title> (a template's head block, an
+// inline SVG label). Cheerio's `.text()` concatenates every match, so pick one element instead:
+// the first non-empty <title> in document order, which puts <head> before <body>. An SVG label or
+// the inert contents of a <template> are not the page's title. Read from the unmodified document,
+// before page-chrome removal can drop the element.
+const extractPageTitle = ($: CheerioAPI): string | null => {
+  for (const candidate of $("title").toArray()) {
+    if (isInsideNonPageTitleAncestor(candidate)) {
+      continue;
+    }
+    const title = normalizePageTitle($(candidate).text());
+    if (title) {
+      return title;
+    }
+  }
+  return null;
+};
+
 const readHeader = (headers: unknown, name: string): string | null => {
   if (!headers || typeof headers !== "object") {
     return null;
@@ -269,6 +303,7 @@ export const buildFetchedHtmlPage = (input: {
   options?: ExtractionOptions;
 }): FetchedPage => {
   const $ = load(input.originalHtml);
+  const title = extractPageTitle($);
   const originalLinks = extractLinks($, input.loadedUrl);
   const structurallyLinkDense = isStructurallyLinkDensePage($);
   removePageChrome($);
@@ -294,7 +329,7 @@ export const buildFetchedHtmlPage = (input: {
   };
   return {
     url: input.loadedUrl,
-    title: $("title").text() || null,
+    title,
     text,
     html,
     httpStatus: input.statusCode,

@@ -8,17 +8,19 @@ import type { ChipDocVariable } from '@/lib/routine-prose'
 // Lets a chip (rendered deep inside the Lexical document) read and set the type of the
 // variable it references, which is owned by the editor screen's state. Keeps the type
 // on the chip itself instead of a separate list the author has to hunt for.
-export type RoutineVariablesContextValue = {
+type RoutineVariablesContextValue = {
   variables: ChipDocVariable[]
   getType: (refId: string) => RoutineSlotType
   setType: (refId: string, type: RoutineSlotType) => void
   // Whether a slot must be filled before the routine completes. Defaults to required; the
   // chip lets the author mark it optional.
   getRequired: (refId: string) => boolean
-  setRequired: (refId: string, required: boolean) => void
+  // The required and mutable setters are present only where the chip may change that property.
+  // Where the routine Document tab's field row owns it, the chip menu shows the value disabled.
+  setRequired?: (refId: string, required: boolean) => void
   // Whether a slot stays editable after the routine completes (issue #746). Defaults off.
   getMutable: (refId: string) => boolean
-  setMutable: (refId: string, mutable: boolean) => void
+  setMutable?: (refId: string, mutable: boolean) => void
   // True inside a routine, where a skill runs as a step and can bind its inputs to slots and
   // assign its outputs. A skill mentioned outside a routine (a directive action) has no step
   // to bind, so its chip shows the skill's identity only.
@@ -43,9 +45,7 @@ export function useRoutineVariables(): RoutineVariablesContextValue {
     getType: () => 'text',
     setType: () => {},
     getRequired: () => true,
-    setRequired: () => {},
     getMutable: () => false,
-    setMutable: () => {},
     supportsStepBindings: false,
   }
 }

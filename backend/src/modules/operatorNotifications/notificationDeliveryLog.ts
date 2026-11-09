@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import { knownAgentId } from "./knownAgentId.js";
 import {
   RECIPIENT_DELIVERY_OUTCOMES,
   type NotificationDeliveryRecorderPort,
@@ -58,8 +59,6 @@ const ALERTING_OUTCOMES: Partial<Record<RecipientDeliveryOutcome, UndeliveredRec
   skipped_suppressed: "suppressed",
 };
 
-const agentIdSchema = z.string().uuid();
-
 /**
  * How long a notice's action waits for its alerts. The action has a fixed budget, and one that runs
  * out is retried: a stalled mail provider must not make notices that already went out go out again.
@@ -95,7 +94,8 @@ const withinBudget = <T>(start: (signal: AbortSignal) => Promise<T>, budgetMs: n
 
 /**
  * Keeps the per-address record of every notice and warns the account's administrators when an
- * address is being skipped. Both are bookkeeping around a delivery that has already been decided,
+ * address is being skipped, unless the notice itself reached them in its place: their copy already
+ * names the address and why. Both are bookkeeping around a delivery that has already been decided,
  * so neither can fail it: a failure is logged without any address and counted.
  */
 export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort {
@@ -111,8 +111,7 @@ export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort
   async record(subject: NotificationDeliverySubject, deliveries: readonly RecipientDelivery[]): Promise<void> {
     const { conversationId } = subject;
     if (!conversationId || deliveries.length === 0) return;
-    // Some notices name their agent "unknown" when the conversation has none; that is no agent.
-    const agentId = subject.agentId !== null && agentIdSchema.safeParse(subject.agentId).success ? subject.agentId : null;
+    const agentId = knownAgentId(subject.agentId);
     try {
       await this.options.store.upsert({ ...subject, agentId, conversationId }, deliveries);
       this.countOutcomes(deliveries);
@@ -127,7 +126,33 @@ export class NotificationDeliveryLog implements NotificationDeliveryRecorderPort
         errorName: error instanceof Error ? error.name : "unknown",
       }, "Notification delivery could not be recorded");
     }
+    const administratorsSent = this.reportAdministratorFallback(subject, deliveries);
+    if (administratorsSent > 0) return;
     await this.warnAdministrators(subject, agentId, deliveries);
+  }
+
+  /**
+   * Counts and logs a notice sent to administrators in place of its configured addresses, and says
+   * how many it reached. Only an attempt on which every administrator's copy went out counts: an
+   * attempt with a failed copy is retried, and counting both would count one notice twice.
+   */
+  private reportAdministratorFallback(subject: NotificationDeliverySubject, deliveries: readonly RecipientDelivery[]): number {
+    const administrators = deliveries.filter((delivery) => delivery.via === "administrator_fallback");
+    const sentCount = administrators.filter((delivery) => delivery.outcome === "sent").length;
+    if (administrators.length === 0 || sentCount < administrators.length) return sentCount;
+    this.options.metrics?.incrementCounter("notification_administrator_fallbacks_total", {
+      help: "Notices sent to workspace administrators because recipient policy left out every configured address.",
+      labels: { kind: subject.kind },
+    });
+    this.options.logger?.warn({
+      event: "notification_administrator_fallback",
+      workspaceId: subject.workspaceId,
+      requestId: subject.requestId,
+      kind: subject.kind,
+      skippedCount: deliveries.length - administrators.length,
+      administratorCount: administrators.length,
+    }, "Notice sent to workspace administrators in place of its configured addresses");
+    return sentCount;
   }
 
   private countOutcomes(deliveries: readonly RecipientDelivery[]): void {

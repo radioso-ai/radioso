@@ -292,10 +292,10 @@ describe("frontend error reporting routes", () => {
       .post("/api/v1/observability/frontend-errors")
       .send({
         errorType: "frontend.react.unhandled",
-        message: "Dashboard render failed",
+        message: "Dashboard render failed for visitor@example.com",
         errorClass: "TypeError",
-        stack: "TypeError: Dashboard render failed\n    at Dashboard (https://app.example/w/acme/chat?token=secret:1:2)",
-        componentStack: "\n    at Dashboard\n    at App",
+        stack: "TypeError: Dashboard render failed for visitor@example.com\n    at Dashboard (https://app.example/w/acme/chat:1:2)",
+        componentStack: "\n    at Composer (/_next/static/chunks/app.js:5:6)\n    at Inbox (visitor@example.com)\n    at Thread (https://app.example/w/acme/inbox:7:8)",
         path: "/w/acme/chat?token=secret",
         source: "frontend",
       })
@@ -304,30 +304,32 @@ describe("frontend error reporting routes", () => {
         recorded: true,
       });
 
-    expect(repositories.auditEventRepository.items).toContainEqual(expect.objectContaining({
-      eventType: "error.recorded",
+    const recorded = repositories.auditEventRepository.items.find((event) => event.eventType === "error.recorded");
+    expect(JSON.stringify(recorded)).not.toContain("visitor@example.com");
+    expect(JSON.stringify(recorded)).not.toContain("secret");
+    expect(recorded).toEqual(expect.objectContaining({
       eventStatus: "failure",
       metadata: {
         error: expect.objectContaining({
           errorType: "frontend.react.unhandled",
-          message: "Dashboard render failed",
+          message: "frontend.react.unhandled: TypeError",
           errorClass: "TypeError",
           requestContext: {
             method: "CLIENT",
             route: "/w/[workspaceKey]/chat",
           },
           metadata: expect.objectContaining({
-            componentStack: "\n    at Dashboard\n    at App",
+            componentStack: "    at Composer (/_next/static/chunks/app.js:5:6)\n    at Thread (/w/[workspaceKey]/inbox:7:8)",
             source: "frontend",
             userAgent: expect.any(String),
           }),
-          stack: expect.not.stringContaining("secret"),
+          stack: "    at Dashboard (/w/[workspaceKey]/chat:1:2)",
         }),
       },
     }));
   });
 
-  it("truncates oversized frontend error payload fields instead of rejecting the report", async () => {
+  it("accepts oversized frontend error payload fields instead of rejecting the report", async () => {
     const { app, repositories } = createTestApp();
 
     await request(app)
@@ -343,17 +345,12 @@ describe("frontend error reporting routes", () => {
       })
       .expect(202);
 
-    expect(repositories.auditEventRepository.items).toContainEqual(expect.objectContaining({
-      eventType: "error.recorded",
-      metadata: {
-        error: expect.objectContaining({
-          message: "m".repeat(2048),
-          stack: "s".repeat(16_384),
-          metadata: expect.objectContaining({
-            componentStack: "c".repeat(8192),
-          }),
-        }),
-      },
+    const recorded = repositories.auditEventRepository.items.find((event) => event.eventType === "error.recorded");
+    // None of the three is a stack frame or a safe message, so none reaches the report.
+    expect(JSON.stringify(recorded)).not.toMatch(/mmmm|ssss|cccc/u);
+    expect(recorded?.metadata?.error).toEqual(expect.objectContaining({
+      errorClass: "TypeError",
+      message: "frontend.runtime.unhandled: TypeError",
     }));
   });
 

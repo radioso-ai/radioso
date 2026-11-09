@@ -4,6 +4,8 @@ import { DefaultConversationEngine } from "../src/index.js";
 import type {
   AttemptRoutineInput,
   ConversationEvent,
+  ConversationRoutineActivator,
+  ConversationRoutineReentryGate,
   ConversationRoutineSlotCorrection,
   RoutineSlotCorrectionCandidate,
   RoutineState,
@@ -21,12 +23,19 @@ const mutableEmailSlot: RoutineSlotCorrectionCandidate["slots"] = [
   { id: "s_email", key: "email", type: "email", required: true, mutable: true },
 ];
 
+const noCorrection: ConversationRoutineSlotCorrection["detect"] = async () => ({ kind: "none", reason: "not_a_correction" });
+
+const correction = (candidate: RoutineSlotCorrectionCandidate): ConversationRoutineSlotCorrection["detect"] =>
+  async () => ({ kind: "correction", ...candidate });
+
 const buildInput = (overrides: {
   detect?: ConversationRoutineSlotCorrection["detect"];
   confirm?: ConversationRoutineSlotCorrection["confirm"];
   rejectInvalid?: ConversationRoutineSlotCorrection["rejectInvalid"];
   completedStates?: RoutineState[];
   save?: (state: RoutineState) => Promise<void>;
+  routineActivator?: ConversationRoutineActivator;
+  routineReentryGate?: ConversationRoutineReentryGate;
 }): { input: AttemptRoutineInput; events: ConversationEvent[]; save: ReturnType<typeof vi.fn>; rejectInvalid: ReturnType<typeof vi.fn> } => {
   const events: ConversationEvent[] = [];
   const save = vi.fn(overrides.save ?? (async () => {}));
@@ -50,10 +59,12 @@ const buildInput = (overrides: {
     // Unused by the correction path, but attemptRoutine requires it to be wired.
     routineRunner: { resume: vi.fn() },
     routineSlotCorrection: {
-      detect: overrides.detect ?? vi.fn(async () => null),
+      detect: overrides.detect ?? vi.fn(noCorrection),
       confirm: overrides.confirm ?? vi.fn(async () => "Updated."),
       rejectInvalid,
     },
+    ...(overrides.routineActivator ? { routineActivator: overrides.routineActivator } : {}),
+    ...(overrides.routineReentryGate ? { routineReentryGate: overrides.routineReentryGate } : {}),
   };
   return { input, events, save, rejectInvalid };
 };
@@ -61,7 +72,7 @@ const buildInput = (overrides: {
 describe("completed-instance slot-correction interceptor", () => {
   it("patches the stored variable and replies when a valid correction is detected", async () => {
     const { input, events, save } = buildInput({
-      detect: vi.fn(async () => ({ slots: mutableEmailSlot, slotKey: "email", rawValue: "new@example.com" })),
+      detect: vi.fn(correction({ slots: mutableEmailSlot, slotKey: "email", rawValue: "new@example.com" })),
       confirm: vi.fn(async () => "Done — I updated your email."),
     });
 
@@ -86,7 +97,7 @@ describe("completed-instance slot-correction interceptor", () => {
 
   it("does not patch state when confirmation generation fails", async () => {
     const { input, save } = buildInput({
-      detect: vi.fn(async () => ({ slots: mutableEmailSlot, slotKey: "email", rawValue: "new@example.com" })),
+      detect: vi.fn(correction({ slots: mutableEmailSlot, slotKey: "email", rawValue: "new@example.com" })),
       confirm: vi.fn(async () => {
         throw new Error("confirmation_failed");
       }),
@@ -97,7 +108,7 @@ describe("completed-instance slot-correction interceptor", () => {
   });
 
   it("falls through (no patch) when no correction is detected", async () => {
-    const { input, save } = buildInput({ detect: vi.fn(async () => null) });
+    const { input, save } = buildInput({ detect: vi.fn(noCorrection) });
     const result = await new DefaultConversationEngine().attemptRoutine(input);
     expect(result).toBeNull();
     expect(save).not.toHaveBeenCalled();
@@ -107,7 +118,7 @@ describe("completed-instance slot-correction interceptor", () => {
     // Immutable slot — detection misfired; the deterministic gate must reject it and leave
     // the turn to normal answering (only invalid_value re-asks).
     const { input, save, rejectInvalid } = buildInput({
-      detect: vi.fn<ConversationRoutineSlotCorrection["detect"]>(async () => ({
+      detect: vi.fn(correction({
         slots: [{ id: "s_email", key: "email", type: "email", required: true, mutable: false }],
         slotKey: "email",
         rawValue: "new@example.com",
@@ -121,7 +132,7 @@ describe("completed-instance slot-correction interceptor", () => {
 
   it("re-asks (no patch) when the replacement value fails the slot's type", async () => {
     const { input, save, rejectInvalid } = buildInput({
-      detect: vi.fn(async () => ({ slots: mutableEmailSlot, slotKey: "email", rawValue: "not-an-email" })),
+      detect: vi.fn(correction({ slots: mutableEmailSlot, slotKey: "email", rawValue: "not-an-email" })),
       rejectInvalid: vi.fn(async () => "That doesn't look like a valid email — what should I use?"),
     });
     const result = await new DefaultConversationEngine().attemptRoutine(input);
@@ -136,11 +147,54 @@ describe("completed-instance slot-correction interceptor", () => {
   });
 
   it("does nothing when there is no completed routine instance", async () => {
-    const detect = vi.fn(async () => null);
+    const detect = vi.fn(noCorrection);
     const { input, save } = buildInput({ detect, completedStates: [] });
     const result = await new DefaultConversationEngine().attemptRoutine(input);
     expect(result).toBeNull();
     expect(detect).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
+  });
+
+  // #1714: a booking routine ended holding nothing, and "I'd like to book from 8 to 10 January"
+  // was taken as a change to an arrival the run never held — confirmed as updated, and the
+  // request never reached activation.
+  it("never claims a change to a value the completed run does not hold, and lets activation have the turn", async () => {
+    const confirm = vi.fn(async () => "Perfect, I've updated your arrival.");
+    const activate = vi.fn<ConversationRoutineActivator["activate"]>(async () => null);
+    const { input, save, rejectInvalid } = buildInput({
+      completedStates: [{ ...completed, variables: {} }],
+      detect: vi.fn(correction({
+        slots: [{ id: "s_arrival", key: "arrival", type: "date", required: true, mutable: true }],
+        slotKey: "arrival",
+        rawValue: "2027-01-08",
+      })),
+      confirm,
+      routineActivator: { activate },
+    });
+
+    const result = await new DefaultConversationEngine().attemptRoutine(input);
+
+    expect(result).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(rejectInvalid).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(activate).toHaveBeenCalledOnce();
+  });
+
+  it("hands a message the detector reads as a new request on to reentry and activation", async () => {
+    const decide = vi.fn<ConversationRoutineReentryGate["decide"]>(async () => ({ kind: "suppress" }));
+    const activate = vi.fn<ConversationRoutineActivator["activate"]>(async () => null);
+    const { input, save } = buildInput({
+      detect: vi.fn<ConversationRoutineSlotCorrection["detect"]>(async () => ({ kind: "none", reason: "new_request" })),
+      routineReentryGate: { decide },
+      routineActivator: { activate },
+    });
+
+    const result = await new DefaultConversationEngine().attemptRoutine(input);
+
+    expect(result).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(decide).toHaveBeenCalledOnce();
+    expect(activate).toHaveBeenCalledWith(expect.objectContaining({ suppressedRoutineIds: ["routine_intake"] }));
   });
 });

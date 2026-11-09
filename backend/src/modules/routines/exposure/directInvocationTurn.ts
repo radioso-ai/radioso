@@ -19,7 +19,7 @@ const inertReentryGate: ConversationRoutineReentryGate = {
   decide: () => Promise.resolve({ kind: "suppress" }),
 };
 const inertSlotCorrection: ConversationRoutineSlotCorrection = {
-  detect: () => Promise.resolve(null),
+  detect: () => Promise.resolve({ kind: "none", reason: "not_a_correction" }),
   confirm: () => Promise.reject(new Error("routine_slot_correction_inert_on_invocation")),
   rejectInvalid: () => Promise.reject(new Error("routine_slot_correction_inert_on_invocation")),
 };

@@ -325,7 +325,7 @@ describe("document ingestion", () => {
     );
 
     jobRepository.enqueue = async () => {
-      throw new Error("queue unavailable");
+      throw Object.assign(new Error("queue unavailable: duplicate key (title)=(Notes for visitor@example.com)"), { code: "23505" });
     };
 
     await expect(
@@ -341,8 +341,11 @@ describe("document ingestion", () => {
       expect.objectContaining({
         eventName: "document.ingest_failed",
         workspaceId: "workspace-1",
+        // Product analytics leave Radioso, so the reason names the failure by class and code only.
+        properties: expect.objectContaining({ reason: "Error [23505]" }),
       }),
     );
+    expect(JSON.stringify(analyticsService.track.mock.calls)).not.toContain("visitor@example.com");
   });
 
   it("keeps ingest successful when dispatching the queued job fails after durable queueing", async () => {
@@ -1047,6 +1050,138 @@ describe("document ingestion", () => {
 
     const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(current?.revision).toBe(1);
+  });
+
+  it("re-ingests a synced document when only its title changes (a recrawl that now extracts a corrected title)", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Yoga Retreat Weekend – Example SiteTemplate Page",
+      content: "Same body",
+      externalDocumentId: "page_42",
+      metadata: { sourceUrl: "https://example.com/p" },
+    });
+
+    const second = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Yoga Retreat Weekend – Example Site",
+      content: "Same body",
+      externalDocumentId: "page_42",
+      metadata: { sourceUrl: "https://example.com/p" },
+    });
+
+    expect(second.documentId).toBe(first.documentId);
+    expect(second.status).not.toBe("ready");
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(2);
+    expect(current?.title).toBe("Yoga Retreat Weekend – Example Site");
+  });
+
+  it("skips reprocessing when a synced document's title is unchanged", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const input = {
+      workspaceId: "workspace-1",
+      title: "Yoga Retreat Weekend – Example Site",
+      content: "Same body",
+      externalDocumentId: "page_42",
+    };
+    const first = await service.ingest(input);
+    const second = await service.ingest(input);
+
+    expect(second).toEqual({ documentId: first.documentId, status: "ready" });
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(1);
+  });
+
+  it("keeps the stored title and skips reprocessing when a caller supplies no title", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Yoga Retreat Weekend – Example Site",
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+    const second = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "  ",
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+
+    expect(second).toEqual({ documentId: first.documentId, status: "ready" });
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(1);
+    expect(current?.title).toBe("Yoga Retreat Weekend – Example Site");
+  });
+
+  it.each([
+    ["internal newlines and runs of spaces", "Page\n  | Site", "Page | Site"],
+    ["a no-break space before a colon", "Atelier : Yoga", "Atelier : Yoga"],
+    ["a narrow no-break space before a colon", "Atelier : Yoga", "Atelier : Yoga"],
+  ])("skips reprocessing when the stored and incoming titles differ only by %s", async (_label, storedTitle, incomingTitle) => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: storedTitle,
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+    const second = await service.ingest({
+      workspaceId: "workspace-1",
+      title: incomingTitle,
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+
+    expect(second).toEqual({ documentId: first.documentId, status: "ready" });
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(1);
+    expect(current?.title).toBe(storedTitle);
+  });
+
+  it("re-ingests when an incoming title differs in more than whitespace", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Page\n  | Site",
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+    await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Page | Other site",
+      content: "Same body",
+      externalDocumentId: "page_42",
+    });
+
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(2);
+    expect(current?.title).toBe("Page | Other site");
   });
 
   it("re-ingests when an indexed field changes type without changing its text", async () => {

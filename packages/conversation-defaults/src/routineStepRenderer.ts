@@ -227,6 +227,46 @@ const retrievalContextMessages = (turn: TurnContext): ConversationMessage[] => {
 };
 
 /**
+ * What a step reply may take a fact from beyond its own instruction (#1717): the excerpts a
+ * retrieval step staged, and the evidence of the context variables the step references, such
+ * as the page the visitor is on. A routine chat step runs no retrieval of its own, so on a turn
+ * without either it has none, and is told so.
+ */
+type StepReplySource = "retrieved_excerpts" | "visitor_context_evidence";
+
+// Each label names a block the reply's messages carry under the same name.
+const STEP_REPLY_SOURCE_LABELS: Record<StepReplySource, string> = {
+  retrieved_excerpts: "the retrieved document excerpts",
+  visitor_context_evidence: "the evidence from the visitor's context",
+};
+
+const NO_STEP_REPLY_SOURCES =
+  "none: no retrieved document excerpts and no evidence from the visitor's context were provided";
+
+/** True when a staged retrieval result carries an excerpt the reply's messages render. */
+const hasRetrievedExcerpt = (turn: TurnContext): boolean =>
+  turn.stagedContext.some((staged) =>
+    staged.source === "retrieval.context" &&
+    isRecord(staged.data) &&
+    Array.isArray(staged.data.contexts) &&
+    staged.data.contexts.some((context) => isRecord(context) && textField(context.content) !== null));
+
+const stepReplySources = (turn: TurnContext, contextEvidence: readonly string[]): StepReplySource[] => [
+  ...(hasRetrievedExcerpt(turn) ? ["retrieved_excerpts" as const] : []),
+  ...(contextEvidence.length > 0 ? ["visitor_context_evidence" as const] : []),
+];
+
+/**
+ * The sources line of the reply prompt. Without it, a dates step told to state the edition's
+ * dates "from the sources", on no page, gave the visitor's own window back as the course's
+ * dates. Labels only: what the sources say stays in the messages, as untrusted quoted data.
+ */
+const stepSourcesText = (sources: readonly StepReplySource[]): string =>
+  sources.length > 0
+    ? sources.map((source) => STEP_REPLY_SOURCE_LABELS[source]).join(" and ")
+    : NO_STEP_REPLY_SOURCES;
+
+/**
  * Citations the routine step grounded on, drawn from the same staged `retrieval.context`
  * output the excerpts were rendered from. Host-neutral: IDs/content/metadata are passed
  * through verbatim so the host maps them to its own citation type, resolves a source URL
@@ -458,6 +498,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
   private async stepReplyRequest(input: RoutineStepReplyInput): Promise<ConversationModelRequest> {
     const responseLanguage = await this.options.responseLanguage;
     const { instructions, guidance } = stepSteering(input.step, input.steering);
+    const contextEvidence = input.contextEvidence ?? [];
     const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       answer_scope_reference: scopeReferenceBlock(input.turn.agent),
       step_progress_instruction: stepProgressInstruction(input.step, this.stepProgressPromptTemplate),
@@ -466,9 +507,10 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       subordinate_guidance: renderSteeringRules(guidance, routineStepSteeringOptions(this.steeringPromptTemplate)),
       instructions: renderRoutineStepInstructions(instructions.map((rule) => rule.action)),
       reask_context: reaskBlock(input.reask, this.reaskTemplates),
+      step_sources: stepSourcesText(stepReplySources(input.turn, contextEvidence)),
     });
     return {
-      messages: turnMessages(input.turn, input.contextEvidence ?? [], this.contextEvidencePromptTemplate),
+      messages: turnMessages(input.turn, contextEvidence, this.contextEvidencePromptTemplate),
       systemPrompt,
     };
   }

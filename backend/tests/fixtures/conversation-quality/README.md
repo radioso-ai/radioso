@@ -16,7 +16,7 @@ repo-committed regression suite you run from the CLI.
 | `routines.ts` | 6 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, and `kitchen-note`, whose confirm step reads a held note back |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 57 seed cases |
+| `cases.ts` | the 58 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -36,9 +36,10 @@ Two layers (see `src/modules/eval/suite/`):
   cheapest text model the configuration resolves (the rerank tier, or `--judge-model`).
   `evals`, `evals:ci`, `evals:update-baseline`, and the nightly workflow all pass
   `--judge-tag quick-reply --judge-tag unavailable`, so the quick-reply judge assertions and the
-  judge of `page-read-metadata-only-summary-unavailable` (its only assertion: no deterministic
-  check can tell an invented page summary from a real one) gate every run, and the baseline is
-  recorded the way the gate runs. A run refuses any case left with nothing to gate, so a
+  judges of the two `unavailable` cases gate every run, and the baseline is recorded the way the
+  gate runs. No deterministic check can tell an invented page summary from a real one
+  (`page-read-metadata-only-summary-unavailable`), or a date the reply made up from one it read
+  (`routine-step-without-sources-keeps-visitor-dates-theirs`). A run refuses any case left with nothing to gate, so a
   filtered run that selects a judge-only case must grade its tag too.
 
 ## Quick-reply cases
@@ -113,6 +114,21 @@ Run only these cases with:
 
 ```bash
 pnpm run evals -- --tag slot-filling
+```
+
+## Unsourced-facts case
+
+`routine-step-without-sources-keeps-visitor-dates-theirs` runs the `book-edition` routine with
+no page. The visitor said they are free between 17 and 27 November, then names the course, so
+the dates step is asked with nothing that gives the edition's dates: the page reference is
+empty and no retrieval step ran. The judge checks the reply neither states dates for the course
+nor passes the visitor's window off as them; it says it doesn't have the dates here, or asks
+for them. The step reply's prompt names the sources it has (`none` here), and a fact the step
+instruction wants from a source comes only from those. The case carries the `unavailable` tag,
+so its judge gates every run.
+
+```bash
+pnpm run evals -- --tag unsourced-facts
 ```
 
 ## Review cases

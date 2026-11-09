@@ -1,7 +1,7 @@
 ---
 title: "Author a routine"
 description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
-last_updated: 2026-10-26
+last_updated: 2026-11-09
 ---
 
 # Author a routine
@@ -175,6 +175,17 @@ hand-off, and they don't add contact details or links the step doesn't ask
 for. A step that asks for a name and email asks for them even when an
 **Always** directive tells open answers to send booking questions to
 reception. See [Directives on a routine turn](/guides/authoring-directives#directives-on-a-routine-turn).
+
+A chat step states facts only from its own instruction and the sources it has
+on that turn: the text of the page the visitor is on, when the step references
+**Current page** and the embed sends page content, and the documents a
+**Retrieval context** step fetched earlier in the same turn. A chat step
+searches no documents itself. So when a step says "tell them the edition dates
+from the page" and the visitor isn't on a course page, the reply says it
+doesn't have the dates here and asks the visitor for theirs. It never guesses,
+and a visitor who wrote "I'm free between the 17th and 27th" never hears those
+dates read back as the course's. Put a fact every visitor needs in the
+instruction itself, or in a page or document the step reads.
 
 ### Sensitive values
 

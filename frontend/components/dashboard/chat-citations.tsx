@@ -44,6 +44,13 @@ export function linkifyText(text: string): ReactNode[] {
 import { type AnswerSegment, type Citation } from '@/lib/api'
 import { type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { AssistantMarkdownContent } from './chat-markdown'
+import {
+  getListItem,
+  getSegmentCitationIndices,
+  isPunctuationOnly,
+  redistributeLeadingPunctuation,
+  splitClosingBulletRun,
+} from './answer-segment-layout'
 
 export type CitationOpenResult = 'opened' | 'unavailable' | 'error'
 export type AssistantLinkClickType = 'citation_marker' | 'source_chip' | 'citation_source_url' | 'assistant_url'
@@ -199,6 +206,51 @@ const CitationMarker = ({
   )
 }
 
+// Numbers a run of markers the way a reader scans it: "6–10" for three or more
+// consecutive sources, "1, 3" otherwise.
+const formatCitationRun = (numbers: number[]) => {
+  const sorted = [...numbers].sort((left, right) => left - right)
+  const parts: string[] = []
+  let start = 0
+  while (start < sorted.length) {
+    let end = start
+    while (end + 1 < sorted.length && sorted[end + 1] === sorted[end] + 1) {
+      end += 1
+    }
+    parts.push(end - start >= 2 ? `${sorted[start]}–${sorted[end]}` : sorted.slice(start, end + 1).join(', '))
+    start = end + 1
+  }
+  return parts.join(', ')
+}
+
+// A run of markers reads as one note: one pill that shows the run's sources.
+const CitationGroupMarker = ({
+  indices,
+  onRevealSources,
+  onLinkClickAnalytics,
+}: {
+  indices: number[]
+  onRevealSources: (indices: number[]) => void
+  onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
+}) => {
+  const label = formatCitationRun(indices.map((index) => index + 1))
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation()
+        onLinkClickAnalytics?.({ linkType: 'citation_marker' })
+        onRevealSources(indices)
+      }}
+      className={cn(CITATION_MARKER_BASE_CLASS, 'cursor-pointer px-1 hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none')}
+      aria-label={`Show sources ${label}`}
+      data-citation-group={label}
+    >
+      {label}
+    </button>
+  )
+}
+
 const SourceChip = ({
   citation,
   index,
@@ -221,6 +273,7 @@ const SourceChip = ({
   return (
     <span
       data-source-index={index + 1}
+      data-highlighted={highlighted ? 'true' : undefined}
       className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs leading-5 transition-colors duration-300 ${
         highlighted ? 'border-primary bg-primary/10 ring-1 ring-primary/40' : 'border-border bg-card'
       }`}
@@ -304,289 +357,6 @@ const hasBlockMarkdown = (content: string) => {
     || /^\s*\|.+\|\s*$/m.test(trimmed)
 }
 
-const ORDERED_LIST_ITEM_PATTERN = /^(\s*)(\d+)\.\s+([\s\S]+)$/
-// One bullet item on one line, so consecutive cited items can join a single list.
-const BULLET_LIST_ITEM_PATTERN = /^\s*[-*+][ \t]+([^\r\n]+?)\s*$/
-
-const WORD_CHAR_PATTERN = /[\p{L}\p{N}]/u
-
-// Only sentence punctuation may be pulled back onto a cited segment. Markdown-significant
-// leading characters (*, _, ~, `, [, (, #, >, -, +) must never be absorbed, or the next
-// segment's formatting would be stripped and rendered after the citation marker.
-//
-// Radioso answers in every language, so the terminator set comes from Unicode properties
-// rather than an ASCII list: Terminal_Punctuation covers `.` `。` `、` `，` `！` `？` `؟` `،`
-// `؛` `।` `॥` `።`, Pe the closing brackets, Pf the final quotes. Ellipsis and the straight
-// quotes carry no such property and stay explicit. Opening delimiters are deliberately
-// absent from all three properties, so `(`, `«` and `“` still stay with their own clause.
-const SENTENCE_PUNCTUATION_CLASS = String.raw`\p{Terminal_Punctuation}\p{Pe}\p{Pf}…"'`
-const SENTENCE_PUNCTUATION_ONLY_PATTERN = new RegExp(`^[\\s${SENTENCE_PUNCTUATION_CLASS}]+$`, 'u')
-const LEADING_SENTENCE_PUNCTUATION_PATTERN = new RegExp(`^(\\s*)([${SENTENCE_PUNCTUATION_CLASS}]+)`, 'u')
-
-const isPunctuationOnly = (text: string) => !WORD_CHAR_PATTERN.test(text)
-const isSentencePunctuationOnly = (text: string) => SENTENCE_PUNCTUATION_ONLY_PATTERN.test(text)
-
-const stripWhitespace = (text: string) => text.replace(/\s+/g, '')
-
-// An anchor placed mid-sentence leaves the rest of that sentence in its own segment.
-// Because every segment renders through its own markdown pass, that remainder would
-// otherwise become a block of its own and drop onto a new line. Everything before the
-// first real block boundary — a blank line, or a line opening a list, heading, quote,
-// table or fence — continues the previous line instead. A lone newline is a soft break
-// inside a paragraph, so it stays inside the run.
-const BLOCK_BOUNDARY_PATTERN =
-  /\n[ \t]*\n|\n(?=[ \t]{0,3}(?:[-+*][ \t]|\d+\.[ \t]|#{1,6}[ \t]|>|\||```|~~~))/
-
-// A run absorbed onto a cited line renders as raw characters after the marker, so any
-// run that markdown would transform has to stay in its own segment and keep its own
-// pass. That covers inline delimiters and, because remark-gfm autolinks literals, bare
-// URLs and email addresses too — absorbing those would turn a link into dead text.
-const INLINE_MARKDOWN_PATTERN = /[*_~`[\]<>]/
-const GFM_AUTOLINK_PATTERN = /https?:\/\/|www\.|[\w.+-]+@[\w-]+\.[\w-]+/i
-// Markdown decodes character references, so an absorbed `R&amp;D` would reach the
-// reader as literal `R&amp;D` instead of `R&D`.
-const CHARACTER_REFERENCE_PATTERN = /&(?:[a-z]+|#\d+|#x[0-9a-f]+);/i
-
-const rendersAsMarkdown = (run: string) =>
-  INLINE_MARKDOWN_PATTERN.test(run)
-  || GFM_AUTOLINK_PATTERN.test(run)
-  || CHARACTER_REFERENCE_PATTERN.test(run)
-
-const splitLeadingInlineRun = (text: string) => {
-  const boundary = text.match(BLOCK_BOUNDARY_PATTERN)
-  const cut = boundary?.index ?? text.length
-  return { run: text.slice(0, cut), rest: text.slice(cut) }
-}
-
-// `trailingText` is sentence punctuation glued to the marker; `trailingContinuation` is
-// the prose that carries on after it, which must stay wrappable.
-type RenderableSegment = AnswerSegment & { trailingText?: string; trailingContinuation?: string }
-
-// Detaches the leading run of `next` when it belongs on the previous segment's line,
-// mutating `next` and returning the run. Returns null when the run must stay put.
-const takeLeadingContinuation = (
-  next: RenderableSegment,
-  nextHasCitations: boolean,
-  requireMarkdownSafe: boolean,
-): string | null => {
-  const { run, rest } = splitLeadingInlineRun(next.text)
-  if (run.trim().length === 0) {
-    return null
-  }
-  // A cited segment may only give up a run when a block boundary leaves its own marker
-  // behind. Absorbing it whole would delete the segment and lose the citation with it.
-  if (nextHasCitations && rest.length === 0) {
-    return null
-  }
-  if (requireMarkdownSafe && rendersAsMarkdown(run)) {
-    return null
-  }
-
-  next.text = rest
-  return run
-}
-
-// Everything absorbed onto a cited line renders in source order after the marker:
-// punctuation first, then any prose, then punctuation that followed that prose. Once a
-// continuation has been taken, later punctuation belongs behind it, not in front.
-const appendAfterMarker = (segment: RenderableSegment, text: string) => {
-  if (segment.trailingContinuation !== undefined) {
-    segment.trailingContinuation += text
-    return
-  }
-  segment.trailingText = (segment.trailingText ?? '') + text
-}
-
-const appendContinuation = (segment: RenderableSegment, run: string) => {
-  if (segment.trailingContinuation !== undefined) {
-    segment.trailingContinuation += run
-    return
-  }
-  // A separator space already sits in trailingText. Markdown would have stripped the
-  // run's own block-edge whitespace, so drop it here rather than doubling the gap.
-  segment.trailingContinuation = /\s$/.test(segment.trailingText ?? '')
-    ? run.replace(/^[ \t]+/, '')
-    : run
-}
-
-const attachDetachedCitationSegments = (
-  segments: AnswerSegment[],
-  citations: Citation[],
-): RenderableSegment[] => {
-  const normalized: RenderableSegment[] = []
-
-  for (const segment of segments) {
-    const citationIndices = getSegmentCitationIndices(segment, citations)
-    const detachedCitationOnlySegment =
-      citationIndices.length > 0 && (segment.text.length === 0 || isSentencePunctuationOnly(segment.text))
-    const previous = normalized.at(-1)
-
-    if (detachedCitationOnlySegment && previous) {
-      previous.citationIndices = [
-        ...new Set([...(previous.citationIndices ?? []), ...citationIndices]),
-      ]
-      const trailingText = stripWhitespace(segment.text)
-      if (trailingText) {
-        previous.trailingText = (previous.trailingText ?? '') + trailingText
-      }
-      continue
-    }
-
-    normalized.push({ ...segment })
-  }
-
-  return normalized
-}
-
-const redistributeLeadingPunctuation = (
-  segments: AnswerSegment[],
-  citations: Citation[],
-): RenderableSegment[] => {
-  const cloned = attachDetachedCitationSegments(segments, citations)
-
-  for (let index = 0; index < cloned.length; index += 1) {
-    const current = cloned[index]
-    if (getSegmentCitationIndices(current, citations).length === 0) {
-      // An uncited clause carries no marker, so trailing sentence punctuation the
-      // model split onto its own segment can fold straight back into the prose.
-      // Left alone it renders as a bare "." after the clause's block, dropping it
-      // onto its own line.
-      const next = cloned[index + 1]
-      if (
-        next &&
-        current.text.length > 0 &&
-        isSentencePunctuationOnly(next.text) &&
-        getSegmentCitationIndices(next, citations).length === 0
-      ) {
-        const punct = stripWhitespace(next.text)
-        if (punct) {
-          current.text += punct
-          next.text = ''
-        }
-      }
-
-      // No marker sits between the two, so the run rejoins the prose in the same
-      // markdown pass — markdown inside it still renders and needs no guard.
-      if (next && current.text.length > 0 && next.text.length > 0) {
-        const continuation = takeLeadingContinuation(
-          next,
-          getSegmentCitationIndices(next, citations).length > 0,
-          false,
-        )
-        if (continuation) {
-          current.text += continuation
-        }
-      }
-      continue
-    }
-
-    let cursor = index + 1
-    while (cursor < cloned.length) {
-      const next = cloned[cursor]
-      const nextHasCitations = getSegmentCitationIndices(next, citations).length > 0
-
-      if (isSentencePunctuationOnly(next.text) && !nextHasCitations) {
-        const punct = stripWhitespace(next.text)
-        if (punct) {
-          appendAfterMarker(current, punct)
-        }
-        next.text = ''
-        cursor += 1
-        continue
-      }
-
-      const leadingMatch = next.text.match(LEADING_SENTENCE_PUNCTUATION_PATTERN)
-      if (leadingMatch) {
-        const leadingWhitespace = leadingMatch[1]
-        const leadingPunct = leadingMatch[2]
-        const rest = next.text.slice(leadingMatch[0].length)
-        const inlineRest = rest.replace(/^[ \t]+/, '')
-        // When the cited clause's punctuation is followed by more of the same line,
-        // a single space belongs between them. Each segment renders through its own
-        // markdown pass, which strips block-edge whitespace, so any space left on
-        // the next segment vanishes and glues the punctuation to the next word
-        // ("2026[1].The", or "level[1],and" when the model itself dropped the
-        // space). Normalize to exactly one separator carried in trailingText —
-        // rendered as raw text after the marker — and strip the next segment's
-        // leading inline whitespace so it never doubles up. A leading newline is a
-        // block boundary and must stay on the next segment.
-        const continuesInline = inlineRest.length > 0 && !/^[\r\n]/.test(inlineRest)
-        // But an anchor can land inside a number ("EUR 18[[1]],00", "1[[1]].2"),
-        // where the punctuation is a decimal/grouping mark, not a sentence break.
-        // A digit immediately after it (no separating space in the source) means
-        // the two sides are one number, so keep them tight — inserting a space
-        // would change the value. A space before the digit is a real sentence
-        // boundary and still gets the separator.
-        const isNumericPunctuation = /^[\p{Nd}]/u.test(rest)
-        const separator = continuesInline && !isNumericPunctuation ? ' ' : ''
-        appendAfterMarker(current, leadingPunct + separator)
-        next.text = continuesInline ? leadingWhitespace + inlineRest : leadingWhitespace + rest
-      }
-
-      // Whatever is left of the next segment's opening line finishes this segment's
-      // sentence, so it renders after the marker instead of opening a block.
-      const continuation = takeLeadingContinuation(next, nextHasCitations, true)
-      if (continuation) {
-        appendContinuation(current, continuation)
-        if (next.text.length === 0 && !nextHasCitations) {
-          cursor += 1
-          continue
-        }
-      }
-      break
-    }
-  }
-
-  return cloned.filter((segment) => segment.text.length > 0)
-}
-
-const getSegmentCitationIndices = (segment: AnswerSegment, citations: Citation[]) =>
-  [...new Set(segment.citationIndices ?? [])].filter(
-    (index) => index >= 0 && index < citations.length,
-  )
-
-type ListItemSegment =
-  | { ordered: true; number: number; content: string }
-  | { ordered: false; content: string }
-
-const BULLET_LINE_PATTERN = /^[ \t]*[-*+][ \t]+\S/
-
-// A list whose opening sentence carries no marker arrives with its first items in that
-// sentence's segment. Splitting the segment's closing run of bullet lines into one
-// segment per item lets those items join the rest of the list; the segment's markers
-// belong to its last line.
-const splitClosingBulletRun = (segment: AnswerSegment): AnswerSegment[] => {
-  const lines = segment.text.split('\n')
-  let end = lines.length
-  while (end > 0 && lines[end - 1].trim() === '') {
-    end -= 1
-  }
-  let start = end
-  while (start > 0 && BULLET_LINE_PATTERN.test(lines[start - 1])) {
-    start -= 1
-  }
-  const prefix = lines.slice(0, start).join('\n')
-  const itemCount = end - start
-  if (itemCount === 0 || (itemCount === 1 && prefix.trim() === '')) {
-    return [segment]
-  }
-  const items = lines.slice(start, end)
-  return [
-    ...(prefix.trim() ? [{ text: prefix }] : []),
-    ...items.map((line, index) =>
-      index === items.length - 1 ? { ...segment, text: `\n${line}` } : { text: `\n${line}` },
-    ),
-  ]
-}
-
-const getListItem = (segment: AnswerSegment): ListItemSegment | null => {
-  const ordered = segment.text.match(ORDERED_LIST_ITEM_PATTERN)
-  if (ordered) {
-    return { ordered: true, number: Number(ordered[2]), content: ordered[3] }
-  }
-  const bullet = segment.text.match(BULLET_LIST_ITEM_PATTERN)
-  return bullet ? { ordered: false, content: bullet[1] } : null
-}
 
 // Identifies a citation for dedup purposes. Citations sharing a documentId
 // collapse to a single source chip; chunk-only citations stay distinct.
@@ -643,9 +413,9 @@ export function AssistantMessageContent({
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
   const [sourcesExpanded, setSourcesExpanded] = useState(false)
   const [sourcesRendered, setSourcesRendered] = useState(false)
-  // A reveal targets one source chip; the nonce lets repeated clicks on the same
-  // marker re-trigger the scroll + highlight effect.
-  const [reveal, setReveal] = useState<{ index: number; nonce: number } | null>(null)
+  // A reveal targets the source chips behind one marker or run of markers; the nonce
+  // lets repeated clicks on the same marker re-trigger the scroll + highlight effect.
+  const [reveal, setReveal] = useState<{ indices: number[]; nonce: number } | null>(null)
   const revealNonceRef = useRef(0)
   const sourcesPanelRef = useRef<HTMLDivElement | null>(null)
   const sourcesPanelId = useId()
@@ -689,8 +459,19 @@ export function AssistantMessageContent({
     }
   }
 
-  const renderCitations = (citationIndices: number[]) =>
-    citationIndices.map((citationIndex) => {
+  const renderCitations = (citationIndices: number[]) => {
+    const present = citationIndices.filter((citationIndex) => effectiveCitations[citationIndex])
+    if (present.length > 1) {
+      return [
+        <CitationGroupMarker
+          key={`group-${present.join('-')}`}
+          indices={present}
+          onRevealSources={handleRevealSources}
+          onLinkClickAnalytics={onLinkClickAnalytics}
+        />,
+      ]
+    }
+    return present.map((citationIndex) => {
       const citation = effectiveCitations[citationIndex]
       if (!citation) {
         return null
@@ -709,11 +490,17 @@ export function AssistantMessageContent({
         </Fragment>
       )
     })
+  }
 
   // Keeps the markers and the sentence punctuation the segment carries after
   // them on the same line as the word they annotate. Any trailing separator
   // space stays outside the nowrap span so the next word can still wrap.
-  const renderCitationCluster = (citationIndices: number[], trailingText = '', continuation = '') => {
+  const renderCitationCluster = (
+    citationIndices: number[],
+    trailingText = '',
+    continuation = '',
+    joinsNumber = false,
+  ) => {
     const markers = renderCitations(citationIndices)
     const punctuation = trailingText.replace(/\s+$/, '')
     const separator = trailingText.slice(punctuation.length)
@@ -724,10 +511,12 @@ export function AssistantMessageContent({
 
     return (
       <>
+        {/* Footnote order: the marker follows the punctuation, unless the punctuation
+            is a decimal or grouping mark that the rest of the number continues. */}
         <span className="whitespace-nowrap">
           {CITATION_WORD_JOINER}
-          {markers}
-          {punctuation}
+          {joinsNumber ? markers : punctuation}
+          {joinsNumber ? punctuation : markers}
         </span>
         {separator}
         {continuation}
@@ -745,13 +534,17 @@ export function AssistantMessageContent({
     setSourcesExpanded(true)
   }
 
-  const handleRevealSource = (index: number) => {
-    const resolvedIndex = resolveRepresentativeCitationIndex(effectiveCitations, index)
+  const handleRevealSources = (indices: number[]) => {
+    const resolvedIndices = [
+      ...new Set(indices.map((index) => resolveRepresentativeCitationIndex(effectiveCitations, index))),
+    ]
     setSourcesRendered(true)
     setSourcesExpanded(true)
     revealNonceRef.current += 1
-    setReveal({ index: resolvedIndex, nonce: revealNonceRef.current })
+    setReveal({ indices: resolvedIndices, nonce: revealNonceRef.current })
   }
+
+  const handleRevealSource = (index: number) => handleRevealSources([index])
 
   // Once the sources panel is open and a reveal is pending, bring the matching
   // chip into view and keep it highlighted briefly before clearing.
@@ -761,7 +554,7 @@ export function AssistantMessageContent({
     }
 
     const panel = sourcesPanelRef.current
-    const target = panel?.querySelector<HTMLElement>(`[data-source-index="${reveal.index + 1}"]`)
+    const target = panel?.querySelector<HTMLElement>(`[data-source-index="${(reveal.indices[0] ?? 0) + 1}"]`)
     ;(target ?? panel)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
 
     const timeout = window.setTimeout(() => {
@@ -788,6 +581,7 @@ export function AssistantMessageContent({
         citationIndices: number[]
         trailingText?: string
         trailingContinuation?: string
+        trailingJoinsNumber?: boolean
       }> = []
 
       for (let listIndex = segmentIndex; listIndex < segments.length; listIndex += 1) {
@@ -806,6 +600,7 @@ export function AssistantMessageContent({
           // it has to reach the cluster here or the prose is dropped from the render.
           trailingText: listSegment.trailingText,
           trailingContinuation: listSegment.trailingContinuation,
+          trailingJoinsNumber: listSegment.trailingJoinsNumber,
         })
         segmentIndex = listIndex
       }
@@ -833,6 +628,7 @@ export function AssistantMessageContent({
                 item.citationIndices,
                 item.trailingText ?? '',
                 item.trailingContinuation ?? '',
+                item.trailingJoinsNumber,
               )}
             </li>
           ))}
@@ -852,6 +648,7 @@ export function AssistantMessageContent({
           dedupedIndices,
           segment.trailingText ?? '',
           segment.trailingContinuation ?? '',
+          segment.trailingJoinsNumber,
         )
 
     contentNodes.push(
@@ -873,6 +670,7 @@ export function AssistantMessageContent({
             dedupedIndices,
             segment.trailingText ?? '',
             segment.trailingContinuation ?? '',
+            segment.trailingJoinsNumber,
           )
           : null}
       </Fragment>,
@@ -935,7 +733,7 @@ export function AssistantMessageContent({
                     citation={citation}
                     index={index}
                     interactive={citationsInteractive}
-                    highlighted={reveal?.index === index}
+                    highlighted={reveal?.indices.includes(index) ?? false}
                     onOpenDocument={handleCitationOpen}
                     onLinkClickAnalytics={onLinkClickAnalytics}
                   />

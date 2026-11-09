@@ -2685,12 +2685,17 @@ describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)",
 
   describe("a reply the selector could not read (#1715)", () => {
     const unreadable = { outcome: "unreadable" as const, returnedSlotKeys: [], unreadableReason: "no_json_object" as const, retried: true as const };
+    const fallbackRead = (keys: string[]) => ({ ...unreadable, returnedSlotKeys: keys, slotFallback: "read" as const });
+    const gated: Routine = {
+      ...bookingRoutine,
+      transitions: bookingRoutine.transitions.map((transition) => ({ ...transition, origin: "compiler_slot_gate" as const })),
+    };
 
-    it("tells the renderer the re-ask follows a reply that could not be read", async () => {
+    it("tells the renderer the re-ask follows a reply nothing could read", async () => {
       const renderer = freshRenderer();
       const runner = new DefaultRoutineRunner(
         [bookingRoutine],
-        { select: vi.fn(async () => ({ nextStepId: "program", variables: {}, selection: unreadable })) },
+        { select: vi.fn(async () => ({ nextStepId: "program", variables: {}, exitsUnjudged: "unread" as const, selection: unreadable })) },
         renderer,
       );
 
@@ -2702,7 +2707,7 @@ describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)",
       }));
     });
 
-    it("signals a re-ask after an unreadable reply even when the step already holds its slots", async () => {
+    it("signals a re-ask after an unread reply even when the step already holds its slots", async () => {
       const withCancel: Routine = {
         ...bookingRoutine,
         transitions: [...bookingRoutine.transitions, { from: "dates", to: "done", condition: "The user wants to stop." }],
@@ -2710,7 +2715,7 @@ describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)",
       const renderer = freshRenderer();
       const runner = new DefaultRoutineRunner(
         [withCancel],
-        { select: vi.fn(async () => ({ nextStepId: "dates", variables: {}, selection: unreadable })) },
+        { select: vi.fn(async () => ({ nextStepId: "dates", variables: {}, exitsUnjudged: "unread" as const, selection: unreadable })) },
         renderer,
       );
 
@@ -2721,15 +2726,16 @@ describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)",
       }));
     });
 
-    it("re-asks as usual when the selector's slot-only reading read the reply", async () => {
+    it("re-asks as usual for what a compiler slot gate still lacks when the slot-only reading read the reply", async () => {
       const renderer = freshRenderer();
       const runner = new DefaultRoutineRunner(
-        [bookingRoutine],
+        [gated],
         {
           select: vi.fn(async () => ({
             nextStepId: "dates",
             variables: { arrival: "2026-11-11" },
-            selection: { ...unreadable, returnedSlotKeys: ["arrival"], slotFallback: "read" as const },
+            exitsUnjudged: "read" as const,
+            selection: fallbackRead(["arrival"]),
           })),
         },
         renderer,
@@ -2743,10 +2749,6 @@ describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)",
     });
 
     it("moves a compiler slot gate on when the slot-only reading filled every slot the decision could not read", async () => {
-      const gated: Routine = {
-        ...bookingRoutine,
-        transitions: bookingRoutine.transitions.map((transition) => ({ ...transition, origin: "compiler_slot_gate" as const })),
-      };
       const renderer = freshRenderer();
       const runner = new DefaultRoutineRunner(
         [gated],
@@ -2754,7 +2756,8 @@ describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)",
           select: vi.fn(async () => ({
             nextStepId: "dates",
             variables: { arrival: "2026-11-11", departure: "2026-11-14" },
-            selection: { ...unreadable, returnedSlotKeys: ["arrival", "departure"], slotFallback: "read" as const },
+            exitsUnjudged: "read" as const,
+            selection: fallbackRead(["arrival", "departure"]),
           })),
         },
         renderer,
@@ -2765,6 +2768,53 @@ describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)",
       expect(result.nextState).toBeNull();
       expect(result.trace?.terminalKind).toBe("complete");
       expect(vi.mocked(renderer.render).mock.calls[0][0].step.id).toBe("done");
+    });
+
+    it("takes no default exit in place of an AI-decides exit nobody judged: the values stay, no action runs, the step is asked again", async () => {
+      // The contact step's author-written exit sends a visitor who refuses to be emailed to a
+      // callback; the default submits. The decision came back unreadable, so whether the visitor
+      // refused was never judged, though a slot-only reading filled the step.
+      const contactRoutine: Routine = {
+        id: "contact",
+        rootStepId: "contact",
+        slots: [
+          { id: "slot_name", key: "full_name", type: "text", required: true },
+          { id: "slot_email", key: "email", type: "email", required: true },
+        ],
+        steps: [
+          { id: "contact", kind: "chat", action: "Ask for their name and email.", metadata: { collectsSlots: ["full_name", "email"] } },
+          { id: "callback", kind: "terminal", action: "Say someone will call them." },
+          { id: "submit", kind: "action", actionType: "contact.send" },
+          { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+        ],
+        transitions: [
+          { from: "contact", to: "callback", condition: "The user wants a call instead of being emailed." },
+          { from: "contact", to: "submit", condition: "default", guard: { kind: "default" } },
+          { from: "submit", to: "done", condition: "default", guard: { kind: "default" } },
+        ],
+      };
+      const renderer = freshRenderer();
+      const runner = new DefaultRoutineRunner(
+        [contactRoutine],
+        {
+          select: vi.fn(async () => ({
+            nextStepId: "contact",
+            variables: { full_name: "Alex Rivera", email: "alex@rivera.example" },
+            exitsUnjudged: "read" as const,
+            selection: fallbackRead(["full_name", "email"]),
+          })),
+        },
+        renderer,
+      );
+
+      const result = await runner.resume({ turn, state: { ...state(["contact"]), routineId: "contact" } });
+
+      expect(result.actions).toBeUndefined();
+      expect(result.nextState).toMatchObject({ path: ["contact"], variables: { full_name: "Alex Rivera", email: "alex@rivera.example" } });
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+        step: expect.objectContaining({ id: "contact" }),
+        reask: { missingSlots: [], replyUnreadable: true },
+      }));
     });
   });
 
@@ -4966,6 +5016,25 @@ describe("DefaultRoutineRunner on a run whose opening message states no slot val
       selection: { outcome: "transition", returnedSlotKeys: ["plan"] },
     });
     expect(result.trace?.steps[0]).not.toHaveProperty("capturedSlotKeys");
+  });
+
+  it("tells the selector a structured call states no slot values, so it reads none (#1715)", async () => {
+    const pickRoutine: Routine = {
+      id: "plan",
+      rootStepId: "pick",
+      slots: [{ id: "slot_plan", key: "plan", type: "text", required: true }],
+      steps: [
+        { id: "pick", kind: "chat", action: "Ask which plan they want.", metadata: { collectsSlots: ["plan"] } },
+        { id: "large", kind: "terminal", action: "Confirm the large plan." },
+      ],
+      transitions: [{ from: "pick", to: "large", condition: "The user chose the large plan." }],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "large" }));
+    const runner = new DefaultRoutineRunner([pickRoutine], { select }, echoRenderer, undefined, { openingMessageStatesSlotValues: false });
+
+    await runner.resume({ turn: callTurn, state: { ...started({ plan: "large" }), routineId: "plan" }, activationTurn: true });
+
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ messageStatesSlotValues: false }));
   });
 
   // The model took 3 of 5 live calls for an authority claim (#1563). Read for an exit the author

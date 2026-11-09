@@ -1958,7 +1958,7 @@ Primary internals:
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit; `claim` decides the turn before the reply exists, `resume` claims and renders)
-- `packages/conversation-engine/src/routineReask.ts` (what a step asked again is told it lacks, and whether the selector could not read the reply at all)
+- `packages/conversation-engine/src/routineReask.ts` (what a step asked again is told it lacks, whether its reply went unread, and which turns count as progress toward the re-ask limit)
 - `backend/src/modules/routines/selectorCompletionTelemetry.ts` (counts every next-step selector completion in `routine_next_step_completions_total` by model, step kind, call, and result, and logs an unreadable one)
 - `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector
 - `packages/conversation-engine/src/stepReferences.ts` (fills `{{slot.<key>}}` and `{{context.<name>}}` into a step instruction, and collects the `contextEvidence` the referenced context variables carry to the step reply; the host renders both in `backend/src/modules/context-variables/routineContextRenderer.ts`)

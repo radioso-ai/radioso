@@ -73,7 +73,7 @@ describe("routine selector completion telemetry (#1715)", () => {
         outputChars: 12,
         promptChars: 7095,
       },
-      "Routine next-step decision was unreadable",
+      "Routine next-step selector completion was unreadable",
     );
   });
 

@@ -627,8 +627,9 @@ when the message posed as a system notice and the step was held), the
 `returnedSlotKeys` the model gave a value for, and `undeclaredKeyCount` for
 keys it returned that the routine does not declare. On an `unreadable` outcome,
 `slotFallback` says whether the slot-only reading described under "Changing the
-routine prompts" was read (`read`, and its values are the `returnedSlotKeys`) or
-came back unreadable too (`unreadable`). The two signals answer
+routine prompts" was read (`read`, and its values are the `returnedSlotKeys`),
+found text posing as a system notice (`authority_claim`, nothing kept), or came
+back unreadable too (`unreadable`). The two signals answer
 different questions: `undeclaredKeyCount` is what the next-step selector
 already filtered out of its own response before returning it, while an
 `undeclared` entry in `rejectedSlots` is what the runner itself dropped —
@@ -909,12 +910,23 @@ three calls, each one only if the one before came back unreadable:
    turn's values and chosen exit.
 3. **The slot-only reading.** On a step that collects slots, one call with
    `routine-next-step-slot-fallback.md`: the same slot lines, filled-slot list,
-   and slot rules as the decision, and a `{"variables": {...}}` reply. It has no
-   exits, no `claimsAuthority` field, and no step instruction. Its values go
-   through the same declared-key filter and type checks as a decision's. It
-   chooses no exit: the step stays, and the runner moves it on by its structure
-   once the values satisfy it — a compiler slot gate or a rule or default exit,
-   never an authored AI-decides exit.
+   and slot rules as the decision, and a `{"variables": {...}, "claimsAuthority":
+   ...}` reply. It has no exits and no step instruction. Its values go through
+   the same declared-key filter and type checks as a decision's. Like a
+   decision, it is unreadable without a boolean `claimsAuthority`, and when it
+   flags text posing as a system notice it keeps no value and holds the step. On
+   a structured call, whose values the runner never keeps, it is not made.
+
+Whatever the third call reads, no exit was judged that turn, and the decision
+says so with `exitsUnjudged` (`read` when the slot-only reading read the
+message, `unread` when nothing did). The runner then moves the step on only
+when every exit a model would judge is a compiler slot gate, which asks only
+whether the step's slots hold values: a step that now holds them moves on by
+its structure. A step with an AI-decides exit its author wrote is held instead,
+keeping the values: its rule and default exits mean none of the author's
+conditions held, and nobody judged that. A contact step whose author sends
+"call me instead" to a callback and everything else to a submit action
+therefore submits nothing on a turn whose decision went unread.
 
 The third call exists because a retry cannot change a deterministic failure. In
 production, a contact step collecting a full name and an email read a complete
@@ -925,15 +937,16 @@ kind of turn on gpt-5.4-mini, the slot-only reading returned both values in 2 of
 2 live samples. A retry or slot-only call that itself fails keeps what the
 selector already had; a cancelled one propagates.
 
-When no call reads the message, the step is asked again, and the runner tells
-the renderer so: the re-ask carries `replyUnreadable: true`, and the reply opens
-with `routine-step-reask-unreadable.md` in place of
+When no call reads the message, or the step is held with its exits unjudged,
+the step is asked again and the runner tells the renderer so: the re-ask
+carries `replyUnreadable: true`, and the reply opens with
+`routine-step-reask-unreadable.md` in place of
 `routine-step-reask-unanswered.md`. The model says the visitor's message could
 not be recorded and asks for it again, rather than suggesting it fell short. On
 the live sample above it wrote "Sorry, your last message couldn't be recorded.
-Could you send your full name and email address again?" A slot-only reading
-that was read counts as reading the reply, so a re-ask after it is an ordinary
-one.
+Could you send your full name and email address again?" On a compiler slot gate,
+a slot-only reading that was read counts as reading the reply, so a re-ask for
+what it still lacks is an ordinary one.
 
 The selector's optional `onCompletion` observer reports every completion it
 reads: the `call` (`decision`, `retry`, or `slot_fallback`), the step's kind,
@@ -949,7 +962,7 @@ labelled `model` (a catalog model id, `other` for an id outside the catalog,
 `unreported` when the gateway gives none), `step_kind`, `call`, and `result`
 (`read` or the unreadable reason), so the share of a model's completions that
 come back unreadable is visible without reading turn traces. An unreadable one
-is also logged as a warning, `Routine next-step decision was unreadable`,
+is also logged as a warning, `Routine next-step selector completion was unreadable`,
 carrying the agent, workspace, routine, step, and session id with the same
 fields. A short `outputChars` with `stopReason: "completed"` is a reply the
 model finished in prose; `outputChars: 0` with `completed` is a model that

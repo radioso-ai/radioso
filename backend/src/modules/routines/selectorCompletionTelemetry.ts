@@ -47,6 +47,6 @@ export const selectorCompletionTelemetry = (
       outputChars: event.outputChars,
       promptChars: event.promptChars,
     },
-    "Routine next-step decision was unreadable",
+    "Routine next-step selector completion was unreadable",
   );
 };

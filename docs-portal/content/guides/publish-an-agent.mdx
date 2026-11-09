@@ -109,7 +109,7 @@ The first is an [A2A Agent Card](https://a2a-protocol.org), version 1.0: the age
 }
 ```
 
-`supportedInterfaces` holds one entry: the JSON-RPC endpoint at `/a2a/{publicId}`, speaking protocol 1.0. [Connect a calling agent](/guides/agent-converse#connect-an-a2a-client) walks through sending it a message. `capabilities` says what the endpoint does not do: it does not stream and does not push notifications. The Radioso extension under `capabilities.extensions` points an MCP-only client at the agent's MCP endpoint and carries each routine's input schema, which an A2A skill has no field for; the [extension reference](/reference/a2a-converse-extension/v1) lists its parameters.
+`supportedInterfaces` holds one entry: the JSON-RPC endpoint at `/a2a/{publicId}`, speaking protocol 1.0. [Connect an A2A client](/guides/a2a-converse) walks through sending it a message. `capabilities` says what the endpoint does not do: it does not stream and does not push notifications. The Radioso extension under `capabilities.extensions` points an MCP-only client at the agent's MCP endpoint and carries each routine's input schema, which an A2A skill has no field for; the [extension reference](/reference/a2a-converse-extension/v1) lists its parameters.
 
 `securitySchemes` declares the access grant as an HTTP bearer scheme. `securityRequirements` is where a caller reads what it must bring. With credential-free access off, the card carries a requirement for `bearer`, and the card is still worth publishing: "this agent exists, here is its endpoint, ask the operator for a credential" is useful to the agent reading it.
 
@@ -226,7 +226,8 @@ The turn becomes a verified turn: `verifiedCustomerId` is set on the conversatio
 
 ## Read next
 
-- [Connect a calling agent](/guides/agent-converse) — `ask_agent`, the reply envelope, routines as typed tools, coming back after a handoff, and [connecting an A2A client](/guides/agent-converse#connect-an-a2a-client).
+- [Connect a calling agent](/guides/agent-converse) — `ask_agent`, the reply envelope, routines as typed tools, and coming back after a handoff.
+- [Connect an A2A client](/guides/a2a-converse) — send a message to the agent's A2A endpoint, keep the `contextId`, and follow a task.
 - [A2A converse extension](/reference/a2a-converse-extension/v1) — the card parameters and reply metadata an A2A client reads.
 - [MCP server](/guides/mcp-server) — issue an agent credential and run the standalone server.
 - [WordPress connector](/operators/wordpress-connector) — answer the `.well-known` paths from your own WordPress site.

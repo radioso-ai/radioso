@@ -45,6 +45,7 @@ import type {
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
 import type { AuthFunnelService } from "../../modules/auth/services/authFunnelService.js";
+import type { SessionSignOutService } from "../../modules/auth/services/sessionSignOutService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AgentPublicationReader, AgentRevisionService } from "../../modules/agents/public.js";
@@ -225,6 +226,7 @@ export interface AppDependencies {
   passwordResetService: PasswordResetService;
   emailVerificationService: EmailVerificationService;
   authFunnelService: AuthFunnelService;
+  sessionSignOutService: SessionSignOutService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   apiPrincipalAuthenticator: ApiPrincipalAuthenticator;

@@ -19,10 +19,12 @@ export interface ChatGatewayGenerationOptions {
 /**
  * For a caller that reports how a completion ended. Only `answer` fills it: every call the
  * provider answers overwrites `stopReason` with that completion's (undefined when the provider
- * gives none), including a blank one that `answer` then fails. `streamAnswer` ignores it.
+ * gives none) and `model` with the model that answered, including a blank one that `answer`
+ * then fails. `streamAnswer` ignores it.
  */
 export interface ChatGatewayCompletionRecord {
   stopReason?: TextGenerationStopReason;
+  model?: string;
 }
 
 export interface ChatGatewayInput {

@@ -1,0 +1,1 @@
+The user's latest reply could not be recorded in full, so this message asks again; the reply may have given everything this step needs. Say in a few words that their last message could not be recorded, not because anything in it was wrong, and ask them to send it again.

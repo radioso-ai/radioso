@@ -112,7 +112,7 @@ describe("routine turn provider on a direct invocation turn", () => {
     const ports = await provider.forTurn({ modelGateway, agentId: "agent-1", routineInvocation: invocation });
 
     await expect(ports!.reentryGate!.decide({ turn, completedState })).resolves.toEqual({ kind: "suppress" });
-    await expect(ports!.slotCorrection!.detect({ turn, completedState })).resolves.toBeNull();
+    await expect(ports!.slotCorrection!.detect({ turn, completedState })).resolves.toEqual({ kind: "none", reason: "not_a_correction" });
     expect(modelGateway.complete).not.toHaveBeenCalled();
   });
 

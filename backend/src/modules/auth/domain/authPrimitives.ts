@@ -57,13 +57,23 @@ export const decryptSecret = (value: string, secret: string): string => {
   return decrypted.toString("utf8");
 };
 
+// A browser matches a cookie to clear by name, domain and path, so issuing and clearing
+// the session cookie share these attributes.
+const sessionCookieAttributes = {
+  httpOnly: true,
+  secure: true,
+  sameSite: "lax",
+  path: "/",
+} as const;
+
 export const serializeSessionCookie = (sessionToken: string, env: Env): string =>
   serialize(env.SESSION_COOKIE_NAME, sessionToken, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
+    ...sessionCookieAttributes,
     maxAge: env.SESSION_TTL_HOURS * 60 * 60,
   });
+
+/** The `Set-Cookie` that makes a browser drop the session cookie `serializeSessionCookie` issued. */
+export const serializeClearedSessionCookie = (env: Pick<Env, "SESSION_COOKIE_NAME">): string =>
+  serialize(env.SESSION_COOKIE_NAME, "", { ...sessionCookieAttributes, maxAge: 0 });
 
 export const tokenPrefix = (token: string): string => token.slice(0, TOKEN_PREFIX.length + 8);

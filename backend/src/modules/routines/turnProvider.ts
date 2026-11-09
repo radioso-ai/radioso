@@ -35,6 +35,7 @@ import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js"
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 import { createRoutineTurnReporter } from "./routineTurnReporter.js";
+import { selectorCompletionTelemetry } from "./selectorCompletionTelemetry.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { setTraceAttributes } from "../../shared/observability/tracing/operations.js";
 import type { RoutineTurnReporter } from "./turnReport.js";
@@ -137,6 +138,28 @@ interface RoutineTurnProvider {
 }
 
 const routineActivationPolicy = { floor: 0.4, margin: 0.15, askMargin: 0.15, maxOptions: 4 };
+
+/**
+ * Records on the turn spine what became of a message after a routine ended (#1714): `correction`,
+ * `invalid_value` when the engine refused the new value for its type, or why no correction was
+ * offered (`not_held`, `already_sent`, `new_request`, ...). The engine claims every correction
+ * the corrector offers, since both read the slot through `correctableSlots`, so the value type
+ * is the one check left that can turn an offer down, and it always does so through
+ * `rejectInvalid`. An attribute on the active span, never a new span; never a value.
+ */
+const SLOT_CORRECTION_DECISION = "routine.slot_correction.decision";
+const tracedSlotCorrection = (corrector: ConversationRoutineSlotCorrection): ConversationRoutineSlotCorrection => ({
+  detect: async (input) => {
+    const detection = await corrector.detect(input);
+    setTraceAttributes({ [SLOT_CORRECTION_DECISION]: detection.kind === "correction" ? "correction" : detection.reason });
+    return detection;
+  },
+  confirm: (input) => corrector.confirm(input),
+  rejectInvalid: (input) => {
+    setTraceAttributes({ [SLOT_CORRECTION_DECISION]: "invalid_value" });
+    return corrector.rejectInvalid(input);
+  },
+});
 
 const coverageCriteriaMatches = (criteria: AnswerCoverageCriteria, turn: TurnContext): boolean => {
   const assessment = turn.metadata?.answerCoverage;
@@ -455,19 +478,21 @@ export const createRoutineTurnProvider = (
         slotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-slots.md"),
         filledSlotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-filled-slots.md"),
         dateRulePromptTemplate: loadPromptTemplate("chat/routine-next-step-date-rule.md"),
-        // Ids, the reason, and the completion's stop reason and sizes; never prompt or completion text.
-        onUnreadable: ({ routineId, stepId, sessionId, reason, attempt, stopReason, outputChars, promptChars }) => {
-          dependencies.logger.warn(
-            { agentId, workspaceId, routineId, stepId, sessionId, reason, attempt, stopReason, outputChars, promptChars },
-            "Routine next-step decision was unreadable",
-          );
-        },
+        slotFallbackPromptTemplate: loadPromptTemplate("chat/routine-next-step-slot-fallback.md"),
+        onCompletion: selectorCompletionTelemetry({
+          logger: dependencies.logger,
+          metricsRegistry: dependencies.metricsRegistry ?? null,
+          agentId,
+          workspaceId,
+        }),
       }),
       new RoutineStepRenderer(modelGateway, {
         promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
         terminalHandoffWithMessagePromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-with-message.md"),
         terminalHandoffDefaultPromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-default.md"),
         reaskPromptTemplate: loadPromptTemplate("chat/routine-step-reask.md"),
+        reaskUnansweredPromptTemplate: loadPromptTemplate("chat/routine-step-reask-unanswered.md"),
+        reaskUnreadablePromptTemplate: loadPromptTemplate("chat/routine-step-reask-unreadable.md"),
         reaskGapPromptTemplate: loadPromptTemplate("chat/routine-step-reask-gap.md"),
         reaskExhaustedGapPromptTemplate: loadPromptTemplate("chat/routine-step-reask-exhausted-gap.md"),
         reaskMissingSlotsPromptTemplate: loadPromptTemplate("chat/routine-step-reask-missing-slots.md"),
@@ -576,11 +601,11 @@ export const createRoutineTurnProvider = (
         : {}),
       slotCorrection: dependencies.turnPlanAdapters.slotCorrection({
         handle: turnPlan,
-        fallback: new RoutineSlotCorrector(routines, modelGateway, {
+        fallback: tracedSlotCorrection(new RoutineSlotCorrector(routines, modelGateway, {
           detectPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-detect.md"),
           confirmPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-confirm.md"),
           invalidPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-invalid.md"),
-        }),
+        })),
       }),
       reentryGate: preEvidenceReentryGate,
       runner,

@@ -23,6 +23,8 @@ import {
   DEFAULT_ROUTINE_STEP_REASK_GAP_PROMPT,
   DEFAULT_ROUTINE_STEP_REASK_MISSING_SLOTS_PROMPT,
   DEFAULT_ROUTINE_STEP_REASK_PROMPT,
+  DEFAULT_ROUTINE_STEP_REASK_UNANSWERED_PROMPT,
+  DEFAULT_ROUTINE_STEP_REASK_UNREADABLE_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
   DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT,
   DEFAULT_ROUTINE_STEP_SOURCES_PROMPT,
@@ -132,6 +134,8 @@ const stepProgressInstruction = (step: RoutineStep, template: string): string =>
 /** The templates a re-ask is written from (`chat/routine-step-reask*.md`). */
 interface ReaskTemplates {
   reask: string;
+  unanswered: string;
+  unreadable: string;
   gap: string;
   exhaustedGap: string;
   missingSlots: string;
@@ -151,7 +155,9 @@ interface ReaskTemplates {
  * email"), it came back word for word (#1449), so the reply is told what was already
  * said, except a fact the visitor needs to answer, such as a date it offered. Past the
  * runner's re-ask limit the exhausted prompt follows, so the reply also says what a
- * usable answer looks like (#1376).
+ * usable answer looks like (#1376). A reply the routine could not read at all may have
+ * answered the step; told it fell short, the re-ask asked again with no reason the visitor
+ * could see (#1715), so it says the reply could not be recorded instead.
  */
 const reaskBlock = (reask: RoutineStepReask | undefined, templates: ReaskTemplates): string => {
   if (!reask) {
@@ -159,6 +165,9 @@ const reaskBlock = (reask: RoutineStepReask | undefined, templates: ReaskTemplat
   }
   const missing = reask.missingSlots.map((slot) => slot.key);
   return renderPromptTemplate("chat/routine-step-reask.md", templates.reask, {
+    reply_status: reask.replyUnreadable
+      ? renderPromptTemplate("chat/routine-step-reask-unreadable.md", templates.unreadable, {})
+      : renderPromptTemplate("chat/routine-step-reask-unanswered.md", templates.unanswered, {}),
     // Past the limit the exhausted prompt says plainly what is still needed, so the reply may
     // name it; it still does not list what the step already holds.
     gap_rule: reask.exhausted
@@ -385,8 +394,12 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       promptTemplate?: string;
       terminalHandoffWithMessagePromptTemplate?: string;
       terminalHandoffDefaultPromptTemplate?: string;
-      /** What a step asked again is told (#1369, #1449); `{{gap_rule}}`, `{{missing_slots}}` and `{{exhausted}}` take the pieces below. */
+      /** What a step asked again is told (#1369, #1449); `{{reply_status}}`, `{{gap_rule}}`, `{{missing_slots}}` and `{{exhausted}}` take the pieces below. */
       reaskPromptTemplate?: string;
+      /** Why the step is asked again: the reply did not give everything it needs. */
+      reaskUnansweredPromptTemplate?: string;
+      /** Why the step is asked again: the routine could not read the reply (#1715). */
+      reaskUnreadablePromptTemplate?: string;
       /** How a re-ask treats what the step still lacks and already holds (#1662). */
       reaskGapPromptTemplate?: string;
       /** The same, past the re-ask limit, where the reply may say what is still needed. */
@@ -419,6 +432,8 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       options.terminalHandoffDefaultPromptTemplate ?? DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT;
     this.reaskTemplates = {
       reask: options.reaskPromptTemplate ?? DEFAULT_ROUTINE_STEP_REASK_PROMPT,
+      unanswered: options.reaskUnansweredPromptTemplate ?? DEFAULT_ROUTINE_STEP_REASK_UNANSWERED_PROMPT,
+      unreadable: options.reaskUnreadablePromptTemplate ?? DEFAULT_ROUTINE_STEP_REASK_UNREADABLE_PROMPT,
       gap: options.reaskGapPromptTemplate ?? DEFAULT_ROUTINE_STEP_REASK_GAP_PROMPT,
       exhaustedGap: options.reaskExhaustedGapPromptTemplate ?? DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_GAP_PROMPT,
       missingSlots: options.reaskMissingSlotsPromptTemplate ?? DEFAULT_ROUTINE_STEP_REASK_MISSING_SLOTS_PROMPT,

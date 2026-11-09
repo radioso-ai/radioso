@@ -69,7 +69,7 @@ import {
 } from "./builders/infra.js";
 import {
   buildAccessServices,
-  buildAuthFunnelService,
+  buildAuthSessionServices,
   buildAuthService,
   buildEmailVerificationService,
   buildPasswordResetService,
@@ -479,7 +479,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
-  const authFunnelService = buildAuthFunnelService({
+  const authSessionServices = buildAuthSessionServices({
     auditService: infrastructure.auditService,
     env,
     repositories,
@@ -1352,7 +1352,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     accessGrantService: access.accessGrantService,
     passwordResetService,
     emailVerificationService,
-    authFunnelService,
+    ...authSessionServices,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
     apiPrincipalAuthenticator: access.apiPrincipalAuthenticator,

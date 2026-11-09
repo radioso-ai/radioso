@@ -8,7 +8,7 @@ It serves `POST /a2a/{publicId}`, A2A's JSON-RPC binding, with four methods:
 
 It runs the same converse turn MCP's `ask` runs, on the `a2a` source channel, and records the
 little bookkeeping A2A needs beside the conversation. The normative spec is
-`specs/a2a-protocol-binding/spec.md`.
+`specs/1731-a2a-protocol-binding/spec.md`.
 
 Start at `routes.ts` for the request pipeline, `services/a2aService.ts` for the four methods
 behind one admission step, and `domain/taskState.ts` for the precedence table that decides every

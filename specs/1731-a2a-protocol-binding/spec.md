@@ -3,7 +3,7 @@
 **Feature Branch**: `feat/a2a-protocol-binding`
 **Created**: 2026-11-09
 **Status**: Draft (revised after adversarial review, 2026-11-09)
-**Issue**: none yet — file one before approval
+**Issue**: #1731
 **Builds on**: `specs/1290-agent-consumable-service-surface/` — replaces its "Full A2A protocol" non-goal for the JSON-RPC binding; streaming and push notifications stay out (see Non-goals)
 **Input**: Radioso publishes an A2A Agent Card, but a client that speaks A2A and not MCP finds the card and cannot use it. Make a published agent answer A2A v1.0 over JSON-RPC, so the card's promise is true.
 

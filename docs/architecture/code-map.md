@@ -1425,7 +1425,7 @@ Public surfaces and key files:
 Related docs:
 
 - `backend/src/modules/a2a/README.md`
-- `specs/a2a-protocol-binding/spec.md`
+- `specs/1731-a2a-protocol-binding/spec.md`
 - `docs-portal/content/guides/agent-converse.mdx`
 
 ## MCP Converse Sessions

@@ -115,6 +115,7 @@ import {
   type SuspendedRoutineReader,
 } from "./approvalResumeTurn.js";
 import { DeferredClarificationStore, type ChatClarificationStore } from "./clarification/deferredClarificationStore.js";
+import type { RoutineOfferStore } from "./routines/deferredRoutineOffer.js";
 import {
   resolvePendingClarification,
   type PendingClarificationResolution,
@@ -247,6 +248,8 @@ export interface ChatServiceOptions {
   conversationOwnershipRepository?: ConversationOwnershipRepository;
   /** Optional: durable per-session routine state store (with {@link routineProvider}). */
   routineStore?: ConversationRoutineStore;
+  /** Which routines each conversation was shown an offer to start (#1716). */
+  routineOfferStore?: RoutineOfferStore;
   /** Optional: detects parked routines so fresh visitor messages answer normally. */
   suspendedRoutineReader?: SuspendedRoutineReader;
   /** Optional: detects human-owned conversations so visitor turns do not start AI work. */
@@ -456,6 +459,7 @@ export class ChatService {
       facetExtractionJobs,
       conversationOwnershipRepository,
       routineStore,
+      routineOfferStore,
       suspendedRoutineReader,
       conversationOwnershipReader,
       routineProvider,
@@ -545,6 +549,7 @@ export class ChatService {
       chatSessionPreparer: this.chatSessionPreparer,
       directiveStateStore,
       routineStore,
+      routineOfferStore,
       coverageHeadRecorder,
       coverageShadowAssessor,
     }) ?? new ChatTurnAssembly({
@@ -559,6 +564,7 @@ export class ChatService {
       turnRouter,
       turnInterpreter,
       routineStore,
+      routineOfferStore,
       routineProvider,
       clarifier,
       recordClarificationDecision,
@@ -706,7 +712,7 @@ export class ChatService {
     if (!clarifier || !this.clarificationStore) {
       return {};
     }
-    const store = DeferredClarificationStore.over(this.clarificationStore);
+    const store = new DeferredClarificationStore(this.clarificationStore);
     // A tool call is not a reply to a pending question: mapping it would spend a model
     // call and could hand the turn to the question's activator instead of the routine
     // the call names. The question stays pending for the next message turn.

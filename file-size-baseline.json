@@ -1,7 +1,7 @@
 {
   "backend/src/app/http/openapi/paths/documentsPaths.ts": 1035,
   "backend/src/app/http/openapi/schemas/assistantHistorySchemas.ts": 1044,
-  "backend/src/app/server/builders/chat.ts": 1043,
+  "backend/src/app/server/builders/chat.ts": 1045,
   "backend/src/app/server/dependencies.ts": 1538,
   "backend/src/db/repositories/agentRepository.ts": 1295,
   "backend/src/db/repositories/documentProcessingJobRepository.ts": 1156,
@@ -11,10 +11,10 @@
   "backend/src/modules/audiencePulse/services/audiencePulseService.ts": 1156,
   "backend/src/modules/auth/services/authService.ts": 1413,
   "backend/src/modules/chat/services/chatHistoryService.ts": 1670,
-  "backend/src/modules/chat/services/chatService.ts": 2218,
+  "backend/src/modules/chat/services/chatService.ts": 2224,
   "backend/src/modules/chat/services/chatSessionPreparer.ts": 1365,
-  "backend/src/modules/chat/services/chatTurnAssembly.ts": 1429,
-  "backend/src/modules/chat/services/chatTurnLifecycle.ts": 1553,
+  "backend/src/modules/chat/services/chatTurnAssembly.ts": 1441,
+  "backend/src/modules/chat/services/chatTurnLifecycle.ts": 1550,
   "backend/src/modules/chat/services/retrievalTurnSkill.ts": 1160,
   "backend/src/modules/chat/services/turnPlanService.ts": 1044,
   "backend/src/modules/documents/services/documentIngestionService.ts": 1157,
@@ -39,7 +39,7 @@
   "frontend/lib/anonymous-chat-context.tsx": 1317,
   "frontend/lib/dashboard-routes.ts": 1223,
   "frontend/lib/radioso-embed-launcher.js": 2564,
-  "packages/conversation-contract/index.d.ts": 2186,
+  "packages/conversation-contract/index.d.ts": 2142,
   "packages/conversation-engine/src/routineRunner.ts": 1429,
-  "packages/routine-document/src/tokens.ts": 1124
+  "packages/routine-document/src/tokens.ts": 1073
 }

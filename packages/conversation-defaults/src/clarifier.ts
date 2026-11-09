@@ -8,8 +8,6 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
-import { ROUTINE_ACTIVATION_SURFACE } from "@radioso/conversation-engine";
-
 import { renderPromptTemplate } from "./promptTemplate.js";
 import { steeringForSurface } from "./domain.js";
 import {
@@ -365,7 +363,7 @@ export class DefaultClarifier implements ConversationClarifier {
     if (input.mode !== "offer") {
       return ["chat/clarification-reply-map.md", this.replyMapPromptTemplate];
     }
-    return input.source === ROUTINE_ACTIVATION_SURFACE
+    return input.offerKind === "start"
       ? ["chat/clarification-routine-offer-reply-map.md", this.routineOfferReplyMapPromptTemplate]
       : ["chat/clarification-offer-reply-map.md", this.offerReplyMapPromptTemplate];
   }

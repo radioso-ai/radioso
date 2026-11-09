@@ -141,9 +141,6 @@ const parseRankedMatches = (raw: string, knownIds: Set<string>): RankedRoutineMa
       if (typeof item.confidence !== "number" || !Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1) {
         return null;
       }
-      if (item.directRequest !== undefined && typeof item.directRequest !== "boolean") {
-        return null;
-      }
       matches.push({
         routineId: item.routineId,
         confidence: item.confidence,

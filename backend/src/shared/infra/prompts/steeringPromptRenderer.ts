@@ -14,6 +14,9 @@ import {
 } from "../../domain/steeringRule.js";
 import { loadPromptTemplate, renderPromptTemplate } from "./promptLoader.js";
 
+/** What the closing offer names: the routine as its author wrote it. */
+type OfferedRoutine = Pick<RoutineStartOffer, "label" | "description">;
+
 interface SteeringBlockRenderOptions extends Pick<RenderSteeringRulesOptions, "includeRuleIds"> {
   /** Generator these rules are being rendered for. Defaults to the answering voice. */
   surface?: GenerationSurface;
@@ -90,14 +93,14 @@ interface RoutineLeadBackOptions {
    * An Offer-first routine this turn offered instead of starting (#1716). With no parked routine
    * to lead back to, the answer closes by offering to start it (`chat/routine-offer.md`).
    */
-  offer?: RoutineStartOffer;
+  offer?: OfferedRoutine;
 }
 
 const noSupportHandoff = (options: RoutineLeadBackOptions): string =>
   options.noSupportHandsOff ? `\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}` : "";
 
 /** The routine's name and what it is for, as the operator wrote them; one line each. */
-const renderRoutineOffer = (offer: RoutineStartOffer, options: RoutineLeadBackOptions): string =>
+const renderRoutineOffer = (offer: OfferedRoutine, options: RoutineLeadBackOptions): string =>
   renderPromptTemplate("chat/routine-offer.md", {
     offer: [`- ${offer.label}`, ...(offer.description ? [`- ${offer.description}`] : [])].join("\n"),
     no_support_handoff: noSupportHandoff(options),

@@ -2,7 +2,6 @@ import type {
   ClarificationCandidate,
   ClarificationClearOutcome,
   ConversationClarificationStore,
-  ConversationRoutineOfferMemory,
   PendingClarification,
   PendingClarificationStatus,
   RecentClarificationReader,
@@ -89,25 +88,7 @@ const mapRow = (row: ClarificationStateRow): PendingClarification => ({
 const clearedFields = (outcome: ClarificationClearOutcome): { original_query: null } | Record<string, never> =>
   outcome === "resolved" ? { original_query: null } : {};
 
-/**
- * Records that a conversation was offered these routines. A routine offer is a pending row in offer
- * mode, and the row is replaced by the next clarification; `routine_offers` keeps the fact that the
- * offer was made for as long as the conversation exists. Shared with the assistant-turn
- * transaction, which writes it beside the pending row.
- */
-export const recordRoutineOffers = async (db: Db, sessionId: string, routineIds: readonly string[]): Promise<void> => {
-  if (routineIds.length === 0) {
-    return;
-  }
-  await db
-    .insertInto("routine_offers")
-    .values(routineIds.map((routineId) => ({ conversation_id: sessionId, routine_id: routineId })))
-    .onConflict((oc) => oc.columns(["conversation_id", "routine_id"]).doNothing())
-    .execute();
-};
-
-export class ClarificationStateRepository
-  implements ConversationClarificationStore, RecentClarificationReader, ConversationRoutineOfferMemory {
+export class ClarificationStateRepository implements ConversationClarificationStore, RecentClarificationReader {
   constructor(
     private readonly db: Db,
     private readonly ttlMs: number = DEFAULT_CLARIFICATION_STATE_TTL_MS,
@@ -196,19 +177,5 @@ export class ClarificationStateRepository
       .set({ status: outcome, ...clearedFields(outcome), updated_at: currentTimestamp() })
       .where("session_id", "=", input.sessionId)
       .execute();
-  }
-
-  async loadOffered(input: { sessionId: string }): Promise<readonly string[]> {
-    const rows = await this.db
-      .selectFrom("routine_offers")
-      .select("routine_id")
-      .where("conversation_id", "=", input.sessionId)
-      .orderBy("offered_at")
-      .execute();
-    return rows.map((row) => row.routine_id);
-  }
-
-  async recordOffered(input: { sessionId: string; routineId: string }): Promise<void> {
-    await recordRoutineOffers(this.db, input.sessionId, [input.routineId]);
   }
 }

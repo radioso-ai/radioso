@@ -373,10 +373,15 @@ describe("RoutineRegistry ranked activation", () => {
     expect(result).not.toHaveProperty("startMode");
   });
 
-  it("rejects a ranking whose direct-request verdict is not a boolean", async () => {
-    const gw = gateway(rankedJson([{ routineId: "demo", confidence: 0.92, directRequest: "yes" }]));
+  it("reads a direct-request verdict that is not a boolean as absent, keeping the ranking", async () => {
+    const offerFirst = registration("room_booking");
+    offerFirst.routine.activation = { triggerDescription: "User wants room_booking", priority: 0, reentryMode: "once_per_conversation", startMode: "offer" };
+    const gw = gateway(rankedJson([{ routineId: "room_booking", confidence: 0.92, directRequest: null }]));
 
-    expect(await new RoutineRegistry([registration("demo")], { policy }).activator(gw).activate({ turn })).toBeNull();
+    const result = await new RoutineRegistry([offerFirst], { policy }).activator(gw).activate({ turn });
+
+    expect(result).toMatchObject({ kind: "activate", routineId: "room_booking", startMode: "offer" });
+    expect(result).not.toHaveProperty("directRequest");
   });
 
   it("starts a soft-band pick as an auto-pick, so 'offered' only ever means the visitor was offered something", async () => {

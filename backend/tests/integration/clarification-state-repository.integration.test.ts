@@ -211,37 +211,4 @@ describeIntegration("ClarificationStateRepository (Postgres)", () => {
     // pending.originalQuery first), so there is nothing left to retain.
     expect(rows[0]?.original_query).toBeNull();
   });
-
-  it("remembers which routines a conversation was offered, once each, past any later clarification", async () => {
-    expect(await repository.loadOffered({ sessionId: recentSessionId })).toEqual([]);
-
-    await repository.recordOffered({ sessionId: recentSessionId, routineId: "room_booking" });
-    await repository.recordOffered({ sessionId: recentSessionId, routineId: "room_booking" });
-    await repository.save({
-      sessionId: recentSessionId,
-      source: "retrieval_sense",
-      mode: "ask",
-      candidates: [candidate],
-      status: "pending",
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    });
-    await repository.clear({ sessionId: recentSessionId, outcome: "expired" });
-
-    expect(await repository.loadOffered({ sessionId: recentSessionId })).toEqual(["room_booking"]);
-    expect(await repository.loadOffered({ sessionId })).toEqual([]);
-  });
-
-  it("forgets a conversation's offers with the conversation", async () => {
-    const conversationId = randomUUID();
-    await seedConversations(database, [conversationId]);
-    await repository.recordOffered({ sessionId: conversationId, routineId: "room_booking" });
-
-    await database.query(`DELETE FROM conversations WHERE id = $1`, [conversationId]);
-
-    const rows = await database.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM routine_offers WHERE conversation_id = $1`,
-      [conversationId],
-    );
-    expect(rows[0]?.count).toBe("0");
-  });
 });

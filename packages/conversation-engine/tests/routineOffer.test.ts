@@ -50,11 +50,8 @@ const acceptedOfferActivator = (candidate: ClarificationCandidate): Conversation
   }),
 });
 
-const memoryOf = (offered: string[] = []): ConversationRoutineOfferMemory & {
-  recordOffered: ReturnType<typeof vi.fn>;
-} => ({
+const memoryOf = (offered: string[] = []): ConversationRoutineOfferMemory => ({
   loadOffered: vi.fn(async () => offered),
-  recordOffered: vi.fn(async () => {}),
 });
 
 const clarificationStoreOf = (pending: PendingClarification | null = null): ConversationClarificationStore & {
@@ -136,22 +133,28 @@ describe("Offer-first routine activation", () => {
 
     expect(result).toBeNull();
     expect(input.routineRunner!.resume).not.toHaveBeenCalled();
-    expect(store.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      sessionId: "session_1",
-      source: "routine_activation",
-      mode: "offer",
-      status: "pending",
-      candidates: [bookingCandidate],
-    }));
-    const saved = store.save.mock.calls[0][0] as PendingClarification;
-    expect(new Date(saved.expiresAt).getTime() - Date.now()).toBeGreaterThan(29 * 60 * 1000);
-    expect(memory.recordOffered).toHaveBeenCalledExactlyOnceWith({ sessionId: "session_1", routineId: "room_booking" });
+    // The host saves the pending offer only once the answer that ends with it is shown.
+    expect(store.save).not.toHaveBeenCalled();
+    expect(memory.loadOffered).toHaveBeenCalledWith({ sessionId: "session_1" });
     const notice = noticed.mock.calls[0][0];
     expect(notice).toMatchObject({
       sessionId: "session_1",
       inputEventId: "input_1",
-      offer: { routineId: "room_booking", label: "Room booking", description: "The visitor wants to book a room." },
+      offer: {
+        routineId: "room_booking",
+        label: "Room booking",
+        description: "The visitor wants to book a room.",
+        pending: {
+          sessionId: "session_1",
+          source: "routine_activation",
+          mode: "offer",
+          status: "pending",
+          candidates: [bookingCandidate],
+        },
+      },
     });
+    const pending: PendingClarification = notice.offer!.pending;
+    expect(new Date(pending.expiresAt).getTime() - Date.now()).toBeGreaterThan(29 * 60 * 1000);
     expect(clarificationOutputs(notice.stages)).toEqual([
       expect.objectContaining({ surface: "routine_activation", decision: "offered", chosenCandidateId: "room_booking" }),
     ]);
@@ -209,7 +212,6 @@ describe("Offer-first routine activation", () => {
     expect(await attemptRoutine(input)).toBeNull();
     expect(input.routineRunner!.resume).not.toHaveBeenCalled();
     expect(store.save).not.toHaveBeenCalled();
-    expect(memory.recordOffered).not.toHaveBeenCalled();
     const notice = noticed.mock.calls[0][0];
     expect(notice.offer).toBeUndefined();
     expect(clarificationOutputs(notice.stages)).toEqual([
@@ -297,7 +299,7 @@ describe("a reply to a routine offer", () => {
       turn: replyTurn("yes please"),
     });
 
-    expect(mapReply).toHaveBeenCalledWith(expect.objectContaining({ mode: "offer", source: "routine_activation" }));
+    expect(mapReply).toHaveBeenCalledWith(expect.objectContaining({ mode: "offer", offerKind: "start" }));
     expect(resolution).toMatchObject({ outcome: "resolved", mappingOutcome: "accepted" });
     const input = attemptInput({
       inputEvent: { id: "input_2", kind: "message", content: "yes please" },

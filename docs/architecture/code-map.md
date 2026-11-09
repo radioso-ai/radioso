@@ -1546,9 +1546,11 @@ Primary internals:
   candidate evaluation and ranked activation, and reaction recording all run
   from here, returning `proceed` or `yield_turn` — #1260)
 - `packages/conversation-engine/src/routineStart.ts` (whether a ranked pick of an
-  Offer-first routine starts or is offered, the pending offer row, the
-  once-per-conversation offer memory check, and the stages an unclaimed pass hands
-  the host as a `RoutineActivationNotice` — #1716; types in
+  Offer-first routine starts or is offered, the pending offer row the host saves
+  once the reply shows the offer, the once-per-conversation offer memory check, and
+  the stages an unclaimed pass hands the host as a `RoutineActivationNotice` — #1716;
+  the backend side is `chat/services/routines/deferredRoutineOffer.ts` over
+  `db/repositories/routineOfferRepository.ts`; types in
   `packages/conversation-contract/routineOffer.d.ts`, generic clarification types in
   `clarification.d.ts`)
 - `packages/conversation-engine/src/skillFallback.ts` (the skill a selection's

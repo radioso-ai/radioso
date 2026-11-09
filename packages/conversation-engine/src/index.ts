@@ -696,7 +696,6 @@ export {
 } from "./slotCorrection.js";
 export { completedRunSentValues } from "./routineEnding.js";
 export { checkSlotValue } from "./slotValue.js";
-export { ROUTINE_ACTIVATION_SURFACE } from "./routineStart.js";
 export {
   clarificationMappingStage,
   clarificationStage,

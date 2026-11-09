@@ -386,8 +386,9 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         content: "Single rooms are free from 8 March. Would you like me to book one?",
       },
       auditEvent: { eventType: "chat.answer", eventStatus: "success", workspaceId: workspace.id, metadata: {} },
-      clarificationTransition: {
-        kind: "save",
+      clarificationTransition: { kind: "clear", sessionId: conversation.id, outcome: "declined" },
+      routineOffer: {
+        routineId: "room_booking",
         pending: {
           sessionId: conversation.id,
           source: "routine_activation",
@@ -396,7 +397,6 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
           status: "pending",
           expiresAt: "2099-01-01T00:00:00.000Z",
         },
-        offeredRoutineIds: ["room_booking"],
       },
     });
 
@@ -405,6 +405,11 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       [conversation.id],
     );
     expect(offers).toEqual([{ routine_id: "room_booking" }]);
+    const pending = await database.queryOne<{ source: string; mode: string; status: string }>(
+      "SELECT source, mode, status FROM clarification_states WHERE session_id = $1",
+      [conversation.id],
+    );
+    expect(pending).toEqual({ source: "routine_activation", mode: "offer", status: "pending" });
   });
 
   it("requests ownership handoff and records ownership audit inside the assistant turn transaction", async () => {

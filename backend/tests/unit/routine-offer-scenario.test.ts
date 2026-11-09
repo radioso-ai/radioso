@@ -15,6 +15,7 @@ import { ChatService, type ChatGateway, type ChatRoutineProvider } from "../../s
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import type { ChatClarificationStore } from "../../src/modules/chat/services/clarification/deferredClarificationStore.js";
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
+import type { RoutineOfferStore } from "../../src/modules/chat/services/routines/deferredRoutineOffer.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { compileRoutineDefinition, type RoutineDefinition } from "../../src/modules/routines/public.js";
 import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
@@ -135,7 +136,19 @@ const scriptedModel = (script: { rankings: Record<string, Ranking | null>; offer
 const clarificationStore = () => {
   let pending: PendingClarification | null = null;
   const offered = new Set<string>();
-  const store: ChatClarificationStore & { pending: () => PendingClarification | null; offered: () => string[] } = {
+  const offerStore: RoutineOfferStore = {
+    async loadOffered() {
+      return [...offered];
+    },
+    async record({ routineId }) {
+      offered.add(routineId);
+    },
+  };
+  const store: ChatClarificationStore & {
+    pending: () => PendingClarification | null;
+    offered: () => string[];
+    offerStore: RoutineOfferStore;
+  } = {
     async loadPending() {
       return pending?.status === "pending" ? pending : null;
     },
@@ -145,14 +158,9 @@ const clarificationStore = () => {
     async clear({ outcome }) {
       pending = pending ? { ...pending, status: outcome ?? "resolved" } : null;
     },
-    async loadOffered() {
-      return [...offered];
-    },
-    async recordOffered({ routineId }) {
-      offered.add(routineId);
-    },
     pending: () => (pending?.status === "pending" ? pending : null),
     offered: () => [...offered],
+    offerStore,
   };
   return store;
 };
@@ -296,6 +304,7 @@ const guesthouse = async (script: Parameters<typeof scriptedModel>[0]) => {
       routineOfferReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-routine-offer-reply-map.md"),
     }),
     clarificationStore: clarifications,
+    routineOfferStore: clarifications.offerStore,
     recordClarificationDecision: (decision) => {
       metrics.incrementCounter("clarification_decisions_total", { help: "test", labels: { ...decision } });
     },

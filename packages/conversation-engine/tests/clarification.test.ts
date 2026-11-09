@@ -431,7 +431,7 @@ describe("resolvePendingClarification", () => {
       candidates: current.candidates,
       turn: expect.objectContaining({ sessionId: "session_1" }),
       mode: "offer",
-      source: "test_surface",
+      offerKind: "alternatives",
     });
     expect(store.clear).toHaveBeenCalledWith({ sessionId: "session_1", outcome: "declined" });
     expect(resolved).toMatchObject({

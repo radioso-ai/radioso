@@ -1,6 +1,7 @@
 import type { Request, Router } from "express";
 import type { Kysely } from "kysely";
 
+import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import {
   A2aAccessResolver,
   A2aMessageReceiptRepository,
@@ -15,6 +16,7 @@ import {
   createA2aObserver,
   createA2aRoutes,
   type A2aMessageReceiptStore,
+  type A2aRoutineRunReader,
   type A2aTaskStore,
 } from "../../modules/a2a/public.js";
 import { AgentConverseAudit } from "../../modules/chat/composition.js";
@@ -45,7 +47,6 @@ type A2aCompositionDependencies = Pick<
   AppDependencies,
   | "abuseControlService"
   | "accessGrantService"
-  | "activeRoutineRuns"
   | "accountAccessService"
   | "agentPublication"
   | "agentRepository"
@@ -62,15 +63,30 @@ type A2aCompositionDependencies = Pick<
   | "workspaceInvalidationPublisher"
 >;
 
-/** Where the binding keeps tasks and receipts: Postgres in the app, an in-memory store in tests. */
+/** The routine store's active-run read, which never returns an expired run. */
+interface ActiveRoutineStates {
+  loadActive(input: { sessionId: string }): Promise<{ executionId?: string } | null>;
+}
+
+/**
+ * Where the binding keeps tasks and receipts, and the routine store it reads after a turn:
+ * Postgres in the app, in-memory stores in tests.
+ */
 interface A2aStores {
   tasks: A2aTaskStore;
   receipts: A2aMessageReceiptStore;
+  routineStates: ActiveRoutineStates;
 }
 
 const createA2aStores = (db: Kysely<DB>): A2aStores => ({
   tasks: new A2aTaskRepository(db),
   receipts: new A2aMessageReceiptRepository(db),
+  routineStates: new RoutineStateRepository(db),
+});
+
+/** A routine state is keyed by its conversation; the binding asks only for the active run's id. */
+const routineRunReader = (routineStates: ActiveRoutineStates): A2aRoutineRunReader => ({
+  activeExecutionId: async (conversationId) => (await routineStates.loadActive({ sessionId: conversationId }))?.executionId ?? null,
 });
 
 /** The walk-in conversation door's audit `surface` for the A2A endpoint. */
@@ -119,7 +135,15 @@ export const createA2aRouter = (
       transcript,
       observer,
     }),
-    send: new A2aSendMessageService({ converse, tasks: stores.tasks, receipts: stores.receipts, transcript, view, observer }),
+    send: new A2aSendMessageService({
+      converse,
+      tasks: stores.tasks,
+      receipts: stores.receipts,
+      transcript,
+      routineRuns: routineRunReader(stores.routineStates),
+      view,
+      observer,
+    }),
     reads: new A2aTaskReader({ tasks: stores.tasks, transcript, view, observer }),
   });
 

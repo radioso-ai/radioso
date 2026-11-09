@@ -2,11 +2,13 @@ import type { A2aTaskRecord, A2aTranscriptPort } from "../contracts/ports.js";
 import { renderTask, type WireTask } from "../domain/taskWire.js";
 import { authoredMessages, type AuthoredMessage } from "../domain/turnMessages.js";
 
-/** The most history a task renders; a caller may ask for less, never for more. */
+/** The most history a task renders unless its caller sets a lower cap; a caller may ask for less, never for more. */
 const HISTORY_CAP = 100;
 
 interface TaskRenderOptions {
   historyLength: number | null;
+  /** A lower cap than {@link HISTORY_CAP}, for a read that renders many tasks. */
+  historyCap?: number;
   includeArtifacts: boolean;
   extensionActive: boolean;
 }
@@ -20,16 +22,17 @@ export class A2aTaskView {
   constructor(private readonly dependencies: { transcript: Pick<A2aTranscriptPort, "readRange"> }) {}
 
   async render(task: A2aTaskRecord, options: TaskRenderOptions): Promise<WireTask> {
-    const window = task.openingMessageId && task.shownThroughMessageId
-      ? await this.range(task, task.openingMessageId, task.shownThroughMessageId, HISTORY_CAP)
+    const cap = Math.min(options.historyCap ?? HISTORY_CAP, HISTORY_CAP);
+    // The newest messages of the task's range, only as many as the history renders.
+    const length = Math.min(options.historyLength ?? cap, cap);
+    const window = length > 0 && task.openingMessageId && task.shownThroughMessageId
+      ? await this.range(task, task.openingMessageId, task.shownThroughMessageId, length)
       : [];
     const [statusMessage, artifact] = await Promise.all([
       this.messageById(task, task.statusMessageId, window),
       this.messageById(task, task.artifactMessageId, window),
     ]);
-    const history = options.historyLength === 0
-      ? null
-      : options.historyLength === null ? window : window.slice(-options.historyLength);
+    const history = options.historyLength === 0 ? null : window;
     return renderTask({
       task,
       statusMessage,

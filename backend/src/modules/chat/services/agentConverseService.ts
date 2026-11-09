@@ -57,27 +57,18 @@ export interface AgentConverseAskResult extends AgentReplyEnvelopeCore {
  */
 export interface AgentConverseTurnResult {
   reply: AgentConverseAskResult;
+  /** The conversation the turn ran in: its row id, never the caller's public session id `reply` names. */
+  conversationId: string;
   /**
    * The concrete routine run `reply.routine` describes (null when the turn reported none, or a
    * declined call named a completed routine), so a door that keeps a record per run can tell a new
    * run from the one it follows.
    */
   routineExecutionId: string | null;
-  /**
-   * The routine run still in flight once the turn finished, read from the routine store after it;
-   * null when none is (it ended, expired, or never started). A routine that yields to an off-topic
-   * message is parked unsaved, so the turn reports no routine while this still names its run.
-   */
-  activeRoutineExecutionId: string | null;
   /** The caller's message this turn stored. */
   requestMessageId: string | null;
   /** The reply this turn stored; null when it generated none (a person owns the thread). */
   replyMessageId: string | null;
-}
-
-/** The routine run a conversation has in flight; a store that never returns an expired run. */
-export interface ActiveRoutineRunReader {
-  loadActive(input: { sessionId: string }): Promise<{ executionId?: string } | null>;
 }
 
 /** Only a credential-bound session names a grant; a walk-in one has none. */
@@ -90,7 +81,6 @@ export class AgentConverseService {
       assistantChatService: Pick<AssistantChatService, "answer">;
       conversationRepository: AgentConverseConversationStore;
       agentToolCatalog: AgentToolCatalogPort;
-      activeRoutineRuns: ActiveRoutineRunReader;
       audit?: AgentConverseAudit;
       visitorIdentity?: ConverseVisitorIdentityVerifier;
       publisher?: WorkspaceInvalidationPublisher;
@@ -157,8 +147,6 @@ export class AgentConverseService {
         });
       }
 
-      // The turn has committed its routine transition, so this reads where the turn left it.
-      const activeRun = await this.dependencies.activeRoutineRuns.loadActive({ sessionId: conversation.record.id });
       await this.dependencies.audit?.recordAskOutcome({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
@@ -177,8 +165,8 @@ export class AgentConverseService {
             citations: response.citations ?? [],
           },
         },
+        conversationId: conversation.record.id,
         routineExecutionId: response.routineExecutionId ?? null,
-        activeRoutineExecutionId: activeRun?.executionId ?? null,
         requestMessageId: response.requestMessageId ?? null,
         // A turn a person owns stores the caller's message and generates no reply.
         replyMessageId: response.assistantMessageId || null,

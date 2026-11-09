@@ -1426,7 +1426,8 @@ Related docs:
 
 - `backend/src/modules/a2a/README.md`
 - `specs/1731-a2a-protocol-binding/spec.md`
-- `docs-portal/content/guides/agent-converse.mdx`
+- `docs-portal/content/guides/a2a-converse.mdx`
+- `docs-portal/content/reference/a2a-converse-extension/v1.mdx`
 
 ## MCP Converse Sessions
 

@@ -253,6 +253,35 @@ describe("A2A tasks: a person takes over, and the caller comes back (US3)", () =
     ]);
   });
 
+  it("answers INPUT_REQUIRED on a person's reply the caller sends past without reading it first", async () => {
+    const ctx = createA2aTestApp();
+    const { session, agent, publicId } = await openA2aAgent(ctx);
+    const opened = await sendText(ctx, publicId, "Hello").expect(200);
+    const contextId = opened.body.result.message.contextId as string;
+    const conversationId = await conversationIdForContext(ctx, contextId);
+    const operator = operatorOf(ctx, session, conversationId);
+    const takeover = await operator.takeOver();
+    const waiting = await sendText(ctx, publicId, "Can a person help?", { contextId }).expect(200);
+    const task = waiting.body.result.task;
+    await operator.reply("I can help with that.", takeover.body.ownership.version);
+
+    // No GetTask in between: the caller writes again while the person's reply is unread.
+    const next = await sendText(ctx, publicId, "Order 1042, please.", { taskId: task.id, contextId }).expect(200);
+
+    expect(next.body.result.task).toMatchObject({
+      id: task.id,
+      status: { state: "TASK_STATE_INPUT_REQUIRED", message: { role: "ROLE_AGENT", parts: [{ text: "I can help with that." }] } },
+    });
+    const read = await rpc(ctx, publicId, "GetTask", { id: task.id }).expect(200);
+    expect(read.body.result.status).toMatchObject({ state: "TASK_STATE_INPUT_REQUIRED", message: { parts: [{ text: "I can help with that." }] } });
+    expect(read.body.result.history.map((message: { parts: [{ text: string }] }) => message.parts[0].text)).toEqual([
+      "Can a person help?",
+      "I can help with that.",
+      "Order 1042, please.",
+    ]);
+    expect(await assistantReplies(ctx, agent.workspaceId, conversationId)).toHaveLength(1);
+  });
+
   it("opens a task carrying a person's reply the caller has not seen, rather than dropping it", async () => {
     const ctx = createA2aTestApp();
     const { session, publicId } = await openA2aAgent(ctx);

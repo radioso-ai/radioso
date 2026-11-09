@@ -53,7 +53,7 @@ export class InMemoryA2aTaskStore implements A2aTaskStore {
     const matching = [...this.tasks.values()]
       .filter((task) => task.conversationId === query.conversationId)
       .filter((task) => !query.state || task.state === query.state)
-      .filter((task) => !query.stateAtOrAfter || task.stateAt.getTime() >= query.stateAtOrAfter.getTime())
+      .filter((task) => !query.stateAfter || task.stateAt.getTime() > query.stateAfter.getTime())
       .sort((a, b) => b.stateAt.getTime() - a.stateAt.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
     const before = query.before;
     const page = before

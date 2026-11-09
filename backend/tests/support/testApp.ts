@@ -3195,7 +3195,6 @@ export const createTestDependencies = (overrides: {
     chatBootstrapService,
     agentStarterPromptReader,
     agentToolCatalog,
-    activeRoutineRuns: routineStateStore,
     agentPublicProfile: createAgentPublicProfileComposition({
       agentRepository,
       agentRevisionReader: publishedAgentRevisions,

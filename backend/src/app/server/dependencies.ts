@@ -1431,7 +1431,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatBootstrapService: chat.chatBootstrapService,
     agentStarterPromptReader: chat.agentStarterPromptReader,
     agentToolCatalog,
-    activeRoutineRuns: new RoutineStateRepository(infrastructure.database.kysely),
     agentPublicProfile: createAgentPublicProfileComposition({
       agentRepository: repositories.agentRepository,
       agentRevisionReader: publishedRevisionReader,

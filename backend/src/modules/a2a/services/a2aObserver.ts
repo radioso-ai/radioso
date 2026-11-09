@@ -29,6 +29,12 @@ export interface A2aObserver {
    * answers `TURN_IN_PROGRESS` until the claim goes stale and the retry takes it over.
    */
   receiptReleaseFailed(input: { conversationId: string; error: unknown }): void;
+  /**
+   * A step after a turn that ran failed, and the send carried on without it: the routine-run read
+   * (the run the open task follows is taken as still active), the task's settlement (what is known is
+   * recorded instead), or the receipt (its claim stays in flight, so a retry is refused, not re-run).
+   */
+  afterTurnFailed(input: { step: "routine_run_read" | "task_settlement" | "receipt_completion"; conversationId: string; error: unknown }): void;
 }
 
 export const createA2aObserver = (dependencies: {
@@ -56,5 +62,8 @@ export const createA2aObserver = (dependencies: {
   receiptReleaseFailed({ conversationId, error }) {
     // The logger's error serializer keeps the error's class and code, never its message.
     dependencies.logger?.warn({ conversationDigest: logDigest(conversationId), err: error }, "A2A message receipt release failed");
+  },
+  afterTurnFailed({ step, conversationId, error }) {
+    dependencies.logger?.warn({ step, conversationDigest: logDigest(conversationId), err: error }, "A2A step after a turn failed");
   },
 });

@@ -81,12 +81,12 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   turn behind every door that holds a converse principal (MCP `ask`, A2A). It runs on
   the principal's `sourceChannel`, and `askAgent` returns `AgentConverseTurnResult`:
   the `reply` a door serialises, plus facts a door keeps in-process:
-  `routineExecutionId` (the run the reply's routine names), `activeRoutineExecutionId`
-  (the run still in flight after the turn, read through the `ActiveRoutineRunReader`
-  port, so a routine that yielded to an off-topic message still names its run and an
-  expired one names none), and `requestMessageId` / `replyMessageId` (the turn's own
-  stored messages; no reply when a person owns the thread). Composition builds it once
-  per door with `app/composition/agentConverse.ts`.
+  `conversationId` (the conversation's row id, where `reply.conversationId` is the
+  caller's public session id), `routineExecutionId` (the run the reply's routine
+  names), and `requestMessageId` / `replyMessageId` (the turn's own stored messages;
+  no reply when a person owns the thread). Every fact comes from the turn itself; a
+  door that needs more after the turn reads it through its own port. Composition
+  builds it once per door with `app/composition/agentConverse.ts`.
   `services/agentConverseAudit.ts` records each turn as `mcp_converse.ask` or
   `a2a.ask` by channel, with `sourceChannel` in the metadata.
 - `services/agentTurnInput.ts` (exported through `contracts/`): `resolveAgentTurnInput`

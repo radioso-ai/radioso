@@ -118,7 +118,7 @@ describeIntegration("A2A task and receipt stores (Postgres)", () => {
       insert: newTask(conversationId, { state: "completed" }),
     })).resolves.toBe("conflict");
 
-    expect((await tasks.list({ conversationId, state: null, stateAtOrAfter: null, before: null, limit: 10 })).total).toBe(2);
+    expect((await tasks.list({ conversationId, state: null, stateAfter: null, before: null, limit: 10 })).total).toBe(2);
     expect(await tasks.findOpen(conversationId)).toMatchObject({ id: replacement.id });
   });
 
@@ -131,16 +131,20 @@ describeIntegration("A2A task and receipt stores (Postgres)", () => {
     for (const task of [older, middle, newest]) await tasks.commit({ updates: [], insert: task });
     await tasks.commit({ updates: [], insert: newTask(await seedConversation()) });
 
-    const firstPage = await tasks.list({ conversationId, state: null, stateAtOrAfter: null, before: null, limit: 2 });
-    const secondPage = await tasks.list({ conversationId, state: null, stateAtOrAfter: null, before: { stateAt: middle.stateAt, id: middle.id }, limit: 2 });
-    const completed = await tasks.list({ conversationId, state: "completed", stateAtOrAfter: null, before: null, limit: 10 });
-    const recent = await tasks.list({ conversationId, state: null, stateAtOrAfter: new Date(base - 2_000), before: null, limit: 10 });
+    const firstPage = await tasks.list({ conversationId, state: null, stateAfter: null, before: null, limit: 2 });
+    const secondPage = await tasks.list({ conversationId, state: null, stateAfter: null, before: { stateAt: middle.stateAt, id: middle.id }, limit: 2 });
+    const completed = await tasks.list({ conversationId, state: "completed", stateAfter: null, before: null, limit: 10 });
+    // Strictly after: a task whose status changed at the instant named is not listed.
+    const recent = await tasks.list({ conversationId, state: null, stateAfter: new Date(base - 2_000), before: null, limit: 10 });
+    const justBefore = await tasks.list({ conversationId, state: null, stateAfter: new Date(base - 2_001), before: null, limit: 10 });
 
     expect(firstPage.tasks.map((task) => task.id)).toEqual([newest.id, middle.id]);
     expect(firstPage.total).toBe(3);
     expect(secondPage.tasks.map((task) => task.id)).toEqual([older.id]);
     expect(completed.tasks.map((task) => task.id)).toEqual([older.id]);
-    expect(recent.tasks.map((task) => task.id)).toEqual([newest.id, middle.id]);
+    expect(recent.tasks.map((task) => task.id)).toEqual([newest.id]);
+    expect(recent.total).toBe(1);
+    expect(justBefore.tasks.map((task) => task.id)).toEqual([newest.id, middle.id]);
   });
 
   it("claims a receipt once, answers a retry in flight, replays a completed one, and takes over a stale claim", async () => {

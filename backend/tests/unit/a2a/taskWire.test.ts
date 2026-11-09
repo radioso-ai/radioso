@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { A2aTaskRecord, A2aTurnEnvelope } from "../../../src/modules/a2a/contracts/ports.js";
-import { authoredMessages, humanRepliesAfter, unseenHumanMessages } from "../../../src/modules/a2a/domain/turnMessages.js";
+import { authoredMessages, unseenHumanMessages } from "../../../src/modules/a2a/domain/turnMessages.js";
 import { renderAgentMessage, renderTask, wireTaskState } from "../../../src/modules/a2a/domain/taskWire.js";
 import { A2A_CONVERSE_EXTENSION_URI } from "../../../src/shared/domain/a2aConverseExtension.js";
 
@@ -63,19 +63,6 @@ describe("message authorship", () => {
     ]);
     expect(unseenHumanMessages(transcript).map((entry) => entry.id)).toEqual(["m5", "m6"]);
     expect(unseenHumanMessages(authoredMessages([message("m1", "human_agent")])).map((entry) => entry.id)).toEqual(["m1"]);
-  });
-
-  it("finds a person's replies after the turn's own message, whatever other turns stored around it", () => {
-    const transcript = authoredMessages([
-      message("m0", "human_agent"),
-      message("m1", "customer"),
-      message("m2", "ai_agent"),
-      message("m3", "human_agent"),
-      message("m4", "customer"),
-    ]);
-    expect(humanRepliesAfter(transcript, "m1").map((entry) => entry.id)).toEqual(["m3"]);
-    // The turn's message out of view: no person's message is dropped.
-    expect(humanRepliesAfter(transcript, null).map((entry) => entry.id)).toEqual(["m0", "m3"]);
   });
 });
 

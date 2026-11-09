@@ -28,10 +28,12 @@ It reaches the rest of the backend through ports:
 - chat's `AgentConverseService` runs turns, and its reply envelope describes them;
 - settings' `AgentConversePrincipalPort` opens and re-verifies contexts;
 - `contracts/ports.ts` declares the conversation reads (`A2aTranscriptPort`), the agent lookup
-  (`A2aAgentDirectory`), the sealer, and the two stores.
+  (`A2aAgentDirectory`), the active routine run (`A2aRoutineRunReader`), the sealer, and the two
+  stores.
 
 Application composition implements those ports and hands in the HTTP limits. It does this in
-`app/composition/a2a.ts` and `a2aTranscript.ts`, and mounts the router at the agent discovery
+`app/composition/a2a.ts` (which reads the active run through the routine-state repository's
+`loadActive`) and `a2aTranscript.ts`, and mounts the router at the agent discovery
 module's `A2A_ENDPOINT_MOUNT_PATH` from `builtIn/a2aModule.ts`. Routines, MCP and the card's JSON
 stay on the other side of those ports. Only composition imports this module, through `public.ts`.
 
@@ -63,10 +65,12 @@ stay on the other side of those ports. Only composition imports this module, thr
    - With a context or a task, it re-verifies the sealed origin under the credential presented
      now.
 6. It spends the per-caller budgets, keyed exactly as MCP's: by grant, or by walk-in public id
-   and source.
+   and source. Each branch's limits and permission check run as one Express sub-router.
 7. It runs the method.
 
-JSON-RPC errors answer HTTP 200, and -32603 answers 500. These answer at the HTTP level through
+Every middleware composition hands in runs so that a promise it returns and that rejects reaches the
+error handler: Express 4 ignores what a handler returns. JSON-RPC errors answer HTTP 200, and
+-32603 answers 500. These answer at the HTTP level through
 the shared error handler:
 
 - a refused opening (401 or 403, with the refusal `code`);
@@ -119,10 +123,12 @@ holds no message text:
 A partial unique index keeps one open task per conversation. A task id is 128 random bits.
 
 **After a turn.** `decideTaskAfterTurn` applies rows 1–10 of the precedence table to the turn's
-ownership, routine status and invocation outcome, and to two facts `AgentConverseTurnResult`
-carries beside the reply: the run the reported routine names (`routineExecutionId`), and the run
-still active once the turn finished (`activeRoutineExecutionId`, read from the routine store, so an
-expired run is none). Three readings are made explicit in the code:
+ownership, routine status and invocation outcome, to the run the reported routine names
+(`routineExecutionId`, which `AgentConverseTurnResult` carries beside the reply), and to the run
+still active once the turn finished. A2A reads that last one itself, after the turn, through
+`A2aRoutineRunReader`, so an expired run is none. A read that fails never fails the send and never
+cancels a task (row 10): the run the open task follows is taken as still active, and the failure
+logs at `warn`. Three readings are made explicit in the code:
 
 - Row 7 (declined) is checked before row 8 (completed), because a declined call reports its
   routine as `completed`.
@@ -132,16 +138,20 @@ expired run is none). Three readings are made explicit in the code:
   task stays `input_required` on the turn's reply, keeps the routine report it had, and rows 9
   and 10 do not apply. Row 10 needs no run active after the turn.
 
-The turn names its own messages: `requestMessageId` and `replyMessageId` on the turn result are the
-caller message and reply a task records, a receipt replays, and the status message and artifact
-point at. A read after the turn only finds where the caller's view now ends, and a person's replies
-after the turn's own message.
+The turn names its own messages and its conversation: `requestMessageId` and `replyMessageId` on
+the turn result are the caller message and reply a task records, a receipt replays, and the status
+message and artifact point at, and `conversationId` is the row a context's first send opened. A
+read after the turn only finds where the caller's view now ends, and what a person wrote that the
+caller has not been shown.
 
 A plain answer, with no task open and nothing pending, is a `Message` and writes no record.
 
-**Unseen human messages.** When a turn finds a person's messages after the caller's previous
-message, from the conversation's latest page, the task it opens starts at the first of them. So
-its history carries what the caller has not seen.
+**Unseen human messages.** A person's message the caller has not been shown is one past the open
+task's cursor or, with no task open, after the caller's previous message on the conversation's
+latest page. It counts whether it landed before the caller's new message or while the turn ran. Under
+human ownership any such message makes the task `input_required` on the latest of them (row 1), so a
+caller that sends without polling first still sees the reply. A task a turn opens starts at the first
+of them, so its history carries what the caller has not seen.
 
 **The cursor.** Each task's cursor sits just after the last message its caller has been shown.
 `GetTask` and `ListTasks` read past it (rows 1 and 3, `decideTaskOnRead`), page by page to the end
@@ -149,7 +159,12 @@ of the conversation (`services/transcriptReads.ts`; past ten pages a read takes 
 reply found there makes the task `input_required` on the newest such reply, and the cursor moves
 past it. The read changes only `ownership` in the stored envelope; the routine report and citations
 the last turn recorded stay. A second read with nothing new answers the same, until the caller's
-next turn.
+next turn. A read moves the status timestamp only when the state or the status message changes,
+because `ListTasks` pages by it.
+
+`ListTasks` refreshes and renders its page four tasks at a time, so one request never fans out a
+query per task at once, and gives each task at most its 10 latest history messages. `GetTask` gives
+up to 100. `statusTimestampAfter` lists tasks whose status changed strictly after that instant.
 
 **Concurrency.** Every task write compares and sets on the version (`A2aTaskStore.commit`, in one
 transaction):
@@ -172,8 +187,19 @@ messages are `ROLE_AGENT`.
 - A retry while the claim is in flight answers `TURN_IN_PROGRESS`.
 - A finished send stores what replays it: the reply's message id and envelope core, or the task's
   id. A retry returns that without a turn, even when the task has since finished.
-- A failed send releases its claim; a release that fails logs at `warn` with a conversation digest.
-  A claim left by a dead process is taken over after ten minutes, under the new send's token.
+- Once the turn has run, a retry replays and never runs it again. Only a send that failed before
+  its turn ran (the terminal-task check, the reads before the turn, or the turn itself) releases its
+  claim; a release that fails logs at `warn` with a conversation digest.
+- A step after the turn that fails never releases the claim:
+  - Settlement that throws, or loses to concurrent writers three times, records what is known
+    instead: the task now open in the conversation, or else the turn's reply as a message. The send
+    answers that, as its retry will. With neither, the send fails and the claim stays.
+  - Completing the receipt is tried three times. When it still fails, the send answers what the
+    turn produced, logs at `warn`, and leaves the claim in flight, so a retry answers
+    `TURN_IN_PROGRESS`.
+- A claim left in flight, by a dead process or a receipt that could not be completed, is taken over
+  after ten minutes under the new send's token. That retry runs the turn again; it is the one case
+  that does.
 - Completing and releasing match the token, so a slow send whose claim was taken over changes
   nothing.
 
@@ -209,6 +235,9 @@ Status messages and artifacts only ever carry text a turn produced or a person w
 
 - A refusal logs at `info` with the source digest, the agent id, and a task id digest.
 - A receipt release that fails logs at `warn` with a conversation digest and the error's class.
+- A step after a turn that fails and is carried past logs at `warn` with its `step`
+  (`routine_run_read`, `task_settlement` or `receipt_completion`), a conversation digest and the
+  error's class.
 - `SendMessage` runs in an `a2a.send_message` span (`a2a.method`, `a2a.task_state`), the parent
   of the turn's spans.
 - Walk-in openings count and log through the walk-in observer MCP uses.

@@ -294,8 +294,13 @@ describe("agent reply envelope contract (SC-004)", () => {
     expect(ask.body).toMatchObject({ answer: { text: expect.any(String) } });
     expect(ask.text).not.toContain(PROBE_EXECUTION_ID);
     expect(ask.text).not.toContain(PROBE_REQUEST_MESSAGE_ID);
-    for (const turnFact of ["routineExecutionId", "activeRoutineExecutionId", "requestMessageId", "replyMessageId", "reply"]) {
+    for (const turnFact of ["routineExecutionId", "requestMessageId", "replyMessageId", "reply"]) {
       expect(ask.body).not.toHaveProperty(turnFact);
     }
+    // The conversation's row id stays in-process: the body's `conversationId` is the caller's session handle.
+    const conversationRowId = vi.mocked(dependencies.assistantChatService.answer).mock.calls[0]?.[0].conversationId;
+    expect(conversationRowId).toEqual(expect.any(String));
+    expect(ask.body.conversationId).toEqual(expect.any(String));
+    expect(ask.text).not.toContain(conversationRowId);
   });
 });

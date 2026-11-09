@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-26
+last_updated: 2026-11-09
 ---
 
 # Authoring Routines
@@ -244,6 +244,16 @@ This is a value the step reads, not one it stores: nothing is added to
 To keep a value, ask for it with an `@` slot. The visible page text stays out
 of the step; the step sees the page's identity, and the page still counts as
 untrusted data the agent reasons about rather than instructions it follows.
+
+A chat step states facts only from its instruction and the sources it has on
+that turn: the page text, when the step places **Current page** and the embed
+sends page content, and the documents a `retrieve` step fetched earlier in the
+same turn. A chat step searches no documents itself. When a step says "tell
+them the edition dates from the page" and there is no page text, the reply
+says it doesn't have the dates here and asks the visitor for theirs; a visitor
+who wrote "I'm free between the 17th and 27th" never hears those dates read
+back as the course's. Write a fact every visitor needs into the instruction
+itself, or into a page or document the step reads.
 
 ### Add steps and connect skills
 

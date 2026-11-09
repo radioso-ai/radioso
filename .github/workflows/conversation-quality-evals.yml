@@ -102,9 +102,9 @@ jobs:
       - name: Run conversation-quality suite
         working-directory: backend
         # `--judge-tag quick-reply` grades the quick-reply cases' "no factual proposition" judge
-        # assertions, and `--judge-tag unavailable` the judge of the metadata-only page case, which
-        # has no other live gate, on the configuration's rerank-tier model; every other case
-        # scores its deterministic layer.
+        # assertions, and `--judge-tag unavailable` the judges of the metadata-only page case and
+        # the routine step with no source for the dates it states, on the configuration's
+        # rerank-tier model; every other case scores its deterministic layer.
         run: node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --samples ${{ github.event.inputs.samples || '5' }} --judge-tag quick-reply --judge-tag unavailable
 
       - name: Stop document worker

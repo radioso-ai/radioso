@@ -324,6 +324,24 @@ describe("copilot routine validation", () => {
     });
   });
 
+  it("flags a field editable after completion on a routine whose only ending hands off (#1714)", async () => {
+    const ports = dependencies([routine({
+      slots: [{ stableSlotId: "slot_date", key: "arrival", type: "date", required: true, description: null, ordinal: 0, mutable: true }],
+      terminals: [{ stableStepId: "human", kind: "handoff", instruction: null, ordinal: 0 }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "validate_routine")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { ok: boolean; advisories: Array<{ code: string; location: string; message: string }> };
+
+    expect(result.ok).toBe(true);
+    expect(result.advisories).toEqual([expect.objectContaining({
+      code: "mutable_slot_not_correctable",
+      location: "slot:arrival.mutable",
+    })]);
+    expect(result.advisories[0]?.message).toContain("Turn mutable off");
+  });
+
   it("suggests only email fields that are not sensitive for the reply-to (#1543)", async () => {
     const ports = dependencies([routine({
       slots: [

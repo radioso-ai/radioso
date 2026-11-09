@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-26
+last_updated: 2026-11-09
 ---
 
 # Authoring Routines
@@ -167,9 +167,10 @@ value, such as `@order_number` or `@email`. The value appears in
 
 When a step asks for a value, the routine waits for the visitor's reply, stores
 it under that name, then continues. A type controls the comparisons available
-on a later branch. In **Information**, you can also mark a value:
+on a later branch. Open a value's row in **Information** to set its switches:
 
-- **Optional** when the flow may reach an ending while the value remains empty.
+- **Required**, switched off when the flow may reach an ending while the value
+  remains empty.
 - **Editable after completion** when a visitor may correct it after the routine
   finishes, such as an email address or a date. Ray switches it on or off for a
   value when you ask.

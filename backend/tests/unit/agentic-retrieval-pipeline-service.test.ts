@@ -215,6 +215,26 @@ describe("AgenticRetrievalPipelineService", () => {
     expect(detState.runWithoutRetrievalCalls).toBe(0);
   });
 
+  it("lays the answer out for speech when the caller hears it", async () => {
+    const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
+    const service = new AgenticRetrievalPipelineService({
+      deterministic: stubDeterministic(detState),
+      runner: stubRunner({
+        selectedChunks: [stubChunk("c1")],
+        rationale: null,
+        trace: emptyTrace(),
+        terminatedReason: "completed",
+        stepsTaken: 1,
+      }),
+      promptBuilder: new PromptBuilder(),
+      systemPrompt: "agentic system",
+    });
+
+    const result = await service.run(buildRequest({ spokenReply: true }));
+
+    expect(result.systemPrompt).toMatch(/read aloud/i);
+  });
+
   it("interpret() and runWithoutRetrieval() delegate cleanly to the deterministic instance", async () => {
     const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
     const service = new AgenticRetrievalPipelineService({

@@ -105,7 +105,10 @@ imports from `services/` or `infra/`.
 - Candidate ranking or filtering: `candidate*`, `metadataRuleScoringService.ts`,
   `rerankService.ts`.
 - Context and prompt shape: `contextSelectionStage.ts`,
-  `promptAssemblyStage.ts`, `promptBuilder.ts`. `domain/answerCandidatePool.ts`
+  `promptAssemblyStage.ts`, `promptBuilder.ts`. `promptBuilder.ts` renders the
+  answer's layout from `prompts/retrieval/answer-layout-written.md`, or
+  `answer-layout-spoken.md` when the request sets `spokenReply`.
+  `domain/answerCandidatePool.ts`
   holds the one answer-candidate pool size formula (raised by `rerankTopK`,
   floored by the answer's passage target, `finalContextTopK` or
   `temporal.dateRangeListingContextTopK` for a range answer, and capped by

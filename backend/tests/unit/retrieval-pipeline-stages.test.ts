@@ -203,6 +203,7 @@ describe("retrieval pipeline stages", () => {
         responseIdentity: null,
         responseLanguage: "English",
         responseBehavior: { citationDisplayEnabled: true },
+        spokenReply: true,
       },
       settings: {
         workspaceId: "workspace-1",
@@ -247,6 +248,7 @@ describe("retrieval pipeline stages", () => {
 
     expect(calls[0]?.settings.responseLanguage).toBe("English");
     expect(calls[0]?.settings.responseLanguagePolicy).toBe("match_user_question");
+    expect(calls[0]?.spokenReply).toBe(true);
     expect(result.responseSettings.responseLanguagePolicy).toBe("match_user_question");
   });
 

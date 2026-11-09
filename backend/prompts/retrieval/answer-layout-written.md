@@ -1,0 +1,2 @@
+Layout
+Give one or two items in plain sentences. When the answer covers three or more parallel items, such as courses, dates, prices, or steps, open with one short sentence that answers the question, then give each item its own line in a Markdown list: bullets, or numbers when order matters. Start each item with its name, linked as the Links rule requires, then its key details, and end it with its citation markers. No headings, nested lists, or tables.

@@ -2,7 +2,7 @@ import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalida
 import type { ConversationRecord, ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { AuditService } from "../audit/contracts/index.js";
-import { operatorRepliesAreSpoken, type PublicConversationEventBus } from "../chat/contracts/index.js";
+import { repliesAreSpoken, type PublicConversationEventBus } from "../chat/contracts/index.js";
 import type {
   CustomerChannelReplyDeliverer,
   CustomerReplyOutboxPort,
@@ -79,7 +79,7 @@ export class OperatorReplyService {
       operatorAccountId: reply.accountId,
       operatorUserId: operator.userId,
       operatorDisplayName: operator.replySignature ?? undefined,
-      ...(operatorRepliesAreSpoken(conversation) ? { pendingSpeech: true } : {}),
+      ...(repliesAreSpoken(conversation) ? { pendingSpeech: true } : {}),
     });
     await scope.conversations.touch(conversation.id, conversation.workspaceId);
     await reply.channel?.enqueue(scope.outbox, { id: message.id, content: message.content });

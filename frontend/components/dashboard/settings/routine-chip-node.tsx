@@ -1004,15 +1004,15 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
             {/* Closing the menu on select would drop the author mid-config; keep it open so
                 type, optional, and editable can be toggled in one pass. */}
             <DropdownMenuCheckboxItem
-              checked={!getRequired(refId)}
-              onCheckedChange={(checked) => setRequired(refId, !checked)}
+              checked={!getRequired(refId)} disabled={!setRequired}
+              onCheckedChange={(checked) => setRequired?.(refId, !checked)}
               onSelect={(event) => event.preventDefault()}
             >
               Optional
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem
-              checked={getMutable(refId)}
-              onCheckedChange={(checked) => setMutable(refId, checked === true)}
+              checked={getMutable(refId)} disabled={!setMutable}
+              onCheckedChange={(checked) => setMutable?.(refId, checked === true)}
               onSelect={(event) => event.preventDefault()}
             >
               Editable after completion

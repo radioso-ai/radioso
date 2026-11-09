@@ -105,7 +105,7 @@ describe("copilot routine readers", () => {
       stepsTruncated: false,
       endings: [{ stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: false, operatorNotice: null }],
       endingsTruncated: false,
-      fields: [{ key: "order_number", type: "text", required: true, description: "The order", sensitivity: "normal" }],
+      fields: [{ key: "order_number", type: "text", required: true, description: "The order", sensitivity: "normal", mutable: false }],
       fieldsTruncated: false,
     });
   });
@@ -120,7 +120,21 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { fields: unknown[] } } };
 
     expect(result.routine.editable.fields).toEqual([
-      { key: "injury", type: "text", required: true, description: "Any injury", sensitivity: "sensitive" },
+      { key: "injury", type: "text", required: true, description: "Any injury", sensitivity: "sensitive", mutable: false },
+    ]);
+  });
+
+  it("shows which fields a visitor may correct after completion, so an edit can open one or close it", async () => {
+    const ports = dependencies([routine({
+      slots: [{ stableSlotId: "slot_email", key: "email", type: "email", required: true, description: "Where to reach them", ordinal: 0, mutable: true }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { fields: unknown[] } } };
+
+    expect(result.routine.editable.fields).toEqual([
+      { key: "email", type: "email", required: true, description: "Where to reach them", sensitivity: "normal", mutable: true },
     ]);
   });
 

@@ -620,6 +620,69 @@ describe('AssistantMessageContent', () => {
     expect(html).not.toContain('&amp;amp;')
   })
 
+  // A list the model cites item by item arrives as one segment per item. The items
+  // belong in one list; rendered apart, every bullet becomes its own spaced-out list.
+  it('keeps bullets cited item by item in one list, each with its marker', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: 'Source 2' },
+          { documentId: 'doc-3', chunkId: 'chunk-3', title: 'Source 3' },
+        ]}
+        answerSegments={[
+          { text: 'We run two retreats in February', citationIndices: [0] },
+          { text: ':\n\n- [Healing the heart](https://retreats.example/healing) — 1–4 Feb · €320', citationIndices: [1] },
+          { text: '\n- Valmora reset — 2–7 Feb · €410', citationIndices: [2] },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html.match(/<ul/g)).toHaveLength(1)
+    expect(listItemTexts(html)).toEqual(['Healing the heart — 1–4 Feb · €3202', 'Valmora reset — 2–7 Feb · €4103'])
+  })
+
+  // With no marker on the opening sentence, the first item shares the sentence's segment.
+  it('keeps the first bullet in the list when the opening sentence has no marker', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: 'Source 2' },
+          { documentId: 'doc-3', chunkId: 'chunk-3', title: 'Source 3' },
+        ]}
+        answerSegments={[
+          { text: 'We have three beginner courses:\n- Meditation — 13–14 Mar', citationIndices: [0] },
+          { text: '\n- Yoga basics — 4 Mar', citationIndices: [1] },
+          { text: '\n- Living with joy — 22–26 Mar', citationIndices: [2] },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(paragraphTexts(html)).toEqual(['We have three beginner courses:'])
+    expect(html.match(/<ul/g)).toHaveLength(1)
+    expect(listItemTexts(html)).toEqual(['Meditation — 13–14 Mar1', 'Yoga basics — 4 Mar2', 'Living with joy — 22–26 Mar3'])
+  })
+
+  it('keeps the marker on a bullet that ends with a link', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'Two retreats run in February:\n- Valmora reset\n- [Healing the heart](https://retreats.example/healing)', citationIndices: [0] },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(listItemTexts(html)).toEqual(['Valmora reset', 'Healing the heart1'])
+  })
+
   // An ordered-list segment renders through a dedicated branch. Anything redistribution
   // moved onto it must reach that branch too, or the prose is silently deleted.
   it('keeps a continuation absorbed onto an ordered-list item', async () => {

@@ -4,6 +4,7 @@ import { Fragment, type CSSProperties, type ReactNode, useEffect, useId, useRef,
 import { ChevronDown, ExternalLink, FileText } from 'lucide-react'
 
 import { MESSAGE_LINK_CLASS, isSafeHref } from '../markdown/markdown-content'
+import { cn } from '@/lib/utils'
 
 const URL_REGEX = /https?:\/\/[^\s<>)"']+/g
 
@@ -304,6 +305,8 @@ const hasBlockMarkdown = (content: string) => {
 }
 
 const ORDERED_LIST_ITEM_PATTERN = /^(\s*)(\d+)\.\s+([\s\S]+)$/
+// One bullet item on one line, so consecutive cited items can join a single list.
+const BULLET_LIST_ITEM_PATTERN = /^\s*[-*+][ \t]+([^\r\n]+?)\s*$/
 
 const WORD_CHAR_PATTERN = /[\p{L}\p{N}]/u
 
@@ -542,16 +545,47 @@ const getSegmentCitationIndices = (segment: AnswerSegment, citations: Citation[]
     (index) => index >= 0 && index < citations.length,
   )
 
-const getOrderedListItem = (segment: AnswerSegment) => {
-  const match = segment.text.match(ORDERED_LIST_ITEM_PATTERN)
-  if (!match) {
-    return null
-  }
+type ListItemSegment =
+  | { ordered: true; number: number; content: string }
+  | { ordered: false; content: string }
 
-  return {
-    number: Number(match[2]),
-    content: match[3],
+const BULLET_LINE_PATTERN = /^[ \t]*[-*+][ \t]+\S/
+
+// A list whose opening sentence carries no marker arrives with its first items in that
+// sentence's segment. Splitting the segment's closing run of bullet lines into one
+// segment per item lets those items join the rest of the list; the segment's markers
+// belong to its last line.
+const splitClosingBulletRun = (segment: AnswerSegment): AnswerSegment[] => {
+  const lines = segment.text.split('\n')
+  let end = lines.length
+  while (end > 0 && lines[end - 1].trim() === '') {
+    end -= 1
   }
+  let start = end
+  while (start > 0 && BULLET_LINE_PATTERN.test(lines[start - 1])) {
+    start -= 1
+  }
+  const prefix = lines.slice(0, start).join('\n')
+  const itemCount = end - start
+  if (itemCount === 0 || (itemCount === 1 && prefix.trim() === '')) {
+    return [segment]
+  }
+  const items = lines.slice(start, end)
+  return [
+    ...(prefix.trim() ? [{ text: prefix }] : []),
+    ...items.map((line, index) =>
+      index === items.length - 1 ? { ...segment, text: `\n${line}` } : { text: `\n${line}` },
+    ),
+  ]
+}
+
+const getListItem = (segment: AnswerSegment): ListItemSegment | null => {
+  const ordered = segment.text.match(ORDERED_LIST_ITEM_PATTERN)
+  if (ordered) {
+    return { ordered: true, number: Number(ordered[2]), content: ordered[3] }
+  }
+  const bullet = segment.text.match(BULLET_LIST_ITEM_PATTERN)
+  return bullet ? { ordered: false, content: bullet[1] } : null
 }
 
 // Identifies a citation for dedup purposes. Citations sharing a documentId
@@ -619,7 +653,7 @@ export function AssistantMessageContent({
   const effectiveAnswerSegments = showCitations ? answerSegments : undefined
   const noticeScope = `${content}|${effectiveCitations.length}|${effectiveAnswerSegments?.length ?? 0}`
   const rawSegments = getRenderableSegments(content, effectiveAnswerSegments)
-  const segments = redistributeLeadingPunctuation(rawSegments, effectiveCitations)
+  const segments = redistributeLeadingPunctuation(rawSegments.flatMap(splitClosingBulletRun), effectiveCitations)
   const contentThemeVars = theme
     ? ({
         '--message-link-fg': theme.accent,
@@ -743,12 +777,13 @@ export function AssistantMessageContent({
 
   for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
     const segment = segments[segmentIndex]
-    const orderedListItem = getOrderedListItem(segment)
+    const firstListItem = getListItem(segment)
 
-    if (orderedListItem) {
+    // A list cited item by item arrives one segment per item; the run renders as one list.
+    if (firstListItem) {
       const listItems: Array<{
         key: string
-        number: number
+        number?: number
         content: string
         citationIndices: number[]
         trailingText?: string
@@ -757,14 +792,14 @@ export function AssistantMessageContent({
 
       for (let listIndex = segmentIndex; listIndex < segments.length; listIndex += 1) {
         const listSegment = segments[listIndex]
-        const listItem = getOrderedListItem(listSegment)
-        if (!listItem) {
+        const listItem = getListItem(listSegment)
+        if (!listItem || listItem.ordered !== firstListItem.ordered) {
           break
         }
 
         listItems.push({
           key: `segment-${listIndex}`,
-          number: listItem.number,
+          ...(listItem.ordered ? { number: listItem.number } : {}),
           content: listItem.content,
           citationIndices: getSegmentCitationIndices(listSegment, effectiveCitations),
           // Redistribution can move the rest of the item's sentence onto the segment;
@@ -775,8 +810,12 @@ export function AssistantMessageContent({
         segmentIndex = listIndex
       }
 
+      const ListTag = firstListItem.ordered ? 'ol' : 'ul'
       contentNodes.push(
-        <ol key={`ordered-list-${segmentIndex}`} className="ml-5 list-decimal space-y-1 text-foreground">
+        <ListTag
+          key={`list-${segmentIndex}`}
+          className={cn('my-2 ml-5 space-y-1 text-foreground first:mt-0 last:mb-0', firstListItem.ordered ? 'list-decimal' : 'list-disc')}
+        >
           {listItems.map((item) => (
             <li key={item.key} value={item.number} className="ml-1 text-foreground">
               <AssistantMarkdownContent
@@ -797,7 +836,7 @@ export function AssistantMessageContent({
               )}
             </li>
           ))}
-        </ol>,
+        </ListTag>,
       )
       continue
     }

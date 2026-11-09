@@ -513,12 +513,13 @@ describe("grounded answer prompt contract", () => {
     // The grounded answer base folds in the compact inline-decline guard (#863),
     // not the full focused-miss ruleset.
     // Widened when the answer gained a layout rule: three or more items become a Markdown
-    // list, and a spoken answer names a few items instead. The written layout is the longer one.
+    // list of same-shaped lines (name, then terse facts), and a spoken answer names a few
+    // items instead. The written layout is the longer one.
     const groundedBase = countWords(loadPromptTemplate("retrieval/answer.md"))
       + countWords(loadPromptTemplate("chat/grounded-inline-decline.md"))
       + countWords(loadPromptTemplate("retrieval/answer-layout-written.md"));
     expect(groundedBase).toBeGreaterThanOrEqual(770);
-    expect(groundedBase).toBeLessThanOrEqual(840);
+    expect(groundedBase).toBeLessThanOrEqual(880);
     expect(countWords(loadPromptTemplate("retrieval/answer-layout-spoken.md")))
       .toBeLessThanOrEqual(countWords(loadPromptTemplate("retrieval/answer-layout-written.md")));
     expect(countWords(loadPromptTemplate("chat/grounded-miss.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeGreaterThanOrEqual(300);
@@ -555,7 +556,7 @@ describe("grounded answer prompt contract", () => {
     );
     expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1900);
     // Widened with the layout rule above (three or more items become a Markdown list).
-    expect(groundedWithSuggestions).toBeLessThanOrEqual(2280);
+    expect(groundedWithSuggestions).toBeLessThanOrEqual(2330);
 
     // Grounded answer, suggestions disabled. Widened in #1575 with the sheet above.
     const groundedNoSuggestions = stack(
@@ -567,7 +568,7 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-coverage-response-guidance.md",
     );
     expect(groundedNoSuggestions).toBeGreaterThanOrEqual(1280);
-    expect(groundedNoSuggestions).toBeLessThanOrEqual(1650);
+    expect(groundedNoSuggestions).toBeLessThanOrEqual(1700);
 
     // Focused decline / grounded-miss owns the full decline ruleset.
     const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md");

@@ -9,6 +9,22 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.29.1] - 2026-11-09
+
+### Fixed
+
+- **routines:** tell a step reply which sources it has, so it never states the visitor's dates as the course's ([#1725](https://github.com/radioso-ai/radioso/pull/1725))
+- **security:** keep the store failure as the cause of the abuse-control 503 ([#1701](https://github.com/radioso-ai/radioso/pull/1701))
+- **retrieval:** fence vector index work on its claim so a lost lease does not stop maintenance ([#1713](https://github.com/radioso-ai/radioso/pull/1713))
+- **routines:** keep a slot answer the step selector cannot read, and say so when it re-asks ([#1729](https://github.com/radioso-ai/radioso/pull/1729))
+- **auth:** end the server session on sign out ([#1727](https://github.com/radioso-ai/radioso/pull/1727))
+
+### Internal
+
+- **deps:** bump sanitize-html from 2.18.0 to 2.18.1 ([#1658](https://github.com/radioso-ai/radioso/pull/1658))
+
+[1.29.1]: https://github.com/radioso-ai/radioso/compare/v1.29.0...v1.29.1
+
 ## [1.29.0] - 2026-11-09
 
 ### Added

@@ -33,12 +33,18 @@ const processTurnResult: ProcessTurnResult = {
 
 const recordingEngine = (): { engine: ConversationEngine; input: () => ProcessTurnInput | undefined } => {
   let recordedInput: ProcessTurnInput | undefined;
-  const engine = {
+  const unused = (method: string) => (): never => {
+    throw new Error(`recording engine: ${method} is not part of this test`);
+  };
+  const engine: ConversationEngine = {
     processTurn: vi.fn(async (input: ProcessTurnInput) => {
       recordedInput = input;
       return processTurnResult;
     }),
-  } as ConversationEngine;
+    processTurnStream: unused("processTurnStream"),
+    attemptRoutine: unused("attemptRoutine"),
+    resumeAwaitingDecision: unused("resumeAwaitingDecision"),
+  };
 
   return { engine, input: () => recordedInput };
 };

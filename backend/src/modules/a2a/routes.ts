@@ -90,17 +90,22 @@ const httpOutcome = (statusCode: number): string => {
   return statusCode >= 400 ? "client_error" : "ok";
 };
 
-/** Runs the handlers in order, the way a route list would. */
-const inSequence = (handlers: readonly RequestHandler[]): RequestHandler => (req, res, next) => {
-  const run = (index: number, error?: unknown): void => {
-    const handler = handlers[index];
-    if (error !== undefined || !handler) {
-      next(error);
-      return;
-    }
-    void handler(req, res, (handlerError?: unknown) => run(index + 1, handlerError));
-  };
-  run(0);
+/**
+ * A handed-in middleware, run so that a promise it returns and that rejects reaches the error
+ * handler. Express 4 ignores what a handler returns, so a rejection would otherwise leave the
+ * request hanging and the rejection unhandled.
+ */
+const forwardingRejections = (handler: RequestHandler): RequestHandler => (req, res, next) => {
+  void Promise.resolve(handler(req, res, next)).catch(next);
+};
+
+/** Handlers chained by Express itself, as a route list chains them; an error skips the rest. */
+const chainOf = (handlers: readonly RequestHandler[]): Router => {
+  const chain = Router({ mergeParams: true });
+  if (handlers.length > 0) {
+    chain.use(handlers.map(forwardingRejections));
+  }
+  return chain;
 };
 
 /**
@@ -131,6 +136,10 @@ export const a2aWalkInPublicId = (req: Request, bearer: string | null): string |
 export const createA2aRoutes = (dependencies: A2aRouteDependencies): Router => {
   const router = Router({ mergeParams: true });
   const { middleware, observer } = dependencies;
+  const turnSourceLimit = forwardingRejections(middleware.turnSourceLimit);
+  const readSourceLimit = forwardingRejections(middleware.readSourceLimit);
+  const turnLimits = chainOf(middleware.turnLimits);
+  const readLimits = chainOf(middleware.readLimits);
 
   const observeRequest: RequestHandler = (_req, res, next) => {
     res.on("finish", () => {
@@ -167,8 +176,9 @@ export const createA2aRoutes = (dependencies: A2aRouteDependencies): Router => {
     next();
   };
 
-  const sourceLimit: RequestHandler = (req, res, next) =>
-    (isTurn(callLocals(res).call?.input) ? middleware.turnSourceLimit : middleware.readSourceLimit)(req, res, next);
+  const sourceLimit: RequestHandler = (req, res, next) => {
+    (isTurn(callLocals(res).call?.input) ? turnSourceLimit : readSourceLimit)(req, res, next);
+  };
 
   const resolveAgent: RequestHandler = async (req, res, next) => {
     try {
@@ -232,7 +242,7 @@ export const createA2aRoutes = (dependencies: A2aRouteDependencies): Router => {
       next();
       return;
     }
-    inSequence(isTurn(locals.call?.input) ? middleware.turnLimits : middleware.readLimits)(req, res, next);
+    (isTurn(locals.call?.input) ? turnLimits : readLimits)(req, res, next);
   };
 
   const dispatch: RequestHandler = async (_req, res, next) => {
@@ -261,7 +271,7 @@ export const createA2aRoutes = (dependencies: A2aRouteDependencies): Router => {
     readCall,
     sourceLimit,
     resolveAgent,
-    middleware.walkInLimit,
+    forwardingRejections(middleware.walkInLimit),
     admit,
     callerLimits,
     dispatch,

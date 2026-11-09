@@ -13,7 +13,6 @@ const aiTurn = (overrides: Partial<TurnTaskFacts> = {}): TurnTaskFacts => ({
   routine: null,
   activeRoutineExecutionId: null,
   invocationOutcome: null,
-  humanReplyDuringTurn: false,
   unseenHumanMessages: false,
   ...overrides,
 });
@@ -22,8 +21,11 @@ const routineTask = (executionId = "exec-1"): OpenTaskFacts => ({ routineExecuti
 const humanStretchTask = (): OpenTaskFacts => ({ routineExecutionId: null, humanStretch: true });
 
 describe("decideTaskAfterTurn (the precedence table, rows 1-10)", () => {
-  it("row 1: human-owned with a person's reply since the caller's message is INPUT_REQUIRED on that reply", () => {
-    expect(decideTaskAfterTurn(routineTask(), aiTurn({ ownership: "human_owned", humanReplyDuringTurn: true }))).toEqual({
+  it("row 1: human-owned with a person's message the caller has not seen is INPUT_REQUIRED on that message", () => {
+    // Opened for it when no task is open: the caller sent without seeing what a person wrote.
+    expect(decideTaskAfterTurn(null, aiTurn({ ownership: "human_owned", unseenHumanMessages: true })))
+      .toMatchObject({ target: "new", state: "input_required", reason: "human_message", status: "later_message" });
+    expect(decideTaskAfterTurn(routineTask(), aiTurn({ ownership: "human_owned", unseenHumanMessages: true }))).toEqual({
       kind: "task",
       target: "open",
       replacesOpenTask: false,

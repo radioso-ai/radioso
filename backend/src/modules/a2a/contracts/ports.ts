@@ -66,7 +66,8 @@ export interface A2aTaskWrite {
 export interface A2aTaskListQuery {
   conversationId: string;
   state: A2aTaskState | null;
-  stateAtOrAfter: Date | null;
+  /** Only tasks whose status changed strictly after this instant (A2A's `statusTimestampAfter`). */
+  stateAfter: Date | null;
   /** Keyset: tasks strictly older than this `(stateAt, id)`, newest status first. */
   before: { stateAt: Date; id: string } | null;
   limit: number;
@@ -159,6 +160,16 @@ export interface A2aTranscriptPort {
     throughMessageId: string;
     limit: number;
   }): Promise<A2aTranscriptMessage[]>;
+}
+
+/**
+ * The routine run a conversation has in flight, read after a turn from the routine store, so a run
+ * that expired is none. A routine that yields to an off-topic message reports nothing on its turn,
+ * yet its run is still the one this names.
+ */
+export interface A2aRoutineRunReader {
+  /** The active run's execution id; null when none is (it ended, expired, or never started). */
+  activeExecutionId(conversationId: string): Promise<string | null>;
 }
 
 /** Seals a converse opening into the context id a caller holds, and opens it again. */

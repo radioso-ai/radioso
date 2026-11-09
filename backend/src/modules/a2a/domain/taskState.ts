@@ -70,9 +70,10 @@ export interface TurnTaskFacts {
   activeRoutineExecutionId: string | null;
   /** What became of a typed invocation; null on a message turn. */
   invocationOutcome: string | null;
-  /** A person's message landed after the caller's message while the turn ran. */
-  humanReplyDuringTurn: boolean;
-  /** With no task open, the turn found human messages after the caller's previous message. */
+  /**
+   * A person wrote what the caller has not been shown: after its previous message (no task open) or
+   * past the open task's cursor, before the turn's own message or while the turn ran.
+   */
   unseenHumanMessages: boolean;
 }
 
@@ -130,7 +131,7 @@ export const decideTaskAfterTurn = (open: OpenTaskFacts | null, turn: TurnTaskFa
 
   if (turn.ownership === "human_owned") {
     const routineExecutionId = open ? open.routineExecutionId ?? routine?.executionId ?? null : routine?.executionId ?? null;
-    return turn.humanReplyDuringTurn
+    return turn.unseenHumanMessages
       ? taskDecision(target, routineExecutionId, { state: "input_required", reason: "human_message", status: "later_message" })
       : taskDecision(target, routineExecutionId, { state: "working", reason: "human_owned", status: "reply" });
   }

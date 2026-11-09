@@ -52,9 +52,6 @@ const startReturnCatalog = () => ({
   })),
 });
 
-/** The routine-state read after a turn, for a conversation with no run in flight. */
-const noActiveRoutineRun = { loadActive: vi.fn(async () => null) };
-
 describe("AgentConverseService", () => {
   it("publishes MCP conversation.created only for the create-once result", async () => {
     const publisher: WorkspaceInvalidationPublisher = {
@@ -67,7 +64,6 @@ describe("AgentConverseService", () => {
       conversationRepository: { getOrCreateByAnonymousSession },
       assistantChatService: { answer: vi.fn(async () => chatResponse()) },
       agentToolCatalog: startReturnCatalog(),
-      activeRoutineRuns: noActiveRoutineRun,
       publisher,
     });
 
@@ -90,7 +86,6 @@ describe("AgentConverseService", () => {
       },
       assistantChatService: { answer },
       agentToolCatalog: catalog,
-      activeRoutineRuns: noActiveRoutineRun,
     });
 
     const result = await service.askAgent(principal, { routine: { toolName: "start_return", input: { orderId: "A-1" } } });
@@ -117,7 +112,6 @@ describe("AgentConverseService", () => {
       },
       assistantChatService: { answer },
       agentToolCatalog: catalog,
-      activeRoutineRuns: noActiveRoutineRun,
       audit: audit as never,
     });
 
@@ -136,7 +130,6 @@ describe("AgentConverseService", () => {
       },
       assistantChatService: { answer: vi.fn(async () => chatResponse()) },
       agentToolCatalog: catalog,
-      activeRoutineRuns: noActiveRoutineRun,
     });
 
     await service.askAgent(principal, { routine: { toolName: "start_return", input: { orderId: "A-1" } } });
@@ -153,7 +146,6 @@ describe("AgentConverseService", () => {
       conversationRepository: { getOrCreateByAnonymousSession },
       assistantChatService: { answer },
       agentToolCatalog: startReturnCatalog(),
-      activeRoutineRuns: noActiveRoutineRun,
       audit: audit as never,
       metrics,
     });
@@ -173,7 +165,6 @@ describe("AgentConverseService", () => {
       conversationRepository: { getOrCreateByAnonymousSession },
       assistantChatService: { answer },
       agentToolCatalog: startReturnCatalog(),
-      activeRoutineRuns: noActiveRoutineRun,
     });
 
     await service.askAgent(principal, { message: "hello" });
@@ -195,7 +186,6 @@ describe("AgentConverseService", () => {
         })),
       },
       agentToolCatalog: startReturnCatalog(),
-      activeRoutineRuns: noActiveRoutineRun,
     });
 
     const result: AgentConverseTurnResult = await service.askAgent(principal, { message: "I want to return an order" });
@@ -206,39 +196,21 @@ describe("AgentConverseService", () => {
     expect(result.reply).not.toHaveProperty("routineExecutionId");
   });
 
-  it("reads the routine run still active after the turn, and reports it beside the reply", async () => {
-    const answer = vi.fn(async () => chatResponse());
-    const loadActive = vi.fn(async () => ({ executionId: "execution-2" }));
+  it("hands an in-process caller the conversation the turn ran in, never inside the reply", async () => {
     const service = new AgentConverseService({
       conversationRepository: {
-        getOrCreateByAnonymousSession: vi.fn(async () => ({ record: { id: "conversation-1", agentRevisionId: null }, created: false })),
-      },
-      assistantChatService: { answer },
-      agentToolCatalog: startReturnCatalog(),
-      activeRoutineRuns: { loadActive },
-    });
-
-    // A routine that yielded to an off-topic message: the turn reports no routine, yet the run is active.
-    const result = await service.askAgent(principal, { message: "What are your hours?" });
-
-    expect(loadActive).toHaveBeenCalledWith({ sessionId: "conversation-1" });
-    expect(loadActive.mock.invocationCallOrder[0]).toBeGreaterThan(answer.mock.invocationCallOrder[0] ?? Infinity);
-    expect(result.reply).not.toHaveProperty("routine");
-    expect(result.activeRoutineExecutionId).toBe("execution-2");
-    expect(JSON.stringify(result.reply)).not.toContain("execution-2");
-  });
-
-  it("reports no active routine run once none is in flight after the turn (ended or expired)", async () => {
-    const service = new AgentConverseService({
-      conversationRepository: {
-        getOrCreateByAnonymousSession: vi.fn(async () => ({ record: { id: "conversation-1", agentRevisionId: null }, created: false })),
+        getOrCreateByAnonymousSession: vi.fn(async () => ({ record: { id: "conversation-row-7", agentRevisionId: null }, created: true })),
       },
       assistantChatService: { answer: vi.fn(async () => chatResponse()) },
       agentToolCatalog: startReturnCatalog(),
-      activeRoutineRuns: noActiveRoutineRun,
     });
 
-    expect((await service.askAgent(principal, { message: "hello" })).activeRoutineExecutionId).toBeNull();
+    const result = await service.askAgent(principal, { message: "hello" });
+
+    expect(result.conversationId).toBe("conversation-row-7");
+    // The reply names the caller's own handle, the public session id, never the row.
+    expect(result.reply.conversationId).toBe("session-1");
+    expect(JSON.stringify(result.reply)).not.toContain("conversation-row-7");
   });
 
   it("hands an in-process caller the turn's own request and reply message ids, never inside the reply", async () => {
@@ -249,7 +221,6 @@ describe("AgentConverseService", () => {
       },
       assistantChatService: { answer },
       agentToolCatalog: startReturnCatalog(),
-      activeRoutineRuns: noActiveRoutineRun,
     });
 
     const result = await service.askAgent(principal, { message: "hello" });
@@ -270,7 +241,6 @@ describe("AgentConverseService", () => {
       },
       assistantChatService: { answer: vi.fn(async () => chatResponse()) },
       agentToolCatalog: startReturnCatalog(),
-      activeRoutineRuns: noActiveRoutineRun,
     });
 
     const result = await service.askAgent(principal, { message: "hello" });

@@ -6,7 +6,7 @@ last_updated: 2026-11-09
 
 # A2A converse extension, version 1
 
-The Radioso converse extension adds two things to an agent's [A2A endpoint](/guides/agent-converse#connect-an-a2a-client). On the Agent Card it points to the agent's MCP endpoint and lists each exposed routine with the JSON Schema of its input, because an A2A skill carries no input schema. On replies it carries the same machine-readable envelope an MCP caller gets from `ask_agent`: answer coverage, ownership, routine status, citations, and who wrote the message.
+The Radioso converse extension adds two things to an agent's [A2A endpoint](/guides/a2a-converse). On the Agent Card it points to the agent's MCP endpoint and lists each exposed routine with the JSON Schema of its input, because an A2A skill carries no input schema. On replies it carries the same machine-readable envelope an MCP caller gets from `ask_agent`: answer coverage, ownership, routine status, citations, and who wrote the message.
 
 The extension is identified by this URI:
 
@@ -124,6 +124,6 @@ When the extension is active, every `Message`, every task `status.message`, and 
 
 ## Read next
 
-- [Connect a calling agent](/guides/agent-converse#connect-an-a2a-client) — send a message, keep the `contextId`, and follow a task from input-required to completed.
+- [Connect an A2A client](/guides/a2a-converse) — send a message, keep the `contextId`, and follow a task from input-required to completed.
 - [Publish and open an agent](/guides/publish-an-agent) — the whole agent card and the walk-in access it describes.
 - [MCP server](/guides/mcp-server) — the MCP endpoint that `params.mcp` points to.

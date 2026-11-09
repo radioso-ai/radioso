@@ -37,7 +37,6 @@ import {
 export type McpConverseRouteDependencies = Pick<
   AppDependencies,
   | "accessGrantService"
-  | "activeRoutineRuns"
   | "accountAccessService"
   | "agentRepository"
   | "agentConverseSessionMappingRepository"

@@ -285,13 +285,17 @@ describe("agent reply envelope (US1)", () => {
 
     expect(inProcess.reply.routine).toMatchObject({ status: "waiting_for_input" });
     expect(inProcess.routineExecutionId).toBe(mcpRuns[0]);
-    expect(inProcess.activeRoutineExecutionId).toBe(mcpRuns[0]);
     expect(JSON.stringify(inProcess.reply)).not.toContain(mcpRuns[0]);
+    // The conversation's row id is in-process only; the MCP body names the caller's session handle.
+    const conversationRowId = [...mcpCtx.routineStateStore.states.keys()][0];
+    expect(inProcess.conversationId).toBe(conversationRowId);
+    expect(inProcess.reply.conversationId).not.toBe(conversationRowId);
+    expect(mcpTurn.text).not.toContain(conversationRowId);
     // The turn's own stored messages are named in-process too, and never on the MCP body.
     const stored = await mcpCtx.repositories.messageRepository.listByConversationId(converse.workspaceId, [...mcpCtx.routineStateStore.states.keys()][0] ?? "");
     expect(stored.find((message) => message.id === inProcess.requestMessageId)?.content).toBe("Still deciding");
     expect(stored.find((message) => message.id === inProcess.replyMessageId)?.role).toBe("assistant");
-    for (const turnFact of ["routineExecutionId", "activeRoutineExecutionId", "requestMessageId", "replyMessageId"]) {
+    for (const turnFact of ["routineExecutionId", "requestMessageId", "replyMessageId"]) {
       expect(mcpTurn.body).not.toHaveProperty(turnFact);
     }
   });

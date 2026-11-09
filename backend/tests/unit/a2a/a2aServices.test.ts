@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentConverseTurnResult } from "../../../src/modules/chat/contracts/index.js";
-import type { A2aTaskRecord, A2aTranscriptMessage, A2aTranscriptPort } from "../../../src/modules/a2a/public.js";
+import type { A2aRoutineRunReader, A2aTaskRecord, A2aTranscriptMessage, A2aTranscriptPort } from "../../../src/modules/a2a/public.js";
 import { A2aSendMessageService, A2aTaskReader, A2aTaskView, createA2aObserver } from "../../../src/modules/a2a/public.js";
 import type { A2aContextAdmission } from "../../../src/modules/a2a/services/a2aAccess.js";
 import type { AgentConverseOpening, AgentConversePrincipal } from "../../../src/modules/settings/contracts/agentConverseSession.js";
@@ -38,6 +38,17 @@ class FakeTranscript implements A2aTranscriptPort {
     const from = this.messages.findIndex((message) => message.id === input.fromMessageId);
     const through = this.messages.findIndex((message) => message.id === input.throughMessageId);
     return from < 0 || through < from ? [] : this.messages.slice(Math.max(from, through + 1 - input.limit), through + 1);
+  }
+}
+
+/** The routine store as a turn leaves it: the run still active, or a read that fails. */
+class FakeRoutineRuns implements A2aRoutineRunReader {
+  active: string | null = null;
+  failure: Error | null = null;
+
+  async activeExecutionId() {
+    if (this.failure) throw this.failure;
+    return this.active;
   }
 }
 
@@ -79,7 +90,7 @@ const openTask = (overrides: Partial<A2aTaskRecord> = {}): Omit<A2aTaskRecord, "
   ...overrides,
 });
 
-type TurnFacts = Partial<Pick<AgentConverseTurnResult, "activeRoutineExecutionId" | "requestMessageId" | "replyMessageId">> & {
+type TurnFacts = Partial<Pick<AgentConverseTurnResult, "requestMessageId" | "replyMessageId">> & {
   ownership?: "ai_owned" | "human_owned";
   text?: string;
 };
@@ -97,7 +108,7 @@ const turnResult = (
     answer: { text: facts.text ?? "Done.", citations: [] },
   },
   routineExecutionId,
-  activeRoutineExecutionId: facts.activeRoutineExecutionId ?? null,
+  conversationId: CONVERSATION_ID,
   requestMessageId: facts.requestMessageId ?? null,
   replyMessageId: facts.replyMessageId ?? null,
 });
@@ -115,7 +126,8 @@ const setUp = async (options: { task?: Partial<A2aTaskRecord> | null; logger?: {
   const receipts = new InMemoryA2aMessageReceiptStore();
   const observer = createA2aObserver({ ...(options.logger ? { logger: options.logger } : {}) });
   const view = new A2aTaskView({ transcript });
-  return { transcript, tasks, receipts, observer, view };
+  const routineRuns = new FakeRoutineRuns();
+  return { transcript, tasks, receipts, observer, view, routineRuns };
 };
 
 const storedTask = async (tasks: InMemoryA2aTaskStore): Promise<A2aTaskRecord> => {
@@ -145,7 +157,7 @@ describe("A2A task writes under concurrency", () => {
   });
 
   it("re-decides a turn against the task a read moved while it ran, and still writes the turn's result", async () => {
-    const { transcript, tasks, receipts, observer, view } = await setUp();
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp();
     const task = await tasks.findById("task-0000000000000001");
     if (!task) throw new Error("expected the task");
     const converse = {
@@ -157,7 +169,7 @@ describe("A2A task writes under concurrency", () => {
         return turnResult({ name: "Support intake", status: "completed", pendingInput: [] }, "exec-1", { requestMessageId, replyMessageId });
       }),
     };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
 
     const result = await send.send(admission(task), { messageId: "c-1", text: "topic: billing", contextId: "ctx-token", taskId: task.id, historyLength: null }, { extensionActive: false });
 
@@ -166,14 +178,14 @@ describe("A2A task writes under concurrency", () => {
   });
 
   it("answers TURN_IN_PROGRESS to a retry while the first send runs, and releases a failed send's claim", async () => {
-    const { transcript, tasks, receipts, observer, view } = await setUp();
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp();
     let release: () => void = () => undefined;
     const converse = {
       askAgent: vi.fn(() => new Promise<AgentConverseTurnResult>((_resolve, reject) => {
         release = () => reject(new Error("model unavailable"));
       })),
     };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
     const input = { messageId: "c-9", text: "Hello", contextId: "ctx-token", taskId: null, historyLength: null };
 
     const first = send.send(admission(), input, { extensionActive: false });
@@ -186,9 +198,9 @@ describe("A2A task writes under concurrency", () => {
   });
 
   it("answers -32004 to a message for a terminal task, without running a turn", async () => {
-    const { transcript, tasks, receipts, observer, view } = await setUp();
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp();
     const converse = { askAgent: vi.fn() };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
     const terminal = { ...openTask({ state: "completed", reason: "routine_completed" }), version: 2 };
 
     await expect(send.send(admission(terminal), { messageId: "c-2", text: "More", contextId: null, taskId: terminal.id, historyLength: null }, { extensionActive: false }))
@@ -197,7 +209,7 @@ describe("A2A task writes under concurrency", () => {
   });
 
   it("keeps a stretch of human ownership one when a read lands between the turn's load and its write", async () => {
-    const { transcript, tasks, receipts, observer, view } = await setUp({
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({
       task: { routineExecutionId: null, state: "working", reason: "human_owned", humanStretch: true, statusMessageId: null },
     });
     const task = await storedTask(tasks);
@@ -214,7 +226,7 @@ describe("A2A task writes under concurrency", () => {
         return turnResult(null, null, { requestMessageId, replyMessageId, text: "Glad to help." });
       }),
     };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
 
     const result = await send.send(admission(task), sendInput("c-4", "Thanks!", task.id), { extensionActive: false });
 
@@ -225,7 +237,7 @@ describe("A2A task writes under concurrency", () => {
 
 describe("A2A turns: the turn's own messages", () => {
   it("answers with the turn's own reply when an overlapping turn on the context stored its messages after it", async () => {
-    const { transcript, tasks, receipts, observer, view } = await setUp({ task: null });
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ task: null });
     const converse = {
       askAgent: vi.fn(async () => {
         const requestMessageId = transcript.add("customer", "Where is my parcel?");
@@ -236,7 +248,7 @@ describe("A2A turns: the turn's own messages", () => {
         return turnResult(null, null, { requestMessageId, replyMessageId, text: "On its way." });
       }),
     };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
 
     const result = await send.send(admission(), sendInput("c-5", "Where is my parcel?"), { extensionActive: false });
     const replayed = await send.send(admission(), sendInput("c-5", "Where is my parcel?"), { extensionActive: false });
@@ -246,19 +258,20 @@ describe("A2A turns: the turn's own messages", () => {
     expect(converse.askAgent).toHaveBeenCalledTimes(1);
   });
 
-  it("records no receipt for a plain answer whose reply was never stored, rather than inventing a message id", async () => {
-    const { transcript, tasks, receipts, observer, view } = await setUp({ task: null });
+  it("records no result for a plain answer whose reply was never stored, rather than inventing a message id", async () => {
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ task: null });
     const converse = {
       askAgent: vi.fn(async () => turnResult(null, null, { requestMessageId: transcript.add("customer", "Hello") })),
     };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
 
     await expect(send.send(admission(), sendInput("c-6", "Hello"), { extensionActive: false })).rejects.toThrow();
-    expect(receipts.receipts.size).toBe(0);
+    // The turn ran, so its claim stays in flight: a retry is refused rather than running it again.
+    expect([...receipts.receipts.values()]).toEqual([expect.objectContaining({ state: "in_flight", result: null })]);
   });
 
   it("finds a person's reply after the turn's message past a full page of messages since the cursor", async () => {
-    const { transcript, tasks, receipts, observer, view } = await setUp({
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({
       task: { routineExecutionId: null, state: "working", reason: "human_owned", humanStretch: true },
     });
     for (let note = 0; note < 55; note += 1) {
@@ -273,7 +286,7 @@ describe("A2A turns: the turn's own messages", () => {
         return turnResult(null, null, { ownership: "human_owned", requestMessageId, text: "" });
       }),
     };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
 
     const result = await send.send(admission(task), sendInput("c-7", "Order 1042, please.", task.id), { extensionActive: false });
 
@@ -283,7 +296,7 @@ describe("A2A turns: the turn's own messages", () => {
 
 describe("A2A receipts: claims belong to the send that holds them", () => {
   it("lets a takeover's claim stand against the slow send it replaced, whether that send finishes or fails", async () => {
-    const { transcript, tasks, receipts, observer, view } = await setUp({ task: null });
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ task: null });
     let now = Date.now();
     const finish: Array<(turn: AgentConverseTurnResult) => void> = [];
     const converse = {
@@ -291,7 +304,7 @@ describe("A2A receipts: claims belong to the send that holds them", () => {
         finish.push(resolve);
       })),
     };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, clock: () => new Date(now) });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns, clock: () => new Date(now) });
     const receipt = () => [...receipts.receipts.values()][0];
 
     const first = send.send(admission(), sendInput("c-8", "Hello"), { extensionActive: false });
@@ -313,7 +326,7 @@ describe("A2A receipts: claims belong to the send that holds them", () => {
   });
 
   it("never releases a takeover's claim when the stale send it replaced fails", async () => {
-    const { transcript, tasks, receipts, observer, view } = await setUp({ task: null });
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ task: null });
     let now = Date.now();
     const fail: Array<(error: Error) => void> = [];
     const converse = {
@@ -321,7 +334,7 @@ describe("A2A receipts: claims belong to the send that holds them", () => {
         fail.push(reject);
       })),
     };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, clock: () => new Date(now) });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns, clock: () => new Date(now) });
 
     const stale = send.send(admission(), sendInput("c-9", "Hello"), { extensionActive: false });
     await vi.waitFor(() => expect(converse.askAgent).toHaveBeenCalledTimes(1));
@@ -341,12 +354,12 @@ describe("A2A receipts: claims belong to the send that holds them", () => {
 
   it("logs a release that failed at warn, with digests only, and still answers the turn's own failure", async () => {
     const logger = { info: vi.fn(), warn: vi.fn() };
-    const { transcript, tasks, receipts, observer, view } = await setUp({ task: null, logger });
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ task: null, logger });
     receipts.release = vi.fn(async () => {
       throw new Error("connection to db.internal.example lost");
     });
     const converse = { askAgent: vi.fn(async () => { throw new Error("model unavailable"); }) };
-    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer });
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
 
     await expect(send.send(admission(), sendInput("client-message-10", "Hello"), { extensionActive: false })).rejects.toThrow("model unavailable");
 
@@ -386,5 +399,251 @@ describe("A2A reads", () => {
 
     expect(read.status.message?.parts).toEqual([{ text: "update 59" }]);
     expect(await storedTask(tasks)).toMatchObject({ statusMessageId: "m62", shownThroughMessageId: "m62", cursor: "62" });
+  });
+});
+
+describe("A2A turns: a person's messages the caller has not been shown", () => {
+  it("answers INPUT_REQUIRED on a person's message past the task's cursor when the caller sends without reading first", async () => {
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({
+      task: { routineExecutionId: null, state: "working", reason: "human_owned", humanStretch: true, statusMessageId: null },
+    });
+    // A person replies past the task's cursor, and the caller sends again without a GetTask in between.
+    transcript.add("human_agent", "Your refund went out this morning.");
+    const task = await storedTask(tasks);
+    const converse = {
+      askAgent: vi.fn(async () => {
+        // Under human ownership the caller's message is stored and no reply is generated.
+        const requestMessageId = transcript.add("customer", "Any news on my refund?");
+        return turnResult(null, null, { ownership: "human_owned", requestMessageId, text: "" });
+      }),
+    };
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
+
+    const result = await send.send(admission(task), sendInput("c-11", "Any news on my refund?", task.id), { extensionActive: false });
+
+    expect("task" in result && result.task.status).toMatchObject({
+      state: "TASK_STATE_INPUT_REQUIRED",
+      message: { parts: [{ text: "Your refund went out this morning." }] },
+    });
+    expect(await storedTask(tasks)).toMatchObject({ state: "input_required", reason: "human_message", statusMessageId: "m3", cursor: "4" });
+  });
+
+  it("opens a task at INPUT_REQUIRED on a person's message the caller has not seen when a person owns the thread", async () => {
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ task: null });
+    transcript.add("human_agent", "A teammate here: your refund went out.");
+    const converse = {
+      askAgent: vi.fn(async () => {
+        const requestMessageId = transcript.add("customer", "Any news?");
+        return turnResult(null, null, { ownership: "human_owned", requestMessageId, text: "" });
+      }),
+    };
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
+
+    const result = await send.send(admission(), sendInput("c-12", "Any news?"), { extensionActive: false });
+
+    if (!("task" in result)) throw new Error("expected a task");
+    expect(result.task.status).toMatchObject({ state: "TASK_STATE_INPUT_REQUIRED", message: { parts: [{ text: "A teammate here: your refund went out." }] } });
+    expect(result.task.history?.map((message) => message.parts[0]?.text)).toEqual(["A teammate here: your refund went out.", "Any news?"]);
+  });
+});
+
+describe("A2A turns: the routine run still active after a turn", () => {
+  it("reads the active run from the routine store, and keeps the task of a routine that yielded open", async () => {
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp();
+    routineRuns.active = "exec-1";
+    const converse = {
+      askAgent: vi.fn(async () => {
+        const requestMessageId = transcript.add("customer", "What are your hours?");
+        const replyMessageId = transcript.add("ai_agent", "Nine to five.");
+        // The routine yielded to an off-topic message: the turn reports none, yet its run is active.
+        return turnResult(null, null, { requestMessageId, replyMessageId, text: "Nine to five." });
+      }),
+    };
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
+
+    const result = await send.send(admission(await storedTask(tasks)), sendInput("c-13", "What are your hours?", TASK_ID), { extensionActive: false });
+
+    expect("task" in result && result.task.status).toMatchObject({ state: "TASK_STATE_INPUT_REQUIRED", message: { parts: [{ text: "Nine to five." }] } });
+    expect(await storedTask(tasks)).toMatchObject({ state: "input_required", reason: "awaiting_input", routineExecutionId: "exec-1" });
+  });
+
+  it("keeps the task open and answers the turn when the routine-run read fails, logging it at warn with digests only", async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ logger });
+    routineRuns.failure = new Error("connection to db.internal.example lost");
+    const converse = {
+      askAgent: vi.fn(async () => {
+        const requestMessageId = transcript.add("customer", "What are your hours?");
+        const replyMessageId = transcript.add("ai_agent", "Nine to five.");
+        return turnResult(null, null, { requestMessageId, replyMessageId, text: "Nine to five." });
+      }),
+    };
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
+
+    const result = await send.send(admission(await storedTask(tasks)), sendInput("client-message-14", "What are your hours?", TASK_ID), { extensionActive: false });
+
+    // Row 10 never cancels a task on a read that failed: the run is taken to be still active.
+    expect("task" in result && result.task.status.state).toBe("TASK_STATE_INPUT_REQUIRED");
+    expect(await storedTask(tasks)).toMatchObject({ state: "input_required", routineExecutionId: "exec-1" });
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationDigest: expect.any(String) }), expect.any(String));
+    const logged = JSON.stringify(logger.warn.mock.calls);
+    expect(logged).not.toContain(CONVERSATION_ID);
+    expect(logged).not.toContain("client-message-14");
+    expect(logged).not.toContain("db.internal.example");
+  });
+});
+
+describe("A2A receipts: a turn that ran is never run again", () => {
+  const plainTurn = (transcript: FakeTranscript) => vi.fn(async () => {
+    const requestMessageId = transcript.add("customer", "Hello");
+    const replyMessageId = transcript.add("ai_agent", "Hi there.");
+    return turnResult(null, null, { requestMessageId, replyMessageId, text: "Hi there." });
+  });
+
+  it("retries a receipt completion that failed, and replays the answer to a retry without a second turn", async () => {
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ task: null });
+    const complete = receipts.complete.bind(receipts);
+    receipts.complete = vi.fn()
+      .mockRejectedValueOnce(new Error("connection reset"))
+      .mockImplementation(complete);
+    const converse = { askAgent: plainTurn(transcript) };
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
+
+    const result = await send.send(admission(), sendInput("c-15", "Hello"), { extensionActive: false });
+    const replayed = await send.send(admission(), sendInput("c-15", "Hello"), { extensionActive: false });
+
+    expect(result).toMatchObject({ message: { parts: [{ text: "Hi there." }] } });
+    expect(replayed).toEqual(result);
+    expect(converse.askAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers the turn and keeps its claim when the receipt cannot be completed, so a retry never runs it again", async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ task: null, logger });
+    receipts.complete = vi.fn(async () => {
+      throw new Error("connection reset");
+    });
+    const converse = { askAgent: plainTurn(transcript) };
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
+
+    const result = await send.send(admission(), sendInput("c-16", "Hello"), { extensionActive: false });
+
+    expect(result).toMatchObject({ message: { parts: [{ text: "Hi there." }] } });
+    expect([...receipts.receipts.values()]).toEqual([expect.objectContaining({ state: "in_flight" })]);
+    await expect(send.send(admission(), sendInput("c-16", "Hello"), { extensionActive: false })).rejects.toMatchObject({ reason: "TURN_IN_PROGRESS" });
+    expect(converse.askAgent).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationDigest: expect.any(String) }), expect.any(String));
+  });
+
+  it("records what it knows when settlement runs out of attempts, so a retry replays the task rather than running the turn", async () => {
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp();
+    // Every write loses to a concurrent writer.
+    vi.spyOn(tasks, "commit").mockResolvedValue("conflict");
+    const converse = {
+      askAgent: vi.fn(async () => {
+        const requestMessageId = transcript.add("customer", "topic: billing");
+        const replyMessageId = transcript.add("ai_agent", "Done.");
+        return turnResult({ name: "Support intake", status: "completed", pendingInput: [] }, "exec-1", { requestMessageId, replyMessageId });
+      }),
+    };
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
+
+    const result = await send.send(admission(await storedTask(tasks)), sendInput("c-17", "topic: billing", TASK_ID), { extensionActive: false });
+    const replayed = await send.send(admission(await storedTask(tasks)), sendInput("c-17", "topic: billing", TASK_ID), { extensionActive: false });
+
+    expect(result).toMatchObject({ task: { id: TASK_ID } });
+    expect(replayed).toEqual(result);
+    expect(converse.askAgent).toHaveBeenCalledTimes(1);
+    expect([...receipts.receipts.values()]).toEqual([expect.objectContaining({ state: "completed", result: { kind: "task", taskId: TASK_ID } })]);
+  });
+});
+
+describe("A2A turns: the conversation a context's first send opened", () => {
+  it("records the turn in the conversation the turn names, with no second lookup", async () => {
+    const { transcript, tasks, receipts, observer, view, routineRuns } = await setUp({ task: null });
+    const conversationIdFor = vi.spyOn(transcript, "conversationIdFor");
+    const converse = {
+      askAgent: vi.fn(async () => {
+        const requestMessageId = transcript.add("customer", "Hello");
+        const replyMessageId = transcript.add("ai_agent", "Hi there.");
+        return turnResult(null, null, { requestMessageId, replyMessageId, text: "Hi there." });
+      }),
+    };
+    const send = new A2aSendMessageService({ converse, tasks, receipts, transcript, view, observer, routineRuns });
+
+    const result = await send.send({ ...admission(), conversationId: null }, sendInput("c-18", "Hello"), { extensionActive: false });
+
+    expect(result).toMatchObject({ message: { messageId: "m4", parts: [{ text: "Hi there." }] } });
+    expect(conversationIdFor).not.toHaveBeenCalled();
+  });
+});
+
+describe("A2A reads: listing tasks", () => {
+  const terminalTask = (index: number): Omit<A2aTaskRecord, "version"> => openTask({
+    id: `task-${String(index).padStart(16, "0")}`,
+    state: "completed",
+    reason: "routine_completed",
+    openingMessageId: "m1",
+    shownThroughMessageId: "m40",
+    statusMessageId: null,
+    stateAt: new Date(Date.UTC(2026, 10, 9, 10, index)),
+  });
+
+  it("renders a page a few tasks at a time, with a lower history cap than GetTask", async () => {
+    const { transcript, tasks, observer, view } = await setUp({ task: null });
+    for (let note = 3; note <= 40; note += 1) {
+      transcript.add(note % 2 ? "customer" : "ai_agent", `message ${note}`);
+    }
+    for (let index = 0; index < 20; index += 1) {
+      await tasks.commit({ updates: [], insert: terminalTask(index) });
+    }
+    let inFlight = 0;
+    let peak = 0;
+    const limits: number[] = [];
+    const readRange = transcript.readRange.bind(transcript);
+    transcript.readRange = async (input) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      limits.push(input.limit);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      try {
+        return await readRange(input);
+      } finally {
+        inFlight -= 1;
+      }
+    };
+    const reader = new A2aTaskReader({ tasks, transcript, view, observer });
+
+    const listed = await reader.list(admission(), {
+      contextId: "ctx-token", state: null, pageSize: 20, pageToken: null, historyLength: 50, statusTimestampAfter: null, includeArtifacts: false,
+    }, { extensionActive: false });
+    const got = await reader.get(admission(await tasks.findById("task-0000000000000000")), { id: "task-0000000000000000", historyLength: 50 }, { extensionActive: false });
+
+    expect(listed.tasks).toHaveLength(20);
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(Math.max(...listed.tasks.map((task) => task.history?.length ?? 0))).toBe(10);
+    expect(got.history).toHaveLength(40);
+    expect(limits.slice(0, 20).every((limit) => limit <= 10)).toBe(true);
+  });
+});
+
+describe("A2A reads: the status timestamp", () => {
+  it("keeps a task's status timestamp when a read finds nothing it has not already reported", async () => {
+    const stateAt = new Date("2026-11-09T10:00:00.000Z");
+    const { transcript, tasks, observer, view } = await setUp({
+      task: { state: "input_required", reason: "human_message", statusMessageId: "m3", stateAt },
+    });
+    transcript.add("human_agent", "A teammate here.");
+    let now = new Date("2026-11-09T11:00:00.000Z");
+    const reader = new A2aTaskReader({ tasks, transcript, view, observer, clock: () => now });
+
+    await reader.get(admission(await storedTask(tasks)), { id: TASK_ID, historyLength: null }, { extensionActive: false });
+    expect((await storedTask(tasks)).stateAt).toEqual(stateAt);
+
+    // A new reply is news: the status moves, and so does its timestamp.
+    transcript.add("human_agent", "Found it.");
+    now = new Date("2026-11-09T12:00:00.000Z");
+    await reader.get(admission(await storedTask(tasks)), { id: TASK_ID, historyLength: null }, { extensionActive: false });
+    expect(await storedTask(tasks)).toMatchObject({ statusMessageId: "m4", stateAt: now });
   });
 });

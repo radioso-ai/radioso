@@ -112,3 +112,51 @@ describe("A2A routes: turn failures a caller can act on", () => {
     expect(metrics.incrementCounter).toHaveBeenCalledWith("a2a_requests_total", expect.objectContaining({ labels: { method: "other", outcome: "METHOD_NOT_FOUND" } }));
   });
 });
+
+describe("A2A routes: a limiter that fails", () => {
+  const appWithLimits = (limits: { turnLimits?: RequestHandler[]; readLimits?: RequestHandler[]; walkInLimit?: RequestHandler }) => {
+    const app = express();
+    app.use(express.json());
+    app.use("/a2a/:publicId", createA2aRoutes({
+      service: { ...admitted, handle: async () => ({ message: { messageId: "r" } }) } as unknown as A2aService,
+      directory: { resolve: async () => ({ agentId: "a-1", workspaceId: "w-1" }) },
+      observer: createA2aObserver({}),
+      maxMessageLength: 4_000,
+      middleware: {
+        turnSourceLimit: pass,
+        readSourceLimit: pass,
+        walkInLimit: limits.walkInLimit ?? pass,
+        turnLimits: limits.turnLimits ?? [pass],
+        readLimits: limits.readLimits ?? [pass],
+        admitPrincipal: () => undefined,
+        sourceDigest: () => null,
+        bearer: () => null,
+      },
+    }));
+    app.use(((_error, _req, res, _next) => {
+      res.status(500).json({ error: { code: "internal_error" } });
+    }) as express.ErrorRequestHandler);
+    return app;
+  };
+
+  const rejecting: RequestHandler = async () => {
+    throw new Error("limiter store unavailable");
+  };
+
+  it("answers an error, rather than hanging, when an async per-caller limiter or permission check rejects", async () => {
+    const turn = appWithLimits({ turnLimits: [pass, rejecting] });
+    const read = appWithLimits({ readLimits: [rejecting] });
+
+    await send(turn).timeout(2_000).expect(500);
+    await request(read)
+      .post("/a2a/ag_x")
+      .set("A2A-Version", "1.0")
+      .send({ jsonrpc: "2.0", id: 2, method: "GetTask", params: { id: "task-1" } })
+      .timeout(2_000)
+      .expect(500);
+  });
+
+  it("answers an error when the walk-in budget's limiter rejects", async () => {
+    await send(appWithLimits({ walkInLimit: rejecting })).timeout(2_000).expect(500);
+  });
+});

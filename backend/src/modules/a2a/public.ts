@@ -5,6 +5,7 @@ export type {
   A2aMessageReceiptStore,
   A2aReceiptClaim,
   A2aReceiptResult,
+  A2aRoutineRunReader,
   A2aTaskListQuery,
   A2aTaskRecord,
   A2aTaskStore,

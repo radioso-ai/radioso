@@ -52,7 +52,6 @@ export type { ChatActionSuggestionProvider } from "../services/actionSuggestions
 // serialises `AgentConverseTurnResult.reply` and keeps the rest of the turn result in-process.
 export type { AgentConverseAudit } from "../services/agentConverseAudit.js";
 export type {
-  ActiveRoutineRunReader,
   AgentConverseAskResult,
   AgentConverseService,
   AgentConverseTurnResult,

@@ -4,7 +4,6 @@ import type { AppDependencies } from "../server/types.js";
 
 type AgentConverseDependencies = Pick<
   AppDependencies,
-  | "activeRoutineRuns"
   | "agentToolCatalog"
   | "assistantChatService"
   | "conversationRepository"
@@ -15,7 +14,7 @@ type AgentConverseDependencies = Pick<
 
 /**
  * The converse turn behind every door that holds a converse principal (MCP `ask`, A2A): the same
- * chat turn, tool catalog and routine-state read for each. A door hands in its own audit, and MCP
+ * chat turn and tool catalog for each. A door hands in its own audit, and MCP
  * its visitor identity check.
  */
 export const createAgentConverseService = (
@@ -25,7 +24,6 @@ export const createAgentConverseService = (
   assistantChatService: dependencies.assistantChatService,
   conversationRepository: dependencies.conversationRepository,
   agentToolCatalog: dependencies.agentToolCatalog,
-  activeRoutineRuns: dependencies.activeRoutineRuns,
   publisher: dependencies.workspaceInvalidationPublisher,
   metrics: dependencies.metricsRegistry,
   logger: dependencies.logger,

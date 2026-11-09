@@ -120,6 +120,12 @@ export const createA2aTestApp = <Stores extends A2aTestStores = InMemoryA2aStore
   const { stores: givenStores, turnRouter, ...appOptions } = options;
   // The default type argument is the in-memory pair, which is what is built when none is handed in.
   const stores = givenStores ?? ({ tasks: new InMemoryA2aTaskStore(), receipts: new InMemoryA2aMessageReceiptStore() } as A2aTestStores as Stores);
+  // The router is built while the app is, before the app's in-memory routine store is handed back;
+  // it reads that store only once a request runs.
+  let routineStates: ReturnType<typeof createTestApp>["routineStateStore"] | null = null;
+  const activeRoutineStates = {
+    loadActive: async (input: { sessionId: string }) => (routineStates ? routineStates.loadActive(input) : null),
+  };
   const ctx = createTestApp({
     ...appOptions,
     envOverrides: { METRICS_ENABLED: true, METRICS_AUTH_TOKEN: "metrics-test-token", ...options.envOverrides },
@@ -132,11 +138,12 @@ export const createA2aTestApp = <Stores extends A2aTestStores = InMemoryA2aStore
       },
       {
         path: A2A_ENDPOINT_MOUNT_PATH,
-        createRouter: (dependencies) => createA2aRouter(dependencies, stores),
+        createRouter: (dependencies) => createA2aRouter(dependencies, { ...stores, routineStates: activeRoutineStates }),
         createErrorHandler: (dependencies) => createA2aErrorHandler(dependencies),
       },
     ],
   });
+  routineStates = ctx.routineStateStore;
   return { ...ctx, stores };
 };
 

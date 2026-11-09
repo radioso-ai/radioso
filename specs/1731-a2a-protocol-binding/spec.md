@@ -255,7 +255,7 @@ A caller that activates the Radioso extension sends `{ routine: { toolName, inpu
 ### Docs and contract
 
 - **FR-060** These docs MUST ship with the change:
-  - the connect guide (`docs-portal/content/guides/agent-converse.mdx`) gains A2A client setup, including the `contextId` reuse advice;
+  - a connect guide for A2A clients (`docs-portal/content/guides/a2a-converse.mdx`), including the `contextId` reuse advice, with a pointer to it from the calling-agent guide (`docs-portal/content/guides/agent-converse.mdx`);
   - `publish-an-agent.mdx` describes what the card advertises;
   - the extension's reference page;
   - `readme.md` lists A2A among the ways to reach an agent;

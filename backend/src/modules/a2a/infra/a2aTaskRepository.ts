@@ -180,8 +180,9 @@ export class A2aTaskRepository implements A2aTaskStore {
     if (query.state) {
       filtered = filtered.where("state", "=", query.state);
     }
-    if (query.stateAtOrAfter) {
-      filtered = filtered.where("state_at", ">=", query.stateAtOrAfter);
+    if (query.stateAfter) {
+      // A2A's `statusTimestampAfter` is strictly after: a task whose status changed at that instant is not listed.
+      filtered = filtered.where("state_at", ">", query.stateAfter);
     }
     let page = filtered.select(taskColumns);
     if (query.before) {

@@ -49,13 +49,3 @@ const lastCallerIndex = (messages: readonly AuthoredMessage[]): number => {
  */
 export const unseenHumanMessages = (messages: readonly AuthoredMessage[]): AuthoredMessage[] =>
   messages.slice(lastCallerIndex(messages) + 1).filter((message) => message.author === "human");
-
-/**
- * What a person wrote after the turn's own message, while the turn ran: replies the turn did not
- * generate. With the turn's message unknown or not in view, every person's message in view counts,
- * so a reply is never dropped.
- */
-export const humanRepliesAfter = (messages: readonly AuthoredMessage[], requestMessageId: string | null): AuthoredMessage[] => {
-  const requestIndex = requestMessageId ? messages.findIndex((message) => message.id === requestMessageId) : -1;
-  return messages.slice(requestIndex + 1).filter((message) => message.author === "human");
-};

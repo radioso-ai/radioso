@@ -16,6 +16,30 @@ interface ListTasksResult {
   totalSize: number;
 }
 
+/**
+ * The most history each listed task carries. A page holds up to a hundred tasks, so each carries
+ * less than `GetTask` renders; A2A lets a server apply a lower limit than the caller asked for.
+ */
+const LISTED_TASK_HISTORY_CAP = 10;
+
+/** Listed tasks refreshed and rendered at once: each is a few conversation reads on a pool every request shares. */
+const LIST_CONCURRENCY = 4;
+
+/** Maps `items` in order, running at most `lanes` of them at a time. */
+const mapInLanes = async <T, R>(items: readonly T[], lanes: number, map: (item: T) => Promise<R>): Promise<R[]> => {
+  const results: R[] = [];
+  let next = 0;
+  const lane = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await map(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(lanes, items.length) }, lane));
+  return results;
+};
+
 /** A page token: the `(stateAt, id)` of the last task on the previous page, opaque to the caller. */
 const encodePageToken = (task: A2aTaskRecord): string =>
   Buffer.from(JSON.stringify({ t: task.stateAt.toISOString(), i: task.id }), "utf8").toString("base64url");
@@ -85,17 +109,17 @@ export class A2aTaskReader {
     const page = await this.dependencies.tasks.list({
       conversationId: admission.conversationId,
       state: input.state,
-      stateAtOrAfter: input.statusTimestampAfter,
+      stateAfter: input.statusTimestampAfter,
       before,
       limit: input.pageSize + 1,
     });
     const pageTasks = page.tasks.slice(0, input.pageSize);
-    const refreshed = await Promise.all(pageTasks.map((task) => this.refresh(task)));
-    const tasks = await Promise.all(refreshed.map((task) => this.dependencies.view.render(task, {
+    const tasks = await mapInLanes(pageTasks, LIST_CONCURRENCY, async (task) => this.dependencies.view.render(await this.refresh(task), {
       historyLength: input.historyLength,
+      historyCap: LISTED_TASK_HISTORY_CAP,
       includeArtifacts: input.includeArtifacts,
       extensionActive: options.extensionActive,
-    })));
+    }));
     const last = pageTasks.at(-1);
     return {
       tasks,
@@ -134,6 +158,8 @@ export class A2aTaskReader {
     if (!decision || !newest) {
       return task;
     }
+    // The status timestamp orders ListTasks pages, so it moves only when the status does.
+    const statusChanged = decision.state !== task.state || newest.id !== task.statusMessageId;
     const changes: A2aTaskChanges = {
       state: decision.state,
       reason: decision.reason,
@@ -142,7 +168,7 @@ export class A2aTaskReader {
       shownThroughMessageId: page.messages.at(-1)?.id ?? task.shownThroughMessageId,
       // A read observes who owns the thread now; the rest of what the last turn reported stands.
       envelope: { ...task.envelope, ownership: { state: page.ownership, suppressed: false } },
-      stateAt: this.clock(),
+      ...(statusChanged ? { stateAt: this.clock() } : {}),
       ...(marksHumanStretch(decision.reason) ? { humanStretch: true } : {}),
     };
     const outcome = await this.dependencies.tasks.commit({ updates: [{ id: task.id, expectedVersion: task.version, changes }] });

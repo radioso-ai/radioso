@@ -19136,6 +19136,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: Sign out of the current session
+      description: Revokes the session named by the session cookie, so the same cookie value is refused afterwards, and clears the cookie. Only that session ends; the user's other sessions stay signed in. The call succeeds without a live session, so a repeat, a missing cookie, or an unknown one all answer 204 and still clear the cookie.
+      operationId: logoutAccount
+      responses:
+        "204":
+          description: Session ended, or none was live; the session cookie is cleared
+        "500":
+          description: The session could not be ended; the cookie is left in place
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/auth/profile:
     get:
       tags:

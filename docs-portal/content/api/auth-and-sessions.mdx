@@ -1,7 +1,7 @@
 ---
 title: Auth and sessions
-description: Check registration availability, register, log in, join an organization by invitation, and set the name teammates and visitors see.
-last_updated: 2026-10-24
+description: Check registration availability, register, log in, sign out, join an organization by invitation, and set the name teammates and visitors see.
+last_updated: 2026-11-09
 ---
 
 import { Steps } from 'nextra/components'
@@ -86,6 +86,18 @@ The login request can also include `preferredWorkspaceId` or `preferredAccountId
 
 The response names where the session landed — `accountId`, `organizationName`, and the workspace — along with `userId` and `displayName`, the name you set on [your profile](#your-profile) or `null`. Every response that signs you in carries the same fields: registration, invitation acceptance, password reset confirmation, and the [organization create and switch routes](/api/accounts-and-users#switch-account-context). A client can show who signed in straight from that response.
 
+## Sign out
+
+```bash
+curl -sS -b cookies.txt -c cookies.txt -X POST https://api.radioso.ai/api/v1/auth/logout
+```
+
+Sign-out revokes the session the cookie names, so that cookie value is refused from then on, even if someone replays it. The response is `204` with a `Set-Cookie` that clears the cookie in the browser or cookie jar. Only that session ends: the same person's sessions on other devices stay signed in, and signing out records an `auth.logout` audit event on the organization the session was on.
+
+The call is safe to repeat. With no cookie, an unknown cookie, or a session that already ended, it still answers `204` and clears the cookie, because the caller already holds no usable session. When the server cannot revoke the session it answers `500` and leaves the cookie in place, so retry rather than treat the browser as signed out.
+
+The dashboard's **Sign out** menu item calls this route, then returns to the sign-in screen, where a reload stays signed out. If the call fails, the dashboard still signs the browser out and logs the failure to the browser console, but the server session lives until its cookie expires, so a reload can sign back in.
+
 ## Your profile
 
 Your profile holds the name teammates see for you in the dashboard, and the name visitors see on a reply you send them from the Inbox. Read it with the session cookie:
@@ -140,6 +152,7 @@ The [API Reference](/api-reference) lists the fields on each register, login, pr
 GET   /api/v1/auth/registration
 POST  /api/v1/auth/register
 POST  /api/v1/auth/login
+POST  /api/v1/auth/logout
 GET   /api/v1/auth/session
 GET   /api/v1/auth/profile
 PATCH /api/v1/auth/profile

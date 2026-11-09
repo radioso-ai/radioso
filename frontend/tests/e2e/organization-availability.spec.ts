@@ -277,6 +277,8 @@ test('lands on the sign-in page, not /login, after an owner deletes the organiza
 
   // Once signed out, '/' renders the auth page, which probes registration on mount.
   await installAuthMocks(page, false, undefined, 'fallback')
+  // The delete already cleared the cookie, so the sign-out that follows it has no session to end.
+  await page.route('**/backend/api/v1/auth/logout', (route) => route.fulfill({ status: 204 }))
 
   await page.goto(`/w/${workspaceKey}/settings`)
 

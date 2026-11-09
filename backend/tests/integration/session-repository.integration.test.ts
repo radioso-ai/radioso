@@ -113,6 +113,25 @@ describeIntegration("SessionRepository (Postgres)", () => {
     expect(found?.lastSeenAt.getTime()).toBe(later.getTime());
   });
 
+  it("revokeByTokenHash ends only the session its token names, and names it", async () => {
+    const signedOut = await createSession();
+    const otherDevice = await createSession();
+
+    const ended = await repository.revokeByTokenHash(signedOut.sessionTokenHash, new Date());
+
+    expect(ended).toEqual({ sessionId: signedOut.id, userId, accountId });
+    expect(await repository.findActiveByTokenHash(signedOut.sessionTokenHash, new Date())).toBeNull();
+    expect((await repository.findActiveByTokenHash(otherDevice.sessionTokenHash, new Date()))?.id).toBe(otherDevice.id);
+  });
+
+  it("revokeByTokenHash finds nothing to end for a token that is unknown or already revoked", async () => {
+    const created = await createSession();
+    await repository.revokeByTokenHash(created.sessionTokenHash, new Date());
+
+    expect(await repository.revokeByTokenHash(created.sessionTokenHash, new Date())).toBeNull();
+    expect(await repository.revokeByTokenHash(`hash-${randomUUID()}`, new Date())).toBeNull();
+  });
+
   it("revokeAllForUser returns the number of sessions revoked and is idempotent", async () => {
     await createSession();
     await createSession();

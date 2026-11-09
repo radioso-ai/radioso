@@ -306,10 +306,10 @@ const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promis
   await deps.routineDefinitionService.createDraft(target.workspaceId, target.agentId, {
     name: COPILOT_EVAL_ROUTINE_NAME,
     activation: { triggerDescription: "When a customer asks where their order is", gateRef: null, priority: 10, reentryMode: "always" },
-    slots: [],
+    slots: [{ stableSlotId: "slot_order_number", key: "order_number", type: "text", required: true, description: "The order the customer is asking about", mutable: true, ordinal: 0 }],
     steps: [{ stableStepId: "ask_order_number", kind: "chat", instruction: "Ask for the order number.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
     transitions: [{ fromStep: "ask_order_number", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
-    terminals: [{ stableStepId: "done", kind: "complete", instruction: "Give the order's status.", ordinal: 0 }],
+    terminals: [{ stableStepId: "done", kind: "complete", instruction: "Give the status of order {{slot.order_number}}.", ordinal: 0 }],
   });
   console.log("Seeded one answered conversation with a complaint, one document, and one draft routine.");
   return { assistantMessageId: answer.id };

@@ -2971,6 +2971,43 @@ describe("routine proposal adapter edits", () => {
     expect(input.steps).toEqual(storedRoutine().steps);
   });
 
+  it("turns a field's \"Editable after completion\" on through the same edit tool, previewing the flag and writing only it", async () => {
+    const slots = [{ stableSlotId: "slot_email", key: "email", type: "email", required: true, description: "Where to reach them", ordinal: 0 }];
+    const ports = routineAdapterPorts(storedRoutine({ slots }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { slots: [{ key: "email", mutable: true }] });
+
+    expect(draft.summary).toBe("Edit routine support-intake: field email.");
+    // The card re-derives from the stored payload after a reload, so the flag rides it.
+    expect(draft.payload).toMatchObject({ kind: "edit", changes: { slots: [{ key: "email", mutable: true }] }, rationale: draft.summary });
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toMatchObject({
+      current: { slots: { email: { mutable: false } } },
+      proposed: { slots: { email: { mutable: true } } },
+    });
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    const [, , , input] = ports.updateDraft.mock.calls[0] as unknown as [string, string, string, { slots: unknown[]; steps: unknown[] }];
+    expect(input.slots).toEqual([{ ...slots[0], mutable: true }]);
+    expect(input.steps).toEqual(storedRoutine().steps);
+  });
+
+  it("turns a field's \"Editable after completion\" back off, so the stored flag is cleared rather than left behind", async () => {
+    const slots = [{ stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0, mutable: true }];
+    const ports = routineAdapterPorts(storedRoutine({ slots }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { slots: [{ key: "email", mutable: false }] });
+
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toMatchObject({
+      current: { slots: { email: { mutable: true } } },
+      proposed: { slots: { email: { mutable: false } } },
+    });
+    await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token);
+    const [, , , input] = ports.updateDraft.mock.calls[0] as unknown as [string, string, string, { slots: Array<{ mutable?: boolean }> }];
+    expect(input.slots[0]?.mutable).toBeUndefined();
+  });
+
   it("exposes a routine as a tool through the same edit path, previewing the block and writing only it", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);

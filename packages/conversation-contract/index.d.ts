@@ -1,6 +1,7 @@
 import type { ConversationModelGateway } from "./modelGateway.js";
 import type { ReferenceTimeZone } from "./referenceTimeZone.js";
 import type { RoutineRunTrace, RoutineSelectionTrace } from "./routineTrace.js";
+import type { ConversationRoutineSlotCorrection } from "./routineSlotCorrection.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
@@ -1437,17 +1438,12 @@ export interface SuspendedRoutineReader {
   loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
-/**
- * A detected post-completion slot correction (issue #746): the routine's declared slot
- * schema plus the slot the visitor wants to change and the proposed raw value. The host
- * resolves the routine (it owns the catalog) and runs model-driven, multilingual detection;
- * the engine then deterministically verifies via `verifySlotCorrection` before persisting.
- */
-export interface RoutineSlotCorrectionCandidate {
-  slots: RoutineSlotSchema[];
-  slotKey: string;
-  rawValue: string;
-}
+export type {
+  ConversationRoutineSlotCorrection,
+  RoutineSlotCorrectionCandidate,
+  RoutineSlotCorrectionDetection,
+  RoutineSlotCorrectionSkipReason,
+} from "./routineSlotCorrection.js";
 
 /**
  * Structured decision for a completed routine whose reentry mode is `semantic` (issue #746):
@@ -1469,27 +1465,6 @@ export type RoutineReentryDecision =
  */
 export interface ConversationRoutineReentryGate {
   decide(input: { turn: TurnContext; completedState: RoutineState }): Promise<RoutineReentryDecision>;
-}
-
-/**
- * Host port for correcting a value captured by a routine that already completed, without
- * rerunning it. `detect` returns null when the latest message is not a correction (or the
- * completed routine has no mutable slots). `confirm` produces the user-facing reply — copy
- * comes from the model, never hard-coded in the engine.
- */
-export interface ConversationRoutineSlotCorrection {
-  detect(input: { turn: TurnContext; completedState: RoutineState }): Promise<RoutineSlotCorrectionCandidate | null>;
-  confirm(input: {
-    turn: TurnContext;
-    routineId: string;
-    slotKey: string;
-    value: string | number | boolean;
-  }): Promise<string>;
-  /**
-   * Reply when a detected correction's new value fails the slot's declared type — asks the
-   * visitor for a valid value. Copy comes from the model; the engine persists nothing.
-   */
-  rejectInvalid(input: { turn: TurnContext; routineId: string; slotKey: string }): Promise<string>;
 }
 
 export interface RoutineDecisionInput {

@@ -442,6 +442,7 @@ describe("completed-routine planner bypass adapters", () => {
   it("pins a bypass before rendering a confirmed or invalid slot correction", async () => {
     const correction: ConversationRoutineSlotCorrection = {
       detect: vi.fn(async () => ({
+        kind: "correction" as const,
         slots: [{ id: "email", key: "email", type: "email" as const, required: true, mutable: true }],
         slotKey: "email",
         rawValue: "new@example.com",

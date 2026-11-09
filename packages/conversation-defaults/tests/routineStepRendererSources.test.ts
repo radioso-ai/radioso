@@ -11,10 +11,10 @@ import type {
 import { RoutineStepRenderer } from "../src/index.js";
 
 /**
- * A step reply is told which sources it has for the facts it gives (#1717). With no page and no
- * retrieved excerpts, a dates step told to state the edition's dates "from the sources" said
- * "The course dates I hold for you are 17 November to 27 November": the visitor's own window,
- * presented as the course's.
+ * A step reply is told which quoted sources it has besides its instruction (#1717). With no
+ * page and no retrieved excerpts, a dates step told to state the edition's dates "from the
+ * sources" said "The course dates I hold for you are 17 November to 27 November": the
+ * visitor's own window, presented as the course's.
  */
 
 const datesStep: RoutineStep = {
@@ -45,14 +45,20 @@ const retrieval = (contexts: unknown[]): StagedContext => ({
 
 const autumnExcerpt = { documentId: "doc_1", title: "Autumn course", content: "Runs 22 to 27 November 2026." };
 
-const SOURCES_ONLY = "SOURCES:{{step_sources}}";
+// What the reply is told about its sources, read off sources templates that print only that.
+const PRESENCE_TEMPLATE = "SOURCES[retrieved={{retrieved_excerpts}},evidence={{context_evidence}}]";
+const NONE_TEMPLATE = "SOURCES[none]";
 
 const requestFor = async (
   input: Partial<RoutineStepReplyInput>,
-  promptTemplate?: string,
+  options: { promptTemplate?: string; stepProgressPromptTemplate?: string } = {},
 ): Promise<ConversationModelRequest> => {
   const gateway: ConversationModelGateway = { complete: vi.fn(async () => ({ text: "ok" })) };
-  await new RoutineStepRenderer(gateway, promptTemplate ? { promptTemplate } : {}).render({
+  await new RoutineStepRenderer(gateway, {
+    ...options,
+    stepSourcesPromptTemplate: PRESENCE_TEMPLATE,
+    stepSourcesNonePromptTemplate: NONE_TEMPLATE,
+  }).render({
     step: datesStep,
     steering: [],
     turn,
@@ -61,39 +67,35 @@ const requestFor = async (
   return vi.mocked(gateway.complete).mock.calls[0][0];
 };
 
-const sourcesFor = async (input: Partial<RoutineStepReplyInput>): Promise<string> =>
-  (await requestFor(input, SOURCES_ONLY)).systemPrompt ?? "";
+const reportedSources = async (input: Partial<RoutineStepReplyInput>): Promise<string> =>
+  (await requestFor(input, { promptTemplate: "{{step_sources}}" })).systemPrompt ?? "";
 
-describe("RoutineStepRenderer tells a step reply which sources it has (#1717)", () => {
-  it("says a step with no page excerpt and no retrieved excerpts has no sources", async () => {
-    expect(await sourcesFor({})).toBe(
-      "SOURCES:none: no retrieved document excerpts and no evidence from the visitor's context were provided",
+describe("RoutineStepRenderer tells a step reply which quoted sources it has (#1717)", () => {
+  it("tells a step with no page excerpt and no retrieved excerpts that it has no source", async () => {
+    expect(await reportedSources({})).toBe("SOURCES[none]");
+  });
+
+  it("reports the visitor's context evidence when the step reads the page", async () => {
+    expect(await reportedSources({ contextEvidence: [pageEvidence] })).toBe("SOURCES[retrieved=none,evidence=provided]");
+  });
+
+  it("reports the retrieved excerpts when a retrieval step staged some", async () => {
+    expect(await reportedSources({ turn: { ...turn, stagedContext: [retrieval([autumnExcerpt])] } })).toBe(
+      "SOURCES[retrieved=provided,evidence=none]",
     );
   });
 
-  it("names the visitor's context evidence when the step reads the page", async () => {
-    expect(await sourcesFor({ contextEvidence: [pageEvidence] })).toBe(
-      "SOURCES:the evidence from the visitor's context",
-    );
-  });
-
-  it("names the retrieved excerpts when a retrieval step staged some", async () => {
-    expect(await sourcesFor({ turn: { ...turn, stagedContext: [retrieval([autumnExcerpt])] } })).toBe(
-      "SOURCES:the retrieved document excerpts",
-    );
-  });
-
-  it("names both when the step has retrieved excerpts and the page", async () => {
+  it("reports both when the step has retrieved excerpts and the page", async () => {
     expect(
-      await sourcesFor({ turn: { ...turn, stagedContext: [retrieval([autumnExcerpt])] }, contextEvidence: [pageEvidence] }),
-    ).toBe("SOURCES:the retrieved document excerpts and the evidence from the visitor's context");
+      await reportedSources({ turn: { ...turn, stagedContext: [retrieval([autumnExcerpt])] }, contextEvidence: [pageEvidence] }),
+    ).toBe("SOURCES[retrieved=provided,evidence=provided]");
   });
 
-  it("counts a retrieval that found nothing, or nothing with text, as no source", async () => {
-    expect(await sourcesFor({ turn: { ...turn, stagedContext: [retrieval([])] } })).toMatch(/^SOURCES:none: /u);
+  it("reports no retrieved excerpts for a retrieval that found nothing, or nothing with text", async () => {
+    expect(await reportedSources({ turn: { ...turn, stagedContext: [retrieval([])] } })).toBe("SOURCES[none]");
     expect(
-      await sourcesFor({ turn: { ...turn, stagedContext: [retrieval([{ title: "Autumn course", content: "  " }, "text"])] } }),
-    ).toMatch(/^SOURCES:none: /u);
+      await reportedSources({ turn: { ...turn, stagedContext: [retrieval([{ title: "Autumn course", content: "  " }, "text"])] } }),
+    ).toBe("SOURCES[none]");
   });
 
   it("ignores staged context that is not a retrieval result", async () => {
@@ -102,16 +104,31 @@ describe("RoutineStepRenderer tells a step reply which sources it has (#1717)", 
       source: "context.page_context",
       data: { content: "Autumn residential course: 22 to 27 November 2026." },
     };
-    expect(await sourcesFor({ turn: { ...turn, stagedContext: [staged] } })).toMatch(/^SOURCES:none: /u);
+    expect(await reportedSources({ turn: { ...turn, stagedContext: [staged] } })).toBe("SOURCES[none]");
   });
 
-  it("gives a re-asked step the same sources", async () => {
+  it("reports the same sources on a re-ask", async () => {
     expect(
-      await sourcesFor({
+      await reportedSources({
         contextEvidence: [pageEvidence],
         reask: { missingSlots: [{ id: "slot_departure", key: "departure", type: "date", required: true }] },
       }),
-    ).toBe("SOURCES:the evidence from the visitor's context");
+    ).toBe("SOURCES[retrieved=none,evidence=provided]");
+  });
+
+  it("leaves a context block rendered into the instruction in the instruction, where the reply may state it", async () => {
+    const block = '<context_variable name="course_dates">22 to 27 November 2026</context_variable>';
+    const step: RoutineStep = { ...datesStep, action: `Tell them the edition dates, ${block}, and ask them to confirm.` };
+
+    const request = await requestFor({ step });
+
+    // The block is no quoted source of its own: the reply still hears it has none besides the
+    // instruction, and reads the block where the instruction carries it, once.
+    const systemPrompt = request.systemPrompt ?? "";
+    expect(systemPrompt).toContain(`- ${step.action}`);
+    expect(systemPrompt.match(/22 to 27 November 2026/gu)).toHaveLength(1);
+    expect(systemPrompt.indexOf(block)).toBeLessThan(systemPrompt.indexOf("SOURCES[none]"));
+    expect(JSON.stringify(request.messages)).not.toContain("22 to 27 November 2026");
   });
 
   it("keeps the visitor's words and the page text out of the system prompt", async () => {
@@ -122,23 +139,20 @@ describe("RoutineStepRenderer tells a step reply which sources it has (#1717)", 
     expect(request.messages.filter((message) => message.content.includes(pageEvidence))).toHaveLength(1);
   });
 
-  it("states, in the shipped prompt after the step instruction, that a fact the step lacks a source for is asked, not taken from the user", async () => {
-    // The template wraps its lines; read it as running text.
-    const systemPrompt = ((await requestFor({})).systemPrompt ?? "").replace(/\s+/gu, " ");
+  it("reports the sources once in the shipped prompt, after the step instruction and before the closing rules", async () => {
+    // Placed with the facts paragraph near the top, the same rule left the visitor's window
+    // stated as the edition's dates in 5 of 5 runs; after the step instruction, in 0 of 5.
+    const systemPrompt = (await requestFor({}, { stepProgressPromptTemplate: "PROGRESS-RULE" })).systemPrompt ?? "";
 
-    const sourcesAt = systemPrompt.indexOf("Sources for this message: none: ");
+    const sourcesAt = systemPrompt.indexOf("SOURCES[none]");
+    expect(systemPrompt.match(/SOURCES\[/gu)).toHaveLength(1);
     expect(sourcesAt).toBeGreaterThan(systemPrompt.indexOf(datesStep.action ?? ""));
-    expect(sourcesAt).toBeLessThan(systemPrompt.indexOf("This message is part of an unfinished flow"));
-    expect(systemPrompt).toContain(
-      "take it only from the sources listed here, never from the user's messages or from your own knowledge.",
-    );
-    expect(systemPrompt).toContain("never as a fact about what is offered or as a value you hold for them.");
-    expect(systemPrompt).toContain("If no listed source gives the fact, do not state or guess it");
+    expect(sourcesAt).toBeLessThan(systemPrompt.indexOf("PROGRESS-RULE"));
   });
 
-  it("tells a terminal step's reply its sources too", async () => {
+  it("reports a terminal step's sources too", async () => {
     const terminal: RoutineStep = { id: "done", kind: "terminal", action: "Tell them the edition dates from the sources." };
 
-    expect(await sourcesFor({ step: terminal })).toMatch(/^SOURCES:none: /u);
+    expect(await reportedSources({ step: terminal })).toBe("SOURCES[none]");
   });
 });

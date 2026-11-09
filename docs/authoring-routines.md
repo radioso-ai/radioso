@@ -245,15 +245,17 @@ To keep a value, ask for it with an `@` slot. The visible page text stays out
 of the step; the step sees the page's identity, and the page still counts as
 untrusted data the agent reasons about rather than instructions it follows.
 
-A chat step states facts only from its instruction and the sources it has on
-that turn: the page text, when the step places **Current page** and the embed
-sends page content, and the documents a `retrieve` step fetched earlier in the
-same turn. A chat step searches no documents itself. When a step says "tell
-them the edition dates from the page" and there is no page text, the reply
-says it doesn't have the dates here and asks the visitor for theirs; a visitor
-who wrote "I'm free between the 17th and 27th" never hears those dates read
-back as the course's. Write a fact every visitor needs into the instruction
-itself, or into a page or document the step reads.
+A chat step's reply takes its facts from its instruction, including any
+**Visitor context** chip placed in it, and from the sources it has on that
+turn: the page text, when the step places **Current page** and the embed sends
+page content, and the documents a `retrieve` step fetched earlier in the same
+turn. A chat step searches no documents itself. When a step says "tell them the
+edition dates from the page" and there is no page text, the reply is told it
+has no page text and no documents, so it asks the visitor for their dates
+instead of stating the course's. A visitor's own dates, such as "I'm free
+between the 17th and 27th", reach it as the visitor's words, not as a source.
+Write a fact every visitor needs into the instruction itself, or into a page or
+document the step reads.
 
 ### Add steps and connect skills
 

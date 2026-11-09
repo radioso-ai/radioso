@@ -813,12 +813,15 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     query: "Il corso residenziale di meditazione d'autunno",
     assertions: [
       { type: "routine_step_reached", routineId: BOOK_EDITION_ROUTINE_ID, stepId: "dates" },
+      // The window is when the visitor is free, not an arrival or a departure, so the dates step
+      // is asked with both empty and nothing from the visitor is filled into its instruction.
+      { type: "routine_slots_unfilled", routineId: BOOK_EDITION_ROUTINE_ID, slotKeys: ["arrival", "departure"] },
       {
         type: "llm_judge",
         expectedAnswer:
           "Ottima scelta! Qui non ho le date di questa edizione del corso. Mi dici in che giorno arriveresti e in che giorno ripartiresti?",
         criteria:
-          "The visitor said they are free between 17 and 27 November; nothing gives the course's dates. The reply must not state a start or end date for the course or its edition, and must not present 17 or 27 November, or the window between them, as the course's dates or as dates it holds for the course. It either says it does not have the edition's dates here, or asks the visitor for their dates. Repeating the visitor's window as the visitor's own availability is fine.",
+          "The visitor said they are free between 17 and 27 November; nothing gives the course's dates. The reply must not state a start or end date for the course or its edition, and must not present 17 or 27 November, or the window between them, as the course's dates or as dates it holds for the course. It says it does not have the edition's dates here, or asks the visitor for dates, or both; asking for the edition's dates or for the visitor's own arrival and departure both count. Repeating the visitor's window as the visitor's own availability is fine.",
       },
     ],
   },

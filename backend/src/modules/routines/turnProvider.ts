@@ -475,6 +475,8 @@ export const createRoutineTurnProvider = (
         stuckHandoffPromptTemplate: loadPromptTemplate("chat/routine-step-stuck-handoff.md"),
         stepProgressPromptTemplate: loadPromptTemplate("chat/routine-step-progress.md"),
         contextEvidencePromptTemplate: loadPromptTemplate("chat/routine-step-context-evidence.md"),
+        stepSourcesPromptTemplate: loadPromptTemplate("chat/routine-step-sources.md"),
+        stepSourcesNonePromptTemplate: loadPromptTemplate("chat/routine-step-sources-none.md"),
         responseLanguage,
         groundedAnswerRenderer,
         steeringPromptTemplate: loadPromptTemplate("chat/routine-step-steering.md"),

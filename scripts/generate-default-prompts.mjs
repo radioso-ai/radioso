@@ -60,6 +60,14 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT",
   },
   {
+    source: "routine-step-sources.md",
+    exportName: "DEFAULT_ROUTINE_STEP_SOURCES_PROMPT",
+  },
+  {
+    source: "routine-step-sources-none.md",
+    exportName: "DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT",
+  },
+  {
     source: "routine-next-step.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_PROMPT",
   },

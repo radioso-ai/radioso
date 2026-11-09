@@ -47,9 +47,10 @@ edition dates" can state the dates printed on the page the visitor is on. The
 excerpt is quoted data: the reply can state facts from it, and text on the page
 that reads like an instruction is never followed. On a channel that sends no
 page, the routine carries on without it. With no excerpt to read, in
-`metadata` mode or with no page at all, that same step says it doesn't have
-the edition dates here and asks the visitor, rather than guessing them or
-reading the visitor's own dates back as the edition's.
+`metadata` mode or with no page at all, the step's instruction still carries
+the page's URL, title, and locale when the embed sends them, but the reply is
+told it has no page text: a step that says "tell them the edition dates" asks
+the visitor for their dates instead of stating dates the page would have given.
 
 A step reached after a **Retrieval context** tool step (`retrieval.context`)
 in the same turn writes its reply from the retrieved documents. When that step

@@ -121,11 +121,15 @@ pnpm run evals -- --tag slot-filling
 `routine-step-without-sources-keeps-visitor-dates-theirs` runs the `book-edition` routine with
 no page. The visitor said they are free between 17 and 27 November, then names the course, so
 the dates step is asked with nothing that gives the edition's dates: the page reference is
-empty and no retrieval step ran. The judge checks the reply neither states dates for the course
-nor passes the visitor's window off as them; it says it doesn't have the dates here, or asks
-for them. The step reply's prompt names the sources it has (`none` here), and a fact the step
-instruction wants from a source comes only from those. The case carries the `unavailable` tag,
-so its judge gates every run.
+empty and no retrieval step ran. `routine_slots_unfilled` checks the window filled neither the
+arrival nor the departure, so no visitor value reaches the step instruction. The judge checks
+the reply neither states dates for the course nor passes the visitor's window off as them; it
+says it doesn't have the dates here, or asks for them. The step reply's prompt tells it that no
+page excerpt and no retrieved excerpts were provided (`routine-step-sources-none.md`), and a fact
+the step instruction wants from a source never comes from the visitor's messages. The case
+carries the `unavailable` tag, so its judge gates every run. Its baseline entry is a five-sample
+recording at 4 of 5: the one failed sample asked for the edition's dates "to check they match the
+17th and 27th", which the judge read as offering the window as the course's dates.
 
 ```bash
 pnpm run evals -- --tag unsourced-facts

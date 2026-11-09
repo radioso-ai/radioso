@@ -29,6 +29,8 @@ export class PromptBuilder {
     requestedDateRange?: RequestedDateRange;
     /** The zone today's date is read in. */
     timeZone: string;
+    /** The caller hears the answer rather than reads it, so it is laid out for speech. */
+    spokenReply?: boolean;
     settings: {
       responseIdentity?: ResponseIdentity | null;
       customInstruction?: string;
@@ -74,6 +76,9 @@ export class PromptBuilder {
         conversation_mode_instruction_block: "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
         today: formatPromptDate(this.clock(), input.timeZone),
+        layout_block: loadPromptTemplate(
+          input.spokenReply ? "retrieval/answer-layout-spoken.md" : "retrieval/answer-layout-written.md",
+        ),
         // The grounded answer prompt answers or declines inline; it carries only the
         // compact guard-case essentials. The full decline ruleset stays scoped to the
         // dedicated focused-miss path (#863 split-by-turn-type).

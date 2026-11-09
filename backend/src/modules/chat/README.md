@@ -133,11 +133,14 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   that conversation. Chat reads none of it back; the quality stats count it, and
   the block moves no tail cursor.
 - `contracts/operatorReplySpeech.ts`: a teammate's reply on a conversation
-  whose caller hears replies (`operatorRepliesAreSpoken`: the voice channel
+  whose caller hears replies (`repliesAreSpoken`: the voice channel
   context) waits for the caller's next turn. `OperatorReplyService.write`
   (handoff) stores it with `speech: { state: "pending" }`
   (`MessageRepository.create`'s `pendingSpeech`). One port serves the voice
   channel, on `MessageRepository`: `OperatorReplySpeechClaims`.
+  `ChatSessionPreparer` reads the same predicate into the retrieval request's
+  `spokenReply`, so the grounded answer prompt takes the spoken layout
+  (`retrieval/answer-layout-spoken.md`) instead of the written one.
   `claimPendingOperatorReplies` claims and reads the conversation's pending
   teammate replies, oldest first, in one UPDATE ... RETURNING (`claimed`,
   with `claimedAt` and `claimTurnId`); `markOperatorRepliesSpoken`,

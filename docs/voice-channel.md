@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, and the period's call numbers on the Quality page."
-last_updated: 2026-11-03
+last_updated: 2026-11-09
 ---
 
 # Voice Channel
@@ -32,7 +32,12 @@ Activity and the Inbox.
    instructions, so Radioso reads only the last one, plus, on the `elevenlabs`
    dialect, how much of the previous reply the caller heard (see
    [When the caller talks over the agent](#when-the-caller-talks-over-the-agent)).
-4. The agent runs its turn. The reply comes back as `chat.completion.chunk`
+4. The agent runs its turn, knowing the caller hears the reply rather than
+   reads it. It answers in a few short sentences, and when the answer covers
+   more than three things, such as every retreat in a month, it names the two
+   or three that fit the question best and says how many others there are, so
+   the caller can ask for them. The same question in a chat window gets one
+   line per retreat. The reply comes back as `chat.completion.chunk`
    frames, one sentence per frame, ending with `finish_reason: "stop"` and
    `data: [DONE]`.
 5. If you turned the agent's voice settings on, the wait is covered: when

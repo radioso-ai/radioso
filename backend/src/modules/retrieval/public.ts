@@ -134,6 +134,8 @@ export interface RetrievalPipelineRequest {
   responseBehavior?: RetrievalResponseBehavior;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   responseLanguage?: string;
+  /** The caller hears the answer rather than reads it, so it is laid out for speech. */
+  spokenReply?: boolean;
   metadataFilter?: Record<string, unknown>;
   documentScope?: string[];
   sourceScope?: RetrievalSourceScope;

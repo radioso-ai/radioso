@@ -113,6 +113,52 @@ describe("routine authoring edits", () => {
       .toBe("field order_number");
   });
 
+  it("turns \"Editable after completion\" on and off for one field through the edit patch, and shows the reviewer which", () => {
+    const editable = applyRoutineFieldPatch(routine(), routineFieldPatchSchema.parse({
+      slots: [{ key: "order_number", mutable: true }],
+    }));
+    expect(editable.slots?.[0]?.mutable).toBe(true);
+    // The patched draft re-enters the draft authoring schema the write path validates it against.
+    expect(() => routineDefinitionDraftInputSchema.parse(editable)).not.toThrow();
+    expect((projectRoutineForReview(editable).slots as Record<string, { mutable: boolean }>).order_number.mutable).toBe(true);
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({ slots: [{ key: "order_number", mutable: true }] })))
+      .toBe("field order_number");
+
+    const stored = { ...routine(), slots: routine().slots.map((slot) => ({ ...slot, mutable: true })) };
+    const locked = applyRoutineFieldPatch(stored, routineFieldPatchSchema.parse({
+      slots: [{ key: "order_number", mutable: false }],
+    }));
+    // Not editable is the absence of the flag, as a stored slot reads back, so a field switched
+    // back projects exactly as it did before it was ever opened to corrections.
+    expect(locked.slots).toEqual(routine().slots);
+    expect((projectRoutineForReview(locked).slots as Record<string, { mutable: boolean }>).order_number.mutable).toBe(false);
+    expect((projectRoutineForReview(draftInputFromRoutine(stored)).slots as Record<string, { mutable: boolean }>).order_number.mutable).toBe(true);
+  });
+
+  it("changes only the flags the edit names, so switching correction on keeps the field's other settings", () => {
+    const stored = {
+      ...routine(),
+      slots: routine().slots.map((slot) => ({ ...slot, sensitivity: "sensitive" as const, description: "Kept" })),
+    };
+
+    const patched = applyRoutineFieldPatch(stored, routineFieldPatchSchema.parse({ slots: [{ key: "order_number", mutable: true }] }));
+    expect(patched.slots).toEqual([{ ...stored.slots[0], mutable: true }]);
+
+    const described = applyRoutineFieldPatch({ ...stored, slots: stored.slots.map((slot) => ({ ...slot, mutable: true })) }, routineFieldPatchSchema.parse({
+      slots: [{ key: "order_number", description: "Reworded" }],
+    }));
+    expect(described.slots?.[0]).toMatchObject({ description: "Reworded", mutable: true, sensitivity: "sensitive" });
+  });
+
+  it("accepts mutable alone as a field edit and refuses a field edit that sets nothing", () => {
+    expect(routineFieldPatchSchema.safeParse({ slots: [{ key: "order_number", mutable: false }] }).success).toBe(true);
+    expect(routineFieldPatchSchema.safeParse({ slots: [{ key: "order_number", mutable: "yes" }] }).success).toBe(false);
+
+    const empty = routineFieldPatchSchema.safeParse({ slots: [{ key: "order_number" }] });
+    expect(empty.success).toBe(false);
+    expect(JSON.stringify(empty.error?.issues)).toContain("editable after completion");
+  });
+
   it("takes a routine in or out of service through the same edit patch, leaving the graph untouched", () => {
     const source = routine({ enabled: true });
 
@@ -195,7 +241,7 @@ describe("routine authoring edits", () => {
       enabled: true,
       activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always" },
       slots: {
-        order_number: { type: "text", required: true, description: "The order it concerns", mutable: null, sensitivity: "normal", ordinal: 0 },
+        order_number: { type: "text", required: true, description: "The order it concerns", mutable: false, sensitivity: "normal", ordinal: 0 },
       },
       steps: {
         collect_topic: { kind: "chat", instruction: "Ask how we can help.", toolRef: null, actionType: null, captureKey: null, options: null, ordinal: 0, metadata: { outlineLabel: "collect_topic" } },

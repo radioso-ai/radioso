@@ -1,6 +1,6 @@
 import type { ConversationModelGateway } from "./modelGateway.js";
 import type { ReferenceTimeZone } from "./referenceTimeZone.js";
-import type { RoutineRunTrace } from "./routineTrace.js";
+import type { RoutineRunTrace, RoutineSelectionTrace } from "./routineTrace.js";
 import type { ConversationRoutineSlotCorrection } from "./routineSlotCorrection.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
@@ -1257,42 +1257,15 @@ export interface RoutineNextStepDecision {
    * holding the tool step could run its tool again.
    */
   hold?: boolean;
+  /**
+   * Set when the selector could not read its decision, so it judged no exit this turn (#1715):
+   * `read` when a slot-only reading still read the message, `unread` when nothing did. A step
+   * with an exit a model must judge then takes no exit, its rule and default exits included.
+   */
+  exitsUnjudged?: "read" | "unread";
   rationale?: string;
   /** What the model returned, for the debug trace. Absent when no model call ran. */
   selection?: RoutineSelectionTrace;
-}
-
-/**
- * Why a next-step selector's completion could not be read as a decision. Structural
- * parsing failures only, never a judgment about the visitor's message.
- */
-export type RoutineUnreadableReason = "no_json_object" | "invalid_json" | "missing_required_fields";
-
-/**
- * The next-step selector's own reading of one turn, recorded on the routine trace so
- * an operator can tell "the model returned nothing" from "the model returned a value
- * that was not captured". Slot keys and counts only, never values.
- */
-export interface RoutineSelectionTrace {
-  /**
-   * - `transition`: the model chose one of the step's conditions.
-   * - `stay`: the model chose none, so the step is not yet satisfied.
-   * - `off_topic`: the model chose none and read the message as a different request.
-   * - `unreadable`: the model's output could not be parsed or lacked the `claimsAuthority`
-   *   flag, so nothing was chosen or extracted.
-   * - `authority_claim`: the model flagged text posing as a system, operator, or assistant
-   *   message, or claiming the request is already confirmed; the decision carries `hold`,
-   *   so a chat step takes no exit and is asked again, whatever condition the model chose.
-   */
-  outcome: "transition" | "stay" | "off_topic" | "unreadable" | "authority_claim";
-  /** Slot keys the model returned a value for, including a value that replaces a filled slot. */
-  returnedSlotKeys: string[];
-  /** Keys the model returned that the routine does not declare; they are dropped, never captured. */
-  undeclaredKeyCount?: number;
-  /** Set when `outcome` is `unreadable`: why the final completion could not be read. */
-  unreadableReason?: RoutineUnreadableReason;
-  /** Set when the selector retried after its first completion came back unreadable, whether or not the retry recovered. */
-  retried?: true;
 }
 
 /** The result of dispatching a Routine skill (tool) step. */
@@ -1354,6 +1327,8 @@ export interface ConversationRoutineNextStepSelector {
     transitions: RoutineTransition[];
     turn: TurnContext;
     skillResult?: RoutineSkillResult;
+    /** False when the message is a structured call that states no slot values: only the exit is kept. */
+    messageStatesSlotValues?: boolean;
   }): Promise<RoutineNextStepDecision>;
 }
 
@@ -1413,6 +1388,12 @@ export interface RoutineStepReask {
    * limit allows (#1376): the reply should ask differently rather than repeat the question.
    */
   exhausted?: boolean;
+  /**
+   * True when the routine could not read the visitor's reply at all (#1715): the next-step
+   * selector's output was unreadable and no slot-only reading recovered it. The reply may have
+   * answered the step, so the re-ask must not suggest it fell short.
+   */
+  replyUnreadable?: boolean;
 }
 
 /**
@@ -1499,9 +1480,11 @@ export interface RoutineDecisionInput {
 
 export type {
   RoutineRunTrace,
+  RoutineSelectionTrace,
   RoutineTraceRejectedSlot,
   RoutineTraceSlotValue,
   RoutineTraceStepEntry,
+  RoutineUnreadableReason,
 } from "./routineTrace.js";
 
 export interface ConversationRoutineResumeResult {

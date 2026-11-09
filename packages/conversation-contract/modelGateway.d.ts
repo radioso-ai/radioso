@@ -26,6 +26,8 @@ export interface ConversationModelCompletion {
   text: string;
   /** Omitted when the host's provider gives no reason. */
   stopReason?: ConversationModelStopReason;
+  /** The model that wrote the completion, as the host's provider names it; omitted when the host does not report it. */
+  model?: string;
   metadata?: Record<string, unknown>;
 }
 

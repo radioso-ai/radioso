@@ -16,6 +16,7 @@ export class ModelChatGateway implements ChatGateway {
 
   async answer(input: ChatGatewayInput): Promise<string> {
     const generation = this.generation(input);
+    const { model } = this.inference.metadata;
     const result = await this.inference.complete({
       operation: input.usageContext,
       prompt: input.prompt,
@@ -29,6 +30,7 @@ export class ModelChatGateway implements ChatGateway {
         // Recorded before the blank check, so a blank completion still says why it stopped.
         if (input.completionRecord) {
           input.completionRecord.stopReason = result.stopReason;
+          input.completionRecord.model = model;
         }
         if (!result.text?.trim()) {
           throw new BlankChatAnswerError();

@@ -25,6 +25,10 @@ interface SessionSignOutDependencies {
  * Ends the session a browser presents. Signing out is idempotent: a request with no
  * cookie, an unknown token, or a session that already ended succeeds and records nothing,
  * because the caller's intent -- to hold no usable session -- is already met.
+ *
+ * The audit record is required, like the other successful auth events (login, password reset,
+ * verification): the revoke commits first, so an audit write that fails answers a 5xx for a
+ * session that has in fact ended. The route clears the cookie on that response too.
  */
 export class SessionSignOutService {
   constructor(private readonly dependencies: SessionSignOutDependencies) {}

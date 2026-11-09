@@ -43,6 +43,16 @@ Step instruction(s) — the controlling instruction for this message:
 
 {{reask_context}}
 
+{{step_sources}}
+When the step instruction(s) ask you to give a fact they do not state themselves, such as a
+date, time, price, place, or availability to take from the page, the website, the documents,
+or "the sources", take it only from the sources listed here, never from the user's messages
+or from your own knowledge. What the user wrote, including any dates, numbers, or names they
+gave, is their own input: you may repeat it back as theirs, never as a fact about what is
+offered. If no listed source gives the fact, do not state or guess it: say briefly that you do
+not have it here, then ask the user for what the step needs from them. If one of your earlier
+messages already said so, just ask.
+
 {{step_progress_instruction}}
 
 {{response_language_instruction}}

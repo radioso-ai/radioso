@@ -40,6 +40,14 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_REASK_PROMPT",
   },
   {
+    source: "routine-step-reask-unanswered.md",
+    exportName: "DEFAULT_ROUTINE_STEP_REASK_UNANSWERED_PROMPT",
+  },
+  {
+    source: "routine-step-reask-unreadable.md",
+    exportName: "DEFAULT_ROUTINE_STEP_REASK_UNREADABLE_PROMPT",
+  },
+  {
     source: "routine-step-reask-gap.md",
     exportName: "DEFAULT_ROUTINE_STEP_REASK_GAP_PROMPT",
   },
@@ -60,6 +68,14 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT",
   },
   {
+    source: "routine-step-sources.md",
+    exportName: "DEFAULT_ROUTINE_STEP_SOURCES_PROMPT",
+  },
+  {
+    source: "routine-step-sources-none.md",
+    exportName: "DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT",
+  },
+  {
     source: "routine-next-step.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_PROMPT",
   },
@@ -74,6 +90,10 @@ const manifest = [
   {
     source: "routine-next-step-date-rule.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT",
+  },
+  {
+    source: "routine-next-step-slot-fallback.md",
+    exportName: "DEFAULT_ROUTINE_NEXT_STEP_SLOT_FALLBACK_PROMPT",
   },
   {
     source: "directive-match.md",

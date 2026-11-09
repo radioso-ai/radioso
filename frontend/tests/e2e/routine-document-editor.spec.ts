@@ -343,6 +343,49 @@ test("turns a field's Editable after completion on and off, saves it, and reads 
   await expect(offEditor.getByRole("switch", { name: "Slot email editable after completion" })).not.toBeChecked();
 });
 
+test("says Editable after completion has no effect once every ending of the routine sends what it collects", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates: [] });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Book a stay");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for the @arrival");
+  await page.getByRole("option", { name: /Create variable “arrival”/ }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  const hint = documentEditor.getByText("No effect: this routine always sends it on before it ends.");
+  const editable = documentEditor.getByRole("switch", { name: "Slot arrival editable after completion" });
+
+  // The routine finishes without telling anyone, so a visitor can still change the date.
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "arrival", exact: true }).click();
+  await editable.click();
+  await expect(editable).toBeChecked();
+  await expect(hint).toBeHidden();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  // Once its only ending hands off, the team already has the date, so the switch does nothing.
+  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+  await documentEditor.getByLabel("complete kind").selectOption("handoff");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "arrival", exact: true }).click();
+  await expect(editable).toBeChecked();
+  await expect(hint).toBeVisible();
+
+  // The hint goes with the switch.
+  await editable.click();
+  await expect(hint).toBeHidden();
+});
+
 const addChatStep = async (page: Page, documentEditor: Locator, text: string) => {
   await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
   await page.getByRole("menuitem", { name: "Chat" }).click();

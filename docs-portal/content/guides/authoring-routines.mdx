@@ -141,8 +141,9 @@ then continues through the flow.
 Choose a type — `text`, `number`, `boolean`, `email`, or `date` — in
 **Information**. Open a value's row there to switch **Required** off when the
 flow may reach an ending while the value remains empty, turn on **Editable after
-completion** when a visitor may correct it later, or turn on **Sensitive** when
-it is something the visitor would not want copied around. Ray switches
+completion** when a visitor may correct it after the routine ends (see [Changes
+after a routine ends](#changes-after-a-routine-ends)), or turn on **Sensitive**
+when it is something the visitor would not want copied around. Ray switches
 **Editable after completion** and **Sensitive** on or off for a value, and only
 when you ask.
 
@@ -217,6 +218,40 @@ runs on still reads the value, since it is part of the conversation. A value the
 visitor gives while no step is asking for it, before its step or as a correction
 after the routine has finished, is marked only when the routine stores it, and
 once the routine has ended a later reply that mentions the value is not masked.
+
+### Changes after a routine ends
+
+Say a visitor gives an arrival date of 5 January, then tells your booking
+routine they're only browsing, and it ends without telling anyone. With
+`@arrival` marked **Editable after completion**, "actually I'd arrive on 9
+January" updates the date the routine holds, and the agent confirms it noted the
+change. It reads "9 January" against today's date, so the year comes out right.
+
+The agent takes a change only when the change is real:
+
+- **The routine holds the value.** A routine that ended before the visitor gave
+  a date holds no `@arrival`, so "I'd like to book from 8 to 10 January" is a new
+  request, not a change.
+- **Nothing the routine collected has left the conversation.** Once its ending
+  notified your team, handed off, or sent the completion export, or a skill,
+  action, or approval step ran, a changed value would reach none of them. The
+  agent takes no change and answers the message like any other. Every skill
+  step counts, even one that only looks something up.
+- **The visitor is changing what they gave.** A request for something new, such
+  as another booking with different dates, is not a change either.
+
+A message that isn't a change goes on as any message does, and the routine's
+[reentry](#reentry) setting decides what happens to it. Under **Once per
+conversation**, the default, the finished routine doesn't start again, so "I'd
+like to book from 8 to 10 January" gets a normal answer. Under **Every time it
+matches** it starts a new booking. The agent keeps a finished routine for 30
+minutes after its last update; after that, no change is taken.
+
+When a routine can't end without sending what it collected, **Editable after
+completion** does nothing on its fields. The field's row says so beside the
+switch, and Ray's `validate_routine` reports each such field as
+`mutable_slot_not_correctable`. Neither stops the routine from saving or
+publishing.
 
 ## Set branches, approvals, and endings
 
@@ -410,6 +445,17 @@ from a test that kept skills off.
   it. A sensitive address never leaves the conversation, so it can't take
   replies. Validation reports `operator_notice_reply_to_slot_invalid` until you
   pick another email field or **No reply-to**.
+- A visitor's change after the routine ended isn't taken, though the field is
+  **Editable after completion**: the routine held no value for it, or its
+  ending already notified the team, handed off, or exported, or a skill,
+  action, or approval step ran. The turn's span records why as
+  `routine.slot_correction.decision` (`not_held`, `already_sent`, or
+  `new_request` when the message asked for something new). When every way
+  through the routine sends what it collected, `validate_routine` flags the
+  field as `mutable_slot_not_correctable`.
+- A booking request after a booking routine ended gets a normal answer instead
+  of a new booking: the routine runs **Once per conversation**. Set its reentry
+  to **Every time it matches** to let it start again.
 - A webhook or Slack skill receives `[redacted]` for a value: the field is
   marked sensitive and the step passes it without a binding. Bind the skill's
   input to the field on the step, or turn **Sensitive** off.

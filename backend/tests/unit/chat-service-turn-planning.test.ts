@@ -1485,6 +1485,7 @@ describe("chat service fused turn planning", () => {
           handle: turnPlan,
           fallback: {
             detect: vi.fn(async () => ({
+              kind: "correction" as const,
               slots: [{ id: "email", key: "email", type: "email" as const, required: true, mutable: true }],
               slotKey: "email",
               rawValue: "new@example.com",

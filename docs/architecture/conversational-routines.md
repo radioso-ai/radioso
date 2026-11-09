@@ -711,15 +711,19 @@ the change.
 `RoutineSlotCorrector` (`packages/conversation-defaults/src/routineSlotCorrector.ts`)
 decides whether to offer a correction, and offers one only when it would be true:
 
-- It considers only the mutable slots the run holds a value for. A run that ended holding
-  none, such as a booking that ended on its opening turn, gets no model call, and the
-  message goes on to reentry and activation.
+- It considers only the slots `correctableSlots` returns: declared, `mutable`, and holding
+  a value in the run. A run that ended holding none, such as a booking that ended on its
+  opening turn, gets no model call, and the message goes on to reentry and activation.
 - It offers nothing once the run's values have left the conversation, read from the run's
   `path` against the routine it ran (`completedRunSentValues` in
   `packages/conversation-engine/src/routineEnding.ts`): the run passed a tool, action, or
   approval step, or its ending notified operators, handed off (a run stuck on a step ends
   there and hands off), or fired the completion export. A changed value would reach none
-  of those, and the ending does not run again, so the agent does not say it changed.
+  of those, and the ending does not run again, so the agent does not say it changed. Every
+  tool step counts, a read-only lookup included: the run record keeps which steps ran, not
+  what each skill did outside the conversation. Whether the ending exported is decided by
+  `firingCompletionExport`, the rule the runner emits the export by, applied to the routine
+  as this turn loads it.
 - Otherwise one model call (`backend/prompts/chat/routine-slot-correction-detect.md`)
   sees each offered slot with the value it holds, today's date in the turn's zone, and the
   conversation, and returns an `intent`: `correction` with the slot and its new value,
@@ -727,17 +731,39 @@ decides whether to offer a correction, and offers one only when it would be true
   different dates, or `other`. Only `correction` is offered; the rest go on to reentry and
   activation like any message.
 
-The engine then checks the offered slot is held, declared, and mutable, and that the value
-fits its type (`verifySlotCorrection`), before it saves the run with the new value. A value
-that fails its type gets a reply asking for a valid one and changes nothing. The
-confirmation (`routine-slot-correction-confirm.md`) says the value was noted and never that
-anything was booked, sent, or passed on.
+The engine claims a correction only to a slot `correctableSlots` returns for the run, the
+same rule the corrector offers by, then checks the value fits the slot's type
+(`verifySlotCorrection`) before it saves the run with the new value. A value that fails its
+type gets a reply asking for a valid one and changes nothing. The confirmation
+(`routine-slot-correction-confirm.md`) says the value was noted and never that anything was
+booked, sent, or passed on.
+
+A message that is not a correction goes where the routine's reentry setting sends it. Under
+`once_per_conversation`, the default, the ended routine stays out of activation, so a new
+request such as "I'd like to book from 8 to 10 January" is answered normally rather than
+starting the booking again; under `always` it starts a new run, and under `semantic` the
+reentry gate decides.
+
+A run the semantic reentry gate reopens with `resume_existing` starts again from its first
+step with the values it held, and its record keeps only the second part's `path`. If the
+first part notified the team and the reopened run ends quietly, a later correction is
+offered although the team holds the earlier value. The run record has no place to carry the
+first part's verdict across the reopening.
 
 The turn trace records a claimed correction as a `routine_slot_correction` stage, `applied`
 or `rejected` with the slot key, never the value. Every detection also sets
-`routine.slot_correction.decision` on the turn's span: `correction`, or why not —
+`routine.slot_correction.decision` on the turn's span to the final outcome: `correction`,
+`invalid_value` when the new value failed its type, or why no correction was offered —
 `not_held`, `already_sent`, `new_request`, `not_a_correction`, `no_mutable_slot`, or
 `unknown_routine`.
+
+At authoring time, `routineAdvisories` in `@radioso/routine-definition` reports
+`mutable_slot_not_correctable` for each `mutable` slot of a routine that can't end without
+sending what it collected: no route from its first step reaches an ending that sends
+nothing (`endingSendsCollectedValues`) without crossing a tool, action, or approval step.
+The advisory never blocks saving or publishing. Ray's `validate_routine` and routine
+proposals report it, and a backend test compares it against `completedRunSentValues` over
+every route through the compiled routine.
 
 ## Activation and clarification
 

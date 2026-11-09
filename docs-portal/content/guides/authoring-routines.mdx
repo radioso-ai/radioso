@@ -235,14 +235,22 @@ The agent takes a change only when the change is real:
 - **Nothing the routine collected has left the conversation.** Once its ending
   notified your team, handed off, or sent the completion export, or a skill,
   action, or approval step ran, a changed value would reach none of them. The
-  agent takes no change and answers the message like any other.
+  agent takes no change and answers the message like any other. Every skill
+  step counts, even one that only looks something up.
 - **The visitor is changing what they gave.** A request for something new, such
   as another booking with different dates, is not a change either.
 
-A message that isn't a change goes on as any message does, so it can start the
-routine again when its [reentry](#reentry) setting allows. The agent keeps a
-finished routine for 30 minutes after its last update; after that, no change is
-taken.
+A message that isn't a change goes on as any message does, and the routine's
+[reentry](#reentry) setting decides what happens to it. Under **Once per
+conversation**, the default, the finished routine doesn't start again, so "I'd
+like to book from 8 to 10 January" gets a normal answer. Under **Every time it
+matches** it starts a new booking. The agent keeps a finished routine for 30
+minutes after its last update; after that, no change is taken.
+
+When a routine can't end without sending what it collected, **Editable after
+completion** does nothing on its fields. Ray's `validate_routine` reports each
+such field as `mutable_slot_not_correctable`; the note never stops the routine
+from saving or publishing.
 
 ## Set branches, approvals, and endings
 
@@ -441,7 +449,12 @@ from a test that kept skills off.
   ending already notified the team, handed off, or exported, or a skill,
   action, or approval step ran. The turn's span records why as
   `routine.slot_correction.decision` (`not_held`, `already_sent`, or
-  `new_request` when the message asked for something new).
+  `new_request` when the message asked for something new). When every way
+  through the routine sends what it collected, `validate_routine` flags the
+  field as `mutable_slot_not_correctable`.
+- A booking request after a booking routine ended gets a normal answer instead
+  of a new booking: the routine runs **Once per conversation**. Set its reentry
+  to **Every time it matches** to let it start again.
 - A webhook or Slack skill receives `[redacted]` for a value: the field is
   marked sensitive and the step passes it without a binding. Bind the skill's
   input to the field on the step, or turn **Sensitive** off.

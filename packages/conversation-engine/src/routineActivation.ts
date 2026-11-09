@@ -11,7 +11,7 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 import { clarificationStage } from "./clarification.js";
-import { verifySlotCorrection } from "./slotCorrection.js";
+import { correctableSlots, verifySlotCorrection } from "./slotCorrection.js";
 import { buildResolvedSteering, knownAnswerCoverage, steeringForKnownVerdict } from "./steering.js";
 import { claimRoutineResume } from "./routineResume.js";
 import {
@@ -124,9 +124,6 @@ const buildSlotCorrectionTurn = async (
   });
 };
 
-const holdsValue = (variables: Record<string, unknown>, key: string): boolean =>
-  Object.prototype.hasOwnProperty.call(variables, key);
-
 const claimCompletedRoutineCorrection = async (
   input: AttemptRoutineInput,
   baseTurn: TurnContext,
@@ -141,9 +138,12 @@ const claimCompletedRoutineCorrection = async (
     return null;
   }
   const candidate = await routineSlotCorrection.detect({ turn: baseTurn, completedState });
-  // A correction changes a value the run holds. Anything else, a request for something new
-  // included, goes on to reentry and activation (#1714).
-  if (candidate.kind !== "correction" || !holdsValue(completedState.variables, candidate.slotKey)) {
+  // A correction changes a value the run holds in a slot open to one. Anything else, a request
+  // for something new included, goes on to reentry and activation (#1714).
+  if (
+    candidate.kind !== "correction" ||
+    !correctableSlots(candidate.slots, completedState.variables).some((slot) => slot.key === candidate.slotKey)
+  ) {
     return null;
   }
   const verdict = verifySlotCorrection({

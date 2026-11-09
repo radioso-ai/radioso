@@ -60,6 +60,9 @@ const scriptedModel = (visitors: Record<string, Visitor>): ConversationModelGate
     if (metadata.routineSlotCorrectionConfirm === true) {
       return { text: "Noted, your arrival is now the 9th." };
     }
+    if (metadata.routineSlotCorrectionInvalid === true) {
+      return { text: "That date doesn't exist. Which day will you arrive?" };
+    }
     if (request.systemPrompt?.includes("claimsAuthority")) {
       const selects = visitor.selects;
       return {
@@ -185,5 +188,47 @@ describe("a message after a booking routine ended (#1714)", () => {
     expect(correctionStage(booking)).toBeUndefined();
     expect(booking?.operatorNotice).toMatchObject({ collected: { arrival: "2027-01-08", departure: "2027-01-10" } });
     expect(decisionsTraced()).toEqual(["correction", "new_request"]);
+  });
+
+  // Under the default reentry setting a booking runs once per conversation, so once it has
+  // ended the request is answered normally: the routine does not start again, and no change is
+  // claimed either. The routine's reentry setting decides this; the correction pass only stays
+  // out of its way.
+  it("hands a new request to normal answering when the booking runs once per conversation", async () => {
+    const model = scriptedModel({
+      [JUST_LOOKING]: { activates: true, selects: { exit: "just_looking", dates: {} } },
+      [PRICE_QUESTION]: { activates: false },
+      [BOOK_JANUARY]: { activates: true, detects: { intent: "correction", slotKey: "arrival", value: "2027-01-08" } },
+    });
+    const conversation = await startBookingConversation(model, { reentryMode: "once_per_conversation" });
+
+    await conversation.send(JUST_LOOKING);
+    await conversation.send(PRICE_QUESTION);
+    const booking = await conversation.send(BOOK_JANUARY);
+
+    expect(booking).toBeNull();
+    expect(modelCalls(model, "routineSlotCorrectionDetect")).toHaveLength(0);
+    expect(modelCalls(model, "routineSlotCorrectionConfirm")).toHaveLength(0);
+    // Only the opening message was ranked; the ended booking is out of the running after that.
+    expect(modelCalls(model, "routineActivation")).toHaveLength(1);
+    expect(await conversation.routineState()).toMatchObject({ status: "completed", variables: {} });
+    expect(decisionsTraced()).toEqual(["not_held", "not_held"]);
+  });
+
+  it("records the refused value as the turn's final decision when the new date does not exist", async () => {
+    const lookingWithArrival = "I might arrive on 8 January, but I'm only looking for now.";
+    const impossibleDate = "Actually, make it the 31st of February.";
+    const model = scriptedModel({
+      [lookingWithArrival]: { activates: true, selects: { exit: "just_looking", dates: { arrival: "2027-01-08" } } },
+      [impossibleDate]: { activates: false, detects: { intent: "correction", slotKey: "arrival", value: "2027-02-31" } },
+    });
+    const conversation = await startBookingConversation(model);
+
+    await conversation.send(lookingWithArrival);
+    const change = await conversation.send(impossibleDate);
+
+    expect(correctionStage(change)).toMatchObject({ status: "rejected", outputs: { reason: "invalid_value" } });
+    expect(await conversation.routineState()).toMatchObject({ variables: { arrival: "2027-01-08" } });
+    expect(decisionsTraced().at(-1)).toBe("invalid_value");
   });
 });

@@ -2,6 +2,8 @@ import type {
   ConversationRoutineResumeResult,
   ProcessTurnResult,
   Routine,
+  RoutineAuthoredTerminalKind,
+  RoutineCompletionExport,
   RoutineOperatorNoticeEffect,
   RoutineState,
   RoutineStep,
@@ -84,20 +86,50 @@ const operatorNoticeFor = (
   };
 };
 
+/** The kind of ending a `terminal` step is; a terminal that declares none, or an unknown one, completes. */
+export const terminalKindFor = (step: RoutineStep): RoutineAuthoredTerminalKind | null => {
+  if (step.kind !== "terminal") {
+    return null;
+  }
+  const kind = step.metadata?.terminalKind;
+  return kind === "handoff" || kind === "action" || kind === "complete" ? kind : "complete";
+};
+
+/**
+ * The routine's completion export when it fires on an ending of `kind`, else null. The one
+ * statement of when an ending exports: the runner emits the export from it, and
+ * {@link completedRunSentValues} reads it back.
+ */
+export const firingCompletionExport = (
+  routine: Routine,
+  kind: RoutineAuthoredTerminalKind | null,
+): RoutineCompletionExport | null => {
+  const completionExport = routine.completionExport;
+  if (
+    !completionExport?.enabled ||
+    !completionExport.destinationRef ||
+    (kind !== "complete" && kind !== "handoff") ||
+    !completionExport.triggerKinds.includes(kind)
+  ) {
+    return null;
+  }
+  return completionExport;
+};
+
 /** Steps that hand the run's values to someone outside the conversation the moment they run. */
 const STEPS_THAT_SEND: ReadonlySet<RoutineStep["kind"]> = new Set(["skill", "action", "await"]);
 
 /** Whether the terminal a run ended on told someone outside the conversation what it held. */
 const endingSends = (routine: Routine, terminal: RoutineStep): boolean => {
-  if (terminal.metadata?.terminalKind === "handoff") {
+  const kind = terminalKindFor(terminal);
+  if (kind === "handoff") {
     return true;
   }
   const notice = terminal.metadata?.operatorNotice;
   if (typeof notice === "object" && notice !== null) {
     return true;
   }
-  const completionExport = routine.completionExport;
-  return completionExport?.enabled === true && completionExport.triggerKinds.includes("complete");
+  return firingCompletionExport(routine, kind) !== null;
 };
 
 /**

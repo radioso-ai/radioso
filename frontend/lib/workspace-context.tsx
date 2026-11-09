@@ -58,7 +58,7 @@ export const shouldLogoutAfterWorkspaceBootstrapError = (error: unknown): boolea
 )
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const { user, isBootstrapping, logout } = useAuth()
+  const { user, isBootstrapping, discardSession } = useAuth()
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -127,7 +127,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setActiveWorkspaceId(targetId)
         }
       } catch (error) {
-        if (!cancelled && shouldLogoutAfterWorkspaceBootstrapError(error)) logout()
+        if (!cancelled && shouldLogoutAfterWorkspaceBootstrapError(error)) discardSession()
       } finally {
         if (!cancelled) setIsLoading(false)
       }
@@ -138,7 +138,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       cancelled = true
       window.removeEventListener('radioso:accounts-updated', handleAccountRefresh)
     }
-  }, [signedInUserId, signedInAccountId, isBootstrapping, logout, refreshAccounts])
+  }, [signedInUserId, signedInAccountId, isBootstrapping, discardSession, refreshAccounts])
 
   const switchWorkspace = useCallback(async (workspaceId: string) => {
     const workspace = workspaces.find((candidate) => candidate.id === workspaceId) ?? null

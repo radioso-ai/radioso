@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { normalizeEmail } from "../../../modules/auth/domain/authPrimitives.js";
+import { normalizeEmail, serializeClearedSessionCookie } from "../../../modules/auth/domain/authPrimitives.js";
 import { PENDING_REGISTRATION_COOKIE_NAME } from "../../../modules/auth/services/authFunnelService.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { readRequestSource } from "../middleware/requestSource.js";
@@ -68,6 +68,7 @@ type AuthRouteDependencies = SessionDependencies & Pick<
   | "passwordResetService"
   | "emailVerificationService"
   | "authFunnelService"
+  | "sessionSignOutService"
   | "abuseControlService"
   | "auditService"
 >;
@@ -235,6 +236,23 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
         workspaceName: result.workspaceName,
         workspacePublicRouteKey: result.workspacePublicRouteKey,
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Signing out works from any state, so this reads the cookie itself instead of sitting
+  // behind `requireSession`: a request with no live session still gets the cookie cleared.
+  // A revocation that fails is an error and leaves the cookie, so the browser is never told
+  // it is signed out while the server session is live. Like the other cookie-authenticated
+  // routes here, it relies on `SameSite=Lax` to keep the cookie off cross-site POSTs.
+  router.post("/logout", async (req, res, next) => {
+    try {
+      const sessionToken: unknown = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
+      await dependencies.sessionSignOutService.signOut(typeof sessionToken === "string" ? sessionToken : undefined);
+      res.append("Set-Cookie", serializeClearedSessionCookie(dependencies.env));
+      res.setHeader("Cache-Control", "no-store");
+      res.status(204).end();
     } catch (error) {
       next(error);
     }

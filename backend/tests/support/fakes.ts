@@ -62,6 +62,10 @@ import type {
   AuthFunnelRepositoryPort,
   CredentialGeneration,
 } from "../../src/modules/auth/services/authFunnelService.js";
+import type {
+  EndedSession,
+  SessionSignOutRepositoryPort,
+} from "../../src/modules/auth/services/sessionSignOutService.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
 import type {
   AgentGreetingUpdateOptions,
@@ -595,7 +599,7 @@ interface InMemorySessionWriter {
   revokeAllForUser(userId: string, revokedAt: Date): Promise<number>;
 }
 
-export class InMemorySessionRepository implements SessionRepositoryPort, InMemorySessionWriter {
+export class InMemorySessionRepository implements SessionRepositoryPort, SessionSignOutRepositoryPort, InMemorySessionWriter {
   private readonly items = new Map<string, SessionRecord>();
   // Postgres joins the user into the session lookup, for the credential generation and to
   // drop disabled users; tests wire the users in.
@@ -639,6 +643,17 @@ export class InMemorySessionRepository implements SessionRepositoryPort, InMemor
     if (item) {
       item.lastSeenAt = lastSeenAt;
     }
+  }
+
+  async revokeByTokenHash(sessionTokenHash: string, revokedAt: Date): Promise<EndedSession | null> {
+    const item = [...this.items.values()].find(
+      (candidate) => candidate.sessionTokenHash === sessionTokenHash && candidate.revokedAt === null,
+    );
+    if (!item) {
+      return null;
+    }
+    item.revokedAt = revokedAt;
+    return { sessionId: item.id, userId: item.userId, accountId: item.accountId };
   }
 
   async revokeAllForUser(userId: string, revokedAt: Date): Promise<number> {

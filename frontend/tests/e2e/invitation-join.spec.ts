@@ -76,6 +76,7 @@ const installInvitationApiMocks = async (
     session?: SessionFixture | null
     onAccept?: (body: unknown) => void
     onAcceptAsCurrentUser?: () => void
+    onLogout?: () => void
   },
 ) => {
   const {
@@ -116,6 +117,11 @@ const installInvitationApiMocks = async (
     if (path === `/auth/invitations/${token}/accept-as-current-user` && method === 'POST') {
       options.onAcceptAsCurrentUser?.()
       await route.fulfill({ json: loginResponse })
+      return
+    }
+    if (path === '/auth/logout' && method === 'POST') {
+      options.onLogout?.()
+      await route.fulfill({ status: 204 })
       return
     }
     if (path === '/workspace' && method === 'GET') {
@@ -366,6 +372,36 @@ test('a session signed in as a different address shows the mismatch without a jo
   await expect(page.getByText(invitedEmail, { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Use a different account' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Join account' })).toHaveCount(0)
+})
+
+test('using a different account ends the session and offers the credential form on the same invitation', async ({ page }) => {
+  const token = 'invite-switch-account'
+  const invitedEmail = 'invited-person@example.com'
+  let loggedOut = false
+
+  await seedSignedInUser(page, { userId: 'user-2', accountId: 'account-2', email: 'someone-else@example.com' })
+  await installInvitationApiMocks(page, {
+    token,
+    invitation: {
+      accountId: 'account-2',
+      email: invitedEmail,
+      status: 'pending',
+      expiresAt: nowIso,
+      requiresExistingPassword: false,
+      federatedProviders: [],
+    },
+    onLogout: () => {
+      loggedOut = true
+    },
+  })
+
+  await page.goto(`/invite/${token}`)
+  await page.getByRole('button', { name: 'Use a different account' }).click()
+
+  await expect(page.getByLabel('Email')).toHaveValue(invitedEmail)
+  await expect(page.getByText(/You are signed in as/)).toHaveCount(0)
+  expect(loggedOut).toBe(true)
+  await expect(page).toHaveURL(new RegExp(`/invite/${token}$`))
 })
 
 test('a non-pending invitation is blocked without a form', async ({ page }) => {

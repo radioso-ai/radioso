@@ -3,6 +3,13 @@
 // not the bare /api path. Using /api here 404s in the real app.
 const operatorConsoleApiBase = "/backend/api/v1/ee/operator-console";
 
+export const staffGoogleSignInUrl = `${operatorConsoleApiBase}/auth/google/start`;
+
+export interface StaffSignInMethods {
+  password: boolean;
+  google: boolean;
+}
+
 export type StaffRole = "support_read" | "billing_write" | "owner";
 export type StaffStatus = "active" | "disabled";
 
@@ -126,7 +133,8 @@ interface StaffCreatePayload {
   email: string;
   name: string;
   role: StaffRole;
-  password: string;
+  /** Only while staff sign in with a password. */
+  password?: string;
 }
 
 export class StaffApiError extends Error {
@@ -187,6 +195,8 @@ const operatorFetch = async <T>(
 };
 
 export const staffAuthApi = {
+  signInMethods: () =>
+    operatorFetch<{ methods: StaffSignInMethods }>("/auth/methods"),
   login: (input: { email: string; password: string }) =>
     operatorFetch<{ staff: StaffUser }>("/auth/login", {
       method: "POST",

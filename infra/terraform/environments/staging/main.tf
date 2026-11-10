@@ -82,6 +82,7 @@ module "radioso" {
   public_chat_session_secret                = var.public_chat_session_secret
   connector_encryption_key                  = var.connector_encryption_key
   ee_usage_admin_token                      = var.ee_usage_admin_token
+  staff_google_workspace_domain             = var.staff_google_workspace_domain
   resend_mail_api_key                       = var.resend_mail_api_key
   lettermint_project_token                  = var.lettermint_project_token
   mail_driver                               = var.mail_driver

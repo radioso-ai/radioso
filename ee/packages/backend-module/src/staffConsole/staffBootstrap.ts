@@ -21,10 +21,11 @@ export class StaffBootstrapService {
     private readonly events: Pick<StaffSecurityEvents, "privilegedChange">,
   ) {}
 
-  async bootstrapOwner(input: { email: string; name: string; password: string }): Promise<StaffBootstrapResult> {
+  /** `password` is null when staff sign in with Google Workspace. */
+  async bootstrapOwner(input: { email: string; name: string; password: string | null }): Promise<StaffBootstrapResult> {
     const email = input.email.trim().toLowerCase();
     const existing = await this.users.findByEmail(email);
-    const passwordHash = await hashStaffPassword(input.password);
+    const passwordHash = input.password === null ? null : await hashStaffPassword(input.password);
     if (existing) {
       return this.resetExistingOwner(existing, passwordHash);
     }
@@ -40,11 +41,11 @@ export class StaffBootstrapService {
     return { staff, action: "create_owner", revokedSessions: 0 };
   }
 
-  private async resetExistingOwner(existing: StaffUser, passwordHash: string): Promise<StaffBootstrapResult> {
+  private async resetExistingOwner(existing: StaffUser, passwordHash: string | null): Promise<StaffBootstrapResult> {
     if (existing.role !== "owner") {
       throw new HttpError(409, "staff_bootstrap_conflict", "Bootstrap can only reset an existing owner.");
     }
-    const staff = await this.users.updatePassword(existing.id, passwordHash);
+    const staff = await this.users.resetCredentials(existing.id, passwordHash);
     if (!staff) {
       throw new HttpError(404, "not_found", "Staff owner not found.");
     }

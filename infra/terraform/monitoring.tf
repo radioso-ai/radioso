@@ -407,6 +407,8 @@ resource "google_logging_metric" "staff_sign_in_failures" {
     "resource.type=\"cloud_run_revision\"",
     "resource.labels.service_name=\"${local.resource_name_prefix}-backend\"",
     "jsonPayload.event=\"staff_console.sign_in\" AND jsonPayload.outcome=\"failure\"",
+    # These come from the Google round trip before any identity exists, so anyone can produce them.
+    "NOT jsonPayload.reason=(\"provider_error\" OR \"invalid_state\" OR \"oauth_exchange_failed\")",
   ])
 
   metric_descriptor {

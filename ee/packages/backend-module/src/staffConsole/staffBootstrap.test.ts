@@ -11,6 +11,7 @@ const staffUser = async (role: StaffRole): Promise<StaffUser> => ({
   email: "owner@example.com",
   name: "Owner",
   passwordHash: await hashStaffPassword("old-password-123"),
+  googleSubject: "old-google-subject",
   role,
   status: "disabled",
   createdAt: new Date(),
@@ -28,6 +29,7 @@ const createService = (existing: StaffUser | null) => {
         email: input.email,
         name: input.name,
         passwordHash: input.passwordHash,
+        googleSubject: null,
         role: input.role,
         status: input.status ?? "active",
         createdAt: new Date(),
@@ -37,8 +39,8 @@ const createService = (existing: StaffUser | null) => {
       created.push(row);
       return row;
     }),
-    updatePassword: vi.fn(async (_id: string, passwordHash: string) =>
-      existing ? { ...existing, passwordHash, status: "active" as const } : null),
+    resetCredentials: vi.fn(async (_id: string, passwordHash: string | null) =>
+      existing ? { ...existing, passwordHash, googleSubject: null, status: "active" as const } : null),
   } as unknown as StaffUserRepository;
   const revokeAllForStaff = vi.fn(async () => 2);
   const sessions = { revokeAllForStaff } as unknown as StaffSessionRepository;
@@ -51,6 +53,22 @@ const createService = (existing: StaffUser | null) => {
 const input = { email: "Owner@Example.com", name: "Owner", password: "new-password-123" };
 
 describe("StaffBootstrapService", () => {
+  it("creates an owner with no password when staff sign in with Workspace", async () => {
+    const { service, created } = createService(null);
+
+    await service.bootstrapOwner({ ...input, password: null });
+
+    expect(created[0]).toMatchObject({ role: "owner", passwordHash: null });
+  });
+
+  it("frees a reset owner to sign in with a replacement Google account", async () => {
+    const { service } = createService(await staffUser("owner"));
+
+    const result = await service.bootstrapOwner({ ...input, password: null });
+
+    expect(result.staff).toMatchObject({ passwordHash: null, googleSubject: null, status: "active" });
+  });
+
   it("creates the first owner, audits it, and raises the alertable line", async () => {
     const { service, created, revokeAllForStaff, record, warn } = createService(null);
 

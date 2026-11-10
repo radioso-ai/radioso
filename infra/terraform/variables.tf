@@ -786,6 +786,12 @@ variable "staff_session_ttl_hours" {
   default     = 8
 }
 
+variable "staff_google_workspace_domain" {
+  description = "Google Workspace domain whose accounts sign in to the Enterprise operator console. Setting it turns password sign-in off, so register the console's callback on the Google login client first. Leave unset to keep password sign-in."
+  type        = string
+  default     = null
+}
+
 variable "ee_usage_admin_token" {
   description = "Bearer token for the Enterprise usage-limits admin API. Leave unset to disable it."
   type        = string

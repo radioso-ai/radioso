@@ -12,10 +12,17 @@ import { HttpError } from "../shared/httpError.js";
 const DEFAULT_STAFF_SESSION_TTL_HOURS = 8;
 export const staffSessionIdleTimeoutMs = 30 * 60 * 1000;
 
-interface StaffAuthResult {
+export interface StaffAuthResult {
   staff: StaffUser;
   sessionToken: string;
   expiresAt: Date;
+}
+
+interface StaffGoogleIdentity {
+  subject: string;
+  email: string;
+  emailVerified: boolean;
+  hostedDomain: string | null;
 }
 
 export class StaffAuthService {
@@ -42,6 +49,43 @@ export class StaffAuthService {
       throw new HttpError(403, "forbidden", "Staff user is disabled.");
     }
 
+    return this.openSession(staff, "password");
+  }
+
+  /**
+   * Google says who this is; `ee_staff_users` says whether they are staff. The hosted domain is
+   * what proves a managed Workspace account, since a personal Google account can hold any address.
+   * Google may reassign an address but never a subject, so the first sign-in binds the account.
+   */
+  async loginWithGoogle(identity: StaffGoogleIdentity, workspaceDomain: string): Promise<StaffAuthResult> {
+    const refuse = async (
+      reason: "email_unverified" | "wrong_workspace" | "not_staff" | "disabled" | "subject_mismatch",
+      staffId?: string,
+    ): Promise<never> => {
+      await this.events.signIn({ method: "google", outcome: "failure", reason, staffId });
+      throw new HttpError(403, "forbidden", "This Google account cannot sign in here.");
+    };
+
+    if (!identity.emailVerified) {
+      return refuse("email_unverified");
+    }
+    if (identity.hostedDomain?.toLowerCase() !== workspaceDomain) {
+      return refuse("wrong_workspace");
+    }
+    const staff = await this.users.findByEmail(identity.email);
+    if (!staff) {
+      return refuse("not_staff");
+    }
+    if (staff.status !== "active") {
+      return refuse("disabled", staff.id);
+    }
+    if (!(await this.users.bindGoogleSubject(staff.id, identity.subject))) {
+      return refuse("subject_mismatch", staff.id);
+    }
+    return this.openSession(staff, "google");
+  }
+
+  private async openSession(staff: StaffUser, method: "password" | "google"): Promise<StaffAuthResult> {
     const sessionToken = generateStaffSessionToken();
     const expiresAt = new Date(Date.now() + this.resolveTtlHours() * 60 * 60 * 1000);
     await this.sessions.create({
@@ -50,7 +94,7 @@ export class StaffAuthService {
       expiresAt,
     });
     await this.users.touchLastLogin(staff.id);
-    await this.events.signIn({ method: "password", outcome: "success", staffId: staff.id });
+    await this.events.signIn({ method, outcome: "success", staffId: staff.id });
 
     return { staff, sessionToken, expiresAt };
   }

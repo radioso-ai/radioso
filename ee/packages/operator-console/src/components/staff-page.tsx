@@ -16,6 +16,8 @@ export function StaffPage() {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ email: "", name: "", role: "support_read" as StaffRole, password: "" });
   const [saving, setSaving] = useState(false);
+  // Null until the API says how staff sign in; the form stays closed until then.
+  const [usesPasswords, setUsesPasswords] = useState<boolean | null>(null);
 
   const load = async () => {
     const result = await staffAuthApi.listStaff();
@@ -24,6 +26,9 @@ export function StaffPage() {
 
   useEffect(() => {
     load().catch((caught) => setError(caught instanceof Error ? caught.message : "Staff could not be loaded."));
+    staffAuthApi.signInMethods()
+      .then((result) => setUsesPasswords(result.methods.password))
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "Sign-in methods could not be loaded."));
   }, []);
 
   const create = async (event: FormEvent<HTMLFormElement>) => {
@@ -31,7 +36,8 @@ export function StaffPage() {
     setSaving(true);
     setError(null);
     try {
-      await staffAuthApi.createStaff(form);
+      const { password, ...identity } = form;
+      await staffAuthApi.createStaff(usesPasswords ? { ...identity, password } : identity);
       setForm({ email: "", name: "", role: "support_read", password: "" });
       await load();
     } catch (caught) {
@@ -110,12 +116,17 @@ export function StaffPage() {
                 {roles.map((role) => <option key={role} value={role}>{role}</option>)}
               </select>
             </label>
-            <label className="block text-sm font-medium text-zinc-200">
-              Temporary password
-              <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required minLength={12} />
-            </label>
+            {usesPasswords === true ? (
+              <label className="block text-sm font-medium text-zinc-200">
+                Temporary password
+                <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required minLength={12} />
+              </label>
+            ) : null}
+            {usesPasswords === false ? (
+              <p className="text-sm text-zinc-400">They sign in with their Google Workspace account at this address.</p>
+            ) : null}
           </div>
-          <Button className="mt-5" type="submit" disabled={saving}>
+          <Button className="mt-5" type="submit" disabled={saving || usesPasswords === null}>
             <UserPlus className="size-4" />
             {saving ? "Creating" : "Create staff"}
           </Button>

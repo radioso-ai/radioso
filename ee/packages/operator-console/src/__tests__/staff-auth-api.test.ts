@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { StaffApiError, staffAuthApi } from "../lib/staff-auth-api";
+import { StaffApiError, staffAuthApi, staffGoogleSignInUrl } from "../lib/staff-auth-api";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}) =>
   new Response(JSON.stringify(body), {
@@ -63,6 +63,20 @@ describe("staff auth api", () => {
 
     await expect(staffAuthApi.setStaffRole("staff-1", "owner")).rejects.toBeInstanceOf(StaffApiError);
     expect(location.href).toBe("/operator/login");
+  });
+
+  it("asks the API which sign-in methods are on, and starts Google sign-in through the proxy", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ methods: { password: false, google: true } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await staffAuthApi.signInMethods();
+
+    expect(result.methods).toEqual({ password: false, google: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/backend/api/v1/ee/operator-console/auth/methods",
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(staffGoogleSignInUrl).toBe("/backend/api/v1/ee/operator-console/auth/google/start");
   });
 
   it("builds organization query parameters", async () => {

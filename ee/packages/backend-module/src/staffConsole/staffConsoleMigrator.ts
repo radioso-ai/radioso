@@ -22,6 +22,12 @@ export const staffConsoleMigrator: ApplicationDatabaseMigrator = {
     `);
 
     await database.query(`
+      ALTER TABLE ee_staff_users
+        ALTER COLUMN password_hash DROP NOT NULL,
+        ADD COLUMN IF NOT EXISTS google_subject TEXT
+    `);
+
+    await database.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_ee_staff_users_email_lower_unique
         ON ee_staff_users (LOWER(email))
     `);

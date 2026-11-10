@@ -16,4 +16,12 @@ describe("the staff console log lines the Cloud alerts match", () => {
     expect(monitoring).toContain(`jsonPayload.event=\\"${STAFF_SIGN_IN_LOG_EVENT}\\" AND jsonPayload.outcome=\\"failure\\"`);
     expect(monitoring).toContain(`jsonPayload.event=\\"${STAFF_PRIVILEGED_CHANGE_LOG_EVENT}\\"`);
   });
+
+  it("leaves out refusals anyone can produce without presenting an identity", async () => {
+    const monitoring = await readFile(new URL("../../../../../infra/terraform/monitoring.tf", import.meta.url), "utf8");
+
+    expect(monitoring).toContain(
+      'NOT jsonPayload.reason=(\\"provider_error\\" OR \\"invalid_state\\" OR \\"oauth_exchange_failed\\")',
+    );
+  });
 });

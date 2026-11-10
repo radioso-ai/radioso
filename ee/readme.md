@@ -175,6 +175,57 @@ source, using the `AUTH_RATE_LIMIT_*` budget. Any other console request carrying
 cookie is limited to 300 a minute per source, and to 60 a minute per signed-in staff
 member.
 
+### Signing in with Google Workspace
+
+Set a Workspace domain and staff sign in with their Google Workspace accounts, which
+brings your Workspace's two-step verification and offboarding to the console:
+
+```bash
+STAFF_GOOGLE_WORKSPACE_DOMAIN=example.com
+```
+
+This shares the Google client customer sign-in uses (`GOOGLE_LOGIN_CLIENT_ID` and
+`GOOGLE_LOGIN_CLIENT_SECRET`). Deploy this release and add the console's redirect URI
+to that client before you set the domain, because the domain turns password sign-in
+off the moment the backend restarts. On the bundled Cloud Run stack, set the domain
+as the `STAFF_GOOGLE_WORKSPACE_DOMAIN` GitHub environment variable, not a secret, and
+apply Terraform.
+
+```text
+<APP_BASE_URL>/backend/api/v1/ee/operator-console/auth/google/callback
+```
+
+The staff list still decides who gets in. A sign-in succeeds when Google verified
+the address, Google reports the account as part of that exact Workspace domain, and
+the address matches an active staff identity. Check that every staff identity's
+address is its Workspace address before you switch, since anyone else stops being
+able to sign in. New staff need only an address, a name, and a role.
+
+The first sign-in binds the Google account to the staff identity. If Workspace later
+hands that address to someone else, their sign-in is refused until an owner disables
+and re-enables the identity, which releases the binding. Disabling also ends the
+identity's open sessions.
+
+If the account is refused, the page says "That Google account can't sign in here" and
+a `staff.auth.login` audit event records the `reason`: `wrong_workspace`, `not_staff`,
+`disabled`, `email_unverified`, or `subject_mismatch`. If something broke instead,
+including a cancelled consent screen or an expired attempt, the page says "Google
+sign-in didn't finish. Try again" and the backend logs
+`staff_console.google_sign_in_error`.
+
+If the domain is set but the Google client or `APP_BASE_URL` is missing, the
+console stays closed, the page says "Staff sign-in isn't configured", and the backend
+logs which input is missing at startup. Removing the domain turns password sign-in
+back on for identities that still have a password.
+
+Sessions already open when you set the domain keep working until they end: 30 idle
+minutes, or the session lifetime. If you're switching because a password may be
+compromised, end them all once the domain is live:
+
+```sql
+UPDATE ee_staff_sessions SET revoked_at = NOW() WHERE revoked_at IS NULL;
+```
+
 ### First owner and recovery
 
 A fresh install has no staff identity, and only the `staff:bootstrap` command can
@@ -185,7 +236,10 @@ backend has started and created the staff tables. After the first owner exists,
 owners create further staff through the console.
 
 The password comes from the environment, so it stays out of your shell history
-and the job's arguments. It needs at least 12 characters.
+and the job's arguments. It needs at least 12 characters. With
+`STAFF_GOOGLE_WORKSPACE_DOMAIN` in the command's environment, leave the password out:
+the owner signs in with Google, and a reset also releases the Google account bound
+to them so they can use a replacement.
 
 ```bash
 DATABASE_URL="postgresql://..." \
@@ -217,18 +271,26 @@ gcloud run jobs delete staff-bootstrap --region "$REGION" --quiet
 gcloud secrets delete "$BOOTSTRAP_PASSWORD_SECRET" --quiet
 ```
 
+With Workspace sign-in on, skip the secret: drop `STAFF_BOOTSTRAP_PASSWORD` from
+`--set-secrets` and pass
+`--set-env-vars PGSSLMODE=no-verify,STAFF_GOOGLE_WORKSPACE_DOMAIN=example.com`.
+
 Every run writes a `staff.bootstrap` audit event and raises the staff access alert
 described in [Monitoring On Google Cloud](../docs/monitoring-google-cloud.md).
 
 ### Console endpoints
 
-Every endpoint below except `auth/login` needs the staff session cookie, and
-anything else under this path answers `401` without it. Reads allow any role; tier
+Every endpoint below except the sign-in ones (`auth/methods`, `auth/login`, and
+`auth/google/*`) needs the staff session cookie, and anything else under this path
+answers `401` without it. Reads allow any role; tier
 changes need `billing_write`; staff management needs `owner`. Writes must be sent
 as `application/json`, including ones with no body, and answer `415` otherwise.
 
 ```text
+GET    /api/v1/ee/operator-console/auth/methods
 POST   /api/v1/ee/operator-console/auth/login
+GET    /api/v1/ee/operator-console/auth/google/start
+GET    /api/v1/ee/operator-console/auth/google/callback
 POST   /api/v1/ee/operator-console/auth/logout
 GET    /api/v1/ee/operator-console/auth/me
 GET    /api/v1/ee/operator-console/organizations

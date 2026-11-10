@@ -343,6 +343,56 @@ test("turns a field's Editable after completion on and off, saves it, and reads 
   await expect(offEditor.getByRole("switch", { name: "Slot email editable after completion" })).not.toBeChecked();
 });
 
+test("a variable chip shows its type read-only and follows the type its field row sets", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Book a class");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor wants to book a class.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for the @start_date");
+  await page.getByRole("option", { name: /Create variable “start_date”/ }).click();
+
+  // The field row owns the type, so the chip menu shows it without offering a picker that does nothing.
+  await instruction.locator("[data-routine-chip='variable']").click();
+  await expect(page.getByRole("menuitemradio", { name: "text" })).toBeChecked();
+  await expect(page.getByRole("menuitemradio", { name: "text" })).toBeDisabled();
+  await expect(page.getByRole("menuitemradio", { name: "date" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "start_date", exact: true }).click();
+  await documentEditor.getByLabel("Slot start_date type").selectOption("date");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(
+    () => routineUpdates
+      .filter((update) => update.method === "POST" || update.method === "PATCH")
+      .at(-1)?.body?.slots?.find((slot) => slot.key === "start_date")?.type,
+    { timeout: 15_000 },
+  ).toBe("date");
+
+  // Reopened, the chip reads the type the field row set.
+  await documentEditor.getByRole("button", { name: "Instruction" }).first().click();
+  await documentEditor.getByLabel("Step 1 instruction").locator("[data-routine-chip='variable']").click();
+  await expect(page.getByRole("menuitemradio", { name: "date" })).toBeChecked();
+  await expect(page.getByRole("menuitemradio", { name: "date" })).toBeDisabled();
+});
+
 test("says Editable after completion has no effect once every ending of the routine sends what it collects", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { routineUpdates: [] });

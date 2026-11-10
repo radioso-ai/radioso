@@ -49,7 +49,9 @@ export function ConditionBuilderDialog({
   onOpenChange: (open: boolean) => void
   variables: ChipDocVariable[]
   onConfirm: (condition: ConditionDraft) => void
-  onSetVariableType: (refId: string, type: RoutineSlotType) => void
+  // Absent where the variable's own row owns its type: the picker then shows the type read-only,
+  // and the checks offered are the ones that fit it.
+  onSetVariableType?: (refId: string, type: RoutineSlotType) => void
 }) {
   const [refId, setRefId] = useState('')
   const [op, setOp] = useState<RoutineFieldGuardOp>('equals')
@@ -115,9 +117,10 @@ export function ConditionBuilderDialog({
               <select
                 id="conditionType"
                 value={selected.type}
+                disabled={!onSetVariableType}
                 onChange={(event) => {
                   const nextType = event.target.value as RoutineSlotType
-                  onSetVariableType(selected.id, nextType)
+                  onSetVariableType?.(selected.id, nextType)
                   setOp(fieldGuardOpsForType(nextType)[0])
                 }}
                 className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
@@ -126,7 +129,10 @@ export function ConditionBuilderDialog({
                   <option key={type} value={type}>{type}</option>
                 ))}
               </select>
-              <p className="text-xs text-muted-foreground">The type decides which exact checks are available.</p>
+              <p className="text-xs text-muted-foreground">
+                The type decides which exact checks are available.
+                {onSetVariableType ? null : ' Change it under Collected information.'}
+              </p>
             </div>
           ) : null}
           {selected ? (

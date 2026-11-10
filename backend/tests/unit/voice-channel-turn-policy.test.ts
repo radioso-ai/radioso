@@ -117,6 +117,41 @@ describe("voice turn policy", () => {
     expect(calls).toEqual([["bridgeDue", "check", true], ["firstSpeech", 3_000, true]]);
   });
 
+  it("claims the bridge line before speaking it, and keeps it unspoken and uncounted when the claim is refused", async () => {
+    const reply = () => timedReply([
+      { atMs: 0, event: conversation },
+      { atMs: 3_000, event: speech("We open at nine.", true) },
+      { atMs: 3_000, event: outcome },
+    ]).events;
+    const granted = recordingObserver();
+    const refused = recordingObserver();
+    const grant = vi.fn(async () => true);
+    const refuse = vi.fn(async () => false);
+
+    const spoken = await run(reply(), policy({ observer: granted.observer, claimBridge: grant }));
+    const silent = await run(reply(), policy({ observer: refused.observer, claimBridge: refuse }));
+
+    expect(spoken.map(({ event }) => event.type)).toEqual(["conversation", "bridge", "speech", "outcome"]);
+    expect(granted.calls).toEqual([["bridgeDue", "check", true], ["firstSpeech", 3_000, true]]);
+    expect(silent.map(({ event }) => event.type)).toEqual(["conversation", "speech", "outcome"]);
+    expect(refused.calls).toEqual([["firstSpeech", 3_000, false]]);
+    expect([grant.mock.calls.length, refuse.mock.calls.length]).toEqual([1, 1]);
+  });
+
+  it("claims no bridge line the session may not hear, or the agent has no words for", async () => {
+    const claimBridge = vi.fn(async () => true);
+    const steps = [
+      { atMs: 0, event: conversation },
+      { atMs: 3_000, event: speech("We open at nine.", true) },
+      { atMs: 3_000, event: outcome },
+    ];
+
+    await run(timedReply(steps).events, policy({ mayBridge: () => false, claimBridge }));
+    await run(timedReply(steps).events, policy({ bridge: { style: "check", text: null }, claimBridge }));
+
+    expect(claimBridge).not.toHaveBeenCalled();
+  });
+
   it("leaves a prompt reply untouched", async () => {
     const { observer, calls } = recordingObserver();
     const reply: TimedEvent[] = [

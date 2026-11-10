@@ -128,6 +128,7 @@ import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsR
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import { Database } from "../../../shared/infra/database.js";
+import type { PostgresNotificationListener } from "../../../shared/infra/postgresNotificationListener.js";
 import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.js";
 import {
   ContextualDirectiveMatchGatewayFactory,
@@ -224,6 +225,8 @@ export const buildChatServices = (input: {
   /** Optional: when wired, an eligible visitor message enqueues a facet extraction job (spec 956). */
   facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">;
   metricsRegistry?: MetricsRegistry | null;
+  /** The process's shared `LISTEN` connection; chat turn coordination subscribes to it. */
+  notificationListener: Pick<PostgresNotificationListener, "subscribe">;
   telemetryService: TelemetryService;
   webhookDestinations: WebhookDestinationRuntimePort;
   productAnalyticsService: ProductAnalyticsService;
@@ -781,8 +784,8 @@ export const buildChatServices = (input: {
     input.metricsRegistry,
   );
   const conversationTurnCoordination = createConversationTurnCoordination({
-    env: input.env,
     db: input.database.kysely,
+    listener: input.notificationListener,
     logger: input.logger,
     metricsRegistry: input.metricsRegistry,
   });

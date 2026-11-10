@@ -691,14 +691,14 @@ describe('AssistantMessageContent', () => {
         answerSegments={[
           { text: 'We run two retreats in February', citationIndices: [0] },
           { text: ':\n\n- [Healing the heart](https://retreats.example/healing) — 1–4 Feb · €320', citationIndices: [1] },
-          { text: '\n- Valmora reset — 2–7 Feb · €410', citationIndices: [2] },
+          { text: '\n- Breathwork reset — 2–7 Feb · €410', citationIndices: [2] },
         ]}
         onOpenDocument={async () => 'opened'}
       />,
     )
 
     expect(html.match(/<ul/g)).toHaveLength(1)
-    expect(listItemTexts(html)).toEqual(['Healing the heart — 1–4 Feb · €3202', 'Valmora reset — 2–7 Feb · €4103'])
+    expect(listItemTexts(html)).toEqual(['Healing the heart — 1–4 Feb · €3202', 'Breathwork reset — 2–7 Feb · €4103'])
   })
 
   // With no marker on the opening sentence, the first item shares the sentence's segment.
@@ -731,13 +731,13 @@ describe('AssistantMessageContent', () => {
         content="unused"
         citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
         answerSegments={[
-          { text: 'Two retreats run in February:\n- Valmora reset\n- [Healing the heart](https://retreats.example/healing)', citationIndices: [0] },
+          { text: 'Two retreats run in February:\n- Breathwork reset\n- [Healing the heart](https://retreats.example/healing)', citationIndices: [0] },
         ]}
         onOpenDocument={async () => 'opened'}
       />,
     )
 
-    expect(listItemTexts(html)).toEqual(['Valmora reset', 'Healing the heart1'])
+    expect(listItemTexts(html)).toEqual(['Breathwork reset', 'Healing the heart1'])
   })
 
   // An ordered-list segment renders through a dedicated branch. Anything redistribution

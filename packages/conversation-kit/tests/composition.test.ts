@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationModelGateway, SkillDefinition } from "@radioso/conversation-contract";
+import type { ConversationModelGateway, ConversationSkillSelector, SkillDefinition } from "@radioso/conversation-contract";
 
 import {
   createConversationKit,
@@ -156,7 +156,7 @@ describe("default skill selection", () => {
       modelGateway: gateway,
       skills: [{ name: "book", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } }],
       selector: {
-        select: vi.fn(async ({ turn }) => ({
+        select: vi.fn<ConversationSkillSelector["select"]>(async ({ turn }) => ({
           selected: turn.history.some((message) => message.content.includes("August 7"))
             ? [{ skillName: "book" }]
             : [],

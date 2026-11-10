@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseProseDoc, serializeProseDoc, tokenForChip, type ProseParagraph } from '../src/index.js'
+import { parseProseDoc, serializeProseDoc, tokenForChip, type ProseParagraph, type ProseSegment } from '../src/index.js'
 
 // The inline chip token layer is what a skill-mention surface reads and writes: an author
 // types `#skill` or `@variable` inside one field, and the stored value keeps those marks as
@@ -9,28 +9,31 @@ import { parseProseDoc, serializeProseDoc, tokenForChip, type ProseParagraph } f
 
 const paragraphs = (doc: { paragraphs: ProseParagraph[] }) => doc.paragraphs
 
+// `tokenForChip` receives a paragraph's chip segment, so the fixtures are typed as one.
+const chipSegment = (segment: Extract<ProseSegment, { kind: 'chip' }>) => segment
+
 const parse = (text: string, isSkill: (name: string) => boolean = () => false) =>
   paragraphs(parseProseDoc(text, isSkill))
 
 describe('inline chip tokens', () => {
   describe('tokenForChip', () => {
     it('writes a skill back as the `#name` an author typed', () => {
-      expect(tokenForChip({ kind: 'chip', chipKind: 'skill', refId: 'book_demo', label: 'Book demo' })).toBe('#book_demo')
+      expect(tokenForChip(chipSegment({ kind: 'chip', chipKind: 'skill', refId: 'book_demo', label: 'Book demo' }))).toBe('#book_demo')
     })
 
     it('writes a variable back as the `@name` an author typed', () => {
-      expect(tokenForChip({ kind: 'chip', chipKind: 'variable', refId: 'work_email', label: 'work email' })).toBe('@work_email')
+      expect(tokenForChip(chipSegment({ kind: 'chip', chipKind: 'variable', refId: 'work_email', label: 'work email' }))).toBe('@work_email')
     })
 
     it('keeps a skill chip whole when it carries input and output bindings', () => {
-      const token = tokenForChip({
+      const token = tokenForChip(chipSegment({
         kind: 'chip',
         chipKind: 'skill',
         refId: 'book_demo',
         label: 'Book demo',
         inputBindings: { email: { kind: 'variableRef', ref: 'work_email' } },
         outputAssignments: { booking: 'booking_id' },
-      })
+      }))
       // A mention surface rebuilds an unrecognized `#name` from its token, so nothing the
       // author bound may be dropped on the way back to text.
       expect(token).toContain('#book_demo')

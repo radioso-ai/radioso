@@ -758,7 +758,7 @@ helpers and the shared chat message limit from `app/http`
   speaks only when the runtime asks, on the caller's next utterance, and there
   is no push channel, so an Inbox reply waits for that request. The handoff
   module stores a reply on a voice conversation with `speech: { state:
-  "pending" }` (`operatorRepliesAreSpoken` in
+  "pending" }` (`repliesAreSpoken` in
   `chat/contracts/operatorReplySpeech.ts`); `customerReplyDelivery.ts` has no
   `voice` deliverer and needs none. The voice domain knows one chat-side port
   of the reply, `OperatorReplySpeechClaims` (the turn service's mandatory

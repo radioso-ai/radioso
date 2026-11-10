@@ -104,3 +104,31 @@ describe("PromptBuilder dates", () => {
     expect(withoutRange.prompt).toContain("Answer request:\nWhat's on this weekend?\n\nStandalone retrieval query:");
   });
 });
+
+describe("PromptBuilder answer layout", () => {
+  const systemPromptFor = (spokenReply?: boolean) =>
+    new PromptBuilder().build({
+      timeZone: "UTC",
+      query: "Which retreats run in February?",
+      history: [],
+      contexts: [],
+      settings: {},
+      ...(spokenReply === undefined ? {} : { spokenReply }),
+    }).systemPrompt;
+
+  it("lays a written answer covering three or more items out as a Markdown list", () => {
+    const prompt = systemPromptFor();
+
+    expect(prompt).toMatch(/three or more/i);
+    expect(prompt).toMatch(/Markdown list/i);
+    expect(prompt).not.toMatch(/read aloud/i);
+  });
+
+  it("lays a spoken answer out for a caller: a few items named, the rest offered, never a list", () => {
+    const prompt = systemPromptFor(true);
+
+    expect(prompt).toMatch(/read aloud/i);
+    expect(prompt).toMatch(/how many others/i);
+    expect(prompt).not.toMatch(/Markdown list/i);
+  });
+});

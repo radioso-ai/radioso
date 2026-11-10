@@ -106,6 +106,9 @@ const MOUNTAIN_COURSE_FIGURES_ABSENT: ConversationQualityCase["assertions"] = ["
 
 const FULL_QUOTE_FOR_THE_EVENT_ITALIAN = "Mi mandi un preventivo completo compreso di pernottamento per l'evento?";
 
+/** A line that opens a Markdown bulleted or numbered list item. */
+const MARKDOWN_LIST_ITEM = String.raw`(?m)^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S`;
+
 /**
  * The rubric every quick reply is graded on: no factual proposition at all, except what a
  * standing instruction supplies word for word or a courtesy about the assistant's own
@@ -191,11 +194,25 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
       { type: "answer_cites_document", documentId: PRICING_DOC_ID },
       { type: "answer_contains", pattern: "49", matchMode: "substring" },
+      // One price reads as a sentence, not a one-item list.
+      { type: "answer_does_not_contain", pattern: MARKDOWN_LIST_ITEM, matchMode: "regex" },
       {
         type: "llm_judge",
         expectedAnswer: "The Pro plan costs $49 per month.",
         criteria: "States the Pro plan price as $49 per month. Does not hedge, estimate, or invent a different figure.",
       },
+    ],
+  },
+  {
+    id: "retrieval-plans-listed",
+    name: "Three plans are laid out as a list, not run together in one paragraph",
+    tags: ["retrieval", "layout"],
+    query: "Which plans do you offer?",
+    assertions: [
+      { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
+      { type: "answer_cites_document", documentId: PRICING_DOC_ID },
+      { type: "answer_contains", pattern: MARKDOWN_LIST_ITEM, matchMode: "regex" },
+      { type: "answer_contains", pattern: "Enterprise", matchMode: "substring" },
     ],
   },
   {

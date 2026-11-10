@@ -83,6 +83,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
         ? { requestedDateRange: rewrittenQuery.structuredResult.requestedDateRange }
         : {}),
       timeZone: runTimeZone(input.request),
+      spokenReply: input.request.spokenReply,
       settings: {
         responseIdentity: input.request.responseIdentity,
         customInstruction: responseBehavior?.customInstruction ?? settings.customInstruction,

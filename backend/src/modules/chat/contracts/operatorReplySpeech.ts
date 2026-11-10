@@ -14,8 +14,11 @@ export const operatorReplySpeechSchema = z.object({
 });
 export type OperatorReplySpeech = z.infer<typeof operatorReplySpeechSchema>;
 
-/** Whether teammate replies on the conversation are spoken to its caller, and so wait for a turn. */
-export const operatorRepliesAreSpoken = (conversation: { channelContext: ConversationChannelContext | null }): boolean =>
+/**
+ * Whether the conversation's caller hears replies rather than reads them: a teammate's reply then
+ * waits for a turn, and the assistant lays its answer out for speech.
+ */
+export const repliesAreSpoken = (conversation: { channelContext: ConversationChannelContext | null }): boolean =>
   conversation.channelContext?.provider === "voice";
 
 /** A teammate's reply the caller has not heard yet. */

@@ -447,6 +447,21 @@ describe("grounded answer prompt contract", () => {
     expect(inline).toMatch(/distress/i);
   });
 
+  it("lays out three or more parallel items as a Markdown list, and leaves lists to the answer", () => {
+    const base = loadPromptTemplate("retrieval/answer.md");
+    const written = loadPromptTemplate("retrieval/answer-layout-written.md");
+    const envelope = loadPromptTemplate("chat/answer-envelope.md");
+
+    // A run of courses, dates, or prices written as one paragraph is hard to scan.
+    expect(base).toContain("{{layout_block}}");
+    expect(written).toMatch(/^Layout$/m);
+    expect(written).toMatch(/three or more/i);
+    expect(written).toMatch(/Markdown list/i);
+    // The envelope keeps follow-up questions out of the body without forbidding lists there.
+    expect(envelope).not.toMatch(/menus, lists/i);
+    expect(envelope).toMatch(/follow-up questions/i);
+  });
+
   it("decides answer support from findings or an admitted page excerpt, never wording or instructions", () => {
     const prompt = loadPromptTemplate("retrieval/answer.md");
 
@@ -497,8 +512,16 @@ describe("grounded answer prompt contract", () => {
     expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeLessThanOrEqual(640);
     // The grounded answer base folds in the compact inline-decline guard (#863),
     // not the full focused-miss ruleset.
-    expect(countWords(loadPromptTemplate("retrieval/answer.md")) + countWords(loadPromptTemplate("chat/grounded-inline-decline.md"))).toBeGreaterThanOrEqual(690);
-    expect(countWords(loadPromptTemplate("retrieval/answer.md")) + countWords(loadPromptTemplate("chat/grounded-inline-decline.md"))).toBeLessThanOrEqual(760);
+    // Widened when the answer gained a layout rule: three or more items become a Markdown
+    // list of same-shaped lines (name, then terse facts), and a spoken answer names a few
+    // items instead. The written layout is the longer one.
+    const groundedBase = countWords(loadPromptTemplate("retrieval/answer.md"))
+      + countWords(loadPromptTemplate("chat/grounded-inline-decline.md"))
+      + countWords(loadPromptTemplate("retrieval/answer-layout-written.md"));
+    expect(groundedBase).toBeGreaterThanOrEqual(770);
+    expect(groundedBase).toBeLessThanOrEqual(880);
+    expect(countWords(loadPromptTemplate("retrieval/answer-layout-spoken.md")))
+      .toBeLessThanOrEqual(countWords(loadPromptTemplate("retrieval/answer-layout-written.md")));
     expect(countWords(loadPromptTemplate("chat/grounded-miss.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeGreaterThanOrEqual(300);
     // Widened in #946: the focused decline also returns a decline classification.
     expect(countWords(loadPromptTemplate("chat/grounded-miss.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeLessThanOrEqual(460);
@@ -524,6 +547,7 @@ describe("grounded answer prompt contract", () => {
     // directive may withhold part of an answered request.
     const groundedWithSuggestions = stack(
       "retrieval/answer.md",
+      "retrieval/answer-layout-written.md",
       "chat/grounded-inline-decline.md",
       "chat/answer-envelope.md",
       "chat/answer-coverage-head.md",
@@ -531,18 +555,20 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-suggestions.md",
     );
     expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1900);
-    expect(groundedWithSuggestions).toBeLessThanOrEqual(2200);
+    // Widened with the layout rule above (three or more items become a Markdown list).
+    expect(groundedWithSuggestions).toBeLessThanOrEqual(2330);
 
     // Grounded answer, suggestions disabled. Widened in #1575 with the sheet above.
     const groundedNoSuggestions = stack(
       "retrieval/answer.md",
+      "retrieval/answer-layout-written.md",
       "chat/grounded-inline-decline.md",
       "chat/answer-envelope.md",
       "chat/answer-coverage-head.md",
       "chat/answer-coverage-response-guidance.md",
     );
     expect(groundedNoSuggestions).toBeGreaterThanOrEqual(1280);
-    expect(groundedNoSuggestions).toBeLessThanOrEqual(1570);
+    expect(groundedNoSuggestions).toBeLessThanOrEqual(1700);
 
     // Focused decline / grounded-miss owns the full decline ruleset.
     const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md");

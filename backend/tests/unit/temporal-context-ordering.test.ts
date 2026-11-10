@@ -55,7 +55,7 @@ describe("temporal context ordering", () => {
   });
 
   it("pushes past events below upcoming and undated context instead of surfacing them first", () => {
-    // Reproduces eval 93560082: a stale past event ("Valmora initiation" 2025-08-23) shares the
+    // Reproduces an eval case: a stale past event ("Valmora initiation" 2025-08-23) shares the
     // topic of a live 2026 event and, being the earliest date, was ascending-sorted to the top.
     const result = orderTemporalPromptContexts({
       contexts: [

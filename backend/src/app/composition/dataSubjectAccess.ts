@@ -8,9 +8,10 @@ import {
   DataSubjectConversationRepository,
 } from "../../db/repositories/dataSubjectConversationRepository.js";
 import { RoutineValueExporter } from "../../db/repositories/routineStateRepository.js";
+import { A2aTaskExporter } from "../../modules/a2a/public.js";
 import { SlackUserIdentityFinder } from "../../modules/connectors/plugins/index.js";
 import { EmailMessageExporter, EmailSenderIdentityFinder } from "../../modules/emailChannel/public.js";
-import type { DataSubjectReadUnitOfWork } from "../../modules/privacy/public.js";
+import { DataSubjectAccessService, type DataSubjectReadUnitOfWork } from "../../modules/privacy/public.js";
 import { VisitorRecordExporter, WebVisitorIdentityFinder } from "../../modules/visitors/composition.js";
 import type { DataSubjectDataExporter, DataSubjectIdentityFinder } from "../../shared/domain/dataSubjectAccess.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
@@ -40,6 +41,7 @@ export const defaultDataSubjectDataExporters: readonly DataSubjectDataExporterBi
   (trx) => new ContextVariableValueExporter(trx),
   (trx) => new EmailMessageExporter(trx),
   (trx) => new AnswerFeedbackExporter(trx),
+  (trx) => new A2aTaskExporter(trx),
 ];
 
 /**
@@ -64,4 +66,12 @@ export const createPostgresDataSubjectReadUnitOfWork = (deps: {
         conversations: new DataSubjectConversationRepository(trx),
       })),
   };
+};
+
+/** The data subject access service over the Postgres read above. */
+export const createPostgresDataSubjectAccess = (
+  deps: { db: Kysely<DB> } & Omit<ConstructorParameters<typeof DataSubjectAccessService>[0], "reads">,
+): DataSubjectAccessService => {
+  const { db, ...service } = deps;
+  return new DataSubjectAccessService({ ...service, reads: createPostgresDataSubjectReadUnitOfWork({ db }) });
 };

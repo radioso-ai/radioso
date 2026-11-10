@@ -27,8 +27,9 @@ import type {
   UserMessageInputMetadata,
 } from "../../../db/repositories/messageRepository.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
-import type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
+import type { ChatRoutineInvocationReport } from "../contracts/routineTurnState.js";
 import { repliesAreSpoken } from "../contracts/operatorReplySpeech.js";
+import type { DescribedRoutineTurn } from "./routines/routineTurnDescription.js";
 import { isAudiencePulseCustomerSource, isAudiencePulseEndUserChannel } from "../audiencePulseHistorySource.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -177,18 +178,17 @@ export interface PreparedSession {
    */
   routineInvocation?: RoutineInvocation;
   /**
-   * Set by the routine turn when a direct invocation named a routine the activator
-   * declined (already completed under `once_per_conversation`): the turn falls through to
-   * a normal answer, and the lifecycle reports this state in the reply envelope so the
-   * caller learns why nothing started. Absent on every other turn.
+   * Set when the activator declined a direct invocation (its routine completed under
+   * `once_per_conversation`): the turn answers normally and the reply still names that routine,
+   * with no run, so the caller learns why nothing started. Absent on every other turn.
    */
-  declinedRoutine?: ChatRoutineTurnState;
+  declinedRoutine?: DescribedRoutineTurn;
   /**
-   * Set when a routine suspended awaiting an approval decision kept this turn: the routine
-   * attempt is bypassed, so nothing else describes it, and the reply still says which routine
-   * is waiting and on what. Absent on every other turn.
+   * Set, with its run, when a routine suspended awaiting an approval decision kept this turn: the
+   * routine attempt is bypassed, so nothing else describes it, and the reply still says which
+   * routine is waiting and on what. Absent on every other turn.
    */
-  suspendedRoutine?: ChatRoutineTurnState;
+  suspendedRoutine?: DescribedRoutineTurn;
   /**
    * Set by the routine turn when the active routine yielded this turn to a normal answer
    * and stays parked: the answer closes by pointing back to its pending step, and the

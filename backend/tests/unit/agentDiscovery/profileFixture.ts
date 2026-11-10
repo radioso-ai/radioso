@@ -27,6 +27,7 @@ export const profileFixture = (overrides: Partial<AgentPublicProfile> = {}): Age
   name: "Valmora support",
   description: "Answers questions about bookings, rooms, and retreats.",
   mcpEndpointUrl: "https://mcp.radioso.ai/mcp/a/ag_QmFzZTY0dXJsSWRlbnQxMg",
+  a2aEndpointUrl: "https://api.radioso.ai/a2a/ag_QmFzZTY0dXJsSWRlbnQxMg",
   documentationUrl: "https://docs.radioso.ai/guides/agent-converse",
   walkInEnabled: true,
   tools: [bookTableTool, requestCallbackTool],

@@ -34,12 +34,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { Env } from "../config/env.js";
 import type { MailTransportPort } from "./applicationModule.js";
-
-export const notificationRecipientPublicApiBase = (env: Pick<Env, "APP_BASE_URL" | "CONNECTOR_PUBLIC_BASE_URL" | "PORT">): string => {
-  if (env.CONNECTOR_PUBLIC_BASE_URL) return env.CONNECTOR_PUBLIC_BASE_URL.replace(/\/+$/u, "");
-  if (env.APP_BASE_URL) return `${env.APP_BASE_URL.replace(/\/+$/u, "")}/backend`;
-  return `http://localhost:${env.PORT}`;
-};
+import { publicApiBaseUrl } from "./publicApiBase.js";
 
 /**
  * The one place the default contact destination is wired: a named notify skill, then
@@ -88,7 +83,7 @@ export const buildNotificationRecipientPolicy = (input: {
   const confirmationMailer = new NotificationRecipientConfirmationMailer({
     mailer: input.mailer,
     signer,
-    publicBaseUrl: notificationRecipientPublicApiBase(input.env),
+    publicBaseUrl: publicApiBaseUrl(input.env),
     logger: input.logger,
     metrics: input.metrics,
   });

@@ -1390,6 +1390,45 @@ Related docs:
 - [MCP Client Setup](../mcp-client-setup.md)
 - `docs-portal/content/guides/agent-converse.mdx`
 
+## A2A Endpoint
+
+Owns `POST /a2a/{publicId}`, the A2A v1.0 JSON-RPC binding a published agent's
+card names. `SendMessage` runs the converse turn MCP's `ask` runs, on the `a2a`
+source channel; `GetTask`, `ListTasks` and `CancelTask` read the tasks those turns
+left. A context is one conversation: its id is the settings
+`AgentConverseOpening`, sealed with the field encryption keys and re-verified on
+every request, so nothing about a context is stored. A task is references and
+state only (`a2a_tasks`), one open per conversation, decided by the precedence
+table in `domain/taskState.ts` after a turn and, for rows 1 and 3, on a read past
+the task's cursor. Task writes compare and set on a version. Sends are idempotent
+on the caller's `messageId` through `a2a_message_receipts`.
+
+The request is validated before anything is looked up; then the converse source
+budget, the card's 404, the walk-in conversation budget MCP spends too, admission,
+the per-caller budget keyed as MCP's, and the method. JSON-RPC errors answer HTTP
+200 with a `google.rpc.ErrorInfo`; refused credentials, a missing agent, and spent
+budgets answer at the HTTP level. A body that does not parse reaches the mount's
+error handler (`ApplicationRouteMount.createErrorHandler`), which answers -32700.
+
+Public surfaces and key files:
+
+- `backend/src/modules/a2a/routes.ts` (the request pipeline, `a2aWalkInPublicId`, `createA2aBodyErrorHandler`)
+- `backend/src/modules/a2a/services/` (`a2aService.ts`, `a2aAccess.ts`, `a2aSendMessage.ts`, `a2aTaskReads.ts`, `a2aTaskView.ts`, `a2aObserver.ts`, `transcriptReads.ts`)
+- `backend/src/modules/a2a/domain/` (`taskState.ts` precedence table, `jsonRpc.ts`, `requestParams.ts`, `a2aErrors.ts`, `contextClaims.ts`, `taskWire.ts`, `turnMessages.ts`)
+- `backend/src/modules/a2a/contracts/ports.ts` (`A2aTaskStore`, `A2aMessageReceiptStore`, `A2aTranscriptPort`, `A2aAgentDirectory`, `A2aContextSealer`)
+- `backend/src/modules/a2a/infra/` (Kysely repositories, `contextSealer.ts`, retention rules and the `a2a_tasks` export section)
+- `backend/src/app/composition/a2a.ts` and `a2aTranscript.ts` (the issuer for the `a2a` channel, the transcript and agent-directory adapters, the shared limits), `builtIn/a2aModule.ts` (the mount), `agentConverse.ts` (the converse service both MCP and A2A build)
+- `backend/src/db/migrations/253_a2a_tasks.sql`
+- `backend/tests/unit/a2a/`, `backend/tests/contract/a2a-binding.contract.test.ts`
+- `backend/tests/integration/a2a-binding.integration.test.ts`, `a2a-tasks.integration.test.ts`, `a2a-task-store.integration.test.ts`, `a2a-tasks-postgres.integration.test.ts` (the flows on the Postgres stores), `a2a-sdk-client.integration.test.ts` (an off-the-shelf `@a2a-js/sdk` client)
+
+Related docs:
+
+- `backend/src/modules/a2a/README.md`
+- `specs/1731-a2a-protocol-binding/spec.md`
+- `docs-portal/content/guides/a2a-converse.mdx`
+- `docs-portal/content/reference/a2a-converse-extension/v1.mdx`
+
 ## MCP Converse Sessions
 
 Owns who is allowed to hold a converse session and for how long. A session names
@@ -1410,19 +1449,32 @@ Walk-in exchanges spend a per-source and a per-agent budget before the exchange
 resolves anything about the agent, so a throttled caller and an agent that does
 not exist are indistinguishable. Turns inside an open session spend the shared
 agent-channel budgets, keyed by grant for a credential and by session for a
-walk-in caller.
+walk-in caller. `createWalkInConversationRateLimiter` takes the door (how a request
+names its walk-in target, and the audit `surface`) and spends the same budget keys
+for every door, so MCP and A2A walk-ins share one `walkInConversationsPerHour`.
+
+A door whose caller holds its own context instead of a session token (A2A) uses
+`AgentConversePrincipalIssuer` (`AgentConversePrincipalPort`, bound to one channel
+in composition). `open` runs the same walk-in and grant checks as the exchange but
+always opens a fresh conversation, a grant included, and returns the
+`AgentConverseOpening` the door seals; `verify` re-admits it through the same
+origin verifier on every call, and ends a walk-in opening at the walk-in session
+lifetime. An opening continues only under the origin that opened it: a grant
+opening needs the same grant presented again (resolved by its token, compared by
+id), and a walk-in opening presented with a credential is `origin_mismatch`. Both
+answer a typed refusal (`statusCode`, `code`) rather than throwing.
 
 Public surfaces and key files:
 
-- `backend/src/modules/settings/contracts/agentConverseSession.ts` (`AgentConverseOrigin`, `AgentConversePrincipal`, `AgentConverseOriginVerifier`, `AgentConverseWalkInIssuerPort`)
-- `backend/src/modules/settings/services/agentConverseSessionService.ts` and `converseExchangeOrigins.ts` (the two issue paths)
+- `backend/src/modules/settings/contracts/agentConverseSession.ts` (`AgentConverseOrigin`, `AgentConversePrincipal`, `AgentConverseChannel`, `AgentConverseOriginVerifier`, `AgentConverseWalkInIssuerPort`, `AgentConversePrincipalPort`)
+- `backend/src/modules/settings/services/agentConverseSessionService.ts` and `converseExchangeOrigins.ts` (the two issue paths), `agentConversePrincipalIssuer.ts` (principals without a session token), `domain/agentConversePrincipal.ts`
 - `backend/src/modules/settings/domain/publicChatSession.ts` (`issueConverseChatSession`, `verifyConverseChatSession`) and `converseGrantVersion.ts`
 - `backend/src/app/composition/agentConverseOrigins.ts` (both verifier adapters, the walk-in issuer, the outcome observer)
 - `backend/src/app/composition/converseVisitorIdentity.ts` (`signedIdentity` bound to the session rather than an origin)
 - `backend/src/app/http/middleware/mcpConverseWalkInRateLimiter.ts` and `requireMcpConverseSession.ts`
 - `backend/src/app/http/routes/mcpConverseRoutes.ts` (`POST /api/v1/mcp/converse/session` takes `launchToken` or `publicId`)
 - `packages/radioso-mcp-server/src/http/walkInRoutes.ts` and `auth/authService.ts` (`/mcp/a/{publicId}`)
-- `backend/tests/unit/settings/agentConverseOriginVerifier.test.ts`, `converseSessionPayload.test.ts`
+- `backend/tests/unit/settings/agentConverseOriginVerifier.test.ts`, `converseSessionPayload.test.ts`, `agentConversePrincipalIssuer.test.ts`, `backend/tests/unit/walk-in-conversation-rate-limiter.test.ts`
 - `backend/tests/integration/walk-in-converse.integration.test.ts`, `mcp-converse-session-revalidation.integration.test.ts`
 
 Related docs:
@@ -1965,7 +2017,7 @@ Primary internals:
 - `packages/conversation-engine/src/routineActivation.ts` and `routineResume.ts` (`claimRoutine` → the host renders or streams the reply → `settle`; `attemptRoutine` is that sequence rendered whole)
 - `backend/src/modules/chat/services/routines/routineReplyDelivery.ts` (the delivery rule: a claimed reply streams when its turn only moves the routine to its next step, and is persisted first and shown whole when a skill acted outside the conversation, the turn queued an action, or ended the routine; `skillActsOutsideConversation` in `backend/src/modules/retrieval/public.ts` is the one rule for which skills act outside, shared with safe-test suppression), consulted through `routineReplyFor.ts` by both live streaming chat (`ChatService`) and streamed Test Chat replay (`WorkbenchReplayRunner.stream`)
 - `packages/conversation-engine/src/slotValue.ts` (the one per-type check every stored slot value passes)
-- `backend/prompts/chat/routine-next-step.md` with `routine-next-step-slots.md`, `routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` (the selector's declared slots and the rules for filling them), `routine-next-step-slot-fallback.md` (the selector's slot-only reading when its decision stays unreadable), `routine-step-reply.md` with `routine-step-progress.md` (a chat step's reply ends on its question), `routine-step-context-evidence.md` (frames the visitor's page as evidence), and `routine-step-reask.md` with `routine-step-reask-unanswered.md` or `routine-step-reask-unreadable.md`, `routine-step-reask-gap.md`, `routine-step-reask-exhausted-gap.md`, `routine-step-reask-missing-slots.md`, and `routine-step-reask-exhausted.md` (a step asked again, and past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Every one of these but `routine-ranked-activation.md` and `routine-step-answer-steering.md` reaches `RoutineNextStepSelector` or `RoutineStepRenderer` as a template option from `backend/src/modules/routines/turnProvider.ts`, and `pnpm run generate:prompts` copies each into `packages/conversation-defaults/src/generated/defaultPrompts.ts` as the package default. `routine-ranked-activation.md` reaches the routine activator instead, as a `turnProvider.ts`-loaded option on its ranked-activation registry; `routine-step-answer-steering.md` is loaded directly by `backend/src/shared/infra/prompts/steeringPromptRenderer.ts`, outside the generator's manifest. `packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the exact model input both send. Before editing any of them (or the fragments still built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
+- `backend/prompts/chat/routine-next-step.md` with `routine-next-step-slots.md`, `routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` (the selector's declared slots and the rules for filling them), `routine-next-step-slot-fallback.md` (the selector's slot-only reading when its decision stays unreadable), `routine-step-reply.md` with `routine-step-progress.md` (a chat step's reply ends on its question), `routine-step-context-evidence.md` (frames the visitor's page as evidence), `routine-step-sources.md` and `routine-step-sources-none.md` (which quoted sources the reply has), and `routine-step-reask.md` with `routine-step-reask-unanswered.md` or `routine-step-reask-unreadable.md`, `routine-step-reask-gap.md`, `routine-step-reask-exhausted-gap.md`, `routine-step-reask-missing-slots.md`, and `routine-step-reask-exhausted.md` (a step asked again, and past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Every one of these but `routine-ranked-activation.md` and `routine-step-answer-steering.md` reaches `RoutineNextStepSelector` or `RoutineStepRenderer` as a template option from `backend/src/modules/routines/turnProvider.ts`, and `pnpm run generate:prompts` copies each into `packages/conversation-defaults/src/generated/defaultPrompts.ts` as the package default. `routine-ranked-activation.md` reaches the routine activator instead, as a `turnProvider.ts`-loaded option on its ranked-activation registry; `routine-step-answer-steering.md` is loaded directly by `backend/src/shared/infra/prompts/steeringPromptRenderer.ts`, outside the generator's manifest. `packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the exact model input both send. Before editing any of them (or the fragments still built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 - `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
 - `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)

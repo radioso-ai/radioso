@@ -31,9 +31,11 @@ export const isOperatorTestSourceChannel = (sourceChannel: string | null | undef
 export const VOICE_SOURCE_CHANNEL = "voice" as const;
 
 // Channels on which the caller is another piece of software rather than a person: the MCP converse
-// door and the REST agent channel. Slack, the embed, the anonymous link, voice, and the dashboard all
-// carry a person, and operator-test traffic is a person driving a test.
-export const AGENT_SOURCE_CHANNELS = ["mcp", "agent_api"] as const;
+// door, the REST agent channel, and the A2A JSON-RPC door. Slack, the embed, the anonymous link,
+// voice, and the dashboard all carry a person, and operator-test traffic is a person driving a test.
+export const AGENT_SOURCE_CHANNELS = ["mcp", "agent_api", "a2a"] as const;
+
+export type AgentSourceChannel = typeof AGENT_SOURCE_CHANNELS[number];
 
 // Whether the other side of a conversation is a person or a calling agent. Derived from the source
 // channel rather than stored independently, so a conversation cannot claim a kind its channel

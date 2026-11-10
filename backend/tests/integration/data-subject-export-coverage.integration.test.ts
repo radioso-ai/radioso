@@ -34,6 +34,7 @@ const coverage: Record<string, ExportCoverage> = {
   email_thread_messages: { kind: "exported", section: "email_messages" },
   email_inbound_deliveries: { kind: "exported", section: "email_messages" },
   assistant_answer_feedback: { kind: "exported", section: "answer_feedback" },
+  a2a_tasks: { kind: "exported", section: "a2a_tasks" },
 
   email_mailboxes: excluded("The workspace's own mailbox and its address, not anyone who wrote to it."),
   email_thread_links: excluded("How the email finder finds a sender's threads. Its latest subject, Cc and display name copy what email_messages carries for each mail."),
@@ -65,6 +66,7 @@ const coverage: Record<string, ExportCoverage> = {
   notification_deliveries: excluded("Which of the workspace's own recipient addresses a notice went to, and whether it was sent: the team's addresses, never the subject's, and no message content. It goes with its conversation."),
   agent_test_execution_sides: excluded("A private test side mints a conversation id that never becomes a conversations row; its transcript is a teammate's test."),
   agent_converse_session_mappings: excluded("Maps an agent grant to the public session it minted; it holds no conversation content."),
+  a2a_message_receipts: excluded("Idempotency bookkeeping for a calling agent's retries: a digest of its message id, and the id of the reply or task the send produced with the turn's routine report, which the export carries as messages and routine values."),
   copilot_messages: excluded("Ray's own conversation with a teammate."),
   copilot_proposals: excluded("A change Ray drafted for a teammate."),
   copilot_replay_evidence: excluded("A replay Ray ran for a teammate."),

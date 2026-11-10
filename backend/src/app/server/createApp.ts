@@ -5,7 +5,7 @@ import swaggerUi from "swagger-ui-express";
 import { createHttpLogger } from "../../shared/observability/logger.js";
 import { createMatchedRouteRecorder } from "../../shared/observability/matchedRoute.js";
 import { createRequestTelemetryMiddleware } from "../../shared/observability/telemetry/telemetryService.js";
-import { badRequest, payloadTooLarge } from "../../shared/domain/errors.js";
+import { payloadTooLarge, RequestBodyParseError } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import { createHttpTracingMiddleware } from "../http/middleware/tracingMiddleware.js";
 import { createRequestAuditContextMiddleware } from "../http/middleware/requestAuditContextMiddleware.js";
@@ -65,7 +65,7 @@ export const captureRequestBody = async (req: express.Request, _res: express.Res
     next();
   } catch (error) {
     if (error instanceof SyntaxError) {
-      next(badRequest("Invalid JSON request body"));
+      next(new RequestBodyParseError());
       return;
     }
     next(error);
@@ -106,6 +106,13 @@ export const createApp = (dependencies: AppDependencies) => {
     app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
   }
   app.use(createApiRouter(dependencies));
+  // A mount whose protocol names its own errors answers the ones raised before routing reached it
+  // (a body that did not parse); everything else falls through to the shared handler.
+  for (const mount of dependencies.applicationRouteMounts) {
+    if (mount.createErrorHandler) {
+      app.use(mount.path, mount.createErrorHandler(dependencies));
+    }
+  }
   app.use(createErrorHandler(dependencies.errorReportingService));
 
   return app;

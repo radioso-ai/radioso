@@ -1,0 +1,129 @@
+---
+title: "A2A converse extension, version 1"
+description: "The card parameters, activation header, and reply metadata of the Radioso converse extension that an A2A client reads beside plain messages and tasks."
+last_updated: 2026-11-09
+---
+
+# A2A converse extension, version 1
+
+The Radioso converse extension adds two things to an agent's [A2A endpoint](/guides/a2a-converse). On the Agent Card it points to the agent's MCP endpoint and lists each exposed routine with the JSON Schema of its input, because an A2A skill carries no input schema. On replies it carries the same machine-readable envelope an MCP caller gets from `ask_agent`: answer coverage, ownership, routine status, citations, and who wrote the message.
+
+The extension is identified by this URI:
+
+```
+https://docs.radioso.ai/reference/a2a-converse-extension/v1
+```
+
+The URI does three jobs. The card lists it under `capabilities.extensions`, a client sends it in the `A2A-Extensions` header to switch the extension on, and it is the key under which reply metadata travels. The version is part of the path, and this page describes version 1.
+
+## Read it in the card
+
+An agent's card lists the extension with `required: false`, so a client that ignores it still works. Its `params` have two members:
+
+```json
+{
+  "uri": "https://docs.radioso.ai/reference/a2a-converse-extension/v1",
+  "description": "Radioso conversation extension. params.mcp names this agent's MCP endpoint and server card; params.tools lists each exposed routine with the JSON Schema of its input.",
+  "required": false,
+  "params": {
+    "mcp": {
+      "url": "https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd",
+      "serverCardUrl": "https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd/server-card"
+    },
+    "tools": [
+      {
+        "toolName": "book_table",
+        "description": "Book a table for a date and party size.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "date": { "type": "string" },
+            "partySize": { "type": "integer" }
+          },
+          "required": ["date", "partySize"]
+        }
+      }
+    ]
+  }
+}
+```
+
+| Param | Type | Meaning |
+|---|---|---|
+| `mcp.url` | string | The agent's MCP endpoint. A client that prefers MCP connects here. |
+| `mcp.serverCardUrl` | string | The agent's MCP server card, one segment past `mcp.url`. |
+| `tools` | array | One entry per routine the operator has [exposed as a tool](/guides/authoring-routines#expose-a-routine-as-a-tool). Empty when none is exposed. |
+| `tools[].toolName` | string | The routine's tool name. It matches the `id` of the card's skill for that routine. |
+| `tools[].description` | string | The operator's description of the routine. |
+| `tools[].inputSchema` | object | A JSON Schema built from the routine's declared slots. |
+
+The `tools` entries are the same descriptors `GET /api/v1/mcp/converse/tools` returns, so one schema describes a routine whichever door a caller uses.
+
+## Activate it
+
+Send the extension's URI in the `A2A-Extensions` request header. Several URIs go in one header, separated by commas:
+
+```bash
+curl https://api.radioso.ai/a2a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd \
+  -H 'Content-Type: application/json' \
+  -H 'A2A-Version: 1.0' \
+  -H 'A2A-Extensions: https://docs.radioso.ai/reference/a2a-converse-extension/v1' \
+  -d '{ "jsonrpc": "2.0", "id": 1, "method": "SendMessage", "params": { "message": { "messageId": "4f0c1a52-9e0b-4b8e-a7a5-0d6f0f6f2a10", "role": "ROLE_USER", "parts": [{ "text": "How long do I have to return an order?" }] } } }'
+```
+
+The response carries an `A2A-Extensions` header listing the extensions the server activated for that request. A request without the header, or without this URI in it, gets replies with no extension metadata.
+
+## Read the reply metadata
+
+When the extension is active, every `Message`, every task `status.message`, and every artifact carries a `metadata` object keyed by the extension's URI, and lists that URI in its `extensions` field:
+
+```json
+{
+  "messageId": "b81d6c0e-2f4a-4c77-9f0e-3f2d5a7c1e44",
+  "contextId": "Zk3xQm…",
+  "role": "ROLE_AGENT",
+  "parts": [{ "text": "You can return an order within 30 days of delivery." }],
+  "extensions": ["https://docs.radioso.ai/reference/a2a-converse-extension/v1"],
+  "metadata": {
+    "https://docs.radioso.ai/reference/a2a-converse-extension/v1": {
+      "author": "agent",
+      "answerCoverage": {
+        "availability": "assessed",
+        "coverage": "answered",
+        "reason": "sufficient_evidence",
+        "originatingTurnId": "c3…",
+        "originatingRequestId": "c3…"
+      },
+      "ownership": { "state": "ai_owned", "suppressed": false },
+      "citations": [
+        { "documentId": "0c8e…", "chunkId": "5d21…", "title": "Returns policy" }
+      ]
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `author` | `agent` for a reply the agent generated, `human` for a reply a person wrote in the Inbox. Both arrive as `ROLE_AGENT`; this field tells them apart. |
+| `answerCoverage` | The coverage verdict the dashboard trace shows. `coverage` is `answered`, `partial`, `unanswered`, or `unclear`; `reason` is `sufficient_evidence`, `insufficient_evidence`, `conflicting_evidence`, `ambiguous_request`, or `intentional_scope_boundary`. `availability` is `assessed`, `not_recorded`, `failed`, or `invalid`, and `not_recorded` means no assessment ran for that turn. |
+| `ownership` | Who owns the conversation. `state` is `ai_owned` or `human_owned`. `suppressed` is `true` when a person owns the conversation and the agent generated nothing for the turn. |
+| `routine` | Present when the turn touched a routine. `toolName` (when the routine is exposed as a tool), `name`, `status`, and `pendingInput`. |
+| `invocation` | Present on a turn that began from a typed routine call. `toolName` and an `outcome` of `started`, `reentered`, `declined`, `not_started`, or `unknown_tool`. |
+| `citations` | The documents the answer cites. Each entry has `documentId`, `chunkId`, `title`, and `sourceUrl` when the document has one. |
+
+`routine.status` is `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, or `abandoned`. `routine.pendingInput` lists every required slot still open plus the current step's optional ones, each with `key`, `type`, `required`, and `description`, so a client can supply them all in one message. While a task is `TASK_STATE_INPUT_REQUIRED` for a routine, this list is what the agent is waiting for.
+
+`answerCoverage`, `ownership`, `routine`, `invocation`, and `citations` are the fields of the agent reply envelope; [what `ask_agent` returns](/guides/agent-converse#what-ask_agent-returns) explains how a calling model uses them. `author` is specific to this extension, because A2A has no way to tell a person's reply from the agent's.
+
+## Common failure modes
+
+- **No metadata on replies.** The request did not activate the extension. Check that `A2A-Extensions` holds the exact URI, including the `v1` at the end, and that the response header echoes it.
+- **`tools` is empty.** The operator has not exposed any routine as a tool. A plain message through the `ask_agent` skill always works.
+- **A `pendingInput` slot the client has no value for.** Ask the user, then send the answer as text in the next message, with the `taskId` or the `contextId`.
+
+## Read next
+
+- [Connect an A2A client](/guides/a2a-converse) — send a message, keep the `contextId`, and follow a task from input-required to completed.
+- [Publish and open an agent](/guides/publish-an-agent) — the whole agent card and the walk-in access it describes.
+- [MCP server](/guides/mcp-server) — the MCP endpoint that `params.mcp` points to.

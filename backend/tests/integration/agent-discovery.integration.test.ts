@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { createAgentToolCatalogComposition } from "../../src/app/composition/agentToolCatalog.js";
 import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
+import { A2A_CONVERSE_EXTENSION_URI } from "../../src/shared/domain/a2aConverseExtension.js";
 import { adminSessionHeaders, createTestApp, issueTestSession, publishTestAgentBaseline } from "../support/testApp.js";
 
 const bookTableDraft = (): RoutineDefinitionDraftInput => ({
@@ -72,22 +73,39 @@ describe("agent discovery documents", () => {
     }
   });
 
-  it("describes the agent, its endpoint, and its exposed routine without leaking an internal identifier", async () => {
-    const ctx = createDiscoveryApp();
+  it("describes the agent, its A2A endpoint, and its exposed routine without leaking an internal identifier", async () => {
+    const ctx = createDiscoveryApp({ CONNECTOR_PUBLIC_BASE_URL: "https://api.radioso.test" });
     const { session, agent, publicId } = await publishDiscoverableAgent(ctx);
 
     const card = await request(ctx.app).get(`/.well-known/agent-card/${publicId}.json`).expect(200);
     expect(card.body).toMatchObject({
       name: agent.name,
       description: "Answers questions about bookings and retreats.",
-      url: `https://mcp.radioso.test/mcp/a/${publicId}`,
+      supportedInterfaces: [
+        { url: `https://api.radioso.test/a2a/${publicId}`, protocolBinding: "JSONRPC", protocolVersion: "1.0" },
+      ],
       // Resolved from the shipped documentation corpus, so a renamed or removed guide
       // fails here rather than quietly dropping the link off every published card.
       documentationUrl: readProductDoc("guides/agent-converse")?.url,
     });
     expect(card.body.documentationUrl).toBe("https://docs.radioso.ai/guides/agent-converse");
-    expect(card.body.skills.map((skill: { id: string }) => skill.id)).toEqual(["book_table"]);
-    expect(card.body.security).toEqual([{}, { bearer: [] }]);
+    for (const v03Field of ["protocolVersion", "url", "preferredTransport", "security"]) {
+      expect(card.body).not.toHaveProperty(v03Field);
+    }
+    expect(card.body.skills.map((skill: { id: string }) => skill.id)).toEqual(["ask_agent", "book_table"]);
+    // Walk-in is open, so the card states no credential requirement.
+    expect(card.body).not.toHaveProperty("securityRequirements");
+    expect(card.body.capabilities.extensions).toMatchObject([{
+      uri: A2A_CONVERSE_EXTENSION_URI,
+      required: false,
+      params: {
+        mcp: {
+          url: `https://mcp.radioso.test/mcp/a/${publicId}`,
+          serverCardUrl: `https://mcp.radioso.test/mcp/a/${publicId}/server-card`,
+        },
+        tools: [{ toolName: "book_table", description: "Book a table for a date and party size." }],
+      },
+    }]);
 
     const embedToken = (await ctx.repositories.agentRepository.findByIdAndWorkspaceId(agent.id, session.workspaceId))
       ?.surfaceSettings.websiteEmbed.token;
@@ -99,7 +117,19 @@ describe("agent discovery documents", () => {
     }
   });
 
-  it("advertises bearer only while walk-in access is closed", async () => {
+  it("keeps the path the public API is served under when it names the A2A endpoint", async () => {
+    const ctx = createDiscoveryApp({
+      CONNECTOR_PUBLIC_BASE_URL: undefined,
+      APP_BASE_URL: "https://app.radioso.test",
+    });
+    const { publicId } = await publishDiscoverableAgent(ctx);
+
+    const card = await request(ctx.app).get(`/.well-known/agent-card/${publicId}.json`).expect(200);
+
+    expect(card.body.supportedInterfaces[0].url).toBe(`https://app.radioso.test/backend/a2a/${publicId}`);
+  });
+
+  it("requires the bearer, and only then, while walk-in access is closed", async () => {
     const ctx = createDiscoveryApp();
     const { session, agent, publicId } = await publishDiscoverableAgent(ctx);
     await request(ctx.app)
@@ -110,8 +140,9 @@ describe("agent discovery documents", () => {
 
     const card = await request(ctx.app).get(`/.well-known/agent-card/${publicId}.json`).expect(200);
 
-    expect(card.body.security).toEqual([{ bearer: [] }]);
+    expect(card.body.securityRequirements).toEqual([{ schemes: { bearer: { list: [] } } }]);
     expect(Object.keys(card.body.securitySchemes)).toEqual(["bearer"]);
+    expect(card.body.securitySchemes.bearer).toMatchObject({ httpAuthSecurityScheme: { scheme: "bearer" } });
   });
 
   it("answers unknown, card-disabled, unpublished, and deleted ids with the same 404", async () => {

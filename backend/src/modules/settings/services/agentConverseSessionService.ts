@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { AppError, serviceUnavailable } from "../../../shared/domain/errors.js";
 import type { AccessGrant } from "../../accessGrants/public.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
@@ -17,6 +19,7 @@ import type {
   AgentConverseWalkInIssuerPort,
   AgentConverseWalkInObserver,
 } from "../contracts/agentConverseSession.js";
+import { agentConversePrincipal } from "../domain/agentConversePrincipal.js";
 import {
   openGrantExchangeOrigin,
   openWalkInExchangeOrigin,
@@ -63,7 +66,11 @@ export class AgentConverseSessionService {
         {
           accessGrantService: this.dependencies.accessGrantService,
           agentLookup: this.dependencies.agentLookup,
-          sessionMapping: this.dependencies.sessionMapping,
+          // MCP keeps one stable conversation per grant version across exchanges.
+          publicSessionIdFor: (grant) => this.dependencies.sessionMapping.resolvePublicSessionId({
+            ...grant,
+            proposedPublicSessionId: randomUUID(),
+          }),
           audit: this.dependencies.audit,
           refuse: converseError,
         },
@@ -78,7 +85,7 @@ export class AgentConverseSessionService {
     });
 
     return {
-      ...this.toPrincipal(session),
+      ...agentConversePrincipal(session, "mcp"),
       sessionToken: session.token,
       expiresAt: session.expiresAt,
       agent: issued.agent,
@@ -103,7 +110,7 @@ export class AgentConverseSessionService {
       throw converseError(revalidation.statusCode, revalidation.code, revalidation.message);
     }
 
-    return this.toPrincipal(payload);
+    return agentConversePrincipal(payload, "mcp");
   }
 
   recordSuccessfulUse(principal: Pick<AgentConversePrincipal, "origin">): void {
@@ -136,21 +143,4 @@ export class AgentConverseSessionService {
     );
   }
 
-  private toPrincipal(payload: ConverseChatSessionPayload): AgentConversePrincipal {
-    return {
-      workspaceId: payload.workspaceId,
-      agentId: payload.agentId,
-      publicSessionId: payload.publicSessionId,
-      origin: payload.origin,
-      sourceChannel: "mcp",
-      sourceOrigin: null,
-      authPrincipal: {
-        type: "public_chat_session",
-        role: "agent",
-        workspaceId: payload.workspaceId,
-        agentId: payload.agentId,
-        publicSessionId: payload.publicSessionId,
-      },
-    };
-  }
 }

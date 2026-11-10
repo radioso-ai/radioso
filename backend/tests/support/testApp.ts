@@ -3201,7 +3201,7 @@ export const createTestDependencies = (overrides: {
       agentRepository,
       agentRevisionReader: publishedAgentRevisions,
       agentToolCatalog,
-      mcpBaseUrl: env.PUBLIC_MCP_CONVERSE_URL,
+      env,
     }),
     chatHistoryService,
     assistantChatService,

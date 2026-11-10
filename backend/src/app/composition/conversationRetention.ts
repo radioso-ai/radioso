@@ -4,6 +4,7 @@ import { AuditEventRetention } from "../../db/repositories/auditEventRepository.
 import { ConversationSummaryRetention } from "../../db/repositories/conversationSummaryRepository.js";
 import { RoutineStateRetention } from "../../db/repositories/routineStateRepository.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
+import { A2aMessageReceiptRetention, A2aTaskRetention } from "../../modules/a2a/public.js";
 import { EmailRawMimeRetention } from "../../modules/emailChannel/public.js";
 import {
   ConversationRetentionSweep,
@@ -30,6 +31,8 @@ const defaultConversationDataRetentionRules = (
   (db) => new ConversationSummaryRetention(db),
   (db) => new RoutineStateRetention(db),
   (db) => new EmailRawMimeRetention(db),
+  (db) => new A2aTaskRetention(db),
+  (db) => new A2aMessageReceiptRetention(db),
   (db) => new AuditEventRetention(db, audit),
 ];
 

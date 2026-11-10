@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-11-08
+last_updated: 2026-11-10
 ---
 
 import { Callout } from 'nextra/components'
@@ -305,7 +305,7 @@ To turn it on for a stack:
 
 1. Apply Terraform for the stack, so every service runs a revision with `PGSSLMODE`. Any image works, because the driver reads the variable itself.
 2. Run the check in [Encryption](/operators/encryption#check-that-database-connections-are-encrypted) against the stack's database. Every application name should show all of its sessions encrypted.
-3. Set `db_require_encrypted_connections = true` for the stack and apply. The instance updates in place; plan it for a quiet window in case Cloud SQL restarts it.
+3. Set `db_require_encrypted_connections = true` for the stack and apply. Cloud SQL changes the setting without restarting the instance, and the rule covers new connections only: a session already open in plain text stays open until it closes or the instance restarts.
 4. Run the check again.
 
 A one-off `psql` session needs nothing extra: `psql` tries TLS first by default.

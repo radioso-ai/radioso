@@ -2053,7 +2053,7 @@
       "title": "Deployment",
       "description": "Production deployment expectations for Radioso and the standalone docs portal.",
       "section": "Operator guides",
-      "lastUpdated": "2026-11-08",
+      "lastUpdated": "2026-11-10",
       "intro": "Radioso’s production contract is a multi-service deployment. The backend, frontend, and document worker are separate runtime units. Deployments that enable live dashboard updates add a dedicated realtime runtime and Redis or Valkey. The docs portal stays separate as well.",
       "sections": [
         {
@@ -2179,7 +2179,7 @@
         {
           "id": "database-connection-encryption",
           "heading": "Database connection encryption",
-          "body": "The backend, document worker and crawler worker connect to Postgres over TLS: Terraform sets `PGSSLMODE=no-verify` on all three services, and the Node.js Postgres driver reads it whenever `DATABASE_URL` carries no TLS settings of its own. Whether Cloud SQL also refuses unencrypted connections is a per-stack switch, `db_require_encrypted_connections`, and it starts off.\n\nTo turn it on for a stack:\n\n1. Apply Terraform for the stack, so every service runs a revision with `PGSSLMODE`. Any image works, because the driver reads the variable itself.\n2. Run the check in [Encryption](https://docs.radioso.ai/operators/encryption#check-that-database-connections-are-encrypted) against the stack's database. Every application name should show all of its sessions encrypted.\n3. Set `db_require_encrypted_connections = true` for the stack and apply. The instance updates in place; plan it for a quiet window in case Cloud SQL restarts it.\n4. Run the check again.\n\nA one-off `psql` session needs nothing extra: `psql` tries TLS first by default."
+          "body": "The backend, document worker and crawler worker connect to Postgres over TLS: Terraform sets `PGSSLMODE=no-verify` on all three services, and the Node.js Postgres driver reads it whenever `DATABASE_URL` carries no TLS settings of its own. Whether Cloud SQL also refuses unencrypted connections is a per-stack switch, `db_require_encrypted_connections`, and it starts off.\n\nTo turn it on for a stack:\n\n1. Apply Terraform for the stack, so every service runs a revision with `PGSSLMODE`. Any image works, because the driver reads the variable itself.\n2. Run the check in [Encryption](https://docs.radioso.ai/operators/encryption#check-that-database-connections-are-encrypted) against the stack's database. Every application name should show all of its sessions encrypted.\n3. Set `db_require_encrypted_connections = true` for the stack and apply. Cloud SQL changes the setting without restarting the instance, and the rule covers new connections only: a session already open in plain text stays open until it closes or the instance restarts.\n4. Run the check again.\n\nA one-off `psql` session needs nothing extra: `psql` tries TLS first by default."
         },
         {
           "id": "database-maintenance-window",

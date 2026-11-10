@@ -61,7 +61,7 @@ variable "worker_max_instances" {
 variable "db_require_encrypted_connections" {
   description = "Whether this stack's Cloud SQL instance refuses connections that are not encrypted with TLS."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "db_point_in_time_recovery_enabled" {

@@ -995,9 +995,9 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
         {kind === 'variable' ? (
           <>
             <DropdownMenuLabel>Variable type</DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={getType(refId)} onValueChange={(value) => setType(refId, value as RoutineSlotType)}>
+            <DropdownMenuRadioGroup value={getType(refId)} onValueChange={(value) => setType?.(refId, value as RoutineSlotType)}>
               {ROUTINE_SLOT_TYPES.map((type) => (
-                <DropdownMenuRadioItem key={type} value={type}>{type}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem key={type} value={type} disabled={!setType}>{type}</DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />

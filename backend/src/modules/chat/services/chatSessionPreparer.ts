@@ -28,6 +28,7 @@ import type {
 } from "../../../db/repositories/messageRepository.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { ChatRoutineInvocationReport } from "../contracts/routineTurnState.js";
+import { repliesAreSpoken } from "../contracts/operatorReplySpeech.js";
 import type { DescribedRoutineTurn } from "./routines/routineTurnDescription.js";
 import { isAudiencePulseCustomerSource, isAudiencePulseEndUserChannel } from "../audiencePulseHistorySource.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
@@ -86,10 +87,7 @@ import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import { resolveSkillEffectPolicy, type ConversationDurability, type SkillEffectPolicy, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AnswerCoverageAssessment } from "../../answerCoverage/public.js";
-import type {
-  ChatAnswerCoverageAssessment,
-  ChatAnswerCoverageInteractionTrace,
-} from "../contracts/answerCoverage.js";
+import type { ChatAnswerCoverageAssessment, ChatAnswerCoverageInteractionTrace } from "../contracts/answerCoverage.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -1137,6 +1135,7 @@ export class ChatSessionPreparer {
       },
       responseLanguage: turn.responseLanguage,
       referenceTimeZone: turn.referenceTimeZone,
+      spokenReply: conversation ? repliesAreSpoken(conversation) : false,
       responseBehaviorEnabled: true,
       agentSkillSettings: agent.skillSettings,
       agenticToolFactories: input.agenticToolFactories,

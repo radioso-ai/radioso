@@ -49,7 +49,10 @@ services.
 - Chat UI: `agent-revision-test-chat.tsx` is the one operator test surface (the
   agent's **Test Chat** tab, backed by `/agents/:id/test-executions`), rendering
   `chat-message-thread.tsx`; `conversation-drawer.tsx` and `chat-citations.tsx` are the
-  activity-side readers.
+  activity-side readers. `chat-citations.tsx` renders an answer's citation markers
+  (footnote order, with a run of markers as one pill that highlights its sources);
+  `answer-segment-layout.ts` holds the pure segment shaping it relies on: punctuation
+  and prose rejoining a cited line, and list items merging into one list.
 - Turn diagnostics (both surfaces): `turn-inspector/turn-diagnostics-panel.tsx`.
 - Test history: Test Chat's **History** view lists durable immutable executions
   (`test-execution-history-view.tsx`, reopened through `reopenExecution`) above

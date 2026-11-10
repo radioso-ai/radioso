@@ -113,13 +113,19 @@ const nodeEndsAtContentEnd = (
   return false
 }
 
+// Inline elements never draw the trailing content themselves, so a list item whose
+// text ends in a link or emphasis still has to draw it.
+const INLINE_TAG_NAMES = new Set(['a', 'br', 'code', 'del', 'em', 'img', 'input', 'span', 'strong', 'sub', 'sup'])
+
 const hasChildEndingAtContentEnd = (
   node: HastElement | undefined,
   content: string,
   contentEndOffset: number,
 ) =>
   node?.children.some((child) =>
-    child.type === 'element' && nodeEndsAtContentEnd(child, content, contentEndOffset),
+    child.type === 'element'
+      && !INLINE_TAG_NAMES.has(child.tagName)
+      && nodeEndsAtContentEnd(child, content, contentEndOffset),
   ) ?? false
 
 // Per-render inputs the overrides need. They flow through context rather than
@@ -191,7 +197,7 @@ const MarkdownLink = ({
   )
 }
 
-export type MarkdownVariant = 'chat' | 'document'
+type MarkdownVariant = 'chat' | 'document'
 
 type PreProps = ComponentPropsWithoutRef<'pre'> & ExtraProps
 

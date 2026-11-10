@@ -83,7 +83,7 @@ export {
 } from "./voiceTurnFacts.js";
 // A teammate's reply on a call waits for the caller's next turn; the voice channel reads and marks it.
 export {
-  operatorRepliesAreSpoken,
+  repliesAreSpoken,
   operatorReplySpeechSchema,
   type OperatorReplyClaim,
   type OperatorReplySpeech,

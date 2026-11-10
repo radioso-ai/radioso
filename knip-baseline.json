@@ -367,7 +367,6 @@
   "types|frontend/components/dashboard/workbench/use-coach-state.ts|CoachState",
   "types|frontend/components/dashboard/workbench/use-coach-state.ts|CoachStatus",
   "types|frontend/components/markdown/highlighter.ts|SupportedLanguage",
-  "types|frontend/components/markdown/markdown-content.tsx|MarkdownVariant",
   "types|frontend/components/providers/dashboard-query-provider.tsx|DashboardLiveInterestSignal",
   "types|frontend/components/providers/dashboard-query-provider.tsx|DashboardQueryPolicy",
   "types|frontend/components/theme-provider.tsx|ThemeProviderProps",

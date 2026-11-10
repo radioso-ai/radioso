@@ -201,3 +201,77 @@ test("chat history renders fenced code blocks in assistant messages", async ({
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy code", exact: true })).toBeVisible();
 });
+
+test("a run of citation markers shows as one pill that highlights its sources", async ({
+  page,
+}) => {
+  const conversationId = "conversation-grouped-citations";
+  const question = "Which retreats run in February?";
+  const answer = "Three retreats run in February.";
+  const citations = [1, 2, 3].map((n) => ({
+    documentId: `doc-${n}`,
+    chunkId: `chunk-${n}`,
+    title: `February retreat ${n}`,
+  }));
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [
+        {
+          id: conversationId,
+          sourceChannel: null,
+          sourceOrigin: null,
+          anonymousSessionId: null,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          messageCount: 2,
+          userMessageCount: 1,
+          assistantMessageCount: 1,
+          preview: question,
+        },
+      ],
+      total: 1,
+      nextCursor: null,
+      hasMore: false,
+    },
+    conversationDetail: {
+      conversationId,
+      workspaceId,
+      sourceChannel: null,
+      sourceOrigin: null,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      messageCount: 2,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      messagesTotal: 2,
+      messageWindowOffset: 0,
+      messageWindowLimit: 50,
+      hasOlderMessages: false,
+      nextCursor: null,
+      messages: [
+        { id: "user-message-1", role: "user", content: question, createdAt: nowIso },
+        {
+          id: "assistant-message-1",
+          role: "assistant",
+          content: answer,
+          createdAt: nowIso,
+          citations,
+          answerSegments: [
+            { text: "Three retreats run in February", citationIndices: [0, 1, 2] },
+            { text: "." },
+          ],
+        },
+      ],
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  await page.getByRole("button", { name: new RegExp(question) }).click();
+
+  await page.getByRole("button", { name: "Show sources 1–3", exact: true }).click();
+
+  for (const n of [1, 2, 3]) {
+    await expect(page.locator(`[data-source-index="${n}"]`)).toHaveAttribute("data-highlighted", "true");
+  }
+});

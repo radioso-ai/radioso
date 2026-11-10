@@ -48,11 +48,13 @@ export type { GroundingSummary } from "../services/groundingAssertions.js";
 export type { ChatConversationDetail, ChatConversationTail } from "../services/chatHistoryService.js";
 export type { ProbeConversationReadPort } from "../services/probeConversationReader.js";
 export type { ChatActionSuggestionProvider } from "../services/actionSuggestions/chatActionSuggestionProvider.js";
-// The MCP converse HTTP surface holds these instances; composition builds them.
+// The converse doors (MCP, A2A) hold these instances; composition builds them. A door
+// serialises `AgentConverseTurnResult.reply` and keeps the rest of the turn result in-process.
 export type { AgentConverseAudit } from "../services/agentConverseAudit.js";
 export type {
   AgentConverseAskResult,
   AgentConverseService,
+  AgentConverseTurnResult,
   ConverseVisitorIdentityVerifier,
 } from "../services/agentConverseService.js";
 // The agent reply envelope is shared by the MCP converse route, the REST agent

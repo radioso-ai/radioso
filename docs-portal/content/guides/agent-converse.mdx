@@ -1,12 +1,12 @@
 ---
 title: "Connect a calling agent"
 description: "Read the reply envelope ask_agent returns, call an exposed routine as a typed tool, and come back for a human's reply after a handoff."
-last_updated: 2026-10-18
+last_updated: 2026-11-09
 ---
 
 # Connect a calling agent
 
-Another AI agent can hold a conversation with one of yours and act on what comes back. It sends a message through `ask_agent`, or calls a routine you have exposed as a named tool, and gets a structured reply envelope beside the prose: what the answer covered, who owns the conversation, and where a routine landed. That envelope is what lets a calling model decide its next move instead of parsing sentences.
+Another AI agent can hold a conversation with one of yours and act on what comes back. It sends a message through `ask_agent`, or calls a routine you have exposed as a named tool, and gets a structured reply envelope beside the prose: what the answer covered, who owns the conversation, and where a routine landed. That envelope is what lets a calling model decide its next move instead of parsing sentences. A client that speaks A2A reaches the same agent over JSON-RPC; [Connect an A2A client](/guides/a2a-converse) covers it.
 
 Start with [MCP server](/guides/mcp-server) to issue the credential and point a client at the server, or with [Publish and open an agent](/guides/publish-an-agent) if you want callers to reach the agent with no credential at all. This page covers what the client does once it is connected.
 
@@ -78,9 +78,15 @@ When a turn hands off to a person, `ownership.state` becomes `human_owned` and t
 
 Over standalone MCP the session must survive between calls. The server returns an `Mcp-Session-Id` header on first contact; echo it on every later request to stay in the same conversation. A client that drops it gets a fresh conversation each call.
 
+## Connect an A2A client
+
+A client that speaks A2A v1.0 reaches the same agent over JSON-RPC, under the same walk-in and grant access, and follows routines and handoffs as tasks. [Connect an A2A client](/guides/a2a-converse) walks through finding the endpoint, sending a message, keeping the `contextId`, and polling a task.
+
 ## Read next
 
 - [Publish and open an agent](/guides/publish-an-agent) — the agent's public id, its discovery documents, and credential-free access.
+- [Connect an A2A client](/guides/a2a-converse) — reach the same agent over A2A JSON-RPC.
+- [A2A converse extension](/reference/a2a-converse-extension/v1) — the card parameters and reply metadata an A2A client reads.
 - [MCP server](/guides/mcp-server) — issue the agent credential, connect a client, and run the standalone server.
 - [Author a routine](/guides/authoring-routines#expose-a-routine-as-a-tool) — expose a routine so a calling agent can start it by name.
 - [Agents and skills](/api/agents-and-skills) — configure the agent behind the conversation.

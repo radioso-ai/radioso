@@ -18524,20 +18524,34 @@
       "A2aAgentCard": {
         "type": "object",
         "properties": {
-          "protocolVersion": {
-            "type": "string"
-          },
           "name": {
             "type": "string"
           },
           "description": {
             "type": "string"
           },
-          "url": {
-            "type": "string"
-          },
-          "preferredTransport": {
-            "type": "string"
+          "supportedInterfaces": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "protocolBinding": {
+                  "type": "string"
+                },
+                "protocolVersion": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url",
+                "protocolBinding",
+                "protocolVersion"
+              ]
+            },
+            "minItems": 1
           },
           "version": {
             "type": "string"
@@ -18554,63 +18568,153 @@
               "pushNotifications": {
                 "type": "boolean"
               },
-              "stateTransitionHistory": {
+              "extendedAgentCard": {
                 "type": "boolean"
+              },
+              "extensions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "params": {
+                      "type": "object",
+                      "properties": {
+                        "mcp": {
+                          "type": "object",
+                          "properties": {
+                            "url": {
+                              "type": "string"
+                            },
+                            "serverCardUrl": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "url",
+                            "serverCardUrl"
+                          ]
+                        },
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "toolName": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "inputSchema": {
+                                "type": "object",
+                                "additionalProperties": {}
+                              }
+                            },
+                            "required": [
+                              "toolName",
+                              "description",
+                              "inputSchema"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "mcp",
+                        "tools"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "uri",
+                    "description",
+                    "required",
+                    "params"
+                  ]
+                }
               }
             },
             "required": [
               "streaming",
               "pushNotifications",
-              "stateTransitionHistory"
+              "extendedAgentCard",
+              "extensions"
             ]
-          },
-          "defaultInputModes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "defaultOutputModes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           },
           "securitySchemes": {
             "type": "object",
             "additionalProperties": {
               "type": "object",
               "properties": {
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "http"
+                "httpAuthSecurityScheme": {
+                  "type": "object",
+                  "properties": {
+                    "scheme": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "scheme"
                   ]
-                },
-                "scheme": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
                 }
               },
               "required": [
-                "type",
-                "scheme"
+                "httpAuthSecurityScheme"
               ]
             }
           },
-          "security": {
+          "securityRequirements": {
             "type": "array",
             "items": {
               "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "type": "string"
+              "properties": {
+                "schemes": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "list": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "list"
+                    ]
+                  }
                 }
-              }
+              },
+              "required": [
+                "schemes"
+              ]
             }
+          },
+          "defaultInputModes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "defaultOutputModes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
           },
           "skills": {
             "type": "array",
@@ -18630,7 +18734,8 @@
                   "type": "array",
                   "items": {
                     "type": "string"
-                  }
+                  },
+                  "minItems": 1
                 },
                 "inputModes": {
                   "type": "array",
@@ -18653,24 +18758,22 @@
                 "inputModes",
                 "outputModes"
               ]
-            }
+            },
+            "minItems": 1
           }
         },
         "required": [
-          "protocolVersion",
           "name",
           "description",
-          "url",
-          "preferredTransport",
+          "supportedInterfaces",
           "version",
           "capabilities",
+          "securitySchemes",
           "defaultInputModes",
           "defaultOutputModes",
-          "securitySchemes",
-          "security",
           "skills"
         ],
-        "description": "An A2A Agent Card for one agent: who it is, where its MCP endpoint is, how a caller authenticates, and one skill per exposed routine."
+        "description": "An A2A v1.0 Agent Card for one agent: who it is, the JSON-RPC interface an A2A client sends messages to, how a caller authenticates, an `ask_agent` skill plus one skill per exposed routine, and under `capabilities.extensions` the Radioso converse extension, which names the agent's MCP endpoint and each routine's input schema. `securityRequirements` is absent while the agent accepts callers with no credential."
       },
       "McpServerCard": {
         "type": "object",

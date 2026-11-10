@@ -71,10 +71,28 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   many declared slots the ending routine held a value for, 0 on a retrieval miss)
   for a channel that delivers the reply in-process; the voice channel derives its
   outcome from it. It is not part of the envelope core, and `presentChatPayload`
-  and `stripPublicChatCitationArtifacts` drop it from every HTTP response.
+  and `stripPublicChatCitationArtifacts` drop it from every HTTP response. A turn
+  that reports a routine also carries `routineExecutionId`, the run `routine`
+  describes (the saved state's, or the suspended one's; none for a declined call),
+  worked out by `services/routines/routineTurnDescription.ts`. Every turn also carries
+  `requestMessageId`, the caller message it stored. Both follow the same rule as
+  `handoff`: off the envelope, dropped by both presenters.
+- `services/agentConverseService.ts` (exported through `contracts/`): the converse
+  turn behind every door that holds a converse principal (MCP `ask`, A2A). It runs on
+  the principal's `sourceChannel`, and `askAgent` returns `AgentConverseTurnResult`:
+  the `reply` a door serialises, plus facts a door keeps in-process:
+  `conversationId` (the conversation's row id, where `reply.conversationId` is the
+  caller's public session id), `routineExecutionId` (the run the reply's routine
+  names), and `requestMessageId` / `replyMessageId` (the turn's own stored messages;
+  no reply when a person owns the thread). Every fact comes from the turn itself; a
+  door that needs more after the turn reads it through its own port. Composition
+  builds it once per door with `app/composition/agentConverse.ts`.
+  `services/agentConverseAudit.ts` records each turn as `mcp_converse.ask` or
+  `a2a.ask` by channel, with `sourceChannel` in the metadata.
 - `services/agentTurnInput.ts` (exported through `contracts/`): `resolveAgentTurnInput`
   turns an agent-facing body into `{ kind: "message" }` or `{ kind: "routine_invocation" }`
-  once, before any turn state exists. The REST agent chat route calls it with the
+  once, before any turn state exists, and counts it as
+  `converse_turns_total{channel, input_kind}`. The REST agent chat route calls it with the
   revision the named conversation is pinned to; `agentConverseService.ts` calls it after
   binding the session's conversation, with that conversation's pinned revision — so
   neither transport validates a tool call on its own and both check the release the

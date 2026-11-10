@@ -188,6 +188,11 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       "INSERT INTO routine_states (session_id, routine_id, variables, status) VALUES ($1, 'booking', $2::jsonb, 'completed')",
       [webConversationId, JSON.stringify({ injury: "knee", phone: "+372 5555 0000" })],
     );
+    await database.query(
+      `INSERT INTO a2a_tasks (id, workspace_id, conversation_id, context_token, state, reason, state_at)
+       VALUES ($1, $2, $3, 'sealed-context', 'completed', 'routine_completed', now())`,
+      [`task${randomUUID().replaceAll("-", "")}`, t.workspaceId, webConversationId],
+    );
     const queueAction = (type: string, payload: Record<string, unknown>) => database.query(
       `INSERT INTO routine_action_requests (type, payload, workspace_id, conversation_id, status)
        VALUES ($1, $2::jsonb, $3, $4, 'dispatched')`,
@@ -340,6 +345,7 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       expect(document).toMatchObject({ format: "radioso.data_subject_export", formatVersion: 1, workspaceId: tenant.workspaceId });
       const { sections } = document;
       expect(Object.keys(sections).sort()).toEqual([
+        "a2a_tasks",
         "answer_feedback",
         "context_values",
         "conversation_summaries",
@@ -362,6 +368,9 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       expect(sections.visitors).toEqual([expect.objectContaining({ id: jane.visitorId, verifiedCustomerId: JANE, lastCountry: "EE" })]);
       expect(sections.routine_values).toEqual([
         expect.objectContaining({ conversationId: jane.webConversationId, routineId: "booking", status: "completed", values: { injury: "knee", phone: "+372 5555 0000" } }),
+      ]);
+      expect(sections.a2a_tasks).toEqual([
+        expect.objectContaining({ conversationId: jane.webConversationId, state: "completed", reason: "routine_completed" }),
       ]);
       expect(sections.routine_actions).toEqual([
         expect.objectContaining({ conversationId: jane.webConversationId, type: "completion.notify", routineId: "booking", values: { injury: "knee" } }),

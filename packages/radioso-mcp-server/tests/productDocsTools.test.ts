@@ -39,11 +39,11 @@ describe("product documentation MCP tools", () => {
     expect(data.page.sections.length).toBeGreaterThan(0);
   });
 
-  it("returns the MCP server, calling-agent, and publishing guides in full, because a connection procedure is only useful whole", async () => {
-    // These three pages carry the procedures an agent has to follow end to end. A page
+  it("returns the MCP server, calling-agent, A2A client, and publishing guides in full, because a connection procedure is only useful whole", async () => {
+    // These four pages carry the procedures an agent has to follow end to end. A page
     // that outgrows the inline budget degrades to an outline, so each one is asserted
     // whole here and the next sentence added to it has to keep it that way.
-    for (const slug of ["guides/mcp-server", "guides/agent-converse", "guides/publish-an-agent"]) {
+    for (const slug of ["guides/mcp-server", "guides/agent-converse", "guides/a2a-converse", "guides/publish-an-agent"]) {
       const data = asRecord((await page.execute({ slug }, context)).data);
 
       expect(data.found, slug).toBe(true);

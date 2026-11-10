@@ -347,6 +347,22 @@ describe("routine invocation (US2)", () => {
     ]);
   });
 
+  it("names the suspended run in-process on every turn it keeps, the same run the starting turn reported", async () => {
+    const ctx = createApp();
+    const converse = await openConverseSession(ctx);
+    await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, startReturnWithApprovalDraft());
+    const services = buildMcpConverseServices(ctx.dependencies);
+    const principal = await services.sessionService.validate(converse.sessionToken);
+
+    const started = await services.converseService.askAgent(principal, { routine: { toolName: "start_return", input: { orderId: "A-1001" } } });
+    const kept = await services.converseService.askAgent(principal, { message: "Any news?" });
+
+    expect(started.reply.routine?.status).toBe("waiting_for_approval");
+    expect(kept.reply.routine?.status).toBe("waiting_for_approval");
+    expect(started.routineExecutionId).toEqual(expect.any(String));
+    expect(kept.routineExecutionId).toBe(started.routineExecutionId);
+  });
+
   it("answers normally on a second call to a completed once_per_conversation routine and still names it (AS-5)", async () => {
     const ctx = createApp();
     const converse = await openConverseSession(ctx);

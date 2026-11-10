@@ -72,6 +72,15 @@ describe('history source formatting', () => {
     expect(formatConversationLocation(input).text).toBe('Voice session')
   })
 
+  it('labels A2A conversations the way MCP conversations are labelled', () => {
+    const input = conversation({ sourceChannel: 'a2a' })
+
+    expect(getConversationSourceBadge(input)?.label).toBe('A2A')
+    expect(formatConversationSource(input)).toBe('A2A')
+    expect(formatConversationLocation(input).text).toBe('No page recorded')
+    expect(getConversationSourceBadge('a2a')?.label).toBe('A2A')
+  })
+
   it('falls back to the existing source-channel behavior when channel context is absent', () => {
     expect(formatConversationSource(conversation())).toBeNull()
     expect(formatConversationSource(conversation({ sourceChannel: 'anonymous' }))).toBe('Anonymous public chat')

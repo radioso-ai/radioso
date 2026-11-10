@@ -72,7 +72,8 @@ import {
   capabilitySubTrace,
 } from "./chatTraceLeaves.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
-import type { ChatRoutineTurnReporter, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
+import { describeRoutineTurn } from "./routines/routineTurnDescription.js";
+import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
 import { conversationSummaryRefreshRequest } from "./summary/conversationSummaryRefreshJob.js";
@@ -612,24 +613,6 @@ const notRecordedAnswerCoverage = (requestMessageId: string): ChatAnswerCoverage
 });
 
 /**
- * The routine this turn left, for the reply: the state it saved when it ran one;
- * otherwise the routine the turn named but could not advance — the completed one
- * a direct invocation was declined for, or the suspended one that kept the turn.
- */
-const describeRoutineTurn = (input: {
-  session: Pick<PreparedSession, "declinedRoutine" | "suspendedRoutine">;
-  routineStateTransition?: CapturedRoutineTransition | null;
-  routineReporter?: ChatRoutineTurnReporter;
-  suspended?: boolean;
-}): ChatRoutineTurnState | null =>
-  input.routineReporter && input.routineStateTransition?.kind === "save"
-    ? input.routineReporter.describe({
-        state: input.routineStateTransition.state,
-        awaitingDecision: input.suspended === true,
-      })
-    : input.session.declinedRoutine ?? input.session.suspendedRoutine ?? null;
-
-/**
  * The sensitive slots (#1543) the routine this turn saved holds a value for, and those the step
  * the turn started on asks for (the visitor's message answers it, stored or not). Both messages
  * of such a turn are marked, so every copy of the transcript that leaves reads them as withheld.
@@ -887,7 +870,7 @@ export class ChatTurnLifecycle {
           accountId: input.accountId,
         })]
       : [];
-    const routineTurnState = describeRoutineTurn(input);
+    const routineTurn = describeRoutineTurn(input);
     const invocationReport = input.session.routineInvocationReport ?? null;
     if (invocationReport) {
       // Every turn-time outcome is counted here, where the reply reports it, so a
@@ -1071,6 +1054,7 @@ export class ChatTurnLifecycle {
         agentId: input.session.agent.id,
         agentName: input.session.agent.name,
         assistantMessageId: assistantMessage.id,
+        requestMessageId: input.session.userMessage.id,
         route: presentation.route,
         answer: input.presentation.answer,
         skillOutcome: presentation.skillTurnOutcome.outcome,
@@ -1082,15 +1066,14 @@ export class ChatTurnLifecycle {
         activityTrace: presentation.activityTrace,
         turnTrace: presentation.turnTrace,
         answerCoverage: input.session.answerCoverageDebug ?? notRecordedAnswerCoverage(input.session.userMessage.id),
-        ...(input.session.answerCoverageInteractionTrace
-          ? { interactionTrace: input.session.answerCoverageInteractionTrace }
-          : {}),
+        ...(input.session.answerCoverageInteractionTrace ? { interactionTrace: input.session.answerCoverageInteractionTrace } : {}),
         // A handoff this turn leaves the conversation human-owned; the reply itself
         // was still generated, so it is not suppressed. Safe-test turns never hand off.
         ...(ownershipHandoff
           ? { ownership: { state: "human_owned", suppressed: false }, handoff: turnHandoffReport(ownershipHandoff) }
           : {}),
-        ...(routineTurnState ? { routine: routineTurnState } : {}),
+        ...(routineTurn ? { routine: routineTurn.routine } : {}),
+        ...(routineTurn?.executionId ? { routineExecutionId: routineTurn.executionId } : {}),
         ...(invocationReport ? { invocation: invocationReport } : {}),
       },
     };

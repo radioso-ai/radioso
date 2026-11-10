@@ -5,7 +5,6 @@ import { converseGrantVersion } from "../domain/converseGrantVersion.js";
 import type {
   AgentConverseAgentLookupPort,
   AgentConverseOrigin,
-  AgentConverseSessionMappingPort,
   AgentConverseWalkInIssuerPort,
   AgentConverseWalkInObserver,
 } from "../contracts/agentConverseSession.js";
@@ -41,15 +40,17 @@ interface GrantExchangeDependencies {
     "resolveConverseGrant" | "resolvePublicLaunchGrant" | "evaluate" | "recordAuthFailure"
   >;
   agentLookup: AgentConverseAgentLookupPort;
-  sessionMapping: AgentConverseSessionMappingPort;
+  /**
+   * Which conversation an admitted grant version speaks in. The door decides: MCP keeps one
+   * stable conversation per grant version across exchanges, through the mapping table; a door
+   * whose caller holds its own context opens a fresh one every time.
+   */
+  publicSessionIdFor: (grant: { grantId: string; grantVersion: string }) => Promise<string>;
   audit?: ConverseExchangeAuditPort;
   refuse: (statusCode: number, code: string, message: string) => Error;
 }
 
-/**
- * The credential door. A grant keeps one stable conversation across exchanges, which is
- * why the public session id comes from the mapping table rather than being minted here.
- */
+/** The credential door: the grant must be a live converse grant for an agent that still exists. */
 export const openGrantExchangeOrigin = async (
   dependencies: GrantExchangeDependencies,
   input: { launchToken: string; client?: { name?: string } },
@@ -89,11 +90,7 @@ export const openGrantExchangeOrigin = async (
   }
 
   const grantVersion = converseGrantVersion(grant);
-  const publicSessionId = await dependencies.sessionMapping.resolvePublicSessionId({
-    grantId: grant.id,
-    grantVersion,
-    proposedPublicSessionId: randomUUID(),
-  });
+  const publicSessionId = await dependencies.publicSessionIdFor({ grantId: grant.id, grantVersion });
   await dependencies.audit?.recordExchangeSucceeded({ grant, publicSessionId, clientName });
 
   return {

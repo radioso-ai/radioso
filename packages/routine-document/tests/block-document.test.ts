@@ -1,9 +1,9 @@
 import fc from 'fast-check'
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('@radioso/routine-definition', async () => import('../../routine-definition/src/index.ts'))
+vi.mock('@radioso/routine-definition', async () => import('../../routine-definition/src/index.js'))
 
-import { routineDefinitionDraftInputSchema, type RoutineDefinitionDraftAuthoringInput } from '@radioso/routine-definition'
+import { routineDefinitionDraftInputSchema, type RoutineDefinitionDraftAuthoringInput, type RoutineDefinitionDraftEditingAuthoringInput } from '@radioso/routine-definition'
 import {
   draftFromBlockDoc,
   routineToBlockDoc,
@@ -56,7 +56,7 @@ const withDocumentOrdinals = (input: ReturnType<typeof draft>) => ({
 
 describe('routine block document', () => {
   it('projects an empty draft to an empty document and round-trips empty arrays', () => {
-    const input: RoutineDefinitionDraftAuthoringInput = {
+    const input: RoutineDefinitionDraftEditingAuthoringInput = {
       name: 'New routine',
       activation: { triggerDescription: 'Start here', gateRef: null, priority: 0 },
       slots: [],
@@ -69,7 +69,7 @@ describe('routine block document', () => {
       doc: {
         name: 'New routine',
         enabled: true,
-        activation: { triggerDescription: 'Start here', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' },
+        activation: { triggerDescription: 'Start here', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' as const },
         information: [],
         steps: [],
         unreferencedEndings: [],
@@ -80,7 +80,7 @@ describe('routine block document', () => {
   })
 
   it('preserves slots and activation when an authoring draft has no steps', () => {
-    const input: RoutineDefinitionDraftAuthoringInput = {
+    const input: RoutineDefinitionDraftEditingAuthoringInput = {
       name: 'New routine',
       activation: { triggerDescription: 'Start here', gateRef: 'support_gate', priority: 3, reentryMode: 'always' },
       slots: [{ stableSlotId: 'account_id', key: 'account_id', type: 'text', required: true, description: 'Customer account', mutable: false, ordinal: 4 }],
@@ -111,7 +111,7 @@ describe('routine block document', () => {
     const input = {
       name: 'New routine',
       enabled: true,
-      activation: { triggerDescription: '', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' },
+      activation: { triggerDescription: '', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' as const },
       slots: [],
       steps: [{ stableStepId: 'start', kind: 'chat' as const, instruction: '', toolRef: null, actionType: null, captureKey: null, options: [], ordinal: 0, metadata: {} }],
       transitions: [],
@@ -145,7 +145,7 @@ describe('routine block document', () => {
   it('projects a tool step before its tool is selected', () => {
     const input = {
       name: 'New routine',
-      activation: { triggerDescription: 'Start here', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' },
+      activation: { triggerDescription: 'Start here', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' as const },
       slots: [],
       steps: [{ stableStepId: 'select-tool', kind: 'tool' as const, instruction: 'Choose a tool.', toolRef: null, actionType: null, captureKey: null, options: [], ordinal: 0, metadata: {} }],
       transitions: [],

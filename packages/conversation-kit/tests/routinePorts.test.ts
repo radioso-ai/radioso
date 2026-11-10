@@ -128,7 +128,7 @@ describe("conversation kit routine ports", () => {
       render: vi.fn(async () => ({ answer: "renderer should not run" })),
     };
     const routineRunner: ConversationRoutineRunner = {
-      resume: vi.fn(async ({ state }) => ({
+      resume: vi.fn<ConversationRoutineRunner["resume"]>(async ({ state }) => ({
         response: { answer: "from supplied runner" },
         nextState: { ...state, path: ["done"], status: "completed" },
         terminal: { kind: "complete", stepId: "done" },

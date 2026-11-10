@@ -20,12 +20,8 @@ import { primaryLanguageTag } from "../../../shared/domain/acceptLanguage.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { toConversationTrace, toPreparedStagedContext } from "./conversationContractMappers.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
-import type {
-  MessageRecord,
-  MessageRepositoryPort,
-  MessageRole,
-  UserMessageInputMetadata,
-} from "../../../db/repositories/messageRepository.js";
+import type { MessageRecord, MessageRepositoryPort, MessageRole } from "../../../db/repositories/messageRepository.js";
+import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { ChatRoutineInvocationReport } from "../contracts/routineTurnState.js";
 import { repliesAreSpoken } from "../contracts/operatorReplySpeech.js";

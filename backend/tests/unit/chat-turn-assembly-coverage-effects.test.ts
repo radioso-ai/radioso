@@ -78,7 +78,7 @@ it("projects coverage handoff and suspended approval effects without committing 
   const runtime = await (assembly as never as { coverageTurnRuntime: (s: unknown, i: unknown) => Promise<unknown> }).coverageTurnRuntime(session, { responseLanguage: Promise.resolve(undefined) });
   const typed = runtime as { routineStore: { save: (s: unknown) => Promise<void> }; effects: (r: unknown) => { actions?: Array<{ type: string }>; handoff?: { routineId: string; stepId: string }; suspended?: boolean; pendingDecisionTransition?: { routineId: string; stepId: string }; commitRoutineState: () => Promise<void> } };
   await typed.routineStore.save({ sessionId: "conversation", routineId: "routine", path: [], variables: {}, status: "suspended" });
-  const effects = typed.effects({ actions: [{ type: "routine.action", payload: {} }], handoff: { routineId: "routine", stepId: "handoff" }, awaitingDecision: { stepId: "approve", captureKey: "approval", options: [{ id: "yes", label: "Yes" }] } });
+  const effects = typed.effects({ actions: [{ type: "routine.action", payload: {} }], handoff: { routineId: "routine", stepId: "handoff" }, hostEffects: { awaitingDecision: { stepId: "approve", captureKey: "approval", options: [{ id: "yes", label: "Yes" }] } } });
   expect(effects.handoff).toEqual({ routineId: "routine", stepId: "handoff" });
   expect(effects.suspended).toBe(true);
   expect(effects.pendingDecisionTransition).toMatchObject({ routineId: "routine", stepId: "approve" });

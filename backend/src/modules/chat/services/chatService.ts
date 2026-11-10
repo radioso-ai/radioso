@@ -52,7 +52,7 @@ import type {
   AssistantClientContextCapabilities,
   AssistantPageContext,
 } from "../types/assistantApi.js";
-import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { CALLER_KIND_MATCH_KEY, visitorMatchContext } from "./visitorMatchContext.js";
 import {

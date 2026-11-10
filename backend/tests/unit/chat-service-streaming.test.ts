@@ -2851,11 +2851,13 @@ describe("chat service streaming", () => {
           variables: { manager_decision: { id: "approve" } },
           status: "suspended",
         },
-        awaitingDecision: {
-          stepId: "finance-approval",
-          options: [{ id: "approve", label: "Approve" }, { id: "reject", label: "Reject" }],
-          captureKey: "finance_decision",
-          reason: "refund_finance_review",
+        hostEffects: {
+          awaitingDecision: {
+            stepId: "finance-approval",
+            options: [{ id: "approve", label: "Approve" }, { id: "reject", label: "Reject" }],
+            captureKey: "finance_decision",
+            reason: "refund_finance_review",
+          },
         },
       }));
       await run;
@@ -3324,10 +3326,12 @@ describe("chat service streaming", () => {
                     collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
                     operatorNotice: {},
                   },
-                  awaitingDecision: {
-                    stepId: "operator_review",
-                    captureKey: "operator_approval",
-                    options: [{ id: "approve", label: "Approve" }],
+                  hostEffects: {
+                    awaitingDecision: {
+                      stepId: "operator_review",
+                      captureKey: "operator_approval",
+                      options: [{ id: "approve", label: "Approve" }],
+                    },
                   },
                 }
               : {}),

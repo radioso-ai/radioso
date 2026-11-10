@@ -137,16 +137,6 @@ exports[`routine turn golden record (attemptRoutine) > records the same port cal
     "appendEvent:assistant",
   ],
   "result": {
-    "awaitingDecision": {
-      "captureKey": "approval",
-      "options": [
-        {
-          "id": "yes",
-          "label": "Approve",
-        },
-      ],
-      "stepId": "approve",
-    },
     "decision": {
       "reason": "routine_resumed:contact",
       "selected": [],
@@ -172,6 +162,18 @@ exports[`routine turn golden record (attemptRoutine) > records the same port cal
         "sessionId": "session_1",
       },
     ],
+    "hostEffects": {
+      "awaitingDecision": {
+        "captureKey": "approval",
+        "options": [
+          {
+            "id": "yes",
+            "label": "Approve",
+          },
+        ],
+        "stepId": "approve",
+      },
+    },
     "outcomes": [],
     "response": {
       "answer": "reply:approve",

@@ -575,7 +575,7 @@ const routineTurnEffectsOf = (result: ProcessTurnResult): RoutineTurnEffects => 
     ...(result.routineExecution ? { routineExecution: result.routineExecution } : {}),
     ...(terminalKind ? { terminalKind } : {}),
     ...(result.actions ? { actions: result.actions } : {}),
-    ...(result.awaitingDecision ? { awaitingDecision: result.awaitingDecision } : {}),
+    ...(result.hostEffects ? { hostEffects: result.hostEffects } : {}),
     ...(result.handoff ? { handoff: result.handoff } : {}),
     ...(result.operatorNotice ? { operatorNotice: result.operatorNotice } : {}),
     ...(result.skillsWithExternalEffects ? { skillsWithExternalEffects: result.skillsWithExternalEffects } : {}),

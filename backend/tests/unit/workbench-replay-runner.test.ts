@@ -1373,10 +1373,12 @@ describe("WorkbenchReplayRunner", () => {
           decision: { reason: "routine_completed" },
           actions: [{ type: "contact.send", payload: { email: "buyer@example.com" } }],
           handoff: { routineId: "contact", stepId: "handoff", terminalKind: "handoff" },
-          awaitingDecision: {
-            stepId: "approval",
-            captureKey: "approval_decision",
-            options: [{ id: "approve", label: "Approve" }],
+          hostEffects: {
+            awaitingDecision: {
+              stepId: "approval",
+              captureKey: "approval_decision",
+              options: [{ id: "approve", label: "Approve" }],
+            },
           },
         } as unknown as ProcessTurnResult;
       },
@@ -3109,7 +3111,7 @@ describe("WorkbenchReplayRunner coverage routine takeover", () => {
 
   it.each(["run", "stream"] as const)("suspends a coverage routine that waits for approval and carries it into the next turn (%s)", async (mode) => {
     const runner = replayRunner(coverageTakeoverEngine({
-      awaitingDecision: { stepId: "approval", captureKey: "approval_decision", options: [{ id: "approve", label: "Approve" }] },
+      hostEffects: { awaitingDecision: { stepId: "approval", captureKey: "approval_decision", options: [{ id: "approve", label: "Approve" }] } },
     }, "suspended"));
 
     const result = await drive(runner, mode, turnInput("How long do refunds take?"));

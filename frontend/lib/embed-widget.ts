@@ -82,6 +82,10 @@ export interface WebsiteEmbedCopy {
   publicChatImageUnsupportedMessage: string
   publicChatImageTooLargeMessage: string
   publicChatImageFailedMessage: string
+  /** Photos cannot be sent now: the agent stopped taking them, or the plan has no answers left. */
+  publicChatImageRefusedMessage: string
+  /** The server was too busy to take a photo, even on a second try. */
+  publicChatImageBusyMessage: string
   publicChatImageLimitTemplate: string
 }
 
@@ -170,6 +174,8 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatImageUnsupportedMessage: 'Use a JPEG, PNG or WebP photo.',
   publicChatImageTooLargeMessage: 'That photo is too large.',
   publicChatImageFailedMessage: "Couldn't upload that photo. Try again.",
+  publicChatImageRefusedMessage: "Photos can't be sent right now.",
+  publicChatImageBusyMessage: 'Busy right now. Try that photo again.',
   publicChatImageLimitTemplate: 'You can send up to {count} photos at once.',
 }
 const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
@@ -246,6 +252,8 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatImageUnsupportedMessage',
   'publicChatImageTooLargeMessage',
   'publicChatImageFailedMessage',
+  'publicChatImageRefusedMessage',
+  'publicChatImageBusyMessage',
   'publicChatImageLimitTemplate',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 

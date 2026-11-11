@@ -72,7 +72,17 @@ interface Observed {
   sentBodies: Array<Record<string, unknown>>;
 }
 
-const mockPublicChat = async (page: Page, options: { acceptsImages: boolean; photo: Buffer; uploadDelayMs?: number }): Promise<Observed> => {
+interface MockOptions {
+  acceptsImages: boolean;
+  photo: Buffer;
+  uploadDelayMs?: number;
+  /** What each upload answers, in turn; the last answer repeats. Defaults to the photo being read. */
+  uploadAnswers?: Array<{ status: number; body: unknown }>;
+  /** The status the message send answers with; 200 streams the agent's reply. */
+  sendStatus?: number;
+}
+
+const mockPublicChat = async (page: Page, options: MockOptions): Promise<Observed> => {
   const observed: Observed = { uploads: [], imageReads: [], sentBodies: [] };
   let sent = false;
   const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, json: body });
@@ -107,7 +117,9 @@ const mockPublicChat = async (page: Page, options: { acceptsImages: boolean; pho
       const locale = /name="locale"\r\n\r\n([^\r]*)/.exec(body.toString("latin1"))?.[1] ?? null;
       observed.uploads.push({ jpeg: uploadedJpeg(body), sessionHeader, locale });
       await new Promise((resolve) => setTimeout(resolve, options.uploadDelayMs ?? 0));
-      return json(route, { id: imageId, readingStatus: "read" }, 201);
+      const answers = options.uploadAnswers ?? [{ status: 201, body: { id: imageId, readingStatus: "read" } }];
+      const answer = answers[Math.min(observed.uploads.length - 1, answers.length - 1)];
+      return json(route, answer.body, answer.status);
     }
     if (pathname.endsWith(`/images/${imageId}`) && method === "GET") {
       observed.imageReads.push({ sessionHeader });
@@ -161,6 +173,8 @@ const mockPublicChat = async (page: Page, options: { acceptsImages: boolean; pho
         assistantAvatarUrl: null,
         assistantLinkUtmEnabled: true,
         citationDisplayEnabled: true,
+        // A chat that reloads reads this, not the session response, to know whether to offer photos.
+        acceptsImages: options.acceptsImages,
         theme,
         intakeActions: [],
         assistantBootstrapActive: false,
@@ -178,6 +192,11 @@ const mockPublicChat = async (page: Page, options: { acceptsImages: boolean; pho
   await page.route(`**/api/public/chat/${publicToken}`, async (route) => {
     sent = true;
     observed.sentBodies.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
+    if (options.sendStatus && options.sendStatus !== 200) {
+      sent = false;
+      await route.fulfill({ status: options.sendStatus, json: { error: { code: "visitor_image_unavailable", message: "An image is not available." } } });
+      return;
+    }
     const done = { conversationId, assistantMessageId: "55555555-5555-4555-8555-555555555552", answer: "I found three farmhouses on the coast." };
     await route.fulfill({
       status: 200,
@@ -249,7 +268,7 @@ test("a visitor attaches a photo, sees it upload, sends it, and still sees it af
   expect(observed.imageReads.every((read) => read.sessionHeader === publicSessionToken)).toBe(true);
   await expect(page.getByText("terracotta roof")).toHaveCount(0);
   await expect(page.getByText("attached_photo")).toHaveCount(0);
-  // The attach control is still there: the session remembered the agent takes photos.
+  // The attach control is still there: the list the reload read says the agent takes photos.
   await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
 });
 
@@ -318,4 +337,85 @@ test("a chat whose agent takes no photos offers no attach control", async ({ pag
   await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
   await expect(page.getByRole("button", { name: "Attach photo" })).toHaveCount(0);
   await expect(page.getByTestId("visitor-image-input")).toHaveCount(0);
+});
+
+test("a photo the server is too busy to take is tried once more, and shows the error when it is busy again", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  const busy = { status: 503, body: { error: { code: "visitor_image_busy", message: "Try again." } } };
+  const observed = await mockPublicChat(page, {
+    acceptsImages: true,
+    photo,
+    uploadAnswers: [busy, { status: 201, body: { id: imageId, readingStatus: "read" } }],
+  });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+
+  // Busy once: the browser waits a moment and tries the same photo again, with nothing for the visitor to do.
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: photo });
+  await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "ready", { timeout: 10_000 });
+  expect(observed.uploads).toHaveLength(2);
+  await expect(page.getByTestId("visitor-image-notice")).toHaveCount(0);
+});
+
+test("a photo the server stays too busy to take, or the plan cannot take, shows why on its chip", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  const busy = { status: 503, body: { error: { code: "visitor_image_busy", message: "Try again." } } };
+  const observed = await mockPublicChat(page, { acceptsImages: true, photo, uploadAnswers: [busy] });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: photo });
+  await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "error", { timeout: 10_000 });
+  await expect(page.getByTestId("visitor-image-notice")).toHaveText("Busy right now. Try that photo again.");
+  expect(observed.uploads).toHaveLength(2);
+  await page.getByRole("button", { name: "Remove photo" }).click();
+
+  // The plan has no answers left: photos cannot be sent now, and nothing is tried again.
+  await page.unroute(`**/backend/api/v1/public/chat/${publicToken}**`);
+  const limited = await mockPublicChat(page, {
+    acceptsImages: true,
+    photo,
+    uploadAnswers: [{ status: 429, body: { error: { code: "usage_limit_exceeded", message: "Usage limit exceeded" } } }],
+  });
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: photo });
+  await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "error");
+  await expect(page.getByTestId("visitor-image-notice")).toHaveText("Photos can't be sent right now.");
+  expect(limited.uploads).toHaveLength(1);
+});
+
+test("a send refused for its photos clears them, says why, and keeps what the visitor typed", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  const observed = await mockPublicChat(page, { acceptsImages: true, photo, sendStatus: 409 });
+
+  await page.goto(`/chat/${publicToken}`);
+  const field = page.getByPlaceholder("Ask a question...");
+  await expect(field).toBeVisible();
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: photo });
+  await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "ready");
+  await field.fill(typedText);
+  await page.getByRole("button", { name: "Send message" }).click();
+
+  // The operator turned photos off after the upload: the photos are gone, with the reason, and the words are still there.
+  await expect.poll(() => observed.sentBodies.length).toBe(1);
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
+  await expect(page.getByTestId("visitor-image-notice")).toHaveText("Photos can't be sent right now.");
+  await expect(field).toHaveValue(typedText);
+  await expect(page.locator('[data-message-role="user"]')).toHaveCount(0);
+
+  // The words go on their own.
+  await page.unroute(`**/api/public/chat/${publicToken}`);
+  await page.route(`**/api/public/chat/${publicToken}`, async (route) => {
+    observed.sentBodies.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: `event: done\ndata: ${JSON.stringify({ conversationId, assistantMessageId: "55555555-5555-4555-8555-555555555552", answer: "Tell me more." })}\n\n`,
+    });
+  });
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("Tell me more.")).toBeVisible();
+  expect(observed.sentBodies[1]).toMatchObject({ message: typedText });
+  expect(observed.sentBodies[1]).not.toHaveProperty("imageIds");
 });

@@ -1,41 +1,23 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { llmProvidersApi, type LlmCapabilityPreference, type WorkspaceLlmModels } from '@/lib/api-llm-providers'
-import { agentImageReading } from '@/lib/visitor-image-model'
 
 /**
  * Lets visitors attach photos to a message. The agent's chat model reads each photo, so the
  * setting says when that model cannot, and does not look as if it works while it cannot.
+ * `chatModelReadsImages` is the server's answer for the model the agent's turns resolve.
  */
 export function VisitorImagesSetting({
   enabled,
   onChange,
-  chatModelOverride,
+  chatModelReadsImages,
 }: {
   enabled: boolean
   onChange: (enabled: boolean) => void
-  chatModelOverride: LlmCapabilityPreference | null | undefined
+  chatModelReadsImages: boolean | undefined
 }) {
-  const [models, setModels] = useState<WorkspaceLlmModels | null>(null)
-  useEffect(() => {
-    let active = true
-    llmProvidersApi
-      .getModels()
-      .then((response) => {
-        if (active) setModels(response)
-      })
-      .catch(() => {
-        // Without the model catalog the setting cannot say which models read images, so it stays quiet.
-      })
-    return () => {
-      active = false
-    }
-  }, [])
-  const cannotRead = agentImageReading({ override: chatModelOverride, models }) === 'cannot_read'
+  const cannotRead = chatModelReadsImages === false
 
   return (
     <div className="flex items-start justify-between gap-4 p-3">

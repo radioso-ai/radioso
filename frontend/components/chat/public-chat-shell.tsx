@@ -34,7 +34,6 @@ import {
   type PrivacyNoticeDisplay,
 } from '@/components/chat/assistant-identity'
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
-import type { VisitorImageThreadConfig } from '@/components/chat/visitor-image-thumbnails'
 import { VoiceCallBar, VoiceCallNotice, VoiceTalkButton } from '@/components/chat/voice-call-controls'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { useElementHeight } from '@/hooks/use-element-height'
@@ -42,8 +41,7 @@ import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-co
 import { publicChatUnavailableMessage, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
 import { useCanAskForMicrophone, useVoiceSession } from '@/lib/use-voice-session'
-import { useVisitorImageAttachments } from '@/lib/use-visitor-image-attachments'
-import { canSendMessage } from '@/lib/visitor-image-attachments'
+import { usePublicChatPhotos } from '@/lib/use-public-chat-photos'
 import { interleaveVoiceTranscript } from '@/lib/voice-session'
 import {
   answerFeedbackApi,
@@ -599,7 +597,6 @@ function PublicChatContent({
     visitorLocale,
     privacyNotice,
   } = useAnonymousChat()
-  const { attachments: imageAttachments, state: imageState } = useVisitorImageAttachments(uploadImage)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -611,27 +608,7 @@ function PublicChatContent({
     () => getWebsiteEmbedCopy(localeOverride, resolvedCopyOverrides),
     [localeOverride, resolvedCopyOverrides],
   )
-  // The photos' controls appear only where the agent takes photos; a message with a photo needs no text.
-  const composerImages = useMemo(
-    () => (acceptsImages
-      ? {
-          attachments: imageState.attachments,
-          limitReached: imageState.limitReached,
-          onFiles: (files: File[]) => imageAttachments.addFiles(files),
-          onRemove: (key: string) => imageAttachments.remove(key),
-        }
-      : undefined),
-    [acceptsImages, imageAttachments, imageState],
-  )
-  const canSend = canSendMessage(input, imageState)
-  const visitorImages = useMemo<VisitorImageThreadConfig>(
-    () => ({
-      source: { kind: 'public', publicChatToken },
-      altLabel: copy.publicChatImageAlt,
-      unavailableLabel: copy.publicChatImageUnavailableLabel,
-    }),
-    [copy.publicChatImageAlt, copy.publicChatImageUnavailableLabel, publicChatToken],
-  )
+  const photos = usePublicChatPhotos({ acceptsImages, uploadImage, sendMessage, publicChatToken, copy, input, setInput })
   const resolvedWorkspaceName = workspaceName ?? initialWorkspaceName ?? copy.embeddedChatTitle
   const resolvedAvatarUrl = assistantAvatarUrl ?? avatarUrl
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides
@@ -780,12 +757,9 @@ function PublicChatContent({
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
 
-    if (!canSend || isLoading) return
+    if (!photos.canSend || isLoading) return
 
-    const nextInput = input.trim()
-    const imageIds = imageAttachments.takeForSend()
-    setInput('')
-    await sendMessage(nextInput, { method: 'typed' }, { imageIds })
+    await photos.send(input.trim())
   }
 
   const handleKeyDown = (event: ReactKeyboardEvent) => {
@@ -869,7 +843,7 @@ function PublicChatContent({
 
   const handleStartNewChat = async () => {
     setInput('')
-    imageAttachments.clear()
+    photos.clear()
     resetVoiceCall()
     if (onStartNewChat) {
       await onStartNewChat()
@@ -1015,8 +989,8 @@ function PublicChatContent({
             isLoading={isLoading}
             compact={false}
             hero
-            images={composerImages}
-            canSend={canSend}
+            images={photos.composerImages}
+            canSend={photos.canSend}
           />
         </PublicChatCenteredIntro>
       ) : (
@@ -1087,7 +1061,7 @@ function PublicChatContent({
                   onEmbedAnalyticsEvent={surface === 'embed' ? trackAnalyticsEvent : undefined}
                   skillCatalog={skillCatalog}
                   audience="visitor"
-                  visitorImages={visitorImages}
+                  visitorImages={photos.visitorImages}
                 />
                 <div ref={messagesEndRef} />
               </div>
@@ -1132,8 +1106,8 @@ function PublicChatContent({
                   inputRef={inputRef}
                   isLoading={isLoading}
                   compact={isCompactKeyboardLayout}
-                  images={composerImages}
-                  canSend={canSend}
+                  images={photos.composerImages}
+                  canSend={photos.canSend}
                   accessory={voiceOffered ? (
                     <VoiceTalkButton theme={theme} copy={copy} onPress={voice.talk} disabled={isLoading || isHydrating || isUnavailable} />
                   ) : null}

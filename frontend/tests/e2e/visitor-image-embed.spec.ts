@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-// The website embed offers the attach control only when the session the launcher started says the
+// The website embed offers the attach control only when the conversation list the chat reads says the
 // agent takes photos. The launcher and the chat frame are the real ones, with the host page on
 // 127.0.0.1 and the app host on localhost so the frame is cross-origin as on a customer's site, and
 // the network mocked at its edges.
@@ -36,8 +36,10 @@ const openEmbed = async (page: Page, session: { acceptsImages?: boolean }) => {
       resumeExpiresAt: new Date(Date.now() + 600_000).toISOString(),
       ...session,
     }));
+  // The chat reads whether the agent takes photos from its conversation list, as a reload does.
   await page.route(`**/backend/api/v1/public/chat/${TOKEN}**`, (route) =>
     fulfillJson(route, {
+      acceptsImages: session.acceptsImages ?? false,
       workspaceName: "Acme",
       assistantAvatarUrl: null,
       assistantLinkUtmEnabled: false,
@@ -68,7 +70,7 @@ const openEmbed = async (page: Page, session: { acceptsImages?: boolean }) => {
   return frame;
 };
 
-test("the website widget offers the attach control when the session says the agent takes photos", async ({ page }) => {
+test("the website widget offers the attach control when the agent takes photos", async ({ page }) => {
   const frame = await openEmbed(page, { acceptsImages: true });
 
   await expect(frame.getByRole("button", { name: "Attach photo" })).toBeVisible();

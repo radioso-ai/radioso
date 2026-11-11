@@ -121,6 +121,27 @@ describe('the three-photo limit', () => {
   })
 })
 
+describe('a send the server refused for its photos', () => {
+  it('shows why, once the photos are gone, until the visitor attaches or removes something', () => {
+    const refused = run([
+      { type: 'add', items: [item('a')] },
+      { type: 'uploaded', key: 'a', imageId: 'image-a' },
+      { type: 'clear' },
+      { type: 'sendRefused', failure: 'unavailable' },
+    ])
+    expect(refused.attachments).toEqual([])
+    expect(refused.sendFailure).toBe('unavailable')
+
+    expect(reduceAttachments(refused, { type: 'add', items: [item('b')] }).sendFailure).toBeNull()
+    expect(reduceAttachments(refused, { type: 'clear' }).sendFailure).toBeNull()
+    expect(canSendMessage('hello', refused)).toBe(true)
+  })
+
+  it('is not there before anything was refused', () => {
+    expect(emptyAttachments.sendFailure).toBeNull()
+  })
+})
+
 describe('when a message can be sent', () => {
   it('needs text or at least one uploaded photo', () => {
     expect(canSendMessage('', emptyAttachments)).toBe(false)
@@ -170,6 +191,8 @@ describe('photo failures', () => {
     [{ error: { code: 'image_too_large' }, status: 413 }, 'too_large'],
     [{ error: { code: 'image_too_many_pixels' }, status: 413 }, 'too_large'],
     [{ error: { code: 'visitor_images_unavailable' }, status: 404 }, 'unavailable'],
+    [{ error: { code: 'usage_limit_exceeded' }, status: 429 }, 'unavailable'],
+    [{ error: { code: 'visitor_image_busy' }, status: 503 }, 'busy'],
     [{ error: { code: 'rate_limit_exceeded' }, status: 429 }, 'failed'],
     [{ error: { code: 'internal_error' }, status: 500 }, 'failed'],
     [new TypeError('Failed to fetch'), 'failed'],

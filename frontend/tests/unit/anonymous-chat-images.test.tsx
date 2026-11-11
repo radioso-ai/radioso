@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
-import { publicChatApi, readStoredPublicSessionAcceptsImages } from '@/lib/api'
+import { publicChatApi } from '@/lib/api'
 import { clearVisitorImageCache, loadVisitorImage, visitorImageCacheKey } from '@/lib/visitor-image-blob-cache'
 
 vi.mock('@/lib/api', () => ({
@@ -22,10 +22,8 @@ vi.mock('@/lib/api', () => ({
   },
   readStoredAnonymousSessionId: vi.fn(() => null),
   readStoredEffectivePublicChatToken: vi.fn(() => null),
-  readStoredPublicSessionAcceptsImages: vi.fn(() => false),
   readStoredPublicSessionResumeToken: vi.fn(() => null),
   readStoredPublicSessionToken: vi.fn(() => 'public-session-token'),
-  storePublicSessionAcceptsImages: vi.fn(),
 }))
 
 const api = vi.mocked(publicChatApi)
@@ -122,16 +120,15 @@ describe('anonymous chat with photos', () => {
       mounted.container.remove()
     }
     vi.clearAllMocks()
-    vi.mocked(readStoredPublicSessionAcceptsImages).mockReturnValue(false)
   })
 
-  it('offers photos when the session said the agent takes them, and not otherwise', async () => {
+  it('offers photos when the conversation list a reload reads says the agent takes them, and not otherwise', async () => {
     await ready()
     expect(chat.acceptsImages).toBe(false)
 
     act(() => mounted?.root.unmount())
     mounted = null
-    vi.mocked(readStoredPublicSessionAcceptsImages).mockReturnValue(true)
+    api.listConversations.mockResolvedValue({ ...emptyConversationList, acceptsImages: true })
     await ready()
     expect(chat.acceptsImages).toBe(true)
   })
@@ -202,7 +199,7 @@ describe('anonymous chat with photos', () => {
   })
 
   it('stops offering photos once the agent refuses an upload', async () => {
-    vi.mocked(readStoredPublicSessionAcceptsImages).mockReturnValue(true)
+    api.listConversations.mockResolvedValue({ ...emptyConversationList, acceptsImages: true })
     api.uploadImage.mockRejectedValue({ status: 404, error: { code: 'visitor_images_unavailable', message: 'No.' } })
     await ready()
     expect(chat.acceptsImages).toBe(true)
@@ -214,5 +211,37 @@ describe('anonymous chat with photos', () => {
     })
 
     await waitFor(() => expect(chat.acceptsImages).toBe(false))
+  })
+
+  describe('when the server refuses a send for its photos', () => {
+    const refusal = { status: 409, error: { code: 'visitor_image_unavailable', message: 'Not available.' } }
+
+    it('takes the turn back out of the thread, tells the caller, and leaves the chat ready for another message', async () => {
+      api.streamMessage.mockRejectedValue(refusal)
+      await ready()
+      const onImagesRefused = vi.fn()
+
+      await act(async () => {
+        await chat.sendMessage('Something like this', { method: 'typed' }, { imageIds: [IMAGE_ID], onImagesRefused })
+      })
+
+      expect(onImagesRefused).toHaveBeenCalledTimes(1)
+      expect(chat.messages).toEqual([])
+      expect(chat.isLoading).toBe(false)
+      expect(chat.rateLimitError).toBeNull()
+    })
+
+    it('treats the same answer to a message with no photos as the failure it is', async () => {
+      api.streamMessage.mockRejectedValue(refusal)
+      await ready()
+      const onImagesRefused = vi.fn()
+
+      await act(async () => {
+        await chat.sendMessage('Hello', { method: 'typed' }, { onImagesRefused })
+      })
+
+      expect(onImagesRefused).not.toHaveBeenCalled()
+      expect(chat.messages.find((message) => message.role === 'assistant')?.status).toBe('error')
+    })
   })
 })

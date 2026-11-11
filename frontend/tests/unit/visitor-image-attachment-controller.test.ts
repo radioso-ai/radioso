@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { VisitorImageAttachments } from '@/lib/visitor-image-attachment-controller'
-import { hasUploadInFlight, readyImageIds } from '@/lib/visitor-image-attachments'
+import { VISITOR_IMAGE_BUSY_RETRY_MS, hasUploadInFlight, readyImageIds } from '@/lib/visitor-image-attachments'
 import type { ImageCodec } from '@/lib/visitor-image-downsize'
 
 const photo = (name: string, size = 1_000, type = 'image/jpeg') => new File([new Uint8Array(size)], name, { type })
@@ -17,6 +17,7 @@ interface Upload {
 }
 
 const setup = (options: { codec?: ImageCodec } = {}) => {
+  const waits: number[] = []
   const uploads: Upload[] = []
   let keys = 0
   let urls = 0
@@ -29,9 +30,10 @@ const setup = (options: { codec?: ImageCodec } = {}) => {
     codec: options.codec ?? passThroughCodec,
     previews: { create: () => `blob:preview-${urls += 1}`, revoke: (url) => { revoked.push(url) } },
     createKey: () => `key-${keys += 1}`,
+    wait: async (ms) => { waits.push(ms) },
   })
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
-  return { attachments, uploads, upload, revoked, settle }
+  return { attachments, uploads, upload, revoked, settle, waits }
 }
 
 describe('attaching photos', () => {
@@ -122,6 +124,67 @@ describe('attaching photos', () => {
   })
 })
 
+describe('a server too busy to take a photo', () => {
+  const busy = { status: 503, error: { code: 'visitor_image_busy', message: 'Try again.' } }
+
+  it('is tried once more after a short wait, and the photo is ready when that works', async () => {
+    const { attachments, uploads, settle, waits } = setup()
+    attachments.addFiles([photo('a.jpg')])
+    await settle()
+
+    uploads[0].fail(busy)
+    await settle()
+    expect(waits).toEqual([VISITOR_IMAGE_BUSY_RETRY_MS])
+    expect(attachments.getState().attachments[0].status).toBe('uploading')
+    expect(uploads).toHaveLength(2)
+    expect(uploads[1].file).toBe(uploads[0].file)
+
+    uploads[1].succeed('image-a')
+    await settle()
+    expect(readyImageIds(attachments.getState())).toEqual(['image-a'])
+  })
+
+  it('shows the error when the second try is busy too, and tries no third time', async () => {
+    const { attachments, uploads, settle } = setup()
+    attachments.addFiles([photo('a.jpg')])
+    await settle()
+
+    uploads[0].fail(busy)
+    await settle()
+    uploads[1].fail(busy)
+    await settle()
+
+    expect(uploads).toHaveLength(2)
+    expect(attachments.getState().attachments[0]).toMatchObject({ status: 'error', failure: 'busy' })
+  })
+
+  it('does not try again for any other error', async () => {
+    const { attachments, uploads, settle, waits } = setup()
+    attachments.addFiles([photo('a.jpg')])
+    await settle()
+
+    uploads[0].fail({ status: 429, error: { code: 'usage_limit_exceeded', message: 'No.' } })
+    await settle()
+
+    expect(uploads).toHaveLength(1)
+    expect(waits).toEqual([])
+    expect(attachments.getState().attachments[0]).toMatchObject({ status: 'error', failure: 'unavailable' })
+  })
+
+  it('is not tried again when the visitor removed the photo while it waited', async () => {
+    const { attachments, uploads, settle } = setup()
+    attachments.addFiles([photo('a.jpg')])
+    await settle()
+    uploads[0].fail(busy)
+
+    attachments.remove('key-1')
+    await settle()
+
+    expect(uploads).toHaveLength(1)
+    expect(attachments.getState().attachments).toEqual([])
+  })
+})
+
 describe('removing a photo', () => {
   it('stops its upload, releases its preview, and ignores the answer when it comes', async () => {
     const { attachments, uploads, revoked, settle } = setup()
@@ -163,6 +226,22 @@ describe('sending', () => {
     expect(attachments.getState().attachments).toEqual([])
     expect(revoked.sort()).toEqual(['blob:preview-1', 'blob:preview-2'])
     expect(uploads[1].signal.aborted).toBe(true)
+  })
+})
+
+describe('a send the server refused for its photos', () => {
+  it('leaves the composer empty with the reason shown', async () => {
+    const { attachments, uploads, settle } = setup()
+    attachments.addFiles([photo('a.jpg')])
+    await settle()
+    uploads[0].succeed('image-a')
+    await settle()
+    attachments.takeForSend()
+
+    attachments.refuseSend('unavailable')
+
+    expect(attachments.getState().attachments).toEqual([])
+    expect(attachments.getState().sendFailure).toBe('unavailable')
   })
 })
 

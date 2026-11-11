@@ -5,7 +5,6 @@ import {
   buildError,
   persistAnonymousSessionHeader,
   storeEffectivePublicChatToken,
-  storePublicSessionAcceptsImages,
   storePublicSessionResumeToken,
   storePublicSessionToken,
 } from './api-client'
@@ -16,11 +15,11 @@ import type {
   ChatConversationDetail,
   PublicChatConversationTail,
   PublicChatConversationEvent,
-  ChatHistoryListResponse,
   ChatResponse,
   ChatStreamHandlers,
   ChatUserInputMetadata,
   ClientContextCapabilities,
+  PublicChatHistoryList,
   PublicChatSessionResponse,
   VisitorImageUploadResponse,
   WebsiteEmbedPageContext,
@@ -108,7 +107,6 @@ export const publicChatApi = {
 
     storePublicSessionToken(session.publicChatToken, session.publicSessionToken, session.expiresAt)
     storePublicSessionResumeToken(session.publicChatToken, session.resumeToken, session.resumeExpiresAt)
-    storePublicSessionAcceptsImages(session.publicChatToken, session.acceptsImages === true)
     storeEffectivePublicChatToken(token, session.publicChatToken)
     return session
   },
@@ -268,7 +266,7 @@ export const publicChatApi = {
   async listConversations(
     token: string,
     input?: { limit?: number; offset?: number; cursor?: string },
-  ): Promise<ChatHistoryListResponse> {
+  ): Promise<PublicChatHistoryList> {
     const query = buildQueryString({
       limit: input?.limit,
       offset: input?.offset,
@@ -288,7 +286,7 @@ export const publicChatApi = {
     }
 
     persistAnonymousSessionHeader(token, response)
-    return response.json() as Promise<ChatHistoryListResponse>
+    return response.json() as Promise<PublicChatHistoryList>
   },
 
   async getConversationDetail(

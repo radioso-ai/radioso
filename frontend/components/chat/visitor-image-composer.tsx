@@ -18,6 +18,8 @@ export interface ComposerImages {
   attachments: readonly Attachment[]
   /** A paste or drop carried more photos than the message has room for. */
   limitReached: boolean
+  /** The server refused the last send for its photos, which are no longer here. */
+  sendFailure: VisitorImageFailure | null
   onFiles: (files: File[]) => void
   onRemove: (key: string) => void
 }
@@ -30,6 +32,8 @@ type ImageCopy = Pick<
   | 'publicChatImageUnsupportedMessage'
   | 'publicChatImageTooLargeMessage'
   | 'publicChatImageFailedMessage'
+  | 'publicChatImageRefusedMessage'
+  | 'publicChatImageBusyMessage'
   | 'publicChatImageLimitTemplate'
 >
 
@@ -39,6 +43,10 @@ const failureMessage = (copy: ImageCopy, failure: VisitorImageFailure): string =
       return copy.publicChatImageUnsupportedMessage
     case 'too_large':
       return copy.publicChatImageTooLargeMessage
+    case 'unavailable':
+      return copy.publicChatImageRefusedMessage
+    case 'busy':
+      return copy.publicChatImageBusyMessage
     default:
       return copy.publicChatImageFailedMessage
   }
@@ -141,6 +149,9 @@ export function VisitorImageChips({ images, theme, copy }: { images: ComposerIma
       images.attachments.flatMap((attachment) => (attachment.status === 'error' ? [failureMessage(copy, attachment.failure)] : [])),
     ),
   ]
+  if (images.sendFailure && !reasons.includes(failureMessage(copy, images.sendFailure))) {
+    reasons.push(failureMessage(copy, images.sendFailure))
+  }
   if (images.limitReached) {
     reasons.push(copy.publicChatImageLimitTemplate.replaceAll('{count}', String(MAX_VISITOR_IMAGES_PER_MESSAGE)))
   }

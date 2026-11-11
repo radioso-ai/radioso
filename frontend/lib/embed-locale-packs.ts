@@ -61,6 +61,8 @@ export const TRANSLATABLE_COPY_KEYS = [
   'publicChatImageUnsupportedMessage',
   'publicChatImageTooLargeMessage',
   'publicChatImageFailedMessage',
+  'publicChatImageRefusedMessage',
+  'publicChatImageBusyMessage',
   'publicChatImageLimitTemplate',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
@@ -117,6 +119,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: 'Usa una foto JPEG, PNG o WebP.',
     publicChatImageTooLargeMessage: 'Esa foto es demasiado grande.',
     publicChatImageFailedMessage: 'No se pudo subir la foto. Inténtalo de nuevo.',
+    publicChatImageRefusedMessage: 'Ahora mismo no se pueden enviar fotos.',
+    publicChatImageBusyMessage: 'Hay mucha actividad. Vuelve a intentarlo con esa foto.',
     publicChatImageLimitTemplate: 'Puedes enviar hasta {count} fotos a la vez.',
   },
   fr: {
@@ -171,6 +175,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: 'Utilisez une photo JPEG, PNG ou WebP.',
     publicChatImageTooLargeMessage: 'Cette photo est trop volumineuse.',
     publicChatImageFailedMessage: "Impossible d'envoyer cette photo. Réessayez.",
+    publicChatImageRefusedMessage: 'Les photos ne peuvent pas être envoyées pour le moment.',
+    publicChatImageBusyMessage: 'Le service est occupé. Réessayez avec cette photo.',
     publicChatImageLimitTemplate: "Vous pouvez envoyer jusqu'à {count} photos à la fois.",
   },
   de: {
@@ -225,6 +231,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: 'Verwenden Sie ein JPEG-, PNG- oder WebP-Foto.',
     publicChatImageTooLargeMessage: 'Dieses Foto ist zu groß.',
     publicChatImageFailedMessage: 'Das Foto konnte nicht hochgeladen werden. Versuchen Sie es erneut.',
+    publicChatImageRefusedMessage: 'Fotos können gerade nicht gesendet werden.',
+    publicChatImageBusyMessage: 'Gerade zu viel los. Versuchen Sie dieses Foto erneut.',
     publicChatImageLimitTemplate: 'Sie können bis zu {count} Fotos auf einmal senden.',
   },
   it: {
@@ -279,6 +287,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: 'Usa una foto JPEG, PNG o WebP.',
     publicChatImageTooLargeMessage: 'Questa foto è troppo grande.',
     publicChatImageFailedMessage: 'Impossibile caricare la foto. Riprova.',
+    publicChatImageRefusedMessage: 'Al momento non è possibile inviare foto.',
+    publicChatImageBusyMessage: 'Il servizio è occupato. Riprova con questa foto.',
     publicChatImageLimitTemplate: 'Puoi inviare fino a {count} foto alla volta.',
   },
   pt: {
@@ -333,6 +343,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: 'Use uma foto JPEG, PNG ou WebP.',
     publicChatImageTooLargeMessage: 'Essa foto é grande demais.',
     publicChatImageFailedMessage: 'Não foi possível enviar a foto. Tente novamente.',
+    publicChatImageRefusedMessage: 'No momento não é possível enviar fotos.',
+    publicChatImageBusyMessage: 'Estamos ocupados. Tente enviar essa foto de novo.',
     publicChatImageLimitTemplate: 'Você pode enviar até {count} fotos de uma vez.',
   },
   nl: {
@@ -387,6 +399,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: 'Gebruik een JPEG-, PNG- of WebP-foto.',
     publicChatImageTooLargeMessage: 'Die foto is te groot.',
     publicChatImageFailedMessage: 'De foto kon niet worden geüpload. Probeer het opnieuw.',
+    publicChatImageRefusedMessage: "Foto's versturen kan nu niet.",
+    publicChatImageBusyMessage: 'Het is druk. Probeer die foto zo opnieuw.',
     publicChatImageLimitTemplate: "Je kunt maximaal {count} foto's tegelijk sturen.",
   },
   pl: {
@@ -441,6 +455,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: 'Użyj zdjęcia w formacie JPEG, PNG lub WebP.',
     publicChatImageTooLargeMessage: 'To zdjęcie jest za duże.',
     publicChatImageFailedMessage: 'Nie udało się przesłać zdjęcia. Spróbuj ponownie.',
+    publicChatImageRefusedMessage: 'Teraz nie można wysyłać zdjęć.',
+    publicChatImageBusyMessage: 'Jest duży ruch. Spróbuj wysłać to zdjęcie ponownie.',
     publicChatImageLimitTemplate: 'Limit zdjęć w jednej wiadomości: {count}.',
   },
   zh: {
@@ -494,6 +510,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: '请使用 JPEG、PNG 或 WebP 格式的照片。',
     publicChatImageTooLargeMessage: '照片太大了。',
     publicChatImageFailedMessage: '无法上传照片，请重试。',
+    publicChatImageRefusedMessage: '现在无法发送照片。',
+    publicChatImageBusyMessage: '服务繁忙，请再试一次这张照片。',
     publicChatImageLimitTemplate: '一次最多可发送 {count} 张照片。',
   },
   ja: {
@@ -548,6 +566,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: 'JPEG、PNG、WebP の写真を使用してください。',
     publicChatImageTooLargeMessage: '写真のサイズが大きすぎます。',
     publicChatImageFailedMessage: '写真をアップロードできませんでした。もう一度お試しください。',
+    publicChatImageRefusedMessage: '現在、写真を送信できません。',
+    publicChatImageBusyMessage: '混み合っています。この写真をもう一度お試しください。',
     publicChatImageLimitTemplate: '一度に送れる写真は最大 {count} 枚です。',
   },
   ru: {
@@ -602,6 +622,8 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageUnsupportedMessage: 'Используйте фото в формате JPEG, PNG или WebP.',
     publicChatImageTooLargeMessage: 'Это фото слишком большое.',
     publicChatImageFailedMessage: 'Не удалось загрузить фото. Попробуйте ещё раз.',
+    publicChatImageRefusedMessage: 'Сейчас отправить фото нельзя.',
+    publicChatImageBusyMessage: 'Сервис занят. Попробуйте отправить это фото ещё раз.',
     publicChatImageLimitTemplate: 'За один раз можно отправить не более {count} фото.',
   },
 }

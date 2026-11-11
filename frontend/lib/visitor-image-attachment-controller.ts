@@ -1,4 +1,5 @@
 import {
+  VISITOR_IMAGE_BUSY_RETRY_MS,
   emptyAttachments,
   exceedsUploadCap,
   preUploadFailure,
@@ -9,6 +10,7 @@ import {
   type AttachmentAction,
   type AttachmentsState,
   type NewAttachment,
+  type VisitorImageFailure,
 } from '@/lib/visitor-image-attachments'
 import { downsizeVisitorImage, type ImageCodec } from '@/lib/visitor-image-downsize'
 
@@ -19,6 +21,8 @@ export interface VisitorImageAttachmentDeps {
   /** Object URLs for the preview chips. */
   previews: { create(file: Blob): string; revoke(url: string): void }
   createKey(): string
+  /** Waits `ms`, or less when `signal` aborts. */
+  wait(ms: number, signal: AbortSignal): Promise<void>
 }
 
 /**
@@ -81,6 +85,11 @@ export class VisitorImageAttachments {
     return ids
   }
 
+  /** Records that the server refused a send for its photos, which `takeForSend` already took out of the composer. */
+  refuseSend(failure: VisitorImageFailure): void {
+    this.apply({ type: 'sendRefused', failure })
+  }
+
   /** Drops every photo, as a new chat does. */
   clear(): void {
     this.dispose()
@@ -109,7 +118,7 @@ export class VisitorImageAttachments {
         this.apply({ type: 'failed', key, failure: 'too_large' })
         return
       }
-      const uploaded = await this.deps.upload(file, controller.signal)
+      const uploaded = await this.uploadRetryingWhenBusy(file, controller.signal)
       this.apply({ type: 'uploaded', key, imageId: uploaded.id })
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -119,6 +128,22 @@ export class VisitorImageAttachments {
       if (this.uploads.get(key) === controller) {
         this.uploads.delete(key)
       }
+    }
+  }
+
+  /** A server decoding as many photos as it takes at once asks for another try: one more, after a short wait. */
+  private async uploadRetryingWhenBusy(file: File, signal: AbortSignal): Promise<{ id: string }> {
+    try {
+      return await this.deps.upload(file, signal)
+    } catch (error) {
+      if (visitorImageFailureOf(error) !== 'busy') {
+        throw error
+      }
+      await this.deps.wait(VISITOR_IMAGE_BUSY_RETRY_MS, signal)
+      if (signal.aborted) {
+        throw error
+      }
+      return this.deps.upload(file, signal)
     }
   }
 

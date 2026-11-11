@@ -97,7 +97,7 @@ Bootstrap greetings are not saved as conversations by themselves. A `startConver
 
 ### Send photos
 
-The website widget and the public chat link attach photos for you. A page of your own does it like this: when the session's `acceptsImages` is `true`, the visitor can attach up to three photos to a message. Upload each one first, as multipart with the photo in the field `image`, and the visitor's public session in `x-radioso-public-session`:
+The website widget and the public chat link attach photos for you. A page of your own does it like this: when `acceptsImages` is `true` on the session, or on the conversation list `GET /api/v1/public/chat/{token}` that a reload reads, the visitor can attach up to three photos to a message. Upload each one first, as multipart with the photo in the field `image`, and the visitor's public session in `x-radioso-public-session`:
 
 ```bash
 curl -sS -X POST "https://api.radioso.ai/api/v1/public/chat/$TOKEN/images" \
@@ -243,7 +243,7 @@ Once the vendor's client has opened the session, `POST /api/v1/public/chat/{toke
 - `404` usually means the public token is unknown or not active.
 - `409` with `chat_turn_superseded` means a newer message replaced this turn before its reply started.
 - `409` with `visitor_image_unavailable` means a photo id is unknown, belongs to another session, or a message already carried it, so upload the photo again; or the agent stopped taking photos after the upload, so send the message without them.
-- `404` with `visitor_images_unavailable` on a photo upload means the agent does not take photos; `acceptsImages` on the session says so before the visitor tries.
+- `404` with `visitor_images_unavailable` on a photo upload means the agent does not take photos; `acceptsImages` on the session and on the conversation list says so before the visitor tries.
 - `503` on a public chat message means Radioso accepted the public session but could not produce a response body.
 - `429` on public chat means the optional server-side public chat rate limit has been reached.
 - If history appears empty, the browser or cookie jar is probably not preserving the HttpOnly anonymous session cookie.

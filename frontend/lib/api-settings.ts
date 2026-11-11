@@ -289,8 +289,8 @@ export const agentsApi = {
     }, { withSession: true })
   },
 
-  async updateAgent(agentId: string, data: AgentSettingsUpdate): Promise<AgentSettings> {
-    return request<AgentSettings>(`/agents/${agentId}`, {
+  async updateAgent(agentId: string, data: AgentSettingsUpdate): Promise<AgentDetail> {
+    return request<AgentDetail>(`/agents/${agentId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }, { withSession: true })

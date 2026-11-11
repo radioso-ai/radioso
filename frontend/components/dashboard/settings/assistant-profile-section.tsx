@@ -392,7 +392,7 @@ export function AssistantProfileSection({
             {assistantBehaviorSettings.visitorImagesEnabled !== undefined ? (
               <VisitorImagesSetting
                 enabled={assistantBehaviorSettings.visitorImagesEnabled}
-                chatModelOverride={assistantBehaviorSettings.chatModelOverride}
+                chatModelReadsImages={assistantBehaviorSettings.chatModelReadsImages}
                 onChange={(checked) =>
                   onAssistantBehaviorDraft((current) => ({
                     ...current,

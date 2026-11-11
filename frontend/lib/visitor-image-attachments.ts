@@ -11,7 +11,14 @@ const VISITOR_IMAGE_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'imag
 /** The server's raw upload cap. */
 const MAX_VISITOR_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024
 
-export type VisitorImageFailure = 'unsupported_type' | 'too_large' | 'unavailable' | 'failed'
+/** How long an upload waits before the one automatic retry of a server too busy to take it. */
+export const VISITOR_IMAGE_BUSY_RETRY_MS = 1_500
+
+/**
+ * Why a photo could not go: its type, its size, photos being off for now (the agent stopped taking
+ * them, or the plan has no answers left), the server too busy even after a retry, or anything else.
+ */
+export type VisitorImageFailure = 'unsupported_type' | 'too_large' | 'unavailable' | 'busy' | 'failed'
 
 interface AttachmentBase {
   /** Identifies the chip in the composer; the server's image id only exists once the upload is done. */
@@ -31,9 +38,11 @@ export interface AttachmentsState {
   attachments: readonly Attachment[]
   /** Set when a paste or drop carried more photos than the message has room for. */
   limitReached: boolean
+  /** Set when the server refused a send for its photos, which are then gone from the composer. */
+  sendFailure: VisitorImageFailure | null
 }
 
-export const emptyAttachments: AttachmentsState = { attachments: [], limitReached: false }
+export const emptyAttachments: AttachmentsState = { attachments: [], limitReached: false, sendFailure: null }
 
 /** A photo to add; `failure` is set when it was refused before any upload. */
 export interface NewAttachment extends AttachmentBase {
@@ -45,6 +54,7 @@ export type AttachmentAction =
   | { type: 'uploaded'; key: string; imageId: string }
   | { type: 'failed'; key: string; failure: VisitorImageFailure }
   | { type: 'remove'; key: string }
+  | { type: 'sendRefused'; failure: VisitorImageFailure }
   | { type: 'clear' }
 
 export const remainingSlots = (state: AttachmentsState): number =>
@@ -79,6 +89,7 @@ export const reduceAttachments = (state: AttachmentsState, action: AttachmentAct
       return {
         attachments: [...state.attachments, ...accepted.map(toAttachment)],
         limitReached: overflow.length > 0,
+        sendFailure: null,
       }
     }
     case 'uploaded':
@@ -101,7 +112,10 @@ export const reduceAttachments = (state: AttachmentsState, action: AttachmentAct
       return {
         attachments: state.attachments.filter((attachment) => attachment.key !== action.key),
         limitReached: false,
+        sendFailure: null,
       }
+    case 'sendRefused':
+      return { ...state, sendFailure: action.failure }
     case 'clear':
       return emptyAttachments
   }
@@ -132,6 +146,8 @@ const FAILURE_BY_CODE: Readonly<Record<string, VisitorImageFailure>> = {
   image_too_large: 'too_large',
   image_too_many_pixels: 'too_large',
   visitor_images_unavailable: 'unavailable',
+  usage_limit_exceeded: 'unavailable',
+  visitor_image_busy: 'busy',
 }
 
 /** The reason an upload's error stands for; anything the visitor cannot act on is a plain failure. */

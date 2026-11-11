@@ -160,6 +160,12 @@ const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
     input.pendingRoutineStep,
   );
 
+/** What a focused decline sends its model: the system prompt and the request. */
+export const groundedMissPrompt = (input: FallbackReplyInput): { systemPrompt: string; prompt: string } => ({
+  systemPrompt: buildGroundedMissSystemPrompt(input),
+  prompt: input.query,
+});
+
 export class ModelFallbackReplyComposer implements FallbackReplyComposer {
   constructor(private readonly inference: ModelInferencePipeline) {}
 
@@ -193,8 +199,7 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
   async composeNoContext(input: FallbackReplyInput): Promise<ComposedDecline> {
     try {
       const request = {
-        systemPrompt: buildGroundedMissSystemPrompt(input),
-        prompt: input.query,
+        ...groundedMissPrompt(input),
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
         // Short utility decline: keep reasoning spend minimal so the token budget

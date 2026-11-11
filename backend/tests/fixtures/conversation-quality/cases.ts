@@ -124,6 +124,20 @@ const MOUNTAIN_COURSE_FIGURES_ABSENT: ConversationQualityCase["assertions"] = ["
 
 const FULL_QUOTE_FOR_THE_EVENT_ITALIAN = "Mi mandi un preventivo completo compreso di pernottamento per l'evento?";
 
+/**
+ * The corpus gives no Source URL, so the only link an answer about it may carry is to an email
+ * address the conversation gave; any other Markdown link is one the model made up (#1751), and
+ * the answer must show it as its text. RE2 has no lookahead, so "`](` not followed by
+ * `mailto:`" is spelled out.
+ */
+const NO_INVENTED_LINKS: ConversationQualityCase["assertions"] = [
+  {
+    type: "answer_does_not_contain",
+    pattern: String.raw`\]\(([^m]|m[^a]|ma[^i]|mai[^l]|mail[^t]|mailt[^o]|mailto[^:])`,
+    matchMode: "regex",
+  },
+];
+
 /** A line that opens a Markdown bulleted or numbered list item. */
 const MARKDOWN_LIST_ITEM = String.raw`(?m)^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S`;
 
@@ -580,6 +594,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "answer_does_not_contain", pattern: "280", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "220", matchMode: "substring" },
       ...MOUNTAIN_COURSE_FIGURES_ABSENT,
+      ...NO_INVENTED_LINKS,
     ],
   },
   {
@@ -600,6 +615,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "answer_does_not_contain", pattern: "260", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "180", matchMode: "substring" },
       ...MOUNTAIN_COURSE_FIGURES_ABSENT,
+      ...NO_INVENTED_LINKS,
     ],
   },
   {

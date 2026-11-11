@@ -162,13 +162,35 @@ describe("retrieval answer links", () => {
     expect(result.finalPresentation.answer).toBe(visible);
   });
 
-  it("guards a composed decline against the turn's prompt", async () => {
+  it("keeps a link only the conversation history holds, and still unwraps an invented one", async () => {
+    const historyUrl = "https://school.example/autumn/programme/il-silenzio-del-cuore-ritiro-di-tre-giorni";
+    const historySession = session();
+    historySession.history = [
+      { role: "user", content: "Which retreats run in October?" },
+      { role: "assistant", content: `${"Our autumn retreats fill quickly. ".repeat(10)}See [Il silenzio del cuore](${historyUrl}).` },
+    ] as never;
+    const { composer } = buildComposer(groundedEnvelope(
+      `Here it is again: [Il silenzio del cuore](${historyUrl})[[2]], or [the booking page](https://school.example/booking)[[1]].`,
+    ));
+
+    const { chunks, result } = await drain(composer.streamAnswer(historySession, "Send me that link again", undefined, undefined));
+
+    const visible = `Here it is again: [Il silenzio del cuore](${historyUrl}), or the booking page.`;
+    expect(chunks.join("")).toBe(visible);
+    expect(result.finalPresentation.answer).toBe(visible);
+  });
+
+  it("guards a composed decline against what the decline was sent", async () => {
     const { composer } = buildComposer("unused", {
       text: `That course isn't on our calendar. Write to us through [our contact page](${CONTACT_URL}) or [Booking](Booking).`,
       declineReason: "content_gap",
     });
+    const declineSession = zeroContextSession();
+    // The decline is sent the agent's instructions, where the contact page is written.
+    (declineSession.retrieval.responseSettings as { customInstruction?: string }).customInstruction =
+      `Visitors with questions write through ${CONTACT_URL}.`;
 
-    const presented = await composer.composeAnswer(zeroContextSession(), "Silence course?", undefined, undefined);
+    const presented = await composer.composeAnswer(declineSession, "Silence course?", undefined, undefined);
 
     expect(presented.answer).toBe(
       `That course isn't on our calendar. Write to us through [our contact page](${CONTACT_URL}) or Booking.`,

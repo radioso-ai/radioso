@@ -321,18 +321,6 @@ export class RetrievalAnswerComposer {
     };
   }
 
-  /**
-   * The link guard for this turn's answer, from the grounded prompt the turn renders. Every
-   * model call the turn makes is sent that prompt or part of it: the grounded and page-context
-   * calls send it whole, and a focused decline sends its instructions, steering, and request.
-   * Rendered again here (the decline-only path renders none), repeating `suggestionBlockRendered`.
-   */
-  private answerLinkGuard(session: PreparedSession): AnswerLinkGuard {
-    return new AnswerLinkGuard(
-      this.promptWithConversationContext(this.support.buildPromptWithContext(session.retrieval.prompt, session), session),
-    );
-  }
-
   /** The answer as the visitor gets it: a link to an address its model was not given is its text. */
   private guardLinks(linkGuard: AnswerLinkGuard, presented: ChatPresentedAnswer, stream: boolean) {
     const guarded = linkGuard.present(presented);
@@ -370,11 +358,12 @@ export class RetrievalAnswerComposer {
     prompt: string,
     accountId: string | undefined,
     attemptKey: string,
+    linkGuard: AnswerLinkGuard,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
   ): Promise<GroundedAnswerEnvelope> {
     const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
-    const raw = await this.chatGateway.answer({
+    const raw = await this.chatGateway.answer(linkGuard.sendsAnswer({
       query,
       history: session.history,
       systemPrompt: groundedPrompt.systemPrompt,
@@ -386,7 +375,7 @@ export class RetrievalAnswerComposer {
         responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session, knownAssessment)?.schemaExtension() ?? null),
       },
       ...(signal ? { signal } : {}),
-    });
+    }));
     const envelope = parseGroundedAnswerEnvelope(raw);
     if (!envelope.answer.trim() && !blankDeclineCommitment(envelope, envelope.answer)) {
       throw new BlankChatAnswerError();
@@ -398,6 +387,7 @@ export class RetrievalAnswerComposer {
     session: PreparedSession,
     query: string,
     accountId: string | undefined,
+    linkGuard: AnswerLinkGuard,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
   ): Promise<PageContextAnswer> {
@@ -412,6 +402,7 @@ export class RetrievalAnswerComposer {
       prompt,
       accountId,
       "page_context",
+      linkGuard,
       signal,
       knownAssessment,
     );
@@ -443,7 +434,7 @@ export class RetrievalAnswerComposer {
     const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
     const reader = new GroundedAnswerEnvelopeReader();
     const answerText = new StreamedAnswerText(linkGuard.stream());
-    const candidateStream = this.chatGateway.streamAnswer({
+    const candidateStream = this.chatGateway.streamAnswer(linkGuard.sendsAnswer({
       query,
       history: session.history,
       systemPrompt: groundedPrompt.systemPrompt,
@@ -455,7 +446,7 @@ export class RetrievalAnswerComposer {
         responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session, knownAssessment)?.schemaExtension() ?? null),
       },
       ...(signal ? { signal } : {}),
-    });
+    }));
     for await (const text of candidateStream) {
       if (signal?.aborted) {
         throw signal.reason ?? new Error("chat_turn_aborted");
@@ -526,7 +517,7 @@ export class RetrievalAnswerComposer {
     coverageVerdict?: RetrievalCoverageVerdictSink,
     signal?: AbortSignal,
   ): Promise<ChatPresentedAnswer> {
-    const linkGuard = this.answerLinkGuard(session);
+    const linkGuard = new AnswerLinkGuard();
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
@@ -552,6 +543,7 @@ export class RetrievalAnswerComposer {
         session,
         query,
         accountId,
+        linkGuard,
         signal,
         zeroEvidenceAssessment,
       );
@@ -567,7 +559,7 @@ export class RetrievalAnswerComposer {
         });
         this.answerMetrics.groundingOutcome(grounding, fallback, false);
       } else {
-        const decline = await this.fallbackReplyComposer.composeNoContext({
+        const decline = await this.fallbackReplyComposer.composeNoContext(linkGuard.sendsDecline({
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -576,7 +568,7 @@ export class RetrievalAnswerComposer {
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
           ...(signal ? { signal } : {}),
-        });
+        }));
         answer = decline.text;
         declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, false);
       }
@@ -587,6 +579,7 @@ export class RetrievalAnswerComposer {
         this.support.buildPromptWithContext(session.retrieval.prompt, session),
         accountId,
         "grounded",
+        linkGuard,
         signal,
       );
       const envelopeAssessment = this.assessmentFromEnvelope(envelope);
@@ -613,6 +606,7 @@ export class RetrievalAnswerComposer {
           accountId,
           "blank_decline",
           envelopeAssessment,
+          linkGuard,
           signal,
         );
         declineReason = blankDeclineReason(blankDecline, decline);
@@ -627,6 +621,7 @@ export class RetrievalAnswerComposer {
           accountId,
           "unsupported_answer",
           envelopeAssessment,
+          linkGuard,
           signal,
         );
         this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, false);
@@ -672,9 +667,10 @@ export class RetrievalAnswerComposer {
     accountId: string | undefined,
     attemptKey: string,
     knownAssessment: AnswerCoverageAssessment,
+    linkGuard: AnswerLinkGuard,
     signal?: AbortSignal,
   ): Promise<ComposedDecline> {
-    return this.fallbackReplyComposer.composeNoContext({
+    return this.fallbackReplyComposer.composeNoContext(linkGuard.sendsDecline({
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -689,7 +685,7 @@ export class RetrievalAnswerComposer {
       workspaceContext: { workspaceId: session.agent.workspaceId },
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
       ...(signal ? { signal } : {}),
-    });
+    }));
   }
 
   /**
@@ -707,7 +703,7 @@ export class RetrievalAnswerComposer {
     signal?: AbortSignal,
     coverageVerdict?: RetrievalCoverageVerdictSink,
   ): AsyncGenerator<string, TurnStreamResult> {
-    const linkGuard = this.answerLinkGuard(session);
+    const linkGuard = new AnswerLinkGuard();
     let rawAnswer = "";
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
@@ -752,7 +748,7 @@ export class RetrievalAnswerComposer {
       if (fallbackEnvelope) {
         rawAnswer = fallbackEnvelope.answer;
       } else {
-        const decline = await this.fallbackReplyComposer.composeNoContext({
+        const decline = await this.fallbackReplyComposer.composeNoContext(linkGuard.sendsDecline({
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -761,7 +757,7 @@ export class RetrievalAnswerComposer {
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
           ...(signal ? { signal } : {}),
-        });
+        }));
         rawAnswer = decline.text;
         declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, true);
       }
@@ -809,7 +805,7 @@ export class RetrievalAnswerComposer {
       // earlier attempt at this same request message instead of this one, but the
       // skill's own rendering and head metrics stay on the attempt actually running.
       let headAssessment: AnswerCoverageAssessment | undefined;
-      const candidateStream = this.chatGateway.streamAnswer({
+      const candidateStream = this.chatGateway.streamAnswer(linkGuard.sendsAnswer({
         query,
         history: session.history,
         systemPrompt: prompt.systemPrompt,
@@ -821,7 +817,7 @@ export class RetrievalAnswerComposer {
           responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session)?.schemaExtension() ?? null),
         },
         signal: combineAbortSignals(signal, gateController.signal),
-      });
+      }));
       let gateBound = false;
       for await (const text of candidateStream) {
         if (signal?.aborted) {
@@ -909,6 +905,7 @@ export class RetrievalAnswerComposer {
           accountId,
           "stream_grounding_gate_bound",
           headAssessment ?? buildInvalidHeadAssessment(),
+          linkGuard,
           signal,
         );
         if (signal?.aborted) {
@@ -970,6 +967,7 @@ export class RetrievalAnswerComposer {
           accountId,
           "stream_blank_decline",
           headAssessment ?? buildInvalidHeadAssessment(),
+          linkGuard,
           signal,
         );
         if (signal?.aborted) {
@@ -988,6 +986,7 @@ export class RetrievalAnswerComposer {
           accountId,
           "stream_unsupported_answer",
           headAssessment ?? buildInvalidHeadAssessment(),
+          linkGuard,
           signal,
         );
         if (signal?.aborted) {

@@ -416,14 +416,16 @@ imports from `services/`.
   Tests: `tests/unit/answer-presentation.test.ts`,
   `tests/unit/markdown-split-boundary.test.ts`,
   `tests/unit/citation-text-normalization.test.ts`.
-- Answer links (#1751): a grounded answer links only to addresses its model was
-  sent. `RetrievalAnswerComposer` builds one `AnswerLinkGuard`
-  (`services/answerLinkGuard.ts`) per turn from the grounded prompt it renders,
-  system and user parts: the Results with their `Source:` lines and text, the
-  admitted page, instructions, directives, and history. Every model call in the
-  turn is sent that prompt or part of it, a focused decline included, so the guard
-  covers the grounded answer, the page-context answer, the focused decline, and a
-  routine step that answers from documents through this composer. A link to any
+- Answer links (#1751): a grounded answer links only to addresses its models were
+  sent. `RetrievalAnswerComposer` keeps one `AnswerLinkGuard`
+  (`services/answerLinkGuard.ts`) per turn and records each model call's input at
+  its call site: a gateway call's system prompt, prompt, and every history message
+  (`sendsAnswer`), and a focused decline's prompt (`sendsDecline`, built by the same
+  `groundedMissPrompt` the decline composer sends). The Results with their
+  `Source:` lines and text, the admitted page, instructions, directives, and the
+  conversation reach a model only that way. The guard covers the grounded answer,
+  the page-context answer, the focused decline, and a routine step that answers
+  from documents through this composer. A link to any
   other address (a made-up site, `#`, a relative path, a page title, the website of
   an email address's domain) becomes its text. Both entry points read the answer as
   the visitor does, citation markers already removed, so they apply one grammar to
@@ -442,7 +444,8 @@ imports from `services/`.
   given address; `mailto:` and `tel:` count when the address is in the prompt. The
   standalone retrieval answer (`modules/retrieval/services/retrievalAnswerService.ts`,
   behind `POST /api/v1/retrieval/answer` and its `mcp_grounded_answer` path)
-  applies the same two helpers to its presented answer. Each unwrapped link counts
+  applies the same two helpers to its presented answer, against its call's system
+  prompt, prompt, and history. Each unwrapped link counts
   on `chat_answer_links_unwrapped_total{reason, stream}` (`fragment`, `relative`,
   `malformed`, `not_given`), or `retrieval_answer_links_unwrapped_total{reason,
   surface}` for the standalone answer, and a streamed turn's compose stage records

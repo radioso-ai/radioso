@@ -132,7 +132,7 @@ export class RetrievalAnswerService {
       usage: "standalone_answer",
     });
     try {
-      const rawAnswer = (await this.dependencies.chatGateway.answer({
+      const answerInput = {
         query: input.query,
         history,
         systemPrompt,
@@ -142,7 +142,8 @@ export class RetrievalAnswerService {
           operation: "grounded_answer",
           attemptKey: "answer",
         },
-      })).trim();
+      } as const;
+      const rawAnswer = (await this.dependencies.chatGateway.answer(answerInput)).trim();
       const evidence = retrieval.contexts.map((context) => ({
         documentId: context.documentId,
         chunkId: context.chunkId,
@@ -151,7 +152,8 @@ export class RetrievalAnswerService {
         metadata: context.metadata,
         sourceUrl: resolveContextSourceUrl(context.metadata),
       }));
-      const presented = this.presentAnswer(rawAnswer, evidence, [systemPrompt, retrieval.prompt], execution.surface);
+      const sent = [answerInput.systemPrompt, answerInput.prompt, ...answerInput.history.map((message) => message.content)];
+      const presented = this.presentAnswer(rawAnswer, evidence, sent, execution.surface);
       const activityTrace = appendDirectiveSteeringStage(this.activityTracePresenter.appendAnswerOutcome({
         trace: retrieval.trace,
         summary: activitySummary,
@@ -192,8 +194,9 @@ export class RetrievalAnswerService {
 
   /**
    * The answer as the caller reads it, citation markers removed. A link to an address the
-   * model was not sent (`sent`: the system prompt and the prompt, which carry the Results with
-   * their Source lines, the instructions, and the directives) becomes its text.
+   * model was not sent (`sent`: the call's system prompt, prompt, and history, which carry the
+   * Results with their Source lines, the instructions, the directives, and the conversation)
+   * becomes its text.
    */
   private presentAnswer(
     rawAnswer: string,

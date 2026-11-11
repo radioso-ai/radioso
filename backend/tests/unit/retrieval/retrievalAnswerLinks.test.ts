@@ -39,6 +39,24 @@ const serviceAnswering = (answer: string) => {
 };
 
 describe("retrieval answer links", () => {
+  it("keeps a link to an address only the caller's conversation holds, and still unwraps an invented one", async () => {
+    const historyUrl = "https://school.example/autumn/programme/il-silenzio-del-cuore-ritiro-di-tre-giorni";
+    const { service } = serviceAnswering(
+      `Here it is again: [Il silenzio del cuore](${historyUrl}), or [the booking page](https://school.example/booking).`,
+    );
+
+    const result = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Send me that link again",
+      conversationContext: {
+        previousUserMessages: ["Which retreats run in October?"],
+        previousAssistantMessages: [`See [Il silenzio del cuore](${historyUrl}).`],
+      },
+    });
+
+    expect(result.answer).toBe(`Here it is again: [Il silenzio del cuore](${historyUrl}), or the booking page.`);
+  });
+
   it("shows a link to an address the model was not sent as plain text, and keeps the rest", async () => {
     const { service, metricWrites } = serviceAnswering(
       `Join [Il respiro consapevole](${COURSE_URL})[[1]], or [Il silenzio](https://example.org/silence)[[?]]. `

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ChatGateway } from "../../../src/modules/chat/contracts/chatGateway.js";
+import type { ChatGateway, ChatGatewayInput } from "../../../src/modules/chat/contracts/chatGateway.js";
 import { AnswerLinkGuard } from "../../../src/modules/chat/services/answerLinkGuard.js";
 import { AssistantSuggestionExpansionService } from "../../../src/modules/chat/services/assistantSuggestionExpansionService.js";
 import { ChatAnswerPresenter } from "../../../src/modules/chat/services/chatAnswerPresenter.js";
@@ -21,7 +21,14 @@ const PROMPT = [
   "Result 2 (Il silenzio del cuore): A silent retreat in October.",
 ].join("\n");
 
-const guard = new AnswerLinkGuard({ systemPrompt: SYSTEM_PROMPT, prompt: PROMPT });
+const HISTORY_URL = "https://school.example/autumn/programme/il-silenzio-del-cuore-ritiro-di-tre-giorni";
+
+/** What one gateway call sends: only these fields reach the guard. */
+const gatewayInput = (fields: Pick<ChatGatewayInput, "systemPrompt" | "prompt" | "history">): ChatGatewayInput =>
+  ({ query: "Which courses?", usageContext: {}, ...fields }) as unknown as ChatGatewayInput;
+
+const guard = new AnswerLinkGuard();
+guard.sendsAnswer(gatewayInput({ systemPrompt: SYSTEM_PROMPT, prompt: PROMPT, history: [] }));
 
 describe("AnswerLinkGuard", () => {
   it("keeps links to addresses the prompt gave and unwraps the rest", () => {
@@ -37,6 +44,33 @@ describe("AnswerLinkGuard", () => {
         + "Plans and Pricing or the site.",
     );
     expect(unwrapped).toEqual(["fragment", "malformed", "not_given"]);
+  });
+
+  it("keeps a link to an address only the conversation history holds, and still unwraps an invented one", () => {
+    const withHistory = new AnswerLinkGuard();
+    const history = [
+      { role: "user", content: "Which retreats run in October?" },
+      { role: "assistant", content: `${"Our autumn retreats fill quickly. ".repeat(10)}See [Il silenzio del cuore](${HISTORY_URL}).` },
+    ] as unknown as ChatGatewayInput["history"];
+    const input = gatewayInput({ systemPrompt: SYSTEM_PROMPT, prompt: PROMPT, history });
+
+    expect(withHistory.sendsAnswer(input)).toBe(input);
+    expect(withHistory.present({
+      answer: `Here it is again: [Il silenzio del cuore](${HISTORY_URL}), or [the booking page](https://school.example/booking).`,
+    }).presented.answer).toBe(`Here it is again: [Il silenzio del cuore](${HISTORY_URL}), or the booking page.`);
+  });
+
+  it("allows what a focused decline was sent, and nothing before anything was sent", () => {
+    const declineOnly = new AnswerLinkGuard();
+    const answer = `Write to us through [our contact page](${CONTACT_URL}).`;
+
+    expect(declineOnly.present({ answer }).presented.answer).toBe("Write to us through our contact page.");
+    declineOnly.sendsDecline({
+      query: "Is there a silence course?",
+      answerInstructionBlock: `Questions go through ${CONTACT_URL}.`,
+      usageContext: {} as never,
+    });
+    expect(declineOnly.present({ answer }).presented.answer).toBe(answer);
   });
 
   it("guards each segment as it is rendered, and keeps their citations", () => {

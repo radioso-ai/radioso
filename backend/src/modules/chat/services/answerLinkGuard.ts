@@ -5,12 +5,8 @@ import {
   type LinkDestinationPolicy,
 } from "../../../shared/text/markdownLinkGuard.js";
 import type { AnswerSegment } from "../contracts/answerTypes.js";
-
-/** The text an answer call sent its model: everything the model could have read an address in. */
-interface AnswerPromptText {
-  readonly systemPrompt: string;
-  readonly prompt: string;
-}
+import type { ChatGatewayInput } from "../contracts/chatGateway.js";
+import { groundedMissPrompt, type FallbackReplyInput } from "./fallbackReplyComposer.js";
 
 /** What a visitor reads of a presented answer: its text, and the segments a surface may render one by one. */
 interface VisibleAnswer {
@@ -25,24 +21,41 @@ const wholeAnswerSegment = (text: string, segments: readonly AnswerSegment[]): A
 };
 
 /**
- * Keeps an answer's links to the addresses its model was sent. A link to any other
+ * Keeps an answer's links to the addresses its models were sent. A link to any other
  * address, a `#` fragment, a relative path, or a page title becomes its plain text, so a
- * visitor is never handed an address nobody gave the model.
+ * visitor is never handed an address nobody gave a model.
  *
- * The prompt text is the allow-list: the Results with their `Source:` lines and their own
- * text, the admitted page, the operator's instructions and directives, and the conversation
- * history all reach the model through it, so an address the model was given is in it by
- * construction. The guard reads it as text and never learns which part an address came from.
+ * The allow-list is exactly what the turn's model calls were sent, recorded at each call
+ * site as the input passes through `sendsAnswer` or `sendsDecline`: a gateway call's system
+ * prompt, prompt, and history, and a focused decline's prompt. The Results with their
+ * `Source:` lines and text, the admitted page, the instructions and directives, and the
+ * conversation reach the model only that way. The guard reads them as text and never learns
+ * which part an address came from.
  *
  * Both entry points read the answer as the visitor does, citation markers already removed:
  * the stream after the citation sanitizer, the finished answer after the presenter. One
  * grammar over the same text is what makes the joined stream equal the finished answer.
  */
 export class AnswerLinkGuard {
-  private readonly policy: LinkDestinationPolicy<UnwrappedLinkReason>;
+  private readonly sent: string[] = [];
+  private policy: LinkDestinationPolicy<UnwrappedLinkReason> = givenLinkPolicy([]);
 
-  constructor(sent: AnswerPromptText) {
-    this.policy = givenLinkPolicy([sent.systemPrompt, sent.prompt]);
+  /** Records what a gateway call sends its model, and passes the input on unchanged. */
+  sendsAnswer<Input extends ChatGatewayInput>(input: Input): Input {
+    this.allow([input.systemPrompt ?? "", input.prompt, ...input.history.map((message) => message.content)]);
+    return input;
+  }
+
+  /** Records what a focused decline sends its model, and passes the input on unchanged. */
+  sendsDecline(input: FallbackReplyInput): FallbackReplyInput {
+    const sent = groundedMissPrompt(input);
+    this.allow([sent.systemPrompt, sent.prompt]);
+    return input;
+  }
+
+  private allow(texts: readonly string[]): void {
+    this.sent.push(...texts);
+    this.policy = givenLinkPolicy(this.sent);
   }
 
   /**
@@ -66,8 +79,11 @@ export class AnswerLinkGuard {
     };
   }
 
-  /** Guards streamed answer text whose citation markers were already removed. */
+  /**
+   * Guards streamed answer text whose citation markers were already removed, against
+   * everything recorded by the time each link is checked.
+   */
   stream(): MarkdownLinkGuardStream<UnwrappedLinkReason> {
-    return new MarkdownLinkGuardStream(this.policy);
+    return new MarkdownLinkGuardStream((destination) => this.policy(destination));
   }
 }

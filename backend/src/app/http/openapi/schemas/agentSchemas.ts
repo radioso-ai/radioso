@@ -215,6 +215,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const AgentDetailSchema = registry.register(
     "AgentDetail",
     ConversationAgentSchema.extend({
+      chatModelReadsImages: z.boolean().openapi({
+        description: "Computed, read-only: whether the agent's chat model reads images, resolved as its turns resolve it (the plan's model, else the agent's `chatModelOverride`, else the workspace's chat preference, else the deployment's default). Photos reach visitors only when this is true and `visitorImagesEnabled` is on; it is true or false whatever `visitorImagesEnabled` says, and a model Radioso cannot vet (an `openai-compatible` endpoint, or one outside the catalogue) reads as false. A request cannot set it.",
+      }),
       voiceCallReadiness: VoiceCallReadinessSchema.optional().openapi({
         description: "Present for dashboard sessions: whether the agent's voice is ready for the website embed's calls switch.",
       }),

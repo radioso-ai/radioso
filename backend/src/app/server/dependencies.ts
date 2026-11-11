@@ -1448,6 +1448,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceRecordingsLeftAtVendor: voiceRecordingErasures,
     visitorImages: visitorImages.service,
     visitorImageAvailability: visitorImages.availability,
+    chatModelImageReading: visitorImages.modelReading,
     voiceRuntimeConnections,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,

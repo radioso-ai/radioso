@@ -44,6 +44,8 @@ const imageWorkspace = async (options: { visitorImagesEnabled?: boolean; reader?
       upload: (bytes: Buffer, field = "image") => request(app).post(`/api/v1/public/chat/${chatToken}/images`).set(headers).attach(field, bytes, "photo.png"),
       send: (body: object) => request(app).post(`/api/v1/public/chat/${chatToken}`).set(headers).send({ stream: false, ...body }),
       view: (imageId: string) => request(app).get(`/api/v1/public/chat/${chatToken}/images/${imageId}`).set(headers),
+      /** The visitor's conversation list, which a reloaded chat reads before anything else. */
+      list: () => request(app).get(`/api/v1/public/chat/${chatToken}`).set(headers),
     };
   };
   /** A new API credential of the operator's, in the same workspace. */
@@ -85,6 +87,54 @@ describe("visitor image contract", () => {
 
     expect((await on.visitor()).session.acceptsImages).toBe(true);
     expect((await off.visitor()).session.acceptsImages).toBe(false);
+  });
+
+  it("tells a returning visitor whether the agent takes photos, as the session start does", async () => {
+    const { visitor, app, agentId, dashboard } = await imageWorkspace();
+    const first = await visitor();
+    expect(first.session.acceptsImages).toBe(true);
+    expect((await first.list().expect(200)).body.acceptsImages).toBe(true);
+
+    // The operator turns photos off, then back on with a model that cannot read them.
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ visitorImagesEnabled: false }).expect(200);
+    const off = await visitor();
+    expect(off.session.acceptsImages).toBe(false);
+    expect((await first.list().expect(200)).body.acceptsImages).toBe(false);
+
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard)
+      .send({ visitorImagesEnabled: true, chatModelOverride: { provider: "openai-compatible", model: "llava" } }).expect(200);
+    const blind = await visitor();
+    expect(blind.session.acceptsImages).toBe(false);
+    expect((await first.list().expect(200)).body.acceptsImages).toBe(false);
+  });
+
+  it("says in the agent's settings whether its chat model reads images, whatever the photo setting", async () => {
+    const { app, agentId, dashboard } = await imageWorkspace({ visitorImagesEnabled: false });
+    const read = async () => (await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200)).body as { chatModelReadsImages: boolean; visitorImagesEnabled: boolean };
+
+    // The deployment's default chat model, which reads images, with photos still off.
+    expect(await read()).toMatchObject({ chatModelReadsImages: true, visitorImagesEnabled: false });
+
+    // A model that cannot read them, in the answer to the save and in the next read.
+    const saved = await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard)
+      .send({ chatModelOverride: { provider: "openai-compatible", model: "llava" } }).expect(200);
+    expect(saved.body.chatModelReadsImages).toBe(false);
+    expect((await read()).chatModelReadsImages).toBe(false);
+
+    // Back to the workspace's model.
+    const cleared = await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ chatModelOverride: null }).expect(200);
+    expect(cleared.body.chatModelReadsImages).toBe(true);
+    expect((await read()).chatModelReadsImages).toBe(true);
+  });
+
+  it("does not let a caller set whether the chat model reads images", async () => {
+    const { app, agentId, dashboard } = await imageWorkspace();
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard)
+      .send({ chatModelOverride: { provider: "openai-compatible", model: "llava" } }).expect(200);
+
+    const saved = await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ chatModelReadsImages: true }).expect(200);
+
+    expect(saved.body.chatModelReadsImages).toBe(false);
   });
 
   it("uploads a photo, reads it, and runs the visitor's message on its text and the reading", async () => {

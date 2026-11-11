@@ -119,7 +119,7 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability" | "voiceRuntimeConnections" | "visitorImages" | "visitorImageAvailability">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability" | "voiceRuntimeConnections" | "visitorImages" | "visitorImageAvailability" | "chatModelImageReading">;
 
 const proposedAgentRecipientEmails = (body: unknown): string[] | null => {
   if (!body || typeof body !== "object" || Array.isArray(body)
@@ -319,6 +319,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         });
       res.status(200).json({
         ...presentAgentForPrincipal(agent, authPrincipal),
+        chatModelReadsImages: await dependencies.chatModelImageReading.readsImages(agent),
         ...(voiceCallReadiness ? { voiceCallReadiness } : {}),
       });
     } catch (error) {
@@ -692,6 +693,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       }
       res.status(200).json({
         ...presentAgentForPrincipal(agent, authPrincipal),
+        chatModelReadsImages: await dependencies.chatModelImageReading.readsImages(agent),
         ...(customInstruction === undefined
           ? {}
           : { revisionState: presentRevisionState(await dependencies.agentRevisionService.state(workspaceId, parsed.agentId), true) }),

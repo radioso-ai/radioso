@@ -240,7 +240,7 @@ export const registerAgentsPaths = (
       },
     },
     responses: {
-      200: { description: "Agent updated", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      200: { description: "Agent updated", content: { "application/json": { schema: schemas.AgentDetailSchema } } },
       400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },

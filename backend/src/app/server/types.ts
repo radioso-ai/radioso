@@ -90,7 +90,7 @@ import type {
   VoiceVendorConversationReportPort,
   VoiceRecordingsLeftAtVendorReader,
 } from "../../modules/voiceChannel/public.js";
-import type { VisitorImageAvailability, VisitorImageService } from "../../modules/visitorImages/public.js";
+import type { ChatModelImageReading, VisitorImageAvailability, VisitorImageService } from "../../modules/visitorImages/public.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
@@ -398,6 +398,8 @@ export interface AppDependencies {
   visitorImages: VisitorImageService;
   /** Whether an agent takes photos now: the public session tells the chat, and an upload checks. */
   visitorImageAvailability: VisitorImageAvailability;
+  /** Whether an agent's chat model reads images, for the settings read and the public chat's `acceptsImages`. */
+  chatModelImageReading: ChatModelImageReading;
   /** The vendor agent Radioso creates and maintains for an agent's voice channel; the Voice card's Connect. */
   voiceRuntimeConnections: VoiceRuntimeConnectionPort;
 

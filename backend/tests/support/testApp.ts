@@ -63,7 +63,7 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { VisitorImageService } from "../../src/modules/visitorImages/composition.js";
 import type { VisitorImageReader } from "../../src/modules/visitorImages/domain.js";
-import { createVisitorImageAvailability, visitorImageAudit, visitorImageObjectStore } from "../../src/app/composition/visitorImages.js";
+import { createChatModelImageReading, createVisitorImageAvailability, visitorImageAudit, visitorImageObjectStore } from "../../src/app/composition/visitorImages.js";
 import { InMemoryVisitorImageStore } from "./inMemoryVisitorImages.js";
 import {
   type VoiceRecordingStore,
@@ -2342,11 +2342,11 @@ export const createTestDependencies = (overrides: {
     agentService,
     new AgentRevisionRuntimeResolver(publishedAgentRevisions),
   );
-  const visitorImageAvailability = createVisitorImageAvailability({
-    agents: agentRepository,
+  const chatModelImageReading = createChatModelImageReading({
     resolver: { resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input) },
     logger,
   });
+  const visitorImageAvailability = createVisitorImageAvailability({ agents: agentRepository, modelReading: chatModelImageReading });
   const visitorImages = new VisitorImageService({
     store: new InMemoryVisitorImageStore(),
     objects: visitorImageObjectStore(documentStorage),
@@ -3244,6 +3244,7 @@ export const createTestDependencies = (overrides: {
     voiceRecordingsLeftAtVendor: overrides.voiceRecordingsLeftAtVendor ?? { listForAccount: async () => ({ total: 0, recordings: [], nextCursor: null }) },
     visitorImages,
     visitorImageAvailability,
+    chatModelImageReading,
     voiceRuntimeConnections,
     assistantHistoryService,
     conversationErasure: overrides.conversationErasure ?? {

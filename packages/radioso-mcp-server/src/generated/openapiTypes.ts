@@ -6219,6 +6219,8 @@ export interface components {
             surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
         };
         AgentDetail: components["schemas"]["ConversationAgent"] & {
+            /** @description Computed, read-only: whether the agent's chat model reads images, resolved as its turns resolve it (the plan's model, else the agent's `chatModelOverride`, else the workspace's chat preference, else the deployment's default). Photos reach visitors only when this is true and `visitorImagesEnabled` is on; it is true or false whatever `visitorImagesEnabled` says, and a model Radioso cannot vet (an `openai-compatible` endpoint, or one outside the catalogue) reads as false. A request cannot set it. */
+            chatModelReadsImages: boolean;
             voiceCallReadiness?: components["schemas"]["VoiceCallReadiness"] & unknown;
         };
         AgentListResponse: {
@@ -9551,6 +9553,8 @@ export interface components {
         PublicConversationListResponse: {
             workspaceName: string;
             assistantBootstrapActive: boolean;
+            /** @description Whether the visitor may attach photos to a message, computed as the session response computes it: the agent has `visitorImagesEnabled` on and its chat model reads images. A chat that reloads reads it here, so it needs no new session to know. */
+            acceptsImages: boolean;
             conversations: components["schemas"]["PublicConversationSummary"][];
             total: number;
             nextCursor: string | null;
@@ -17562,7 +17566,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConversationAgent"];
+                    "application/json": components["schemas"]["AgentDetail"];
                 };
             };
             /** @description Request validation failed */

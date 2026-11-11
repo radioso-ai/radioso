@@ -131,6 +131,35 @@ describe('runBulkDismiss', () => {
   })
 })
 
+describe('runBulkDismiss when the run is aborted', () => {
+  it('starts no row that is still waiting, and settles nothing after the abort', async () => {
+    const items = bulkDismissableItems(['a', 'b', 'c'].map((id) => feedbackItem(id)))
+    const started: string[] = []
+    const settled: string[] = []
+    const controller = new AbortController()
+    let finishFirst: () => void = () => undefined
+
+    const run = runBulkDismiss({
+      items,
+      concurrency: 1,
+      signal: controller.signal,
+      dismiss: async (item) => {
+        started.push(item.assistantMessageId)
+        await new Promise<void>((resolve) => { finishFirst = resolve })
+        return triage({ state: 'dismissed', version: 1 })
+      },
+      onSettled: (row) => settled.push(row.item.assistantMessageId),
+    })
+    await Promise.resolve()
+    controller.abort()
+    finishFirst()
+    await run
+
+    expect(started).toEqual(['a'])
+    expect(settled).toEqual([])
+  })
+})
+
 describe('summarizeBulkDismiss', () => {
   const row = (id: string, result: BulkDismissRowResult['result']): BulkDismissRowResult => ({
     item: { ...feedbackItem(id), assistantMessageId: id },

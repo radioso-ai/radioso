@@ -422,14 +422,15 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       patchLatestQuality(messageId, result.current, false)
       return
     }
-    if (result.kind === 'closed_elsewhere') {
-      setTerminalQualityMessageIds((previous) => new Set([...previous, messageId]))
-    }
+    // The row has left the queue for good. Remembering its id keeps a list read that began before
+    // this dismissal landed from bringing it back for a moment, and the counts with it.
+    setTerminalQualityMessageIds((previous) => new Set([...previous, messageId]))
     setQualitySnapshot((previous) => removeQualityInboxTurn(previous, messageId))
     patchLatestQuality(messageId, result.kind === 'dismissed' ? result.triage : result.current, true)
     clearItemSelectionRoute(item)
   }, [clearItemSelectionRoute, patchLatestQuality])
   const bulkDismiss = useBulkDismiss({
+    workspaceId,
     items: filteredItems,
     onResult: applyBulkDismissResult,
     onAnnounce: setStatusAnnouncement,

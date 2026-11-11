@@ -44,28 +44,36 @@ const resultOfFailure = (caught: unknown): BulkDismissResult => {
  * Dismisses each row through `dismiss`, a few at a time, and settles every one on its own: a row
  * that fails is reported and the rest carry on. `onSettled` fires as each row lands, so the queue
  * can update while the rest are still running.
+ *
+ * Aborting `signal` starts no row that is still waiting its turn, because a request that starts
+ * late would read the active workspace as it is by then. Rows already sent finish where they were
+ * sent, and nothing settles after an abort: whoever aborted has left the queue those results are for.
  */
 export const runBulkDismiss = async ({
   items,
   dismiss,
   onSettled,
   concurrency = BULK_DISMISS_CONCURRENCY,
+  signal,
 }: {
   items: readonly BulkDismissItem[]
   dismiss: (item: BulkDismissItem) => Promise<QualityTriageRecord>
   onSettled?: (row: BulkDismissRowResult) => void
   concurrency?: number
+  signal?: AbortSignal
 }): Promise<BulkDismissRowResult[]> => {
   const enqueue = createRequestQueue(concurrency)
   return Promise.all(items.map(async (item) => {
     let result: BulkDismissResult
     try {
-      result = { kind: 'dismissed', triage: await enqueue(() => dismiss(item)) }
+      result = { kind: 'dismissed', triage: await enqueue(() => dismiss(item), signal) }
     } catch (caught) {
       result = resultOfFailure(caught)
     }
     const row = { item, result }
-    onSettled?.(row)
+    if (!signal?.aborted) {
+      onSettled?.(row)
+    }
     return row
   }))
 }

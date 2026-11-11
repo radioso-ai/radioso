@@ -475,6 +475,8 @@ test("operator sees the expected feedback permission boundary without losing the
   await expect(page.getByText("New handoffs and approvals will appear here.")).toBeVisible();
   await expect(page.getByText("You don't have permission to view quality feedback.")).toBeVisible();
   await expect(page.getByRole("link", { name: /flagged for quality review/ })).toHaveCount(0);
+  // Nothing in the queue can be dismissed in bulk.
+  await expect(page.getByLabel("Inbox queue").getByRole("checkbox")).toHaveCount(0);
 });
 
 test("the smart default lens stays on Needs-you when quality fails to load, even with an otherwise-empty reading", async ({ page }) => {

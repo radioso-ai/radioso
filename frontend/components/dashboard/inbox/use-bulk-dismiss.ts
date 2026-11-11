@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { qualityApi } from '@/lib/api-quality'
 import type { InboxItem } from '@/lib/needs-attention'
@@ -35,10 +35,13 @@ export interface BulkDismissController {
  * outcome to the queue as each row settles. Rows hidden by a filter are never dismissed unseen.
  */
 export function useBulkDismiss({
+  workspaceId,
   items,
   onResult,
   onAnnounce,
 }: {
+  /** The workspace the queue belongs to; leaving it ends a dismissal that is still queued. */
+  workspaceId: string
   /** The rows the operator can see; the selection is read against these. */
   items: readonly InboxItem[]
   onResult: (item: BulkDismissItem, result: BulkDismissResult) => void
@@ -48,8 +51,31 @@ export function useBulkDismiss({
   const [running, setRunning] = useState(false)
   const [leftBehind, setLeftBehind] = useState<BulkDismissRowResult[]>([])
   const runningRef = useRef(false)
+  const runAbortRef = useRef<AbortController | null>(null)
+
+  // Requests still waiting their turn read the active workspace when they start, so a run that
+  // outlives its workspace (or the view) is ended rather than sent to another workspace.
+  const abortRun = useCallback(() => {
+    runAbortRef.current?.abort()
+    runAbortRef.current = null
+  }, [])
+  useEffect(() => abortRun, [workspaceId, abortRun])
 
   const selectable = useMemo(() => bulkDismissableItems(items), [items])
+
+  // A row that leaves the visible queue (a filter hides it, it was closed) leaves the selection,
+  // so clearing the filter does not bring it back ticked. Adjusted while rendering, as React
+  // recommends for state that follows a prop.
+  const visibleIdsKey = selectable.map((item) => item.assistantMessageId).join('\n')
+  const [seenVisibleIdsKey, setSeenVisibleIdsKey] = useState(visibleIdsKey)
+  if (seenVisibleIdsKey !== visibleIdsKey) {
+    setSeenVisibleIdsKey(visibleIdsKey)
+    const visibleIds = new Set(selectable.map((item) => item.assistantMessageId))
+    const kept = [...selectedIds].filter((id) => visibleIds.has(id))
+    if (kept.length !== selectedIds.size) {
+      setSelectedIds(new Set(kept))
+    }
+  }
   const selected = useMemo(
     () => selectable.filter((item) => selectedIds.has(item.assistantMessageId)),
     [selectable, selectedIds],
@@ -90,8 +116,11 @@ export function useBulkDismiss({
     runningRef.current = true
     setRunning(true)
     setLeftBehind([])
+    const controller = new AbortController()
+    runAbortRef.current = controller
     try {
       const rows = await runBulkDismiss({
+        signal: controller.signal,
         items: selected,
         dismiss: (item) => qualityApi.setTriageState(item.assistantMessageId, {
           state: 'dismissed',
@@ -100,6 +129,7 @@ export function useBulkDismiss({
         }),
         onSettled: (row) => onResult(row.item, row.result),
       })
+      if (controller.signal.aborted) return
       const summary = summarizeBulkDismiss(rows)
       // Only rows still in the queue stay selected, so the same action retries them.
       const stillHere = new Set(
@@ -111,6 +141,7 @@ export function useBulkDismiss({
       setLeftBehind(summary.needsAttention)
       onAnnounce(summary.announcement)
     } finally {
+      if (runAbortRef.current === controller) runAbortRef.current = null
       runningRef.current = false
       setRunning(false)
     }

@@ -45,6 +45,15 @@ const handoffList = (conversations: unknown[]) => ({
   historyList: { conversations, total: conversations.length, nextCursor: null, hasMore: false },
 });
 
+interface TurnTriage {
+  state: string;
+  version: number;
+  resolution: { reason: string; note: string | null } | null;
+  legacyReason: string | null;
+  closedAt: string | null;
+  updatedAt: string | null;
+}
+
 const feedbackTurn = (id: string, question: string, overrides: { channel?: string; version?: number; state?: string } = {}) => ({
   assistantMessageId: id,
   conversationId: `conversation-${id}`,
@@ -73,7 +82,7 @@ const feedbackTurn = (id: string, question: string, overrides: { channel?: strin
     legacyReason: null,
     closedAt: null,
     updatedAt: null,
-  },
+  } as TurnTriage,
   verification: null,
 });
 
@@ -84,17 +93,30 @@ interface TriageRequest {
   resolution?: { reason: string; note: string | null };
 }
 
+/** The reads of written feedback a test watched: how many arrived, and how many were answered. */
+interface ListReads {
+  requested: number;
+  served: number;
+}
+
 /**
  * The quality backend: written feedback is listed while it is open or acknowledged, and a triage
  * write answers from `respond` (a status and body) or, by default, accepts the transition. A
- * closed turn leaves the list, as it does on the real one.
+ * closed turn leaves the list, as it does on the real one, and a conflict naming a state that is
+ * still open updates the turn's version, as the real list would show it.
+ *
+ * `holdTriage` and `holdList` park a write or a read until the promise they return settles. A read
+ * takes its rows when it arrives, so a parked read is one that began before later writes landed.
  */
 const stubQuality = async (
   page: Page,
   turns: ReturnType<typeof feedbackTurn>[],
   options: {
     requests?: TriageRequest[];
+    reads?: ListReads;
     respond?: (request: TriageRequest, attempt: number) => { status: number; body: unknown } | null;
+    holdTriage?: (request: TriageRequest) => Promise<void> | undefined;
+    holdList?: () => Promise<void> | undefined;
   } = {},
 ) => {
   const open = new Map(turns.map((turn) => [turn.assistantMessageId, turn]));
@@ -105,11 +127,14 @@ const stubQuality = async (
     const url = new URL(route.request().url());
     const writtenFeedback = url.searchParams.get("feedback") === "down" && url.searchParams.get("hasComment") === "true";
     const items = writtenFeedback ? [...open.values()] : [];
+    if (writtenFeedback && options.reads) options.reads.requested += 1;
+    if (writtenFeedback) await options.holdList?.();
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ items, total: items.length, page: 1, pageSize: writtenFeedback ? 25 : 1, totalPages: 1 }),
     });
+    if (writtenFeedback && options.reads) options.reads.served += 1;
   });
 
   await page.route("**/backend/api/v1/quality/turns/*/triage**", async (route: Route) => {
@@ -120,10 +145,14 @@ const stubQuality = async (
     const attempt = (attempts.get(assistantMessageId) ?? 0) + 1;
     attempts.set(assistantMessageId, attempt);
 
+    await options.holdTriage?.(request);
+
     const custom = options.respond?.(request, attempt) ?? null;
     if (custom) {
-      const current = (custom.body as { error?: { details?: { current?: { state: string } } } }).error?.details?.current;
+      const current = (custom.body as { error?: { details?: { current?: TurnTriage } } }).error?.details?.current;
+      const turn = open.get(assistantMessageId);
       if (current && isClosed(current.state)) open.delete(assistantMessageId);
+      else if (current && turn) open.set(assistantMessageId, { ...turn, triage: current });
       await route.fulfill({ status: custom.status, contentType: "application/json", body: JSON.stringify(custom.body) });
       return;
     }
@@ -250,28 +279,30 @@ test.describe("bulk dismiss", () => {
 
   test("a row that fails is reported on its own and stays selected while the rest are dismissed", async ({ page }) => {
     const triageRequests: TriageRequest[] = [];
+    const conflict = (current: TurnTriage) => ({
+      status: 409,
+      body: { error: { code: "QUALITY_TRIAGE_CONFLICT", message: "Quality triage changed", details: { current } } },
+    });
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page, handoffList([]));
-    await stubQuality(page, turns(), { requests: triageRequests, respond: ({ assistantMessageId }, attempt) => {
-      if (assistantMessageId === "assistant-b" && attempt === 1) {
-        return { status: 500, body: { error: { code: "internal_error", message: "boom" } } };
-      }
-      if (assistantMessageId === "assistant-c") {
-        return {
-          status: 409,
-          body: {
-            error: {
-              code: "QUALITY_TRIAGE_CONFLICT",
-              message: "Quality triage changed",
-              details: {
-                current: { state: "resolved", version: 4, resolution: null, legacyReason: null, closedAt: nowIso, updatedAt: nowIso },
-              },
-            },
-          },
-        };
-      }
-      return null;
-    } });
+    await stubQuality(page, [...turns(), feedbackTurn("assistant-d", "Fourth complaint")], {
+      requests: triageRequests,
+      respond: ({ assistantMessageId }, attempt) => {
+        // A request that fails.
+        if (assistantMessageId === "assistant-b" && attempt === 1) {
+          return { status: 500, body: { error: { code: "internal_error", message: "boom" } } };
+        }
+        // A teammate closed it first.
+        if (assistantMessageId === "assistant-c") {
+          return conflict({ state: "resolved", version: 4, resolution: null, legacyReason: null, closedAt: nowIso, updatedAt: nowIso });
+        }
+        // A teammate acknowledged it since the queue loaded.
+        if (assistantMessageId === "assistant-d" && attempt === 1) {
+          return conflict({ state: "acknowledged", version: 1, resolution: null, legacyReason: null, closedAt: null, updatedAt: nowIso });
+        }
+        return null;
+      },
+    });
 
     await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
     const queue = queueOf(page);
@@ -279,31 +310,90 @@ test.describe("bulk dismiss", () => {
 
     await queue.getByRole("checkbox", { name: "Select First complaint" }).check();
     const bar = queue.getByRole("region", { name: "Bulk dismiss" });
-    await bar.getByRole("button", { name: "Select all 3" }).click();
-    await expect(bar).toContainText("3 selected");
+    await bar.getByRole("button", { name: "Select all 4" }).click();
+    await expect(bar).toContainText("4 selected");
     await bar.getByRole("button", { name: "Dismiss" }).click();
     await page.getByRole("button", { name: "Close without reason" }).click();
 
     // The first dismissed and the third was already closed by someone else: both left the queue.
     await expect(queue.getByRole("button", { name: /First complaint/ })).toHaveCount(0);
     await expect(queue.getByRole("button", { name: /Third complaint/ })).toHaveCount(0);
-    // The second failed: it stays, still selected, with its own reason.
+    // The second failed and the fourth was changed: both stay, still selected, each with its own reason.
     await expect(queue.getByRole("button", { name: /Second complaint/ })).toBeVisible();
+    await expect(queue.getByRole("button", { name: /Fourth complaint/ })).toBeVisible();
     await expect(queue.getByRole("checkbox", { name: "Select Second complaint" })).toBeChecked();
-    await expect(bar).toContainText("1 selected");
+    await expect(queue.getByRole("checkbox", { name: "Select Fourth complaint" })).toBeChecked();
+    await expect(bar).toContainText("2 selected");
     const report = bar.getByRole("status");
-    await expect(report).toContainText("Second complaint");
-    await expect(report).toContainText("Could not dismiss. Try again.");
-    await expect(report).toContainText("Third complaint");
-    await expect(report).toContainText("Another operator already closed it.");
+    await expect(report.getByRole("listitem").filter({ hasText: "Second complaint" })).toContainText("Could not dismiss. Try again.");
+    await expect(report.getByRole("listitem").filter({ hasText: "Third complaint" })).toContainText("Another operator already closed it.");
+    await expect(report.getByRole("listitem").filter({ hasText: "Fourth complaint" })).toContainText("Another operator changed it. Try again.");
     await expect(report).not.toContainText("First complaint");
 
-    // The same action retries the row that failed.
+    // The same action retries what stayed; the changed row goes at the version the teammate left it.
     await bar.getByRole("button", { name: "Dismiss" }).click();
     await page.getByRole("button", { name: "Close without reason" }).click();
     await expect(queue.getByRole("button", { name: /Second complaint/ })).toHaveCount(0);
+    await expect(queue.getByRole("button", { name: /Fourth complaint/ })).toHaveCount(0);
     await expect(bar).toHaveCount(0);
     expect(triageRequests.filter((request) => request.assistantMessageId === "assistant-b")).toHaveLength(2);
+    expect(triageRequests.filter((request) => request.assistantMessageId === "assistant-d").map((request) => request.expectedVersion))
+      .toEqual([0, 1]);
+  });
+
+  test("a list read that began before a dismissal landed does not bring the row back", async ({ page }) => {
+    const triageRequests: TriageRequest[] = [];
+    const reads: ListReads = { requested: 0, served: 0 };
+    const gate = () => {
+      let open: () => void = () => undefined;
+      const closed = new Promise<void>((resolve) => { open = resolve; });
+      return { closed, open };
+    };
+    const secondDismissal = gate();
+    const staleRead = gate();
+    const laterRead = gate();
+    let readGate = staleRead;
+    const dismissalOfFirstSent = () => triageRequests.some((request) => request.assistantMessageId === "assistant-a");
+
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page, handoffList([]));
+    await stubQuality(page, turns(), {
+      requests: triageRequests,
+      reads,
+      // The second row's dismissal is slow; every read that begins meanwhile still lists it.
+      holdTriage: ({ assistantMessageId }) => assistantMessageId === "assistant-b" ? secondDismissal.closed : undefined,
+      holdList: () => dismissalOfFirstSent() ? readGate.closed : undefined,
+    });
+
+    await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+    const queue = queueOf(page);
+    await expect(page.getByRole("button", { name: /^Needs you · 3$/ })).toBeVisible();
+
+    await queue.getByRole("checkbox", { name: "Select First complaint" }).check();
+    await queue.getByRole("checkbox", { name: "Select Second complaint" }).check();
+    await queue.getByRole("region", { name: "Bulk dismiss" }).getByRole("button", { name: "Dismiss" }).click();
+    await page.getByRole("button", { name: "Close without reason" }).click();
+
+    // The first is gone, and a read began after it that still lists the second.
+    await expect(queue.getByRole("button", { name: /First complaint/ })).toHaveCount(0);
+    await expect.poll(() => reads.requested).toBeGreaterThan(1);
+
+    // The second's dismissal lands: it leaves the queue while that read is still on its way.
+    readGate = laterRead;
+    secondDismissal.open();
+    await expect(queue.getByRole("button", { name: /Second complaint/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Needs you · 1$/ })).toBeVisible();
+
+    // The older read lands. It must not bring the second row back, nor its count.
+    const servedBefore = reads.served;
+    staleRead.open();
+    await expect.poll(() => reads.served).toBeGreaterThan(servedBefore);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(queue.getByRole("button", { name: /Second complaint/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Needs you · 1$/ })).toBeVisible();
+    await expect(queue.getByRole("button", { name: /Third complaint/ })).toBeVisible();
+
+    laterRead.open();
   });
 
   test("a row hidden by a filter is not dismissed with the selection", async ({ page }) => {
@@ -322,6 +412,14 @@ test.describe("bulk dismiss", () => {
     await page.getByRole("option", { name: "email", exact: true }).click();
     await expect(queue.getByRole("button", { name: /Web complaint/ })).toHaveCount(0);
     await expect(queue.getByRole("region", { name: "Bulk dismiss" })).toHaveCount(0);
+
+    // Clearing the filter shows the web row again, unticked.
+    await queue.getByLabel("Filter by channel").click();
+    await page.getByRole("option", { name: "Channel: all" }).click();
+    await expect(queue.getByRole("checkbox", { name: "Select Web complaint" })).not.toBeChecked();
+    await expect(queue.getByRole("region", { name: "Bulk dismiss" })).toHaveCount(0);
+    await queue.getByLabel("Filter by channel").click();
+    await page.getByRole("option", { name: "email", exact: true }).click();
 
     await queue.getByRole("checkbox", { name: "Select Email complaint" }).check();
     const bar = queue.getByRole("region", { name: "Bulk dismiss" });

@@ -48,6 +48,7 @@ export const TRANSLATABLE_COPY_KEYS = [
   'publicChatVoiceMicrophoneError',
   'publicChatVoiceUnavailableError',
   'publicChatSpokenLabel',
+  'publicChatSourcesLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
 export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
@@ -90,6 +91,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: 'Para hablar, se necesita tu micrófono.',
     publicChatVoiceUnavailableError: 'Hablar no está disponible ahora. Inténtalo más tarde.',
     publicChatSpokenLabel: 'Por voz',
+    publicChatSourcesLabel: 'Fuentes',
   },
   fr: {
     launcherDefaultLabel: 'Discutez avec nous',
@@ -130,6 +132,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: 'Pour parler, il faut un micro autorisé.',
     publicChatVoiceUnavailableError: "La voix n'est pas disponible pour le moment. Réessayez plus tard.",
     publicChatSpokenLabel: 'Vocal',
+    publicChatSourcesLabel: 'Sources',
   },
   de: {
     launcherDefaultLabel: 'Mit uns chatten',
@@ -170,6 +173,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: 'Zum Sprechen braucht es Ihr Mikrofon.',
     publicChatVoiceUnavailableError: 'Sprechen ist gerade nicht möglich. Versuchen Sie es später erneut.',
     publicChatSpokenLabel: 'Gesprochen',
+    publicChatSourcesLabel: 'Quellen',
   },
   it: {
     launcherDefaultLabel: 'Chatta con noi',
@@ -210,6 +214,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: 'Per parlare serve il microfono.',
     publicChatVoiceUnavailableError: 'Parlare non è possibile al momento. Riprova più tardi.',
     publicChatSpokenLabel: 'A voce',
+    publicChatSourcesLabel: 'Fonti',
   },
   pt: {
     launcherDefaultLabel: 'Fale conosco',
@@ -250,6 +255,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: 'Para falar, é preciso o microfone.',
     publicChatVoiceUnavailableError: 'Falar não está disponível agora. Tente mais tarde.',
     publicChatSpokenLabel: 'Por voz',
+    publicChatSourcesLabel: 'Fontes',
   },
   nl: {
     launcherDefaultLabel: 'Chat met ons',
@@ -290,6 +296,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: 'Om te praten is je microfoon nodig.',
     publicChatVoiceUnavailableError: 'Praten is nu niet beschikbaar. Probeer het later opnieuw.',
     publicChatSpokenLabel: 'Gesproken',
+    publicChatSourcesLabel: 'Bronnen',
   },
   pl: {
     launcherDefaultLabel: 'Porozmawiaj z nami',
@@ -330,6 +337,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: 'Do rozmowy potrzebny jest mikrofon.',
     publicChatVoiceUnavailableError: 'Rozmowa głosowa jest teraz niedostępna. Spróbuj później.',
     publicChatSpokenLabel: 'Głosowo',
+    publicChatSourcesLabel: 'Źródła',
   },
   zh: {
     launcherDefaultLabel: '与我们聊天',
@@ -369,6 +377,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: '语音通话需要使用麦克风。',
     publicChatVoiceUnavailableError: '语音通话暂时不可用，请稍后再试。',
     publicChatSpokenLabel: '语音',
+    publicChatSourcesLabel: '来源',
   },
   ja: {
     launcherDefaultLabel: 'チャットでお問い合わせ',
@@ -409,6 +418,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: '話すにはマイクが必要です。',
     publicChatVoiceUnavailableError: '現在、音声でお話しできません。後でもう一度お試しください。',
     publicChatSpokenLabel: '音声',
+    publicChatSourcesLabel: '出典',
   },
   ru: {
     launcherDefaultLabel: 'Напишите нам',
@@ -449,6 +459,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceMicrophoneError: 'Чтобы говорить, нужен микрофон.',
     publicChatVoiceUnavailableError: 'Голосовой разговор сейчас недоступен. Попробуйте позже.',
     publicChatSpokenLabel: 'Голосом',
+    publicChatSourcesLabel: 'Источники',
   },
 }
 

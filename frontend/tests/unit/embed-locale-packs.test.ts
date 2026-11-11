@@ -70,6 +70,7 @@ describe('getWebsiteEmbedCopy locale resolution', () => {
     expect(copy.publicChatSendMessageLabel).toBe('Nachricht senden')
     expect(copy.publicChatContactHumanLabel).toBe('Mit einem Menschen sprechen')
     expect(copy.skillReceiptSubmittedLabel).toBe('Gesendet')
+    expect(copy.publicChatSourcesLabel).toBe('Quellen')
   })
 
   it('keeps the English baseline when no locale matches', () => {

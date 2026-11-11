@@ -42,7 +42,7 @@ export function linkifyText(text: string): ReactNode[] {
 }
 
 import { type AnswerSegment, type Citation } from '@/lib/api'
-import { type WebsiteEmbedTheme } from '@/lib/embed-widget'
+import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { AssistantMarkdownContent } from './chat-markdown'
 import {
   getListItem,
@@ -77,6 +77,9 @@ interface AssistantMessageContentProps {
   // dashboard viewer. 'link-only' is for public surfaces: sources are shown but
   // never openable — only an outbound source link (when present) is exposed.
   documentInteractivity?: 'open' | 'link-only'
+  // Names the sources disclosure. Visitor surfaces pass their resolved copy;
+  // the count renders beside it, so the label is never a counted noun.
+  sourcesLabel?: string
 }
 
 const HTML_ENTITY_MAP: Record<string, string> = {
@@ -408,6 +411,7 @@ export function AssistantMessageContent({
   isStreaming = false,
   showCitations = true,
   documentInteractivity = 'open',
+  sourcesLabel = DEFAULT_WEBSITE_EMBED_COPY.publicChatSourcesLabel,
 }: AssistantMessageContentProps) {
   const citationsInteractive = documentInteractivity !== 'link-only'
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
@@ -702,8 +706,8 @@ export function AssistantMessageContent({
               handleSourcesToggle()
             }}
           >
-            <span className="font-semibold text-foreground">{uniqueCitations.length}</span>
-            <span className="font-medium">Sources</span>
+            <span className="font-medium">{sourcesLabel}</span>{' '}
+            <span className="font-semibold text-foreground tabular-nums">{uniqueCitations.length}</span>
             <ChevronDown
               className={`h-3.5 w-3.5 opacity-70 transition-transform duration-150 ease-out ${sourcesExpanded ? '' : '-rotate-90'}`}
               aria-hidden="true"

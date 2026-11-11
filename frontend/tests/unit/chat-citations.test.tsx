@@ -12,6 +12,12 @@ const textContent = (html: string) =>
     .replace(/&#x27;/g, "'")
     .replace(/&quot;/g, '"')
 
+// The visible text of the collapsed Sources disclosure toggle.
+const sourcesToggleText = (html: string) => {
+  const toggle = html.match(/<button[^>]*aria-controls="[^"]*"[^>]*>([\s\S]*?)<\/button>/)
+  return toggle ? textContent(toggle[1]).trim() : null
+}
+
 // The citation cluster must render inside the block it annotates. If it escapes,
 // it lands right after that block's closing tag and drops onto its own line.
 const ESCAPED_CITATION_CLUSTER = /<\/(?:p|ul|ol)>\s*<span class="whitespace-nowrap">/
@@ -305,11 +311,24 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toContain('Sources')
     expect(html).toContain('aria-expanded="false"')
-    expect(html).toMatch(/<span class="font-semibold text-foreground">2<\/span><span class="font-medium">Sources<\/span>/)
+    expect(sourcesToggleText(html)).toBe('Sources 2')
     expect(html).not.toContain('title="Retrieval guide"')
     expect(html).not.toContain('title="Architecture"')
+  })
+
+  it('names the Sources disclosure with the given label and keeps the count apart from it', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Retreat page' }]}
+        answerSegments={[{ text: 'Il prezzo è indicato nella pagina', citationIndices: [0] }, { text: '.' }]}
+        onOpenDocument={async () => 'unavailable'}
+        sourcesLabel="Fonti"
+      />,
+    )
+
+    expect(sourcesToggleText(html)).toBe('Fonti 1')
   })
 
   it('hides source URL affordances while the Sources disclosure is collapsed', async () => {

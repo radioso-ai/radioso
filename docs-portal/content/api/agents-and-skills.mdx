@@ -134,9 +134,11 @@ Both return the updated agent. The old link or install code stops launching new 
 Directives add steering to matching turns. A directive has a `condition`, an
 `action`, optional priority and relationship fields, and optional scope tags.
 
-In the dashboard you author directives in the agent's **Directives** settings, where your own rules sit above the built-in Radioso directives you can **Override**.
+In the dashboard you author directives in the agent's **Directives** settings, where your own rules are listed one to a line above the collapsed group of built-in Radioso directives you can **Customize**.
 
-![The dashboard Directives screen with an authored directive "Shipping delay empathy" above the read-only built-in directives, each with an Override button.](/screenshots/dashboard-agent-directives.png)
+![The Directives tab as a list of one-line rows: two directives that each name the situation they apply to, a customized Readable formatting row marked with a layers icon and "Always · using your version", and a collapsed Radioso defaults group below.](/screenshots/dashboard-agent-directives.png)
+
+`GET /api/v1/agents/{agentId}/directives` returns the agent's authored `directives` and the Radioso `builtIns`. Each built-in carries its stable `name` (the value a directive lists in `excludes` to replace it), a human `title` such as `Readable formatting`, its `condition`, `action`, `priority`, and `description`. Built-ins are read-only; replacing one means creating a directive that lists its `name` in `excludes`.
 
 Create a directive with `POST /api/v1/agents/{agentId}/directives`:
 

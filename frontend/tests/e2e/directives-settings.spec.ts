@@ -28,6 +28,28 @@ const openDirectives = async (page: Page) => {
   await expect(page.getByRole("heading", { name: "Directives", level: 1 })).toBeVisible();
 };
 
+// A row is one line; its directive opens in a sheet, and Edit and Delete live there.
+const openDirective = async (page: Page, name: string) => {
+  await page.getByRole("button", { name, exact: true }).click();
+};
+
+const editDirective = async (page: Page, name: string) => {
+  await openDirective(page, name);
+  await page.getByRole("button", { name: `Edit ${name}`, exact: true }).click();
+};
+
+// The built-ins sit in a collapsed group under the list.
+const openBuiltIn = async (page: Page, title: string) => {
+  const group = page.getByRole("button", { name: /^Radioso defaults/ });
+  if ((await group.getAttribute("aria-expanded")) !== "true") await group.click();
+  await openDirective(page, title);
+};
+
+// The conflict banner offers the way into the directive that explains it.
+const reviewConflict = async (page: Page) => {
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+};
+
 // The create/edit/delete journey reloads the page three times and drives the Instruction editor a
 // keystroke at a time, which runs past the default 30s budget on a loaded machine.
 test.describe.configure({ timeout: 60_000 });
@@ -51,7 +73,7 @@ test("directive coverage criteria round-trip through the authored API payload", 
   });
   await openDirectives(page);
 
-  await page.getByRole("button", { name: "Edit explain-attendance-gap" }).click();
+  await editDirective(page, "explain-attendance-gap");
   await expect(page.getByRole("checkbox", { name: "unanswered", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("checkbox", { name: "insufficient evidence", exact: true })).toHaveAttribute("aria-checked", "true");
   await page.getByRole("checkbox", { name: "unanswered", exact: true }).click();
@@ -73,7 +95,7 @@ test("directive coverage criteria round-trip through the authored API payload", 
   });
 
   await page.reload();
-  await page.getByRole("button", { name: "Edit explain-attendance-gap" }).click();
+  await editDirective(page, "explain-attendance-gap");
   await expect(page.getByRole("checkbox", { name: "partial", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("checkbox", { name: "conflicting evidence" })).toHaveAttribute("aria-checked", "true");
   await page.getByRole("checkbox", { name: "conflicting evidence" }).click();
@@ -87,7 +109,7 @@ test("directive coverage criteria round-trip through the authored API payload", 
   });
 
   await page.reload();
-  await page.getByRole("button", { name: "Edit explain-attendance-gap" }).click();
+  await editDirective(page, "explain-attendance-gap");
   await page.getByRole("checkbox", { name: "partial", exact: true }).click();
   await page.getByRole("button", { name: "Save directive" }).click();
 
@@ -119,8 +141,9 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`);
 
   await expect(page.getByRole("heading", { name: "Directives", level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Built-in directives" })).toBeVisible();
-  await expect(page.getByText("Read-only")).toHaveCount(3);
+  // The built-ins wait in a collapsed group instead of sitting in the list.
+  await expect(page.getByRole("button", { name: "Radioso defaults · 3" })).toBeVisible();
+  await expect(page.getByText("concise-readable-formatting")).toHaveCount(0);
 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("handoff-tone");
@@ -131,7 +154,7 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
   // so the name is only unambiguous once the editor has unmounted.
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.getByText("handoff-tone")).toBeVisible();
-  await expect(page.getByText("No directive conflicts were found.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveCount(0);
   await expect.poll(() => directiveUpdates.length).toBe(1);
   expect(directiveUpdates[0]).toMatchObject({
     method: "POST",
@@ -145,16 +168,20 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
   await page.reload();
   await expect(page.getByText("handoff-tone")).toBeVisible();
 
-  await page.getByRole("button", { name: "Edit handoff-tone" }).click();
+  await editDirective(page, "handoff-tone");
   await page.getByLabel("Name").fill("conflict-tone");
   await fillInstruction(page, "Always be verbose, expansive, and include long explanations.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.getByText("conflict-tone")).toBeVisible();
-  await expect(page.getByText("Potential directive conflicts")).toBeVisible();
-  await expect(page.getByText("concise-readable-formatting:")).toBeVisible();
+  // A conflict is a banner above the list and a label on the row; the reason is in the sheet.
+  await expect(page.getByText("1 conflict")).toBeVisible();
+  await expect(page.getByText("Conflict", { exact: true })).toBeVisible();
+  await reviewConflict(page);
+  await expect(page.getByText("Conflicts with Readable formatting.")).toBeVisible();
   await expect(page.getByText("The saved directive may conflict with a formatting rule.")).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect.poll(() => directiveUpdates.length).toBe(2);
   expect(directiveUpdates[1]).toMatchObject({
     method: "PATCH",
@@ -167,7 +194,8 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
   await page.reload();
   await expect(page.getByText("conflict-tone")).toBeVisible();
 
-  await page.getByRole("button", { name: "Delete conflict-tone" }).click();
+  await openDirective(page, "conflict-tone");
+  await page.getByRole("button", { name: "Delete conflict-tone", exact: true }).click();
   await page.getByRole("button", { name: "Delete directive" }).click();
 
   await expect(page.locator("#directive-44444444-4444-4444-8444-000000000001")).toBeHidden();
@@ -234,11 +262,13 @@ test("agent directives settings can replace and restore a built-in directive", a
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`);
 
-  // The Override button is a shortcut into the normal create dialog with the
-  // built-in pre-selected in Replaces, the priority field exposed, everything editable.
-  await page.getByRole("button", { name: "Replace inline-supported-links for this agent" }).click();
+  // Customize is a shortcut into the normal create dialog with the built-in pre-selected in
+  // Replaces and its instruction copied in, so "your version" starts as an editable copy.
+  await openBuiltIn(page, "Inline source links");
+  await page.getByRole("button", { name: "Customize Inline source links" }).click();
   await expect(page.getByRole("heading", { name: "New directive" })).toBeVisible();
   await expect(page.getByLabel("Name")).toHaveValue("Override: inline-supported-links");
+  await expect(page.getByLabel("Instruction")).toHaveText("Use available source URLs as inline links in grounded answers.");
   // The preselection reads back as a pill, without opening the candidate picker.
   await expect(page.getByRole("button", { name: "Stop replacing inline-supported-links" })).toBeVisible();
   await page.getByRole("radio", { name: /In a specific situation/ }).click();
@@ -246,15 +276,19 @@ test("agent directives settings can replace and restore a built-in directive", a
   await fillInstruction(page, "Use the agent's legal-source link policy instead of the default link style.");
   await page.getByLabel("Priority").fill("95");
   await page.getByRole("button", { name: "Save directive" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
 
-  // The override is contextual, so the built-in is only superseded when the
-  // condition fires — the UI must say so instead of implying a permanent replace.
+  // The override is contextual, so it is a rule in its own right and the built-in stays a default
+  // that is only superseded when the condition fires — the sheet has to say so instead of
+  // implying a permanent replace.
+  await expect(page.getByRole("button", { name: "Override: inline-supported-links", exact: true })).toBeVisible();
+  await expect(page.getByText("answering legal policy questions")).toBeVisible();
+  await openBuiltIn(page, "Inline source links");
   await expect(page.getByText("Replaced by Override: inline-supported-links")).toBeVisible();
   await expect(
     page.getByText("only when: answering legal policy questions", { exact: false }),
   ).toBeVisible();
-  await expect(page.getByText("Replaces inline-supported-links when active")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Replace inline-supported-links for this agent" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Customize Inline source links" })).toBeVisible();
   await expect.poll(() => directiveUpdates.length).toBe(1);
   expect(directiveUpdates[0]).toMatchObject({
     method: "POST",
@@ -267,12 +301,17 @@ test("agent directives settings can replace and restore a built-in directive", a
     },
   });
 
-  await page.getByRole("button", { name: "Delete Override: inline-supported-links" }).click();
+  // The sheet names what the override replaces, and its own name opens it.
+  await page.getByRole("button", { name: "Override: inline-supported-links", exact: true }).click();
+  await expect(page.getByRole("dialog").getByText("Inline source links", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Delete Override: inline-supported-links", exact: true }).click();
   await page.getByRole("button", { name: "Delete directive" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
 
-  await expect(page.getByText("Replaced by Override: inline-supported-links")).toBeHidden();
-  await expect(page.getByText("Replaces inline-supported-links when active")).toBeHidden();
-  await expect(page.getByRole("button", { name: "Replace inline-supported-links for this agent" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Override: inline-supported-links", exact: true })).toHaveCount(0);
+  await openBuiltIn(page, "Inline source links");
+  await expect(page.getByText("Replaced by Override: inline-supported-links")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Customize Inline source links" })).toBeVisible();
   await expect.poll(() => directiveUpdates.length).toBe(2);
   expect(directiveUpdates[1]).toMatchObject({ method: "DELETE" });
 });
@@ -295,14 +334,21 @@ test("agent directives settings can resolve a conflict by superseding another di
   await fillInstruction(page, "Always be verbose, expansive, and include long explanations.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
-  await expect(page.getByText("Potential directive conflicts")).toBeVisible();
+  // Both rules carry the label, and Review opens the first of them with the ways to settle it.
+  await expect(page.getByText("Conflict", { exact: true })).toHaveCount(2);
+  await reviewConflict(page);
   await expect(page.getByRole("button", { name: "conflict-tone supersedes brief-tone" })).toBeVisible();
   await expect(page.getByRole("button", { name: "brief-tone supersedes conflict-tone" })).toBeVisible();
 
   await page.getByRole("button", { name: "conflict-tone supersedes brief-tone" }).click();
 
-  await expect(page.getByText("Replaces: brief-tone")).toBeVisible();
-  await expect(page.getByText("No directive conflicts were found.")).toBeVisible();
+  // Settled: the banner and the labels go, and the winner names what it replaces.
+  await expect(page.getByRole("button", { name: "conflict-tone supersedes brief-tone" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Conflict", { exact: true })).toHaveCount(0);
+  await openDirective(page, "conflict-tone");
+  await expect(page.getByRole("dialog").getByText("brief-tone")).toBeVisible();
   await expect.poll(() => directiveUpdates.length).toBe(3);
   expect(directiveUpdates[2]).toMatchObject({
     method: "PATCH",
@@ -331,6 +377,7 @@ test("agent directives settings can open a conflicting directive as contextual",
   await fillInstruction(page, "Always be verbose, expansive, and include long explanations.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
+  await reviewConflict(page);
   await page.getByRole("button", { name: "Make conflict-tone apply only conditionally" }).click();
 
   await expect(page.getByRole("heading", { name: "Edit directive" })).toBeVisible();
@@ -644,7 +691,7 @@ test("agent directives keep a prose #word out of the binding", async ({ page }) 
   });
   await openDirectives(page);
 
-  await page.getByRole("button", { name: "Edit policy-pointer" }).click();
+  await editDirective(page, "policy-pointer");
   // Text, not a chip: a chip renders its bare name, prose keeps the `#`.
   await expect(page.getByLabel("Instruction")).toHaveText(proseAction);
   await expect(page.getByText(/is available to bind/)).toHaveCount(0);
@@ -683,7 +730,7 @@ test("agent directives keep a prose #word out of the binding even when a skill h
   });
   await openDirectives(page);
 
-  await page.getByRole("button", { name: "Edit policy-pointer" }).click();
+  await editDirective(page, "policy-pointer");
   await expect(page.getByLabel("Instruction")).toHaveText(proseAction);
 
   // Edit something unrelated: the binding must not arrive as a side effect of saving.
@@ -719,7 +766,7 @@ test("agent directives refuse a binding whose skill has been disabled", async ({
   });
   await openDirectives(page);
 
-  await page.getByRole("button", { name: "Edit refund-handoff" }).click();
+  await editDirective(page, "refund-handoff");
   await expect(page.getByText(/No skill named issue_refund is available to bind/)).toBeVisible();
   // Save stays clickable and simply refuses: a dead button would state no reason of its own.
   const save = page.getByRole("button", { name: "Save directive" });
@@ -755,7 +802,7 @@ test("agent directives reopen and resave a bound action that ends a sentence", a
   });
   await openDirectives(page);
 
-  await page.getByRole("button", { name: "Edit refund-handoff" }).click();
+  await editDirective(page, "refund-handoff");
   // A chip renders its bare name; the period stayed in the prose beside it.
   await expect(page.getByLabel("Instruction")).toHaveText("Escalate using @issue_refund.");
   await expect(page.getByText(/is available to bind/)).toHaveCount(0);
@@ -798,7 +845,7 @@ test("agent directives keep a binding when the action names a longer skill", asy
   });
   await openDirectives(page);
 
-  await page.getByRole("button", { name: "Edit refund-handoff" }).click();
+  await editDirective(page, "refund-handoff");
   // The stored characters are untouched and the bound skill is now visible as a chip the author
   // can remove, rather than an invisible rule that a no-op save would drop.
   await expect(page.getByLabel("Instruction")).toHaveText(`${storedAction} @issue_refund`);
@@ -840,7 +887,7 @@ test("agent directives resave an action naming both its bound skill and a longer
   });
   await openDirectives(page);
 
-  await page.getByRole("button", { name: "Edit refund-handoff" }).click();
+  await editDirective(page, "refund-handoff");
   await expect(page.getByLabel("Instruction")).toHaveText("Try #issue_refund-tier2, then fall back to @issue_refund.");
 
   await page.getByRole("button", { name: "Save directive" }).click();
@@ -877,7 +924,7 @@ test("agent directives save an action that names its bound skill twice", async (
   });
   await openDirectives(page);
 
-  await page.getByRole("button", { name: "Edit refund-handoff" }).click();
+  await editDirective(page, "refund-handoff");
   await expect(page.getByText(/hand off to one skill/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save directive" }).click();
@@ -920,7 +967,7 @@ test("agent directives validate a binding again after the skills list fails to l
   await openDirectives(page);
 
   // A load that has not landed says nothing about this binding, so the directive stays saveable.
-  await page.getByRole("button", { name: "Edit refund-handoff" }).click();
+  await editDirective(page, "refund-handoff");
   await expect(page.getByRole("button", { name: "Save directive" })).toBeEnabled();
   await expect(page.getByText(/is available to bind/)).toHaveCount(0);
   await page.getByRole("button", { name: "Cancel" }).click();
@@ -928,7 +975,7 @@ test("agent directives validate a binding again after the skills list fails to l
 
   // One bad request must not disable validation for the session: reopening asks again.
   failSkillList = false;
-  await page.getByRole("button", { name: "Edit refund-handoff" }).click();
+  await editDirective(page, "refund-handoff");
   await expect(page.getByText(/No skill named issue_refund is available to bind/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Save directive" })).toBeEnabled();
 });
@@ -985,8 +1032,9 @@ test("agent directives drop a selected replacement from its pill", async ({ page
   await installDashboardApiMocks(page, { directiveUpdates });
   await openDirectives(page);
 
-  // The Override shortcut preselects the built-in, so this starts from a selection nobody typed.
-  await page.getByRole("button", { name: "Replace inline-supported-links for this agent" }).click();
+  // Customize preselects the built-in, so this starts from a selection nobody typed.
+  await openBuiltIn(page, "Inline source links");
+  await page.getByRole("button", { name: "Customize Inline source links" }).click();
   await page.getByRole("button", { name: "Stop replacing inline-supported-links" }).click();
 
   await expect(page.getByRole("button", { name: "Stop replacing inline-supported-links" })).toHaveCount(0);
@@ -1058,6 +1106,8 @@ test("agent directives settings disable and re-enable a directive from the list"
   const disableToggle = page.getByRole("switch", { name: "Disable handoff-tone" });
   await expect(disableToggle).toBeChecked();
   await expect(page.getByText("handoff-tone")).toBeVisible();
+  // The row is one quiet line: what the rule says is in its sheet, not on the row.
+  await expect(page.getByText("Be calm and specific when handing off to support.")).toHaveCount(0);
 
   await disableToggle.click();
 
@@ -1070,9 +1120,12 @@ test("agent directives settings disable and re-enable a directive from the list"
 
   const enableToggle = page.getByRole("switch", { name: "Enable handoff-tone" });
   await expect(enableToggle).not.toBeChecked();
-  await expect(page.getByText("Disabled")).toBeVisible();
   // The row is still there, still editable — disabling never hides or deletes it.
-  await expect(page.getByRole("button", { name: "Edit handoff-tone" })).toBeVisible();
+  await openDirective(page, "handoff-tone");
+  await expect(page.getByText("Be calm and specific when handing off to support.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit handoff-tone", exact: true })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
 
   await enableToggle.click();
 
@@ -1083,7 +1136,6 @@ test("agent directives settings disable and re-enable a directive from the list"
     body: { enabled: true },
   });
   await expect(page.getByRole("switch", { name: "Disable handoff-tone" })).toBeChecked();
-  await expect(page.getByText("Disabled")).toHaveCount(0);
 
   await page.reload();
   await expect(page.getByRole("switch", { name: "Disable handoff-tone" })).toBeChecked();
@@ -1111,20 +1163,23 @@ test("agent directives settings surface a conflict when a directive is re-enable
   await openDirectives(page);
 
   // Bringing a rule back into play is exactly when a conflict matters, so the verdict the
-  // update returns has to reach the panel. The toggle is a save like any other.
-  await expect(page.getByText("Potential directive conflicts")).toHaveCount(0);
+  // update returns has to reach the banner. The toggle is a save like any other.
+  await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveCount(0);
 
   await page.getByRole("switch", { name: "Enable conflict-tone" }).click();
 
-  await expect(page.getByText("Potential directive conflicts")).toBeVisible();
+  await expect(page.getByText("1 conflict")).toBeVisible();
+  await reviewConflict(page);
   await expect(page.getByText("The saved directive may conflict with a formatting rule.")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
 
-  // Turning it back off takes it out of play, so a panel describing conflicts it can no longer
+  // Turning it back off takes it out of play, so a banner describing conflicts it can no longer
   // have must not linger.
   await page.getByRole("switch", { name: "Disable conflict-tone" }).click();
 
-  await expect(page.getByText("Potential directive conflicts")).toHaveCount(0);
-  await expect(page.getByText("No directive conflicts were found.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Conflict", { exact: true })).toHaveCount(0);
 });
 
 test("agent directives settings keep a built-in in force while its replacement is disabled", async ({ page }) => {
@@ -1149,15 +1204,24 @@ test("agent directives settings keep a built-in in force while its replacement i
   await openDirectives(page);
 
   // A disabled directive never reaches the matcher, so its exclusion never fires and the
-  // built-in still governs every reply. Retiring the built-in here would describe behavior
-  // the agent does not have.
-  await expect(page.getByText("Replaced by legal-link-policy")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Replace inline-supported-links for this agent" })).toBeVisible();
+  // built-in still governs every reply. The one row keeps the name its operator gave it and says
+  // which built-in applies, and a built-in with a customization on file is never offered for
+  // customizing again.
+  await expect(page.getByText("Off · Inline source links applies")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Radioso defaults · 2" })).toBeVisible();
 
-  await page.getByRole("switch", { name: "Enable legal-link-policy" }).click();
+  await openDirective(page, "legal-link-policy");
+  await expect(page.getByRole("button", { name: "Radioso default", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Customize Inline source links" })).toHaveCount(0);
 
-  await expect(page.getByText("Replaced by legal-link-policy")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Replace inline-supported-links for this agent" })).toHaveCount(0);
+  // The picker drives the customization's on/off switch, so choosing your version is the toggle.
+  await page.getByRole("button", { name: "Your version", exact: true }).click();
+
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]).toMatchObject({ method: "PATCH", directiveId, body: { enabled: true } });
+  await expect(page.getByRole("button", { name: "Your version", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("Always · replaces Inline source links")).toBeVisible();
 });
 
 test("agent directives let a disabled rule with a broken binding still be edited and saved", async ({ page }) => {
@@ -1186,7 +1250,7 @@ test("agent directives let a disabled rule with a broken binding still be edited
   // A disabled directive cannot dispatch its skill, so the API accepts it with a binding that
   // would otherwise be refused. Blocking the save here would leave an operator who has already
   // turned a rule off unable to reword it without first repairing a binding that does nothing.
-  await page.getByRole("button", { name: "Edit refund-handoff" }).click();
+  await editDirective(page, "refund-handoff");
   await expect(page.getByText(/No skill named issue_refund is available to bind/)).toHaveCount(0);
 
   await page.getByLabel("Name").fill("refund-handoff-reworded");
@@ -1236,6 +1300,7 @@ test("agent directives hold row actions while a toggle is still in flight", asyn
 
   await openDirectives(page);
   await page.getByRole("switch", { name: "Disable handoff-tone" }).click();
+  await openDirective(page, "handoff-tone");
 
   // The dialog opens from the row's current values and resends them all on save, so an edit
   // started here would save the pre-toggle state back over the toggle once it lands.
@@ -1307,7 +1372,10 @@ test("agent directives apply both results when two rows are toggled at once", as
   // The first row committed too, so it must not sit showing the opposite of what was stored.
   await expect(page.getByRole("switch", { name: "Enable handoff-tone" })).not.toBeChecked();
   await expect(page.getByRole("switch", { name: "Enable refund-window" })).not.toBeChecked();
+  await openDirective(page, "handoff-tone");
   await expect(page.getByRole("button", { name: "Edit handoff-tone" })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
   await expect.poll(() => directiveUpdates.length).toBe(2);
 
   await page.reload();
@@ -1345,9 +1413,10 @@ test("agent directives hold conflict-resolver actions while the directive they r
   });
   await openDirectives(page);
 
-  // Bring the conflict panel up by enabling the directive: the resolver now holds a copy of it.
+  // Bring the conflict up by enabling the directive: its sheet's resolver now holds a copy of it.
   await page.getByRole("switch", { name: "Enable conflict-tone" }).click();
-  await expect(page.getByText("Potential directive conflicts")).toBeVisible();
+  await expect(page.getByText("1 conflict")).toBeVisible();
+  await openDirective(page, "conflict-tone");
   const supersede = page.getByRole("button", { name: "conflict-tone supersedes brief-tone" });
   await expect(supersede).toBeEnabled();
 
@@ -1403,7 +1472,7 @@ test("a directive instruction keeps the lines its author wrote", async ({ page }
   });
 
   // Reopening reads the stored value back as the two lines it was written as.
-  await page.getByRole("button", { name: "Edit two-line-tone" }).click();
+  await editDirective(page, "two-line-tone");
   const reopened = page.getByLabel("Instruction");
   await expect(reopened).toContainText("Answer in two sentences.");
   await expect(reopened).toContainText("Then offer to connect them with support.");
@@ -1444,4 +1513,141 @@ test("directive coverage reasons require a compatible selected status", async ({
     method: "POST",
     body: { coverageCriteria: { coverage: ["partial"] } },
   });
+});
+
+test("agent directives open a rule in a sheet from its row, by click or keyboard", async ({ page }) => {
+  const directiveId = "99999999-9999-4999-8999-000000000001";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directives: [
+      {
+        id: directiveId,
+        name: "pricing-questions",
+        condition: { kind: "contextual", description: "the visitor asks about prices or plans" },
+        action: "Quote prices from the current price list only.\nIf a discount code comes up, say staff confirm discounts at checkout.",
+        priority: 70,
+      },
+    ],
+  });
+  await openDirectives(page);
+
+  // The row is one quiet line: the name and when it applies. The rule itself is in the sheet.
+  await expect(page.getByText("the visitor asks about prices or plans")).toBeVisible();
+  await expect(page.getByText("Quote prices from the current price list only.")).toHaveCount(0);
+
+  const row = page.getByRole("button", { name: "pricing-questions", exact: true });
+  await row.focus();
+  await page.keyboard.press("Enter");
+  const sheet = page.getByRole("dialog");
+  await expect(sheet.getByText("Quote prices from the current price list only.")).toBeVisible();
+  await expect(sheet.getByText("If a discount code comes up")).toBeVisible();
+  await expect(sheet.getByText("70", { exact: true })).toBeVisible();
+  await expect(sheet.getByText("the visitor asks about prices or plans")).toBeVisible();
+
+  // Closing the sheet hands the keyboard back to the row it came from.
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await expect(row).toBeFocused();
+
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("dialog").getByText("Quote prices from the current price list only.")).toBeVisible();
+});
+
+test("agent directives keep the built-ins in a collapsed group that opens in a sheet", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await openDirectives(page);
+
+  const group = page.getByRole("button", { name: "Radioso defaults · 3" });
+  await expect(group).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "Speak as the organization", exact: true })).toHaveCount(0);
+
+  await group.click();
+  await expect(page.getByRole("button", { name: "Readable formatting", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Inline source links", exact: true })).toBeVisible();
+
+  await openDirective(page, "Speak as the organization");
+  const sheet = page.getByRole("dialog");
+  await expect(sheet.getByText("Represent the organization as its assistant.")).toBeVisible();
+  await expect(sheet.getByRole("switch")).toHaveCount(0);
+  await expect(sheet.getByRole("button", { name: "Customize Speak as the organization" })).toBeVisible();
+});
+
+test("agent directives show a customized default as one row with its version in use", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const directiveId = "99999999-9999-4999-8999-000000000002";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    directives: [
+      {
+        id: directiveId,
+        name: "Override: concise-readable-formatting",
+        condition: { kind: "always" },
+        action: "Prefer short paragraphs and answer directly. Keep every reply under three sentences.",
+        excludes: ["concise-readable-formatting"],
+      },
+    ],
+  });
+  await openDirectives(page);
+
+  // The built-in and its customization are one row, titled for the built-in and carrying no
+  // switch of its own, and the group below counts only the defaults nobody has customized.
+  await expect(page.getByRole("button", { name: "Readable formatting", exact: true })).toBeVisible();
+  await expect(page.getByText("Always · using your version")).toBeVisible();
+  await expect(page.getByRole("switch")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Radioso defaults · 2" })).toBeVisible();
+
+  // Close enough to the default to read as a comparison against it: what was added is marked.
+  await openDirective(page, "Readable formatting");
+  await expect(page.getByRole("insertion")).toHaveText("Keep every reply under three sentences.");
+
+  await page.getByRole("button", { name: "Radioso default", exact: true }).click();
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]).toMatchObject({ method: "PATCH", directiveId, body: { enabled: false } });
+  await expect(page.getByRole("button", { name: "Radioso default", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("Always · using the Radioso default")).toBeVisible();
+
+  await openDirective(page, "Readable formatting");
+  await page.getByRole("button", { name: "Edit your version" }).click();
+  await expect(page.getByRole("heading", { name: "Edit directive" })).toBeVisible();
+  await expect(page.getByLabel("Name")).toHaveValue("Override: concise-readable-formatting");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  // Deleting the customization hands the built-in back to the defaults group.
+  await openDirective(page, "Readable formatting");
+  await page.getByRole("button", { name: "Delete your version" }).click();
+  await page.getByRole("button", { name: "Delete directive" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect.poll(() => directiveUpdates.length).toBe(2);
+  expect(directiveUpdates[1]).toMatchObject({ method: "DELETE", directiveId });
+  await expect(page.getByRole("button", { name: "Radioso defaults · 3" })).toBeVisible();
+  await expect(page.getByText("Always · using the Radioso default")).toHaveCount(0);
+});
+
+test("agent directives show both texts when a customization shares little with its default", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directives: [
+      {
+        id: "99999999-9999-4999-8999-000000000003",
+        name: "Override: concise-readable-formatting",
+        condition: { kind: "always" },
+        action: "Answer every question in exactly two sentences.",
+        excludes: ["concise-readable-formatting"],
+      },
+    ],
+  });
+  await openDirectives(page);
+  await openDirective(page, "Readable formatting");
+
+  const sheet = page.getByRole("dialog");
+  await expect(sheet.getByText("Answer every question in exactly two sentences.")).toBeVisible();
+  await expect(sheet.getByText("Prefer short paragraphs and answer directly.")).toBeVisible();
+  await expect(sheet.getByRole("insertion")).toHaveCount(0);
+  await expect(sheet.getByRole("deletion")).toHaveCount(0);
 });

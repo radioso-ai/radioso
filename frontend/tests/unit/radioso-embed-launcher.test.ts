@@ -1,8 +1,8 @@
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import vm from 'node:vm'
 
 import { describe, expect, it, vi } from 'vitest'
+
+import { readEmbedLauncherScript } from '@/lib/embed-launcher-script'
 
 class FakeElement {
   readonly tagName: string
@@ -139,7 +139,7 @@ const collectElements = (element: FakeElement, predicate: (element: FakeElement)
 
 describe('radioso embed launcher', () => {
   it('honors documented data attributes when mounting the iframe', async () => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -241,7 +241,7 @@ describe('radioso embed launcher', () => {
   })
 
   it('resolves built-in locale copy client-side from the visitor language', async () => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -319,7 +319,7 @@ describe('radioso embed launcher', () => {
   })
 
   it('keeps English-preferring visitors on the English baseline', async () => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -390,7 +390,7 @@ describe('radioso embed launcher', () => {
   })
 
   it('keeps an explicitly empty server launcher label icon-only', async () => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -470,7 +470,7 @@ describe('radioso embed launcher', () => {
   })
 
   it('lets the collapsed bubble drag with a comet trail without opening chat', async () => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -581,7 +581,7 @@ describe('radioso embed launcher', () => {
   })
 
   it('keeps an over-dragged bubble inside the viewport and returns it on window release', async () => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -691,7 +691,7 @@ describe('radioso embed launcher', () => {
   })
 
   it('names the assistant and marks the greeting teaser as AI', async () => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -778,7 +778,7 @@ describe('radioso embed launcher', () => {
   })
 
   it('toggles the mounted embed fullscreen state on iframe request', async () => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -914,7 +914,7 @@ describe('radioso embed launcher', () => {
     bodyText,
     expectedCapability,
   }) => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -1057,7 +1057,7 @@ describe('radioso embed launcher', () => {
     { voice: { available: false }, allow: 'clipboard-read; clipboard-write', available: false },
     { voice: undefined, allow: 'clipboard-read; clipboard-write', available: false },
   ])('delegates the microphone and offers Talk only when the embed config says voice is $voice', async ({ voice, allow, available }) => {
-    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
@@ -1151,7 +1151,7 @@ describe('radioso embed launcher', () => {
       /** The session endpoint's answer when it refuses the launch; it starts a session unless a case names one. */
       sessionRefusal?: { status: number; body: unknown }
     } = {}) => {
-      const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+      const launcherSource = await readEmbedLauncherScript()
       const script = new FakeElement('script')
       script.src = 'https://app.example.com/radioso-embed.js'
       script.dataset.radiosoToken = 'embed-token'
@@ -1438,7 +1438,7 @@ describe('radioso embed launcher', () => {
       displayModeOverride?: string
       collapseOnScrollOverride?: string
     } = {}) => {
-      const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+      const launcherSource = await readEmbedLauncherScript()
       const script = new FakeElement('script')
       script.src = 'https://app.example.com/radioso-embed.js'
       script.dataset.radiosoToken = 'embed-token'

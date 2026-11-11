@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   directiveSurfacesOverlap,
   directiveSurfaceLabel,
+  directiveSurfaceSummary,
   directiveSurfacesToForm,
   formSurfacesToPayload,
   hasUnrenderableSurface,
@@ -105,6 +106,21 @@ describe('directiveSurfaceLabel', () => {
   it('names both when a directive addresses both', () => {
     expect(directiveSurfaceLabel(['answer', 'suggested_questions'])).toBe(
       "Applies to: The agent's reply and Suggested follow-up questions",
+    )
+  })
+})
+
+describe('directiveSurfaceSummary', () => {
+  it('names the reply for the default scope', () => {
+    expect(directiveSurfaceSummary(undefined)).toBe("The agent's reply")
+    expect(directiveSurfaceSummary([])).toBe("The agent's reply")
+    expect(directiveSurfaceSummary(['answer'])).toBe("The agent's reply")
+  })
+
+  it('names every generator a directive addresses', () => {
+    expect(directiveSurfaceSummary(['suggested_questions'])).toBe('Suggested follow-up questions')
+    expect(directiveSurfaceSummary(['answer', 'suggested_questions'])).toBe(
+      "The agent's reply and Suggested follow-up questions",
     )
   })
 })

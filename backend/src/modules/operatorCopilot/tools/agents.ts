@@ -216,6 +216,7 @@ const projectBuiltInDirectives = (
     if (!omittedReason) remainingActionChars -= directive.action.length;
     const boundedIdentity = boundPayload({
       name: directive.name,
+      title: directive.title,
       condition: directive.condition,
       priority: directive.priority,
       description: directive.description,

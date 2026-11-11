@@ -534,12 +534,19 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     ],
   },
   {
-    id: "clarification-ambiguous-plan",
-    name: "An under-specified plan question triggers a clarifying question",
-    description: "The flakiest case — it depends on the model choosing to clarify rather than answer broadly. The baseline records current behaviour either way.",
-    tags: ["clarification"],
+    id: "retrieval-plan-choice-compared",
+    name: "Asking which plan to pick lays out every plan from the pricing page",
+    description:
+      "Only the pricing page answers this. The refund and security pages come back behind it, but they are not other meanings of the question, so the turn answers with all three plans instead of asking which page the visitor meant (#1742).",
+    tags: ["retrieval"],
     query: "I want to switch plans — which one should I pick?",
-    assertions: [{ type: "turn_asks_clarification" }],
+    assertions: [
+      { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
+      { type: "answer_cites_document", documentId: PRICING_DOC_ID },
+      { type: "answer_contains", pattern: "Starter", matchMode: "substring" },
+      { type: "answer_contains", pattern: "Pro", matchMode: "substring" },
+      { type: "answer_contains", pattern: "Enterprise", matchMode: "substring" },
+    ],
   },
   {
     id: "multiturn-pricing-followup",

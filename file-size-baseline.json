@@ -16,7 +16,7 @@
   "backend/src/modules/chat/services/chatSessionPreparer.ts": 1364,
   "backend/src/modules/chat/services/chatTurnAssembly.ts": 1482,
   "backend/src/modules/chat/services/chatTurnLifecycle.ts": 1536,
-  "backend/src/modules/chat/services/retrievalTurnSkill.ts": 1160,
+  "backend/src/modules/chat/services/retrievalTurnSkill.ts": 1060,
   "backend/src/modules/chat/services/turnPlanService.ts": 1044,
   "backend/src/modules/documents/services/documentIngestionService.ts": 1157,
   "backend/src/modules/emailChannel/persistence/emailInboundRepository.ts": 1024,

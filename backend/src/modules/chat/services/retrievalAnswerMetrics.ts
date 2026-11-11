@@ -1,4 +1,5 @@
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { UnwrappedLinkReason } from "../../../shared/text/givenLinkTargets.js";
 import { answerCoverageHeadParseOutcome } from "../../../shared/domain/steeringRule.js";
 import type { AnswerCoverageAssessment } from "../contracts/answerCoverage.js";
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
@@ -96,6 +97,16 @@ export class RetrievalAnswerMetrics {
         decline: declineReason,
       },
     });
+  }
+
+  /** One count per link the answer carried to an address its model was not given. */
+  unwrappedLinks(reasons: readonly UnwrappedLinkReason[], stream: boolean): void {
+    for (const reason of reasons) {
+      this.metrics?.incrementCounter("chat_answer_links_unwrapped_total", {
+        help: "Answer links shown as plain text because the model was not given their address",
+        labels: { reason, stream: String(stream) },
+      });
+    }
   }
 
   /**

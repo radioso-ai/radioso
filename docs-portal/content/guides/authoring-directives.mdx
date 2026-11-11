@@ -251,6 +251,13 @@ with.
   reply's **Flow** and read the rule's commitment and grade. When the commitment
   was right and the answer still broke it, raise the rule's **Priority** above
   the built-in rules it competes with (80 for representing the organization).
+- A rule asks the agent to link a page, and the reply shows the page's name as
+  plain text: an answer from your documents links only to an address the agent
+  was given in that turn, such as a document's source URL, the page the visitor
+  is on, your instructions and directives, or the conversation. Put the address
+  in the directive, or give the document a source URL. A link to any other
+  address shows as its text on the web, in the embed, over the API and MCP, and
+  in email, and the reply's compose stage counts it as `unwrappedLinkCount`.
 - An answer-coverage rule did not run: open Turn diagnostics and check whether
   coverage was assessed. Older turns and failed assessments have no semantic
   verdict to match.

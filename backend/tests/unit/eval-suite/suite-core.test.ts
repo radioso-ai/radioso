@@ -34,7 +34,7 @@ import {
   conversationQualityCases,
   conversationQualityRoutines,
 } from "../../fixtures/conversation-quality/index.js";
-import { conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
+import { BREATH_COURSE_DOC_ID, conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
 import { pricesFromTheCoursePageDirective } from "../../fixtures/conversation-quality/directives.js";
 import {
   canonicalAnswerEnvelope,
@@ -102,6 +102,21 @@ describe("trace assertions", () => {
     expect(ungraded.status).toBe("fail");
     expect(ungraded.reason).toContain("ungraded");
     expect(evaluateTraceAssertion(assertion, compose({ answerLength: 12 })).status).toBe("fail");
+    expect(evaluateTraceAssertion(assertion, observed()).status).toBe("error");
+  });
+
+  it("reads turn_links_given from the compose stage's count of links shown as plain text", () => {
+    const compose = (metrics?: Record<string, number>) => observed({
+      turnTrace: trace([{ id: "compose", kind: "compose", status: "applied", outputs: { answerLength: 42 }, ...(metrics ? { metrics } : {}) }]),
+    });
+    const assertion = { type: "turn_links_given" } as const;
+
+    expect(evaluateTraceAssertion(assertion, compose()).status).toBe("pass");
+    expect(evaluateTraceAssertion(assertion, compose({ coverageHeadMs: 120 })).status).toBe("pass");
+    const invented = evaluateTraceAssertion(assertion, compose({ unwrappedLinkCount: 2 }));
+    expect(invented.status).toBe("fail");
+    expect(invented.reason).toContain("2 links");
+    expect(evaluateTraceAssertion(assertion, observed({ turnTrace: trace([]) })).status).toBe("fail");
     expect(evaluateTraceAssertion(assertion, observed()).status).toBe("error");
   });
 
@@ -993,6 +1008,60 @@ describe("withheld-figures directive through the chat pipeline", () => {
     expect(assistantMessage?.metadata).not.toHaveProperty("unmetDirectives");
     expect(metrics).toMatch(/chat_directive_adherence_verdicts_total\{verdict="ungraded"\} 1\b/);
     expect(metrics).not.toMatch(/chat_directive_adherence_verdicts_total\{verdict="satisfied"\}/);
+  });
+});
+
+// #1751: the fixture corpus carries no Source URL, so a link in a reply about it is one the
+// model made up. The delivered answer shows its text; the compose stage counts it.
+describe("invented links through the chat pipeline", () => {
+  const { history: _history, routineStartState: _routineStartState, ...courseCase } = conversationQualityCases.find(
+    (evalCase) => evalCase.id === "referent-course-behind-contact-form",
+  )!;
+  // The harness drives one turn and records no retrieved chunks; the route, coverage, and answer
+  // assertions are its to check.
+  const pipelineCase: ConversationQualityCase = {
+    ...courseCase,
+    assertions: courseCase.assertions.filter((assertion) => !assertion.type.startsWith("retrieval_")),
+  };
+  const runCase = async (answer: string) => {
+    const harness = conversationQualityChatHarness({
+      reply: canonicalAnswerEnvelope({
+        coverage: "answered_sufficient_evidence",
+        requestFocus: "the full quote for the breath course",
+        outcome: "answer",
+        answer,
+        claims: [[1]],
+        grounding: "grounded",
+      }),
+      retrievedDocumentId: BREATH_COURSE_DOC_ID,
+    });
+    const { reports } = await runConversationQualitySuite([pipelineCase], harness.port, { workspaceId: "ws" });
+    const [assistantMessage] = [...harness.messageRepository.items.values()].flat().filter((message) => message.role === "assistant");
+    return { report: reports[0], answer: assistantMessage?.content, metrics: harness.metrics.renderPrometheus() };
+  };
+  const verdictOf = (report: CaseReport | undefined, type: string, pattern?: string) =>
+    report?.verdicts.find((verdict) =>
+      verdict.assertion.type === type && (pattern === undefined || ("pattern" in verdict.assertion && verdict.assertion.pattern === pattern)));
+
+  it("shows the invented link as text, and fails the case on the model's attempt", async () => {
+    const { report, answer, metrics } = await runCase(
+      "Per [Il respiro super consapevole](#) la quota è di 260 € in camera doppia[[1]].",
+    );
+
+    expect(answer).toBe("Per Il respiro super consapevole la quota è di 260 € in camera doppia.");
+    expect(verdictOf(report, "answer_does_not_contain", "](")?.status).toBe("pass");
+    expect(verdictOf(report, "turn_links_given")?.status).toBe("fail");
+    expect(report?.verdicts.filter((verdict) => verdict.status !== "pass").map((verdict) => verdict.assertion.type))
+      .toEqual(["turn_links_given"]);
+    expect(metrics).toMatch(/chat_answer_links_unwrapped_total\{reason="fragment",stream="false"\} 1\b/);
+  });
+
+  it("passes an answer that names the course without a link", async () => {
+    const { report } = await runCase("Per Il respiro super consapevole la quota è di 260 € in camera doppia[[1]].");
+
+    if (report?.status !== "pass") {
+      throw new Error(`expected pass, got ${report?.status}: ${JSON.stringify(report?.verdicts, null, 2)}`);
+    }
   });
 });
 

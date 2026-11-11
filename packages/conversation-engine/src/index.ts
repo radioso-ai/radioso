@@ -526,6 +526,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       kind: "compose",
       status: "applied",
       outputs: composeOutputsFor(response, prepared.outcomes, { streamed: false }),
+      metrics: composeTraceMetricsFor(response),
     }));
 
     if (response.yielded) {

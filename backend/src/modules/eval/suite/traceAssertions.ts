@@ -57,6 +57,12 @@ export type SuiteTraceAssertion =
    */
   | { type: "turn_directive_committed"; directive: string }
   /**
+   * Every link the answer's model wrote points at an address the turn gave it: the compose
+   * stage counted no link it showed as plain text. The delivered answer never carries such a
+   * link, so this reads what the model tried; pair it with an assertion on the answer itself.
+   */
+  | { type: "turn_links_given" }
+  /**
    * Whether the voice turn policy spoke a bridge line before the turn's own speech. A voice
    * assertion's `deterministicOnly` keeps it out of a live run's gate: see
    * {@link withDefinedVoiceScope} for the ones that carry it by definition.
@@ -109,6 +115,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_persists_no_reply",
   "turn_reply_source",
   "turn_directive_committed",
+  "turn_links_given",
   "voice_bridge_emitted",
   "voice_turn_limit_reached",
   "voice_turn_outcome",
@@ -555,6 +562,22 @@ export const evaluateTraceAssertion = (
           ? `The compose stage recorded nothing for "${assertion.directive}": it was not rendered into the answer prompt, or a decline replaced the graded answer.`
           : `The turn composed no answer (no compose stage); expected a commitment to "${assertion.directive}".`,
       );
+    }
+    case "turn_links_given": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      const compose = stages(output).find((stage) => stage.kind === "compose");
+      if (!compose) {
+        return fail(assertion, "The turn composed no answer (no compose stage), so no link was checked.");
+      }
+      const unwrapped = compose.metrics?.unwrappedLinkCount ?? 0;
+      return unwrapped === 0
+        ? pass(assertion, "Every link the answer's model wrote points at an address the turn gave it.")
+        : fail(
+          assertion,
+          `The answer's model wrote ${unwrapped} ${unwrapped === 1 ? "link" : "links"} to addresses the turn never gave it; the answer shows them as plain text.`,
+        );
     }
     case "voice_bridge_emitted": {
       if (!output.voiceTurn) {

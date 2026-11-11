@@ -17,7 +17,8 @@ import type {
   AnswerSideChannel,
   AnswerSideChannelFactory,
 } from "../../../shared/domain/answerSideChannel.js";
-import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
+import { AnswerLinkGuard, type GuardedAnswer } from "./answerLinkGuard.js";
+import { StreamedAnswerText } from "./streamedAnswerText.js";
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import {
   attestableSteering,
@@ -66,30 +67,16 @@ class CoverageVerdictYieldedError extends Error {
   }
 }
 
-/**
- * Holds streamed answer text until it carries more than whitespace. A decline committed
- * with a blank answer is replaced by a composed one once the stream ends, so whitespace
- * alone must neither reach the client ahead of that decline nor mark the turn as
- * already answering. Held whitespace is released with the first text that follows it.
- */
-class LeadingWhitespaceHold {
-  private held = "";
-  private releasing = false;
+/** The compose-stage trace metrics that were measured; none when nothing was. */
+const measuredTraceMetrics = (metrics: Record<string, number | undefined>): { traceMetrics?: Record<string, number> } => {
+  const measured = Object.fromEntries(
+    Object.entries(metrics).filter((entry): entry is [string, number] => entry[1] !== undefined),
+  );
+  return Object.keys(measured).length > 0 ? { traceMetrics: measured } : {};
+};
 
-  push(text: string): string {
-    if (this.releasing) {
-      return text;
-    }
-    this.held += text;
-    if (!this.held.trim()) {
-      return "";
-    }
-    this.releasing = true;
-    const released = this.held;
-    this.held = "";
-    return released;
-  }
-}
+/** How many links the answer carried to addresses its model was not given; none when it carried none. */
+const unwrappedLinkCount = (guarded: GuardedAnswer): number | undefined => guarded.unwrapped.length || undefined;
 
 const combineAbortSignals = (turnSignal: AbortSignal | undefined, gateSignal: AbortSignal): AbortSignal =>
   turnSignal ? AbortSignal.any([turnSignal, gateSignal]) : gateSignal;
@@ -235,7 +222,7 @@ export class RetrievalAnswerComposer {
       streamedAnswer: "",
       deliveryMode: "yielded",
       yielded: true,
-      ...(coverageHeadMs === undefined ? {} : { traceMetrics: { coverageHeadMs } }),
+      ...measuredTraceMetrics({ coverageHeadMs }),
     };
   }
 
@@ -335,6 +322,24 @@ export class RetrievalAnswerComposer {
   }
 
   /**
+   * The link guard for this turn's answer, from the grounded prompt the turn renders. Every
+   * model call the turn makes is sent that prompt or part of it: the grounded and page-context
+   * calls send it whole, and a focused decline sends its instructions, steering, and request.
+   */
+  private answerLinkGuard(session: PreparedSession): AnswerLinkGuard {
+    return new AnswerLinkGuard(
+      this.promptWithConversationContext(this.support.buildPromptWithContext(session.retrieval.prompt, session), session),
+    );
+  }
+
+  /** The answer as the visitor gets it: a link to an address its model was not given is its text. */
+  private guardLinks(linkGuard: AnswerLinkGuard, answer: string, stream: boolean): GuardedAnswer {
+    const guarded = linkGuard.apply(answer);
+    this.answerMetrics.unwrappedLinks(guarded.unwrapped, stream);
+    return guarded;
+  }
+
+  /**
    * Records that the follow-up question generator ran, and spends the once/cooldown
    * budget of any directive addressed only to it.
    *
@@ -430,13 +435,13 @@ export class RetrievalAnswerComposer {
     prompt: string,
     accountId: string | undefined,
     attemptKey: string,
+    linkGuard: AnswerLinkGuard,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
   ): AsyncGenerator<string, EnvelopeAnswer> {
     const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
     const reader = new GroundedAnswerEnvelopeReader();
-    const citationSanitizer = new CitationAnchorSanitizer();
-    const leadingWhitespace = new LeadingWhitespaceHold();
+    const answerText = new StreamedAnswerText(linkGuard.stream());
     const candidateStream = this.chatGateway.streamAnswer({
       query,
       history: session.history,
@@ -457,7 +462,7 @@ export class RetrievalAnswerComposer {
       if (!text) {
         continue;
       }
-      const cleanChunk = leadingWhitespace.push(citationSanitizer.push(reader.push(text)));
+      const cleanChunk = answerText.push(reader.push(text));
       if (cleanChunk) {
         yield cleanChunk;
       }
@@ -465,7 +470,7 @@ export class RetrievalAnswerComposer {
     if (signal?.aborted) {
       throw signal.reason ?? new Error("chat_turn_aborted");
     }
-    const heldTail = leadingWhitespace.push(citationSanitizer.flush());
+    const heldTail = answerText.flush();
     if (heldTail) {
       yield heldTail;
     }
@@ -491,6 +496,7 @@ export class RetrievalAnswerComposer {
     session: PreparedSession,
     query: string,
     accountId: string | undefined,
+    linkGuard: AnswerLinkGuard,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
   ): AsyncGenerator<string, PageContextAnswer> {
@@ -505,6 +511,7 @@ export class RetrievalAnswerComposer {
       prompt,
       accountId,
       "stream_page_context",
+      linkGuard,
       signal,
       knownAssessment,
     );
@@ -518,6 +525,7 @@ export class RetrievalAnswerComposer {
     coverageVerdict?: RetrievalCoverageVerdictSink,
     signal?: AbortSignal,
   ): Promise<ChatPresentedAnswer> {
+    const linkGuard = this.answerLinkGuard(session);
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
@@ -633,9 +641,10 @@ export class RetrievalAnswerComposer {
       }
     }
 
+    const guarded = this.guardLinks(linkGuard, answer, false);
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
       session,
-      answer,
+      guarded.text,
       query,
       plannedSuggestions,
       userExpectedLocale,
@@ -647,6 +656,7 @@ export class RetrievalAnswerComposer {
       ...(metadataPatch
         ? { metadata: { ...presentation.metadata, ...metadataPatch } }
         : {}),
+      ...measuredTraceMetrics({ unwrappedLinkCount: unwrappedLinkCount(guarded) }),
     };
   }
 
@@ -698,6 +708,7 @@ export class RetrievalAnswerComposer {
     signal?: AbortSignal,
     coverageVerdict?: RetrievalCoverageVerdictSink,
   ): AsyncGenerator<string, TurnStreamResult> {
+    const linkGuard = this.answerLinkGuard(session);
     let rawAnswer = "";
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
@@ -723,6 +734,7 @@ export class RetrievalAnswerComposer {
         session,
         query,
         accountId,
+        linkGuard,
         signal,
         zeroEvidenceAssessment,
       );
@@ -763,8 +775,7 @@ export class RetrievalAnswerComposer {
       }
     } else {
       const reader = new GroundedAnswerEnvelopeReader();
-      const citationSanitizer = new CitationAnchorSanitizer();
-      const leadingWhitespace = new LeadingWhitespaceHold();
+      const answerText = new StreamedAnswerText(linkGuard.stream());
       const gate = new BoundedGroundingStreamGate({
         contextCount: session.retrieval.contexts.length,
         maxRetainedCodePoints: RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints,
@@ -873,7 +884,7 @@ export class RetrievalAnswerComposer {
         const releaseText = releasesImmediately
           ? parsedText
           : (decision?.kind === "release" ? decision.text : "");
-        const cleanChunk = leadingWhitespace.push(citationSanitizer.push(releaseText));
+        const cleanChunk = answerText.push(releaseText);
         if (cleanChunk) {
           streamedAnswer += cleanChunk;
           yield cleanChunk;
@@ -907,26 +918,28 @@ export class RetrievalAnswerComposer {
         // Recorded once the decline is composed so the counter carries the same
         // classification the persisted turn outcome does.
         this.answerMetrics.groundingGateBound(decline.declineReason);
+        const guardedDecline = this.guardLinks(linkGuard, decline.text, true);
         return {
           finalPresentation: this.chatAnswerPresenter.presentRetrievalDeclineAnswer(
-            decline.text,
+            guardedDecline.text,
             decline.declineReason,
           ),
           suggestions: { mode: "assistant", planned: [] },
           hasStreamedAnswer: false,
           streamedAnswer: "",
           deliveryMode: "bounded_decline",
-          traceMetrics: {
-            // A bound decision only ever comes from an engaged gate, so this is
-            // always a real measurement, never the "never ran" case.
+          // A bound decision only ever comes from an engaged gate, so its wait is always a
+          // real measurement, never the "never ran" case.
+          ...measuredTraceMetrics({
             groundingGateWaitMs: gate.waitDurationMs,
-            ...(coverageHeadMs === undefined ? {} : { coverageHeadMs }),
-          },
+            coverageHeadMs,
+            unwrappedLinkCount: unwrappedLinkCount(guardedDecline),
+          }),
         };
       }
 
-      // Text the sanitizer still holds behind a `[[` that never became anchor syntax.
-      const heldTail = leadingWhitespace.push(citationSanitizer.flush());
+      // Text still held behind a `[[` that never became anchor syntax, or a `[` that never became a link.
+      const heldTail = answerText.flush();
       if (heldTail) {
         streamedAnswer += heldTail;
         yield heldTail;
@@ -996,9 +1009,10 @@ export class RetrievalAnswerComposer {
 
     // Present the same generated body from its computed assertion verdict. Suggestions
     // stay assistant-sourced; there is no semantic reconciliation generation here.
+    const guarded = this.guardLinks(linkGuard, rawAnswer, true);
     const presentation = await this.chatAnswerPresenter.presentWithoutSuggestions(
       session,
-      rawAnswer,
+      guarded.text,
       query,
       userExpectedLocale,
       { grounding, ...(declineReason ? { declineReason } : {}) },
@@ -1015,12 +1029,7 @@ export class RetrievalAnswerComposer {
       hasStreamedAnswer,
       streamedAnswer,
       deliveryMode: hasStreamedAnswer ? "live" : "committed",
-      ...(groundingGateWaitMs === undefined && coverageHeadMs === undefined ? {} : {
-        traceMetrics: {
-          ...(groundingGateWaitMs === undefined ? {} : { groundingGateWaitMs }),
-          ...(coverageHeadMs === undefined ? {} : { coverageHeadMs }),
-        },
-      }),
+      ...measuredTraceMetrics({ groundingGateWaitMs, coverageHeadMs, unwrappedLinkCount: unwrappedLinkCount(guarded) }),
     };
   }
 }

@@ -63,6 +63,16 @@ export const findCitationAnchors = (text: string): CitationAnchor[] =>
 export const stripCitationAnchorSyntax = (text: string, { endsAnswer }: { endsAnswer: boolean }): string =>
   text.replace(endsAnswer ? ANCHOR_SYNTAX_AT_ANSWER_END : ANCHOR_SYNTAX, "");
 
+/** Where `text` holds the anchor syntax {@link stripCitationAnchorSyntax} removes. */
+export const findCitationAnchorSyntax = (
+  text: string,
+  { endsAnswer }: { endsAnswer: boolean },
+): Array<{ start: number; end: number }> =>
+  [...text.matchAll(endsAnswer ? ANCHOR_SYNTAX_AT_ANSWER_END : ANCHOR_SYNTAX)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+
 /**
  * Splits streamed text into the part already settled and a trailing `[[` candidate still
  * pending. The settled part strips the same way whatever arrives next: no span reaches into

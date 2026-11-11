@@ -162,6 +162,7 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_persists_no_reply") }),
   z.object({ type: z.literal("turn_reply_source"), source: z.enum(["turn_planning", "composer"]) }),
   z.object({ type: z.literal("turn_directive_committed"), directive: z.string().min(1) }),
+  z.object({ type: z.literal("turn_links_given") }),
   z.object({ type: z.literal("voice_bridge_emitted"), expected: z.boolean(), deterministicOnly: z.boolean().optional() }),
   z.object({ type: z.literal("voice_turn_limit_reached"), expected: z.boolean(), deterministicOnly: z.boolean().optional() }),
   z.object({

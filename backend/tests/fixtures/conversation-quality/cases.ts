@@ -124,6 +124,16 @@ const MOUNTAIN_COURSE_FIGURES_ABSENT: ConversationQualityCase["assertions"] = ["
 
 const FULL_QUOTE_FOR_THE_EVENT_ITALIAN = "Mi mandi un preventivo completo compreso di pernottamento per l'evento?";
 
+/**
+ * The corpus gives no Source URL, so any Markdown link in an answer about it is one the model
+ * made up (#1751). The answer shows such a link as its text, which the substring check reads; the
+ * compose stage counts what the model wrote, which `turn_links_given` reads.
+ */
+const NO_INVENTED_LINKS: ConversationQualityCase["assertions"] = [
+  { type: "turn_links_given" },
+  { type: "answer_does_not_contain", pattern: "](", matchMode: "substring" },
+];
+
 /** A line that opens a Markdown bulleted or numbered list item. */
 const MARKDOWN_LIST_ITEM = String.raw`(?m)^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S`;
 
@@ -580,6 +590,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "answer_does_not_contain", pattern: "280", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "220", matchMode: "substring" },
       ...MOUNTAIN_COURSE_FIGURES_ABSENT,
+      ...NO_INVENTED_LINKS,
     ],
   },
   {
@@ -600,6 +611,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "answer_does_not_contain", pattern: "260", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "180", matchMode: "substring" },
       ...MOUNTAIN_COURSE_FIGURES_ABSENT,
+      ...NO_INVENTED_LINKS,
     ],
   },
   {

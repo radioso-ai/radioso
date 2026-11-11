@@ -359,6 +359,67 @@ describe("DefaultRoutineRunner consent before a covered slot (#1544)", () => {
     });
   });
 
+  describe("a covered value stated before or with the grant", () => {
+    // What the visitor said before the turn that answers the collecting step: the value with the
+    // grant, the consent and the grant, then the step's question.
+    const afterGrant = (content: string): TurnContext => ({
+      ...turn(content),
+      history: [
+        { role: "user", content: "I'm Ada, and I'm pregnant" },
+        { role: "assistant", content: "[wording health] Agree / Decline" },
+        { role: "user", content: "yes" },
+        { role: "assistant", content: "[ask_health]" },
+      ],
+    });
+    // A selector that finds the value only where the runner lets it read the visitor's earlier
+    // messages, the way the model reads "nothing else" after an earlier statement.
+    const readingEarlier = (variables: Record<string, unknown>) => {
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async ({ currentStep, earlierMessageSlotKeys }) => ({
+        nextStepId: currentStep.id,
+        variables: Object.fromEntries(Object.entries(variables).filter(([key]) => earlierMessageSlotKeys?.includes(key))),
+      }));
+      return { select };
+    };
+
+    it("lets the collecting step take it from the visitor's earlier messages from the turn after the grant", async () => {
+      const selector = readingEarlier({ pregnant: true });
+      const runner = runnerWith(intake(), consentPort({ decisions: { health: "granted" } }), selector);
+
+      const result = await runner.resume({ turn: afterGrant("No, nothing else."), state: state(["ask_name", GATE, "ask_health"], { name: "Ada" }) });
+
+      expect(selector.select).toHaveBeenCalledWith(expect.objectContaining({ earlierMessageSlotKeys: ["pregnant"] }));
+      expect(result.endedVariables).toEqual({ name: "Ada", pregnant: true });
+      expect(result.response.answer).toBe("[prenatal]");
+    });
+
+    it("never lets a step read earlier messages on the turn that grants the consent", async () => {
+      const selector = readingEarlier({ pregnant: true });
+      const runner = runnerWith(intake(), consentPort({ reply: { decision: "granted", method: "reply" } }), selector);
+
+      const result = await runner.resume({ turn: turn("yes"), state: state(["ask_name", GATE], { name: "Ada", pregnant: true }) });
+
+      expect(result.nextState?.variables).toEqual({ name: "Ada" });
+      for (const [call] of selector.select.mock.calls) {
+        expect(call).not.toHaveProperty("earlierMessageSlotKeys");
+      }
+    });
+
+    it("never lets a step read earlier messages for a slot no consent covers, or on a conversation that never asks", async () => {
+      const covered = readingEarlier({ pregnant: true });
+      await runnerWith(intake(), consentPort({ asks: false, decisions: { health: "granted" } }), covered)
+        .resume({ turn: afterGrant("No, nothing else."), state: state(["ask_name", GATE, "ask_health"], { name: "Ada" }) });
+      const uncovered = readingEarlier({ name: "Ada" });
+      await runnerWith(intake(), consentPort({ decisions: { health: "granted" } }), uncovered)
+        .resume({ turn: afterGrant("Hi"), state: state(["ask_name"]) });
+
+      for (const [call] of covered.select.mock.calls) {
+        expect(call).not.toHaveProperty("earlierMessageSlotKeys");
+      }
+      expect(uncovered.select).toHaveBeenCalledWith(expect.objectContaining({ earlierMessageSlotKeys: ["pregnant"] }));
+      expect(uncovered.select).not.toHaveBeenCalledWith(expect.objectContaining({ earlierMessageSlotKeys: expect.arrayContaining(["name"]) }));
+    });
+  });
+
   describe("a slot the routine runs without, after a decline or a withdrawn grant", () => {
     // ask_health collects the covered `pregnant` and the uncovered `due_date`; the run passed the
     // consent when it was granted, and the grant has since been withdrawn.

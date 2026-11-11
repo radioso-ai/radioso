@@ -152,6 +152,7 @@ How covered fields stay unfilled (FR-007, and the edge case of a value typed ear
 - `checkDeclaredSlotValues` (`routineRunner.ts:262-287`) drops `blocked` keys with reject reason `consent`, added to `RoutineTraceRejectedSlot.reason` (`routineTrace.d.ts:113-116`).
 - Every value enters through it: the activation extraction (`:534-535`), every selector call (`selectChecked`, `:590-611`) and fast-forward reads. So a covered value from before the grant, from the grant message itself, or from a direct-invocation input is never stored.
 - A grant decided this turn does not unblock until the next turn.
+- From the next turn on (option A, 2026-11-11), `RoutineConsentGate.grantedBefore` names the covered keys granted before the turn on a conversation that asks; the runner passes those still empty to the selector as `earlierMessageSlotKeys`, and the selector's `routine-next-step-earlier-slots.md` rule lets them take a value from the visitor's earlier messages, the grant message and messages from before the consent included. A reply that adds nothing keeps the earlier value.
 
 Landing on a gate (the transit loop at `:1152` gains `"consent"`):
 - **A decision exists** (standing, or this turn): `granted` → step to S. `declined` → `onDecline: continue` adds the covered keys to `waived` and steps to S; `handoff` ends the run (below).

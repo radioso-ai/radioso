@@ -161,10 +161,13 @@ Judge each slot on its own: a slot's description applies only to that slot and n
 A value that could fill more than one slot goes in none of them unless the message or the conversation before it makes clear which one it is for. One value goes into two slots only when the message gives it for both.
 When the assistant's last message proposed values for slots and the latest message accepts them, in any words, those values are given this turn. A proposed value is one the user has not given, or one different from what they gave, such as a date the assistant offered instead. Return each proposed value for its slot, replacing any value the slot already holds. A value the user changes while accepting is the one to keep.
 Repeating back values the user already gave, as a summary or to confirm them, proposes nothing, even in the assistant's own words. Accepting such a recap gives no value: return a repeated slot only when the latest message changes it, so each slot keeps the user's own words.
-A condition that refers to a slot as {{slot.<key>}} holds only when that slot has a value, given in the latest message or earlier in the conversation; when you return a value for every slot such a condition refers to, it holds.{{date_rule}}
+A condition that refers to a slot as {{slot.<key>}} holds only when that slot has a value, given in the latest message or earlier in the conversation; when you return a value for every slot such a condition refers to, it holds.{{date_rule}}{{earlier_slots}}
 Return extracted values in "variables" keyed by each slot's key; omit slots not provided or accepted this turn.`;
 
 export const DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT = `Slots that already have a value from earlier turns: {{slot_keys}}.`;
+
+export const DEFAULT_ROUTINE_NEXT_STEP_EARLIER_SLOTS_PROMPT = `These slots may also take their value from anything the user said earlier in this conversation, not only the latest message: {{slot_keys}}.
+For each of them, a value the user stated in an earlier message counts as given this turn: combine it with whatever the latest message adds, changes, or confirms. When the latest message only confirms it, or says there is nothing more, return the value the user stated earlier, never the latest message's own words. Take these values only from what the user said.`;
 
 export const DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT = `The user may write a date in any form; a date they give for a date slot counts as provided. Record a date slot's value as YYYY-MM-DD, reading the day and month the way the user wrote them: "11-14 Nov" is 11 to 14 November. Today is {{today}} ({{time_zone}}); a date given without a year is its next occurrence on or after today. Leave a date slot out when the user names only an approximate time, such as "mid-November" or "in spring".`;
 

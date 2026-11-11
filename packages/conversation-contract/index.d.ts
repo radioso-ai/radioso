@@ -2,7 +2,7 @@ import type { ConversationModelGateway } from "./modelGateway.js";
 import type { ReferenceTimeZone } from "./referenceTimeZone.js";
 import type { RoutineRunTrace, RoutineSelectionTrace } from "./routineTrace.js";
 import type { ConversationRoutineSlotCorrection } from "./routineSlotCorrection.js";
-import type { RoutineConsentEvent } from "./routineConsent.js";
+import type { RoutineConsentEvent, RoutineConsentSelectorInput } from "./routineConsent.js";
 import type { ConversationRoutineReentryGate } from "./routineReentry.js";
 import type {
   DecisionOption,
@@ -1171,7 +1171,7 @@ export interface ConversationRoutineNextStepSelector {
     skillResult?: RoutineSkillResult;
     /** False when the message is a structured call that states no slot values: only the exit is kept. */
     messageStatesSlotValues?: boolean;
-  }): Promise<RoutineNextStepDecision>;
+  } & RoutineConsentSelectorInput): Promise<RoutineNextStepDecision>;
 }
 
 /**

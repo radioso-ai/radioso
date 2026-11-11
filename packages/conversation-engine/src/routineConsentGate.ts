@@ -10,12 +10,15 @@ import type {
   RoutineConsentDecision,
   RoutineConsentEvent,
   RoutineConsentMethod,
+  RoutineConsentSelectorInput,
   RoutineConsentSkipReason,
   RoutineStep,
   RoutineTraceConsent,
   RoutineTraceStepEntry,
   TurnContext,
 } from "@radioso/conversation-contract";
+
+import { hasVariable } from "./routineSlotValues.js";
 
 /**
  * Times a consent is shown before a reply that still neither agrees nor declines counts as
@@ -47,6 +50,13 @@ export class RoutineConsentGate {
   private readonly decidedThisTurn = new Map<string, RoutineConsentDecision>();
   private readonly waivedKeys: Set<string>;
   private readonly turnEvents: RoutineConsentEvent[] = [];
+  /**
+   * Covered slots whose consent the conversation granted before this turn, on a conversation that
+   * asks. Their value may come from anything the visitor said earlier, the grant message and what
+   * they said before the consent included: nothing could keep it then, and from the turn after the
+   * grant the collecting step confirms or completes it rather than losing it.
+   */
+  private readonly grantedBefore: ReadonlySet<string>;
 
   private constructor(
     private readonly routine: Routine,
@@ -66,6 +76,7 @@ export class RoutineConsentGate {
     const runsWithout = (consent: RoutineConsent): boolean =>
       asks ? standing[consent.key] === "declined" : standing[consent.key] !== "granted";
     this.waivedKeys = new Set(coveredKeys((routine.consents ?? []).filter(runsWithout)));
+    this.grantedBefore = new Set(asks ? coveredKeys((routine.consents ?? []).filter((consent) => standing[consent.key] === "granted")) : []);
   }
 
   /** Reads what the conversation already decided, once per turn and only for a routine with consents. */
@@ -84,6 +95,15 @@ export class RoutineConsentGate {
   /** Covered slots the routine runs without: a step that collects only these is satisfied. */
   get waived(): ReadonlySet<string> {
     return this.waivedKeys;
+  }
+
+  /**
+   * A selector's input with the slots granted before this turn that its state holds no value for
+   * yet, as `earlierMessageSlotKeys`; the same input when there are none.
+   */
+  withEarlierMessageSlots<T extends { state: { variables: Record<string, unknown> } }>(input: T): T & RoutineConsentSelectorInput {
+    const earlierMessageSlotKeys = [...this.grantedBefore].filter((key) => !hasVariable(input.state.variables, key));
+    return earlierMessageSlotKeys.length > 0 ? { ...input, earlierMessageSlotKeys } : input;
   }
 
   /** `variables` without a value for any blocked slot; the same object when it holds none. */

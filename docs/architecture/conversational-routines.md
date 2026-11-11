@@ -389,8 +389,14 @@ any source: the activator's extraction, the selector, the input of a routine cal
 as a tool, on a routine with or without a slot schema. Its value is dropped and the
 trace records it as rejected with reason `consent`. The message still stated it, so
 the chat host marks that turn's messages sensitive with the slot's key, as it would
-had the value been captured. The message that grants a consent never fills its slots;
-the collecting step asks for them on the next turn.
+had the value been captured. The turn that grants a consent never fills its slots;
+the collecting step asks for them on the next turn. From then on, the runner passes the
+selector each covered slot granted before the turn that still has no value
+(`earlierMessageSlotKeys`, from `RoutineConsentGate.grantedBefore`), and the selector
+lets those slots take a value from anything the visitor said earlier
+(`routine-next-step-earlier-slots.md`): the grant message, or what they said before the
+consent. So "no, nothing else" after "I'm coeliac" keeps the earlier value instead of
+storing the reply's words. A conversation that never asks passes none.
 
 When the walk reaches a `consent` step:
 

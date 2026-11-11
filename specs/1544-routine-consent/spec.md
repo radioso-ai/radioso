@@ -33,6 +33,10 @@ Article 9(2)(a) lets a controller process special-category data (health, beliefs
 - Q: Can Ray write consent wording? → A: No. Ray proposes only wording the operator supplied, verbatim.
 - Q: What does "withheld" mean on withdrawal? → A: The message stays in the conversation, its text is replaced by the redaction marker, and it is marked withheld. Copies the email channel holds are withheld the same way. Text already delivered to Slack or WhatsApp stays with those providers, and the docs say so.
 
+### End-to-end review 2026-11-11
+
+- Q: What happens to a covered value the visitor stated before or with the grant? → A: Option A. It is never kept on the turn the grant arrives, since consent is recorded before anything is captured. From the next turn on, the collecting step may take the value from anything the visitor said earlier in the conversation, the grant message and messages from before the consent included, so it confirms or completes the value rather than losing it. A plain "no, nothing else" after an earlier statement yields the earlier value, not the refusal text. Only covered slots whose consent was granted before the turn, and only on a conversation that asks.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Author a consent (Priority: P1)
@@ -84,7 +88,7 @@ A visitor on email, WhatsApp, or Slack, or one typing on the web, receives the c
 2. **Given** the consent is shown, **When** the visitor replies with a clear refusal, **Then** a `declined` record is stored and the decline path runs.
 3. **Given** the consent is shown, **When** the reply is ambiguous ("ok", "what do you do with it?", or an agreement with a condition), **Then** nothing is recorded, the agent answers what it can, and asks again.
 4. **Given** the consent has been asked twice without a clear answer, **When** the next reply is still unclear, **Then** a `declined` record is stored and the decline path runs.
-5. **Given** a reply that agrees and also contains a covered value ("yes, I'm pregnant"), **When** consent is recorded, **Then** the slot is not filled from that message. The collecting step asks for it.
+5. **Given** a reply that agrees and also contains a covered value ("yes, I'm pregnant"), **When** consent is recorded, **Then** the slot is not filled on that turn. From the next turn on, the collecting step may take the value from that message or any earlier one, so it confirms or completes the value rather than losing it.
 
 ---
 
@@ -127,7 +131,7 @@ A visitor asks the operator to withdraw their consent. The operator opens the co
 
 - The visitor's language has no variant: the wording falls back the way Exact Words does (exact tag, then base language, then the agent's default language).
 - The operator edits the wording after a visitor agreed: the record still points at the wording that visitor saw. A later conversation is asked with the new wording.
-- A visitor typed a covered value before the routine reached its consent: the slot is still collected only after a grant, from later messages.
+- A visitor typed a covered value before the routine reached its consent: the slot is still collected only after a grant. From the turn after the grant, the collecting step may take the value from that earlier message, and a reply that adds nothing ("no, nothing else") keeps it.
 - A routine has sensitive slots and was published before this feature: it keeps serving as published. Its next publish needs a consent.
 
 ## Requirements *(mandatory)*
@@ -140,7 +144,7 @@ A visitor asks the operator to withdraw their consent. The operator opens the co
 - **FR-004**: The consent text MUST be the authored wording, sent verbatim. Application code and prompts MUST NOT add consent copy.
 - **FR-005**: Where the channel renders buttons, the two labels MUST be offered as buttons whose click is delivered as a structured decision bound to the wording version shown, not as text.
 - **FR-006**: A typed reply MUST be read by the model into `granted`, `declined`, or `unclear`. Only an unambiguous agreement to the shown wording is `granted`. `unclear` asks again; after two asks, the next unclear reply counts as `declined`.
-- **FR-007**: A covered slot MUST NOT be filled before a grant, nor from the message that carried the grant.
+- **FR-007**: A covered slot MUST NOT be filled before a grant, nor on the turn that carried the grant. From the next turn on, its collecting step MAY take the value from anything the visitor stated earlier in the conversation, the grant message included.
 - **FR-008**: On decline, the routine MUST follow the consent's decline choice. Covered slots stay absent.
 - **FR-009**: Voice conversations MUST NOT ask for consent, and MUST follow the decline choice.
 - **FR-010**: Each decision MUST be stored as a record: workspace, agent, conversation, visitor, routine, consent key, wording version, language, decision, method (`button` or `reply`), channel, the message that carried it, and the decision time.

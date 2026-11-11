@@ -110,3 +110,14 @@ export interface RoutineTraceConsent {
   reask?: true;
   reason?: RoutineConsentSkipReason;
 }
+
+/** What a routine's consents tell the next-step selector on a turn. */
+export interface RoutineConsentSelectorInput {
+  /**
+   * Slots that may take their value from anything the user said earlier in the conversation, not
+   * only the latest message: covered slots, still empty, whose consent the conversation granted
+   * before this turn. A value the visitor stated before or with the grant could not be kept then,
+   * so the step confirms or completes it instead of losing it. Absent when none.
+   */
+  earlierMessageSlotKeys?: readonly string[];
+}

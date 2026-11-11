@@ -321,7 +321,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     const selectChecked = async (
       selectInput: Parameters<ConversationRoutineNextStepSelector["select"]>[0],
     ): Promise<RoutineNextStepDecision> => {
-      const decision = await this.selector.select(messageStatesSlotValues ? selectInput : { ...selectInput, messageStatesSlotValues });
+      const decision = await this.selector.select(messageStatesSlotValues ? consentGate.withEarlierMessageSlots(selectInput) : { ...selectInput, messageStatesSlotValues });
       lastSelection = decision.selection;
       // A message that states no values is a structured call, not a visitor's reply: any value
       // the selector returns is one it read into the call, and an authority claim is the call's

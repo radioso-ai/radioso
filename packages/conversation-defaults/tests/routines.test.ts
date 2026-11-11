@@ -855,6 +855,21 @@ describe("routine defaults", () => {
       expect(systemPrompt).not.toContain("2026-11-11");
     });
 
+    it("lets only the slots the runner names take their value from the user's earlier messages (#1544)", async () => {
+      const prompts = async (input: { earlierMessageSlotKeys?: readonly string[]; messageStatesSlotValues?: boolean }) => {
+        const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+        await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn, ...input });
+        return vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      };
+
+      const earlier = await prompts({ earlierMessageSlotKeys: ["arrival"] });
+      expect(earlier).toContain("anything the user said earlier in this conversation, not only the latest message: arrival.");
+      expect(earlier).toContain("return the value the user stated earlier");
+      expect(await prompts({})).not.toContain("said earlier in this conversation");
+      expect(await prompts({ earlierMessageSlotKeys: [] })).not.toContain("said earlier in this conversation");
+      expect(await prompts({ earlierMessageSlotKeys: ["arrival"], messageStatesSlotValues: false })).not.toContain("said earlier in this conversation");
+    });
+
     it("coerces numbers and booleans to their declared type and drops blank values", async () => {
       const typed: Routine = {
         ...routine,

@@ -116,7 +116,6 @@
   "exports|frontend/components/ui/select.tsx|SelectScrollUpButton",
   "exports|frontend/components/ui/select.tsx|SelectSeparator",
   "exports|frontend/components/ui/sheet.tsx|SheetClose",
-  "exports|frontend/components/ui/sheet.tsx|SheetFooter",
   "exports|frontend/components/ui/sidebar.tsx|SidebarGroupAction",
   "exports|frontend/components/ui/sidebar.tsx|SidebarGroupLabel",
   "exports|frontend/components/ui/sidebar.tsx|SidebarInput",

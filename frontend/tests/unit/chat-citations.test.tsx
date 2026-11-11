@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest'
 
 import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
 
+const ITALIAN_CITATION_COPY = {
+  publicChatSourcesLabel: 'Fonti',
+  publicChatShowSourceTemplate: 'Mostra la fonte {number}: {title}',
+  publicChatShowSourcesTemplate: 'Mostra le fonti {numbers}',
+  publicChatOpenSourceLinkTemplate: 'Apri {title} in una nuova scheda',
+  publicChatUntitledSourceTemplate: 'Documento {number}',
+}
+
 // Collapses rendered markup to its visible text so assertions can check the
 // spacing a reader actually sees, independent of element boundaries.
 const textContent = (html: string) =>
@@ -11,6 +19,12 @@ const textContent = (html: string) =>
     .replace(/&amp;/g, '&')
     .replace(/&#x27;/g, "'")
     .replace(/&quot;/g, '"')
+
+// The visible text of the collapsed Sources disclosure toggle.
+const sourcesToggleText = (html: string) => {
+  const toggle = html.match(/<button[^>]*aria-controls="[^"]*"[^>]*>([\s\S]*?)<\/button>/)
+  return toggle ? textContent(toggle[1]).trim() : null
+}
 
 // The citation cluster must render inside the block it annotates. If it escapes,
 // it lands right after that block's closing tag and drops onto its own line.
@@ -305,11 +319,52 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toContain('Sources')
     expect(html).toContain('aria-expanded="false"')
-    expect(html).toMatch(/<span class="font-semibold text-foreground">2<\/span><span class="font-medium">Sources<\/span>/)
+    expect(sourcesToggleText(html)).toBe('Sources 2')
     expect(html).not.toContain('title="Retrieval guide"')
     expect(html).not.toContain('title="Architecture"')
+  })
+
+  it('names the Sources disclosure with the given label and keeps the count apart from it', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Retreat page' }]}
+        answerSegments={[{ text: 'Il prezzo è indicato nella pagina', citationIndices: [0] }, { text: '.' }]}
+        onOpenDocument={async () => 'unavailable'}
+        copy={ITALIAN_CITATION_COPY}
+      />,
+    )
+
+    expect(sourcesToggleText(html)).toBe('Fonti 1')
+  })
+
+  it('names citation markers in the visitor copy on link-only surfaces', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Handbook' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: '' },
+          { documentId: 'doc-3', chunkId: 'chunk-3', title: 'Calendario' },
+          { documentId: 'doc-4', chunkId: 'chunk-4', title: 'Prezzi' },
+        ]}
+        answerSegments={[
+          { text: 'Uno', citationIndices: [0] },
+          { text: ' e due', citationIndices: [1] },
+          { text: ' e il resto', citationIndices: [1, 2, 3] },
+          { text: '.' },
+        ]}
+        onOpenDocument={async () => 'unavailable'}
+        documentInteractivity="link-only"
+        copy={ITALIAN_CITATION_COPY}
+      />,
+    )
+
+    expect(html).toContain('aria-label="Mostra la fonte 1: Handbook"')
+    expect(html).toContain('aria-label="Mostra la fonte 2: Documento 2"')
+    expect(html).toContain('aria-label="Mostra le fonti 2–4"')
+    expect(html).not.toContain('Show source')
   })
 
   it('hides source URL affordances while the Sources disclosure is collapsed', async () => {

@@ -4113,6 +4113,8 @@ components:
       properties:
         name:
           type: string
+        title:
+          type: string
         condition:
           $ref: "#/components/schemas/AuthoredDirectiveCondition"
         action:
@@ -4127,6 +4129,7 @@ components:
             - "null"
       required:
         - name
+        - title
         - condition
         - action
         - priority

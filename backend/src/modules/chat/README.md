@@ -840,7 +840,8 @@ imports from `services/`.
   `turnPlanCoordinator.ts`, rendered by `prompts/chat/turn-planning-standing-instructions.md`
   in the stable prefix; when they alone overflow the prompt budget the lane is off for
   the turn), and `turnPlanQuickReply.ts` owns the host's eligibility rule: a resolved
-  direct plan, no request and no open question, no identity question, no routine yield,
+  direct plan, no request and no open question (a question the assistant asked or a
+  specific offer it made), no identity question, no routine yield,
   no retrieval rewrite written, and answer steering equal to those always-on
   directives (so any applying conditional directive goes to the composer).
   The words (`quickReplyWording.ts`): the agent's authored `mechanicsReplies` line for

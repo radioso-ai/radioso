@@ -15,6 +15,7 @@ export function SegmentedControl<TValue extends string>({
   options,
   'aria-label': ariaLabel,
   fullWidth = false,
+  disabled = false,
 }: {
   value: TValue
   onValueChange: (value: TValue) => void
@@ -22,6 +23,8 @@ export function SegmentedControl<TValue extends string>({
   'aria-label'?: string
   /** Stretches the control to fill its container's width, with segments sharing the space equally, instead of the default content-width sizing. */
   fullWidth?: boolean
+  /** Holds every segment while a change to the value is still being saved. */
+  disabled?: boolean
 }) {
   return (
     <div
@@ -36,9 +39,10 @@ export function SegmentedControl<TValue extends string>({
             key={option.value}
             type="button"
             aria-pressed={isSelected}
+            disabled={disabled}
             onClick={() => onValueChange(option.value)}
             className={cn(
-              'rounded-md px-3 py-1 text-sm font-medium transition',
+              'rounded-md px-3 py-1 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60',
               fullWidth && 'flex-1 text-center',
               isSelected
                 ? 'bg-background text-foreground shadow-sm'

@@ -61,6 +61,16 @@ export interface WebsiteEmbedCopy {
   publicChatVoiceUnavailableError: string
   /** Marks a transcript line the caller or the agent said on a voice session. */
   publicChatSpokenLabel: string
+  /** Names the disclosure listing an answer's sources. A heading, not a counted
+   *  noun: the source count renders beside it, so no plural form is needed. */
+  publicChatSourcesLabel: string
+  /** Screen-reader names for the citation markers and source links, and the
+   *  visible name of a source without a title. `{numbers}` is always a run of
+   *  two or more ("1–3", "1, 3"), so the plural wording is safe. */
+  publicChatShowSourceTemplate: string
+  publicChatShowSourcesTemplate: string
+  publicChatOpenSourceLinkTemplate: string
+  publicChatUntitledSourceTemplate: string
 }
 
 export interface WebsiteEmbedTheme {
@@ -135,6 +145,11 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatVoiceMicrophoneError: 'Talking needs your microphone.',
   publicChatVoiceUnavailableError: "Talking isn't available right now. Try again later.",
   publicChatSpokenLabel: 'Spoken',
+  publicChatSourcesLabel: 'Sources',
+  publicChatShowSourceTemplate: 'Show source {number}: {title}',
+  publicChatShowSourcesTemplate: 'Show sources {numbers}',
+  publicChatOpenSourceLinkTemplate: 'Open {title} in a new tab',
+  publicChatUntitledSourceTemplate: 'Document {number}',
 }
 const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
@@ -197,6 +212,11 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatVoiceMicrophoneError',
   'publicChatVoiceUnavailableError',
   'publicChatSpokenLabel',
+  'publicChatSourcesLabel',
+  'publicChatShowSourceTemplate',
+  'publicChatShowSourcesTemplate',
+  'publicChatOpenSourceLinkTemplate',
+  'publicChatUntitledSourceTemplate',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
 const THEME_OVERRIDE_KEYS = [

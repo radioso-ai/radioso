@@ -246,6 +246,17 @@ describe("visitor image contract", () => {
     expect(response.body.error.code).toBe("visitor_image_unavailable");
   });
 
+  it("refuses to send a photo uploaded before the operator turned photos off", async () => {
+    const { visitor, app, agentId, dashboard } = await imageWorkspace();
+    const { upload, send } = await visitor();
+    const uploaded = await upload(await photo()).expect(201);
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ visitorImagesEnabled: false }).expect(200);
+
+    const refused = await send({ message: "Something like this", imageIds: [uploaded.body.id] }).expect(409);
+
+    expect(refused.body.error.code).toBe("visitor_image_unavailable");
+  });
+
   it("refuses to send a photo a second time", async () => {
     const { visitor } = await imageWorkspace();
     const { upload, send } = await visitor();

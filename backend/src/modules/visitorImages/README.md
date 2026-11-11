@@ -76,7 +76,8 @@ composition. Nothing in `packages/` changes for images.
    (keeping the answer) or `unread` (giving it back). An object never exists
    without a row; a row whose object never landed is swept, and deleting a
    missing object counts as deleted.
-2. Send: the door claims the ids (all or none, one send per photo), renders
+2. Send: the door claims the ids (all or none, one send per photo, and none
+   once the agent no longer takes photos), renders
    `<attached_photo index="n">reading</attached_photo>` (only `<` and `>`
    escaped) or `<attached_photo index="n" status="unreadable"/>` after the typed
    text, and runs the turn. The tag names what it holds, so no prompt explains it.

@@ -120,17 +120,19 @@ export const wireVisitorImages = (deps: {
 } => {
   const objects = visitorImageObjectStore(deps.storage);
   const inference = new ContextualStructuredInferenceFactory({ resolver: deps.resolver }, deps.infrastructure.usageEventRecorder);
+  const availability = createVisitorImageAvailability({ agents: deps.agents, resolver: deps.resolver, logger: deps.logger });
   return {
     service: new VisitorImageService({
       store: new PostgresVisitorImageStore(deps.infrastructure.database.kysely),
       objects,
       reader: new ModelVisitorImageReader({ model: visitorImageReadingModel({ agents: deps.agents, inference }), logger: deps.logger }),
       audit: visitorImageAudit(deps.infrastructure.auditService),
+      availability,
       usage: deps.infrastructure.usageLimitPolicy,
       metrics: deps.infrastructure.metricsRegistry,
       logger: deps.logger,
     }),
-    availability: createVisitorImageAvailability({ agents: deps.agents, resolver: deps.resolver, logger: deps.logger }),
+    availability,
     objectDeletionJobHandler: visitorImageObjectDeletionHandler({ objects, logger: deps.logger }),
   };
 };

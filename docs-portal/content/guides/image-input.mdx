@@ -103,7 +103,7 @@ A page of your own on the public chat uploads to `POST /api/v1/public/chat/{toke
 - **`413 image_too_large` or `image_too_many_pixels`** — over 10 MiB, or too many pixels to decode. Send a smaller photo.
 - **`429 usage_limit_exceeded` on upload** — the workspace's plan has no answers left for the reading. The public chat routes leave out the plan `details`; the API routes carry them.
 - **`400` on `POST /api/v1/assistant/images`** — `agentId` is missing from the query or is not an agent id.
-- **`409 visitor_image_unavailable` on send** — the id is unknown, was uploaded by another session or credential or for another agent, or a message already carried it. Upload the photo again.
+- **`409 visitor_image_unavailable` on send** — the id is unknown, was uploaded by another session or credential or for another agent, or a message already carried it: upload the photo again. It is also the answer when the agent stopped taking photos after the upload, because the operator turned them off or its chat model changed to one that cannot read images; then the message goes without them.
 - **`readingStatus: "unread"`** — the model did not answer in time or could not describe the photo. The message still carries the photo, and its block in the turn text reads `status="unreadable"`.
 
 ## Read next

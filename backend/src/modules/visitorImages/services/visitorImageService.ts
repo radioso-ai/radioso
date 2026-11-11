@@ -7,6 +7,7 @@ import type { VisitorImageClaim, VisitorImageTurnInput } from "../contracts/turn
 import {
   VISITOR_IMAGE_LIMITS,
   type VisitorImageAudit,
+  type VisitorImageAvailability,
   type VisitorImageObjectStore,
   type VisitorImageOwner,
   type VisitorImageReader,
@@ -26,7 +27,7 @@ export type VisitorImageUploadResult =
   | { readonly kind: "rejected"; readonly reason: VisitorImageRejection };
 
 const visitorImageUnavailable = (): AppError =>
-  new AppError(409, "visitor_image_unavailable", "An attached image is unknown or was already sent. Upload it again.");
+  new AppError(409, "visitor_image_unavailable", "An attached image cannot be sent: it is unknown or already sent, or the agent no longer takes images.");
 
 interface VisitorImageServiceLogger {
   info(fields: Record<string, unknown>, message: string): void;
@@ -51,6 +52,8 @@ export class VisitorImageService implements VisitorImageTurnInput {
     objects: VisitorImageObjectStore;
     reader: VisitorImageReader;
     audit: VisitorImageAudit;
+    /** Whether the agent takes photos now, asked again at send: the operator may have turned them off since. */
+    availability: VisitorImageAvailability;
     /** The plan: each reading is one answer, reserved before the photo is stored and read. */
     usage: Pick<UsageLimitPolicy, "reserveAnswer">;
     metrics?: VisitorImageMetricsSink | null;
@@ -158,6 +161,9 @@ export class VisitorImageService implements VisitorImageTurnInput {
   async claim(input: Parameters<VisitorImageTurnInput["claim"]>[0]): Promise<VisitorImageClaim> {
     const unique = new Set(input.imageIds);
     if (input.imageIds.length === 0 || input.imageIds.length > VISITOR_IMAGE_LIMITS.maxImagesPerMessage || unique.size !== input.imageIds.length) {
+      throw visitorImageUnavailable();
+    }
+    if (await this.deps.availability.forAgent({ workspaceId: input.workspaceId, agentId: input.agentId }) !== "available") {
       throw visitorImageUnavailable();
     }
     const claimId = this.newId();

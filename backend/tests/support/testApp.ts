@@ -2342,18 +2342,19 @@ export const createTestDependencies = (overrides: {
     agentService,
     new AgentRevisionRuntimeResolver(publishedAgentRevisions),
   );
+  const visitorImageAvailability = createVisitorImageAvailability({
+    agents: agentRepository,
+    resolver: { resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input) },
+    logger,
+  });
   const visitorImages = new VisitorImageService({
     store: new InMemoryVisitorImageStore(),
     objects: visitorImageObjectStore(documentStorage),
     reader: overrides.visitorImageReader ?? { read: async () => ({ kind: "read", description: "A photo the test uploaded." }) },
     audit: visitorImageAudit(auditService),
+    availability: visitorImageAvailability,
     usage: usageLimitPolicy,
     metrics: metricsRegistry,
-    logger,
-  });
-  const visitorImageAvailability = createVisitorImageAvailability({
-    agents: agentRepository,
-    resolver: { resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input) },
     logger,
   });
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService, { visitorImages });

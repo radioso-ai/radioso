@@ -17486,7 +17486,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another credential or for another agent, or was already sent; nothing was sent, so upload the image again. */
+            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another credential or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -26777,7 +26777,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent; nothing was sent, so upload the image again. */
+            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -32522,7 +32522,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent; nothing was sent, so upload the image again. */
+            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. */
             409: {
                 headers: {
                     [name: string]: unknown;

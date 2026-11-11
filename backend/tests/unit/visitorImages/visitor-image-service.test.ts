@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 
-import type { VisitorImageOwner, VisitorImageReader, VisitorImageReading } from "../../../src/modules/visitorImages/domain.js";
+import type { VisitorImageAvailability, VisitorImageOwner, VisitorImageReader, VisitorImageReading } from "../../../src/modules/visitorImages/domain.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
 import { visitorImageObjectDeletionHandler } from "../../../src/modules/visitorImages/services/visitorImageObjectDeletion.js";
 import { VisitorImageService } from "../../../src/modules/visitorImages/services/visitorImageService.js";
@@ -31,12 +31,14 @@ const harness = (options: { reading?: VisitorImageReading; overPlan?: boolean } 
     read: vi.fn(async () => options.reading ?? { kind: "read" as const, description: "A green field under a clear sky." }),
   };
   const audit = { viewed: vi.fn(async () => undefined) };
+  const availability = { forAgent: vi.fn<VisitorImageAvailability["forAgent"]>(async () => "available") };
   const metrics = { incrementCounter: vi.fn() };
   const service = new VisitorImageService({
     store,
     objects,
     reader,
     audit,
+    availability,
     usage,
     metrics,
     logger: { info: vi.fn(), warn: vi.fn() },
@@ -46,7 +48,7 @@ const harness = (options: { reading?: VisitorImageReading; overPlan?: boolean } 
     if (result.kind !== "accepted") throw new Error(`upload rejected: ${result.reason}`);
     return result;
   };
-  return { service, store, objects, reader, audit, usage, reservation, metrics, upload };
+  return { service, store, objects, reader, audit, availability, usage, reservation, metrics, upload };
 };
 
 const counted = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) =>
@@ -212,6 +214,20 @@ describe("VisitorImageService claim, bind and release", () => {
     await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [mine.id, theirs.id] }))
       .rejects.toMatchObject({ statusCode: 409, code: "visitor_image_unavailable" });
     await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [mine.id] })).resolves.toBeDefined();
+  });
+
+  it("refuses photos once the agent no longer takes them, claiming none", async () => {
+    const { service, upload, availability } = harness();
+    const image = await upload();
+    availability.forAgent.mockResolvedValueOnce("disabled").mockResolvedValueOnce("model_cannot_read");
+
+    await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] }))
+      .rejects.toMatchObject({ statusCode: 409, code: "visitor_image_unavailable" });
+    await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] }))
+      .rejects.toMatchObject({ statusCode: 409, code: "visitor_image_unavailable" });
+
+    expect(availability.forAgent).toHaveBeenCalledWith({ workspaceId: WORKSPACE, agentId: AGENT });
+    await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] })).resolves.toBeDefined();
   });
 
   it("refuses a photo uploaded for another agent, or one named twice", async () => {

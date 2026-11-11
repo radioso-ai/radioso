@@ -27,6 +27,39 @@ describe('AssistantMessageContent link analytics', () => {
     container.remove()
   })
 
+  it('labels the expanded source chips in the visitor copy', async () => {
+    await act(async () => {
+      root.render(
+        <AssistantMessageContent
+          content="unused"
+          citations={[
+            { documentId: 'document-1', chunkId: 'chunk-1', title: 'Pagina del ritiro', sourceUrl: 'https://retreat.example/it' },
+            { documentId: 'document-2', chunkId: 'chunk-2', title: '' },
+          ]}
+          answerSegments={[{ text: 'Il prezzo è indicato nella pagina', citationIndices: [0, 1] }, { text: '.' }]}
+          onOpenDocument={vi.fn().mockResolvedValue('unavailable')}
+          documentInteractivity="link-only"
+          copy={{
+            publicChatSourcesLabel: 'Fonti',
+            publicChatShowSourceTemplate: 'Mostra la fonte {number}: {title}',
+            publicChatShowSourcesTemplate: 'Mostra le fonti {numbers}',
+            publicChatOpenSourceLinkTemplate: 'Apri {title} in una nuova scheda',
+            publicChatUntitledSourceTemplate: 'Documento {number}',
+          }}
+        />,
+      )
+    })
+
+    const sourcesToggle = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Fonti'))
+    await act(async () => {
+      sourcesToggle?.click()
+    })
+
+    expect(container.querySelector('a[aria-label="Apri Pagina del ritiro in una nuova scheda"]')).not.toBeNull()
+    expect(container.querySelector('[data-source-index="2"]')?.textContent).toContain('Documento 2')
+  })
+
   it('reports citation marker, source URL, and assistant markdown link clicks', async () => {
     const onOpenDocument = vi.fn().mockResolvedValue('opened')
     const onLinkClickAnalytics = vi.fn()

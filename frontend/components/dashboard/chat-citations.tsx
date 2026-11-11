@@ -42,7 +42,7 @@ export function linkifyText(text: string): ReactNode[] {
 }
 
 import { type AnswerSegment, type Citation } from '@/lib/api'
-import { type WebsiteEmbedTheme } from '@/lib/embed-widget'
+import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { AssistantMarkdownContent } from './chat-markdown'
 import {
   getListItem,
@@ -77,7 +77,24 @@ interface AssistantMessageContentProps {
   // dashboard viewer. 'link-only' is for public surfaces: sources are shown but
   // never openable — only an outbound source link (when present) is exposed.
   documentInteractivity?: 'open' | 'link-only'
+  // Visitor surfaces pass their resolved embed copy; the dashboard keeps the
+  // English baseline.
+  copy?: CitationCopy
 }
+
+// The visitor-facing strings the citations render.
+type CitationCopy = Pick<
+  WebsiteEmbedCopy,
+  | 'publicChatSourcesLabel'
+  | 'publicChatShowSourceTemplate'
+  | 'publicChatShowSourcesTemplate'
+  | 'publicChatOpenSourceLinkTemplate'
+  | 'publicChatUntitledSourceTemplate'
+>
+
+// One pass, so a title that happens to contain "{number}" is never re-expanded.
+const fillTemplate = (template: string, values: Record<string, string>) =>
+  template.replace(/\{(\w+)\}/g, (placeholder, name: string) => values[name] ?? placeholder)
 
 const HTML_ENTITY_MAP: Record<string, string> = {
   '&amp;': '&',
@@ -125,8 +142,10 @@ const decodeHtmlEntities = (text: string) =>
     return decodeNumericEntity(raw, code)
   })
 
-const getCitationLabel = (citation: Citation, index: number) =>
-  decodeHtmlEntities(citation.title?.trim() || `Document ${index + 1}`)
+const getCitationLabel = (citation: Citation, index: number, copy: CitationCopy) =>
+  decodeHtmlEntities(
+    citation.title?.trim() || fillTemplate(copy.publicChatUntitledSourceTemplate, { number: String(index + 1) }),
+  )
 
 // Sized to sit tight against the word it annotates: the pill's own padding is what
 // reads as a space between the word, the marker and the punctuation that follows, so
@@ -150,6 +169,7 @@ const CitationMarker = ({
   onOpenDocument,
   onRevealSource,
   onLinkClickAnalytics,
+  copy,
 }: {
   citation: Citation
   index: number
@@ -157,7 +177,9 @@ const CitationMarker = ({
   onOpenDocument: (citation: Citation, index: number) => void
   onRevealSource: (index: number) => void
   onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
+  copy: CitationCopy
 }) => {
+  const label = getCitationLabel(citation, index, copy)
   // Non-interactive (link-only) surfaces cannot open the source document, but the
   // marker still reveals the matching source: it expands the sources panel,
   // scrolls it into view, and highlights the corresponding chip.
@@ -176,7 +198,7 @@ const CitationMarker = ({
           onRevealSource(index)
         }}
         className={`${CITATION_MARKER_BASE_CLASS} cursor-pointer hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none`}
-        aria-label={`Show source ${index + 1}: ${getCitationLabel(citation, index)}`}
+        aria-label={fillTemplate(copy.publicChatShowSourceTemplate, { number: String(index + 1), title: label })}
         data-citation-index={index + 1}
       >
         {index + 1}
@@ -184,6 +206,8 @@ const CitationMarker = ({
     )
   }
 
+  // Opening the document is dashboard-only, so this label stays in English;
+  // visitor surfaces are link-only and get the translated marker above.
   return (
     <button
       type="button"
@@ -198,7 +222,7 @@ const CitationMarker = ({
         void onOpenDocument(citation, index)
       }}
       className={`${CITATION_MARKER_BASE_CLASS} hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none`}
-      aria-label={`Open source ${index + 1}: ${getCitationLabel(citation, index)}`}
+      aria-label={`Open source ${index + 1}: ${label}`}
       data-citation-index={index + 1}
     >
       {index + 1}
@@ -228,10 +252,12 @@ const CitationGroupMarker = ({
   indices,
   onRevealSources,
   onLinkClickAnalytics,
+  copy,
 }: {
   indices: number[]
   onRevealSources: (indices: number[]) => void
   onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
+  copy: CitationCopy
 }) => {
   const label = formatCitationRun(indices.map((index) => index + 1))
   return (
@@ -243,7 +269,7 @@ const CitationGroupMarker = ({
         onRevealSources(indices)
       }}
       className={cn(CITATION_MARKER_BASE_CLASS, 'cursor-pointer px-1 hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none')}
-      aria-label={`Show sources ${label}`}
+      aria-label={fillTemplate(copy.publicChatShowSourcesTemplate, { numbers: label })}
       data-citation-group={label}
     >
       {label}
@@ -258,6 +284,7 @@ const SourceChip = ({
   highlighted = false,
   onOpenDocument,
   onLinkClickAnalytics,
+  copy,
 }: {
   citation: Citation
   index: number
@@ -265,8 +292,9 @@ const SourceChip = ({
   highlighted?: boolean
   onOpenDocument: (citation: Citation, index: number) => void
   onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
+  copy: CitationCopy
 }) => {
-  const label = getCitationLabel(citation, index)
+  const label = getCitationLabel(citation, index, copy)
   const sourceUrl = citation.sourceUrl?.trim()
   const safeSourceUrl = sourceUrl && isSafeHref(sourceUrl) ? sourceUrl : null
 
@@ -322,7 +350,7 @@ const SourceChip = ({
             })
           }}
           className="inline-flex shrink-0 items-center text-primary hover:text-primary/80"
-          aria-label={`Open ${label} in a new tab`}
+          aria-label={fillTemplate(copy.publicChatOpenSourceLinkTemplate, { title: label })}
           title={safeSourceUrl}
         >
           <ExternalLink className="h-3 w-3" aria-hidden="true" />
@@ -408,6 +436,7 @@ export function AssistantMessageContent({
   isStreaming = false,
   showCitations = true,
   documentInteractivity = 'open',
+  copy = DEFAULT_WEBSITE_EMBED_COPY,
 }: AssistantMessageContentProps) {
   const citationsInteractive = documentInteractivity !== 'link-only'
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
@@ -442,19 +471,19 @@ export function AssistantMessageContent({
       if (result === 'unavailable') {
         setCitationNotice({
           scope: noticeScope,
-          message: `${getCitationLabel(citation, index)} is unavailable because the source was deleted.`,
+          message: `${getCitationLabel(citation, index, copy)} is unavailable because the source was deleted.`,
         })
         return
       }
 
       setCitationNotice({
         scope: noticeScope,
-        message: `Unable to open ${getCitationLabel(citation, index)} right now.`,
+        message: `Unable to open ${getCitationLabel(citation, index, copy)} right now.`,
       })
     } catch {
       setCitationNotice({
         scope: noticeScope,
-        message: `Unable to open ${getCitationLabel(citation, index)} right now.`,
+        message: `Unable to open ${getCitationLabel(citation, index, copy)} right now.`,
       })
     }
   }
@@ -468,6 +497,7 @@ export function AssistantMessageContent({
           indices={present}
           onRevealSources={handleRevealSources}
           onLinkClickAnalytics={onLinkClickAnalytics}
+          copy={copy}
         />,
       ]
     }
@@ -486,6 +516,7 @@ export function AssistantMessageContent({
             onOpenDocument={handleCitationOpen}
             onRevealSource={handleRevealSource}
             onLinkClickAnalytics={onLinkClickAnalytics}
+            copy={copy}
           />
         </Fragment>
       )
@@ -702,8 +733,8 @@ export function AssistantMessageContent({
               handleSourcesToggle()
             }}
           >
-            <span className="font-semibold text-foreground">{uniqueCitations.length}</span>
-            <span className="font-medium">Sources</span>
+            <span className="font-medium">{copy.publicChatSourcesLabel}</span>{' '}
+            <span className="font-semibold text-foreground tabular-nums">{uniqueCitations.length}</span>
             <ChevronDown
               className={`h-3.5 w-3.5 opacity-70 transition-transform duration-150 ease-out ${sourcesExpanded ? '' : '-rotate-90'}`}
               aria-hidden="true"
@@ -736,6 +767,7 @@ export function AssistantMessageContent({
                     highlighted={reveal?.indices.includes(index) ?? false}
                     onOpenDocument={handleCitationOpen}
                     onLinkClickAnalytics={onLinkClickAnalytics}
+                    copy={copy}
                   />
                 ))}
               </div>

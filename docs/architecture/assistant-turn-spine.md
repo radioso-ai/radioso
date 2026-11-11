@@ -212,7 +212,8 @@ model call. The plan's last three fields are `requestPresent`, `openQuestion`, a
 asks about, anything beyond the greeting, thanks, farewell, or acknowledgement
 itself, so "Good morning! I'd like to cancel my subscription." is a request.
 `openQuestion` is true when the agent's latest message asked the visitor to choose,
-confirm, or provide something, or offered options, so a bare "ok" after "the Pro
+confirm, or provide something, offered options, or offered to do something specific for
+them beyond a generic invitation to ask more, so a bare "ok" after "the Pro
 plan or the Team plan?" is an answer to that question rather than the end of the
 exchange. The prompt
 (`backend/prompts/chat/turn-planning-quick-reply.md`) allows a kind other than

@@ -542,6 +542,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "BuiltInDirective",
     z.object({
       name: z.string(),
+      title: z.string(),
       condition: AuthoredDirectiveConditionSchema,
       action: z.string(),
       priority: z.number().int().nullable(),

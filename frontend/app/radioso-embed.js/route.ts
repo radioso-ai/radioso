@@ -1,11 +1,10 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readEmbedLauncherScript } from "@/lib/embed-launcher-script";
 
 export const dynamic = "force-static";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const script = await readFile(join(process.cwd(), "lib/radioso-embed-launcher.js"), "utf8");
+  const script = await readEmbedLauncherScript();
   return new Response(script, {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",

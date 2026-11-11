@@ -43,6 +43,7 @@ describe('directivesApi', () => {
       directives: [],
       builtIns: [{
         name: 'concise-readable-formatting',
+        title: 'Readable formatting',
         condition: { kind: 'always' },
         action: 'Prefer short paragraphs and answer directly.',
         priority: 60,

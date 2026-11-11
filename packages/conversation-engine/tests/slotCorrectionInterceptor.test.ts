@@ -25,8 +25,11 @@ const mutableEmailSlot: RoutineSlotCorrectionCandidate["slots"] = [
 
 const noCorrection: ConversationRoutineSlotCorrection["detect"] = async () => ({ kind: "none", reason: "not_a_correction" });
 
-const correction = (candidate: RoutineSlotCorrectionCandidate): ConversationRoutineSlotCorrection["detect"] =>
-  async () => ({ kind: "correction", ...candidate });
+// A routine without consents unless a test gives it some.
+const correction = (
+  candidate: Omit<RoutineSlotCorrectionCandidate, "consents"> & Partial<Pick<RoutineSlotCorrectionCandidate, "consents">>,
+): ConversationRoutineSlotCorrection["detect"] =>
+  async () => ({ kind: "correction", consents: [], ...candidate });
 
 const buildInput = (overrides: {
   detect?: ConversationRoutineSlotCorrection["detect"];
@@ -131,23 +134,17 @@ describe("completed-instance slot-correction interceptor", () => {
     expect(rejectInvalid).not.toHaveBeenCalled();
   });
 
-  it("never writes a slot the routine's own consent covers, whatever the detector reports (#1544)", async () => {
-    // The detector offers the change without naming the routine's consents; the runner knows them.
-    const routineRunner = new DefaultRoutineRunner(
-      [{
-        id: "routine_intake",
-        rootStepId: "ask",
+  it("never writes a slot the routine's consent covers, whatever runner runs the routine (#1544)", async () => {
+    // The routine's consents come with the correction, as its slots do; the runner is one that can
+    // say nothing about the routine it runs, as a host's wrapper around the engine's runner is.
+    const { input, save, rejectInvalid } = buildInput({
+      detect: vi.fn(correction({
         slots: mutableEmailSlot,
         consents: [{ key: "contact", slotKeys: ["email"], onDecline: "continue" }],
-        steps: [{ id: "ask", kind: "chat" }, { id: "done", kind: "terminal" }],
-        transitions: [],
-      }],
-      { select: vi.fn() },
-      { render: vi.fn() },
-    );
-    const { input, save, rejectInvalid } = buildInput({
-      detect: vi.fn(correction({ slots: mutableEmailSlot, slotKey: "email", rawValue: "new@example.com" })),
-      routineRunner,
+        slotKey: "email",
+        rawValue: "new@example.com",
+      })),
+      routineRunner: { resume: vi.fn() },
     });
 
     const result = await new DefaultConversationEngine().attemptRoutine(input);

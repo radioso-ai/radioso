@@ -444,6 +444,7 @@ describe("completed-routine planner bypass adapters", () => {
       detect: vi.fn(async () => ({
         kind: "correction" as const,
         slots: [{ id: "email", key: "email", type: "email" as const, required: true, mutable: true }],
+        consents: [],
         slotKey: "email",
         rawValue: "new@example.com",
       })),

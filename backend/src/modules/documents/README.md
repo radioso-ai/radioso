@@ -84,6 +84,14 @@ imports from `services/` or `infra/`.
   embedding-only work that cannot mutate document or canonical chunk state.
 - `services/documentProcessingWorker.ts`: worker runtime behavior.
 - `infra/chunkRepository.ts`: canonical chunk persistence adapter.
+- `infra/documentImageRepository.ts` (contracts in `contracts/documentImages.ts`):
+  the `document_images` rows, the pictures a document's content carries. A
+  `primary` image is the one its metadata names; an `inline` one sits in its text,
+  anchored to a chunk. A row is `pending` until its re-encoded renditions are
+  written, then `stored`; only stored rows are read. `listStoredForEvidence` gives
+  retrieval the stored images of an answer's documents and chunks, never where the
+  bytes live; `findServable` gives the public image route the stored rendition at
+  a width. Rows cascade with their document, and they own their objects' paths.
 - `services/documentJobMessage.ts`: durable job message shape.
 - `services/documentJobDispatcher.ts` and `services/documentJobConsumer.ts`:
   dispatch and consume ports.
@@ -160,5 +168,7 @@ Focused starting points:
   `tests/integration/workspace-storage-purge.integration.test.ts` for the
   hand-off committing with the deletion.
 - `cd backend && pnpm run test:integration` for processing and import flows.
+- `cd backend && pnpm exec vitest run tests/integration/document-image-repository.integration.test.ts`
+  for document image reads.
 
 Use contract tests when document API response shape changes.

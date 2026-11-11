@@ -185,6 +185,54 @@ The set of action `kind` values is open: new modules can register additional
 providers, so clients should treat `kind` as an opaque string and decide
 behavior from `action` rather than from `kind`.
 
+## Picture cards
+
+An answer grounded in documents that carry pictures, such as product pages with their covers or a page of photos, can show those pictures as cards beside its text. A card is part of a **reply block**: a structured part of the reply your client renders itself. Declare that your client renders them on every message:
+
+```json
+{
+  "message": "Which hiking books do you have?",
+  "stream": true,
+  "clientContextCapabilities": {
+    "reply.blocks": { "item_list": { "layouts": ["carousel", "grid"] } }
+  }
+}
+```
+
+A client that sends no `reply.blocks` gets the answer as text alone.
+
+When the agent shows pictures, the reply carries `blocks`. Each block is an `item_list` with a `caption` (its accessible label, written by the agent) and up to ten `items`. An item has a `title` and an `image` taken from the document it came from, and an `open` action with the document's address when the document has one:
+
+```json
+{
+  "type": "item_list",
+  "id": "b1",
+  "layout": "carousel",
+  "selection": "none",
+  "caption": "Three hiking books",
+  "items": [
+    {
+      "key": "3f6c2b9e-1d4a-4c8e-9b7a-2e5d8f1a6c40",
+      "title": "Hut to Hut: Ten Classic Treks",
+      "image": {
+        "src": "https://radioso.example/backend/api/v1/public/reply-images/3f6c2b9e-1d4a-4c8e-9b7a-2e5d8f1a6c40/640",
+        "srcSet": "https://radioso.example/backend/api/v1/public/reply-images/3f6c2b9e-1d4a-4c8e-9b7a-2e5d8f1a6c40/320 320w, https://radioso.example/backend/api/v1/public/reply-images/3f6c2b9e-1d4a-4c8e-9b7a-2e5d8f1a6c40/640 640w",
+        "width": 800,
+        "height": 1200,
+        "alt": ""
+      },
+      "actions": [{ "type": "open", "url": "https://shop.example/books/hut-to-hut" }]
+    }
+  ]
+}
+```
+
+The layout follows from what is shown: the covers of several documents come as a `carousel`, photos from within a page as a `grid`. A layout your client did not declare reaches it as `list`, and a client that meets a layout it does not know should draw a `list` too. The reply's text is a short lead that leaves the shown items to the cards, so render both.
+
+On a stream, each block arrives as a `block` event after the last `chunk` and before `done`, carrying `conversationId`, `assistantMessageId` and the `block`; `done.blocks` repeats them. History returns the same blocks on the assistant message.
+
+Images are served by `GET /api/v1/public/reply-images/{imageId}/{width}` as WebP at 320 or 640 pixels wide. The address is the permission: it needs no session, so an `<img>` on any page can load it, and responses are `Cache-Control: private`. Take `src` and `srcSet` from the block rather than building them. Once the document an image came from is deleted, its address answers `404`; an older conversation keeps the card and its link, so draw the card without its picture when the image fails to load.
+
 ## History in the anonymous flow
 
 Use `GET /api/v1/public/chat/{token}` to list conversations for the current anonymous session.
@@ -208,6 +256,7 @@ GET  /api/v1/public/chat/{token}/tail/{conversationId}
 GET  /api/v1/public/chat/{token}/events/{conversationId}
 GET  /api/v1/public/chat/{token}/embed-config
 GET  /api/v1/public/chat/{token}/assistant-logo
+GET  /api/v1/public/reply-images/{imageId}/{width}
 POST /api/v1/public/chat/{token}/voice/sessions
 POST /api/v1/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation
 ```

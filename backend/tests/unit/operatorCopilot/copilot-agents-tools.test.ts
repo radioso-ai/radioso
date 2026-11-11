@@ -74,6 +74,7 @@ describe("copilot agent readers", () => {
       builtInsTruncated: false,
       builtIns: builtInAnswerDirectiveViews.map((directive) => ({
         ...directive,
+        title: expect.any(String),
         actionChars: directive.action.length,
         omittedReason: null,
       })),
@@ -85,6 +86,11 @@ describe("copilot agent readers", () => {
         },
       },
     });
+    expect((result.agent.builtIns as Array<{ name: string; title: string }>).map(({ name, title }) => [name, title])).toEqual([
+      ["concise-readable-formatting", "Readable formatting"],
+      ["represent-organization", "Speak as the organization"],
+      ["inline-supported-links", "Inline source links"],
+    ]);
     expect(serialized).not.toContain("raw-anonymous-token");
     expect(serialized).not.toContain("raw-embed-token");
     expect(serialized).not.toContain("https://private.example.com");

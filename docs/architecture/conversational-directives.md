@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-10-29
+last_updated: 2026-11-11
 ---
 
 # Conversational Directives
@@ -206,9 +206,23 @@ A directive resolves against the others two ways, one soft and one hard.
   from the matched set before rendering. In the agent editor this is surfaced as
   **Replaces** — "when this directive applies, cancel these and run instead" —
   a searchable picker where each selected directive shows as a removable pill.
-  The per-built-in **Override** button is a shortcut that pre-selects that
-  built-in. Use it when a built-in's behavior must be gone for sure, not merely
+  The built-in's **Customize** button is a shortcut that pre-selects that
+  built-in and copies its instruction into the new directive's **Instruction**.
+  Use it when a built-in's behavior must be gone for sure, not merely
   outranked.
+
+  The directive list reads that exclusion back as a single row. One authored
+  directive that applies **Always**, replaces exactly one built-in, and meets it
+  on the agent's reply is that built-in's customization: the list shows it
+  under the built-in's `title` while it keeps the name **Customize** gave it
+  (`Override: <built-in name>`) and under its own name once an operator renames
+  it, with a **Radioso default** / **Your version**
+  choice that drives the directive's `enabled` flag, and the defaults group
+  counts only the built-ins nobody has customized. Two such directives, a
+  contextual one, or one that also replaces other names remain ordinary rows,
+  and the built-in stays in the defaults group with a note naming the directive
+  that replaces it. A disabled replacer never fires its exclusion, so a
+  built-in it names is reported as in force.
 
 ## Where a directive applies
 
@@ -318,9 +332,9 @@ applies**, **Replaces**, and **Priority**.
 
 Every authored directive also carries `enabled`, a reversible off switch on the
 directive record itself. The dialog has no field for it: the control is a
-switch on the directive's row in the directive list, next to Edit and Delete,
-so turning a rule off or back on is a single click that never reopens or
-resubmits the dialog. Turn one off to take it out of play without losing
+switch on the directive's row in the directive list and at the top of its
+detail panel, beside Edit and Delete, so turning a rule off or back on is a
+single click that never reopens or resubmits the dialog. Turn one off to take it out of play without losing
 its condition, instruction, or any of its other settings, then turn it back on
 later. A disabled directive is never handed to the matcher, so it cannot fire,
 conflict with another directive, or show up as a conflict in the coherence

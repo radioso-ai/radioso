@@ -11,7 +11,7 @@ what they need, and do not rush them into a choice. The rule stays separate from
 the agent's general persona, so you can see, change, and test it on its own.
 
 A directive steers a reply. It is not a procedure and it does not perform an
-action. Use the agent's **Behavior** for a voice or rule that belongs on every
+action. Use the agent's **Profile** for a voice or rule that belongs on every
 answer; use a [routine](/guides/authoring-routines) when the request needs a
 sequence of steps, collected information, or an action such as a Slack post.
 
@@ -19,7 +19,14 @@ In an agent's **Directives** tab, choose **New directive**. Your edits are saved
 to the agent's private draft. The draft is the version you test; it becomes part
 of visitor conversations only when you choose **Review & Publish** and publish it.
 
-![The dashboard Directives screen with an authored directive "Shipping delay empathy" above the read-only built-in directives, each with an Override button.](/screenshots/dashboard-agent-directives.png)
+![The Directives tab as a list of one-line rows: two directives that each name the situation they apply to, a customized Readable formatting row marked with a layers icon and "Always · using your version", and a collapsed Radioso defaults group below.](/screenshots/dashboard-agent-directives.png)
+
+The tab lists your rules one to a line: a switch, the rule's name, and when it
+applies. Select a row to open the rule in a panel beside the list. The panel
+shows the full instruction, the priority, and which part of the turn the rule
+shapes, and it holds the **Edit** and **Delete** buttons. A rule the
+coherence check finds in conflict with another carries a **Conflict** label,
+and a banner above the list opens the first of them.
 
 ## Describe the rule
 
@@ -27,7 +34,7 @@ Give the directive a short **Name** that helps your team recognize it later,
 such as `Anxious customer`. Then choose **When this applies**:
 
 - **Always** applies the instruction to every reply. Use it for a rule that is
-  narrower than the general Behavior, but still needs to be visible and
+  narrower than the agent's Profile, but still needs to be visible and
   independently managed.
 - **In a specific situation** opens **Situation**. Describe the circumstance in
   plain language, such as “the customer sounds worried about a missed delivery.”
@@ -78,10 +85,32 @@ land above, between, or below those rules.
 
 Use **Replaces** when another directive must be absent while this one applies.
 It removes the selected directive from that reply, which is stronger than
-priority. Each built-in directive also has an **Override** button; it starts a
-new directive with that built-in already selected in **Replaces**. Use the
-shortcut when you need to author a replacement for a built-in, then finish the
-name, condition, instruction, and priority yourself.
+priority.
+
+### Customize a built-in
+
+The three built-in directives, **Readable formatting**, **Speak as the
+organization**, and **Inline source links**, wait in a collapsed **Radioso
+defaults** group under your rules. Open one to read its instruction. Choose
+**Customize** to start a new directive with that built-in already selected in
+**Replaces** and its instruction copied into **Instruction**, so your version
+begins as an editable copy of the default. Change the words you want, set the
+name and priority, and save.
+
+A customization that applies **Always** and replaces only that built-in becomes
+the built-in's row in the list, marked with a layers icon in place of a switch.
+The row reads as the built-in's title until you give the directive a name of
+your own; then it shows your name and the built-in it stands in for. Open it to choose which version is in use,
+**Radioso default** or **Your version**. Your text is kept either way, so
+switching back to the default and forth again loses nothing. When your version
+is close to the default, the panel sets it against the default's current text
+and marks the words you added and removed. **Delete your version** gives the
+built-in back to the defaults group.
+
+A customization that applies only in a situation, or one that replaces other
+rules as well, is a rule in its own right and stays in the list under its own
+name. The built-in remains in the defaults group, and its panel names the rule
+that replaces it and when.
 
 ## Keep something out of the answer
 
@@ -148,13 +177,16 @@ Every authored directive has a switch on its row in the directive list. Turn
 it off to take the rule out of play immediately, without losing its name,
 condition, or instruction. This is the fastest way to confirm that a rule is
 the source of a bad reply before you rewrite it, or to compare an agent's
-answers with and without it. A disabled directive stays in the list, marked
-**Disabled**, so you can find it and turn it back on.
+answers with and without it. A disabled directive stays in the list, dimmed with
+its switch off, so you can find it and turn it back on. The switch is also at
+the top of the rule's panel.
 
 This is different from **Replaces**, which redirects one specific built-in to
 your directive rather than switching anything off, and from deleting the
 directive, which discards the name, condition, and instruction for good. When
-you are not sure a rule should go away permanently, turn it off first.
+you are not sure a rule should go away permanently, turn it off first. For a
+customized built-in, choosing **Radioso default** in its panel is the same
+off switch: the default governs again and your version waits.
 
 ## Add a skill only when it helps answer
 
@@ -210,7 +242,7 @@ with.
 
 - The rule applies too broadly: make **Situation** describe the customer state
   or request that should trigger it, rather than a topic word.
-- A built-in rule still affects the answer: use **Replaces** or **Override** if
+- A built-in rule still affects the answer: use **Replaces** or **Customize** if
   it must be removed; priority only orders competing guidance.
 - A contextual rule matched but did not shape the answer: inspect the turn
   trace for a count or token-limit reason, then narrow its **Situation** or

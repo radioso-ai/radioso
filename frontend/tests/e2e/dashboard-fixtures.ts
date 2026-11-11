@@ -681,6 +681,7 @@ const buildDirective = (input: Partial<AuthoredDirectiveFixture> & Pick<Authored
 const baseBuiltInDirectives = (): BuiltInDirectiveFixture[] => [
   {
     name: "concise-readable-formatting",
+    title: "Readable formatting",
     condition: { kind: "always" },
     action: "Prefer short paragraphs and answer directly.",
     priority: 60,
@@ -688,6 +689,7 @@ const baseBuiltInDirectives = (): BuiltInDirectiveFixture[] => [
   },
   {
     name: "represent-organization",
+    title: "Speak as the organization",
     condition: { kind: "always" },
     action: "Represent the organization as its assistant.",
     priority: 80,
@@ -695,6 +697,7 @@ const baseBuiltInDirectives = (): BuiltInDirectiveFixture[] => [
   },
   {
     name: "inline-supported-links",
+    title: "Inline source links",
     condition: { kind: "always" },
     action: "Use available source URLs as inline links in grounded answers.",
     priority: 90,

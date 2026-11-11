@@ -185,13 +185,12 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
       "UPDATE routine_consent_records SET withdrawn_at = now(), withdrawn_by_account_id = $2 WHERE conversation_id = $1",
       [withdrawn.conversationId, tenant.accountId],
     );
-    const standing = (conversation: SeededConversation, overrides: { routineId?: string; consentKey?: string; versionIds?: string[] } = {}) =>
-      repository.standing({
+    const standing = async (conversation: SeededConversation, overrides: { routineId?: string; consentKey?: string; versionIds?: string[] } = {}) =>
+      (await repository.standingByConsent({
         conversationId: conversation.conversationId,
         routineId: overrides.routineId ?? "routine-intake",
-        consentKey: overrides.consentKey ?? "health",
-        versionIds: overrides.versionIds ?? [englishId, germanId],
-      });
+        versionIdsByConsent: new Map([[overrides.consentKey ?? "health", overrides.versionIds ?? [englishId, germanId]]]),
+      })).get(overrides.consentKey ?? "health") ?? null;
 
     expect(await standing(granted)).toBe("granted");
     expect(await standing(declined)).toBe("declined");
@@ -202,6 +201,31 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
     expect(await standing(granted, { routineId: "routine-other" })).toBeNull();
     expect(await standing(granted, { consentKey: "allergies" })).toBeNull();
     expect(await standing(granted, { versionIds: [] })).toBeNull();
+  });
+
+  it("reads what a conversation decided for every consent of a routine at once, each on its own wordings", async () => {
+    const tenant = await seedTenant();
+    const repository = new RoutineConsentRepository(database.kysely);
+    const conversation = await seedConversation(tenant);
+    const englishId = routineConsentWordingVersionId(english);
+    const germanId = routineConsentWordingVersionId(german);
+    await recordDecision(tenant, conversation, { consentKey: "health", wording: german });
+    await recordDecision(tenant, conversation, { consentKey: "diet", slotKeys: ["allergy"], decision: "declined", wording: english });
+    // A consent whose wording is German only: the English record above is the other consent's.
+    await recordDecision(tenant, conversation, { consentKey: "travel", slotKeys: ["insurance"], wording: english });
+
+    const decisions = await repository.standingByConsent({
+      conversationId: conversation.conversationId,
+      routineId: "routine-intake",
+      versionIdsByConsent: new Map([
+        ["health", [englishId, germanId]],
+        ["diet", [englishId]],
+        ["travel", [germanId]],
+        ["undecided", [englishId, germanId]],
+      ]),
+    });
+
+    expect(decisions).toEqual(new Map([["health", "granted"], ["diet", "declined"]]));
   });
 
   it("finds the consent prompt a conversation showed last, for the routine and consent asked", async () => {
@@ -225,6 +249,20 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
     expect(await repository.latestPrompt({ conversationId: conversation.conversationId, routineId: "routine-other", consentKey: "health" }))
       .toBeNull();
     expect(await repository.latestPrompt({ conversationId: randomUUID(), routineId: "routine-intake", consentKey: "health" }))
+      .toBeNull();
+  });
+
+  it("reads a malformed consent prompt stamp as no prompt, rather than failing the turn", async () => {
+    const tenant = await seedTenant();
+    const repository = new RoutineConsentRepository(database.kysely);
+    const conversation = await seedConversation(tenant);
+    await database.query(
+      "INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json) VALUES ($1, $2, $3, 'assistant', 'Wording', $4::jsonb)",
+      [randomUUID(), conversation.conversationId, tenant.workspaceId,
+        JSON.stringify({ consentPrompt: { routineId: "routine-intake", consentKey: "health", wordingVersionId: 42 } })],
+    );
+
+    expect(await repository.latestPrompt({ conversationId: conversation.conversationId, routineId: "routine-intake", consentKey: "health" }))
       .toBeNull();
   });
 
@@ -455,6 +493,43 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
       [conversation.conversationId],
     );
     expect(state?.variables).toEqual({ name: "Ada" });
+  });
+
+  it("saves the state of a routine that asks no consent without the withdrawal guard", async () => {
+    const tenant = await seedTenant();
+    const conversation = await seedConversation(tenant);
+    // A withdrawn record the guard would act on, were it run for this routine.
+    await recordDecision(tenant, conversation, { routineId: "routine-intake", slotKeys: ["pregnant"] });
+    await database.query("UPDATE routine_consent_records SET withdrawn_at = now() WHERE conversation_id = $1", [conversation.conversationId]);
+
+    await new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000).completeAssistantTurn({
+      workspaceId: tenant.workspaceId,
+      conversationId: conversation.conversationId,
+      routineStateTransition: {
+        kind: "save",
+        asksConsent: false,
+        state: {
+          sessionId: conversation.conversationId,
+          routineId: "routine-intake",
+          path: ["ask_health"],
+          variables: { name: "Ada", pregnant: true },
+          status: "active",
+        },
+      },
+      assistantMessage: {
+        conversationId: conversation.conversationId,
+        workspaceId: tenant.workspaceId,
+        role: "assistant",
+        content: "Thanks, Ada.",
+      },
+      auditEvent: { workspaceId: tenant.workspaceId, eventType: "chat.answer", eventStatus: "success", metadata: {} },
+    });
+
+    const [state] = await database.query<{ variables: Record<string, unknown> }>(
+      "SELECT variables FROM routine_states WHERE session_id = $1",
+      [conversation.conversationId],
+    );
+    expect(state?.variables).toEqual({ name: "Ada", pregnant: true });
   });
 
   it("records nothing for a consent the turn did not ask, and keeps a decision once however often a turn is retried", async () => {

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { RoutineConsentReading, TurnContext } from "@radioso/conversation-contract";
 
+import type { PreparedSession } from "../../../src/modules/chat/services/chatSessionPreparer.js";
+import { routineConsentTurnFacts } from "../../../src/modules/chat/services/routines/routineConsentTurn.js";
 import {
   createRoutineConsentTurnPort,
   type RoutineConsentStore,
@@ -55,7 +57,7 @@ const facts = (overrides: Partial<RoutineConsentTurnFacts> = {}): RoutineConsent
 });
 
 const store = (overrides: Partial<RoutineConsentStore> = {}): RoutineConsentStore => ({
-  standing: vi.fn(async () => null),
+  standingByConsent: vi.fn(async () => new Map()),
   latestPrompt: vi.fn(async () => null),
   ...overrides,
 });
@@ -143,17 +145,47 @@ describe("the consent a conversation is asked (#1544)", () => {
 
 describe("what a conversation already decided (#1544)", () => {
   it("reuses a decision made on any language of the consent, so a language switch is not new wording", async () => {
-    const decisions = store({ standing: vi.fn(async () => "granted" as const) });
+    const decisions = store({ standingByConsent: vi.fn(async () => new Map([["health", "granted" as const]])) });
 
     const standing = await port({ store: decisions }).standing({ routine, turn: turn("hi") });
 
     expect(standing.decisions).toEqual({ health: "granted" });
-    expect(decisions.standing).toHaveBeenCalledWith({
+    expect(decisions.standingByConsent).toHaveBeenCalledWith({
       conversationId: "conversation_1",
       routineId: routine.id,
-      consentKey: "health",
-      versionIds: [english, italian, portuguese].map(routineConsentWordingVersionId),
+      versionIdsByConsent: new Map([["health", [english, italian, portuguese].map(routineConsentWordingVersionId)]]),
     });
+  });
+
+  it("reads every consent of the routine in one lookup", async () => {
+    const diet = { locale: "en", body: "We ask about allergies only to plan your meals.", agreeLabel: "Fine", declineLabel: "Rather not" };
+    const base = definition([english]);
+    const twoConsents = compileRoutineDefinition({
+      ...base,
+      slots: [...base.slots, { stableSlotId: "slot_allergy", key: "allergy", type: "text", required: true, description: null, ordinal: 1, sensitivity: "sensitive" }],
+      steps: [{ ...base.steps[0], instruction: "Ask about {{slot.injury}} and {{slot.allergy}}." }],
+      consents: [...base.consents!, { key: "diet", slotKeys: ["allergy"], variants: [diet], onDecline: "continue" }],
+    });
+    const decisions = store({ standingByConsent: vi.fn(async () => new Map([["diet", "declined" as const]])) });
+
+    const standing = await port({ store: decisions }).standing({ routine: twoConsents, turn: turn("hi") });
+
+    expect(standing.decisions).toEqual({ diet: "declined" });
+    expect(decisions.standingByConsent).toHaveBeenCalledTimes(1);
+    expect(decisions.standingByConsent).toHaveBeenCalledWith(expect.objectContaining({
+      versionIdsByConsent: new Map([
+        ["health", [routineConsentWordingVersionId(english)]],
+        ["diet", [routineConsentWordingVersionId(diet)]],
+      ]),
+    }));
+  });
+
+  it.each(["voice", "mcp", "agent_api", "a2a"])("reads no decision on %s, where no consent is asked", async (sourceChannel) => {
+    const decisions = store();
+
+    expect(await port({ facts: facts({ sourceChannel }), store: decisions }).standing({ routine, turn: turn("hi") }))
+      .toEqual({ asks: false, decisions: {} });
+    expect(decisions.standingByConsent).not.toHaveBeenCalled();
   });
 
   it("holds no decision for a consent the conversation never decided", async () => {
@@ -161,7 +193,7 @@ describe("what a conversation already decided (#1544)", () => {
   });
 
   it("reads a conversation no row is kept for from the store its own session carries, as Test Chat binds it", async () => {
-    const session = store({ standing: vi.fn(async () => "granted" as const) });
+    const session = store({ standingByConsent: vi.fn(async () => new Map([["health", "granted" as const]])) });
 
     const standing = await port({ facts: facts({ durable: false }), store: session }).standing({ routine, turn: turn("hi") });
 
@@ -260,5 +292,33 @@ describe("a click on a consent's button (#1544)", () => {
 
   it("cannot bind a click to wording when the conversation shows no prompt it can verify", async () => {
     expect(await port({ facts: clicked("agree"), replies: replies("granted") }).read({ routine, consent, turn: turn("I agree") })).toBeNull();
+  });
+});
+
+describe("the language a consent is shown in mid-routine (#1544)", () => {
+  // A turn an active routine holds runs no turn plan; its language comes from the detector alone.
+  const midRoutine = (sourceChannel: string): PreparedSession => ({
+    conversation: { id: "conversation_1", visitorId: "visitor_1", sourceChannel },
+    userMessage: { id: "message_2", content: "Mi chiamo Ada" },
+    agent: { id: "agent_1", assistantDefaultLocale: "en" },
+    pageContext: null,
+  }) as unknown as PreparedSession;
+
+  it.each(["whatsapp", "email"])("shows the Italian wording on %s to a visitor writing Italian, over the agent's English default", async (sourceChannel) => {
+    const turnFacts = routineConsentTurnFacts(midRoutine(sourceChannel), Promise.resolve("Italian"));
+
+    expect(await turnFacts.preferredLocales()).toEqual(["it"]);
+    const asked = await shown(port({ facts: turnFacts }));
+    // The wording shown is what the decision is recorded against, language included.
+    expect(asked?.wording).toEqual(italian);
+    expect(asked?.wording.locale).toBe("it");
+    expect(asked?.reply.answer).toBe(`${italian.body}\n\n${italian.agreeLabel}\n\n${italian.declineLabel}`);
+  });
+
+  it("falls back to the agent's default when the turn's language is unknown", async () => {
+    const turnFacts = routineConsentTurnFacts(midRoutine("whatsapp"), Promise.resolve(undefined));
+
+    expect(await turnFacts.preferredLocales()).toEqual([]);
+    expect((await shown(port({ facts: turnFacts })))?.wording).toEqual(english);
   });
 });

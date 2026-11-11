@@ -48,11 +48,19 @@ export class SessionRoutineConsentStore implements ChatRoutineConsentStore {
     this.prompts = seed?.prompts.map((prompt) => ({ ...prompt })) ?? [];
   }
 
-  // The session is one conversation, so the conversation id names nothing more to match.
-  async standing(input: { routineId: string; consentKey: string; versionIds: readonly string[] }): Promise<RoutineConsentDecision | null> {
-    const latest = [...this.decisions].reverse().find((decision) =>
-      sameConsent(decision, input) && input.versionIds.includes(decision.wordingVersionId));
-    return latest?.decision ?? null;
+  // The session is one conversation, so the conversation id names nothing more to match. Each
+  // wording keeps its first decision (`record`); across wordings the latest decision holds.
+  async standingByConsent(input: {
+    routineId: string;
+    versionIdsByConsent: ReadonlyMap<string, readonly string[]>;
+  }): Promise<ReadonlyMap<string, RoutineConsentDecision>> {
+    const decisions = new Map<string, RoutineConsentDecision>();
+    for (const [consentKey, versionIds] of input.versionIdsByConsent) {
+      const latest = [...this.decisions].reverse().find((decision) =>
+        sameConsent(decision, { routineId: input.routineId, consentKey }) && versionIds.includes(decision.wordingVersionId));
+      if (latest) decisions.set(consentKey, latest.decision);
+    }
+    return decisions;
   }
 
   async latestPrompt(input: { routineId: string; consentKey: string }): Promise<{ messageId: string; wordingVersionId: string; locale: string } | null> {
@@ -63,7 +71,8 @@ export class SessionRoutineConsentStore implements ChatRoutineConsentStore {
   /**
    * Keeps what a settled turn did with its consents, as a live turn's transaction records it: a
    * consent shown becomes the prompt `replyMessageId` answers next, and a decision holds for the
-   * rest of the session. A consent not asked keeps nothing.
+   * rest of the session. As in the workspace's records, a wording keeps the first decision given
+   * on it. A consent not asked keeps nothing.
    */
   record(input: { events: readonly RoutineConsentEvent[] | undefined; replyMessageId: string }): void {
     for (const event of input.events ?? []) {
@@ -77,7 +86,7 @@ export class SessionRoutineConsentStore implements ChatRoutineConsentStore {
         this.prompts.splice(0, this.prompts.length, ...others, {
           routineId, consentKey, messageId: input.replyMessageId, wordingVersionId, locale: wording.locale,
         });
-      } else {
+      } else if (!this.decisions.some((decision) => sameConsent(decision, event) && decision.wordingVersionId === wordingVersionId)) {
         this.decisions.push({ routineId, consentKey, wordingVersionId, decision: event.decision });
       }
     }

@@ -461,7 +461,7 @@ export class ChatTurnAssembly {
     session.routineStartMessageId = input.activeRoutine
       ? input.activeRoutine.startedMessageId
       : session.userMessage.id;
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId, routineTurnPorts.routines);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
     const routineRunner = pageReadAwareRoutineRunner({
@@ -674,7 +674,7 @@ export class ChatTurnAssembly {
     }
     const routineStartMessageId = getSession().userMessage.id;
     getSession().routineStartMessageId = routineStartMessageId;
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore, routineStartMessageId);
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, routineStartMessageId, routineTurnPorts.routines);
     const deferredClarificationStore = input.clarification?.store;
     return {
       coverageRoutineActivator: routineTurnPorts.coverageActivator,

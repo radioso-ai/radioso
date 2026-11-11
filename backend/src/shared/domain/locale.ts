@@ -24,6 +24,36 @@ export const localeTagOf = (value: unknown): string | undefined => {
   return isLocaleTag(tag) ? tag : undefined;
 };
 
+let languageTagsByEnglishName: ReadonlyMap<string, string> | undefined;
+
+/**
+ * Every two-letter language tag by its English name in the runtime's CLDR data, lower-cased; built
+ * once. A deprecated tag gives way to its canonical one ("mo" names Romanian, as "ro" does).
+ */
+const languageTagsByName = (): ReadonlyMap<string, string> => {
+  if (languageTagsByEnglishName) return languageTagsByEnglishName;
+  const names = new Intl.DisplayNames(["en"], { type: "language", fallback: "none" });
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  const byName = new Map<string, string>();
+  for (const first of letters) {
+    for (const second of letters) {
+      const name = names.of(`${first}${second}`)?.toLowerCase();
+      const [canonical] = Intl.getCanonicalLocales(`${first}${second}`);
+      if (name && canonical && !byName.has(name)) byName.set(name, canonical);
+    }
+  }
+  languageTagsByEnglishName = byName;
+  return byName;
+};
+
+/**
+ * The language tag of a response language as the turn's language detector reports it: a language
+ * named in English ("Italian" → "it"), by its prompt's contract, or a tag already. Undefined for a
+ * name the runtime's CLDR data does not hold, such as a regional variety.
+ */
+export const localeTagOfLanguage = (language: string): string | undefined =>
+  languageTagsByName().get(language.trim().toLowerCase()) ?? localeTagOf(language);
+
 
 export const normalizeLocaleTag = (
   value: unknown,

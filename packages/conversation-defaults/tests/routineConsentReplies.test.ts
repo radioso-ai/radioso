@@ -33,7 +33,17 @@ describe("RoutineConsentReplyReader", () => {
   });
 
   it.each([
+    ["fenced JSON", "```json\n{\"decision\": \"granted\"}\n```"],
+    ["JSON after a preamble", "Sure: {\"decision\": \"granted\"}"],
+  ])("reads the decision from %s", async (_label, text) => {
+    const reader = new RoutineConsentReplyReader(gateway(text));
+
+    expect(await reader.read({ turn: turn("sì, sono d'accordo"), wording })).toBe("granted");
+  });
+
+  it.each([
     ["text that is not JSON", "Sure, they agreed."],
+    ["an unbalanced object", "```json\n{\"decision\": \"granted\"\n```"],
     ["an unknown decision", JSON.stringify({ decision: "maybe" })],
     ["a decision of the wrong type", JSON.stringify({ decision: true })],
     ["no decision", JSON.stringify({ granted: true })],

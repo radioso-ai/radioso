@@ -101,6 +101,7 @@ const fixedCorrection = (rawValue: string): ConversationRoutineSlotCorrection =>
   detect: vi.fn(async (): Promise<RoutineSlotCorrectionDetection> => ({
     kind: "correction",
     slots: mutableEmailSlots,
+    consents: [],
     slotKey: "prospect_email",
     rawValue,
   })),

@@ -42,13 +42,16 @@ export interface RoutineConsentTurnFacts {
 
 /** What a conversation recorded of its consents, as the consent port reads it. */
 export interface RoutineConsentStore {
-  /** The decision on any of `versionIds` (every language of one consent); a withdrawn grant reads as declined. */
-  standing(input: {
+  /**
+   * What the conversation decided for each of a routine's consents, read at once: by consent key,
+   * the decision on any of its wording versions (every language it carries). An undecided consent
+   * is absent; a withdrawn grant reads as declined.
+   */
+  standingByConsent(input: {
     conversationId: string;
     routineId: string;
-    consentKey: string;
-    versionIds: readonly string[];
-  }): Promise<RoutineConsentDecision | null>;
+    versionIdsByConsent: ReadonlyMap<string, readonly string[]>;
+  }): Promise<ReadonlyMap<string, RoutineConsentDecision>>;
   /** The reply that showed this consent last, with the wording version it showed. */
   latestPrompt(input: {
     conversationId: string;
@@ -168,17 +171,20 @@ export const createRoutineConsentTurnPort = (input: {
 
   return {
     async standing({ routine }) {
-      const decisions: Record<string, RoutineConsentDecision> = {};
-      for (const consent of routine.consents ?? []) {
-        const decision = await store.standing({
-          conversationId: facts.conversationId,
-          routineId: routine.id,
-          consentKey: consent.key,
-          versionIds: consentWordingVariants(routine, consent.key).map(routineConsentWordingVersionId),
-        });
-        if (decision) decisions[consent.key] = decision;
+      const consents = routine.consents ?? [];
+      // Where no consent is asked none was ever decided, so there is nothing to read.
+      if (presentation === "not_asked" || consents.length === 0) {
+        return { asks: presentation !== "not_asked", decisions: {} };
       }
-      return { asks: presentation !== "not_asked", decisions };
+      const decisions = await store.standingByConsent({
+        conversationId: facts.conversationId,
+        routineId: routine.id,
+        versionIdsByConsent: new Map(consents.map((consent) => [
+          consent.key,
+          consentWordingVariants(routine, consent.key).map(routineConsentWordingVersionId),
+        ])),
+      });
+      return { asks: true, decisions: Object.fromEntries(decisions) };
     },
 
     async prompt({ routine, consent, turn, reask }) {

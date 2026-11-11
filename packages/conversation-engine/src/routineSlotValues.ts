@@ -53,6 +53,23 @@ export const checkDeclaredSlotValues = (
   return { values: kept, rejected };
 };
 
+/** A tool step's outputs under the variable names its `outputAssignments` map them to. */
+export const assignOutputs = (
+  outputAssignments: Record<string, string> | undefined,
+  outputs: Record<string, unknown> | undefined,
+): Record<string, unknown> => {
+  if (!outputAssignments || !outputs) {
+    return {};
+  }
+  const assigned: Record<string, unknown> = {};
+  for (const [outputField, variableName] of Object.entries(outputAssignments)) {
+    if (hasVariable(outputs, outputField)) {
+      assigned[variableName] = outputs[outputField];
+    }
+  }
+  return assigned;
+};
+
 /** The routine's slot keys its author marked sensitive, in declared order. */
 export const sensitiveSlotKeys = (routine: Routine): string[] =>
   (routine.slots ?? []).filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key);

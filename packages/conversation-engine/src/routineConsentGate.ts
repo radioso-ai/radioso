@@ -14,6 +14,7 @@ import type {
   RoutineConsentSkipReason,
   RoutineStep,
   RoutineTraceConsent,
+  RoutineTraceRejectedSlot,
   RoutineTraceStepEntry,
   TurnContext,
 } from "@radioso/conversation-contract";
@@ -111,6 +112,19 @@ export class RoutineConsentGate {
     return Object.keys(variables).some((key) => this.blocked.has(key))
       ? Object.fromEntries(Object.entries(variables).filter(([key]) => !this.blocked.has(key)))
       : variables;
+  }
+
+  /**
+   * `values` without one for a covered slot the run may not hold now: blocked, or one it runs
+   * without. Each is reported by key with reason `consent`. For a source the declared-slot checks
+   * do not read, as a tool step's outputs.
+   */
+  admit(values: Record<string, unknown>): { values: Record<string, unknown>; rejected: RoutineTraceRejectedSlot[] } {
+    const closed = (key: string): boolean => this.blocked.has(key) || this.waivedKeys.has(key);
+    const rejected = Object.keys(values).filter(closed).map((key) => ({ key, reason: "consent" as const }));
+    return rejected.length === 0
+      ? { values, rejected }
+      : { values: Object.fromEntries(Object.entries(values).filter(([key]) => !closed(key))), rejected };
   }
 
   /** What the turn did with the routine's consents, for the host to record. */

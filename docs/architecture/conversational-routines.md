@@ -436,14 +436,18 @@ The backend's port is `modules/routines/consent/consentTurnPort.ts`, built per t
 by the routines turn provider from the `RoutineConsentTurnFacts` chat hands it
 (`chat/services/routines/routineConsentTurn.ts`): the conversation, visitor, source
 channel, the visitor message, the languages to try, and the agent's default
-language. The compiler carries every language of each consent's wording on the
+language. The first language to try is the one the turn answers in: the tag its
+plan gives it or, on a turn an active routine holds (which runs no plan), the tag
+of the language its detector reported, the one the routine's replies are written
+in. The visitor's page and browser languages follow. The compiler carries every language of each consent's wording on the
 compiled routine's metadata (`consent/consentWording.ts`), so the port reads the
 wording of the revision the conversation runs. `consentPresentationFor` in
 `shared/domain/conversationSource.ts` decides how a channel shows a consent:
 buttons on the web, text on email, WhatsApp, Slack and the operator surfaces that
 show a reply's text alone (Test Chat, eval replay, Ray's probe), and no ask on voice
 or a calling agent's channel. The port picks the variant by the Exact Words rule, reads
-standing decisions for every language of a consent, and reads an answer against the
+the standing decisions of all a routine's consents, every language of each, in one
+lookup (and none on a channel that never asks), and reads an answer against the
 wording the conversation last showed (its `consentPrompt` stamp): a click on that
 message's `agree` or `decline` chip (`suggestion_click` with `suggestionId` and
 `suggestionSourceMessageId` naming it, `shared/domain/chatInputMetadata.ts`) is a
@@ -463,8 +467,9 @@ Chat carries the events unread to `PostgresAssistantTurnPersistence`, whose turn
 transaction records them (`RoutineConsentRepository.writeTurnEvents`): a shown
 consent keeps its wording version and stamps `consentPrompt` on the reply, a
 decision keeps its version and records the visitor message that carried it, and a
-skipped consent records nothing. The same transaction strips the slots of any
-consent withdrawn in the conversation from the routine state it saves. Once the
+skipped consent records nothing. When the routine it saves asks consent, the same
+transaction strips the slots of any consent withdrawn in the conversation from the
+routine state it saves. Once the
 turn commits, `consent/consentTelemetry.ts` logs `routine_consent_shown`,
 `routine_consent_decided`, `routine_consent_defaulted` and
 `routine_consent_skipped` (an error for `wording_unavailable`) and counts

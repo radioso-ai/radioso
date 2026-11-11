@@ -2,6 +2,7 @@ import type {
   ConversationEngine,
   ConversationRoutineDecisionResult,
   ConversationTrace,
+  Routine,
   RoutineState,
 } from "@radioso/conversation-contract";
 
@@ -24,7 +25,7 @@ import {
   createRoutineGroundedAnswerRenderer,
   presentRoutineRenderableAnswer,
 } from "./routines/routineGroundedAnswerRenderer.js";
-import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
+import { asksConsentField, type CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import { routineConsentTurnFacts } from "./routines/routineConsentTurn.js";
 import {
@@ -82,7 +83,10 @@ interface ResumeCoordination {
  * completed run (#1457). Anything else fails the resume, so the decision's transaction rolls
  * back and the decision stays pending, rather than wiping the routine (#1460).
  */
-const approvalResumeTransition = (result: ConversationRoutineDecisionResult): CapturedRoutineTransition => {
+const approvalResumeTransition = (
+  result: ConversationRoutineDecisionResult,
+  routines: readonly Routine[] | undefined,
+): CapturedRoutineTransition => {
   if (result.yielded) {
     throw new Error("approval_resume_yielded");
   }
@@ -90,7 +94,7 @@ const approvalResumeTransition = (result: ConversationRoutineDecisionResult): Ca
   if (!keptState) {
     throw new Error("approval_resume_without_routine_state");
   }
-  return { kind: "save", state: keptState };
+  return { kind: "save", state: keptState, ...asksConsentField(routines, keptState.routineId) };
 };
 
 export class ApprovalResumeTurn {
@@ -217,7 +221,7 @@ export class ApprovalResumeTurn {
       throw new Error("approval_resume_suspended_state_missing");
     }
 
-    const routineStateTransition = approvalResumeTransition(result);
+    const routineStateTransition = approvalResumeTransition(result, routineTurnPorts.routines);
     const presentation = presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, result.response);
     const routineEnding = routineEndingEffectsForTurn({
       session,

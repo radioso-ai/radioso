@@ -125,30 +125,35 @@ export class RoutineConsentRepository {
   }
 
   /**
-   * What the conversation decided for a routine's consent, on any of `versionIds` (the wording
-   * versions of every language the consent carries): `null` when nothing was decided. A withdrawn
-   * grant reads as declined, so a routine never asks again once consent was withdrawn.
+   * What the conversation decided for each of a routine's consents, in one read: by consent key, the
+   * decision on any of that consent's wording versions (one per language it carries). A consent
+   * nothing was decided for is absent. A withdrawn grant reads as declined, so a routine never asks
+   * again once consent was withdrawn.
    */
-  async standing(input: {
+  async standingByConsent(input: {
     conversationId: string;
     routineId: string;
-    consentKey: string;
-    versionIds: readonly string[];
-  }): Promise<RoutineConsentDecision | null> {
-    if (input.versionIds.length === 0) return null;
-    const row = await this.db
+    versionIdsByConsent: ReadonlyMap<string, readonly string[]>;
+  }): Promise<Map<string, RoutineConsentDecision>> {
+    const decisions = new Map<string, RoutineConsentDecision>();
+    const versionIds = [...new Set([...input.versionIdsByConsent.values()].flat())];
+    if (versionIds.length === 0) return decisions;
+    const rows = await this.db
       .selectFrom("routine_consent_records")
-      .select(["decision", "withdrawn_at"])
+      .select(["consent_key", "wording_version_id", "decision", "withdrawn_at"])
       .where("conversation_id", "=", input.conversationId)
       .where("routine_id", "=", input.routineId)
-      .where("consent_key", "=", input.consentKey)
-      .where((eb) => anyOf(eb.ref("wording_version_id"), input.versionIds, "text[]"))
+      .where((eb) => anyOf(eb.ref("consent_key"), [...input.versionIdsByConsent.keys()], "text[]"))
+      .where((eb) => anyOf(eb.ref("wording_version_id"), versionIds, "text[]"))
       .orderBy(sql`withdrawn_at IS NOT NULL`, "desc")
       .orderBy("decided_at", "desc")
-      .limit(1)
-      .executeTakeFirst();
-    if (!row) return null;
-    return row.withdrawn_at === null && row.decision === "granted" ? "granted" : "declined";
+      .execute();
+    // Two consents with the same wording share a version, so a row counts only for its own consent's.
+    for (const row of rows) {
+      if (decisions.has(row.consent_key) || !input.versionIdsByConsent.get(row.consent_key)?.includes(row.wording_version_id)) continue;
+      decisions.set(row.consent_key, row.withdrawn_at === null && row.decision === "granted" ? "granted" : "declined");
+    }
+    return decisions;
   }
 
   /**
@@ -171,9 +176,9 @@ export class RoutineConsentRepository {
       .orderBy("id", "desc")
       .limit(1)
       .executeTakeFirst();
-    if (!row) return null;
-    const stamp = consentPromptStampSchema.parse(row.prompt);
-    return { messageId: row.id, wordingVersionId: stamp.wordingVersionId, locale: stamp.locale };
+    // A stamp that does not read is no prompt: a reply to it is read as unanswerable, not a failed turn.
+    const stamp = row ? consentPromptStampSchema.safeParse(row.prompt) : null;
+    return row && stamp?.success ? { messageId: row.id, wordingVersionId: stamp.data.wordingVersionId, locale: stamp.data.locale } : null;
   }
 
   /**

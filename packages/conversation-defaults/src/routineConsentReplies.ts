@@ -12,6 +12,7 @@ import {
   DEFAULT_ROUTINE_CONSENT_REPLY_PROMPT,
   DEFAULT_ROUTINE_CONSENT_UNCLEAR_ANSWER_PROMPT,
 } from "./generated/defaultPrompts.js";
+import { extractJsonObject } from "./extractJsonObject.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
 /** The consent text a visitor was shown: the operator's wording and the two choice labels, verbatim. */
@@ -39,9 +40,14 @@ const READINGS: ReadonlySet<string> = new Set<RoutineConsentReading>(["granted",
 
 const isReading = (value: unknown): value is RoutineConsentReading => typeof value === "string" && READINGS.has(value);
 
+// A model may fence its JSON or put a sentence before it; only an object it holds is read.
 const parseReading = (raw: string): RoutineConsentReading => {
+  const json = extractJsonObject(raw);
+  if (!json) {
+    return "unclear";
+  }
   try {
-    const parsed: unknown = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(json);
     if (parsed && typeof parsed === "object" && "decision" in parsed && isReading(parsed.decision)) {
       return parsed.decision;
     }

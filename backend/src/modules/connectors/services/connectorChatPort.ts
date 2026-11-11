@@ -1,8 +1,8 @@
 import type { ChatAnswerPort, ConversationIngestPort } from "../../chat/contracts/index.js";
 import type { ConnectorChatPort } from "@radioso/connector-api";
-import { badRequest } from "../../../shared/domain/errors.js";
+import { AppError, badRequest } from "../../../shared/domain/errors.js";
 import { connectorChatOutcome, connectorTurnResult } from "./connectorTurnFacts.js";
-import type { ConnectorImageTurns } from "./connectorImageTurns.js";
+import { CONNECTOR_IMAGES_UNUSABLE_CODE, type ConnectorImageTurns } from "./connectorImageTurns.js";
 
 /**
  * The host side of a connector's chat port. `imageTurns` is where a turn with photos is stored,
@@ -39,7 +39,7 @@ export const createConnectorChatPort = (
       }
       // Every photo was refused: the turn is its text, or there is nothing to answer.
       if (input.query.trim().length === 0) {
-        throw badRequest("None of the images could be used and there is no text to answer");
+        throw new AppError(422, CONNECTOR_IMAGES_UNUSABLE_CODE, "None of the images could be used and there is no text to answer");
       }
     }
 

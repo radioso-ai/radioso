@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectorChatPort, ConnectorStatePort } from "@radioso/connector-api";
+import { AppError } from "../../../../src/shared/domain/errors.js";
+import { CONNECTOR_IMAGES_UNUSABLE_CODE } from "../../../../src/modules/connectors/services/connectorImageTurns.js";
 import { WhatsAppClientError } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import type { WhatsAppClient } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import { WhatsAppMessageHandler, type WhatsAppInboundMessage } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappMessageHandler.js";
@@ -832,16 +834,73 @@ describe("WhatsAppMessageHandler", () => {
       expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
     });
 
-    it("fails a photo that is gone and had no caption, without replying", async () => {
-      const chat = photosOn();
-      const downloadImage = vi.fn<WhatsAppClient["downloadImage"]>(async () => ({ kind: "unavailable", reason: "too_large" }));
-      const { handler, persistence, client } = createHandler({ chat, client: { ...sender(), downloadImage } });
+    describe("when no photo of the turn can be used and nothing was typed", () => {
+      const refusedByHost = () => ({
+        ...photosOn(),
+        answer: vi.fn<ConnectorChatPort["answer"]>(async () => {
+          throw new AppError(422, CONNECTOR_IMAGES_UNUSABLE_CODE, "None of the images could be used and there is no text to answer");
+        }),
+      });
+      const goneOnWhatsApp = () => vi.fn<WhatsAppClient["downloadImage"]>(async () => ({ kind: "unavailable", reason: "too_large" }));
+
+      it.each([
+        ["every photo is gone or over the cap", () => ({ chat: photosOn(), downloadImage: goneOnWhatsApp() })],
+        ["the host refuses every photo", () => ({ chat: refusedByHost(), downloadImage: downloads() })],
+      ])("sends the configured unsupported-message reply when %s", async (_label, build) => {
+        const { chat, downloadImage } = build();
+        const { handler, persistence, client } = createHandler({
+          chat,
+          client: { ...sender(), downloadImage },
+          unsupportedMessageReply: "Please send your request as text.",
+          maxRetryAttempts: 3,
+        });
+
+        await send(persistence, handler, [photoMessage(1), photoMessage(2)]);
+
+        expect(client.sendTextMessage).toHaveBeenCalledTimes(1);
+        expect(client.sendTextMessage).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ text: "Please send your request as text." }));
+        for (const wamid of ["wamid-photo-1", "wamid-photo-2"]) {
+          expect(persistence.messageLogs.get(wamid)).toMatchObject({ status: "replied", errorDetails: null });
+        }
+        // Nothing is left to retry: the outcome is the unsupported-message one, not a failure.
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(client.sendTextMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it.each([
+        ["every photo is gone or over the cap", () => ({ chat: photosOn(), downloadImage: goneOnWhatsApp() })],
+        ["the host refuses every photo", () => ({ chat: refusedByHost(), downloadImage: downloads() })],
+      ])("skips the messages, as for any unsupported message, when %s and no reply is configured", async (_label, build) => {
+        const { chat, downloadImage } = build();
+        const { handler, persistence, client } = createHandler({ chat, client: { ...sender(), downloadImage }, maxRetryAttempts: 3 });
+
+        await send(persistence, handler, [photoMessage(1)]);
+
+        expect(client.sendTextMessage).not.toHaveBeenCalled();
+        expect(persistence.messageLogs.get("wamid-photo-1")).toMatchObject({ status: "skipped", errorDetails: "Unsupported WhatsApp message type" });
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(chat.answer.mock.calls.length).toBeLessThanOrEqual(1);
+      });
+    });
+
+    it("still fails a turn whose answer fails for another reason", async () => {
+      const chat = {
+        ...photosOn(),
+        answer: vi.fn<ConnectorChatPort["answer"]>(async () => {
+          throw new AppError(409, "visitor_images_unavailable", "This agent does not read images.");
+        }),
+      };
+      const { handler, persistence, client } = createHandler({
+        chat,
+        client: { ...sender(), downloadImage: downloads() },
+        unsupportedMessageReply: "Please send your request as text.",
+        maxRetryAttempts: 1,
+      });
 
       await send(persistence, handler, [photoMessage(1)]);
 
-      expect(chat.answer).not.toHaveBeenCalled();
       expect(client.sendTextMessage).not.toHaveBeenCalled();
-      expect(persistence.messageLogs.get("wamid-photo-1")).toMatchObject({ status: "failed", errorDetails: "WhatsApp photo could not be downloaded" });
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("failed");
     });
 
     it("retries a transient download failure without answering twice", async () => {

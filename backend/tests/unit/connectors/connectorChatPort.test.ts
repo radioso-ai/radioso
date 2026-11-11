@@ -8,7 +8,11 @@ import type {
   ConversationIngestPort,
 } from "../../../src/modules/chat/contracts/index.js";
 import { createConnectorChatPort } from "../../../src/modules/connectors/services/connectorChatPort.js";
-import type { ConnectorImageAnswer, ConnectorImageTurns } from "../../../src/modules/connectors/services/connectorImageTurns.js";
+import {
+  CONNECTOR_IMAGES_UNUSABLE_CODE,
+  type ConnectorImageAnswer,
+  type ConnectorImageTurns,
+} from "../../../src/modules/connectors/services/connectorImageTurns.js";
 import { connectorChatOutcome } from "../../../src/modules/connectors/services/connectorTurnFacts.js";
 
 const unusedIngest: ConversationIngestPort = {
@@ -178,11 +182,11 @@ describe("createConnectorChatPort", () => {
       });
     });
 
-    it("refuses a turn with nothing to answer: no text and no usable photo", async () => {
+    it("refuses a turn with nothing to answer, by a code the connector can tell apart: no text and no usable photo", async () => {
       const { connectorChat, chatService } = setup(null);
 
       await expect(connectorChat.answer({ workspaceId: "workspace-1", query: "  ", images: [{ bytes: PHOTO }] }))
-        .rejects.toMatchObject({ statusCode: 400 });
+        .rejects.toMatchObject({ statusCode: 422, code: CONNECTOR_IMAGES_UNUSABLE_CODE });
       expect(chatService.answer).not.toHaveBeenCalled();
     });
 

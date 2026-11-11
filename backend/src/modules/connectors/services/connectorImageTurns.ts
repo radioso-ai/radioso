@@ -12,6 +12,13 @@ import {
   type VisitorImageService,
 } from "../../visitorImages/public.js";
 
+/**
+ * The code of the refusal `ConnectorChatPort.answer` raises when every photo of a turn was
+ * refused and the sender typed nothing, so a connector can treat the message as one it does not
+ * support rather than as a failure.
+ */
+export const CONNECTOR_IMAGES_UNUSABLE_CODE = "visitor_images_unusable";
+
 /** What a turn with photos answered: the conversation it ran in and the host's reply outcome. */
 export interface ConnectorImageAnswer {
   readonly conversationId: string;

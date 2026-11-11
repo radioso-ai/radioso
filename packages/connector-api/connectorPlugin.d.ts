@@ -136,7 +136,9 @@ export interface ConnectorChatPort {
      * The photos the customer sent with this message, at most `imageAllowance().maxImages`.
      * `query` is what they typed with them and may be empty. The host stores and reads each photo,
      * runs the turn on the text and the readings, and keeps the photos with the conversation. A
-     * photo it cannot use is left out; the turn is refused when none is usable and `query` is empty.
+     * photo it cannot use is left out. When none is usable and `query` is empty, the turn is
+     * refused with an error whose `code` is `visitor_images_unusable`; a connector treats that
+     * message as one it does not support.
      */
     images?: readonly ConnectorInboundImage[];
   }): Promise<{

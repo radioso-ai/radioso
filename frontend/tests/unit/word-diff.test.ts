@@ -20,7 +20,7 @@ describe('diffWords', () => {
     expect(diff.segments).toEqual([{ kind: 'same', gap: '', text: 'Keep answers short.' }])
   })
 
-  it('marks a replaced run as one removal and one addition', () => {
+  it('marks a replaced run as one removal and one addition, counted as one change', () => {
     const diff = diffWords(
       'Use bullets for options and bold labels only when they aid scanning.',
       'Use bullets for options and bold labels when there are more than two items.',
@@ -29,7 +29,7 @@ describe('diffWords', () => {
     expect(render(diff)).toBe(
       'Use bullets for options and bold labels [-only-] when [-they aid scanning.-] {+there are more than two items.+}',
     )
-    expect(diff.changes).toBe(3)
+    expect(diff.changes).toBe(2)
   })
 
   it('counts consecutive changed words as a single change', () => {

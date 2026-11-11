@@ -179,7 +179,7 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
   await expect(page.getByText("1 conflict")).toBeVisible();
   await expect(page.getByText("Conflict", { exact: true })).toBeVisible();
   await reviewConflict(page);
-  await expect(page.getByText("Conflicts with concise-readable-formatting.")).toBeVisible();
+  await expect(page.getByText("Conflicts with Readable formatting.")).toBeVisible();
   await expect(page.getByText("The saved directive may conflict with a formatting rule.")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect.poll(() => directiveUpdates.length).toBe(2);

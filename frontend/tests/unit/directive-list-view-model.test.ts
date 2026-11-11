@@ -296,6 +296,7 @@ describe('buildDirectiveListViewModel conflicts', () => {
       ['tone', 0],
     ])
     expect(view.rows[0].conflicts[0].existing).toBeNull()
+    expect(view.rows[0].conflicts[0].existingName).toBe('Readable formatting')
     expect(view.banner?.reviewDirectiveId).toBe('brief')
   })
 

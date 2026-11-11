@@ -214,7 +214,9 @@ A directive resolves against the others two ways, one soft and one hard.
   The directive list reads that exclusion back as a single row. One authored
   directive that applies **Always**, replaces exactly one built-in, and meets it
   on the agent's reply is that built-in's customization: the list shows it
-  under the built-in's `title` with a **Radioso default** / **Your version**
+  under the built-in's `title` while it keeps the name **Customize** gave it
+  (`Override: <built-in name>`) and under its own name once an operator renames
+  it, with a **Radioso default** / **Your version**
   choice that drives the directive's `enabled` flag, and the defaults group
   counts only the built-ins nobody has customized. Two such directives, a
   contextual one, or one that also replaces other names remain ordinary rows,

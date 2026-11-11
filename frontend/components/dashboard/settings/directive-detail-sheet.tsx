@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { DirectiveConflicts } from '@/components/dashboard/settings/directive-conflicts'
 import { focusBuiltInRow, focusDirectiveRow } from '@/components/dashboard/settings/directive-list'
@@ -18,7 +18,7 @@ import { Switch } from '@/components/ui/switch'
 import type { BuiltInDirective, Directive } from '@/lib/api'
 import type { BuiltInDefaultEntry, DirectiveRow } from '@/lib/directive-list-view-model'
 import { directiveSurfaceSummary } from '@/lib/directive-surfaces'
-import { diffWords, WORD_DIFF_SIMILARITY_THRESHOLD } from '@/lib/word-diff'
+import { diffWords, WORD_DIFF_SIMILARITY_THRESHOLD, type WordDiff } from '@/lib/word-diff'
 
 export type DirectiveSheetTarget =
   | { kind: 'row'; row: DirectiveRow }
@@ -85,8 +85,7 @@ function SheetFrame({
   )
 }
 
-function WordDiffText({ from, to }: { from: string; to: string }) {
-  const { segments } = diffWords(from, to)
+function WordDiffText({ segments }: { segments: WordDiff['segments'] }) {
   return (
     <p className="whitespace-pre-wrap break-words">
       {segments.map((segment, index) => {
@@ -109,14 +108,32 @@ function WordDiffText({ from, to }: { from: string; to: string }) {
   )
 }
 
-function AuthoredSheet({ row, actions }: { row: DirectiveRow; actions: DirectiveSheetActions }) {
-  const { directive } = row
-  const isPending = actions.isRowPending(directive.id)
+// The settings a row leaves out. A customized default shows them too: folding a rule into its
+// built-in's row must not hide its priority, where it applies, or the note its author left.
+function DirectiveDetails({ directive, replaces }: { directive: Directive; replaces?: string[] }) {
   const details: Array<[string, string]> = [
     ['Priority', directive.priority == null ? 'Default' : String(directive.priority)],
     ['Applies to', directiveSurfaceSummary(directive.surfaces)],
-    ...(row.replaces.length > 0 ? [['Replaces', row.replaces.join(', ')] as [string, string]] : []),
+    ...(replaces && replaces.length > 0 ? [['Replaces', replaces.join(', ')] as [string, string]] : []),
+    ...(directive.description ? [['Note', directive.description] as [string, string]] : []),
   ]
+  return (
+    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 border-t border-border pt-4 text-sm">
+      {details.map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="break-words text-foreground">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function AuthoredSheet({ row, actions }: { row: DirectiveRow; actions: DirectiveSheetActions }) {
+  const { directive } = row
+  // A save in flight (the editor, or a conflict action) resends a directive in full, as does a
+  // toggle; starting another from this copy would write a stale value back over it.
+  const isBusy = actions.isRowPending(directive.id) || actions.isSaving
   return (
     <SheetFrame
       title={directive.name}
@@ -124,18 +141,16 @@ function AuthoredSheet({ row, actions }: { row: DirectiveRow; actions: Directive
         <Switch
           checked={directive.enabled}
           onCheckedChange={(enabled) => actions.onToggleEnabled(directive, enabled)}
-          disabled={isPending}
+          disabled={isBusy}
           aria-label={`${directive.enabled ? 'Disable' : 'Enable'} ${directive.name}`}
         />
       )}
       footer={(
         <>
-          {/* The editor opens from this directive's current values and resends them on save, so
-              editing while a toggle is still in flight would save the pre-toggle state back over it. */}
-          <Button type="button" variant="outline" disabled={isPending} onClick={() => actions.onEdit(directive)} aria-label={`Edit ${directive.name}`}>
+          <Button type="button" variant="outline" disabled={isBusy} onClick={() => actions.onEdit(directive)} aria-label={`Edit ${directive.name}`}>
             Edit
           </Button>
-          <Button type="button" variant="ghost" className="ml-auto text-destructive hover:text-destructive" disabled={isPending} onClick={() => actions.onDelete(directive)} aria-label={`Delete ${directive.name}`}>
+          <Button type="button" variant="ghost" className="ml-auto text-destructive hover:text-destructive" disabled={isBusy} onClick={() => actions.onDelete(directive)} aria-label={`Delete ${directive.name}`}>
             Delete
           </Button>
         </>
@@ -153,14 +168,7 @@ function AuthoredSheet({ row, actions }: { row: DirectiveRow; actions: Directive
         {directive.condition.kind === 'contextual' ? directive.condition.description : 'Always'}
       </Field>
       <Field label="Instruction"><InstructionText>{directive.action}</InstructionText></Field>
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 border-t border-border pt-4 text-sm">
-        {details.map(([label, value]) => (
-          <div key={label} className="contents">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="break-words text-foreground">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <DirectiveDetails directive={directive} replaces={row.replaces} />
     </SheetFrame>
   )
 }
@@ -175,9 +183,9 @@ function CustomizedSheet({
   actions: DirectiveSheetActions
 }) {
   const { directive } = row
-  const isPending = actions.isRowPending(directive.id)
+  const isBusy = actions.isRowPending(directive.id) || actions.isSaving
   const inUse: VersionInUse = directive.enabled ? 'yours' : 'default'
-  const diff = diffWords(builtIn.action, directive.action)
+  const diff = useMemo(() => diffWords(builtIn.action, directive.action), [builtIn.action, directive.action])
   const isComparable = diff.similarity >= WORD_DIFF_SIMILARITY_THRESHOLD
   return (
     <SheetFrame
@@ -185,10 +193,10 @@ function CustomizedSheet({
       subtitle={row.title === row.defaultTitle ? 'Radioso default, customized · Always' : `Customizes ${row.defaultTitle} · Always`}
       footer={(
         <>
-          <Button type="button" variant="outline" disabled={isPending} onClick={() => actions.onEdit(directive)}>
+          <Button type="button" variant="outline" disabled={isBusy} onClick={() => actions.onEdit(directive)}>
             Edit your version
           </Button>
-          <Button type="button" variant="ghost" className="ml-auto text-destructive hover:text-destructive" disabled={isPending} onClick={() => actions.onDelete(directive)}>
+          <Button type="button" variant="ghost" className="ml-auto text-destructive hover:text-destructive" disabled={isBusy} onClick={() => actions.onDelete(directive)}>
             Delete your version
           </Button>
         </>
@@ -207,7 +215,7 @@ function CustomizedSheet({
         <SegmentedControl<VersionInUse>
           aria-label="Version in use"
           value={inUse}
-          disabled={isPending}
+          disabled={isBusy}
           onValueChange={(next) => {
             if (next !== inUse) actions.onToggleEnabled(directive, next === 'yours')
           }}
@@ -219,7 +227,7 @@ function CustomizedSheet({
       </Field>
       {isComparable ? (
         <Field label={diff.changes === 0 ? 'Your version · same as the default' : `Your version · ${diff.changes} ${diff.changes === 1 ? 'change' : 'changes'} from the default`}>
-          <WordDiffText from={builtIn.action} to={directive.action} />
+          <WordDiffText segments={diff.segments} />
         </Field>
       ) : (
         <>
@@ -227,6 +235,7 @@ function CustomizedSheet({
           <Field label="Radioso default"><InstructionText>{builtIn.action}</InstructionText></Field>
         </>
       )}
+      <DirectiveDetails directive={directive} />
     </SheetFrame>
   )
 }

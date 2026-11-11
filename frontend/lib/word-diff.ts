@@ -6,9 +6,10 @@ type DiffSegment = {
   text: string
 }
 
-type WordDiff = {
+export type WordDiff = {
   segments: DiffSegment[]
-  // Runs of consecutive added or removed words, each counted once.
+  // Edited stretches: a run of removed and added words between unchanged ones counts once, so a
+  // word swapped for another is one change.
   changes: number
   // Words the two texts share, as a share of the longer text. 1 is identical, 0 is unrelated.
   similarity: number
@@ -89,7 +90,7 @@ export const diffWords = (from: string, to: string): WordDiff => {
   const segments = groupOperations(operations)
   return {
     segments,
-    changes: segments.filter((segment) => segment.kind !== 'same').length,
+    changes: segments.filter((segment, index) => segment.kind !== 'same' && (index === 0 || segments[index - 1].kind === 'same')).length,
     similarity: shared / longest,
   }
 }

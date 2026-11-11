@@ -50,22 +50,19 @@ export const inlineSupportedLinksDirective: Directive = {
   ].join(" "),
 };
 
-export const defaultAnswerDirectives: Directive[] = [
-  conciseReadableFormattingDirective,
-  representOrganizationDirective,
-  inlineSupportedLinksDirective,
+// The title is what operators read in the dashboard and Ray; it stays beside the engine directive
+// rather than on it, and a built-in cannot be listed without one.
+const builtInAnswerDirectives: ReadonlyArray<{ directive: Directive; title: string }> = [
+  { directive: conciseReadableFormattingDirective, title: "Readable formatting" },
+  { directive: representOrganizationDirective, title: "Speak as the organization" },
+  { directive: inlineSupportedLinksDirective, title: "Inline source links" },
 ];
 
-const builtInDirectiveTitles: Record<string, string> = {
-  [conciseReadableFormattingDirective.name]: "Readable formatting",
-  [representOrganizationDirective.name]: "Speak as the organization",
-  [inlineSupportedLinksDirective.name]: "Inline source links",
-};
+export const defaultAnswerDirectives: Directive[] = builtInAnswerDirectives.map(({ directive }) => directive);
 
-export const builtInAnswerDirectiveViews: BuiltInDirectiveView[] = defaultAnswerDirectives.map((directive) => ({
+export const builtInAnswerDirectiveViews: BuiltInDirectiveView[] = builtInAnswerDirectives.map(({ directive, title }) => ({
   name: directive.name,
-  // A built-in added without a title falls back to its name rather than rendering blank.
-  title: builtInDirectiveTitles[directive.name] ?? directive.name,
+  title,
   condition: directive.condition,
   action: directive.action,
   priority: directive.priority ?? null,

@@ -40,8 +40,8 @@ export function DirectiveConflicts({
       className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100"
       role="status"
     >
-      {entries.map(({ conflict, subject, existing }) => {
-        const otherName = subject && subject.id !== focusId ? subject.name : conflict.directiveName
+      {entries.map(({ conflict, subject, existing, existingName }) => {
+        const otherName = subject && subject.id !== focusId ? subject.name : existingName
         const canResolve = subject
           && existing
           && subject.id !== existing.id

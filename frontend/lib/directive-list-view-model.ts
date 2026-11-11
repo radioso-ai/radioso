@@ -11,6 +11,9 @@ export type DirectiveConflictEntry = {
   // The authored directive the conflict names. Null when it names a built-in, which is not
   // an authored directive and so cannot be resubmitted.
   existing: Directive | null
+  // What the operator calls the directive the conflict names: an authored directive's name, or a
+  // built-in's title.
+  existingName: string
   // The verdict's summary, shared by every conflict in it.
   rationale: string
 }
@@ -100,18 +103,24 @@ const replacedNames = (
 const conflictEntries = (
   coherence: DirectiveCoherence | null,
   directives: Directive[],
+  builtIns: BuiltInDirective[],
   subjectId: string | null,
 ): DirectiveConflictEntry[] => {
   if (!coherence || coherence.coherent) return []
   const subject = subjectId ? directives.find((directive) => directive.id === subjectId) ?? null : null
-  return coherence.conflicts.map((conflict) => ({
-    conflict,
-    subject,
-    rationale: coherence.rationale,
-    existing: directives.find((directive) =>
+  return coherence.conflicts.map((conflict) => {
+    const existing = directives.find((directive) =>
       conflict.directiveId ? directive.id === conflict.directiveId : directive.name === conflict.directiveName,
-    ) ?? null,
-  }))
+    ) ?? null
+    const builtIn = existing ? undefined : builtIns.find((candidate) => candidate.name === conflict.directiveName)
+    return {
+      conflict,
+      subject,
+      rationale: coherence.rationale,
+      existing,
+      existingName: existing?.name ?? (builtIn ? builtInTitle(builtIn) : conflict.directiveName),
+    }
+  })
 }
 
 const conflictsInvolving = (
@@ -139,7 +148,7 @@ export const buildDirectiveListViewModel = ({
   coherence: DirectiveCoherence | null
   coherenceSubjectId: string | null
 }): DirectiveListViewModel => {
-  const entries = conflictEntries(coherence, directives, coherenceSubjectId)
+  const entries = conflictEntries(coherence, directives, builtIns, coherenceSubjectId)
 
   const customizations = new Map<string, BuiltInDirective>()
   for (const builtIn of builtIns) {

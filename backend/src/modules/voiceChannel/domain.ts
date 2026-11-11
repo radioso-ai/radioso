@@ -5,6 +5,9 @@ import type { VoiceVendor, VoiceVendorRegion } from "../../shared/domain/voiceVe
 
 import type { AgentVoiceSettings } from "../agents/public.js";
 
+import type { VoiceTestChatBinding, VoiceTestChatSubject } from "./testChatSessionDomain.js";
+export type { VoiceSessionSurface, VoiceTestChatBinding, VoiceTestChatSubject, VoiceTestChatTurnEvent, VoiceTestChatTurns } from "./testChatSessionDomain.js";
+
 export type VoiceTransport = "phone" | "web";
 
 /** One voice session, which maps to exactly one conversation. */
@@ -515,9 +518,27 @@ export interface VoiceSessionVendorAgent {
   region: VoiceVendorRegion;
 }
 
-/** Where a started session waits for its first turn. */
+/**
+ * Who a session is started for: a website visitor, or an operator's private test in Test Chat, with
+ * the test's own greeting for a maintained vendor agent to say first (null once the test is past it).
+ */
+export type VoiceSessionStartFor =
+  | { visitor: VoiceSessionVisitor; test?: never }
+  | { test: VoiceTestChatSubject & { greeting: string | null }; visitor?: never };
+
+/** Where a started session waits for its turns: its first one, or every one of a Test Chat session. */
 export interface VoiceSessionStartRegistry {
-  register(start: { session: VoiceSessionRef; visitor: VoiceSessionVisitor; expiresAt: Date; vendorAgent: VoiceSessionVendorAgent }): Promise<void>;
+  register(start: {
+    session: VoiceSessionRef;
+    expiresAt: Date;
+    vendorAgent: VoiceSessionVendorAgent;
+  } & ({ visitor: VoiceSessionVisitor } | { test: VoiceTestChatSubject })): Promise<void>;
+}
+
+/** Whether a session was started from Test Chat, read before any of its turns runs. */
+export interface VoiceTestChatBindingLookup {
+  /** Null for every other session: a website visitor's, a page's own, or one nobody started. */
+  findTestChatBinding(session: VoiceSessionRef): Promise<VoiceTestChatBinding | null>;
 }
 
 /** What a session's first turn reads of its start. */
@@ -640,8 +661,11 @@ export interface VoiceSessionAvailabilityPort {
 }
 
 export interface VoiceSessionStartPort {
-  /** Starts a voice session for one agent and visitor. `locale` is the caller's language tag, when the page names one. */
-  start(input: { workspaceId: string; agentId: string; visitor: VoiceSessionVisitor; locale?: string }): Promise<VoiceSessionStartResult>;
+  /**
+   * Starts a voice session for one agent, for a website visitor or an operator's private test.
+   * `locale` is the caller's language tag, when the page names one.
+   */
+  start(input: { workspaceId: string; agentId: string; locale?: string } & VoiceSessionStartFor): Promise<VoiceSessionStartResult>;
 }
 
 /**

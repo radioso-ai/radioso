@@ -52,6 +52,7 @@ import { createAgentDiscoveryRoutes } from "../../../modules/agentDiscovery/publ
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 import { createTestExecutionRoutes } from "./testExecutionRoutes.js";
+import { createTestChatVoiceSessionRoutes } from "./testChatVoiceSessionRoute.js";
 import { createNotificationRecipientConfirmationRoutes } from "./notificationRecipientConfirmationRoutes.js";
 import { createNotificationDeliveryWebhookRoutes } from "./notificationDeliveryWebhookRoutes.js";
 
@@ -92,6 +93,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
       evalSnapshotService: appDependencies.evalSnapshotService,
     }),
   },
+  { path: "/api/v1/agents", createRouter: createTestChatVoiceSessionRoutes },
   { path: "/api/v1", createRouter: createContextVariableRoutes },
   { path: "/api/v1/agents", createRouter: createDecisionRoutes },
   { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },

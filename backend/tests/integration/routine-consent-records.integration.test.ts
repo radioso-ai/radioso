@@ -457,6 +457,43 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
     expect(state?.variables).toEqual({ name: "Ada" });
   });
 
+  it("saves the state of a routine that asks no consent without the withdrawal guard", async () => {
+    const tenant = await seedTenant();
+    const conversation = await seedConversation(tenant);
+    // A withdrawn record the guard would act on, were it run for this routine.
+    await recordDecision(tenant, conversation, { routineId: "routine-intake", slotKeys: ["pregnant"] });
+    await database.query("UPDATE routine_consent_records SET withdrawn_at = now() WHERE conversation_id = $1", [conversation.conversationId]);
+
+    await new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000).completeAssistantTurn({
+      workspaceId: tenant.workspaceId,
+      conversationId: conversation.conversationId,
+      routineStateTransition: {
+        kind: "save",
+        asksConsent: false,
+        state: {
+          sessionId: conversation.conversationId,
+          routineId: "routine-intake",
+          path: ["ask_health"],
+          variables: { name: "Ada", pregnant: true },
+          status: "active",
+        },
+      },
+      assistantMessage: {
+        conversationId: conversation.conversationId,
+        workspaceId: tenant.workspaceId,
+        role: "assistant",
+        content: "Thanks, Ada.",
+      },
+      auditEvent: { workspaceId: tenant.workspaceId, eventType: "chat.answer", eventStatus: "success", metadata: {} },
+    });
+
+    const [state] = await database.query<{ variables: Record<string, unknown> }>(
+      "SELECT variables FROM routine_states WHERE session_id = $1",
+      [conversation.conversationId],
+    );
+    expect(state?.variables).toEqual({ name: "Ada", pregnant: true });
+  });
+
   it("records nothing for a consent the turn did not ask, and keeps a decision once however often a turn is retried", async () => {
     const tenant = await seedTenant();
     const conversation = await seedConversation(tenant);

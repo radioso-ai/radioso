@@ -154,8 +154,11 @@ const applyRoutineStateTransition = async (
   }
   if (transition.kind === "save") {
     await saveRoutineState(db, transition.state, ttlMs);
-    // A consent withdrawn while this turn ran never leaves its covered values in the state it saved (#1544).
-    await new RoutineConsentRepository(db).stripWithdrawnSlots({ conversationId: transition.state.sessionId });
+    // A consent withdrawn while this turn ran never leaves its covered values in the state it saved
+    // (#1544). Only a routine that asks consent can hold one, so no other pays for the guard.
+    if (transition.asksConsent !== false) {
+      await new RoutineConsentRepository(db).stripWithdrawnSlots({ conversationId: transition.state.sessionId });
+    }
     return;
   }
   await sql`DELETE FROM routine_states WHERE session_id = ${transition.sessionId}`.execute(db);

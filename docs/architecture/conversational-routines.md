@@ -461,8 +461,9 @@ Chat carries the events unread to `PostgresAssistantTurnPersistence`, whose turn
 transaction records them (`RoutineConsentRepository.writeTurnEvents`): a shown
 consent keeps its wording version and stamps `consentPrompt` on the reply, a
 decision keeps its version and records the visitor message that carried it, and a
-skipped consent records nothing. The same transaction strips the slots of any
-consent withdrawn in the conversation from the routine state it saves. Once the
+skipped consent records nothing. When the routine it saves asks consent, the same
+transaction strips the slots of any consent withdrawn in the conversation from the
+routine state it saves. Once the
 turn commits, `consent/consentTelemetry.ts` logs `routine_consent_shown`,
 `routine_consent_decided`, `routine_consent_defaulted` and
 `routine_consent_skipped` (an error for `wording_unavailable`) and counts

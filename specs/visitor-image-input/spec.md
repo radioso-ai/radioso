@@ -1,6 +1,6 @@
 # Visitor image input
 
-Status: Draft — decisions 1 and 3 settled 11-11; decision 2 open (additive).
+Status: Draft — decisions settled 11-11.
 
 ## Problem
 
@@ -188,13 +188,14 @@ need a text answer from the tool.
 - Test Chat parity.
 - Image cards in agent replies, for example showing matched properties.
 - Reading images inside the document corpus.
-- Typed attribute extraction against an operator field catalog and matching by metadata filter (decision 2, pending).
+- Typed attribute extraction against an operator field catalog and matching by metadata filter (decision 2).
 - Camera capture: the Permissions-Policy is `camera=()`, while the file picker still offers the camera on mobile.
 
 ## Decisions
 
 1. **Keep images with the conversation**, bounded in size: a browser downsizer plus a server re-encode to at most
    512 KB per image. The operator sees the reference photo, and it is erased with the conversation. (11-11)
-2. **Structure via routine slots** first. Whether to also extract typed attributes against a field catalog is still
-   open. It is additive, so it does not block parts 2–4.
+2. **Structure via routine slots.** Operator-authored slots are filled from the reading, and the search runs by
+   meaning. Typed attributes against a field catalog stay a follow-up, to add only if matching needs to be stricter.
+   (11-11)
 3. **Channels:** website embed, public chat link, WhatsApp and the REST API with the SDK. (11-11)

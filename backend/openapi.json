@@ -5860,6 +5860,9 @@
           "name": {
             "type": "string"
           },
+          "title": {
+            "type": "string"
+          },
           "condition": {
             "$ref": "#/components/schemas/AuthoredDirectiveCondition"
           },
@@ -5881,6 +5884,7 @@
         },
         "required": [
           "name",
+          "title",
           "condition",
           "action",
           "priority",

@@ -2,6 +2,9 @@ import type { Directive } from "./domain.js";
 
 export interface BuiltInDirectiveView {
   name: string;
+  // The operator-facing label. The engine `Directive` carries the stable `name` only; this is
+  // display copy, so it lives on the view and never reaches the runtime.
+  title: string;
   condition: Directive["condition"];
   action: string;
   priority: number | null;
@@ -53,8 +56,16 @@ export const defaultAnswerDirectives: Directive[] = [
   inlineSupportedLinksDirective,
 ];
 
+const builtInDirectiveTitles: Record<string, string> = {
+  [conciseReadableFormattingDirective.name]: "Readable formatting",
+  [representOrganizationDirective.name]: "Speak as the organization",
+  [inlineSupportedLinksDirective.name]: "Inline source links",
+};
+
 export const builtInAnswerDirectiveViews: BuiltInDirectiveView[] = defaultAnswerDirectives.map((directive) => ({
   name: directive.name,
+  // A built-in added without a title falls back to its name rather than rendering blank.
+  title: builtInDirectiveTitles[directive.name] ?? directive.name,
   condition: directive.condition,
   action: directive.action,
   priority: directive.priority ?? null,

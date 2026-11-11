@@ -1,3 +1,5 @@
+import type { ConversationOwner } from './operator-actions'
+
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 const absoluteRowTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -37,3 +39,29 @@ export const formatApprovalCreatedAt = (createdAt: string, now = new Date()): st
  * the two surfaces never drift into two different date formats.
  */
 export const formatInboxRowTimestamp = (value: string): string => absoluteRowTimestampFormatter.format(new Date(value))
+
+/**
+ * Who holds a human-owned row, for the queue. `teammate` is a conversation another operator holds
+ * and the row looks different for it; `unknown` is a holder the viewer cannot be compared to
+ * because the signed-in teammate is not known yet, so it is neither "mine" nor a teammate's.
+ */
+export interface InboxOwnerPresentation {
+  kind: 'mine' | 'teammate' | 'unknown'
+  text: string
+}
+
+export const inboxOwnerPresentation = (
+  owner: ConversationOwner | null | undefined,
+  currentUserId: string | null,
+): InboxOwnerPresentation | null => {
+  if (!owner) {
+    return null
+  }
+  if (currentUserId === null) {
+    return { kind: 'unknown', text: `${owner.label ?? 'Someone'} is handling this` }
+  }
+  if (owner.userId === currentUserId) {
+    return { kind: 'mine', text: 'You are handling this' }
+  }
+  return { kind: 'teammate', text: `${owner.label ?? 'A teammate'} is handling this` }
+}

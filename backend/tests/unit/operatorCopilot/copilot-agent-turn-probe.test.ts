@@ -102,6 +102,18 @@ describe("test_agent_turn", () => {
     });
   });
 
+  it("refuses a time zone the runtime does not know, instead of testing as another zone while saying it tested as that one", () => {
+    const { descriptor } = build();
+    const parse = (userTimeZone: string) => descriptor.inputSchema.safeParse({ message: "What's on tomorrow?", userTimeZone });
+
+    expect(parse("America/Los_Angeles").success).toBe(true);
+    for (const unknown of ["PDT", "Pacific", "Mars/Olympus_Mons", "+05:00"]) {
+      const refused = parse(unknown);
+      expect(refused.success, unknown).toBe(false);
+      expect(JSON.stringify(refused.error?.issues)).toContain("IANA time zone");
+    }
+  });
+
   it("resolves an agent name to a stable id and forwards only the safe probe contract", async () => {
     const { enriched, testTurn } = build();
     const permissions = new Set(enriched.requiredPermissions);

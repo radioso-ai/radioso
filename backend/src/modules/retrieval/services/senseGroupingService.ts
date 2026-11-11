@@ -302,7 +302,10 @@ export class SenseGroupingService {
         similaritySum: 0,
       };
       group.chunks.push(candidate);
-      group.similaritySum += candidate.similarity;
+      // `similarity` holds the hybrid rank-fused score, which reads adjacent ranks as
+      // near-equal however far apart the matches are; how close a document's chunks sit
+      // to the question is their semantic score.
+      group.similaritySum += candidate.semanticScore;
       byDocument.set(candidate.documentId, group);
     }
 

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-11T00:48:10.149Z",
+  "generatedAt": "2026-11-11T12:18:00.811Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -313,6 +313,11 @@
       "samples": 5
     },
     "offer-scope-what-to-write-gets-no-draft": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "retrieval-plans-listed": {
       "status": "pass",
       "passRate": 1,
       "samples": 5

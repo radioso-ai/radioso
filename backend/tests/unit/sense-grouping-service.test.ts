@@ -39,6 +39,8 @@ const candidate = (input: {
   documentId: string;
   title: string;
   similarity: number;
+  /** Cosine similarity to the query; defaults to `similarity` for fixtures that predate fused scoring. */
+  semanticScore?: number;
 }): RetrievedCandidate => ({
   chunkId: input.chunkId,
   documentId: input.documentId,
@@ -47,7 +49,7 @@ const candidate = (input: {
   similarity: input.similarity,
   retrievalSources: ["semantic_rewritten"],
   retrievalText: `${input.title} fixture retrieval text`,
-  semanticScore: input.similarity,
+  semanticScore: input.semanticScore ?? input.similarity,
   lexicalScore: 0,
   attributeMatchScore: 0,
   metadata: {},
@@ -392,6 +394,44 @@ describe("SenseGroupingService", () => {
       "Whether shipping details apply",
     ]);
     expect(refund!.confidence - shipping!.confidence).toBeGreaterThanOrEqual(0.15);
+    expect(decideClarification(candidates, { floor: 0, margin: 0.15, maxOptions: 4 })).toMatchObject({
+      kind: "auto_pick",
+      candidate: expect.objectContaining({ id: "doc-left" }),
+      reason: "clear_margin",
+    });
+  });
+
+  it("judges a group's relevance by its similarity to the question, not by its fused rank score", async () => {
+    // Hybrid retrieval overwrites `similarity` with a rank-fused score, so adjacent ranks
+    // read as near-equal however far apart the matches are. A plans question that pulls a
+    // refund page in behind the pricing page must not turn into a tie between them.
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
+        id: group.id,
+        label: group.id === "doc-left" ? "Plans and their prices" : "Refund terms",
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+    const fused = (chunkId: string, documentId: string, title: string, similarity: number, semanticScore: number) =>
+      candidate({ chunkId, documentId, title, similarity, semanticScore });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "Which plans do you offer?",
+      rankedCandidates: [
+        fused("left-1", "doc-left", "Plans and Pricing", 0.8, 0.52),
+        fused("right-1", "doc-right", "Refund Policy", 0.787, 0.33),
+        fused("left-2", "doc-left", "Plans and Pricing", 0.775, 0.5),
+        fused("right-2", "doc-right", "Refund Policy", 0.764, 0.31),
+      ],
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toHaveLength(2);
     expect(decideClarification(candidates, { floor: 0, margin: 0.15, maxOptions: 4 })).toMatchObject({
       kind: "auto_pick",
       candidate: expect.objectContaining({ id: "doc-left" }),

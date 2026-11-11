@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/public.js";
 import type { CopilotContextContributor } from "../../../src/modules/operatorCopilot/context/contributor.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 import { InMemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
 
 type WarnLogger = { warn: (fields: Record<string, unknown>, message: string) => void };
@@ -12,6 +13,7 @@ const serviceWith = (contextContributors: ReadonlyArray<CopilotContextContributo
     result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 0, wallTimeMs: 1 }),
   }));
   const service = new OperatorCopilotService({
+    contributedProposals: noContributedCopilotProposals,
     repository: new InMemoryCopilotRepository(),
     capabilityRunner: { runStreaming },
     usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },

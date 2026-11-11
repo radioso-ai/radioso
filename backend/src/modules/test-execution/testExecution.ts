@@ -233,6 +233,8 @@ export interface TrustedTestExecutionRunnerPort {
     executionMode: "safe_test";
     skillEffects: SkillEffectPolicy;
     accountId: string | null;
+    /** The operator's IANA zone, when their client sent one; the turn resolves it like a visitor's. */
+    userTimeZone?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<string, TestExecutionRunnerResult>;
 }
@@ -635,7 +637,7 @@ export class TestExecutionService {
         surface: "test_execution",
         usage: "test_run",
       });
-      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, signal: identity.signal });
+      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, userTimeZone: identity.userTimeZone, signal: identity.signal });
       let streamed = "";
       let step = await turn.next();
       while (!step.done) {
@@ -712,5 +714,9 @@ export class TestExecutionService {
   }
 }
 
-interface TestExecutionMessageInput { workspaceId: string; agentId: string; accountId: string | null; executionId: string; message: string; generation: number; turnId: string; attemptId: string; signal?: AbortSignal; }
+interface TestExecutionMessageInput {
+  workspaceId: string; agentId: string; accountId: string | null; executionId: string; message: string; generation: number; turnId: string; attemptId: string; signal?: AbortSignal;
+  /** The operator's IANA zone as their browser reports it; the turn reads "today" in it. */
+  userTimeZone?: string;
+}
 interface TestExecutionRetryInput extends Omit<TestExecutionMessageInput, "message"> { sideId: string; }

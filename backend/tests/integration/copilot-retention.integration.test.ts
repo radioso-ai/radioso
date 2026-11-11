@@ -5,12 +5,13 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { CopilotRepository } from "../../src/db/repositories/copilotRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { firstPartyCopilotProposalTargetTypes } from "../../src/modules/operatorCopilot/proposalContribution.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("CopilotRepository retention sweep (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new CopilotRepository(database.kysely);
+  const repository = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const operatorUserId = randomUUID();

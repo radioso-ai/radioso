@@ -145,6 +145,58 @@ describe('agentRevisionsApi', () => {
     expect(init.method).toBe('GET')
   })
 
+  describe('Test Chat turns', () => {
+    const stubBrowserZone = (timeZone: string | undefined) => {
+      const RealDateTimeFormat = Intl.DateTimeFormat
+      vi.spyOn(Intl, 'DateTimeFormat').mockImplementation((...args: ConstructorParameters<typeof Intl.DateTimeFormat>) => {
+        const formatter = new RealDateTimeFormat(...args)
+        return Object.assign(Object.create(formatter) as Intl.DateTimeFormat, {
+          resolvedOptions: () => ({ ...formatter.resolvedOptions(), timeZone }),
+        })
+      })
+    }
+    const turn = { executionGeneration: 1, turnId: 'turn-1', attemptId: 'attempt-1' }
+    const sentBody = (fetchMock: ReturnType<typeof vi.fn>) => {
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      return JSON.parse(init.body as string) as Record<string, unknown>
+    }
+
+    afterEach(() => vi.restoreAllMocks())
+
+    it("sends the operator's browser time zone with every message", async () => {
+      vi.stubGlobal('window', { localStorage: storage() })
+      stubBrowserZone('America/Los_Angeles')
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}))
+      vi.stubGlobal('fetch', fetchMock)
+
+      await agentRevisionsApi.sendTestMessage('agent-1', 'execution-1', { message: "What's on tomorrow?", ...turn })
+
+      expect(sentBody(fetchMock)).toEqual({ message: "What's on tomorrow?", ...turn, userTimeZone: 'America/Los_Angeles' })
+    })
+
+    it('sends it with a retry of a failed side too', async () => {
+      vi.stubGlobal('window', { localStorage: storage() })
+      stubBrowserZone('Europe/Rome')
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}))
+      vi.stubGlobal('fetch', fetchMock)
+
+      await agentRevisionsApi.retryTestSide('agent-1', 'execution-1', 'side-1', turn)
+
+      expect(sentBody(fetchMock)).toEqual({ ...turn, userTimeZone: 'Europe/Rome' })
+    })
+
+    it('sends no zone when the browser reports none', async () => {
+      vi.stubGlobal('window', { localStorage: storage() })
+      stubBrowserZone(undefined)
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}))
+      vi.stubGlobal('fetch', fetchMock)
+
+      await agentRevisionsApi.sendTestMessage('agent-1', 'execution-1', { message: 'Hi', ...turn })
+
+      expect(sentBody(fetchMock)).toEqual({ message: 'Hi', ...turn })
+    })
+  })
+
   it('retains one settled comparison side through the private execution port', async () => {
     vi.stubGlobal('window', { localStorage: storage() })
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'retained-1', generation: 1, mode: 'single', sides: [] }))

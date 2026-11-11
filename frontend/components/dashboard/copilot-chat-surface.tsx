@@ -50,6 +50,7 @@ import {
   type CopilotProposalSummary,
 } from '@/lib/api-copilot'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { workspaceDashboardHref } from '@/lib/copilot-dashboard-path'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   resolveCopilotEntityLabel,
@@ -397,6 +398,7 @@ export function CopilotChatSurface({
       ...(event.evidence ? { evidence: event.evidence } : {}),
       ...(event.removal ? { removal: true } : {}),
       ...(event.reach ? { reach: true } : {}),
+      ...(event.presentation ? { presentation: event.presentation } : {}),
     }
     updateSession((current) => ({
       ...current,
@@ -538,6 +540,15 @@ export function CopilotChatSurface({
     }
   }
 
+  // A contributed proposal names a page inside the workspace dashboard.
+  const openDashboardPath = (dashboardPath: string) => {
+    const routeKey = activeWorkspace?.publicRouteKey
+    const href = routeKey ? workspaceDashboardHref(routeKey, dashboardPath) : null
+    if (!href) return
+    closePanel()
+    router.push(href)
+  }
+
   if (session.permissionDenied) return null
 
   if (session.availability?.reason === 'no_llm_capability') {
@@ -649,7 +660,7 @@ export function CopilotChatSurface({
                           {proposals.length > 0 ? (
                             <div className="mt-4 space-y-3">
                               {proposals.map((proposal) => (
-                                <CopilotProposalCard key={proposal.id} proposal={proposal} canApply={(session.availability?.applyableProposalTargets ?? []).includes(proposal.targetType)} defaultAgentId={pageContext.agentId} onOpenEntity={openEntity} />
+                                <CopilotProposalCard key={proposal.id} proposal={proposal} canApply={(session.availability?.applyableProposalTargets ?? []).includes(proposal.targetType)} defaultAgentId={pageContext.agentId} onOpenEntity={openEntity} onOpenDashboardPath={openDashboardPath} />
                               ))}
                             </div>
                           ) : null}

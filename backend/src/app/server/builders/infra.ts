@@ -62,6 +62,7 @@ import { IntegrationConnectionRepository } from "../../../modules/integrationCon
 import { SlackChannelBindingRepository, SlackInstallationRepository } from "../../../modules/slack/public.js";
 import { SlackSkillDefinitionRepository } from "../../../modules/slackSkills/public.js";
 import { CopilotRepository } from "../../../db/repositories/copilotRepository.js";
+import type { CopilotProposalTargetTypeSet } from "../../../modules/operatorCopilot/public.js";
 import { TestExecutionRepository } from "../../../db/repositories/testExecutionRepository.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopDocumentCapacityReadPort, NoopUsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
@@ -204,6 +205,10 @@ export const buildRepositories = (
   options: {
     agentSurfaceExtensions?: AgentSurfaceExtensionRegistry;
     agentSkillSettings?: AgentSkillSettingsRegistry;
+    /** The Ray proposal target types this deployment stores, reads, and applies. */
+    copilotProposalTargetTypes: CopilotProposalTargetTypeSet;
+    /** Where the copilot repository reports a stored card it skips. */
+    logger: Pick<AppLogger, "warn">;
   },
 ) => ({
   accountMembershipRepository: new AccountMembershipRepository(database.kysely),
@@ -262,7 +267,7 @@ export const buildRepositories = (
   emailSkillActivityRepository: new EmailSkillActivityRepository(database.kysely),
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
   slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
-  copilotRepository: new CopilotRepository(database.kysely),
+  copilotRepository: new CopilotRepository(database.kysely, options.copilotProposalTargetTypes, options.logger),
   testExecutionRepository: new TestExecutionRepository(database.kysely),
 });
 

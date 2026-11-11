@@ -612,6 +612,68 @@ test("applies a routine proposal and opens the routine editor", async ({ page })
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${routineId}(\\?|$)`));
 });
 
+test("applies a proposal an extension module contributed and opens the dashboard page it names", async ({ page }) => {
+  const copilotConversationId = "copilot-contributed-proposal-apply";
+  const proposalId = "proposal-contributed-apply-1";
+  const targetLabel = "Alert at 500 answers";
+  const summary = "Alert the workspace once it uses 500 answers this month.";
+  const presentation = { label: "usage alerts", dashboardPath: "/settings?settingsTab=usage" };
+  const detail = {
+    id: proposalId,
+    targetType: "alert_threshold",
+    targetLabel,
+    summary,
+    status: "pending",
+    targetRef: {},
+    preview: { current: null, proposed: { threshold: 500 } },
+    currentVersionMatches: true,
+    evidenceCases: null,
+  };
+  let messages: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["workspace_setting", "alert_threshold"] } });
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Alert me at 500 answers", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
+    if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Alert me at 500 answers", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
+    if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
+    if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "applied", appliedRef: { alertId: "alert-1" } } });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      const body = JSON.parse(request.postData() ?? "{}") as { message: string };
+      messages = [
+        { id: "operator-contributed-proposal-apply", role: "operator", content: body.message, createdAt: nowIso },
+        { id: "answer-contributed-proposal-apply", role: "copilot", content: "I drafted an alert threshold for review.", createdAt: nowIso, outcome: "completed", activity: [], proposals: [{ id: proposalId, targetType: "alert_threshold", targetLabel, summary, status: "pending", presentation }] },
+      ];
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-contributed-proposal-apply" })}`,
+          `event: proposal\ndata: ${JSON.stringify({ proposalId, targetType: "alert_threshold", targetLabel, summary, presentation })}`,
+          "event: chunk\ndata: {\"text\":\"I drafted an alert threshold for review.\"}",
+          "event: outcome\ndata: {\"status\":\"completed\"}",
+          "event: done\ndata: {}",
+        ].join("\n\n") + "\n\n",
+      });
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/w/${workspaceKey}/copilot`);
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Alert me at 500 answers");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await expect(page.getByText(targetLabel, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.getByRole("button", { name: "Apply proposal", exact: true }).click();
+  await expect(page.getByText("Applied", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open usage alerts", exact: true }).click();
+  // The usage tab belongs to the contributing module; Settings may drop a tab it does not know.
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/settings(\\?|$)`));
+});
+
 test("dismisses a pending proposal without applying it", async ({ page }) => {
   const copilotConversationId = "copilot-proposal-dismiss";
   const proposalId = "proposal-dismiss-1";

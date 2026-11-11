@@ -64,7 +64,7 @@ import type {
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { sensitiveSlotsAwaited } from "../../routines/public.js";
-import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
+import { userMessageTurnMetadata } from "./userMessageTurnMetadata.js";
 import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/public.js";
 import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
 import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
@@ -569,9 +569,7 @@ export class ChatSessionPreparer {
       workspaceId: input.workspaceId,
       role: "user",
       content: input.query,
-      ...(awaitedSensitiveSlotKeys.length > 0
-        ? { metadata: { ...userMessageInputMetadata, ...sensitiveTurnMetadata(awaitedSensitiveSlotKeys) } }
-        : { inputMetadata: userMessageInputMetadata }),
+      ...userMessageTurnMetadata({ inputMetadata: userMessageInputMetadata, sensitiveSlotKeys: awaitedSensitiveSlotKeys, referenceTimeZone }),
     }));
     // A message that answers a sensitive field is never restated as a facet.
     if (!existingUserMessage && awaitedSensitiveSlotKeys.length === 0) {

@@ -66,6 +66,19 @@ describe("resolveReferenceTimeZone", () => {
       .toEqual({ timeZone: "UTC", source: "default" });
   });
 
+  it("reads the zone the conversation last ran in after the visitor's and before the workspace's", () => {
+    expect(resolveReferenceTimeZone({
+      visitorTimeZone: "America/Los_Angeles",
+      conversationTimeZone: "Asia/Tokyo",
+      workspaceTimeZone: "Europe/Rome",
+    })).toEqual({ timeZone: "America/Los_Angeles", source: "visitor" });
+    expect(resolveReferenceTimeZone({ conversationTimeZone: "Asia/Tokyo", workspaceTimeZone: "Europe/Rome" }))
+      .toEqual({ timeZone: "Asia/Tokyo", source: "conversation" });
+    expect(resolveReferenceTimeZone({ conversationTimeZone: "Not/AZone", workspaceTimeZone: "Europe/Rome" }))
+      .toEqual({ timeZone: "Europe/Rome", source: "workspace" });
+    expect(resolveReferenceTimeZone({ conversationTimeZone: null })).toEqual({ timeZone: "UTC", source: "default" });
+  });
+
   it("is UTC when neither the visitor nor the workspace names a zone", () => {
     expect(resolveReferenceTimeZone({})).toEqual({ timeZone: "UTC", source: "default" });
     expect(resolveReferenceTimeZone({ visitorTimeZone: undefined, workspaceTimeZone: null }))

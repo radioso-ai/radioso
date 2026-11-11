@@ -231,6 +231,7 @@ import {
   EvalCaseReplayService,
   CopilotRetentionWorker,
   EvalSuiteProbeService,
+  firstPartyCopilotProposalTargetTypes,
   OperatorCopilotService,
   RetrievalProbeService,
   TestChatService,
@@ -382,6 +383,7 @@ import {
   bindClusteringEmbeddingPort,
   bindDocumentEmbeddingPort,
 } from "./embeddingPorts.js";
+import { noContributedCopilotProposals } from "../../src/modules/operatorCopilot/proposalContribution.js";
 
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
@@ -2833,7 +2835,7 @@ export const createTestDependencies = (overrides: {
   // tools call back into this service; the service runs the tools), so the closures above reference
   // this `const` ahead of its declaration, mirroring production wiring in `app/server/dependencies.ts`.
   const copilotContext = createCopilotContext({ workspaceSetupState: workspaceSummaryService, capabilityRunner: copilotCapabilityRunner, usageLimitPolicy, prompt: copilotPrompt, workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver, logger });
-  const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
+  const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     contextContributors: copilotContext.contributors,
     repository: copilotRepository,
     capabilityRunner: copilotCapabilityRunner,
@@ -2999,6 +3001,7 @@ export const createTestDependencies = (overrides: {
     operatorMcpReadiness: Promise.resolve(false),
     operatorMcpClientResolver: { resolve: async () => { throw new Error("Operator MCP is disabled in the test app"); } },
     copilotToolCatalog,
+    copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
     copilotCapabilityRunner,
     copilotPrompt,
     copilotWorkspaceRouteKeyResolver,

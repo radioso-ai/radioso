@@ -17,6 +17,7 @@ import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/ser
 import { copilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/contracts.js";
 import { realCatalog } from "./realCatalogTestSupport.js";
 import type { CopilotToolDescriptor, CopilotToolInvocationContext } from "../../../src/modules/operatorCopilot/public.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const currentAuthorization = { hasAllPermissions: vi.fn(async () => true) };
 const context: CopilotToolInvocationContext = {
@@ -243,7 +244,7 @@ describe("OperatorMcpCatalogService", () => {
       requiredPermissions.every((permission) => held.includes(permission))),
   });
 
-  const mcpReviewedService = (initial: ReadonlyArray<Record<string, unknown>>) => new OperatorCopilotService({
+  const mcpReviewedService = (initial: ReadonlyArray<Record<string, unknown>>) => new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     repository: mcpReviewedRepository(initial),
     proposalAdapters: mcpReviewedAdapters(),
     auditService: { record: vi.fn(async () => undefined) },

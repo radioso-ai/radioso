@@ -1095,7 +1095,7 @@ export interface paths {
         get: operations["getTimeZoneSettings"];
         /**
          * Set the zone the workspace reads today's date in
-         * @description Sets the IANA zone relative dates resolve in: the query rewrite, the answer, the rerank, the date-range lookup, the `today()` metadata rule token, and a routine's date slots and lookups all read today's date in it. A visitor whose client reports a valid zone (the website embed sends the browser's; `userTimeZone` on a chat request) reads today in their own zone instead. Null, the default, reads today in UTC. Each change records a `workspace.time_zone_settings.updated` audit event. Requires workspace.settings.manage.
+         * @description Sets the IANA zone relative dates resolve in: the query rewrite, the answer, the rerank, the date-range lookup, the `today()` metadata rule token, and a routine's date slots and lookups all read today's date in it, and a document's relative dates, such as next Friday, count from its creation day in it when the document is enriched. A visitor whose client reports a valid zone (the website embed and Test Chat send the browser's; `userTimeZone` on a chat request) reads today in their own zone instead, and a routine resumed by an approval click reads the zone of the visitor's last message first. Null, the default, reads today in UTC. Each change records a `workspace.time_zone_settings.updated` audit event. Requires workspace.settings.manage.
          */
         put: operations["updateTimeZoneSettings"];
         post?: never;
@@ -11602,6 +11602,8 @@ export interface components {
             turnId: string;
             /** Format: uuid */
             attemptId: string;
+            /** @description The operator's IANA time zone, such as America/Los_Angeles, which Test Chat sends from the browser with every message and retry. The turn reads today, tomorrow and this weekend in it; without it, or with an unknown zone, the workspace's time zone applies, then UTC. */
+            userTimeZone?: string;
         };
         TestExecutionRetryRequest: {
             executionGeneration: number;
@@ -11609,6 +11611,8 @@ export interface components {
             turnId: string;
             /** Format: uuid */
             attemptId: string;
+            /** @description The operator's IANA time zone, such as America/Los_Angeles, which Test Chat sends from the browser with every message and retry. The turn reads today, tomorrow and this weekend in it; without it, or with an unknown zone, the workspace's time zone applies, then UTC. */
+            userTimeZone?: string;
         };
         TestExecutionHistoryItem: {
             /** Format: uuid */
@@ -29558,6 +29562,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
+                        /** @description The proposal target types this operator may apply. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list. */
                         applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting")[];
                     };
                 };
@@ -29726,7 +29731,10 @@ export interface operations {
                             proposals: {
                                 /** Format: uuid */
                                 id: string;
-                                /** @enum {string} */
+                                /**
+                                 * @description What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list. A proposal of such a contributed type also carries an optional `presentation` ({ label, dashboardPath }): the link label and a path inside the workspace dashboard that the applied card opens.
+                                 * @enum {string}
+                                 */
                                 targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                                 targetLabel: string;
                                 summary: string;
@@ -29872,11 +29880,17 @@ export interface operations {
                         id: string;
                         /** Format: uuid */
                         workspaceId: string;
-                        /** @enum {string} */
+                        /**
+                         * @description What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list.
+                         * @enum {string}
+                         */
                         targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                         targetRef?: unknown;
                         target: {
-                            /** @enum {string} */
+                            /**
+                             * @description What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list.
+                             * @enum {string}
+                             */
                             type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                             ref?: unknown;
                         };

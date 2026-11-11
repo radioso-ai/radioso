@@ -5,9 +5,15 @@ export interface StoredDocumentObject {
   sizeBytes: number;
 }
 
+/** The folders an object may go to under its workspace: a document's source file, or a photo a visitor sent. */
+export type DocumentStorageFolder = "documents" | "visitor-images";
+
 export interface DocumentStorageUploadInput {
   workspaceId: string;
+  /** The object's leaf: the caller's random id for it, never a filename. */
   documentId: string;
+  /** `documents` when absent. */
+  folder?: DocumentStorageFolder;
   filename: string;
   mimeType: string;
   buffer: Buffer;
@@ -91,6 +97,10 @@ export const workspaceStoragePrefix = (workspaceId: string): string => {
   }
   return `${WORKSPACE_STORAGE_ROOT}/${workspaceId}/`;
 };
+
+/** Where an upload goes: its folder under the workspace, then its id. Every adapter writes this path. */
+export const documentStorageObjectPath = (input: Pick<DocumentStorageUploadInput, "workspaceId" | "documentId" | "folder">): string =>
+  `${workspaceStoragePrefix(input.workspaceId)}${input.folder ?? "documents"}/${input.documentId}`;
 
 /**
  * The only form a workspace id takes in a storage path: Postgres prints UUIDs in lowercase. Removing

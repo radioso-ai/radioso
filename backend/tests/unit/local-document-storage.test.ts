@@ -52,6 +52,24 @@ describe("LocalDocumentStorage", () => {
     })).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("writes a visitor's photo to its own folder under the workspace", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-local-storage-"));
+    tempRoots.push(root);
+    const storage = new LocalDocumentStorage(root);
+
+    const uploaded = await storage.upload({
+      workspaceId: "workspace-1",
+      documentId: "image-1",
+      folder: "visitor-images",
+      filename: "image.jpg",
+      mimeType: "image/jpeg",
+      buffer: Buffer.from("jpeg bytes"),
+    });
+
+    expect(uploaded.objectPath).toBe("workspaces/workspace-1/visitor-images/image-1");
+    expect((await storage.read(uploaded)).toString("utf8")).toBe("jpeg bytes");
+  });
+
   const createStorage = async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-local-storage-"));
     tempRoots.push(root);

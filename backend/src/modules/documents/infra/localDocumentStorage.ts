@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   WORKSPACE_STORAGE_ROOT,
+  documentStorageObjectPath,
   workspaceStoragePrefix,
   type DocumentStorageAdapter,
   type DocumentStorageDeleteInput,
@@ -76,7 +77,7 @@ export class LocalDocumentStorage implements DocumentStorageAdapter {
     // Path leaf is the caller-generated random documentId; the original
     // filename is untrusted client input, so it's kept on the document row's
     // `sourceFilename` rather than the storage path.
-    const objectPath = `${workspaceStoragePrefix(input.workspaceId)}documents/${input.documentId}`;
+    const objectPath = documentStorageObjectPath(input);
     const targetPath = ensureWithinRoot(this.rootPath, objectPath);
 
     await fs.mkdir(path.dirname(targetPath), { recursive: true });

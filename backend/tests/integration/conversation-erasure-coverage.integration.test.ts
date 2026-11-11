@@ -70,6 +70,11 @@ const coverage: Record<string, ErasureCoverage> = {
     kind: "retained",
     reason: "The voice vendor's id for an erased call, which names its recording there: the erasure backlog asks the vendor to delete it, and keeps the id only while the vendor still holds the recording.",
   },
+  "visitor_images.message_id": {
+    kind: "eraser",
+    owner: "visitor-images",
+    reason: "The message a photo was sent with. The link is SET NULL so a message deleted on its own leaves the photo for the unbound sweep, which deletes its object; a conversation's erasure deletes the row in the visitor images eraser and hands its object to the deletion job, and the row also cascades with conversation_id.",
+  },
   "voice_sessions.started_public_session_id": {
     kind: "eraser",
     owner: "voice-channel",

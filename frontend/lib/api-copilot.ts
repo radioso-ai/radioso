@@ -52,8 +52,21 @@ export interface CopilotAvailability {
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
-export type CopilotProposalTargetType = 'directive' | 'agent' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable' | 'document' | 'ingestion_settings' | 'website_crawl' | 'workspace_setting' | 'agent_greeting' | 'privacy_setting' | 'time_zone_setting'
+/**
+ * What a proposal changes. The first-party types (directive, agent, routine, document, workspace
+ * setting, ...) are linked by the card itself; an application module can contribute a type the
+ * dashboard has never heard of, whose card carries a `presentation` to link instead.
+ */
+export type CopilotProposalTargetType = string
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
+
+/** Where an applied contributed proposal's card links to. */
+export interface CopilotProposalPresentation {
+  /** What the link names, as in "Open usage alerts". */
+  label: string
+  /** A path inside the workspace's dashboard, relative to its root, such as `/settings`. */
+  dashboardPath: string
+}
 
 /** What the card states about replays run before the draft. Absent when nothing was measured. */
 export interface CopilotProposalEvidenceSummary {
@@ -97,6 +110,8 @@ export interface CopilotProposalSummary {
    * it from field names would have to know which of them mean reach.
    */
   reach?: boolean
+  /** Present only for a contributed target type: where the applied card links to. */
+  presentation?: CopilotProposalPresentation
 }
 
 export interface CopilotProposalPreview {
@@ -224,6 +239,7 @@ export interface CopilotProposalEvent {
   evidence?: CopilotProposalEvidenceSummary
   removal?: boolean
   reach?: boolean
+  presentation?: CopilotProposalPresentation
 }
 
 export interface CopilotChunkEvent {

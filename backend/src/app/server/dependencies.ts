@@ -109,6 +109,7 @@ import {
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
+import { resolveCopilotContributions } from "../composition/copilotContributions.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ReviewTurnAuditReader } from "../../modules/chat/contracts/index.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
@@ -195,6 +196,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     widgetOrigin: env.RADIOSO_WIDGET_ORIGIN ?? env.APP_BASE_URL,
   });
   const infrastructure = buildInfrastructure({ env, logger, composition });
+  const copilotContributions = resolveCopilotContributions(composition, { database: infrastructure.database, logger, auditService: infrastructure.auditService });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   for (const extension of composition.agentSurfaceExtensions) {
     agentSurfaceExtensions.register(extension);
@@ -210,10 +212,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     errorReporter: infrastructure.errorReportingService,
     audit: infrastructure.auditService,
   });
-  const repositories = buildRepositories(infrastructure.database, {
-    agentSurfaceExtensions,
-    agentSkillSettings,
-  });
+  const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings, copilotProposalTargetTypes: copilotContributions.proposals.targetTypes });
   const abuseControlComposition = createAbuseControlComposition({
     env,
     logger,
@@ -1023,15 +1022,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // Named rather than inlined so the copilot's behavioural eval suite can drive a real turn through
   // the same catalog, prompt, and runner the dashboard uses. A suite that assembled its own would
   // measure a copilot nobody talks to.
-  // Resolved here rather than at registration time so a contributing module receives the same
-  // constructed infrastructure every other application-module provider does.
-  const copilotToolContributions = composition.copilotToolRegistrations.map((registration) =>
-    typeof registration === "function"
-      ? registration({ database: infrastructure.database, logger, auditService: infrastructure.auditService })
-      : registration);
   const copilotToolCatalog = createCopilotToolCatalog({
     appBaseUrl: env.APP_BASE_URL,
-    toolContributions: copilotToolContributions,
+    toolContributions: copilotContributions.toolContributions,
+    proposalContributions: copilotContributions.proposals.contributions,
+    proposalTargetTypes: copilotContributions.proposals.targetTypes,
     emailChannel: emailChannel?.copilotView ?? null,
     deliveryFailures: deliveryFailureRecords,
     heldReplies,
@@ -1169,7 +1164,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     auditService: infrastructure.auditService,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
-    proposalAdapters: copilotProposalAdapters,
+    proposalAdapters: [...copilotProposalAdapters, ...copilotContributions.proposals.adapters],
+    proposalTargetTypes: copilotContributions.proposals.targetTypes,
     prompt: copilotPrompt,
     tools: copilotToolCatalog,
     probeBudgetPerTurn: env.COPILOT_PROBE_BUDGET_PER_TURN,
@@ -1518,6 +1514,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ...retentionWorkers,
     revisionEvalRunRetentionWorker,
     copilotToolCatalog,
+    copilotProposalTargetTypes: copilotContributions.proposals.targetTypes,
     copilotCapabilityRunner,
     copilotPrompt,
     copilotWorkspaceRouteKeyResolver,

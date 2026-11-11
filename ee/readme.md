@@ -20,9 +20,26 @@ Enterprise operator surfaces reach the operator copilot through
 operation and application-primitive identities they cite, because the OSS public
 contract and owning-port registry describe OSS surfaces only. The copilot
 contract is mirrored structurally in
-`ee/packages/backend-module/src/radiosoModuleTypes.ts`, the same arrangement the
-other registration ports use, so Enterprise code contributes tools without
-importing OSS types. `usageLimits/copilotTools.ts` is the worked example.
+`ee/packages/backend-module/src/copilotContributionTypes.ts` and re-exported from
+`radiosoModuleTypes.ts`, the same arrangement the other registration ports use,
+so Enterprise code contributes tools without importing OSS types. `usageLimits/copilotTools.ts` is the worked example.
+
+A feature that wants Ray to propose a change for an operator to review registers
+it with `registerCopilotProposalAdapter`. The contribution names a target type the
+feature owns, such as `alert_threshold`, the workspace permissions to read and to
+apply its proposals, an adapter, and the name, description, input schema, and
+capability declaration of the propose tool Ray offers for it. Ray builds that tool:
+the adapter's `draft` turns the tool's input into a change, a target label, a
+summary, and a `presentation` (the link label and a dashboard path inside the
+workspace, such as `/settings?settingsTab=usage`), and Ray stores, audits, and
+shows the proposal like a first-party one. Applying it calls the adapter's
+`applyIfVersionMatches` once per apply claim, after Ray checks the operator still
+holds the manage permissions. `canRetryAfterInterruptedApply` is required: return
+false for a create, so an apply interrupted before its outcome was recorded is
+resolved as interrupted rather than creating the target twice. OSS refuses to boot
+when a contributed target type is first-party or another module already
+contributed it. The proposal shows in the dashboard's Ray panel; contributed propose
+tools stay off Operator MCP.
 
 Feature manifests describe ownership metadata such as feature id, edition,
 backend module id, API namespace, frontend route stubs, and docs. The frontend

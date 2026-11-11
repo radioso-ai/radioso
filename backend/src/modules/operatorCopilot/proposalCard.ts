@@ -1,11 +1,15 @@
 import type { AgentTraceEvent } from "../../shared/agent-runtime/index.js";
-import {
-  copilotProposalTargetTypes,
-  type CopilotProposal,
-  type CopilotProposalCard,
-  type CopilotProposalEvidenceSummary,
+import type {
+  CopilotProposal,
+  CopilotProposalCard,
+  CopilotProposalEvidenceSummary,
 } from "./contracts.js";
 import { summarizeProposalEvidence } from "./proposalEvidence.js";
+import {
+  firstPartyCopilotProposalTargetTypes,
+  readCopilotProposalPresentation,
+  type CopilotProposalTargetTypeSet,
+} from "./proposalContribution.js";
 
 /**
  * A proposal card has two producers: the drafting tool's output during the turn, and the stored
@@ -34,19 +38,29 @@ export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalC
   // settings it was made from, and a reader re-deriving it from field names would have to know
   // which of them mean reach.
   const reach = payload.changesReach === true;
-  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.summary, textValue(payload.rationale, targetLabel)), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}), ...(reach ? { reach: true as const } : {}) };
+  // A contributed target type's link, stored by the tool that drafted it. Read through the same
+  // check the live card uses, so a stored link that leaves the workspace dashboard renders nowhere.
+  const presentation = readCopilotProposalPresentation(payload.presentation);
+  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.summary, textValue(payload.rationale, targetLabel)), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}), ...(reach ? { reach: true as const } : {}), ...(presentation ? { presentation } : {}) };
   return proposal.evidence ? { ...card, evidence: summarizeProposalEvidence(proposal.evidence) } : card;
 };
 
-const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean; reach?: boolean } => {
+const isProposalOutput = (value: unknown, targetTypes: CopilotProposalTargetTypeSet): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean; reach?: boolean; presentation?: unknown } => {
   if (!value || typeof value !== "object") return false;
   const output = value as Record<string, unknown>;
-  return typeof output.proposalId === "string" && (copilotProposalTargetTypes as ReadonlyArray<unknown>).includes(output.targetType) && typeof output.targetLabel === "string" && typeof output.summary === "string";
+  return typeof output.proposalId === "string" && targetTypes.has(output.targetType) && typeof output.targetLabel === "string" && typeof output.summary === "string";
 };
 
-/** The card a drafting tool's output streams as, on the turn that drafted it. */
-export const proposalCardFromTrace = (trace: AgentTraceEvent): CopilotProposalCard | null => {
-  if (trace.kind !== "tool_call_completed" || !isProposalOutput(trace.output)) return null;
+/**
+ * The card a drafting tool's output streams as, on the turn that drafted it. An output naming a
+ * target type outside the deployment's assembled set is no card at all.
+ */
+export const proposalCardFromTrace = (
+  trace: AgentTraceEvent,
+  targetTypes: CopilotProposalTargetTypeSet = firstPartyCopilotProposalTargetTypes,
+): CopilotProposalCard | null => {
+  if (trace.kind !== "tool_call_completed" || !isProposalOutput(trace.output, targetTypes)) return null;
+  const presentation = readCopilotProposalPresentation(trace.output.presentation);
   const card = { id: trace.output.proposalId, targetType: trace.output.targetType, targetLabel: trace.output.targetLabel, summary: trace.output.summary, status: "pending" as const };
   // The draft tool already summarized what it measured, so the card states it on the turn that
   // drafted it rather than only after a reload. Same reasoning for removal (Finding 1, issue
@@ -57,5 +71,6 @@ export const proposalCardFromTrace = (trace: AgentTraceEvent): CopilotProposalCa
     ...(trace.output.evidence ? { evidence: trace.output.evidence } : {}),
     ...(trace.output.removal ? { removal: true as const } : {}),
     ...(trace.output.reach ? { reach: true as const } : {}),
+    ...(presentation ? { presentation } : {}),
   };
 };

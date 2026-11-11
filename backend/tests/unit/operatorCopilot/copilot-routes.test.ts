@@ -6,7 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { createCopilotRoutes } from "../../../src/modules/operatorCopilot/routes.js";
-import { CopilotConflictError } from "../../../src/modules/operatorCopilot/public.js";
+import { CopilotConflictError, resolveCopilotProposalContributions } from "../../../src/modules/operatorCopilot/public.js";
+import { ALERT_THRESHOLD_TARGET_TYPE, createAlertThresholdContribution, createAlertThresholdState } from "../../support/contributedProposalModule.js";
 
 const ACCOUNT_ID = "22222222-2222-2222-8222-222222222222";
 const USER_ID = "33333333-3333-3333-8333-333333333333";
@@ -78,6 +79,35 @@ describe("createCopilotRoutes", () => {
       canManage: false,
       applyableProposalTargets: ["document", "document_operation", "ingestion_settings", "website_crawl", "workspace_setting", "privacy_setting", "time_zone_setting"],
     });
+  });
+
+  it("offers Apply on a contributed card exactly when the operator holds the permission its contribution declares", async () => {
+    const targetTypes = resolveCopilotProposalContributions([createAlertThresholdContribution(createAlertThresholdState())]).targetTypes;
+    const availabilityFor = async (held: ReadonlySet<string>) => {
+      const app = express();
+      app.use((req, _res, next) => { req.cookies = { radioso_session: "valid-session" }; next(); });
+      app.use("/api/v1/copilot", createCopilotRoutes({
+        env: { SESSION_COOKIE_NAME: "radioso_session" },
+        authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
+        workspaceSessionService: { async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; } },
+        accountAccessService: {
+          async requireActiveMembership() {},
+          async requirePermission() {},
+          hasPermission: vi.fn(async ({ permission }: { permission: string }) => held.has(permission)),
+        },
+        llmCapabilityResolver: { async resolve() { return {}; } },
+        operatorCopilotService: {},
+        copilotToolCatalog: [],
+        copilotProposalTargetTypes: targetTypes,
+        abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
+        auditService: { record: vi.fn(async () => {}) },
+      } as never));
+      const response = await request(app).get("/api/v1/copilot/availability");
+      return (response.body as { applyableProposalTargets: string[] }).applyableProposalTargets;
+    };
+
+    await expect(availabilityFor(new Set(["workspace.settings.manage"]))).resolves.toContain(ALERT_THRESHOLD_TARGET_TYPE);
+    await expect(availabilityFor(new Set(["workspace.agents.manage"]))).resolves.not.toContain(ALERT_THRESHOLD_TARGET_TYPE);
   });
 
   it("resolves a proposal from its owning workspace instead of dashboard workspace state", async () => {

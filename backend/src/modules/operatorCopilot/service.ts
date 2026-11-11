@@ -6,7 +6,6 @@ import { recipientEmailChangeMetadata } from "../../shared/domain/recipientEmail
 import { AppError } from "../../shared/domain/errors.js";
 import { buildAbsoluteOperatorMcpProposalLink } from "./dashboardLinks.js";
 import {
-  copilotProposalPermissions,
   withCopilotActor,
   type CopilotActor,
   type CopilotPageContext,
@@ -18,7 +17,7 @@ import {
   type CopilotProposalAdapter,
   type CopilotProposalApplyContext,
   type CopilotProposalCard,
-  type CopilotProposalTargetType,
+  type CopilotStoredProposalTargetType,
   type CopilotProposalStatus,
   type CopilotSseEvent,
   type CopilotSurface,
@@ -28,6 +27,7 @@ import {
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
 import { proposalCardFromTrace } from "./proposalCard.js";
+import { firstPartyCopilotProposalTargetTypes, type CopilotProposalTargetTypeSet } from "./proposalContribution.js";
 import { COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT, createCopilotProbeBudget, meteredCopilotTool, type CopilotProbeBudget } from "./probeBudget.js";
 import { COPILOT_TURN_BUDGET } from "./turnBudget.js";
 import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "./catalog.js";
@@ -108,7 +108,7 @@ export interface CopilotMessage {
 
 export interface CopilotProposalDetailReadModel {
   readonly proposalId: string;
-  readonly targetType: CopilotProposalTargetType;
+  readonly targetType: CopilotStoredProposalTargetType;
   readonly target: { readonly agentId: string | null; readonly directiveId: string | null; readonly routineId: string | null; readonly skillId: string | null; readonly documentId: string | null; readonly settingKey: string | null; readonly label: string; readonly reference: Record<string, string | boolean | null> };
   readonly summary: string;
   readonly draftedChange: unknown;
@@ -241,6 +241,8 @@ interface OperatorCopilotServiceDeps {
   /** Existing workspace authorization is mandatory for every protected Ray hook. */
   readonly currentAuthorization: CopilotCurrentAuthorizationPort;
   readonly proposalAdapters?: ReadonlyArray<CopilotProposalAdapter>;
+  /** The target types this deployment stores, reads and applies; the first-party list when omitted. */
+  readonly proposalTargetTypes?: CopilotProposalTargetTypeSet;
   /** Probe calls one turn may spend; see {@link COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT}. */
   readonly probeBudgetPerTurn?: number;
   readonly now?: () => Date;
@@ -825,10 +827,10 @@ export class OperatorCopilotService {
         const event = mapCopilotTraceEvent(trace, labels, entitiesByToolCall);
         trackActivity(trace, labels, entitiesByToolCall, activity);
         if (event) yield event;
-        const proposal = proposalCardFromTrace(trace);
+        const proposal = proposalCardFromTrace(trace, this.targetTypes);
         if (proposal) {
           proposals.push(proposal);
-          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary, ...(proposal.evidence ? { evidence: proposal.evidence } : {}), ...(proposal.removal ? { removal: true as const } : {}), ...(proposal.reach ? { reach: true as const } : {}) } };
+          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary, ...(proposal.evidence ? { evidence: proposal.evidence } : {}), ...(proposal.removal ? { removal: true as const } : {}), ...(proposal.reach ? { reach: true as const } : {}), ...(proposal.presentation ? { presentation: proposal.presentation } : {}) } };
         }
       }
       const result = await stream.result;
@@ -949,10 +951,12 @@ export class OperatorCopilotService {
     return adapter;
   }
 
-  private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType, proposal?: CopilotProposal): Promise<boolean> {
+  private get targetTypes(): CopilotProposalTargetTypeSet { return this.deps.proposalTargetTypes ?? firstPartyCopilotProposalTargetTypes; }
+
+  private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotStoredProposalTargetType, proposal?: CopilotProposal): Promise<boolean> {
     const { currentAuthorization, ...principal } = input;
     const requiredPermissions = [
-      ...copilotProposalPermissions[targetType].manage,
+      ...this.targetTypes.permissionsFor(targetType).manage,
       ...(proposal && proposalChangesNotificationRecipients(proposal)
         ? ["workspace.notification_recipients.manage" as const]
         : []),
@@ -960,12 +964,12 @@ export class OperatorCopilotService {
     return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions });
   }
 
-  private async canReadProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType): Promise<boolean> {
+  private async canReadProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotStoredProposalTargetType): Promise<boolean> {
     const { currentAuthorization, ...principal } = input;
-    return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions: [...copilotProposalPermissions[targetType].read] });
+    return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions: [...this.targetTypes.permissionsFor(targetType).read] });
   }
 
-  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType, proposal?: CopilotProposal): Promise<void> {
+  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotStoredProposalTargetType, proposal?: CopilotProposal): Promise<void> {
     if (await this.canManageProposal(input, targetType, proposal)) return;
     await this.audit(input, {
       accountId: input.accountId,

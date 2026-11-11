@@ -178,9 +178,14 @@ const MAX_CITED_EVIDENCE = 10;
 /** Ids from prior replay_eval_case calls. The measurement itself is read server-side. */
 export const citedEvidenceSchema = z.array(z.string().uuid()).max(MAX_CITED_EVIDENCE).optional();
 
-export const proposalOutputSchema = z.object({
+/**
+ * What a propose tool returns, over the target types it may name. A first-party tool names a
+ * first-party type, so {@link proposalOutputSchema} reads the first-party list; a tool Ray builds
+ * for a contributed adapter reads that adapter's entry in the assembled target-type set.
+ */
+export const proposalOutputSchemaFor = <const TTargetTypes extends readonly [string, ...string[]]>(targetTypes: TTargetTypes) => z.object({
   proposalId: z.string().uuid(),
-  targetType: z.enum(copilotProposalTargetTypes),
+  targetType: z.enum(targetTypes),
   targetLabel: z.string(),
   summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY),
   /** Absent when the change was proposed unmeasured, so silence never reads as verified. */
@@ -196,6 +201,8 @@ export const proposalOutputSchema = z.object({
   /** True only for a proposal that changes who can reach the agent; absent for a wording change. */
   reach: z.boolean().optional(),
 });
+
+export const proposalOutputSchema = proposalOutputSchemaFor(copilotProposalTargetTypes);
 
 export interface CopilotProposalEvidenceDependencies {
   readonly proposalEvidence: ProposalEvidenceDependencies;

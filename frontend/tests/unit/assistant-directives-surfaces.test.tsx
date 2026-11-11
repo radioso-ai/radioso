@@ -118,6 +118,7 @@ const directive = (
 
 const builtIn: BuiltInDirective = {
   name: 'Default reply',
+  title: 'Default reply title',
   condition: { kind: 'always' },
   action: 'Write a useful reply.',
   priority: 50,
@@ -131,6 +132,13 @@ const click = async (element: Element | null) => {
     await Promise.resolve()
   })
 }
+
+// A row opens its directive in a sheet, which portals to the document body rather than into the
+// section's own container.
+const openRow = (container: HTMLElement, name: string) =>
+  click(container.querySelector(`button[aria-label="${name}"]`))
+
+const clickInSheet = (label: string) => click(document.body.querySelector(`[aria-label="${label}"]`))
 
 describe('assistant directive surface-aware editing', () => {
   let container: HTMLDivElement
@@ -216,11 +224,16 @@ describe('assistant directive surface-aware editing', () => {
       }),
     ])
 
-    expect(container.querySelector('[aria-label="Replace Default reply for this agent"]')).not.toBeNull()
-    expect(container.textContent).not.toContain('Replaced by Suggestion rule')
-    expect(container.textContent).not.toContain('Replaces: Default reply')
+    // The exclusion never meets the reply, so the built-in stays a plain default that can still
+    // be customized, and the rule stays an ordinary row rather than folding into it.
+    expect(container.querySelector('button[aria-label="Suggestion rule"]')).not.toBeNull()
+    await click([...container.querySelectorAll('button')].find((button) => button.textContent?.startsWith('Radioso defaults')) ?? null)
+    await openRow(container, 'Default reply title')
+    expect(document.body.querySelector('[aria-label="Customize Default reply title"]')).not.toBeNull()
+    expect(document.body.textContent).not.toContain('Replaced by Suggestion rule')
 
-    await click(container.querySelector('[aria-label="Edit Suggestion rule"]'))
+    await openRow(container, 'Suggestion rule')
+    await clickInSheet('Edit Suggestion rule')
     const replacesField = container.querySelector('[data-testid="replaces-field"]')
     expect(replacesField?.getAttribute('data-built-ins')).toBe('')
     expect(replacesField?.getAttribute('data-selected')).toBe('')
@@ -238,7 +251,10 @@ describe('assistant directive surface-aware editing', () => {
       directive({ id: 'suggestion-rule', name: 'Suggestion rule', surfaces: ['suggested_questions'] }),
     ])
 
-    await click(container.querySelector('[aria-label="Edit Edited rule"]'))
+    // It replaces the one built-in on every turn and nothing else, so it reads as that built-in's
+    // customization rather than as a rule of its own.
+    await openRow(container, 'Default reply title')
+    await click([...document.body.querySelectorAll('button')].find((button) => button.textContent === 'Edit your version') ?? null)
     const replySurface = container.querySelector('[aria-label="The agent\'s reply"]')
     await click(replySurface)
 
@@ -260,7 +276,8 @@ describe('assistant directive surface-aware editing', () => {
       }),
     ])
 
-    await click(container.querySelector('[aria-label="Edit Bound rule"]'))
+    await openRow(container, 'Bound rule')
+    await clickInSheet('Edit Bound rule')
     const replySurface = container.querySelector<HTMLButtonElement>('[aria-label="The agent\'s reply"]')
 
     expect(replySurface?.disabled).toBe(true)

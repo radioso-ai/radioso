@@ -1,10 +1,15 @@
 'use client'
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Pencil, Plus, ScrollText, Trash2 } from 'lucide-react'
+import { Check, Plus, TriangleAlert } from 'lucide-react'
 
+import { BuiltInDefaultsGroup, DirectiveList } from '@/components/dashboard/settings/directive-list'
+import {
+  DirectiveDetailSheet,
+  type DirectiveSheetActions,
+  type DirectiveSheetTarget,
+} from '@/components/dashboard/settings/directive-detail-sheet'
 import { DirectiveReplacesField } from '@/components/dashboard/settings/directive-replaces-field'
-import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { mentionsSkill, SkillMentionInput, type SkillMentionOption } from '@/components/dashboard/settings/skill-mention-input'
 import { CapabilityPicker } from '@/components/dashboard/settings/skills/CapabilityPicker'
 import { SkillForm } from '@/components/dashboard/settings/skills/SkillForm'
@@ -24,14 +29,12 @@ import { Label } from '@/components/ui/label'
 import {
   DIRECTIVE_SURFACE_CHOICES,
   directiveSurfacesOverlap,
-  directiveSurfaceLabel,
   directiveSurfacesToForm,
   formSurfacesToPayload,
   toggleDirectiveSurface,
   type DirectiveSurface,
 } from '@/lib/directive-surfaces'
 import { Spinner } from '@/components/ui/spinner'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -50,6 +53,7 @@ import {
   type AgentSkillCreateInput,
   type SkillCapabilityDescriptor,
 } from '@/lib/api-skills'
+import { buildDirectiveListViewModel } from '@/lib/directive-list-view-model'
 import { normalizeSkillName } from '@/lib/external-skills'
 import {
   compatibleAnswerCoverageReasons,
@@ -263,103 +267,6 @@ const directiveToPayload = (
 
 const dedupeNames = (names: string[]): string[] => Array.from(new Set(names))
 
-const describeCondition = (condition: DirectiveCondition): string =>
-  condition.kind === 'always' ? 'Always applies' : `When: ${condition.description}`
-
-function CoherenceResolver({
-  coherence,
-  directives,
-  subjectId,
-  onSupersede,
-  onMakeConditional,
-  isSaving,
-  isRowPending,
-}: {
-  coherence: DirectiveCoherence
-  directives: Directive[]
-  subjectId: string | null
-  onSupersede: (winner: Directive, loser: Directive) => void
-  onMakeConditional: (directive: Directive) => void
-  isSaving: boolean
-  // Each of these actions resubmits one directive in full, from the copy this panel is holding.
-  // A row mutation in flight for that directive is about to change what "in full" means, so the
-  // action waits rather than writing a stale value back over it.
-  isRowPending: (directiveId: string) => boolean
-}) {
-  if (coherence.coherent) {
-    return (
-      <div className="rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground" role="status">
-        No directive conflicts were found.
-      </div>
-    )
-  }
-
-  const subject = subjectId ? directives.find((directive) => directive.id === subjectId) : undefined
-
-  return (
-    <div className="space-y-3 rounded-xl border border-border bg-muted/50 p-4" role="status">
-      <div>
-        <p className="text-sm font-medium text-foreground">Potential directive conflicts</p>
-        <p className="text-sm text-muted-foreground">{coherence.rationale}</p>
-      </div>
-      {coherence.conflicts.length > 0 ? (
-        <div className="space-y-3">
-          {coherence.conflicts.map((conflict) => {
-            const existing = directives.find((directive) =>
-              conflict.directiveId ? directive.id === conflict.directiveId : directive.name === conflict.directiveName
-            )
-            const canResolve = subject
-              && existing
-              && subject.id !== existing.id
-              && directiveSurfacesOverlap(subject.surfaces, existing.surfaces)
-            return (
-              <div key={`${conflict.directiveName}-${conflict.reason}`} className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">{conflict.directiveName}:</span> {conflict.reason}
-                </p>
-                {subject && existing && canResolve ? (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={isSaving || isRowPending(subject.id)}
-                      onClick={() => onSupersede(subject, existing)}
-                      aria-label={`${subject.name} supersedes ${existing.name}`}
-                    >
-                      {subject.name} supersedes {existing.name}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={isSaving || isRowPending(existing.id)}
-                      onClick={() => onSupersede(existing, subject)}
-                      aria-label={`${existing.name} supersedes ${subject.name}`}
-                    >
-                      {existing.name} supersedes {subject.name}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={isSaving || isRowPending(subject.id)}
-                      onClick={() => onMakeConditional(subject)}
-                      aria-label={`Make ${subject.name} apply only conditionally`}
-                    >
-                      Make {subject.name} apply only conditionally
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
 // What the numbers actually mean on this agent, read off the built-ins the API returned rather
 // than a hard-coded ladder that would drift the moment a built-in is re-ranked.
 function PriorityScale({ builtIns }: { builtIns: BuiltInDirective[] }) {
@@ -382,155 +289,6 @@ function PriorityScale({ builtIns }: { builtIns: BuiltInDirective[] }) {
         </Fragment>
       ))}
     </dl>
-  )
-}
-
-function DirectiveRow({
-  id,
-  directive,
-  readOnly = false,
-  replacedBy,
-  replaces,
-  onEdit,
-  onDelete,
-  onOverride,
-  onFocusReplacement,
-  onToggleEnabled,
-  isTogglingEnabled = false,
-}: {
-  id?: string
-  directive: Directive | BuiltInDirective
-  readOnly?: boolean
-  replacedBy?: Directive
-  replaces?: string[]
-  onEdit?: () => void
-  onDelete?: () => void
-  onOverride?: () => void
-  onFocusReplacement?: () => void
-  // Only ever passed for an authored directive. Built-ins have no `enabled` field of their own
-  // and are not affected by this control.
-  onToggleEnabled?: (enabled: boolean) => void
-  isTogglingEnabled?: boolean
-}) {
-  // A contextual replacer only supersedes this built-in when its condition
-  // fires, so the built-in still applies normally the rest of the time. Only an
-  // unconditional (always) replacer fully retires it — that's the one we fade
-  // out and strike through.
-  const isConditionalReplacement = replacedBy?.condition.kind === 'contextual'
-  const isFullyReplaced = replacedBy != null && !isConditionalReplacement
-  // Built-ins have no `enabled` field of their own and are never turned off from here.
-  const isDisabled = 'enabled' in directive && !directive.enabled
-  return (
-    <div
-      id={id}
-      tabIndex={id ? -1 : undefined}
-      className={`space-y-3 rounded-lg border border-border p-4 ${isFullyReplaced || isDisabled ? 'bg-muted/40 text-muted-foreground' : ''}`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className={`text-sm font-medium text-foreground ${isFullyReplaced ? 'line-through decoration-muted-foreground/70' : ''}`}>
-              {directive.name}
-            </p>
-            {readOnly ? (
-              <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                Read-only
-              </span>
-            ) : null}
-            {isDisabled ? (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                Disabled
-              </span>
-            ) : null}
-            {directive.priority != null ? (
-              <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                Priority {directive.priority}
-              </span>
-            ) : null}
-            {/* Built-ins carry no scope of their own and always address the reply. */}
-            {'surfaces' in directive && directiveSurfaceLabel(directive.surfaces) ? (
-              <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                {directiveSurfaceLabel(directive.surfaces)}
-              </span>
-            ) : null}
-            {replaces?.map((name) => (
-              <span key={name} className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                {directive.condition.kind === 'contextual' ? `Replaces ${name} when active` : `Replaces: ${name}`}
-              </span>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {describeCondition(directive.condition)}
-          </p>
-          {replacedBy ? (
-            <p className="text-xs text-muted-foreground">
-              Replaced by{' '}
-              <button
-                type="button"
-                className="font-medium text-foreground underline-offset-4 hover:underline"
-                onClick={onFocusReplacement}
-              >
-                {replacedBy.name}
-              </button>
-              {replacedBy.condition.kind === 'contextual' ? (
-                <> only when: {replacedBy.condition.description}. Otherwise this default still applies.</>
-              ) : null}
-            </p>
-          ) : null}
-          {'description' in directive && directive.description ? (
-            <p className="text-xs text-muted-foreground">{directive.description}</p>
-          ) : null}
-        </div>
-        {readOnly && !replacedBy ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onOverride}
-            aria-label={`Replace ${directive.name} for this agent`}
-          >
-            Override
-          </Button>
-        ) : !readOnly ? (
-          <div className="flex shrink-0 items-center gap-1">
-            {onToggleEnabled ? (
-              <Switch
-                checked={!isDisabled}
-                onCheckedChange={onToggleEnabled}
-                disabled={isTogglingEnabled}
-                aria-label={`${isDisabled ? 'Enable' : 'Disable'} ${directive.name}`}
-              />
-            ) : null}
-            {/* The dialog opens from this row's current values and always resends them on save,
-                so editing while the toggle is still in flight would save the pre-toggle state
-                back over it. Both actions wait out the request rather than race it. */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onEdit}
-              disabled={isTogglingEnabled}
-              aria-label={`Edit ${directive.name}`}
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onDelete}
-              disabled={isTogglingEnabled}
-              aria-label={`Delete ${directive.name}`}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : null}
-      </div>
-      {/* The instruction keeps the line breaks its author wrote, so the row reads them back
-          instead of collapsing every line into one. */}
-      <p className={`whitespace-pre-wrap text-sm ${replacedBy ? 'text-muted-foreground' : 'text-foreground'}`}>{directive.action}</p>
-    </div>
   )
 }
 
@@ -578,6 +336,10 @@ export function AssistantDirectivesSection({
   const [skillFormError, setSkillFormError] = useState<string | null>(null)
   const [isCreatingSkill, setIsCreatingSkill] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [sheetTarget, setSheetTarget] = useState<
+    { kind: 'row'; id: string } | { kind: 'default'; name: string } | null
+  >(null)
+  const [defaultsOpen, setDefaultsOpen] = useState(false)
   const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
   const bindableSkills = useMemo<SkillMentionOption[]>(
     () => agentSkills
@@ -613,42 +375,20 @@ export function AssistantDirectivesSection({
       ? builtIns.map((directive) => directive.name)
       : []),
   ]), [builtIns, directives])
-  const effectiveReplacements = useMemo(() => {
-    const targetSurfaces = new Map<string, readonly DirectiveSurface[] | undefined>()
-    for (const directive of builtIns) targetSurfaces.set(directive.name, undefined)
-    for (const directive of directives) targetSurfaces.set(directive.name, directive.surfaces)
-
-    const replacements = new Map<string, string[]>()
-    for (const directive of directives) {
-      replacements.set(
-        directive.id,
-        (directive.excludes ?? []).filter((name) =>
-          targetSurfaces.has(name)
-          && directiveSurfacesOverlap(directive.surfaces, targetSurfaces.get(name))
-        ),
-      )
+  const viewModel = useMemo(
+    () => buildDirectiveListViewModel({ directives, builtIns, coherence, coherenceSubjectId }),
+    [builtIns, coherence, coherenceSubjectId, directives],
+  )
+  const sheetTargetView = useMemo<DirectiveSheetTarget | null>(() => {
+    // Looked up from the live data on every change, so a directive deleted or regrouped while its
+    // sheet is open closes the sheet instead of showing a copy that no longer exists.
+    if (sheetTarget?.kind === 'default') {
+      const entry = viewModel.defaults.find((candidate) => candidate.builtIn.name === sheetTarget.name)
+      return entry ? { kind: 'default', entry } : null
     }
-    return replacements
-  }, [builtIns, directives])
-  const supersededBuiltIns = useMemo(() => {
-    const replacements = new Map<string, Directive>()
-    for (const directive of directives) {
-      // A disabled directive never becomes a runtime Directive, so its excludes never fire and
-      // the built-in it names is still fully live. This map drives the built-in's displayed
-      // status, a statement about live behavior, so a disabled replacer must not retire it.
-      if (!directive.enabled) continue
-      // Built-ins govern the reply. An exclusion authored through an older API client may name
-      // one from a suggestion-only directive, but those rules never meet on a generator and the
-      // UI must not retire the built-in as though they did.
-      if (!directiveSurfacesOverlap(directive.surfaces, undefined)) continue
-      for (const builtInName of directive.excludes ?? []) {
-        if (!replacements.has(builtInName)) {
-          replacements.set(builtInName, directive)
-        }
-      }
-    }
-    return replacements
-  }, [directives])
+    const row = sheetTarget ? viewModel.rows.find((candidate) => candidate.id === sheetTarget.id) : undefined
+    return row ? { kind: 'row', row } : null
+  }, [sheetTarget, viewModel])
 
   const replaceCandidates = useMemo(() => {
     const eligibleNames = eligibleReplacementNames(form.surfaces, editingDirective?.id)
@@ -744,6 +484,7 @@ export function AssistantDirectivesSection({
       setBuiltIns([])
       setCoherence(null)
       setCoherenceSubjectId(null)
+      setSheetTarget(null)
       setError(null)
       void directivesApi.listDirectives(agentId)
         .then((response) => {
@@ -879,11 +620,16 @@ export function AssistantDirectivesSection({
   const openConditionalEditDialog = (directive: Directive) =>
     openDialogWith({ ...directiveToForm(directive), conditionKind: 'contextual' }, directive)
 
-  // The per-built-in "Override" button is a shortcut into the normal create
-  // dialog with the built-in pre-selected in Replaces, so it reads as
-  // "cancel this built-in and run mine instead" with everything else editable.
-  const openOverrideDialog = (directive: BuiltInDirective) =>
-    openDialogWith({ ...emptyForm, name: overrideNameFor(directive.name), replaces: [directive.name] }, null)
+  // Customizing a built-in is a shortcut into the normal create dialog: the built-in is
+  // pre-selected in Replaces and its instruction is copied in, so "your version" starts as an
+  // editable copy of the default and everything else stays editable.
+  const openCustomizeDialog = (directive: BuiltInDirective) =>
+    openDialogWith({
+      ...emptyForm,
+      name: overrideNameFor(directive.name),
+      action: directive.action,
+      replaces: [directive.name],
+    }, null)
 
   const toggleReplace = (name: string, checked: boolean) => {
     setForm((current) => ({
@@ -908,12 +654,6 @@ export function AssistantDirectivesSection({
         replaces: current.replaces.filter((name) => eligibleReplacements.has(name)),
       }
     })
-  }
-
-  const focusDirective = (directiveId: string) => {
-    const element = document.getElementById(`directive-${directiveId}`)
-    element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    element?.focus({ preventScroll: true })
   }
 
   const closeDialog = () => {
@@ -1073,87 +813,100 @@ export function AssistantDirectivesSection({
     }
   }
 
+  // Edit, delete, and the other flows that open a dialog close the sheet first: the dialog takes
+  // over the screen, and a sheet left open behind it would still be there once it closes.
+  const sheetActions: DirectiveSheetActions = {
+    isRowPending: rowMutations.isPending,
+    isSaving,
+    onToggleEnabled: (directive, enabled) => void handleToggleEnabled(directive, enabled),
+    onEdit: (directive) => {
+      setSheetTarget(null)
+      openEditDialog(directive)
+    },
+    onDelete: (directive) => {
+      setSheetTarget(null)
+      setDeletingDirective(directive)
+    },
+    onCustomize: (directive) => {
+      setSheetTarget(null)
+      openCustomizeDialog(directive)
+    },
+    onOpenDirective: (directiveId) => setSheetTarget({ kind: 'row', id: directiveId }),
+    onSupersede: (winner, loser) => void handleSupersede(winner, loser),
+    onMakeConditional: (directive) => {
+      setSheetTarget(null)
+      openConditionalEditDialog(directive)
+    },
+  }
+  const { banner } = viewModel
+
   return (
-    <SettingsCard
-      id="assistant-directives-card"
-      icon={<ScrollText className="h-5 w-5 text-primary" />}
-      title="Directives"
-      description={'Conditional rules that fire in specific situations — for "when X, do Y" behavior. For the agent\'s always-on persona, use Behavior; for multi-step procedures, use Routines.'}
-      headerEnd={(
-        <Button type="button" size="sm" onClick={openCreateDialog}>
+    <section id="assistant-directives-card" className="scroll-mt-24 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          Rules the agent follows in specific situations. Its always-on persona lives in Profile; multi-step flows in Routines.
+        </p>
+        <Button type="button" size="sm" className="shrink-0" onClick={openCreateDialog}>
           <Plus className="mr-2 h-4 w-4" />
           New directive
         </Button>
-      )}
-    >
-      <div className="space-y-6">
-        {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-        {coherence ? (
-          <CoherenceResolver
-            coherence={coherence}
-            directives={directives}
-            subjectId={coherenceSubjectId}
-            onSupersede={(winner, loser) => void handleSupersede(winner, loser)}
-            onMakeConditional={openConditionalEditDialog}
-            isSaving={isSaving}
-            isRowPending={rowMutations.isPending}
-          />
-        ) : null}
-
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <h4 className="text-sm font-semibold text-foreground">Authored directives</h4>
-            <p className="text-xs text-muted-foreground">Rules created for this agent. They apply to all routes.</p>
-          </div>
-          {isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner className="h-4 w-4" />
-              Loading directives...
-            </div>
-          ) : directives.length > 0 ? (
-            <div className="space-y-3">
-              {directives.map((directive) => (
-                <DirectiveRow
-                  key={directive.id}
-                  id={`directive-${directive.id}`}
-                  directive={directive}
-                  replaces={effectiveReplacements.get(directive.id) ?? []}
-                  onEdit={() => openEditDialog(directive)}
-                  onDelete={() => setDeletingDirective(directive)}
-                  onToggleEnabled={(enabled) => void handleToggleEnabled(directive, enabled)}
-                  isTogglingEnabled={rowMutations.isPending(directive.id)}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-              No authored directives yet.
-            </p>
-          )}
-        </div>
-
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <h4 className="text-sm font-semibold text-foreground">Built-in directives</h4>
-            <p className="text-xs text-muted-foreground">Default Radioso behavior rules. They cannot be edited here.</p>
-          </div>
-          <div className="space-y-3">
-            {builtIns.map((directive) => {
-              const replacedBy = supersededBuiltIns.get(directive.name)
-              return (
-                <DirectiveRow
-                  key={directive.name}
-                  directive={directive}
-                  readOnly
-                  replacedBy={replacedBy}
-                  onOverride={() => openOverrideDialog(directive)}
-                  onFocusReplacement={replacedBy ? () => focusDirective(replacedBy.id) : undefined}
-                />
-              )
-            })}
-          </div>
-        </div>
       </div>
+
+      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+      {banner ? (
+        <div
+          className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100"
+          role="status"
+        >
+          <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">
+            {banner.conflictCount > 0
+              ? `${banner.conflictCount} ${banner.conflictCount === 1 ? 'conflict' : 'conflicts'}`
+              : banner.rationale}
+          </span>
+          {banner.reviewDirectiveId ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSheetTarget({ kind: 'row', id: banner.reviewDirectiveId as string })}
+            >
+              Review
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="h-4 w-4" />
+          Loading directives...
+        </div>
+      ) : viewModel.rows.length > 0 ? (
+        <DirectiveList
+          rows={viewModel.rows}
+          onOpen={(directiveId) => setSheetTarget({ kind: 'row', id: directiveId })}
+          onToggleEnabled={(row, enabled) => void handleToggleEnabled(row.directive, enabled)}
+          isRowPending={rowMutations.isPending}
+        />
+      ) : (
+        <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+          No rules yet. Add one for a situation the agent should handle a specific way.
+        </p>
+      )}
+
+      <BuiltInDefaultsGroup
+        defaults={viewModel.defaults}
+        isOpen={defaultsOpen}
+        onOpenChange={setDefaultsOpen}
+        onOpen={(name) => setSheetTarget({ kind: 'default', name })}
+      />
+
+      <DirectiveDetailSheet
+        target={sheetTargetView}
+        actions={sheetActions}
+        onClose={() => setSheetTarget(null)}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeDialog())}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
@@ -1438,6 +1191,6 @@ export function AssistantDirectivesSection({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </SettingsCard>
+    </section>
   )
 }

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { RoutineConsentReading, TurnContext } from "@radioso/conversation-contract";
 
+import type { PreparedSession } from "../../../src/modules/chat/services/chatSessionPreparer.js";
+import { routineConsentTurnFacts } from "../../../src/modules/chat/services/routines/routineConsentTurn.js";
 import {
   createRoutineConsentTurnPort,
   type RoutineConsentStore,
@@ -199,5 +201,33 @@ describe("a visitor's reply to the consent shown (#1544)", () => {
       .read({ routine, consent, turn: turn("no") });
 
     expect(read).toEqual({ decision: "declined", method: "reply", wording: italian });
+  });
+});
+
+describe("the language a consent is shown in mid-routine (#1544)", () => {
+  // A turn an active routine holds runs no turn plan; its language comes from the detector alone.
+  const midRoutine = (sourceChannel: string): PreparedSession => ({
+    conversation: { id: "conversation_1", visitorId: "visitor_1", sourceChannel },
+    userMessage: { id: "message_2", content: "Mi chiamo Ada" },
+    agent: { id: "agent_1", assistantDefaultLocale: "en" },
+    pageContext: null,
+  }) as unknown as PreparedSession;
+
+  it.each(["whatsapp", "email"])("shows the Italian wording on %s to a visitor writing Italian, over the agent's English default", async (sourceChannel) => {
+    const turnFacts = routineConsentTurnFacts(midRoutine(sourceChannel), Promise.resolve("Italian"));
+
+    expect(await turnFacts.preferredLocales()).toEqual(["it"]);
+    const asked = await shown(port({ facts: turnFacts }));
+    // The wording shown is what the decision is recorded against, language included.
+    expect(asked?.wording).toEqual(italian);
+    expect(asked?.wording.locale).toBe("it");
+    expect(asked?.reply.answer).toBe(`${italian.body}\n\n${italian.agreeLabel}\n\n${italian.declineLabel}`);
+  });
+
+  it("falls back to the agent's default when the turn's language is unknown", async () => {
+    const turnFacts = routineConsentTurnFacts(midRoutine("whatsapp"), Promise.resolve(undefined));
+
+    expect(await turnFacts.preferredLocales()).toEqual([]);
+    expect((await shown(port({ facts: turnFacts })))?.wording).toEqual(english);
   });
 });

@@ -544,7 +544,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
       { type: "answer_cites_document", documentId: PRICING_DOC_ID },
       { type: "answer_contains", pattern: "Starter", matchMode: "substring" },
-      { type: "answer_contains", pattern: "Pro", matchMode: "substring" },
+      { type: "answer_contains", pattern: "\\bPro\\b", matchMode: "regex" },
       { type: "answer_contains", pattern: "Enterprise", matchMode: "substring" },
     ],
   },

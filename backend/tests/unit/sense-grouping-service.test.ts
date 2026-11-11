@@ -439,6 +439,71 @@ describe("SenseGroupingService", () => {
     });
   });
 
+  it("never auto-picks away a document that only keyword search found", async () => {
+    // A lexical-only hit (an exact code or name) carries no semantic score. The detector
+    // cannot judge its relevance on semantics, so it must not count as irrelevant.
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
+        id: group.id,
+        label: group.id === "doc-left" ? "The exact model code" : "Similar products",
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+    const scored = (chunkId: string, documentId: string, title: string, similarity: number, semanticScore: number) =>
+      candidate({ chunkId, documentId, title, similarity, semanticScore });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "Do you stock the AX-200?",
+      rankedCandidates: [
+        scored("left-1", "doc-left", "AX-200 sheet", 0.8, 0),
+        scored("right-1", "doc-right", "Product range", 0.787, 0.4),
+        scored("left-2", "doc-left", "AX-200 sheet", 0.775, 0),
+        scored("right-2", "doc-right", "Product range", 0.764, 0.38),
+      ],
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toHaveLength(2);
+    expect(decideClarification(candidates, { floor: 0, margin: 0.15, maxOptions: 4 }).kind).not.toBe("auto_pick");
+  });
+
+  it("judges a document by the chunks that have a semantic score, not diluted by keyword-only ones", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
+        id: group.id,
+        label: group.id,
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+    const scored = (chunkId: string, documentId: string, title: string, similarity: number, semanticScore: number) =>
+      candidate({ chunkId, documentId, title, similarity, semanticScore });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "Tell me about the retreat.",
+      rankedCandidates: [
+        scored("left-1", "doc-left", "Retreat", 0.8, 0.55),
+        scored("right-1", "doc-right", "Workshop", 0.787, 0.45),
+        scored("left-2", "doc-left", "Retreat", 0.775, 0),
+        scored("right-2", "doc-right", "Workshop", 0.764, 0.45),
+      ],
+      conversationLanguage: "en",
+    });
+
+    const left = candidates.find((item) => item.id === "doc-left");
+    const right = candidates.find((item) => item.id === "doc-right");
+    expect(left!.confidence).toBeGreaterThan(right!.confidence);
+  });
+
   it("keeps comparable-relevance separated groups inside the ask margin", async () => {
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({

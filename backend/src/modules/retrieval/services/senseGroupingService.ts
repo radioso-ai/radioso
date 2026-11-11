@@ -241,7 +241,7 @@ export class SenseGroupingService {
       share: group.share,
       separation: group.separation,
     }));
-    const bestAverageSimilarity = Math.max(...separated.map((group) => group.averageSimilarity));
+    const bestAverageSemanticScore = Math.max(0, ...separated.map((group) => group.averageSemanticScore ?? 0));
     const labelResults = await this.options.labelGateway.label({
       question: input.question,
       groups: labelGroups,
@@ -275,7 +275,7 @@ export class SenseGroupingService {
         // mix complementary and redundant groups); only the presence of any
         // exclusive/missing member suppresses tagging for the whole set.
         ...(allNonExclusive ? { relationship: label!.relationship } : {}),
-        confidence: confidenceFor(group.share, group.separation, group.averageSimilarity, bestAverageSimilarity),
+        confidence: confidenceFor(group.share, group.separation, group.averageSemanticScore, bestAverageSemanticScore),
         payload: { documentIds: [group.documentId] },
       };
     });
@@ -291,7 +291,8 @@ export class SenseGroupingService {
       title: string;
       metadata?: Record<string, unknown>;
       chunks: RetrievedCandidate[];
-      similaritySum: number;
+      semanticScoreSum: number;
+      semanticChunkCount: number;
     }>();
     for (const candidate of candidates) {
       const group = byDocument.get(candidate.documentId) ?? {
@@ -299,13 +300,18 @@ export class SenseGroupingService {
         title: candidate.title,
         metadata: candidate.metadata,
         chunks: [],
-        similaritySum: 0,
+        semanticScoreSum: 0,
+        semanticChunkCount: 0,
       };
       group.chunks.push(candidate);
       // `similarity` holds the hybrid rank-fused score, which reads adjacent ranks as
-      // near-equal however far apart the matches are; how close a document's chunks sit
-      // to the question is their semantic score.
-      group.similaritySum += candidate.semanticScore;
+      // near-equal however far apart the matches are. Relevance comes from the semantic
+      // score against the query, over the chunks that have one: a keyword-only or
+      // date-only chunk carries 0, which says nothing about how relevant it is.
+      if (candidate.semanticScore > 0) {
+        group.semanticScoreSum += candidate.semanticScore;
+        group.semanticChunkCount += 1;
+      }
       byDocument.set(candidate.documentId, group);
     }
 
@@ -313,15 +319,19 @@ export class SenseGroupingService {
       .map((group) => ({
         ...group,
         share: group.chunks.length / total,
-        averageSimilarity: group.similaritySum / group.chunks.length,
+        averageSemanticScore: group.semanticChunkCount > 0
+          ? group.semanticScoreSum / group.semanticChunkCount
+          : null,
       }))
       .filter((group) => group.share >= this.options.policy.minGroupShare)
       .sort((left, right) => {
         if (left.share !== right.share) {
           return right.share - left.share;
         }
-        if (left.averageSimilarity !== right.averageSimilarity) {
-          return right.averageSimilarity - left.averageSimilarity;
+        const leftScore = left.averageSemanticScore ?? 0;
+        const rightScore = right.averageSemanticScore ?? 0;
+        if (leftScore !== rightScore) {
+          return rightScore - leftScore;
         }
         return left.documentId.localeCompare(right.documentId);
       });
@@ -406,12 +416,14 @@ const minimumSeparation = (
 const confidenceFor = (
   share: number,
   separation: number,
-  averageSimilarity: number,
-  bestAverageSimilarity: number,
+  averageSemanticScore: number | null,
+  bestAverageSemanticScore: number,
 ): number => {
   const structuralConfidence = (share + Math.min(1, separation)) / 2;
-  const relevanceConfidence = bestAverageSimilarity > 0
-    ? Math.max(0, Math.min(1, averageSimilarity / bestAverageSimilarity))
+  // A group with no semantic score cannot be judged on relevance, so it stays neutral
+  // rather than reading as irrelevant and being picked away.
+  const relevanceConfidence = averageSemanticScore !== null && bestAverageSemanticScore > 0
+    ? Math.max(0, Math.min(1, averageSemanticScore / bestAverageSemanticScore))
     : 1;
   return Math.min(1, Number(((structuralConfidence + relevanceConfidence) / 2).toFixed(6)));
 };

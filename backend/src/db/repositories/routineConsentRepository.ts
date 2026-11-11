@@ -171,9 +171,9 @@ export class RoutineConsentRepository {
       .orderBy("id", "desc")
       .limit(1)
       .executeTakeFirst();
-    if (!row) return null;
-    const stamp = consentPromptStampSchema.parse(row.prompt);
-    return { messageId: row.id, wordingVersionId: stamp.wordingVersionId, locale: stamp.locale };
+    // A stamp that does not read is no prompt: a reply to it is read as unanswerable, not a failed turn.
+    const stamp = row ? consentPromptStampSchema.safeParse(row.prompt) : null;
+    return row && stamp?.success ? { messageId: row.id, wordingVersionId: stamp.data.wordingVersionId, locale: stamp.data.locale } : null;
   }
 
   /**

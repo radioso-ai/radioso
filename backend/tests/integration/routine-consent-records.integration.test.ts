@@ -228,6 +228,20 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
       .toBeNull();
   });
 
+  it("reads a malformed consent prompt stamp as no prompt, rather than failing the turn", async () => {
+    const tenant = await seedTenant();
+    const repository = new RoutineConsentRepository(database.kysely);
+    const conversation = await seedConversation(tenant);
+    await database.query(
+      "INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json) VALUES ($1, $2, $3, 'assistant', 'Wording', $4::jsonb)",
+      [randomUUID(), conversation.conversationId, tenant.workspaceId,
+        JSON.stringify({ consentPrompt: { routineId: "routine-intake", consentKey: "health", wordingVersionId: 42 } })],
+    );
+
+    expect(await repository.latestPrompt({ conversationId: conversation.conversationId, routineId: "routine-intake", consentKey: "health" }))
+      .toBeNull();
+  });
+
   it("keeps the record when its message goes, and drops only the link to it", async () => {
     const tenant = await seedTenant();
     const conversation = await seedConversation(tenant);

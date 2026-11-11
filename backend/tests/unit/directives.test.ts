@@ -232,8 +232,8 @@ describe("default answer directives", () => {
     expect(conciseReadableFormattingDirective.action).toContain("Do not use tables unless");
     expect(inlineSupportedLinksDirective.action).toContain("link it inline with Markdown");
     expect(inlineSupportedLinksDirective.action).toContain("within the sentence that mentions it");
-    // #1751: a name only becomes a link when the findings give it a URL.
-    expect(inlineSupportedLinksDirective.action).toContain("A name without such a URL stays plain text");
+    // #1751: a name only becomes a link to an address the model was given.
+    expect(inlineSupportedLinksDirective.action).toContain("Link a name only to an address you were given");
     expect(inlineSupportedLinksDirective.action).not.toContain("Prefer linking each named resource");
     expect(inlineSupportedLinksDirective.action).toContain("If the user asks for a link");
     expect(inlineSupportedLinksDirective.action).toContain("human-readable link text");

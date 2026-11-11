@@ -11,7 +11,6 @@ const PUBLIC_SESSION_STORAGE_PREFIX = 'radioso.publicSession.'
 const PUBLIC_SESSION_RESUME_STORAGE_PREFIX = 'radioso.publicSessionResume.'
 const PUBLIC_SESSION_EFFECTIVE_TOKEN_STORAGE_PREFIX = 'radioso.publicSessionEffectiveToken.'
 const EMBED_BOOTSTRAP_STORAGE_PREFIX = 'radioso.embedBootstrap.'
-const PUBLIC_SESSION_IMAGES_STORAGE_PREFIX = 'radioso.publicSessionImages.'
 
 interface StoredEmbedBootstrapSession {
   workspaceName?: string
@@ -21,8 +20,6 @@ interface StoredEmbedBootstrapSession {
   expiresAt: string
   resumeToken: string
   resumeExpiresAt: string
-  /** Whether the agent takes photos in this session; the session response says. */
-  acceptsImages?: boolean
 }
 
 interface StoredPublicSessionToken {
@@ -209,7 +206,6 @@ const getPublicSessionStorageKey = (token: string) => `${PUBLIC_SESSION_STORAGE_
 const getPublicSessionResumeStorageKey = (token: string) => `${PUBLIC_SESSION_RESUME_STORAGE_PREFIX}${token}`
 const getPublicSessionEffectiveTokenStorageKey = (token: string) => `${PUBLIC_SESSION_EFFECTIVE_TOKEN_STORAGE_PREFIX}${token}`
 const getEmbedBootstrapStorageKey = (token: string) => `${EMBED_BOOTSTRAP_STORAGE_PREFIX}${token}`
-const getPublicSessionImagesStorageKey = (token: string) => `${PUBLIC_SESSION_IMAGES_STORAGE_PREFIX}${token}`
 
 const readAnonymousSessionId = (token: string) => {
   if (typeof window === 'undefined') {
@@ -349,21 +345,6 @@ export const readStoredEmbedBootstrapSession = (token: string): StoredEmbedBoots
   }
 }
 
-/** Whether the agent took photos when this public session started; a session response is the only thing that says. */
-export const readStoredPublicSessionAcceptsImages = (token: string): boolean =>
-  typeof window !== 'undefined' && window.sessionStorage.getItem(getPublicSessionImagesStorageKey(token)) === '1'
-
-export const storePublicSessionAcceptsImages = (token: string, acceptsImages: boolean) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-  if (acceptsImages) {
-    window.sessionStorage.setItem(getPublicSessionImagesStorageKey(token), '1')
-  } else {
-    window.sessionStorage.removeItem(getPublicSessionImagesStorageKey(token))
-  }
-}
-
 export const clearStoredAnonymousSession = (token: string) => {
   const effectiveToken = readStoredEffectivePublicChatToken(token)
   if (effectiveToken && effectiveToken !== token) {
@@ -374,7 +355,6 @@ export const clearStoredAnonymousSession = (token: string) => {
   writeAnonymousSessionId(token, null)
   storePublicSessionToken(token, null)
   storePublicSessionResumeToken(token, null)
-  storePublicSessionAcceptsImages(token, false)
   if (typeof window !== 'undefined') {
     window.sessionStorage.removeItem(getPublicSessionEffectiveTokenStorageKey(token))
   }
@@ -453,7 +433,6 @@ export const storeEmbedBootstrapSession = (token: string, session: StoredEmbedBo
   window.sessionStorage.setItem(storageKey, JSON.stringify(session))
   storePublicSessionToken(session.publicChatToken, session.publicSessionToken, session.expiresAt)
   storePublicSessionResumeToken(session.publicChatToken, session.resumeToken, session.resumeExpiresAt)
-  storePublicSessionAcceptsImages(session.publicChatToken, session.acceptsImages === true)
   writeAnonymousSessionId(session.publicChatToken, session.publicSessionId)
 }
 

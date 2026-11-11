@@ -25,10 +25,8 @@ vi.mock('@/lib/api', () => ({
   },
   readStoredAnonymousSessionId: vi.fn(() => null),
   readStoredEffectivePublicChatToken: vi.fn(() => null),
-  readStoredPublicSessionAcceptsImages: vi.fn(() => false),
   readStoredPublicSessionResumeToken: vi.fn(() => null),
   readStoredPublicSessionToken: vi.fn(() => 'public-session-token'),
-  storePublicSessionAcceptsImages: vi.fn(),
 }))
 
 const publicChatApiMock = vi.mocked(publicChatApi)

@@ -1,14 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
-  clearStoredAnonymousSession,
   readStoredEmbedBootstrapSession,
-  readStoredPublicSessionAcceptsImages,
   readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
   storeEmbedBootstrapSession,
 } from '@/lib/api'
-import { storePublicSessionAcceptsImages } from '@/lib/api-client'
 
 const createSessionStorage = () => {
   const store = new Map<string, string>()
@@ -101,33 +98,5 @@ describe('embed session storage helpers', () => {
       publicSessionToken: 'grant-token',
     })
     expect(readStoredPublicSessionToken('public-token')).toBe('grant-token')
-  })
-
-  it('remembers whether the agent takes photos for the length of the session', () => {
-    // @ts-expect-error test-only window stub
-    global.window = { sessionStorage: createSessionStorage() }
-    const session = {
-      publicChatToken: 'public-token',
-      publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
-      publicSessionToken: 'grant-token',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      resumeToken: 'resume-token',
-      resumeExpiresAt: new Date(Date.now() + 120_000).toISOString(),
-    }
-
-    storeEmbedBootstrapSession('embed-token', { ...session, acceptsImages: true })
-    expect(readStoredPublicSessionAcceptsImages('public-token')).toBe(true)
-    expect(readStoredPublicSessionAcceptsImages('another-token')).toBe(false)
-
-    storeEmbedBootstrapSession('embed-token', session)
-    expect(readStoredPublicSessionAcceptsImages('public-token')).toBe(false)
-
-    storePublicSessionAcceptsImages('public-token', true)
-    clearStoredAnonymousSession('public-token')
-    expect(readStoredPublicSessionAcceptsImages('public-token')).toBe(false)
-  })
-
-  it('reads as not accepting photos where there is no browser storage', () => {
-    expect(readStoredPublicSessionAcceptsImages('public-token')).toBe(false)
   })
 })

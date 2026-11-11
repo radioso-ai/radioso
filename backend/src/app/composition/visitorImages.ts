@@ -124,27 +124,27 @@ export const wireVisitorImages = (deps: {
   logger: AppLogger;
 }): {
   service: VisitorImageService;
-  availability: VisitorImageAvailability;
-  modelReading: ChatModelImageReading;
+  /** What the application's dependencies carry for photos: the service, availability and the model check. */
+  ports: { visitorImages: VisitorImageService; visitorImageAvailability: VisitorImageAvailability; chatModelImageReading: ChatModelImageReading };
   objectDeletionJobHandler: BackgroundJobHandlerRegistration;
 } => {
   const objects = visitorImageObjectStore(deps.storage);
   const inference = new ContextualStructuredInferenceFactory({ resolver: deps.resolver }, deps.infrastructure.usageEventRecorder);
   const modelReading = createChatModelImageReading({ resolver: deps.resolver, logger: deps.logger });
   const availability = createVisitorImageAvailability({ agents: deps.agents, modelReading });
-  return {
-    service: new VisitorImageService({
-      store: new PostgresVisitorImageStore(deps.infrastructure.database.kysely),
-      objects,
-      reader: new ModelVisitorImageReader({ model: visitorImageReadingModel({ agents: deps.agents, inference }), logger: deps.logger }),
-      audit: visitorImageAudit(deps.infrastructure.auditService),
-      availability,
-      usage: deps.infrastructure.usageLimitPolicy,
-      metrics: deps.infrastructure.metricsRegistry,
-      logger: deps.logger,
-    }),
+  const service = new VisitorImageService({
+    store: new PostgresVisitorImageStore(deps.infrastructure.database.kysely),
+    objects,
+    reader: new ModelVisitorImageReader({ model: visitorImageReadingModel({ agents: deps.agents, inference }), logger: deps.logger }),
+    audit: visitorImageAudit(deps.infrastructure.auditService),
     availability,
-    modelReading,
+    usage: deps.infrastructure.usageLimitPolicy,
+    metrics: deps.infrastructure.metricsRegistry,
+    logger: deps.logger,
+  });
+  return {
+    service,
+    ports: { visitorImages: service, visitorImageAvailability: availability, chatModelImageReading: modelReading },
     objectDeletionJobHandler: visitorImageObjectDeletionHandler({ objects, logger: deps.logger }),
   };
 };

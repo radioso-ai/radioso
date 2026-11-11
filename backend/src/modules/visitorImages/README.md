@@ -27,8 +27,10 @@ module never reads `messages`.
 It does not know which model reads a photo or how storage is reached:
 `VisitorImageReader` and `VisitorImageObjectStore` (over document storage's
 `locate`, `upload`, `read` and `delete`) are ports, and
-`VisitorImageAvailability` (whether an agent takes photos now) is implemented in
-composition. Nothing in `packages/` changes for images.
+`VisitorImageAvailability` (whether an agent takes photos now) and
+`ChatModelImageReading` (whether the agent's resolved chat model reads images,
+which the agent settings read reports as `chatModelReadsImages` and the
+availability check builds on) are implemented in composition. Nothing in `packages/` changes for images.
 
 ## Public Surfaces
 

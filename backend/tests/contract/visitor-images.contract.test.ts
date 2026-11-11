@@ -99,7 +99,7 @@ describe("visitor image contract", () => {
 
     const messages = await dependencies.messageRepository.listByConversationId(operator.workspaceId, reply.body.conversationId as string);
     const userMessage = messages.find((message) => message.role === "user")!;
-    expect(userMessage.content).toBe(`Something like this\n<visitor_image index="1">${READING}</visitor_image>`);
+    expect(userMessage.content).toBe(`Something like this\n<attached_photo index="1">${READING}</attached_photo>`);
     expect(userMessage.inputMetadata?.imageInput).toEqual({ typedText: "Something like this", images: [{ id: uploaded.body.id, reading: READING }] });
   });
 
@@ -302,7 +302,7 @@ describe("visitor image contract", () => {
     const reply = await request(app).post(`/api/v1/agents/${agentId}/chat`).set(rest).send({ imageIds: [uploaded.body.id] }).expect(200);
 
     const messages = await dependencies.messageRepository.listByConversationId(operator.workspaceId, reply.body.conversationId as string);
-    expect(messages.find((message) => message.role === "user")?.content).toBe(`<visitor_image index="1">${READING}</visitor_image>`);
+    expect(messages.find((message) => message.role === "user")?.content).toBe(`<attached_photo index="1">${READING}</attached_photo>`);
     await request(app).post(`/api/v1/agents/${agentId}/chat`).set(rest)
       .send({ imageIds: [uploaded.body.id], routine: { toolName: "anything", input: {} } })
       .expect(400);

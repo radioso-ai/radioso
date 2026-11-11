@@ -73,8 +73,8 @@ describe("AssistantChatService with photos", () => {
     expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({
       query: [
         "Something like this, near the coast",
-        "<visitor_image index=\"1\">A stone farmhouse with a terracotta roof.</visitor_image>",
-        "<visitor_image index=\"2\" unread/>",
+        "<attached_photo index=\"1\">A stone farmhouse with a terracotta roof.</attached_photo>",
+        "<attached_photo index=\"2\" status=\"unreadable\"/>",
       ].join("\n"),
       inputMetadata: {
         method: "typed",
@@ -95,7 +95,7 @@ describe("AssistantChatService with photos", () => {
     await service.answer({ ...send, message: undefined, imageIds: [IMAGE_A] });
 
     expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({
-      query: "<visitor_image index=\"1\">A red bicycle.</visitor_image>",
+      query: "<attached_photo index=\"1\">A red bicycle.</attached_photo>",
       inputMetadata: { method: "typed", imageInput: { typedText: "", images: [{ id: IMAGE_A, reading: "A red bicycle." }] } },
     }));
   });

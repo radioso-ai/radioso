@@ -5,7 +5,7 @@ import { z } from "zod";
  * How a recorded user message was produced. `routine_invocation` is a calling agent's tool call:
  * `routine` carries its structured form for tool-call rendering while `content` holds the same
  * call as text. `imageInput` is a message's photos: `content` holds the visitor's text followed by
- * one `<visitor_image>` block per photo, the turn text the agent ran on, while `typedText` is what
+ * one `<attached_photo>` block per photo, the turn text the agent ran on, while `typedText` is what
  * the visitor typed and each image carries what the agent's model read in it.
  */
 export const registerUserMessageInputMetadataSchema = (registry: OpenAPIRegistry) => {

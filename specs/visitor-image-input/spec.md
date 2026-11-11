@@ -45,8 +45,10 @@ the structured form goes in `inputMetadata`. It was chosen over the alternatives
 
 The persisted user message carries:
 
-- `content`: the visitor's text followed by one `<visitor_image index="n">reading</visitor_image>` block per photo,
-  or `<visitor_image index="n" unread/>` when the reading failed. The rendering is structural and language-neutral.
+- `content`: the visitor's text followed by one `<attached_photo index="n">reading</attached_photo>` block per photo,
+  or `<attached_photo index="n" status="unreadable"/>` when the reading failed. The tag names what it holds, so the
+  answering model reads it without a prompt explaining it; only `<` and `>` are escaped in a reading. The rendering is
+  structural and language-neutral.
   Every transcript reader picks it up unchanged: history, summaries, facets, notices, eval capture and export. The
   photo's text form is in the transcript the same way a voice transcript is.
 - `inputMetadata.imageInput`: `{ typedText, images: [{ id, reading | null }] }`. The UIs render this as the visitor's

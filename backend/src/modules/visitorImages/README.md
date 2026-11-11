@@ -77,8 +77,9 @@ composition. Nothing in `packages/` changes for images.
    without a row; a row whose object never landed is swept, and deleting a
    missing object counts as deleted.
 2. Send: the door claims the ids (all or none, one send per photo), renders
-   `<visitor_image index="n">reading</visitor_image>` or
-   `<visitor_image index="n" unread/>` after the typed text, and runs the turn.
+   `<attached_photo index="n">reading</attached_photo>` (only `<` and `>`
+   escaped) or `<attached_photo index="n" status="unreadable"/>` after the typed
+   text, and runs the turn. The tag names what it holds, so no prompt explains it.
 3. Bind: the chat-session preparer tells the door the moment it stores the user
    message (`onUserMessageStored`), and the door binds the claim to that
    conversation and message id in the same request, before the rest of the turn

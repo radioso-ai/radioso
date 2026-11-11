@@ -1093,7 +1093,7 @@ document storage, and reads it once at upload with the agent's chat model
 (`visitor_image.read`, fail-open to `unread`). The chat door
 (`AssistantChatService`) claims a send's photos for their owner through the
 `VisitorImageTurnInput` port, runs the turn on the typed text followed by
-`<visitor_image>` blocks, stores `inputMetadata.imageInput`, and binds the claim
+`<attached_photo>` blocks, stores `inputMetadata.imageInput`, and binds the claim
 to the user message id the moment the preparer stores it
 (`onUserMessageStored`); a turn that stores no message releases the claim.
 An erasure deletes a conversation's photos and queues their objects to the

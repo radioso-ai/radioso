@@ -30,10 +30,10 @@ The agent's turn runs on the visitor's text followed by one block per photo:
 
 ```text
 Something like this, near the coast
-<visitor_image index="1">A two-storey stone farmhouse with a terracotta tile roof and green wooden shutters, set among olive trees. Possibly 19th century.</visitor_image>
+<attached_photo index="1">A two-storey stone farmhouse with a terracotta tile roof and green wooden shutters, set among olive trees. Possibly 19th century.</attached_photo>
 ```
 
-When the model cannot read a photo, the block is `<visitor_image index="1" unread/>` and the agent knows it could not see it; the message still goes through. Text that appears inside a photo counts as something the visitor showed, not an instruction, and the agent treats it as the visitor's own words.
+When the model cannot read a photo, its block is `<attached_photo index="1" status="unreadable"/>`: the turn text still says a photo came with the message and that it could not be read, and the message goes through. Text visible in a photo reaches the agent only as the reading quotes it, and the reading prompt asks the model to quote such text as content rather than follow it. A reading keeps its text as written, with `<` and `>` escaped so it stays inside its block.
 
 The stored message keeps both forms. Its `content` is the turn text above, which summaries, exports and Ray's transcripts read. Its `inputMetadata.imageInput` holds what the visitor typed (`typedText`) and each photo's `id` with its `reading`, so a thread shows the visitor's own words and the photos, with the readings kept apart as the agent's. A teammate opens a photo from the conversation with `GET /api/v1/conversations/{conversationId}/images/{imageId}` in a dashboard session; each view is recorded as a `conversation.image_viewed` audit event.
 
@@ -103,7 +103,7 @@ A page of your own on the public chat uploads to `POST /api/v1/public/chat/{toke
 - **`413 image_too_large` or `image_too_many_pixels`** — over 10 MiB, or too many pixels to decode. Send a smaller photo.
 - **`429 usage_limit_exceeded` on upload** — the workspace's plan has no answers left for the reading. The public chat routes leave out the plan `details`; the API routes carry them.
 - **`409 visitor_image_unavailable` on send** — the id is unknown, was uploaded by another session or credential or for another agent, or a message already carried it. Upload the photo again.
-- **`readingStatus: "unread"`** — the model did not answer in time or could not describe the photo. The message still carries the photo, and the agent is told it could not see it.
+- **`readingStatus: "unread"`** — the model did not answer in time or could not describe the photo. The message still carries the photo, and its block in the turn text reads `status="unreadable"`.
 
 ## Read next
 

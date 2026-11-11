@@ -223,7 +223,7 @@ imports from `services/`.
   `imageIds` goes through `services/visitorImageTurn.ts`: the door claims the
   photos for `imageOwner` through the `visitorImages` module's
   `VisitorImageTurnInput` port, runs the turn on the typed text followed by one
-  `<visitor_image>` block per reading, and records `inputMetadata.imageInput`.
+  `<attached_photo>` block per reading, and records `inputMetadata.imageInput`.
   It passes `onUserMessageStored` with the turn; `services/turnUserMessage.ts`
   calls it right after the preparer stores the user message, and the door binds
   the claim to that message id then. A turn that ends without storing one

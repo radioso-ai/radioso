@@ -11056,7 +11056,7 @@ export interface components {
              */
             id: string;
             /**
-             * @description `read`: the agent's chat model described the image. `unread`: it could not; the message still carries the image, and the agent is told it could not see it.
+             * @description `read`: the agent's chat model described the image. `unread`: it could not; a message still carries the image, and its turn text marks it `<attached_photo index="n" status="unreadable"/>`.
              * @enum {string}
              */
             readingStatus: "read" | "unread";

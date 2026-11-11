@@ -49,7 +49,7 @@ export const registerVisitorImagePaths = (
     z.object({
       id: z.string().uuid().openapi({ description: "Send it in the message's `imageIds`." }),
       readingStatus: z.enum(["read", "unread"]).openapi({
-        description: "`read`: the agent's chat model described the image. `unread`: it could not; the message still carries the image, and the agent is told it could not see it.",
+        description: "`read`: the agent's chat model described the image. `unread`: it could not; a message still carries the image, and its turn text marks it `<attached_photo index=\"n\" status=\"unreadable\"/>`.",
       }),
     }),
   );

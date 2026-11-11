@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
+import { recordedVisitorTimeZone } from "../../src/modules/chat/services/turnReferenceTimeZone.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import {
   createAuditService,
@@ -60,9 +61,10 @@ const setup = async (workspaceTimeZone: string | null) => {
   };
   const readWorkspaceTimeZone = vi.fn(async () => workspaceTimeZone);
   const agent = await new InMemoryAgentRepository().create("ws-1", { name: "Bot" });
+  const messages = new InMemoryMessageRepository();
   const preparer = new ChatSessionPreparer(
     new InMemoryConversationRepository(),
-    new InMemoryMessageRepository(),
+    messages,
     retrievalTurn,
     createAuditService(),
     undefined,
@@ -86,7 +88,7 @@ const setup = async (workspaceTimeZone: string | null) => {
     chatSessionId: "anon-session-tz",
     ...(visitorTimeZone === undefined ? {} : { visitorTimeZone }),
   });
-  return { prepare, interpreted, readWorkspaceTimeZone };
+  return { prepare, interpreted, readWorkspaceTimeZone, messages };
 };
 
 describe("ChatSessionPreparer reference time zone", () => {
@@ -116,5 +118,26 @@ describe("ChatSessionPreparer reference time zone", () => {
     const session = await prepare("Not/AZone");
 
     expect(session.referenceTimeZone).toEqual({ timeZone: "UTC", source: "default" });
+  });
+
+  it("records the visitor's zone on their message, so a later resume reads the zone the conversation ran in", async () => {
+    const { prepare, messages } = await setup("Europe/Rome");
+
+    const session = await prepare("America/Los_Angeles");
+
+    const [stored] = await messages.listRecentByConversationId("ws-1", session.conversation.id, 10);
+    expect(recordedVisitorTimeZone(stored?.metadata)).toBe("America/Los_Angeles");
+  });
+
+  it("records no zone when the visitor's client reported none, or an unknown one", async () => {
+    const { prepare, messages } = await setup("Europe/Rome");
+
+    const unreported = await prepare();
+    const unknown = await prepare("Not/AZone");
+
+    for (const session of [unreported, unknown]) {
+      const [stored] = await messages.listRecentByConversationId("ws-1", session.conversation.id, 10);
+      expect(recordedVisitorTimeZone(stored?.metadata)).toBeNull();
+    }
   });
 });

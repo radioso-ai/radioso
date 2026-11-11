@@ -298,6 +298,14 @@ describe("Test Chat copilot descriptors", () => {
     expect(output.turn.stages[0]).toEqual({ id: "stage-0", kind: "compose", status: "applied" });
   });
 
+  it("hands the port the time zone the caller named for the turn", async () => {
+    const sendMessage = vi.fn(port().sendMessage);
+
+    await invoke(port({ sendMessage }), "send_test_chat_message", { message: "What's on tomorrow?", userTimeZone: "America/Los_Angeles" });
+
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ userTimeZone: "America/Los_Angeles" }));
+  });
+
   it("falls back to the agent the operator is looking at, and test_chat_sessions refuses without one since it has no session id to resolve one from", async () => {
     const testChat = port();
 
@@ -633,6 +641,16 @@ describe("TestChatService", () => {
       messageId: MESSAGE_ID,
       turnTrace: envelope(),
     });
+  });
+
+  it("sends the turn as a visitor in the named time zone, and names none when the caller gave none", async () => {
+    const { service, executions } = serviceHarness();
+
+    await service.sendMessage({ ...sender, message: "What's on tomorrow?", userTimeZone: "America/Los_Angeles" });
+    await service.sendMessage({ ...sender, message: "What's on tomorrow?" });
+
+    expect(executions.send).toHaveBeenNthCalledWith(1, expect.objectContaining({ userTimeZone: "America/Los_Angeles" }));
+    expect(vi.mocked(executions.send).mock.calls[1]?.[0]).not.toHaveProperty("userTimeZone");
   });
 
   it("starts on a named revision", async () => {

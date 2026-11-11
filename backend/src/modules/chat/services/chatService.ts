@@ -111,10 +111,7 @@ import {
   type CompletedAssistantTurn,
 } from "./chatTurnLifecycle.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
-import {
-  ApprovalResumeTurn,
-  type SuspendedRoutineReader,
-} from "./approvalResumeTurn.js";
+import { ApprovalResumeTurn, type SuspendedRoutineReader } from "./approvalResumeTurn.js";
 import { DeferredClarificationStore } from "./clarification/deferredClarificationStore.js";
 import {
   resolvePendingClarification,
@@ -582,6 +579,7 @@ export class ChatService {
       conversationTurnRegistry,
       routineProvider,
       suspendedRoutineReader,
+      workspaceTimeZones,
       detectResponseLanguage: (input, session) => this.detectResponseLanguage(input, session),
     });
   }

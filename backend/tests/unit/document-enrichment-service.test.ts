@@ -56,7 +56,7 @@ const workshopInput = (overrides: { title?: string; markdownContent?: string } =
       { chunkIndex: 0, startOffset: 0, endOffset: 15, metadata: {} },
       { chunkIndex: 1, startOffset: 17, endOffset: markdownContent.length, metadata: {} },
     ],
-    anchor: { source: "document_created_at" as const, date: "2026-07-01" },
+    anchor: { source: "document_created_at" as const, date: "2026-07-01", timeZone: "UTC" },
   };
 };
 
@@ -192,9 +192,46 @@ describe("DocumentEnrichmentService", () => {
     }
   });
 
-  it("does not place a fact quoted from the created-at line of the representation", async () => {
+  // 18:00 on 11 November in Los Angeles is already 12 November in UTC. A document that says
+  // "tomorrow" or "this weekend" means the local calendar, so the model is shown the local date.
+  describe("anchors relative dates in the workspace's zone", () => {
+    const createdAt = new Date("2026-11-12T02:00:00.000Z");
+    const header = async (timeZone: string, date: string) => {
+      const { gateway, requests } = scriptedGateway([{ output: eventOutput([workshopFact()]) }]);
+      const input = workshopInput();
+      await serviceWith(gateway).enrich({
+        ...input,
+        document: { ...input.document, createdAt },
+        anchor: { source: "document_created_at" as const, date, timeZone },
+      });
+      return requests[0]?.documentRepresentation.split("\n\n")[0];
+    };
+
+    it("shows the creation date and weekday in the workspace's zone, not UTC's", async () => {
+      expect(await header("America/Los_Angeles", "2026-11-11")).toBe("Title: Summer workshop\nCreated on: 2026-11-11 (Wednesday), America/Los_Angeles");
+    });
+
+    it("shows the UTC date and weekday, and says UTC, when the workspace has no zone", async () => {
+      expect(await header("UTC", "2026-11-12")).toBe("Title: Summer workshop\nCreated on: 2026-11-12 (Thursday), UTC");
+    });
+
+    it("records the anchor date it was given on the provenance", async () => {
+      const { gateway } = scriptedGateway([{ output: eventOutput([workshopFact()]) }]);
+      const input = workshopInput();
+
+      const result = await serviceWith(gateway).enrich({
+        ...input,
+        document: { ...input.document, createdAt },
+        anchor: { source: "document_created_at" as const, date: "2026-11-11", timeZone: "America/Los_Angeles" },
+      });
+
+      expect(result.provenance).toMatchObject({ anchorDate: "2026-11-11", anchorSource: "document_created_at" });
+    });
+  });
+
+  it("does not place a fact quoted from the created-on line of the representation", async () => {
     const createdAtQuote = {
-      output: { type: "article", confidence: 0.9, facts: [workshopFact({ kind: "article_date", quote: "2026-07-01T00:00:00.000Z", dateFrom: "2026-07-01", dateTo: null })] },
+      output: { type: "article", confidence: 0.9, facts: [workshopFact({ kind: "article_date", quote: "2026-07-01 (Wednesday)", dateFrom: "2026-07-01", dateTo: null })] },
     };
     const { gateway } = scriptedGateway([createdAtQuote, createdAtQuote]);
 

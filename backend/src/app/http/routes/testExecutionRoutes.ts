@@ -122,7 +122,7 @@ export const createTestExecutionRoutes = (dependencies: TestExecutionRouteDepend
       const disconnectAbort = new AbortController();
       await sendTestExecutionSse(
         res,
-        dependencies.testExecutionService.streamMessage({ workspaceId, agentId, accountId: accountId ?? null, executionId, message: req.body.message, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, signal: disconnectAbort.signal }),
+        dependencies.testExecutionService.streamMessage({ workspaceId, agentId, accountId: accountId ?? null, executionId, message: req.body.message, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, userTimeZone: req.body.userTimeZone, signal: disconnectAbort.signal }),
         { onDisconnectCeilingExceeded: () => disconnectAbort.abort() },
       );
     } catch (error) { if (!res.headersSent) next(error); else res.end(); }
@@ -161,7 +161,7 @@ export const createTestExecutionRoutes = (dependencies: TestExecutionRouteDepend
       const disconnectAbort = new AbortController();
       await sendTestExecutionSse(
         res,
-        dependencies.testExecutionService.streamRetry({ workspaceId, agentId, accountId: accountId ?? null, executionId, sideId, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, signal: disconnectAbort.signal }),
+        dependencies.testExecutionService.streamRetry({ workspaceId, agentId, accountId: accountId ?? null, executionId, sideId, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, userTimeZone: req.body.userTimeZone, signal: disconnectAbort.signal }),
         { onDisconnectCeilingExceeded: () => disconnectAbort.abort() },
       );
     } catch (error) { if (!res.headersSent) next(error); else res.end(); }

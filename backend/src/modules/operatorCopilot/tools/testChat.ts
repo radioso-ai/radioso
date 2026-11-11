@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { TIME_ZONE_MAX_LENGTH } from "../../../shared/domain/referenceTimeZone.js";
 import { clipAtGraphemeBoundary } from "../../../shared/text/clipAtGraphemeBoundary.js";
 import { TEST_EXECUTION_LABEL_CHARS } from "../../test-execution/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
@@ -37,6 +38,7 @@ const sendInputSchema = z.object({
   message: z.string().trim().min(1).max(8_000),
   testExecutionId: idSchema.optional(),
   revisionId: idSchema.optional(),
+  userTimeZone: z.string().trim().min(1).max(TIME_ZONE_MAX_LENGTH).optional(),
 }).strict();
 
 const revisionSchema = z.object({
@@ -204,7 +206,7 @@ export interface TestChatCopilotToolDependencies {
 const SESSIONS_DESCRIPTION = `List an agent's recent Test Chat sessions that have a user message, newest first: the revision each side ran (a draft candidate or a published version), the session's state and skill-effects policy, how many user messages it has (counting any copied from a real conversation it continues), and the first of them with text as a label of up to ${TEST_EXECUTION_LABEL_CHARS} characters. Test Chat sessions are private test runs and never appear in conversation_history_search. Read one with test_chat_transcript.`;
 const TRANSCRIPT_DESCRIPTION = "Read one Test Chat session: per side, the revision it ran and each turn's message, answer, state or failure code, and the stages the turn went through. Use test_chat_turn_trace for one turn's full diagnostic spine.";
 const TURN_TRACE_DESCRIPTION = "Inspect one Test Chat turn's full diagnostic spine, in the same trace shape turn_trace returns for a customer conversation, with the revision the turn ran on and its failure code when it did not answer. A routine's captured slot values are shown here (Test Chat is a private test run whose trace is never persisted to a durable audit record) — each value capped to 500 characters (truncated: true marks a cut one) and slot count capped to 50 (omittedSlotCount reports the rest); turn_trace, on a customer conversation, reports only which slots were filled, never their values. If the turn ended on a routine ending that notifies operators (every hand-off, and a completion that carries an operator notice), the trace's handoffPreview carries the notice's kind (handoff or completion; absent on an older trace, which is a hand-off), the message content (subject and body, authored notice text included) the operator notification would have sent, and replyTo, the address replies would go to (absent when the notice has no reply-to); Test Chat never actually delivers it, and live delivery additionally appends the conversation link."
-const SEND_DESCRIPTION = "Send one message through Test Chat, the private, revision-pinned test surface of the dashboard, and return the answer, outcome, and the stages the turn went through. Without testExecutionId it starts a session on revisionId, or on a fresh candidate of the saved draft (the published revision when the draft has no changes); with testExecutionId it continues that single-revision session. Skills never act outward here. The session stays in the agent's Test Chat history, where the operator can open it; read the turn with test_chat_turn_trace. Sending while the session's previous turn is still running answers a retryable operation_conflict rather than starting a second turn; resend the same message once that turn settles. Metered at up to 30 calls per minute per grant, separate from every other tool's shared 6-per-minute budget; an exhausted budget returns retryAfterSeconds and a resetAt time to retry after.";
+const SEND_DESCRIPTION = "Send one message through Test Chat, the private, revision-pinned test surface of the dashboard, and return the answer, outcome, and the stages the turn went through. Without testExecutionId it starts a session on revisionId, or on a fresh candidate of the saved draft (the published revision when the draft has no changes); with testExecutionId it continues that single-revision session. Name userTimeZone (an IANA zone such as America/Los_Angeles) to test the turn as a visitor there, whose today, tomorrow and this weekend resolve in that zone; without it the turn reads today in the workspace's time zone. Skills never act outward here. The session stays in the agent's Test Chat history, where the operator can open it; read the turn with test_chat_turn_trace. Sending while the session's previous turn is still running answers a retryable operation_conflict rather than starting a second turn; resend the same message once that turn settles. Metered at up to 30 calls per minute per grant, separate from every other tool's shared 6-per-minute budget; an exhausted budget returns retryAfterSeconds and a resetAt time to retry after.";
 
 /**
  * The agent a session-scoped Test Chat call names explicitly, from either the caller's own input
@@ -381,6 +383,7 @@ export const createTestChatCopilotTools = (
           message: input.message,
           ...(input.testExecutionId ? { testExecutionId: input.testExecutionId } : {}),
           ...(input.revisionId ? { revisionId: input.revisionId } : {}),
+          ...(input.userTimeZone ? { userTimeZone: input.userTimeZone } : {}),
         });
         const omissions: Omission<"answer" | "stages">[] = [];
         const { turnTrace: trace, ...turn } = result;

@@ -4,6 +4,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { MessageRepository } from "../../src/db/repositories/messageRepository.js";
 import type { VoiceTurnFacts } from "../../src/modules/chat/contracts/index.js";
+import { recordedVisitorTimeZone } from "../../src/modules/chat/services/turnReferenceTimeZone.js";
+import { userMessageTurnMetadata } from "../../src/modules/chat/services/userMessageTurnMetadata.js";
 import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -86,6 +88,25 @@ describeIntegration("MessageRepository (Postgres)", () => {
     const created = await repository.create({ conversationId, workspaceId, role: "assistant", content: "x", metadata: nested });
     const reloaded = (await repository.listByConversationId(workspaceId, conversationId)).find((m) => m.id === created.id);
     expect(reloaded?.metadata).toEqual(nested);
+  });
+
+  it("keeps the zone a visitor's message recorded beside its input method, for a routine resumed later", async () => {
+    const created = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "user",
+      content: "Book the table for tomorrow.",
+      ...userMessageTurnMetadata({
+        inputMetadata: { method: "typed" },
+        sensitiveSlotKeys: [],
+        referenceTimeZone: { timeZone: "America/Los_Angeles", source: "visitor" },
+      }),
+    });
+
+    const [stored] = (await repository.listRecentByConversationId(workspaceId, conversationId, 5)).filter((m) => m.id === created.id);
+
+    expect(recordedVisitorTimeZone(stored?.metadata)).toBe("America/Los_Angeles");
+    expect(stored?.inputMetadata).toEqual({ method: "typed" });
   });
 
   it("round-trips a routine invocation's input metadata and drops an unknown input method on read", async () => {

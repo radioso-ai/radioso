@@ -2,6 +2,8 @@ import type { ConversationModelGateway } from "./modelGateway.js";
 import type { ReferenceTimeZone } from "./referenceTimeZone.js";
 import type { RoutineRunTrace, RoutineSelectionTrace } from "./routineTrace.js";
 import type { ConversationRoutineSlotCorrection } from "./routineSlotCorrection.js";
+import type { RoutineConsentEvent } from "./routineConsent.js";
+import type { ConversationRoutineReentryGate } from "./routineReentry.js";
 import type {
   DecisionOption,
   Routine,
@@ -1278,6 +1280,8 @@ export interface SuspendedRoutineReader {
   loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
+export type * from "./routineConsent.js";
+
 export type {
   ConversationRoutineSlotCorrection,
   RoutineSlotCorrectionCandidate,
@@ -1285,27 +1289,7 @@ export type {
   RoutineSlotCorrectionSkipReason,
 } from "./routineSlotCorrection.js";
 
-/**
- * Structured decision for a completed routine whose reentry mode is `semantic` (issue #746):
- * - `suppress`: leave the completed routine suppressed (the safe default for any non-semantic
- *   routine the gate is asked about, and for an unrelated message).
- * - `resume_existing`: re-open the same instance, keeping its captured variables.
- * - `start_new`: run the routine again from scratch, discarding the prior captured variables.
- */
-export type RoutineReentryDecision =
-  | { kind: "suppress" }
-  | { kind: "resume_existing" }
-  | { kind: "start_new" };
-
-/**
- * Host port that decides whether a completed `semantic`-reentry routine should re-activate.
- * The host owns routine resolution + the model-driven decision; it returns `suppress` (no
- * model call) for any routine that is not in semantic mode, so the gate is inert unless an
- * author opted into it.
- */
-export interface ConversationRoutineReentryGate {
-  decide(input: { turn: TurnContext; completedState: RoutineState }): Promise<RoutineReentryDecision>;
-}
+export type { ConversationRoutineReentryGate, RoutineReentryDecision } from "./routineReentry.js";
 
 export interface RoutineDecisionInput {
   handle: string;
@@ -1345,6 +1329,8 @@ export interface RoutineHostEffects {
    * pending decision before the routine can be resumed.
    */
   awaitingDecision?: RoutineAwaitingDecision;
+  /** What the turn did with the routine's consents, in order; see {@link RoutineConsentEvent}. */
+  consentEvents?: RoutineConsentEvent[];
 }
 
 export interface ConversationRoutineResumeResult {
@@ -1714,8 +1700,8 @@ export interface ProcessTurnResult {
   awaitingSkillInput?: AwaitingSkillInput[];
   /**
    * Present when a routine ended by handing the conversation to a person: at an authored
-   * hand-off terminal (`terminalKind: "handoff"`, `stepId` names it), or stuck past its re-ask
-   * limit (`terminalKind: "stuck"`, `stepId` names the step it was stuck on). Ownership only —
+   * hand-off terminal (`terminalKind: "handoff"`), stuck past its re-ask limit (`"stuck"`, on the
+   * step it was stuck on), or on a declined consent (`"consent_declined"`, on its step). Ownership only —
    * whether operators are told is `operatorNotice`. `collected` carries the routine's declared
    * slot values keyed by slot key, for the host's operator notice.
    */
@@ -1739,15 +1725,15 @@ export interface ProcessTurnResult {
 /**
  * What a routine ending tells operators, as the engine reports it; see
  * {@link ProcessTurnResult.operatorNotice}. The notice an author stores on a terminal is
- * `RoutineOperatorNotice` in `@radioso/routine-definition`. `terminalKind: "stuck"` only ever
- * comes from a host's own default notice for a visitor stuck past the re-ask limit (#1384) —
- * the engine itself never reports one, since a stuck ending lands on no authored terminal step
- * to carry one.
+ * `RoutineOperatorNotice` in `@radioso/routine-definition`. `stuck` and `consent_declined` only
+ * ever come from a host's own default notice for a runner-owned hand-off (#1384, #1544) — the
+ * engine itself never reports one, since such an ending lands on no authored terminal step to
+ * carry one.
  */
 export interface RoutineOperatorNoticeEffect extends RoutineOperatorNoticeTemplate {
   routineId: string;
   stepId: string;
-  terminalKind: "complete" | "handoff" | "stuck";
+  terminalKind: "complete" | RoutineHandoffTerminalKind;
   collected?: Record<string, unknown>;
   /**
    * The keys of `collected` whose values were masked as sensitive; absent when none were. A

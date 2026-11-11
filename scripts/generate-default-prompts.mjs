@@ -116,6 +116,14 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_REENTRY_GATE_PROMPT",
   },
   {
+    source: "routine-consent-reply.md",
+    exportName: "DEFAULT_ROUTINE_CONSENT_REPLY_PROMPT",
+  },
+  {
+    source: "routine-consent-unclear-answer.md",
+    exportName: "DEFAULT_ROUTINE_CONSENT_UNCLEAR_ANSWER_PROMPT",
+  },
+  {
     source: "steering.md",
     exportName: "DEFAULT_STEERING_PROMPT",
   },

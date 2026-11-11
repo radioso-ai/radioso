@@ -554,7 +554,7 @@ export interface RoutineTurnWithConversationEngineClaim {
   };
 }
 
-const ROUTINE_TERMINAL_KINDS: ReadonlySet<string> = new Set<RoutineTerminalKind>(["complete", "handoff", "action", "stuck"]);
+const ROUTINE_TERMINAL_KINDS: ReadonlySet<string> = new Set<RoutineTerminalKind>(["complete", "handoff", "action", "stuck", "consent_declined"]);
 
 const isRoutineTerminalKind = (value: unknown): value is RoutineTerminalKind =>
   typeof value === "string" && ROUTINE_TERMINAL_KINDS.has(value);

@@ -5,6 +5,8 @@ import type {
   RoutineActionRequest,
   RoutineAuthoredTerminalKind,
   RoutineCompletionExport,
+  RoutineHandoffTerminalKind,
+  RoutineTerminalKind,
   RoutineOperatorNoticeEffect,
   RoutineOperatorNoticeTemplate,
   RoutineState,
@@ -43,6 +45,10 @@ export const completedRoutineState = (
   };
 };
 
+/** The endings that hand the conversation to a person: an authored hand-off end, and the runner's own (#1384, #1544). */
+const handsOff = (kind: RoutineTerminalKind): kind is RoutineHandoffTerminalKind =>
+  kind === "handoff" || kind === "stuck" || kind === "consent_declined";
+
 /**
  * What a routine ending does beyond the reply, derived from the landed terminal. Every path
  * that runs a routine to its end (a live turn, a resume after an approval) reports these, so
@@ -52,7 +58,7 @@ export const routineEndingEffects = (
   routineId: string,
   terminal: ConversationRoutineResumeResult["terminal"],
 ): Pick<ProcessTurnResult, "handoff" | "operatorNotice"> => ({
-  ...(terminal?.kind === "handoff" || terminal?.kind === "stuck"
+  ...(terminal && handsOff(terminal.kind)
     ? {
         handoff: {
           routineId,

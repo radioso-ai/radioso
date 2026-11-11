@@ -142,7 +142,7 @@ const claimCompletedRoutineCorrection = async (
   // for something new included, goes on to reentry and activation (#1714).
   if (
     candidate.kind !== "correction" ||
-    !correctableSlots(candidate.slots, completedState.variables).some((slot) => slot.key === candidate.slotKey)
+    !correctableSlots(candidate.slots, completedState.variables, candidate.consents).some((slot) => slot.key === candidate.slotKey)
   ) {
     return null;
   }

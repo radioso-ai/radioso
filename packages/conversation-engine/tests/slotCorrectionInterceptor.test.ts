@@ -130,6 +130,23 @@ describe("completed-instance slot-correction interceptor", () => {
     expect(rejectInvalid).not.toHaveBeenCalled();
   });
 
+  it("never writes a slot a consent covers, even one marked editable (#1544)", async () => {
+    const { input, save, rejectInvalid } = buildInput({
+      detect: vi.fn(correction({
+        slots: mutableEmailSlot,
+        consents: [{ key: "contact", slotKeys: ["email"], onDecline: "continue" }],
+        slotKey: "email",
+        rawValue: "new@example.com",
+      })),
+    });
+
+    const result = await new DefaultConversationEngine().attemptRoutine(input);
+
+    expect(result).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(rejectInvalid).not.toHaveBeenCalled();
+  });
+
   it("re-asks (no patch) when the replacement value fails the slot's type", async () => {
     const { input, save, rejectInvalid } = buildInput({
       detect: vi.fn(correction({ slots: mutableEmailSlot, slotKey: "email", rawValue: "not-an-email" })),

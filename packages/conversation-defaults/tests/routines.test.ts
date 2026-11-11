@@ -841,7 +841,8 @@ describe("routine defaults", () => {
 
     it("tells the model which slots already hold a value, by key", async () => {
       const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
-      await new RoutineNextStepSelector(gw).select({
+      // A fixed day other than the held value, so the prompt's own date cannot match it.
+      await new RoutineNextStepSelector(gw, { clock: () => new Date("2026-09-30T12:00:00Z") }).select({
         routine: booking,
         state: { ...state, variables: { arrival: "2026-11-11" } },
         currentStep,

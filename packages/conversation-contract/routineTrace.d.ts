@@ -5,6 +5,7 @@ import type {
   RoutineStep,
   RoutineTerminalKind,
 } from "./index.js";
+import type { RoutineTraceConsent } from "./routineConsent.js";
 
 /**
  * Why a next-step selector's completion could not be read as a decision. Structural
@@ -67,6 +68,8 @@ export interface RoutineTraceStepEntry {
    * - `reask_limit_handoff`: the step was still not answered on the turn after it asked
    *   differently, and the routine has a hand-off end, so the run ended `stuck` on this step
    *   and the conversation goes to a person (#1384).
+   * - `consent_asked`, `consent_decided`, `consent_reused`, `consent_skipped`: what a `consent`
+   *   step did with its consent this turn; see {@link RoutineTraceConsent}.
    */
   event:
     | "resumed"
@@ -80,7 +83,11 @@ export interface RoutineTraceStepEntry {
     | "decision_notified"
     | "decision_applied"
     | "reask_limit_reached"
-    | "reask_limit_handoff";
+    | "reask_limit_handoff"
+    | "consent_asked"
+    | "consent_decided"
+    | "consent_reused"
+    | "consent_skipped";
   /** Declared slot keys captured at this step this turn (names only — never values). */
   capturedSlotKeys?: string[];
   /** Declared slot keys that held a value and were given a different one at this step this turn (names only — never values). */
@@ -99,6 +106,8 @@ export interface RoutineTraceStepEntry {
   skillReason?: string;
   /** On the routine's first turn, this step read the opening message before it was asked (#1370). */
   readOpeningMessage?: boolean;
+  /** On a `consent_*` event: the consent the step asks and what became of it (keys only). */
+  consent?: RoutineTraceConsent;
 }
 
 /**
@@ -109,10 +118,12 @@ export interface RoutineTraceStepEntry {
  *   not shaped like one, a date that is not a `YYYY-MM-DD` calendar date).
  * - `undeclared`: the key names no slot the routine declares. Reported only on a routine
  *   that declares a slot schema — one with none keeps every key, as it always has.
+ * - `consent`: a consent covers the slot and the visitor had not granted it when the turn
+ *   started (#1544).
  */
 export interface RoutineTraceRejectedSlot {
   key: string;
-  reason: "not_scalar" | "type_mismatch" | "undeclared";
+  reason: "not_scalar" | "type_mismatch" | "undeclared" | "consent";
 }
 
 /**

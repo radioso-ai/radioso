@@ -19,6 +19,24 @@ describe("formatRoutineEndingNotification", () => {
     });
   });
 
+  it("says a visitor declined consent when that is why a person takes over (#1544)", () => {
+    const formatted = formatRoutineEndingNotification({
+      ...base,
+      reason: "routine_consent_declined",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { name: "Ada" },
+    });
+
+    expect(formatted.subject).toBe("Book accommodation: needs a human");
+    expect(formatted.lines).toEqual([
+      "A visitor declined consent, and the conversation needs a human operator.",
+      "",
+      "Collected:",
+      "  Name: Ada",
+      "",
+    ]);
+  });
+
   it("names the routine in the subject and lists the collected values in key order", () => {
     const formatted = formatRoutineEndingNotification({
       ...base,

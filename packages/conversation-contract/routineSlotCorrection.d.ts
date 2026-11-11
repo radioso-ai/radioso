@@ -1,5 +1,5 @@
 // Changing a value a routine run held after the run ended, without running it again.
-import type { RoutineSlotSchema, RoutineState, TurnContext } from "./index.js";
+import type { RoutineConsent, RoutineSlotSchema, RoutineState, TurnContext } from "./index.js";
 
 /**
  * A detected post-completion slot correction (issue #746): the routine's declared slot
@@ -9,6 +9,8 @@ import type { RoutineSlotSchema, RoutineState, TurnContext } from "./index.js";
  */
 export interface RoutineSlotCorrectionCandidate {
   slots: RoutineSlotSchema[];
+  /** The routine's consents. A slot one covers is never corrected after the run (#1544). */
+  consents?: RoutineConsent[];
   slotKey: string;
   rawValue: string;
 }

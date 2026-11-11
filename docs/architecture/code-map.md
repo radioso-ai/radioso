@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 ---
 
 # Code Map
@@ -1555,6 +1555,8 @@ Public surfaces and contracts:
 - `packages/conversation-contract/modelGateway.d.ts` (the model port a host implements: request, completion with its stop reason, and `ConversationModelGateway`; re-exported from `index.d.ts`)
 - `packages/conversation-contract/routineGraph.d.ts` (the authored routine graph: steps, transitions, guards, slots, and ending kinds; re-exported from `index.d.ts`)
 - `packages/conversation-contract/routineTrace.d.ts` (the routine sub-trace: per-step entries, captured and replaced slot keys, opt-in slot values; re-exported from `index.d.ts`)
+- `packages/conversation-contract/routineConsent.d.ts` (a routine's consents before a sensitive slot, #1544: the compiled `RoutineConsent`, the `ConversationRoutineConsentPort` a host asks and reads them through, and the `RoutineConsentEvent`s a turn reports in `RoutineHostEffects.consentEvents`; re-exported from `index.d.ts`)
+- `packages/conversation-contract/routineReentry.d.ts` (whether a routine that already ended starts again: `ConversationRoutineReentryGate`; re-exported from `index.d.ts`)
 - `packages/conversation-contract/index.js` (runtime values of the `declare const` code lists; change the two together)
 
 Useful searches:
@@ -2010,8 +2012,9 @@ Primary internals:
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns); `routineDefinitionRowMapper.ts` reads a row back into a definition
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume); `routineTurnProvider.ts` wires that source and the turn plan's adapters into the routines module's `createRoutineTurnProvider`
-- `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit; `claim` decides the turn before the reply exists, `resume` claims and renders), with `routineSlotValues.ts` (which values may enter a run's state, and how they read in a copy that leaves) and `routineEnding.ts` (how a run ends: the terminal it reports, the completion export, the hand-off and notice effects)
-- `RoutineHostEffects` in `packages/conversation-contract/index.d.ts` (what a routine turn asks its host to record with the turn, such as a decision gate; the engine carries it unread from the runner to the claim's effects and `ProcessTurnResult` as `hostEffects`)
+- `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit; `claim` decides the turn before the reply exists, `resume` claims and renders), with `routineSlotValues.ts` (which values may enter a run's state, and how they read in a copy that leaves), `routineFieldGuard.ts` (field guards evaluated in code), and `routineEnding.ts` (how a run ends: the terminal it reports, the completion export, the hand-off and notice effects)
+- `packages/conversation-engine/src/routineConsentGate.ts` (a routine's consents within one turn, #1544: the covered slots that take no value until granted, the ones the run goes on without after a decline, and what a `consent` step does — pass on, park on the wording, or end `consent_declined`; asks twice before an unclear reply counts as declined). `packages/conversation-defaults/src/routineConsentReplies.ts` reads a typed reply (`backend/prompts/chat/routine-consent-reply.md`) and writes the answer shown before the wording again (`routine-consent-unclear-answer.md`)
+- `RoutineHostEffects` in `packages/conversation-contract/index.d.ts` (what a routine turn asks its host to record with the turn: a decision gate, consent events; the engine carries it unread from the runner to the claim's effects and `ProcessTurnResult` as `hostEffects`)
 - `packages/conversation-engine/src/routineReask.ts` (what a step asked again is told it lacks, whether its reply went unread, and which turns count as progress toward the re-ask limit)
 - `backend/src/modules/routines/selectorCompletionTelemetry.ts` (counts every next-step selector completion in `routine_next_step_completions_total` by model, step kind, call, and result, and logs an unreadable one)
 - `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector

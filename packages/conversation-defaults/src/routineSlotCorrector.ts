@@ -124,7 +124,7 @@ export class RoutineSlotCorrector implements ConversationRoutineSlotCorrection {
     if (!slots.some((slot) => slot.mutable)) {
       return none("no_mutable_slot");
     }
-    const heldSlots = correctableSlots(slots, completedState.variables);
+    const heldSlots = correctableSlots(slots, completedState.variables, routine.consents);
     if (heldSlots.length === 0) {
       return none("not_held");
     }
@@ -155,9 +155,15 @@ export class RoutineSlotCorrector implements ConversationRoutineSlotCorrection {
     if (!detected) {
       return none("not_a_correction");
     }
-    // Pass the full declared slot schema so the engine verifies against the real type +
-    // mutability, not just the subset shown to the model.
-    return { kind: "correction", slots, slotKey: detected.slotKey, rawValue: detected.value };
+    // Pass the full declared slot schema and the consents so the engine verifies against the
+    // real type, mutability and consent cover, not just the subset shown to the model.
+    return {
+      kind: "correction",
+      slots,
+      ...(routine.consents ? { consents: routine.consents } : {}),
+      slotKey: detected.slotKey,
+      rawValue: detected.value,
+    };
   }
 
   async rejectInvalid(input: { turn: TurnContext; routineId: string; slotKey: string }): Promise<string> {

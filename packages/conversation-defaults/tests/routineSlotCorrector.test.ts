@@ -146,6 +146,30 @@ describe("RoutineSlotCorrector", () => {
     expect(gw.complete).not.toHaveBeenCalled();
   });
 
+  it("never offers a correction to a slot a consent covers, even one marked editable (#1544)", async () => {
+    const gw = gateway(decision("correction", "email", "new@example.com"));
+    const covered: Routine = { ...routine, consents: [{ key: "contact", slotKeys: ["email"], onDecline: "continue" }] };
+    const corrector = new RoutineSlotCorrector([covered], gw, { clock });
+
+    const result = await corrector.detect({ turn: turn("actually use new@example.com"), completedState });
+
+    expect(result).toEqual({ kind: "none", reason: "not_held" });
+    expect(gw.complete).not.toHaveBeenCalled();
+  });
+
+  it("hands the engine the routine's consents with a correction it offers", async () => {
+    const gw = gateway(decision("correction", "arrival", "2026-12-01"));
+    const consents = [{ key: "contact", slotKeys: ["email"], onDecline: "continue" as const }];
+    const corrector = new RoutineSlotCorrector([{ ...routine, consents }], gw, { clock });
+
+    const result = await corrector.detect({
+      turn: turn("arrive on 1 December"),
+      completedState: { ...completedState, variables: { ...completedState.variables, arrival: "2026-11-30" } },
+    });
+
+    expect(result).toEqual({ kind: "correction", slots: routine.slots, consents, slotKey: "arrival", rawValue: "2026-12-01" });
+  });
+
   it("offers no correction when the model picks a slot that is not editable", async () => {
     const gw = gateway(decision("correction", "name", "Alex"));
     const corrector = new RoutineSlotCorrector([routine], gw);

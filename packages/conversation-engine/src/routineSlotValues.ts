@@ -16,11 +16,13 @@ export const hasVariable = (variables: Record<string, unknown>, key: string): bo
  * activation, and a selector return free-form field names, and only a declared slot's
  * value may reach routine state, an action payload, or an unbound tool-step input. A blank
  * value is "not given" and dropped silently; one that does not fit its declared type is
- * dropped and reported by key and reason — never by value.
+ * dropped and reported by key and reason — never by value. A slot in `blocked` takes no value
+ * at all: a consent covers it and the visitor had not granted it when the turn started (#1544).
  */
 export const checkDeclaredSlotValues = (
   routine: Routine,
   values: Record<string, unknown>,
+  blocked: ReadonlySet<string> = new Set(),
 ): { values: Record<string, unknown>; rejected: RoutineTraceRejectedSlot[] } => {
   const slotTypes = new Map((routine.slots ?? []).map((slot) => [slot.key, slot.type]));
   const kept: Record<string, unknown> = {};
@@ -36,10 +38,14 @@ export const checkDeclaredSlotValues = (
       continue;
     }
     const checked = checkSlotValue(type, value);
-    if (checked.ok) {
+    if (!checked.ok) {
+      if (checked.reason !== "empty") {
+        rejected.push({ key, reason: blocked.has(key) ? "consent" : checked.reason });
+      }
+    } else if (blocked.has(key)) {
+      rejected.push({ key, reason: "consent" });
+    } else {
       kept[key] = checked.value;
-    } else if (checked.reason !== "empty") {
-      rejected.push({ key, reason: checked.reason });
     }
   }
   return { values: kept, rejected };

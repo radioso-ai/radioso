@@ -5,10 +5,13 @@ import { collectedSlotsForStep, requiredCollectedSlots } from "./slotCollectionS
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
 
-/** The rejected keys that belong to slots this step collects. */
+/**
+ * The rejected keys that belong to slots this step collects. A value kept out for want of
+ * consent (#1544) says nothing about the visitor's answer to the step, so it is not among them.
+ */
 export const rejectedCollectedKeys = (step: RoutineStep, rejected: readonly RoutineTraceRejectedSlot[]): Set<string> => {
   const collected = new Set(collectedSlotsForStep(step));
-  return new Set(rejected.map((slot) => slot.key).filter((key) => collected.has(key)));
+  return new Set(rejected.filter((slot) => slot.reason !== "consent").map((slot) => slot.key).filter((key) => collected.has(key)));
 };
 
 /**

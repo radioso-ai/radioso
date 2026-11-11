@@ -49,7 +49,10 @@ composition. Nothing in `packages/` changes for images.
 - `services/imageNormalizer.ts`: magic-byte sniffing (JPEG, PNG, WebP only),
   `sharp` decode under a pixel limit, auto-rotate, re-encode to JPEG at most
   1,600 px on the long side with no metadata, quality stepped down to at most
-  512 KB.
+  512 KB. `sharp` runs one libuv thread per image with its cache off, and
+  `services/normalizationSlots.ts` lets two photos decode at once per process;
+  a third waits up to five seconds, then is refused as `busy`
+  (`503 visitor_image_busy`).
 - `services/modelVisitorImageReader.ts`: one structured call per photo on the
   agent's chat model through the inference pipeline (`visitor_image.read`), with
   a timeout and fail-open to `unread`. Prompt:
@@ -98,7 +101,7 @@ composition. Nothing in `packages/` changes for images.
 The reading call runs inside the inference pipeline's `llm.provider` span and
 records a usage event with operation `visitor_image.read`. Two bounded counters:
 `visitor_image_uploads_total{outcome}` (accepted, rejected_type, rejected_size,
-rejected_pixels, rate_limited, disabled) and
+rejected_pixels, rate_limited, busy, disabled) and
 `visitor_image_readings_total{outcome}` (read, unread). Logs carry ids, reasons
 and error classes; never bytes, base64 or readings.
 

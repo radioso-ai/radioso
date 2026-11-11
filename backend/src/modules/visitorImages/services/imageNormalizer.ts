@@ -3,6 +3,15 @@ import { createHash } from "node:crypto";
 import sharp from "sharp";
 
 import { VISITOR_IMAGE_LIMITS, type VisitorImageRejection, type VisitorImageSourceType } from "../domain.js";
+import { NormalizationSlots } from "./normalizationSlots.js";
+
+// libvips takes its threads from libuv's pool (four by default), shared with dns, fs and zlib: one
+// thread per image leaves the rest of the process room, and no cache keeps a visitor's pixels.
+sharp.concurrency(1);
+sharp.cache(false);
+
+/** Two photos decode at once in this process; a third waits up to five seconds, then is refused as busy. */
+const DECODING_SLOTS = new NormalizationSlots(2, 5_000);
 
 /**
  * The type a photo's first bytes say it is. Only JPEG, PNG and WebP are read; anything else,
@@ -48,12 +57,16 @@ const encode = (bytes: Buffer, maxInputPixels: number, longSide: number, quality
  */
 export const normalizeVisitorImage = async (
   bytes: Buffer,
-  options: { maxInputPixels?: number } = {},
+  options: { maxInputPixels?: number; slots?: NormalizationSlots } = {},
 ): Promise<NormalizedVisitorImage> => {
   if (bytes.length > VISITOR_IMAGE_LIMITS.maxUploadBytes) return { kind: "rejected", reason: "too_large" };
   const type = sniffVisitorImageType(bytes);
   if (!type) return { kind: "rejected", reason: "unsupported_type" };
-  const maxInputPixels = options.maxInputPixels ?? VISITOR_IMAGE_LIMITS.maxInputPixels;
+  const decoded = await (options.slots ?? DECODING_SLOTS).run(() => decode(bytes, type, options.maxInputPixels ?? VISITOR_IMAGE_LIMITS.maxInputPixels));
+  return decoded === "busy" ? { kind: "rejected", reason: "busy" } : decoded;
+};
+
+const decode = async (bytes: Buffer, type: VisitorImageSourceType, maxInputPixels: number): Promise<NormalizedVisitorImage> => {
   try {
     // The header alone: the size is checked here, against the same limit decoding then enforces.
     const metadata = await sharp(bytes, { limitInputPixels: false }).metadata();

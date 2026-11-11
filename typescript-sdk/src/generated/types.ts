@@ -28410,6 +28410,15 @@ export interface operations {
                     "application/json": components["schemas"]["RateLimitExceededResponse"] | components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description `visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     getPublicChatImage: {
@@ -28549,6 +28558,15 @@ export interface operations {
                     "application/json": components["schemas"]["RateLimitExceededResponse"] | components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description `visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     uploadAgentChannelImage: {
@@ -28627,6 +28645,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateLimitExceededResponse"] | components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

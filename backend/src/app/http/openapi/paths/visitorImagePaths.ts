@@ -23,6 +23,7 @@ const uploadErrors = (schemas: OpenApiSchemas) => ({
   404: errorResponse("`visitor_images_unavailable`: the agent does not take images (its `visitorImagesEnabled` is off, or its chat model cannot read images)", schemas),
   413: errorResponse("`image_too_large`: over 10 MiB; or `image_too_many_pixels`: too many pixels to decode", schemas),
   415: errorResponse("`unsupported_image_type`: not a JPEG, PNG or WebP image", schemas),
+  503: errorResponse("`visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again", schemas),
   429: {
     description: "The upload budget is spent (`rate_limit_exceeded`), or the plan has no answers left for the reading (`usage_limit_exceeded`, the refusal a chat message gets; without `details` on the public route).",
     content: { "application/json": { schema: z.union([schemas.RateLimitExceededSchema, schemas.ErrorResponseSchema]) } },

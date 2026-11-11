@@ -37127,6 +37127,12 @@ paths:
                 anyOf:
                   - $ref: "#/components/schemas/RateLimitExceededResponse"
                   - $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/public/chat/{token}/images/{imageId}:
     get:
       tags:
@@ -37248,6 +37254,12 @@ paths:
                 anyOf:
                   - $ref: "#/components/schemas/RateLimitExceededResponse"
                   - $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/images:
     post:
       tags:
@@ -37315,6 +37327,12 @@ paths:
                 anyOf:
                   - $ref: "#/components/schemas/RateLimitExceededResponse"
                   - $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/images/{imageId}:
     get:
       tags:

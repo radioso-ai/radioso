@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import { normalizeVisitorImage, sniffVisitorImageType } from "../../../src/modules/visitorImages/services/imageNormalizer.js";
+import { NormalizationSlots } from "../../../src/modules/visitorImages/services/normalizationSlots.js";
 import { VISITOR_IMAGE_LIMITS } from "../../../src/modules/visitorImages/domain.js";
 
 /** A solid image of the given size and format, made in the test so no fixture file is needed. */
@@ -118,5 +119,24 @@ describe("normalizeVisitorImage", () => {
     const result = await normalizeVisitorImage(await solid(400, 300, "png"), { maxInputPixels: 400 * 300 - 1 });
 
     expect(result).toEqual({ kind: "rejected", reason: "too_many_pixels" });
+  });
+});
+
+describe("normalizeVisitorImage under load", () => {
+  it("decodes on one libuv thread per image and keeps no decoded pixels cached", () => {
+    expect(sharp.concurrency()).toBe(1);
+    expect(sharp.cache().items.max).toBe(0);
+  });
+
+  it("refuses as busy when no decoding slot frees in time", async () => {
+    const slots = new NormalizationSlots(1, 1);
+    let free!: () => void;
+    const holding = slots.run(() => new Promise<void>((resolve) => { free = resolve; }));
+
+    expect(await normalizeVisitorImage(await solid(40, 30, "png"), { slots })).toEqual({ kind: "rejected", reason: "busy" });
+
+    free();
+    await holding;
+    expect((await normalizeVisitorImage(await solid(40, 30, "png"), { slots })).kind).toBe("normalized");
   });
 });

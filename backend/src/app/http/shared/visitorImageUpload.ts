@@ -31,6 +31,8 @@ const REJECTIONS: Readonly<Record<VisitorImageRejection, () => AppError>> = {
   unsupported_type: () => new AppError(415, "unsupported_image_type", "Send a JPEG, PNG or WebP image."),
   too_large: imageTooLarge,
   too_many_pixels: () => new AppError(413, "image_too_many_pixels", "The image has too many pixels. Send a smaller one."),
+  // Load shed by design, not a platform fault.
+  busy: () => new AppError(503, "visitor_image_busy", "Too many images are being processed right now. Try again in a moment.", undefined, { isExpectedOutcome: true }),
 };
 
 /** The error an upload's refusal answers with. */

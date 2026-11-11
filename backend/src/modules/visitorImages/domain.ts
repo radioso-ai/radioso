@@ -23,8 +23,11 @@ export const VISITOR_IMAGE_LIMITS = {
 /** The types a photo may be, read from its magic bytes; whatever a caller declared is ignored. */
 export type VisitorImageSourceType = "image/jpeg" | "image/png" | "image/webp";
 
-/** Why an upload was refused. Each is a bounded metric label and an error code at the edge. */
-export type VisitorImageRejection = "unsupported_type" | "too_large" | "too_many_pixels";
+/**
+ * Why an upload was refused. Each is a bounded metric label and an error code at the edge; `busy`
+ * is the process decoding as many photos as it takes at once, not the photo.
+ */
+export type VisitorImageRejection = "unsupported_type" | "too_large" | "too_many_pixels" | "busy";
 
 /** Whether the agent's chat model produced a reading. `pending` only while the reading call runs. */
 export type VisitorImageReadingStatus = "pending" | "read" | "unread";

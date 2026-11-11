@@ -97,7 +97,7 @@ Bootstrap greetings are not saved as conversations by themselves. A `startConver
 
 ### Send photos
 
-When the session's `acceptsImages` is `true`, the visitor can attach up to three photos to a message. Upload each one first, as multipart with the photo in the field `image`, and the visitor's public session in `x-radioso-public-session`:
+The website widget and the public chat link attach photos for you. A page of your own does it like this: when the session's `acceptsImages` is `true`, the visitor can attach up to three photos to a message. Upload each one first, as multipart with the photo in the field `image`, and the visitor's public session in `x-radioso-public-session`:
 
 ```bash
 curl -sS -X POST "https://api.radioso.ai/api/v1/public/chat/$TOKEN/images" \

@@ -148,6 +148,10 @@ When you offer calls on the website, the widget's composer shows a microphone bu
 
 Offering calls is your choice and starts off. Turn on **Offer calls on the website** under **Website widget** on the agent's **Web chat** page. You can turn it on once the agent's voice is ready: the agent published, an ElevenLabs key under **Settings → Providers → Voice runtime keys**, ElevenLabs connected on the agent's **Voice** card (**Connect ElevenLabs**), and the **Voice channel** on; until then the switch names what is missing. The snippet stays the same. The button shows only on pages served over https, because browsers give no microphone to plain http pages. If your site sends a `Permissions-Policy` header that denies the microphone, allow it for your Radioso app host, or the widget shows no Talk button. Each call spends one voice session start, which has its own small budget per visitor; see [Voice session start rate limits](/operators/deployment#voice-session-start-rate-limits). A visitor past it, or a call Radioso cannot start, reads "Talking isn't available right now. Try again later."
 
+## Sending photos
+
+When the agent takes photos, the widget's composer shows an attach button beside the message field, and a visitor can also paste or drop up to three photos on it. The agent reads each photo and answers from what it sees, and the photos stay in the visitor's thread, including after a reload. Turn it on under **Profile → Answers → Let visitors send photos**; the widget shows the button only when the agent's chat model reads images. The same composer is on the public chat link. See [Let visitors send photos](/guides/image-input) for the limits and what teammates see in Activity.
+
 ## Recommended launch sequence
 
 <Steps>

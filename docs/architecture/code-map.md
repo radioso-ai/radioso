@@ -1113,12 +1113,17 @@ Public surfaces and key files:
 - `backend/src/app/http/shared/visitorImageUpload.ts`, `backend/src/app/http/middleware/visitorImageUploadRateLimiter.ts`
 - `backend/prompts/chat/visitor-image-reading.md`
 - `backend/src/db/migrations/256_visitor_images.sql`
+- `frontend/components/chat/visitor-image-composer.tsx` (attach button, preview chips, paste and drop) rendered by `PublicChatBubbleComposerForm` in `public-chat-bubble-view.tsx`; `frontend/lib/use-visitor-image-attachments.ts` over `visitor-image-attachment-controller.ts` (shrink, upload, remove, the three-photo limit) and the pure `visitor-image-attachments.ts` (state transitions), `visitor-image-downsize.ts` (sizing and fallbacks over an `ImageCodec`; `visitor-image-browser-codec.ts` is the browser one)
+- `frontend/components/chat/visitor-image-thumbnails.tsx` and `visitor-message-body.tsx` (the visitor's bubble from `inputMetadata.imageInput`, read with `frontend/lib/visitor-image-input.ts`; the public chat fetches a photo with its session header into `visitor-image-blob-cache.ts`, a teammate's view loads it from the conversation route), `ChatMessageThread`'s `visitorImages` prop, and the operator hosts `inbox-response-view.tsx` and `conversation-drawer.tsx`
+- `frontend/lib/anonymous-chat-context.tsx` (`acceptsImages`, `uploadImage`, `sendMessage(..., { imageIds })`), `frontend/lib/api-public-chat.ts` (`uploadImage`, `fetchImage`), `frontend/app/api/public/chat/[token]/route.ts` (the relay's `imageIds`); the session's `acceptsImages` is kept per session by `frontend/lib/api-storage.ts`
+- `frontend/components/dashboard/settings/visitor-images-setting.tsx` with `frontend/lib/visitor-image-model.ts` (the Answers switch and whether the agent's model reads images)
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/unit/agents/agent-visitor-images-flag.test.ts tests/contract/visitor-images.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/visitor-images.integration.test.ts --no-file-parallelism`
 - `cd typescript-sdk && pnpm exec vitest run tests/unit/chat-images.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/visitor-image-*.test.ts tests/unit/anonymous-chat-images.test.tsx tests/unit/public-chat-relay-route.test.ts tests/unit/api-public-chat-images.test.ts`; the journey is `frontend/tests/e2e/visitor-image-composer.spec.ts`
 
 Related specs and docs:
 

@@ -9,7 +9,7 @@ Some requests are easier to show than to write. A client looking for a property 
 
 ## Turn photos on
 
-Photos are an agent setting, `visitorImagesEnabled`, off by default. Ask Ray to turn it on for the agent and apply the card it drafts, or set it over the API:
+Open the agent's **Profile**, find **Answers**, and turn on **Let visitors send photos**. The setting applies as soon as you change it. You can also ask Ray to turn it on and apply the card it drafts, or set `visitorImagesEnabled` over the API:
 
 ```bash
 curl -sS -X PUT https://api.radioso.ai/api/v1/agents/$AGENT_ID \
@@ -18,7 +18,23 @@ curl -sS -X PUT https://api.radioso.ai/api/v1/agents/$AGENT_ID \
   -d '{"visitorImagesEnabled":true}'
 ```
 
-Photos take effect only when the agent's chat model reads images. Every model in Radioso's catalogue does; an `openai-compatible` endpoint is treated as one that does not, because Radioso cannot know what model it serves. The public chat session says whether the agent takes photos right now in `acceptsImages`, so a client shows an attach control only when it is `true`.
+Photos take effect only when the agent's chat model reads images. Every model in Radioso's catalogue does; an `openai-compatible` endpoint is treated as one that does not, because Radioso cannot know what model it serves. When the agent's own model, or the chat model of the workspace, is one that cannot read photos, the setting says so beside the switch: it stays off until you pick another model, and a setting that was already on reads "Not working" until you do. The public chat session says whether the agent takes photos right now in `acceptsImages`, so a client shows an attach control only when it is `true`.
+
+A visitor with the chat already open sees a change the next time the chat starts a session: when the website widget is reopened, or in a new browser tab on the public chat link.
+
+## What visitors see
+
+On an agent that takes photos, the composer in the website widget and on the public chat link shows an attach button beside the message field. A visitor picks up to three photos from the file picker (JPEG, PNG or WebP; on a phone the picker offers the camera too), or pastes or drops them on the composer.
+
+Each photo appears as a small preview with a spinner while it uploads and the agent reads it, which takes a few seconds. A cross on the preview removes it. A photo that fails shows a warning on its preview and a line saying why: the type is not accepted, the photo is too large, or it could not be uploaded. Dropping a fourth photo says that a message carries three.
+
+Send is ready as soon as there is text or an uploaded photo, so a photo alone is a message, and it waits while any photo is still uploading. The browser shrinks each photo before it goes up, to a JPEG of at most 1,600 pixels on the long side, so a several-megabyte phone photo travels as a few hundred KB. In the thread, the visitor's bubble holds their photos and what they typed, and a reload shows the same.
+
+The attach labels and the messages for a photo that cannot be sent come with the widget's built-in translations in every language it speaks.
+
+## What a teammate sees
+
+In Activity, a message with photos shows a thumbnail for each photo above the text the visitor typed, in the conversation view and in the drawer. A photo loads when the thread shows it, and each photo the browser loads is recorded as a `conversation.image_viewed` audit event, so opening a long conversation records one view per photo. Under the visitor's bubble, **What the agent read** opens the agent's reading of each photo, kept apart from the visitor's own words. Seeing photos takes the `workspace.history.read` permission.
 
 ## What the agent reads
 
@@ -98,6 +114,7 @@ A page of your own on the public chat uploads to `POST /api/v1/public/chat/{toke
 
 ## Common failure modes
 
+- **No attach button in the chat** — the agent has photos off, its chat model cannot read images, or the visitor's session started before you turned photos on. Reopen the widget, or open the public link in a new tab.
 - **`404 visitor_images_unavailable` on upload** — the agent has photos off, or its chat model cannot read images. `acceptsImages` on the public session is `false` in both cases.
 - **`415 unsupported_image_type`** — the file is not a JPEG, PNG or WebP image, whatever its name says.
 - **`413 image_too_large` or `image_too_many_pixels`** — over 10 MiB, or too many pixels to decode. Send a smaller photo.

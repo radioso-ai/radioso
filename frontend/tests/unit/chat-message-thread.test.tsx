@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { appendAssistantLinkUtm, ChatMessageThread } from '@/components/dashboard/chat-message-thread'
+import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
+import { appendAssistantLinkUtm } from '@/lib/assistant-link-analytics'
 
 const UTILITY_BUTTON_LABELS = /aria-label="(Copy message|Copied|Thumbs up|Thumbs down)"/
 

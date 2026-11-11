@@ -1,17 +1,15 @@
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import vm from 'node:vm'
 
 import { beforeAll, describe, expect, it } from 'vitest'
 
+import { readEmbedLauncherScript, renderEmbedLauncherScript } from '@/lib/embed-launcher-script'
 import { BUILT_IN_EMBED_LOCALE_PACKS, TRANSLATABLE_COPY_KEYS } from '@/lib/embed-locale-packs'
 import { COPY_OVERRIDE_KEYS } from '@/lib/embed-widget'
 
-// The launcher (`radioso-embed-launcher.js`) is served raw and cannot import a
-// module, so it keeps its own inline copy of the locale packs. This test is the
-// guard that keeps that inline copy identical to the typed source of truth in
-// `lib/embed-locale-packs.ts` — the guard whose absence previously let the
-// launcher silently drop translated keys.
+// The launcher (`radioso-embed-launcher.js`) is one plain script that cannot
+// import a module, so the route serving it fills its locale packs and copy-key
+// whitelist from the typed source of truth. These tests read the script as it
+// is served and guard that it carries exactly those values.
 
 const sliceLiteral = (source: string, name: string, openChar: '{' | '[') => {
   const start = source.indexOf(`const ${name} = `)
@@ -38,7 +36,7 @@ describe('launcher locale-pack parity', () => {
   let launcherCopyKeys: string[]
 
   beforeAll(async () => {
-    const source = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const source = await readEmbedLauncherScript()
     launcherPacks = sliceLiteral(source, 'builtInLocaleCopy', '{')
     launcherCopyKeys = sliceLiteral(source, 'copyOverrideKeys', '[')
   })
@@ -74,5 +72,9 @@ describe('launcher locale-pack parity', () => {
     for (const key of launcherCopyKeys) {
       expect(allowed, `unexpected launcher copy key ${key}`).toContain(key)
     }
+  })
+
+  it('refuses a launcher source that lost its markers', () => {
+    expect(() => renderEmbedLauncherScript('const builtInLocaleCopy = {}')).toThrow(/marker/)
   })
 })

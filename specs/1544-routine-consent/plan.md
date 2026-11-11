@@ -58,6 +58,7 @@ Schema (`packages/routine-definition`):
 - `consents: z.array(routineConsentSchema).optional()` with no default, following the `exposure` precedent (`index.ts:499-501`), so stored rows and published snapshots without consents parse unchanged.
 - The persisted schema is strict on structure (key pattern, `slotKeys.min(1)`, `variants.min(1)`, `onDecline` enum) and lenient on text (blank allowed and reported by the validator, matching `exactContent.ts:21-27`).
 - The editing schema is lenient on everything (`index.ts:504-505` requires it).
+- The row mapper reads the column with `routineConsentStoredSchema`: the persisted rules on every known field, unknown fields dropped, so a field a later version adds survives a rollback.
 - The update schema keeps omission meaning "unchanged", so `mergeDraftInputWithExisting` preserves stored consents (`service.ts:118-137`).
 - `index.ts` is 926 lines, so the schema goes in `consent.ts`, re-exported.
 
@@ -71,7 +72,7 @@ CREATE TABLE routine_consent_wording_versions (
   PRIMARY KEY (workspace_id, id));
 CREATE INDEX routine_consent_wording_versions_retention_idx ON routine_consent_wording_versions (workspace_id, first_shown_at);
 ```
-- The id is a hash of the content (`shared/domain/canonicalContentHash.ts`; the privacy notice uses the same idea at `agents/privacyNotice.ts:67`). Rows are only ever inserted with `ON CONFLICT DO NOTHING`; no code path updates them.
+- The id is a hash of the content (`shared/domain/canonicalContentHash.ts`; the privacy notice uses the same idea at `agents/privacyNotice.ts:67`). Content never changes: the upsert's `ON CONFLICT DO UPDATE SET id = EXCLUDED.id` writes the same id back, which locks the row for the turn so the retention sweep's `SKIP LOCKED` passes over it, or re-inserts it after a sweep that took it first.
 - A unit test recomputes the hash of stored rows.
 - Rows are written inside the turn's transaction both when shown and when decided (the decision re-upserts), so retention can never orphan a record.
 
@@ -101,9 +102,12 @@ CREATE UNIQUE INDEX routine_consent_records_decision_key ON routine_consent_reco
 CREATE INDEX routine_consent_records_retention_idx ON routine_consent_records (workspace_id, decided_at);
 CREATE INDEX routine_consent_records_visitor_idx ON routine_consent_records (workspace_id, visitor_id) WHERE visitor_id IS NOT NULL;
 CREATE INDEX routine_consent_records_message_idx ON routine_consent_records (decision_message_id) WHERE decision_message_id IS NOT NULL;
+CREATE INDEX routine_consent_records_wording_idx ON routine_consent_records (workspace_id, wording_version_id);
+CREATE INDEX routine_consent_records_agent_idx ON routine_consent_records (agent_id) WHERE agent_id IS NOT NULL;
 ```
 - The unique index makes retried turns idempotent.
 - The message index keeps erasure's `SET NULL` from scanning the table, since conversation erasure deletes messages by cascade.
+- The wording index serves wording retention's "no record names it" check and the foreign key check when a version goes; the agent index does the same for the agent's `SET NULL`.
 - No reply text and no values are stored.
 - `withdrawn_by_account_id` / `withdrawn_by_user_id` follow `ConversationErasureActor` (`privacy/conversationErasure.ts:14-18`).
 
@@ -120,7 +124,7 @@ CREATE INDEX routine_consent_records_message_idx ON routine_consent_records (dec
   - Each row: record id, conversation, routine, consent key, decision, method, defaulted, channel, locale, wording version id, `wording{body, agreeLabel, declineLabel}`, `decidedAt`, `withdrawnAt`.
   - Registered in `app/composition/dataSubjectAccess.ts:36-46`.
 - **Retention** (registered in `app/composition/conversationRetention.ts:28-37`):
-  - `ConsentRecordRetention` deletes records whose workspace has `conversation_retention_days` set and `decided_at < now - days` (`SKIP LOCKED`, bounded).
+  - `ConsentRecordRetention` deletes records whose conversation no longer exists, whose workspace has `conversation_retention_days` set, and whose `decided_at < now - days` (`SKIP LOCKED`, bounded). A conversation expires from its last activity, so a record stays as long as the conversation whose values it proves.
   - `ConsentWordingVersionRetention` deletes versions no record references, past the same window.
   - The doc comment on `ConversationDataRetentionRule` (`shared/domain/conversationDataRetention.ts:1-8`) gains one sentence: a rule may read the workspace's own window for proof kept past its conversation.
 
@@ -184,7 +188,7 @@ Effects: `consentEvents?: RoutineConsentEvent[]` follows `awaitingDecision`'s ro
 - **`buttons` presentation** (anonymous link, embed, Test Chat, workbench replay, Ray probe, REST assistant API): `RenderableTurn {answer: body, suggestions:[{id:"agree", text, kind:"authored", action:{kind:"ask_followup"}}, {id:"decline", …}], metadata:{skillName, skillOutcome, skillStatus}}`.
   - `presentationFromRenderableTurn` already carries `suggestions` through (`routineGroundedAnswerRenderer.ts:133-170`, suggestions at :149).
   - The chips use `ChatSuggestion.id` (`chatResponses.ts:24-35`), shaped like the greeting chips (`chatBootstrapService.ts:393-398`). No text is added around the wording (US2-AS1).
-- **`text` presentation** (email, WhatsApp, Slack): `answer = body + "\n\n" + agreeLabel + "\n" + declineLabel`. This is layout only, no words. Slack and WhatsApp send `response.answer` as is (`slackMessageHandler.ts:530`, `whatsappMessageHandler.ts:301`).
+- **`text` presentation** (email, WhatsApp, Slack): `answer = body + "\n\n" + agreeLabel + "\n\n" + declineLabel`, each label its own paragraph so markdown does not join them. This is layout only, no words. Slack and WhatsApp send `response.answer` as is (`slackMessageHandler.ts:530`, `whatsappMessageHandler.ts:301`).
 - **Shown write:** event `asked` → persistence upserts the version and puts `consentPrompt {routineId, consentKey, wordingVersionId, locale}` on the assistant message's metadata.
 
 ### 3.4 Button click as a structured decision

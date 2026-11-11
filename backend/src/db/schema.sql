@@ -9274,6 +9274,13 @@ CREATE UNIQUE INDEX routine_action_requests_idempotency_idx ON public.routine_ac
 
 
 --
+-- Name: routine_consent_records_agent_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_consent_records_agent_idx ON public.routine_consent_records USING btree (agent_id) WHERE (agent_id IS NOT NULL);
+
+
+--
 -- Name: routine_consent_records_decision_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9299,6 +9306,13 @@ CREATE INDEX routine_consent_records_retention_idx ON public.routine_consent_rec
 --
 
 CREATE INDEX routine_consent_records_visitor_idx ON public.routine_consent_records USING btree (workspace_id, visitor_id) WHERE (visitor_id IS NOT NULL);
+
+
+--
+-- Name: routine_consent_records_wording_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_consent_records_wording_idx ON public.routine_consent_records USING btree (workspace_id, wording_version_id);
 
 
 --

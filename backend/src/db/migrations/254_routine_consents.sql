@@ -15,7 +15,8 @@
 -- with an optional withdrawal. It holds no reply text and no slot values. The proof outlives its
 -- conversation and visitor (Art. 17(3)(e)), so conversation_id and visitor_id carry no foreign key;
 -- only the link to the message that carried the decision is dropped when that message goes. Records
--- and versions go with their workspace, and with the workspace's own retention window.
+-- and versions go with their workspace. A record is kept while its conversation exists, then follows
+-- the workspace's own retention window; a version goes once no record names it.
 --
 -- Locks. ADD COLUMN with a constant default is a catalog-only change in PostgreSQL 11+, and the
 -- CHECK is validated against existing rows (all '[]'); both hold ACCESS EXCLUSIVE on
@@ -80,6 +81,16 @@ CREATE UNIQUE INDEX routine_consent_records_decision_key
 -- Retention: records past the workspace's window.
 CREATE INDEX routine_consent_records_retention_idx
   ON routine_consent_records (workspace_id, decided_at);
+
+-- Wording retention looks for a record that still names a version, and removing a version checks
+-- the foreign key the same way.
+CREATE INDEX routine_consent_records_wording_idx
+  ON routine_consent_records (workspace_id, wording_version_id);
+
+-- Deleting an agent sets agent_id to null on its records; this keeps that from scanning the table.
+CREATE INDEX routine_consent_records_agent_idx
+  ON routine_consent_records (agent_id)
+  WHERE agent_id IS NOT NULL;
 
 -- Export: a data subject's records by visitor.
 CREATE INDEX routine_consent_records_visitor_idx

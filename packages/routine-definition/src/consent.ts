@@ -25,21 +25,39 @@ const consentKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const slotKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 /** One language of a consent's wording: the body and the two answer labels, never trimmed or rewritten. */
-const routineConsentVariantSchema = z.object({
+const routineConsentVariantFields = {
   locale: z.string(),
   body: z.string(),
   agreeLabel: z.string(),
   declineLabel: z.string(),
-}).strict();
+};
+const routineConsentVariantSchema = z.object(routineConsentVariantFields).strict();
+
+const consentKeyField = z.string().trim().min(1).max(ROUTINE_CONSENT_LIMITS.key).regex(consentKeyPattern);
+const consentSlotKeysField = z.array(z.string().trim().min(1).max(ROUTINE_CONSENT_LIMITS.slotKey).regex(slotKeyPattern))
+  .min(1)
+  .refine((keys) => new Set(keys).size === keys.length, "A consent names each slot it covers once");
+const consentDeclineField = z.enum(routineConsentDeclineChoices);
 
 export const routineConsentSchema = z.object({
-  key: z.string().trim().min(1).max(ROUTINE_CONSENT_LIMITS.key).regex(consentKeyPattern),
-  slotKeys: z.array(z.string().trim().min(1).max(ROUTINE_CONSENT_LIMITS.slotKey).regex(slotKeyPattern))
-    .min(1)
-    .refine((keys) => new Set(keys).size === keys.length, "A consent names each slot it covers once"),
+  key: consentKeyField,
+  slotKeys: consentSlotKeysField,
   variants: z.array(routineConsentVariantSchema).min(1),
-  onDecline: z.enum(routineConsentDeclineChoices),
+  onDecline: consentDeclineField,
 }).strict();
+
+/**
+ * A consent as a stored routine row reads back: every rule of {@link routineConsentSchema} on the
+ * fields it knows, with fields it does not know dropped rather than refused. A field a later
+ * version writes then survives a rollback to this one, while a broken known field still fails the
+ * read.
+ */
+export const routineConsentStoredSchema = z.object({
+  key: consentKeyField,
+  slotKeys: consentSlotKeysField,
+  variants: z.array(z.object(routineConsentVariantFields)).min(1),
+  onDecline: consentDeclineField,
+});
 
 /** Every state an authoring surface may hold a consent in mid-edit. */
 export const routineConsentEditingSchema = z.object({

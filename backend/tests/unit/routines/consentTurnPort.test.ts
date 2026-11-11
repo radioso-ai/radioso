@@ -112,10 +112,10 @@ describe("the consent a conversation is asked (#1544)", () => {
     ]);
   });
 
-  it.each(["email", "whatsapp", "slack"])("writes the two choices under the wording on %s, which has no buttons", async (sourceChannel) => {
+  it.each(["email", "whatsapp", "slack"])("writes the two choices under the wording on %s, which has no buttons, each as its own paragraph", async (sourceChannel) => {
     const asked = await shown(port({ facts: facts({ sourceChannel }) }));
 
-    expect(asked?.reply.answer).toBe(`${english.body}\n\nI agree\nNo thanks`);
+    expect(asked?.reply.answer).toBe(`${english.body}\n\nI agree\n\nNo thanks`);
     expect(asked?.reply.suggestions).toBeUndefined();
   });
 
@@ -123,11 +123,11 @@ describe("the consent a conversation is asked (#1544)", () => {
     const usedReplies = replies();
     const consentPort = port({ facts: facts({ sourceChannel: "email" }), replies: usedReplies });
 
-    expect((await shown(consentPort))?.reply.answer).toBe(`${english.body}\n\nI agree\nNo thanks`);
+    expect((await shown(consentPort))?.reply.answer).toBe(`${english.body}\n\nI agree\n\nNo thanks`);
     expect(usedReplies.answerer.answer).not.toHaveBeenCalled();
 
     const again = await shown(consentPort, true);
-    expect(again?.reply.answer).toBe(`We only use it to plan your class.\n\n${english.body}\n\nI agree\nNo thanks`);
+    expect(again?.reply.answer).toBe(`We only use it to plan your class.\n\n${english.body}\n\nI agree\n\nNo thanks`);
     expect(usedReplies.answerer.answer).toHaveBeenCalledWith({ turn: expect.objectContaining({ inputEvent: expect.objectContaining({ content: "hello" }) }), wording: english });
   });
 

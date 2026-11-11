@@ -24,8 +24,8 @@ import type { Db } from "../../shared/infra/kysely/types.js";
  * Proof of a routine consent (#1544): every wording a visitor was shown, kept immutably, and every
  * decision a visitor gave, with no reply text and no slot value. A record outlives its conversation
  * and visitor, whose ids it keeps as plain ids; the link to the message that carried the decision
- * goes with that message. Records and wordings go with their workspace, and past the workspace's own
- * retention window.
+ * goes with that message. Records and wordings go with their workspace; a record is kept while its
+ * conversation exists and then follows the workspace's own retention window.
  */
 
 /** One decision as a turn records it. */
@@ -70,8 +70,11 @@ export class RoutineConsentRepository {
   constructor(private readonly db: Db) {}
 
   /**
-   * Keeps a wording as shown and returns its version id. A version is only ever inserted: the same
-   * wording shown again finds its row, and no write changes one.
+   * Keeps a wording as shown and returns its version id. A version's content never changes: the
+   * same wording shown again finds its row and writes the same id back over it. That write locks the
+   * row until the turn commits, so the retention sweep (which skips locked rows) cannot remove a
+   * version the turn is about to record a decision against; if the sweep took the row first, the
+   * write waits for it and inserts the version again.
    */
   async upsertWordingVersion(input: { workspaceId: string; wording: RoutineConsentWording }): Promise<string> {
     const id = routineConsentWordingVersionId(input.wording);
@@ -85,7 +88,7 @@ export class RoutineConsentRepository {
         agree_label: input.wording.agreeLabel,
         decline_label: input.wording.declineLabel,
       })
-      .onConflict((conflict) => conflict.columns(["workspace_id", "id"]).doNothing())
+      .onConflict((conflict) => conflict.columns(["workspace_id", "id"]).doUpdateSet({ id: (eb) => eb.ref("excluded.id") }))
       .execute();
     return id;
   }
@@ -332,7 +335,12 @@ export class ConsentRecordExporter implements DataSubjectDataExporter {
   }
 }
 
-/** Removes consent records decided before their workspace's own conversation retention window. */
+/**
+ * Removes consent records whose conversation is gone and which were decided before their
+ * workspace's own conversation retention window. A conversation expires from its last activity, so
+ * a decision older than the window can still prove consent for values its conversation keeps; the
+ * record stays as long as the conversation does.
+ */
 export class ConsentRecordRetention implements ConversationDataRetentionRule {
   readonly table = "routine_consent_records";
 
@@ -347,6 +355,9 @@ export class ConsentRecordRetention implements ConversationDataRetentionRule {
         .select("record.id")
         .where("workspace.conversation_retention_days", "is not", null)
         .where(({ ref }) => pastWorkspaceWindow(ref("record.decided_at"), ref("workspace.conversation_retention_days"), input.now))
+        .where(({ not, exists, selectFrom: selectConversations }) => not(exists(selectConversations("conversations as conversation")
+          .select("conversation.id")
+          .whereRef("conversation.id", "=", "record.conversation_id"))))
         .limit(input.limit)
         .forUpdate("record")
         .skipLocked())

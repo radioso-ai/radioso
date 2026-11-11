@@ -107,14 +107,18 @@ const chooseWording = (
   return fallback.kind === "resolved" ? authored(fallback.locale) : null;
 };
 
-/** The wording verbatim, laid out for the channel: the choices as buttons, or as lines under it. */
+/**
+ * The wording verbatim, laid out for the channel: the choices as buttons, or each as its own
+ * paragraph under it. A blank line between the labels keeps them apart where markdown joins single
+ * line breaks, and reads the same as plain text in an email.
+ */
 const consentReply = (
   wording: RoutineConsentWording,
   presentation: "buttons" | "text",
   lead: string | null,
 ): RenderableTurn => {
   const verbatim = presentation === "text"
-    ? `${wording.body}\n\n${wording.agreeLabel}\n${wording.declineLabel}`
+    ? [wording.body, wording.agreeLabel, wording.declineLabel].join("\n\n")
     : wording.body;
   return {
     answer: lead ? `${lead}\n\n${verbatim}` : verbatim,

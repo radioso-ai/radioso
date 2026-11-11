@@ -588,6 +588,24 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     await database.execute(`UPDATE routine_definition SET consents = '[]'::jsonb WHERE id = $1`, [created.id]);
   });
 
+  it("reads stored consents a later version wrote with more fields, dropping the fields it does not know (#1544)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const created = await repository.createDraft(agentId, draftInput("consent-later-field"));
+    const consent = {
+      key: "topic_consent",
+      slotKeys: ["topic"],
+      variants: [{ locale: "en", body: "We ask about your topic to route it.", agreeLabel: "Agree", declineLabel: "Decline" }],
+      onDecline: "continue" as const,
+    };
+    await database.execute(
+      `UPDATE routine_definition SET consents = $2::jsonb WHERE id = $1`,
+      [created.id, JSON.stringify([{ ...consent, reviewedAt: "2027-01-01", variants: [{ ...consent.variants[0], tone: "formal" }] }])],
+    );
+
+    expect((await repository.findById(agentId, created.id))?.consents).toEqual([consent]);
+    await database.execute(`UPDATE routine_definition SET consents = '[]'::jsonb WHERE id = $1`, [created.id]);
+  });
+
   it("repairs dirty pre-existing data before building migration 090 lifecycle indexes", async () => {
     const schema = `routine_migration_${randomUUID().replaceAll("-", "_")}`;
     const migration090 = await readFile(path.join(testMigrationsPath, "090_routine_lineage_lifecycle.sql"), "utf8");

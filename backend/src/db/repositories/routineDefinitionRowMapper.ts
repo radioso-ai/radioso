@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import {
-  routineConsentSchema,
+  routineConsentStoredSchema,
   routineReentryModes,
   type RoutineApprovalOption,
   type RoutineDefinition,
@@ -115,13 +115,15 @@ const readApprovalOptions = (record: Record<string, unknown>, key: string): Rout
   return options.length > 0 ? options : null;
 };
 
-const storedConsentsSchema = z.array(routineConsentSchema);
+const storedConsentsSchema = z.array(routineConsentStoredSchema);
 
 /**
  * A routine's consents decide which sensitive slots wait for the visitor's consent, so a stored list
  * that does not parse fails the read rather than reading as fewer consents: dropping one would leave
- * its slots collected without asking. None reads back without the field, so a routine without
- * consents keeps the shape it had before the column existed and published snapshots stay unchanged.
+ * its slots collected without asking. A field this version does not know is dropped, so a consent a
+ * later version wrote still reads after a rollback. None reads back without the field, so a routine
+ * without consents keeps the shape it had before the column existed and published snapshots stay
+ * unchanged.
  */
 const readConsents = (row: Pick<RoutineDefinitionRow, "id" | "consents">): Pick<RoutineDefinition, "consents"> => {
   const parsed = storedConsentsSchema.safeParse(row.consents);

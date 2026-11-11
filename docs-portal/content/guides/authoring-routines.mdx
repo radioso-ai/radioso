@@ -315,7 +315,7 @@ How the two choices appear depends on the channel:
 | Channel | What the visitor gets |
 |---|---|
 | Web chat, the website embed, the REST assistant API | The wording, with your two labels as buttons. |
-| Email, WhatsApp, Slack, Test Chat, Ray's test turns | The wording, a blank line, then each label on its own line. |
+| Email, WhatsApp, Slack, Test Chat, Ray's test turns | The wording, then each label as a paragraph of its own. |
 | Voice, and calling agents (MCP, the agent API, A2A) | Nothing: the routine takes its `onDecline` path straight away and keeps no record. |
 
 Voice asks no consent because a transcript is weak proof and Radioso keeps no
@@ -359,8 +359,9 @@ wording shown is kept unchanged, so a record always shows what its visitor saw:
 when you edit the wording, later conversations get the new text and earlier
 records keep the old.
 
-Records follow your workspace's conversation retention window from the moment of
-the decision; with no window set, they last as long as the workspace. Erasing a
+A record is kept while its conversation exists, then follows your workspace's
+conversation retention window, counted from the decision; with no window set, it
+lasts as long as the workspace. Erasing a
 conversation or a visitor keeps their records and drops only the link to the
 message that carried the decision, so you can still show the consent was given.
 A data subject's export lists their records under `consent_records`, with the

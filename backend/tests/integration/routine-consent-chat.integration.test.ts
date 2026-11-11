@@ -333,10 +333,10 @@ describeIntegration("routine consent through a chat turn (Postgres, #1544)", () 
     const conversation = await startConversation({ sourceChannel: "email" });
     await conversation.send("I want to book a class");
     const asked = await conversation.send("My name is Ada");
-    expect(asked.answer).toBe(`${wording.body}\n\n${wording.agreeLabel}\n${wording.declineLabel}`);
+    expect(asked.answer).toBe(`${wording.body}\n\n${wording.agreeLabel}\n\n${wording.declineLabel}`);
 
     const askedAgain = await conversation.send("What do you do with it?");
-    expect(askedAgain.answer).toBe(`${UNCLEAR_ANSWER}\n\n${wording.body}\n\n${wording.agreeLabel}\n${wording.declineLabel}`);
+    expect(askedAgain.answer).toBe(`${UNCLEAR_ANSWER}\n\n${wording.body}\n\n${wording.agreeLabel}\n\n${wording.declineLabel}`);
     expect(await conversation.records()).toEqual([]);
 
     await conversation.send("Maybe later");

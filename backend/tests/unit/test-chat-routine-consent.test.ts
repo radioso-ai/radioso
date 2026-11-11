@@ -197,7 +197,7 @@ describe("Test Chat routine consent (#1544)", () => {
 
     const asked = await chat.send("My name is Ada");
     // Test Chat shows a reply's text alone, so the two choices follow the wording as lines.
-    expect(asked.answer).toBe(`${wording.body}\n\n${wording.agreeLabel}\n${wording.declineLabel}`);
+    expect(asked.answer).toBe(`${wording.body}\n\n${wording.agreeLabel}\n\n${wording.declineLabel}`);
 
     const granted = await chat.send("Yes, and I have a sore knee");
     // The message that grants consent fills no covered field; the step asks for it next.

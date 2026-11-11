@@ -1,8 +1,9 @@
 /**
  * LIVE verification (not part of CI) for #1544: how the real model reads a visitor's typed reply
  * to a consent they were just shown, through the production consent port and the shipped
- * `routine-consent-reply.md` prompt. One sample per case, in English and Italian. SC-003: no
- * ambiguous or refusing reply is ever read as `granted`.
+ * `routine-consent-reply.md` prompt, and what the agent says before showing the consent again
+ * after an unclear reply (`routine-consent-unclear-answer.md`). One sample per case, in English
+ * and Italian. SC-003: no ambiguous or refusing reply is ever read as `granted`.
  *
  * Run with:
  *   cd backend && pnpm exec vitest run tests/live/routine-consent-reply.verify.test.ts
@@ -90,9 +91,9 @@ const definition: RoutineDefinition = {
 const routine = compileRoutineDefinition(definition);
 const consent = routine.consents![0];
 
-/** Reads `reply` as an answer to `wording`, the consent the conversation last showed. */
-const readReply = async (wording: typeof english, reply: string): Promise<RoutineConsentReading | undefined> => {
-  const port = createRoutineConsentTurnPort({
+/** The production consent port on a text channel, where the conversation last showed `wording`. */
+const portFor = (wording: typeof english) =>
+  createRoutineConsentTurnPort({
     facts: {
       conversationId: "conversation_1",
       visitorId: null,
@@ -109,34 +110,73 @@ const readReply = async (wording: typeof english, reply: string): Promise<Routin
     reader: new RoutineConsentReplyReader(liveModel, { promptTemplate: loadPromptTemplate("chat/routine-consent-reply.md") }),
     answerer: new RoutineConsentUnclearAnswerer(liveModel, { promptTemplate: loadPromptTemplate("chat/routine-consent-unclear-answer.md") }),
   });
-  const turn: TurnContext = {
-    agent: { id: "agent_1", name: "Assistant" },
-    sessionId: "conversation_1",
-    inputEvent: { id: "message_2", kind: "message", content: reply },
-    history: [],
-    stagedContext: [],
-    steering: [],
-  };
-  const read = await port.read({ routine, consent, turn });
+
+const turnWith = (reply: string): TurnContext => ({
+  agent: { id: "agent_1", name: "Assistant" },
+  sessionId: "conversation_1",
+  inputEvent: { id: "message_2", kind: "message", content: reply },
+  history: [],
+  stagedContext: [],
+  steering: [],
+});
+
+/** Reads `reply` as an answer to `wording`, the consent the conversation last showed. */
+const readReply = async (wording: typeof english, reply: string): Promise<RoutineConsentReading | undefined> => {
+  const read = await portFor(wording).read({ routine, consent, turn: turnWith(reply) });
   console.info(`[${wording.locale}] ${JSON.stringify(reply)} -> ${read?.decision ?? "no reading"}`);
   return read?.decision;
 };
 
-// An agreement that also states a covered value may read as granted or, more cautiously, unclear
-// (asked again); never as declined. Either way the value is not stored from it (FR-007).
-const cases: Array<{ wording: typeof english; reply: string; expected: "granted" | "declined" | "not granted" | "not declined" }> = [
+/** What the agent says before showing `wording` again after the unclear `reply`. */
+const leadBeforeReask = async (wording: typeof english, reply: string): Promise<string> => {
+  const prompt = await portFor(wording).prompt({ routine, consent, turn: turnWith(reply), reask: true });
+  if (!prompt) throw new Error("the consent was not shown");
+  const { answer } = await prompt.reply.render();
+  const lead = answer.slice(0, answer.indexOf(wording.body)).trim();
+  console.info(`[${wording.locale}] ${JSON.stringify(reply)} -> lead ${JSON.stringify(lead)}`);
+  return lead;
+};
+
+interface LeadReview {
+  /** It answers the question with what the wording says, rather than only pointing back to it. */
+  answers: boolean;
+  /** It states a fact, purpose, recipient, right or promise the wording does not. */
+  adds: boolean;
+  /** It tells the person they must or have to choose, rather than inviting them to. */
+  orders: boolean;
+}
+
+/** A second model call that reviews a lead against the wording, the way a reviewer would. */
+const reviewLead = async (wording: typeof english, reply: string, lead: string): Promise<LeadReview> => {
+  const { text } = await liveModel.complete({
+    systemPrompt: [
+      "You review a short message an assistant wrote to a person who was shown the consent request below and answered unclearly.",
+      'Return only JSON: {"answers": boolean, "adds": boolean, "orders": boolean}.',
+      '- "answers": true when the message answers the person\'s question using what the request says; false when it says it can only go by the request, or answers nothing.',
+      '- "adds": true when the message states any fact, purpose, recipient, right, or promise the request does not state. Restating the request in other words is not adding.',
+      '- "orders": true when the message tells the person they must or have to choose, rather than inviting them to.',
+      `The request:\n<request>\n${wording.body}\n</request>`,
+    ].join("\n"),
+    messages: [{ role: "user", content: `The person wrote: ${reply}\nThe assistant's message: ${lead}` }],
+  });
+  const review = JSON.parse(text) as LeadReview;
+  console.info(`[${wording.locale}] review of ${JSON.stringify(lead)}: ${JSON.stringify(review)}`);
+  return review;
+};
+
+const cases: Array<{ wording: typeof english; reply: string; expected: "granted" | "declined" | "not granted" }> = [
   { wording: english, reply: "Yes, I agree to that.", expected: "granted" },
   { wording: english, reply: "No, I'd rather not share that.", expected: "declined" },
   { wording: english, reply: "ok", expected: "not granted" },
   { wording: english, reply: "What do you do with it?", expected: "not granted" },
   { wording: english, reply: "Yes, as long as you don't tell my employer.", expected: "not granted" },
-  { wording: english, reply: "Yes, I have celiac disease.", expected: "not declined" },
+  { wording: english, reply: "Yes, I have celiac disease.", expected: "granted" },
   { wording: italian, reply: "Sì, acconsento.", expected: "granted" },
   { wording: italian, reply: "No, preferisco di no.", expected: "declined" },
   { wording: italian, reply: "ok", expected: "not granted" },
   { wording: italian, reply: "Cosa ne fate?", expected: "not granted" },
   { wording: italian, reply: "Sì, purché non lo diciate al mio datore di lavoro.", expected: "not granted" },
-  { wording: italian, reply: "Sì, ho la celiachia.", expected: "not declined" },
+  { wording: italian, reply: "Sì, ho la celiachia.", expected: "granted" },
 ];
 
 describe.skipIf(!apiKey)("LIVE: a visitor's typed reply to a consent (#1544)", () => {
@@ -145,10 +185,24 @@ describe.skipIf(!apiKey)("LIVE: a visitor's typed reply to a consent (#1544)", (
 
     if (expected === "not granted") {
       expect(decision).not.toBe("granted");
-    } else if (expected === "not declined") {
-      expect(["granted", "unclear"]).toContain(decision);
     } else {
       expect(decision).toBe(expected);
     }
+  }, 120_000);
+
+  it("answers a question the wording answers from the wording, adding nothing to it", async () => {
+    const reply = "What do you do with this?";
+    const lead = await leadBeforeReask(english, reply);
+
+    expect(lead).not.toBe("");
+    expect(await reviewLead(english, reply, lead)).toMatchObject({ answers: true, adds: false });
+  }, 120_000);
+
+  it.each([english, italian])("[$locale] invites a reply that asks nothing to choose, politely and without a question", async (wording) => {
+    const lead = await leadBeforeReask(wording, "ok");
+
+    expect(lead).not.toBe("");
+    expect(lead).not.toContain("?");
+    expect(await reviewLead(wording, "ok", lead)).toMatchObject({ adds: false, orders: false });
   }, 120_000);
 });

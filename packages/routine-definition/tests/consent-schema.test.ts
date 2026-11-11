@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   routineConsentEditingSchema,
   routineConsentSchema,
+  routineConsentStoredSchema,
   routineDefinitionDraftEditingInputSchema,
   routineDefinitionDraftInputSchema,
   routineDefinitionDraftUpdateInputSchema,
@@ -59,6 +60,22 @@ describe("routine consent schema", () => {
     ];
     for (const value of invalid) {
       expect(routineConsentSchema.safeParse(value).success, JSON.stringify(value)).toBe(false);
+    }
+  });
+
+  it("reads a stored consent a later version wrote with more fields, dropping them and keeping every rule on the rest", () => {
+    const stored = { ...consent, reviewedAt: "2027-01-01", variants: [{ ...consent.variants[0], tone: "formal" }] };
+
+    expect(routineConsentStoredSchema.parse(stored)).toEqual(consent);
+    const broken: unknown[] = [
+      { ...stored, key: "health.data" },
+      { ...stored, slotKeys: [] },
+      { ...stored, variants: [] },
+      { ...stored, variants: [{ locale: "en", body: "x", agreeLabel: "y", tone: "formal" }] },
+      { ...stored, onDecline: "ignore" },
+    ];
+    for (const value of broken) {
+      expect(routineConsentStoredSchema.safeParse(value).success, JSON.stringify(value)).toBe(false);
     }
   });
 

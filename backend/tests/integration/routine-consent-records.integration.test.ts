@@ -294,14 +294,19 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
     })).toEqual([]);
   });
 
-  it("removes records and unreferenced wordings past the workspace's own window, and nothing else", async () => {
+  it("keeps a record while its conversation exists, then removes it and unreferenced wordings past the workspace's own window", async () => {
     const kept = await seedTenant(null);
     const windowed = await seedTenant(30);
     const keptConversation = await seedConversation(kept);
-    const oldConversation = await seedConversation(windowed);
+    const liveConversation = await seedConversation(windowed);
+    const erasedConversation = await seedConversation(windowed);
     const recentConversation = await seedConversation(windowed);
+    // A conversation expires on its last activity, so a decision can be older than the window
+    // while the conversation it proves is still kept.
+    const retired = { ...english, body: "Wording only an erased conversation was shown." };
     await recordDecision(kept, keptConversation);
-    await recordDecision(windowed, oldConversation);
+    await recordDecision(windowed, liveConversation);
+    await recordDecision(windowed, erasedConversation, { wording: retired });
     await recordDecision(windowed, recentConversation, { wording: german });
     // A wording shown long ago that nobody decided on, and one shown just now.
     const repository = new RoutineConsentRepository(database.kysely);
@@ -318,22 +323,26 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
     }
     await database.query(
       "UPDATE routine_consent_records SET decided_at = now() - interval '40 days' WHERE conversation_id = ANY($1::uuid[])",
-      [[keptConversation.conversationId, oldConversation.conversationId]],
+      [[keptConversation.conversationId, liveConversation.conversationId, erasedConversation.conversationId]],
     );
     await database.query(
       "UPDATE routine_consent_records SET decided_at = now() - interval '10 days' WHERE conversation_id = $1",
       [recentConversation.conversationId],
     );
+    await database.kysely.deleteFrom("conversations")
+      .where("id", "in", [keptConversation.conversationId, erasedConversation.conversationId, recentConversation.conversationId])
+      .execute();
     const now = new Date();
     const records = new ConsentRecordRetention(database.kysely);
     const versions = new ConsentWordingVersionRetention(database.kysely);
 
     expect(await records.enforce({ now, limit: 1 })).toBe(1);
     expect(await records.enforce({ now, limit: 10 })).toBe(0);
-    // The old English wording lost its only record above; the German one is still named by a record.
+    // The retired wording lost its only record above; the English and German ones are still named.
     expect(await versions.enforce({ now, limit: 10 })).toBe(2);
 
-    expect(await recordsOf(oldConversation.conversationId)).toEqual([]);
+    expect(await recordsOf(erasedConversation.conversationId)).toEqual([]);
+    expect(await recordsOf(liveConversation.conversationId)).toHaveLength(1);
     expect(await recordsOf(recentConversation.conversationId)).toHaveLength(1);
     expect(await recordsOf(keptConversation.conversationId)).toHaveLength(1);
     const remaining = await database.query<{ workspace_id: string; body: string }>(
@@ -343,10 +352,53 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
     expect(remaining).toEqual(expect.arrayContaining([
       { workspace_id: kept.workspaceId, body: english.body },
       { workspace_id: kept.workspaceId, body: unanswered.body },
+      { workspace_id: windowed.workspaceId, body: english.body },
       { workspace_id: windowed.workspaceId, body: german.body },
       { workspace_id: windowed.workspaceId, body: fresh.body },
     ]));
-    expect(remaining).toHaveLength(4);
+    expect(remaining).toHaveLength(5);
+  });
+
+  it("keeps a wording a turn is recording a decision against while the retention sweep runs", async () => {
+    const tenant = await seedTenant(30);
+    const conversation = await seedConversation(tenant);
+    const shownLongAgo = { ...english, body: "Wording shown long ago and answered only now." };
+    await new RoutineConsentRepository(database.kysely).upsertWordingVersion({ workspaceId: tenant.workspaceId, wording: shownLongAgo });
+    await database.query(
+      "UPDATE routine_consent_wording_versions SET first_shown_at = now() - interval '40 days' WHERE workspace_id = $1",
+      [tenant.workspaceId],
+    );
+
+    await database.kysely.transaction().execute(async (trx) => {
+      const turn = new RoutineConsentRepository(trx);
+      const wordingVersionId = await turn.upsertWordingVersion({ workspaceId: tenant.workspaceId, wording: shownLongAgo });
+      // The sweep runs on its own connection between the turn's two writes, while the version is
+      // past the window and no committed record names it yet.
+      await new ConsentWordingVersionRetention(database.kysely).enforce({ now: new Date(), limit: 100 });
+      await turn.insertRecord({
+        workspaceId: tenant.workspaceId,
+        agentId: tenant.agentId,
+        conversationId: conversation.conversationId,
+        visitorId: conversation.visitorId,
+        routineId: "routine-intake",
+        consentKey: "health",
+        slotKeys: ["pregnant"],
+        wordingVersionId,
+        locale: shownLongAgo.locale,
+        decision: "granted",
+        method: "reply",
+        defaulted: false,
+        channel: "web",
+        decisionMessageId: conversation.userMessageId,
+      });
+    });
+
+    expect(await recordsOf(conversation.conversationId)).toHaveLength(1);
+    const [version] = await database.query<{ body: string }>(
+      "SELECT body FROM routine_consent_wording_versions WHERE workspace_id = $1",
+      [tenant.workspaceId],
+    );
+    expect(version?.body).toBe(shownLongAgo.body);
   });
 
   it("goes with its workspace", async () => {

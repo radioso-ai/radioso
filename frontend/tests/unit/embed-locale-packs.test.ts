@@ -17,6 +17,17 @@ describe('built-in embed locale packs', () => {
     expect(locales.sort()).toEqual(['de', 'es', 'fr', 'it', 'ja', 'nl', 'pl', 'pt', 'ru', 'zh'])
   })
 
+  it('keeps every template placeholder in every locale', () => {
+    const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(([, name]) => name).sort()
+    for (const locale of locales) {
+      const pack = BUILT_IN_EMBED_LOCALE_PACKS[locale]
+      for (const key of TRANSLATABLE_COPY_KEYS) {
+        expect({ locale, key, placeholders: placeholders(pack[key] ?? '') })
+          .toEqual({ locale, key, placeholders: placeholders(DEFAULT_WEBSITE_EMBED_COPY[key]) })
+      }
+    }
+  })
+
   it('translates every required copy key in every locale', () => {
     for (const locale of locales) {
       const pack = BUILT_IN_EMBED_LOCALE_PACKS[locale]

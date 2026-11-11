@@ -49,6 +49,10 @@ export const TRANSLATABLE_COPY_KEYS = [
   'publicChatVoiceUnavailableError',
   'publicChatSpokenLabel',
   'publicChatSourcesLabel',
+  'publicChatShowSourceTemplate',
+  'publicChatShowSourcesTemplate',
+  'publicChatOpenSourceLinkTemplate',
+  'publicChatUntitledSourceTemplate',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
 export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
@@ -92,6 +96,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: 'Hablar no está disponible ahora. Inténtalo más tarde.',
     publicChatSpokenLabel: 'Por voz',
     publicChatSourcesLabel: 'Fuentes',
+    publicChatShowSourceTemplate: 'Mostrar la fuente {number}: {title}',
+    publicChatShowSourcesTemplate: 'Mostrar las fuentes {numbers}',
+    publicChatOpenSourceLinkTemplate: 'Abrir {title} en una pestaña nueva',
+    publicChatUntitledSourceTemplate: 'Documento {number}',
   },
   fr: {
     launcherDefaultLabel: 'Discutez avec nous',
@@ -133,6 +141,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: "La voix n'est pas disponible pour le moment. Réessayez plus tard.",
     publicChatSpokenLabel: 'Vocal',
     publicChatSourcesLabel: 'Sources',
+    publicChatShowSourceTemplate: 'Afficher la source {number} : {title}',
+    publicChatShowSourcesTemplate: 'Afficher les sources {numbers}',
+    publicChatOpenSourceLinkTemplate: 'Ouvrir {title} dans un nouvel onglet',
+    publicChatUntitledSourceTemplate: 'Document {number}',
   },
   de: {
     launcherDefaultLabel: 'Mit uns chatten',
@@ -174,6 +186,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: 'Sprechen ist gerade nicht möglich. Versuchen Sie es später erneut.',
     publicChatSpokenLabel: 'Gesprochen',
     publicChatSourcesLabel: 'Quellen',
+    publicChatShowSourceTemplate: 'Quelle {number} anzeigen: {title}',
+    publicChatShowSourcesTemplate: 'Quellen {numbers} anzeigen',
+    publicChatOpenSourceLinkTemplate: '{title} in neuem Tab öffnen',
+    publicChatUntitledSourceTemplate: 'Dokument {number}',
   },
   it: {
     launcherDefaultLabel: 'Chatta con noi',
@@ -215,6 +231,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: 'Parlare non è possibile al momento. Riprova più tardi.',
     publicChatSpokenLabel: 'A voce',
     publicChatSourcesLabel: 'Fonti',
+    publicChatShowSourceTemplate: 'Mostra la fonte {number}: {title}',
+    publicChatShowSourcesTemplate: 'Mostra le fonti {numbers}',
+    publicChatOpenSourceLinkTemplate: 'Apri {title} in una nuova scheda',
+    publicChatUntitledSourceTemplate: 'Documento {number}',
   },
   pt: {
     launcherDefaultLabel: 'Fale conosco',
@@ -256,6 +276,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: 'Falar não está disponível agora. Tente mais tarde.',
     publicChatSpokenLabel: 'Por voz',
     publicChatSourcesLabel: 'Fontes',
+    publicChatShowSourceTemplate: 'Mostrar a fonte {number}: {title}',
+    publicChatShowSourcesTemplate: 'Mostrar as fontes {numbers}',
+    publicChatOpenSourceLinkTemplate: 'Abrir {title} em nova aba',
+    publicChatUntitledSourceTemplate: 'Documento {number}',
   },
   nl: {
     launcherDefaultLabel: 'Chat met ons',
@@ -297,6 +321,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: 'Praten is nu niet beschikbaar. Probeer het later opnieuw.',
     publicChatSpokenLabel: 'Gesproken',
     publicChatSourcesLabel: 'Bronnen',
+    publicChatShowSourceTemplate: 'Bron {number} tonen: {title}',
+    publicChatShowSourcesTemplate: 'Bronnen {numbers} tonen',
+    publicChatOpenSourceLinkTemplate: '{title} openen in nieuw tabblad',
+    publicChatUntitledSourceTemplate: 'Document {number}',
   },
   pl: {
     launcherDefaultLabel: 'Porozmawiaj z nami',
@@ -338,6 +366,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: 'Rozmowa głosowa jest teraz niedostępna. Spróbuj później.',
     publicChatSpokenLabel: 'Głosowo',
     publicChatSourcesLabel: 'Źródła',
+    publicChatShowSourceTemplate: 'Pokaż źródło {number}: {title}',
+    publicChatShowSourcesTemplate: 'Pokaż źródła {numbers}',
+    publicChatOpenSourceLinkTemplate: 'Otwórz {title} w nowej karcie',
+    publicChatUntitledSourceTemplate: 'Dokument {number}',
   },
   zh: {
     launcherDefaultLabel: '与我们聊天',
@@ -378,6 +410,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: '语音通话暂时不可用，请稍后再试。',
     publicChatSpokenLabel: '语音',
     publicChatSourcesLabel: '来源',
+    publicChatShowSourceTemplate: '显示来源 {number}：{title}',
+    publicChatShowSourcesTemplate: '显示来源 {numbers}',
+    publicChatOpenSourceLinkTemplate: '在新标签页中打开 {title}',
+    publicChatUntitledSourceTemplate: '文档 {number}',
   },
   ja: {
     launcherDefaultLabel: 'チャットでお問い合わせ',
@@ -419,6 +455,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: '現在、音声でお話しできません。後でもう一度お試しください。',
     publicChatSpokenLabel: '音声',
     publicChatSourcesLabel: '出典',
+    publicChatShowSourceTemplate: '出典 {number} を表示：{title}',
+    publicChatShowSourcesTemplate: '出典 {numbers} を表示',
+    publicChatOpenSourceLinkTemplate: '{title} を新しいタブで開く',
+    publicChatUntitledSourceTemplate: 'ドキュメント {number}',
   },
   ru: {
     launcherDefaultLabel: 'Напишите нам',
@@ -460,6 +500,10 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatVoiceUnavailableError: 'Голосовой разговор сейчас недоступен. Попробуйте позже.',
     publicChatSpokenLabel: 'Голосом',
     publicChatSourcesLabel: 'Источники',
+    publicChatShowSourceTemplate: 'Показать источник {number}: {title}',
+    publicChatShowSourcesTemplate: 'Показать источники {numbers}',
+    publicChatOpenSourceLinkTemplate: 'Открыть {title} в новой вкладке',
+    publicChatUntitledSourceTemplate: 'Документ {number}',
   },
 }
 

@@ -519,7 +519,7 @@ function PublicChatCenteredIntro({
                 isStreaming={greetingMessage.status === 'streaming'}
                 showCitations={citationDisplayEnabled}
                 documentInteractivity="link-only"
-                sourcesLabel={copy.publicChatSourcesLabel}
+                copy={copy}
               />
             )}
           </div>

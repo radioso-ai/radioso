@@ -913,7 +913,7 @@ export function ChatMessageThread({
                               isStreaming={message.status === 'streaming'}
                               showCitations={showCitations}
                               documentInteractivity={documentInteractivity}
-                              sourcesLabel={copy.publicChatSourcesLabel}
+                              copy={copy}
                             />
                           </div>
                         )}

@@ -39,13 +39,10 @@ import {
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
+import { RetrievalAnswerMetrics } from "./retrievalAnswerMetrics.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 import { GroundedAnswerHeadReader, headOfCompletedEnvelope } from "./groundedAnswerHeadReader.js";
-import {
-  answerCoverageHeadParseOutcome,
-  steeringForKnownVerdict,
-  type RoutinePendingStep,
-} from "../../../shared/domain/steeringRule.js";
+import { steeringForKnownVerdict, type RoutinePendingStep } from "../../../shared/domain/steeringRule.js";
 import {
   buildAnswerCoverageAssessmentFromHead,
   buildDeterministicZeroEvidenceAssessment,
@@ -181,17 +178,17 @@ type PageContextAnswer = EnvelopeAnswer | { kind: "no_page" };
  * skills and never reach here.
  */
 export class RetrievalAnswerComposer {
+  private readonly answerMetrics: RetrievalAnswerMetrics;
+
   constructor(
     private readonly support: ChatAnswerSupport,
     private readonly chatGateway: ChatGateway,
     private readonly chatAnswerPresenter: ChatAnswerPresenter,
     private readonly fallbackReplyComposer: FallbackReplyComposer,
-    private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
+    metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
     private readonly answerSideChannel?: AnswerSideChannelFactory,
-  ) {}
-
-  private isEnvelopeDecline(outcome: GroundedAnswerEnvelope["outcome"]): boolean {
-    return outcome === "no_support" || outcome === "out_of_scope";
+  ) {
+    this.answerMetrics = new RetrievalAnswerMetrics(metrics);
   }
 
   /**
@@ -242,44 +239,6 @@ export class RetrievalAnswerComposer {
     };
   }
 
-  private recordGroundingOutcome(
-    summary: GroundingSummary,
-    envelope: Pick<GroundedAnswerEnvelope, "outcome">,
-    stream: boolean,
-  ): void {
-    const protocol = summary.parseStatus === "valid_v2"
-      ? "v2"
-      : summary.parseStatus === "legacy_v1"
-        ? "v1"
-        : summary.parseStatus === "missing"
-          ? "missing"
-          : "malformed";
-    const reason = summary.parseStatus !== "valid_v2"
-      ? "parse_failure"
-      : summary.invalidSourceCount > 0
-        ? "invalid_index"
-        : summary.assertionMismatch
-          ? "mismatch"
-          : this.isEnvelopeDecline(envelope.outcome) && summary.verdict !== "no_support"
-            ? "invalid_no_support"
-            : summary.claimCount === 0 && summary.verdict !== "no_support"
-              ? "anchor_free"
-              : summary.unsourcedClaimCount > 0
-                ? "unsourced"
-                : "complete";
-    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
-      help: "Computed chat grounding assertion outcomes",
-      labels: {
-        protocol,
-        verdict: summary.verdict,
-        reason,
-        stream: String(stream),
-        // Content-free: why the turn declined, or `none` when it did not decline.
-        decline: summary.declineReason ?? "none",
-      },
-    });
-  }
-
   /**
    * The answer side channel for this turn, if composition supplied one. The composer
    * merges its schema extension into the envelope and hands the parsed extras back
@@ -298,37 +257,6 @@ export class RetrievalAnswerComposer {
     return this.answerSideChannel?.forSteeringRules(attestableSteering(knownVerdictRules));
   }
 
-  private recordGroundingGateBound(declineReason: TurnDeclineReason): void {
-    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
-      help: "Computed chat grounding assertion outcomes",
-      labels: {
-        protocol: "v2",
-        verdict: "no_support",
-        reason: "gate_bound",
-        stream: "true",
-        decline: declineReason,
-      },
-    });
-  }
-
-  private recordBlankDecline(
-    outcome: CommittedDeclineOutcome,
-    declineReason: TurnDeclineReason,
-    stream: boolean,
-  ): void {
-    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
-      help: "Computed chat grounding assertion outcomes",
-      labels: {
-        protocol: "v2",
-        verdict: "no_support",
-        reason: "blank_decline",
-        stream: String(stream),
-        decline: declineReason,
-        outcome,
-      },
-    });
-  }
-
   /**
    * Why a zero-evidence turn declined. With no page to answer from, the composed decline
    * says; when the page envelope committed a decline without text, that commitment does,
@@ -343,45 +271,8 @@ export class RetrievalAnswerComposer {
       return decline.declineReason;
     }
     const declineReason = blankDeclineReason(pageAnswer.committed, decline);
-    this.recordBlankDecline(pageAnswer.committed, declineReason, stream);
+    this.answerMetrics.blankDecline(pageAnswer.committed, declineReason, stream);
     return declineReason;
-  }
-
-  private recordUnsupportedAnswerDecline(declineReason: TurnDeclineReason, stream: boolean): void {
-    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
-      help: "Computed chat grounding assertion outcomes",
-      labels: {
-        protocol: "v2",
-        verdict: "no_support",
-        reason: "unsupported_answer",
-        stream: String(stream),
-        decline: declineReason,
-      },
-    });
-  }
-
-  /**
-   * Bounded-label counters for the answer-head parse outcome and the host's
-   * proceed/yield decision (#1260). Records nothing when `decision` is
-   * absent — the coverage verdict sink was never wired for this turn, so
-   * there is no host decision to attribute an outcome to.
-   */
-  private recordCoverageHeadOutcome(
-    assessment: AnswerCoverageAssessment,
-    decision: "proceed" | "yield_turn" | undefined,
-  ): void {
-    if (!decision) {
-      return;
-    }
-    const parseOutcome = answerCoverageHeadParseOutcome(assessment);
-    this.metrics?.incrementCounter("chat_answer_coverage_head_parse_total", {
-      help: "Answer envelope head parse outcome before the host decides",
-      labels: { outcome: parseOutcome },
-    });
-    this.metrics?.incrementCounter("chat_answer_coverage_head_decision_total", {
-      help: "Host decision (proceed or yield the turn) after the answer coverage head verdict",
-      labels: { decision },
-    });
   }
 
   /**
@@ -644,7 +535,7 @@ export class RetrievalAnswerComposer {
       // proceed/yield; this turn's own rendering (`steeringForKnownVerdict` below)
       // and head metrics always use this fresh `zeroEvidenceAssessment` — main's
       // regenerate behavior, where a re-run shows and measures its own attempt.
-      this.recordCoverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
+      this.answerMetrics.coverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
       }
@@ -665,7 +556,7 @@ export class RetrievalAnswerComposer {
           envelope: fallback,
           contextCount: 0,
         });
-        this.recordGroundingOutcome(grounding, fallback, false);
+        this.answerMetrics.groundingOutcome(grounding, fallback, false);
       } else {
         const decline = await this.fallbackReplyComposer.composeNoContext({
           query,
@@ -695,7 +586,7 @@ export class RetrievalAnswerComposer {
       // attempt at this request message, not this call's own `envelopeAssessment` — see
       // the zero-evidence branch above. The composed decline and the head metrics below
       // still use this fresh `envelopeAssessment`.
-      this.recordCoverageHeadOutcome(envelopeAssessment, headVerdict?.decision);
+      this.answerMetrics.coverageHeadOutcome(envelopeAssessment, headVerdict?.decision);
       if (headVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
       }
@@ -716,7 +607,7 @@ export class RetrievalAnswerComposer {
           signal,
         );
         declineReason = blankDeclineReason(blankDecline, decline);
-        this.recordBlankDecline(blankDecline, declineReason, false);
+        this.answerMetrics.blankDecline(blankDecline, declineReason, false);
         answer = decline.text;
         grounding = "no_support";
       } else if (shouldSuppressUnsupportedDraft(session, envelope, summary)) {
@@ -729,7 +620,7 @@ export class RetrievalAnswerComposer {
           envelopeAssessment,
           signal,
         );
-        this.recordUnsupportedAnswerDecline(decline.declineReason, false);
+        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, false);
         answer = decline.text;
         declineReason = decline.declineReason;
         grounding = "no_support";
@@ -738,7 +629,7 @@ export class RetrievalAnswerComposer {
         plannedSuggestions = envelope.suggestions;
         metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
         grounding = summary;
-        this.recordGroundingOutcome(summary, envelope, false);
+        this.answerMetrics.groundingOutcome(summary, envelope, false);
       }
     }
 
@@ -824,7 +715,7 @@ export class RetrievalAnswerComposer {
       // attempt at this request message rather than this call's own assessment — see
       // the non-streaming `composeAnswer`'s zero-evidence branch. Rendering and head
       // metrics below still use this fresh `zeroEvidenceAssessment`.
-      this.recordCoverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
+      this.answerMetrics.coverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedStreamResult();
       }
@@ -868,7 +759,7 @@ export class RetrievalAnswerComposer {
       if (fallbackEnvelope) {
         metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallbackEnvelope.extras);
         grounding = computeGroundingSummary({ body: fallbackEnvelope.answer, envelope: fallbackEnvelope, contextCount: 0 });
-        this.recordGroundingOutcome(grounding, fallbackEnvelope, true);
+        this.answerMetrics.groundingOutcome(grounding, fallbackEnvelope, true);
       }
     } else {
       const reader = new GroundedAnswerEnvelopeReader();
@@ -952,7 +843,7 @@ export class RetrievalAnswerComposer {
           if (signal?.aborted) {
             throw signal.reason ?? new Error("chat_turn_aborted");
           }
-          this.recordCoverageHeadOutcome(assessment, verdict?.decision);
+          this.answerMetrics.coverageHeadOutcome(assessment, verdict?.decision);
           if (verdict?.decision === "yield_turn") {
             yieldedTurn = true;
             gateController.abort(new CoverageVerdictYieldedError());
@@ -1015,7 +906,7 @@ export class RetrievalAnswerComposer {
         }
         // Recorded once the decline is composed so the counter carries the same
         // classification the persisted turn outcome does.
-        this.recordGroundingGateBound(decline.declineReason);
+        this.answerMetrics.groundingGateBound(decline.declineReason);
         return {
           finalPresentation: this.chatAnswerPresenter.presentRetrievalDeclineAnswer(
             decline.text,
@@ -1072,7 +963,7 @@ export class RetrievalAnswerComposer {
           throw signal.reason ?? new Error("chat_turn_aborted");
         }
         declineReason = blankDeclineReason(blankDecline, decline);
-        this.recordBlankDecline(blankDecline, declineReason, true);
+        this.answerMetrics.blankDecline(blankDecline, declineReason, true);
         rawAnswer = decline.text;
         grounding = "no_support";
         plannedSuggestions = [];
@@ -1089,7 +980,7 @@ export class RetrievalAnswerComposer {
         if (signal?.aborted) {
           throw signal.reason ?? new Error("chat_turn_aborted");
         }
-        this.recordUnsupportedAnswerDecline(decline.declineReason, true);
+        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, true);
         rawAnswer = decline.text;
         declineReason = decline.declineReason;
         grounding = "no_support";
@@ -1099,7 +990,7 @@ export class RetrievalAnswerComposer {
         // describe text the visitor never sees.
         metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
         grounding = summary;
-        this.recordGroundingOutcome(summary, finalized, true);
+        this.answerMetrics.groundingOutcome(summary, finalized, true);
       }
     }
 

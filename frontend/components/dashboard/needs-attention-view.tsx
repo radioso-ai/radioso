@@ -10,6 +10,7 @@ import type { OperatorActionResult } from './operator-composer'
 import { InboxEmptyState } from './inbox/inbox-empty-state'
 import { InboxLensToggle } from './inbox/inbox-lens-toggle'
 import { InboxQueue } from './inbox/inbox-queue'
+import { useBulkDismiss } from './inbox/use-bulk-dismiss'
 import { InboxResponseView } from './inbox/inbox-response-view'
 import { useInboxAgentOptions } from './inbox/use-inbox-agent-options'
 import { useInboxRecentlyClosed } from './inbox/use-inbox-recently-closed'
@@ -75,6 +76,7 @@ import {
   type AttentionChunks,
 } from '@/lib/needs-attention-query-state'
 import { patchQualityTriage } from '@/lib/quality-query-state'
+import type { BulkDismissItem, BulkDismissResult } from '@/lib/needs-attention-bulk-dismiss'
 import { useDashboardQueryInvalidation } from '@/components/providers/dashboard-query-provider'
 import { isTerminalQualityTriageState } from '@/lib/quality-signals'
 
@@ -407,6 +409,32 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const clearItemSelectionRoute = useCallback((item: InboxItem | RecentlyClosedInboxItem) => {
     clearSelectionRoute(needsAttentionRouteTargetForItemAction(item, routeTarget))
   }, [clearSelectionRoute, routeTarget])
+
+  // A feedback row's bulk dismissal lands here as it settles, the same way a single close does.
+  const applyBulkDismissResult = useCallback((item: BulkDismissItem, result: BulkDismissResult) => {
+    const messageId = item.assistantMessageId
+    if (result.kind === 'failed') {
+      return
+    }
+    if (result.kind === 'changed') {
+      setQualitySnapshot((previous) =>
+        updateQualityInboxTurn(previous, messageId, (turn) => ({ ...turn, triage: result.current })))
+      patchLatestQuality(messageId, result.current, false)
+      return
+    }
+    // The row has left the queue for good. Remembering its id keeps a list read that began before
+    // this dismissal landed from bringing it back for a moment, and the counts with it.
+    setTerminalQualityMessageIds((previous) => new Set([...previous, messageId]))
+    setQualitySnapshot((previous) => removeQualityInboxTurn(previous, messageId))
+    patchLatestQuality(messageId, result.kind === 'dismissed' ? result.triage : result.current, true)
+    clearItemSelectionRoute(item)
+  }, [clearItemSelectionRoute, patchLatestQuality])
+  const bulkDismiss = useBulkDismiss({
+    workspaceId,
+    items: filteredItems,
+    onResult: applyBulkDismissResult,
+    onAnnounce: setStatusAnnouncement,
+  })
 
   /* eslint-disable react-hooks/set-state-in-effect -- This consumes the browser route into queue-local row data once the queues load. */
   useEffect(() => {
@@ -874,6 +902,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               channelOptions={channelOptions}
               operatorOptions={operatorOptions}
               now={now}
+              currentUserId={currentUserId}
+              bulkDismiss={bulkDismiss}
               selectedKey={selectedInboxItem?.key ?? null}
               selectedRecentlyClosedKey={selectedRecentlyClosedItem?.key ?? null}
               onSelect={handleSelectItem}

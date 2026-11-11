@@ -2232,7 +2232,8 @@ Focused checks:
 - `cd backend && pnpm exec vitest run tests/unit/handoff tests/unit/approval-decision-service.test.ts tests/unit/quality-triage-service.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/handoff tests/integration/approvals tests/integration/quality-triage.integration.test.ts tests/integration/conversation-activity-backfill-migration.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/handoff/held-reply-service.test.ts tests/unit/handoff/held-reply-state.test.ts tests/unit/app-composition/held-reply-unit-of-work.test.ts tests/integration/held-reply-repository.integration.test.ts tests/contract/held-replies.contract.test.ts`
-- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts tests/unit/needs-attention.test.ts tests/unit/needs-attention-query-state.test.tsx`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts tests/unit/needs-attention.test.ts tests/unit/needs-attention-query-state.test.tsx tests/unit/needs-attention-bulk-dismiss.test.ts tests/unit/needs-attention-format.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/needs-you-filters-and-bulk-dismiss.spec.ts tests/e2e/hitl-needs-attention.spec.ts` (the Needs-you queue: filters, who holds a row, bulk dismiss, Assign and Reassign)
 
 Related docs:
 

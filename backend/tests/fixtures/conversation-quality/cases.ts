@@ -37,6 +37,24 @@ const refundExchangeItalian: NonNullable<ConversationQualityCase["history"]> = [
   { role: "assistant", content: "Puoi richiedere un rimborso completo entro 30 giorni dall'acquisto." },
 ];
 
+// The `offer-scope` cases: a friendly, goal-asking instruction and a visitor who will write to the
+// team themselves, after a reply that already offered to word the message. Writing that message
+// is not something the agent can do, so no later reply may offer it or write it.
+const friendlyGuideInstruction =
+  "You are a friendly and helpful assistant. Help visitors find the right course: ask about their goal and recommend the best fit.";
+/** Judges of the `offer-scope` cases read a refusal to write the message as what it is. */
+const DECLINE_IS_NOT_AN_OFFER = "Saying that it cannot write or prepare the message is a decline, not an offer.";
+const contactsWithWordingOffer: NonNullable<ConversationQualityCase["history"]> = [
+  {
+    role: "user",
+    content: "Ho pubblicato un libro sulla meditazione e vorrei proporvi una presentazione per i vostri iscritti: come devo fare?",
+  },
+  {
+    role: "assistant",
+    content: "Puoi contattarci a info@example.org o allo 0123 456 789. Vuoi scriverci o telefonarci? Se scrivi, posso aiutarti a impostare il messaggio.",
+  },
+];
+
 /**
  * A booking exchange in which the visitor names a course and the assistant's next turn only asks
  * for contact details, so the course is two turns behind a later reference to "the event".
@@ -117,9 +135,13 @@ const MARKDOWN_LIST_ITEM = String.raw`(?m)^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S`;
 const NO_FACTUAL_PROPOSITION_RUBRIC =
   "The reply contains no factual proposition about anything (the organisation, its products, plans, prices, policies, or people, the assistant's abilities, or the world), except text a standing instruction supplies word for word. A greeting, thanks, a farewell, a generic invitation to ask, or a courtesy about the assistant's own willingness or pleasure to help is not a factual proposition. A claim about what the assistant can do is a factual proposition about its abilities and is not covered by that exception.";
 
+/** The opening of a judge criterion whose reference describes the expected reply instead of quoting one. */
+const DESCRIBED_REFERENCE_RUBRIC =
+  "The reference describes the expected reply rather than quoting it: judge whether the observed reply fits that description, not whether it repeats its words or includes its optional parts.";
+
 /** The judge criterion for a quick-reply case whose reference describes the expected reply. */
 const quickReplyCriteria = (language: string): string =>
-  `The reference describes the expected reply rather than quoting it: judge whether the observed reply fits that description, not whether it repeats its words or includes its optional parts. The reply is one or two short sentences in ${language}. ${NO_FACTUAL_PROPOSITION_RUBRIC}`;
+  `${DESCRIBED_REFERENCE_RUBRIC} The reply is one or two short sentences in ${language}. ${NO_FACTUAL_PROPOSITION_RUBRIC}`;
 
 const quickReplyCase = (input: {
   id: string;
@@ -1139,6 +1161,69 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     assertions: [
       { type: "turn_route", route: "retrieval" },
       { type: "turn_reply_source", source: "composer" },
+    ],
+  },
+  {
+    id: "offer-scope-what-to-write-gets-no-draft",
+    name: "Asking what to write gets neither the email nor an offer to write it",
+    description:
+      "An earlier reply gave the contacts and offered to help word the message. The visitor asks what to write in the email. Writing it is not something the agent can do, so the reply must not write it or offer to draft, prepare, or help word it, under a friendly instruction and the always-on helpfulness directive alike.",
+    tags: ["offer-scope", "multilingual"],
+    agentConfigOverride: { customInstruction: friendlyGuideInstruction },
+    history: contactsWithWordingOffer,
+    query: "e cosa ci scrivo nella mail?",
+    assertions: [
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "Writes none of the email and does not offer to; ideally says that writing it is not something it does and points to the contacts already given, info@example.org and 0123 456 789.",
+        criteria:
+          `${DESCRIBED_REFERENCE_RUBRIC} An earlier assistant message gave info@example.org and 0123 456 789 and offered to help word the message; the visitor now asks what to write in the email. Fail if the reply writes the email or any part of its text for the visitor (a greeting, body, or sign-off, a template, or a placeholder such as a bracketed name), if any sentence offers to write, draft, prepare, word, edit, or polish it or to suggest what it should say, or if it asks for details in order to write it. Otherwise pass: declining and pointing to either contact is ideal but not required. ${DECLINE_IS_NOT_AN_OFFER}`,
+      },
+    ],
+  },
+  {
+    id: "offer-scope-chosen-email-gets-no-new-offer",
+    name: "Choosing email after an offer to word the message gets the address, not another offer",
+    description:
+      "An earlier reply gave both contacts, asked whether the visitor will write or call, and offered to help set up the message if they write. The visitor answers \"mail\", which also accepts that offer. The reply gives the address; it must neither write the message nor offer again to write, draft, or help word it.",
+    tags: ["offer-scope", "multilingual"],
+    agentConfigOverride: { customInstruction: friendlyGuideInstruction },
+    history: contactsWithWordingOffer,
+    query: "mail",
+    assertions: [
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "Gives the contacts already shared, info@example.org and possibly 0123 456 789, without writing the message or offering again to write it; it may say that writing the message is not something it does.",
+        criteria:
+          `${DESCRIBED_REFERENCE_RUBRIC} The previous assistant message gave info@example.org and 0123 456 789, asked whether the visitor will write or call, and offered to help set up the message if they write; the visitor answers "mail". Fail if the reply writes the message or any part of its text, or if any sentence offers to write, draft, prepare, word, edit, or polish it or to suggest what it should say. Otherwise pass: giving info@example.org again is ideal but not required. ${DECLINE_IS_NOT_AN_OFFER}`,
+      },
+    ],
+  },
+  {
+    id: "offer-scope-accepted-writing-offer-declined",
+    name: "Accepting an earlier offer to write the email gets no draft",
+    description:
+      "An earlier reply offered to write a draft of the email, and the visitor accepts. Writing it is still not something the agent can do, so the reply contains none of the message's text; ideally it says so in the team's voice and points back to the address. The other two cases judge offers; this one judges only the draft, at zero tolerance.",
+    tags: ["offer-scope", "multilingual", ZERO_TOLERANCE_JUDGE_TAG],
+    agentConfigOverride: { customInstruction: friendlyGuideInstruction },
+    history: [
+      contactsWithWordingOffer[0],
+      {
+        role: "assistant",
+        content: "Puoi proporci la presentazione scrivendo a info@example.org. Se ti fa comodo, posso scriverti io una bozza della mail.",
+      },
+    ],
+    query: "sì grazie",
+    assertions: [
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "Contains none of the message's text; ideally says that writing it is not something it does and points to info@example.org.",
+        criteria:
+          `${DESCRIBED_REFERENCE_RUBRIC} The previous assistant message offered to write an email for the visitor, and the visitor's "sì grazie" accepts that offer. Fail only if the reply contains text of the message written for the visitor: a greeting, body, or sign-off, a template, or a placeholder such as a bracketed name. Otherwise pass, even if the reply also mentions or offers help (the other two cases judge offers): saying plainly that writing it is not something it does and pointing to info@example.org is ideal but not required. ${DECLINE_IS_NOT_AN_OFFER}`,
+      },
     ],
   },
   {

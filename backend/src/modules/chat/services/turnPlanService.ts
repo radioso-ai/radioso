@@ -722,7 +722,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
     properties.openQuestion = {
       type: "boolean",
       description:
-        "Describes only the assistant's latest message, whatever the user replied: true when that message asks the user anything (a question, a choice between options, a confirmation, or a detail to provide), even if the user's reply only acknowledges it; otherwise false.",
+        "Describes only the assistant's latest message, whatever the user replied: true when that message asks the user anything or offers to do something specific for them (a question, a choice between options, a confirmation, a detail to provide, or such an offer; a generic invitation to ask more is not one), even if the user's reply only acknowledges it; otherwise false.",
     };
     properties.quickReply = quickReplyJsonSchema;
     required.push("requestPresent", "openQuestion", "quickReply");

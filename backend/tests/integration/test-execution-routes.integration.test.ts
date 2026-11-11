@@ -75,6 +75,35 @@ describe("test execution HTTP streaming", () => {
     expect(observedSignal).toBeInstanceOf(AbortSignal);
   });
 
+  it("hands the browser's time zone from a message and a retry request to the service", async () => {
+    const sideId = "50000000-0000-4000-8000-000000000001";
+    const streamMessage = vi.fn(async function* (_input: Record<string, unknown>) { yield* []; });
+    const streamRetry = vi.fn(async function* (_input: Record<string, unknown>) { yield* []; });
+    const testExecutionService = { streamMessage, streamRetry } as unknown as TestExecutionService;
+    const { app } = createTestApp({ testExecutionService });
+    const session = await issueTestSession(app);
+
+    await request(app)
+      .post(`/api/v1/agents/${agentId}/test-executions/${executionId}/messages`)
+      .set(adminSessionHeaders(session))
+      .send({ message: "What's on tomorrow?", executionGeneration: 1, turnId, attemptId, userTimeZone: "America/Los_Angeles" })
+      .expect(200);
+    await request(app)
+      .post(`/api/v1/agents/${agentId}/test-executions/${executionId}/sides/${sideId}/retry`)
+      .set(adminSessionHeaders(session))
+      .send({ executionGeneration: 1, turnId, attemptId, userTimeZone: "Europe/Rome" })
+      .expect(200);
+    await request(app)
+      .post(`/api/v1/agents/${agentId}/test-executions/${executionId}/messages`)
+      .set(adminSessionHeaders(session))
+      .send({ message: "hello", executionGeneration: 1, turnId, attemptId })
+      .expect(200);
+
+    expect(streamMessage.mock.calls[0]?.[0]).toMatchObject({ message: "What's on tomorrow?", userTimeZone: "America/Los_Angeles" });
+    expect(streamRetry.mock.calls[0]?.[0]).toMatchObject({ sideId, userTimeZone: "Europe/Rome" });
+    expect(streamMessage.mock.calls[1]?.[0].userTimeZone).toBeUndefined();
+  });
+
   it.each([
     ["missing execution", notFound("Test execution is unavailable."), 404, "not_found"],
     ["stale generation", conflict("Test execution generation is stale."), 409, "conflict"],

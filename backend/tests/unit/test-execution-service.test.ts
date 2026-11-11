@@ -225,6 +225,36 @@ describe("TestExecutionService", () => {
     expect(runner.mock.calls.at(-1)?.[0]).toMatchObject({ accountId: "account-7" });
   });
 
+  it("hands the operator's browser time zone to every side's runner turn, and to a retry of a failed side", async () => {
+    let invocation = 0;
+    const runner = vi.fn(async (input: { candidateRevision: AgentRevision }): Promise<TestExecutionRunnerResult> => {
+      invocation += 1;
+      if (invocation === 2) throw new Error("provider timeout");
+      return { answer: input.candidateRevision.id, messageId: ids[6], continuation: null };
+    });
+    const { service, repository } = setup(runner);
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+
+    await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "What's on tomorrow?", generation: 1, turnId: ids[6], attemptId: ids[7], userTimeZone: "America/Los_Angeles" });
+    const failed = repository.execution!.sides.find((side) => side.state === "failed")!;
+    await service.retry({ workspaceId, agentId, accountId: null, executionId: execution.id, sideId: failed.id, generation: 1, turnId: ids[6], attemptId: "70000000-0000-4000-8000-000000000001", userTimeZone: "Europe/Rome" });
+
+    expect(runner.mock.calls.map(([input]) => (input as { userTimeZone?: string }).userTimeZone)).toEqual([
+      "America/Los_Angeles",
+      "America/Los_Angeles",
+      "Europe/Rome",
+    ]);
+  });
+
+  it("runs a turn without a time zone when the client sent none", async () => {
+    const { service, runner } = setup();
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+    await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
+
+    expect(runner.mock.calls.at(-1)?.[0]).not.toHaveProperty("userTimeZone", expect.any(String));
+  });
+
   it("claims each attempt with a lease that outlasts a turn carrying a full-length external tool call", async () => {
     const { service, repository } = setup();
     const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], skillEffects: "allowed" });

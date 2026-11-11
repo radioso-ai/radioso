@@ -24,6 +24,8 @@ import type { AgentRetrievalScopePort } from "../domain/agentRetrievalScope.js";
 import { resolveScopedRetrievalRun, type ScopedRetrievalRun } from "./scopedRetrievalRun.js";
 import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { appendDirectiveSteeringStage } from "../../chat/contracts/index.js";
+import { givenLinkPolicy } from "../../../shared/text/givenLinkTargets.js";
+import { guardMarkdownLinks } from "../../../shared/text/markdownLinkGuard.js";
 
 const RETRIEVAL_DIRECTIVE_ROUTE = "retrieval";
 
@@ -130,7 +132,7 @@ export class RetrievalAnswerService {
       usage: "standalone_answer",
     });
     try {
-      const rawAnswer = (await this.dependencies.chatGateway.answer({
+      const answerInput = {
         query: input.query,
         history,
         systemPrompt,
@@ -140,7 +142,8 @@ export class RetrievalAnswerService {
           operation: "grounded_answer",
           attemptKey: "answer",
         },
-      })).trim();
+      } as const;
+      const rawAnswer = (await this.dependencies.chatGateway.answer(answerInput)).trim();
       const evidence = retrieval.contexts.map((context) => ({
         documentId: context.documentId,
         chunkId: context.chunkId,
@@ -149,7 +152,8 @@ export class RetrievalAnswerService {
         metadata: context.metadata,
         sourceUrl: resolveContextSourceUrl(context.metadata),
       }));
-      const presented = this.presentAnswer(rawAnswer, evidence);
+      const sent = [answerInput.systemPrompt, answerInput.prompt, ...answerInput.history.map((message) => message.content)];
+      const presented = this.presentAnswer(rawAnswer, evidence, sent, execution.surface);
       const activityTrace = appendDirectiveSteeringStage(this.activityTracePresenter.appendAnswerOutcome({
         trace: retrieval.trace,
         summary: activitySummary,
@@ -188,14 +192,31 @@ export class RetrievalAnswerService {
     }
   }
 
+  /**
+   * The answer as the caller reads it, citation markers removed. A link to an address the
+   * model was not sent (`sent`: the call's system prompt, prompt, and history, which carry the
+   * Results with their Source lines, the instructions, the directives, and the conversation)
+   * becomes its text.
+   */
   private presentAnswer(
     rawAnswer: string,
     evidence: CitationEvidence[],
+    sent: readonly string[],
+    surface: "retrieval" | "mcp_capability",
   ) {
-    return this.answerPresentationService.present({
+    const presented = this.answerPresentationService.present({
       answer: rawAnswer,
       citations: evidence,
     });
+    const guarded = guardMarkdownLinks(presented.answer, givenLinkPolicy(sent));
+    for (const reason of guarded.unwrapped) {
+      this.dependencies.metrics?.incrementCounter("retrieval_answer_links_unwrapped_total", {
+        help: "Retrieval answer links shown as plain text because the model was not given their address",
+        labels: { reason, surface },
+      });
+    }
+    // Segments are not part of this answer's result, so only the text and its citations go on.
+    return { answer: guarded.text, citations: presented.citations };
   }
 
   private async recordAuditAnswer(

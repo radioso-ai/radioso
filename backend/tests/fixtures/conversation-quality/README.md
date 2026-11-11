@@ -90,6 +90,18 @@ Run only these cases with:
 pnpm run evals -- --tag directive-withholds
 ```
 
+## Invented-link checks
+
+The corpus gives no `Source:` URL, so a Markdown link in an answer about it points at an
+address the model made up, unless it is a `mailto:` link to an address the conversation gave.
+The two `referent-course-*` cases gate on what the visitor gets: a regex check fails when the
+delivered answer carries `](` not followed by `mailto:`, spelled out because RE2 has no
+lookahead. The answer guard shows an invented link as its text, so the check passes whether or
+not the model tried; how often it tries shows on `chat_answer_links_unwrapped_total`, not in
+the suite. A test in `tests/unit/eval-suite/suite-core.test.ts` drives
+`referent-course-behind-contact-form` through the chat pipeline with a scripted reply that links
+the course name to `#`.
+
 ## Slot-filling cases
 
 Most `slot-filling`-tagged cases run the `book-edition` routine on an Italian course page, where

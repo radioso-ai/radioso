@@ -62,7 +62,7 @@ import type {
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { sensitiveSlotsAwaited } from "../../routines/public.js";
-import { userMessageTurnMetadata } from "./userMessageTurnMetadata.js";
+import { routineInvocationInputMetadata, userMessageTurnMetadata } from "./userMessageTurnMetadata.js";
 import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/public.js";
 import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
 import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
@@ -356,15 +356,6 @@ interface WorkbenchReplayBaselineCapability {
 export const historicalWorkbenchReplayBaseline: WorkbenchReplayBaselineCapability = {
   [historicalWorkbenchReplayBaselineBrand]: true,
 };
-
-/**
- * The recorded form of a tool call: Activity and the Inbox render it as a tool-call block
- * from this, while the message content stays the rendered text a person would have typed.
- */
-const routineInvocationInputMetadata = (invocation: RoutineInvocation): UserMessageInputMetadata => ({
-  method: "routine_invocation",
-  routine: { toolName: invocation.toolName, input: { ...invocation.input } },
-});
 
 export class ChatSessionPreparer {
   constructor(

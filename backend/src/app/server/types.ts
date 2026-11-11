@@ -79,7 +79,8 @@ import type {
   ConnectorSourceDirectory,
 } from "../../modules/connectors/services/public.js";
 import type { EmailChannelWorker } from "../../modules/connectors/plugins/index.js";
-import type { EmailChannelOperatorServices, EmailReviewChecks } from "../composition/emailChannel/index.js";
+import type { EmailChannelOperatorServices, EmailChannelOptions, EmailReviewChecks } from "../composition/emailChannel/index.js";
+import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";
@@ -108,6 +109,7 @@ import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type {
   ApplicationAccountAdministratorDirectoryPort,
+  ApplicationModule,
   ApplicationModuleCoordinator,
   ApplicationNoticeMailPort,
   ApplicationPeriodicTaskHandle,
@@ -200,6 +202,15 @@ import type { PersistedOperatorMcpClient } from "../../modules/operatorMcpAuthor
 import type { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import type { ConversationLinkResolver } from "../../shared/domain/conversationLinkResolver.js";
 import type { RevisionEvalRunService } from "../../modules/eval/services/revisionEvalRun.js";
+
+/** How `buildDependencies` is varied by the harnesses and entry points that assemble the app. */
+export interface BuildDependenciesOptions {
+  modules?: ApplicationModule[];
+  realtimePublisherComposition?: RealtimePublisherComposition;
+  operatorMcpPreregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
+  /** Test and harness overrides of the email channel's fixed timings, limits and local spool. */
+  emailChannel?: EmailChannelOptions;
+}
 
 export interface AppDependencies {
   env: Env;

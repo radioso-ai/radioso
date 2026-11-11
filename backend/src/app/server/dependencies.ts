@@ -11,11 +11,7 @@ import {
   wireVoiceRuntimeConnections,
 } from "../composition/voiceChannel.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
-import {
-  createEmailChannelComposition,
-  createEmailHeldReplyChannelRegistration,
-  type EmailChannelOptions,
-} from "../composition/emailChannel/index.js";
+import { createEmailChannelComposition, createEmailHeldReplyChannelRegistration } from "../composition/emailChannel/index.js";
 import {
   ConnectorManagementService,
   createConnectorChatPort,
@@ -31,12 +27,10 @@ import {
   createDefaultFacetExtractionDrainDispatcher,
   createLiveAgentConfigReader,
   createRealtimePublisherComposition,
-  type ApplicationModule,
 } from "../composition/index.js";
 import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/config.js";
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
-import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
 import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
 import {
@@ -60,7 +54,7 @@ import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInfere
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
 import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
 import { OperatorMcpAuthorizationRepository } from "../../db/repositories/operatorMcpAuthorizationRepository.js";
-import type { AppDependencies } from "./types.js";
+import type { AppDependencies, BuildDependenciesOptions } from "./types.js";
 import {
   buildInfrastructure,
   buildLogger,
@@ -160,20 +154,11 @@ import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/pu
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { buildNotificationDeliveryReader, buildNotificationRecipientPolicy, buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
-import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import { NotificationRecipientStateRepository } from "../../db/repositories/notificationRecipientStateRepository.js";
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
 import { PeriodicTaskRunner, createPeriodicTasksLifecycle } from "../composition/periodicTaskRunner.js";
 import { createAbuseControlComposition } from "../composition/abuseControl.js";
-
-interface BuildDependenciesOptions {
-  modules?: ApplicationModule[];
-  realtimePublisherComposition?: RealtimePublisherComposition;
-  operatorMcpPreregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
-  /** Test and harness overrides of the email channel's fixed timings, limits and local spool. */
-  emailChannel?: EmailChannelOptions;
-}
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();

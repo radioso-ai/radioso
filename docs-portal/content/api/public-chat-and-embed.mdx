@@ -150,7 +150,8 @@ Two kinds of chips can appear together:
   `inputMetadata.method = "suggestion_click"`,
   `suggestionSourceMessageId = <assistant message id>`, and, when the chip
   has one, `suggestionId = <chip id>`. `suggestionId` goes only with
-  `suggestion_click`; any other method with it gets a `400`.
+  `suggestion_click`; any other method with it gets a `400`. An id longer
+  than 200 characters is dropped, and the click goes through without it.
 - **Action chips** carry `action.kind === "start_intent"` with an
   `intent.skillName` (and an optional `intent.intentName`). They route to a
   specific assistant skill instead of asking a follow-up question. When the

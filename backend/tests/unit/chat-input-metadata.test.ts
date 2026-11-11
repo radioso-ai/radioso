@@ -20,12 +20,20 @@ describe("a clicked chip's id on the input metadata (#1544)", () => {
     expect(chatInputMetadataSchema.safeParse({ method: "suggestion_click", suggestionSourceMessageId: SOURCE_MESSAGE_ID }).success).toBe(true);
   });
 
-  it("rejects a chip id on anything but a suggestion click, and one that is blank, too long, or not text", () => {
+  it("keeps a click on a chip whose authored id is longer than a chip id it keeps, without the id", () => {
+    const click = { method: "suggestion_click", suggestionSourceMessageId: SOURCE_MESSAGE_ID, suggestionId: "x".repeat(201) };
+
+    for (const schema of [chatInputMetadataSchema, strictChatInputMetadataSchema]) {
+      expect(schema.parse(click)).toEqual({ method: "suggestion_click", suggestionSourceMessageId: SOURCE_MESSAGE_ID });
+    }
+    expect(chatInputMetadataSchema.parse({ ...click, suggestionId: "x".repeat(200) })).toEqual({ ...click, suggestionId: "x".repeat(200) });
+  });
+
+  it("rejects a chip id on anything but a suggestion click, and one that is blank or not text", () => {
     const rejected = [
       { method: "typed", suggestionId: "agree" },
       { method: "intent_click", intent: { skillName: "contact" }, suggestionSourceMessageId: SOURCE_MESSAGE_ID, suggestionId: "agree" },
       { method: "suggestion_click", suggestionSourceMessageId: SOURCE_MESSAGE_ID, suggestionId: "" },
-      { method: "suggestion_click", suggestionSourceMessageId: SOURCE_MESSAGE_ID, suggestionId: "x".repeat(201) },
       { method: "suggestion_click", suggestionSourceMessageId: SOURCE_MESSAGE_ID, suggestionId: 7 },
     ];
     for (const value of rejected) {

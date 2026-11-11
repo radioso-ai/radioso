@@ -822,6 +822,42 @@ describe("public chat contract", () => {
     ]));
   });
 
+  it("takes a click on an authored chip whose id is longer than a chip id it keeps, and keeps the click without it (#1544)", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-long-suggestion-id@example.com");
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+    const send = (body: Record<string, unknown>) => request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ stream: false, ...body });
+    const first = await send({ message: "What does this page do?" });
+    expect(first.status).toBe(200);
+
+    const clicked = await send({
+      message: "Tell me about the autumn retreat",
+      conversationId: first.body.conversationId,
+      inputMetadata: { method: "suggestion_click", suggestionSourceMessageId: first.body.assistantMessageId, suggestionId: "autumn-retreat-".repeat(20) },
+    });
+    expect(clicked.status).toBe(200);
+
+    const detail = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/history/${first.body.conversationId}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .set("Cookie", findAnonymousCookie(clicked.headers["set-cookie"] ?? first.headers["set-cookie"])!);
+    expect(detail.body.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: "user",
+        content: "Tell me about the autumn retreat",
+        inputMetadata: { method: "suggestion_click", suggestionSourceMessageId: first.body.assistantMessageId },
+      }),
+    ]));
+  });
+
   it("rejects a malformed tail cursor as 400, not a database cast error", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-tail-malformed-cursor@example.com");

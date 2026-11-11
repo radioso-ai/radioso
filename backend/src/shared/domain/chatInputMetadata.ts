@@ -29,6 +29,19 @@ export interface UserMessageInputMetadata {
   };
 }
 
+const MAX_SUGGESTION_ID_LENGTH = 200;
+
+/**
+ * A clicked chip's id, kept up to the length a chip id may have here and dropped past it. Authored
+ * chip ids have no length limit, and a client sends the id of whichever chip was clicked, so a
+ * longer one loses only its id rather than failing the click. The ids that decide anything, a
+ * routine consent's `agree` and `decline`, are short.
+ */
+const suggestionIdSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.length > MAX_SUGGESTION_ID_LENGTH ? undefined : value),
+  z.string().min(1).max(MAX_SUGGESTION_ID_LENGTH).optional(),
+);
+
 const clientIntentSchema = z.object({
   skillName: z.string().trim().min(1).max(120),
   intentName: z.string().trim().min(1).max(120).optional(),
@@ -37,7 +50,7 @@ const clientIntentSchema = z.object({
 const clientInputMetadataShape = z.object({
   method: z.enum(CLIENT_INPUT_METHODS),
   suggestionSourceMessageId: z.string().uuid().optional(),
-  suggestionId: z.string().min(1).max(200).optional(),
+  suggestionId: suggestionIdSchema,
   intent: clientIntentSchema.optional(),
 });
 

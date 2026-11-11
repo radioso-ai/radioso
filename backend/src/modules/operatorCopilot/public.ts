@@ -25,6 +25,7 @@ export { AgentTurnProbeService } from "./services/agentTurnProbeService.js";
 export { EvalCaseCaptureService } from "./services/evalCaseCaptureService.js";
 export { EvalCaseReplayService } from "./services/evalCaseReplayService.js";
 export { summarizeProposalEvidence } from "./proposalEvidence.js";
+export { presentProposalCard } from "./proposalCard.js";
 export type { ProposalEvidenceDependencies } from "./services/proposalEvidenceService.js";
 export { EvalSuiteProbeService } from "./services/evalSuiteProbeService.js";
 export { ReplyDraftProbeService } from "./services/replyDraftProbeService.js";

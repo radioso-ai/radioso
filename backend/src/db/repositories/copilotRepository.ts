@@ -5,7 +5,7 @@ import { sql } from "kysely";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { nowMinusSeconds } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { CopilotConversation, CopilotMcpProposalRecoveryPort, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalDraft, CopilotProposalEvidence, CopilotRepositoryPort, CopilotRetentionPort } from "../../modules/operatorCopilot/public.js";
-import { copilotProposalTargetTypes, summarizeProposalEvidence } from "../../modules/operatorCopilot/public.js";
+import { copilotProposalTargetTypes, presentProposalCard } from "../../modules/operatorCopilot/public.js";
 
 interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
 interface CopilotMessageRow { id: string; conversation_id: string; role: string; content: string; outcome: string | null; activity: unknown; created_at: Date; }
@@ -30,27 +30,7 @@ const narrowEvidence = (value: unknown): CopilotProposalEvidence | null => {
   const record = asRecord(value);
   return Array.isArray(record.cases) ? { cases: record.cases as CopilotProposalEvidence["cases"] } : null;
 };
-export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalCard => {
-  const targetRef = asRecord(proposal.targetRef);
-  const payload = asRecord(proposal.payload);
-  // agent_setting is the only target type with no drafted name of its own - it targets an existing
-  // setting key instead. Every other target type (present or future) proposes a named thing, so
-  // this reads as "not agent_setting" rather than an OR-chain a new target type could miss.
-  const targetLabel = proposal.targetType !== "agent_setting" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
-  // A payload states its own irreversibility, so a reloaded card warns about deletion without the
-  // reader having to recognise each target type's word for it - the pairing that silently dropped
-  // the warning when document removal arrived. The directive clause reads rows written before the
-  // flag existed; every proposal drafted since carries `removesTarget`.
-  const removal = payload.removesTarget === true || (proposal.targetType === "directive" && payload.op === "remove");
-  // Read from the payload for the same reason as removal: the draft decided reach against the
-  // settings it was made from, and a reader re-deriving it from field names would have to know
-  // which of them mean reach.
-  const reach = payload.changesReach === true;
-  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.summary, textValue(payload.rationale, targetLabel)), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}), ...(reach ? { reach: true as const } : {}) };
-  return proposal.evidence ? { ...card, evidence: summarizeProposalEvidence(proposal.evidence) } : card;
-};
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const textValue = (value: unknown, fallback: string): string => typeof value === "string" ? value : fallback;
 
 export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentionPort, CopilotMcpProposalRecoveryPort {
   constructor(private readonly db: Db) {}

@@ -5,7 +5,7 @@ import { badRequest, notFound } from "../../../src/shared/domain/errors.js";
 
 import { copilotProposalPermissions, type CopilotProposal } from "../../../src/modules/operatorCopilot/contracts.js";
 import { boundedSummary } from "../../../src/modules/operatorCopilot/tools/shared.js";
-import { presentProposalCard } from "../../../src/db/repositories/copilotRepository.js";
+import { presentProposalCard } from "../../../src/modules/operatorCopilot/proposalCard.js";
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
 import { createDocumentProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/documentProposals.js";
 import { createDocumentCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/documentProposalAdapter.js";

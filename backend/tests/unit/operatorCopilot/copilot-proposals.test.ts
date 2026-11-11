@@ -2507,7 +2507,7 @@ describe("context variable proposal adapter", () => {
 
 describe("proposal card presentation", () => {
   it("keeps a routine proposal's drafted summary across a reload", async () => {
-    const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
+    const { presentProposalCard } = await import("../../../src/modules/operatorCopilot/proposalCard.js");
     const base = {
       id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "routine" as const, targetRef: { agentId: "agent-1", routineId: null }, versionToken: "v1", evidence: null,
@@ -2525,7 +2525,7 @@ describe("proposal card presentation", () => {
   // preview/apply time - so the frontend's Apply confirmation can state plainly that the change
   // is a permanent deletion even after the operator resumes a past conversation.
   it("marks a reloaded directive removal proposal's card with removal: true", async () => {
-    const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
+    const { presentProposalCard } = await import("../../../src/modules/operatorCopilot/proposalCard.js");
     const base = {
       id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
@@ -2537,7 +2537,7 @@ describe("proposal card presentation", () => {
   });
 
   it("does not mark an ordinary directive save proposal's card as a removal", async () => {
-    const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
+    const { presentProposalCard } = await import("../../../src/modules/operatorCopilot/proposalCard.js");
     const base = {
       id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
@@ -2561,7 +2561,7 @@ const routineDraftPayload = () => ({
 
 describe("proposal card evidence", () => {
   const card = async (evidence: CopilotProposal["evidence"]) => {
-    const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
+    const { presentProposalCard } = await import("../../../src/modules/operatorCopilot/proposalCard.js");
     return presentProposalCard({
       id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation", conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "directive", targetRef: { agentId: "agent-1", directiveId: null }, payload: { name: "Refund window", rationale: "State it" },

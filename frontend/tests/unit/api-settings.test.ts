@@ -42,6 +42,7 @@ const responseAgent = (behavior: AssistantBehaviorSettings): AgentSettings => ({
   agentCardEnabled: false,
   publicAgentAccessEnabled: false,
   walkInConversationsPerHour: null,
+  visitorImagesEnabled: false,
   createdAt: '2026-09-01T10:00:00.000Z',
   updatedAt: '2026-09-01T10:00:00.000Z',
   isDefault: true,

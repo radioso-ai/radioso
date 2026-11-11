@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { Check, CircleCheckBig, Clock, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, Volume2, VolumeX, Wrench, Workflow } from 'lucide-react'
+import { appendAssistantLinkUtm, sanitizeDestinationForAnalytics } from '@/lib/assistant-link-analytics'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
 import type { RoutineThreadMarker } from '@/lib/routine-thread-grouping'
@@ -104,52 +105,6 @@ export const getThemedSuggestionButtonStyle = (theme: WebsiteEmbedTheme): CSSPro
   '--suggestion-fg': theme.panelForeground,
 } as CSSProperties)
 type ChatLinkAnalyticsSurface = 'dashboard' | 'history' | 'eval' | 'public_chat' | 'embed'
-
-const toAssistantUtmMedium = (assistantName?: string | null) => {
-  const normalized = assistantName
-    ?.trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '_')
-    .replace(/^_+|_+$/g, '')
-    .replace(/_+/g, '_')
-
-  return `${normalized || 'assistant'}_agent`
-}
-
-export const appendAssistantLinkUtm = (href: string, assistantName?: string | null) => {
-  try {
-    const url = new URL(href)
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      return href
-    }
-
-    url.searchParams.set('utm_source', 'radioso')
-    url.searchParams.set('utm_medium', toAssistantUtmMedium(assistantName))
-    return url.toString()
-  } catch {
-    return href
-  }
-}
-
-const sanitizeDestinationForAnalytics = (destinationUrl?: string) => {
-  if (!destinationUrl) {
-    return {}
-  }
-
-  try {
-    const url = new URL(destinationUrl)
-    if (!['http:', 'https:', 'mailto:'].includes(url.protocol)) {
-      return {}
-    }
-
-    return {
-      destinationOrigin: url.protocol === 'mailto:' ? 'mailto:' : url.origin,
-      destinationPath: url.protocol === 'mailto:' ? '' : url.pathname,
-    }
-  } catch {
-    return {}
-  }
-}
 
 const removeUndefinedProperties = (record: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined))

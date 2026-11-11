@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Buffer } from "node:buffer";
 
+import { pageReadCapabilitySchema } from "../../chat/contracts/index.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import type {
   CopilotAgentTurnProbePort,
@@ -51,12 +52,9 @@ const assistantPageContextSchema = z.object({
   content: z.string().trim().max(6_000).nullable().optional(),
 }).strict();
 
+// A probe reads the page a client hands it; it renders no reply blocks, so it declares none.
 const clientContextCapabilitiesSchema = z.object({
-  "page.read": z.object({
-    available: z.boolean(),
-    mode: z.enum(["metadata", "content"]).nullable(),
-    supportedOperations: z.array(z.enum(["metadata", "lookup", "summarize"])).max(3),
-  }).strict().optional(),
+  "page.read": pageReadCapabilitySchema.strict().optional(),
 }).strict();
 
 const agentTurnProbeInputSchema = z.object({

@@ -1,7 +1,7 @@
 import type { InternalClientConfig } from "../core/config.js";
 import { normalizeError, RadiosoError } from "../core/errors.js";
 import { requestStream } from "../core/http.js";
-import type { AssistantChatRequest, ChatResponse, ChatStreamRequest } from "../generated/client.js";
+import type { AssistantChatRequest, ChatResponse, ChatStreamRequest, ReplyBlock } from "../generated/client.js";
 
 export interface RadiosoChatStreamCancelledEvent {
   type: "cancelled";
@@ -17,11 +17,20 @@ export interface RadiosoChatStreamStatusEvent {
   stage: RadiosoChatStatusStage;
 }
 
+/** One reply block, sent before `done`, which carries all of them again in `blocks`. */
+export interface RadiosoChatStreamBlockEvent {
+  type: "block";
+  conversationId: string;
+  assistantMessageId: string;
+  block: ReplyBlock;
+}
+
 export type RadiosoChatStreamEvent =
   | RadiosoChatStreamStatusEvent
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
   | RadiosoChatStreamCancelledEvent
+  | RadiosoChatStreamBlockEvent
   | {
       type: "suggestions";
       conversationId: string;
@@ -109,6 +118,21 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
   }
 
   if (
+    eventName === "block" &&
+    typeof payload.conversationId === "string" &&
+    typeof payload.assistantMessageId === "string" &&
+    typeof payload.block === "object" &&
+    payload.block !== null
+  ) {
+    return {
+      type: "block",
+      conversationId: payload.conversationId,
+      assistantMessageId: payload.assistantMessageId,
+      block: payload.block as ReplyBlock,
+    };
+  }
+
+  if (
     eventName === "suggestions" &&
     typeof payload.conversationId === "string" &&
     Array.isArray(payload.suggestions)
@@ -136,6 +160,7 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
       ...(Array.isArray(payload.citations) ? { citations: payload.citations } : {}),
       ...(Array.isArray(payload.answerSegments) ? { answerSegments: payload.answerSegments } : {}),
       ...(Array.isArray(payload.suggestions) ? { suggestions: payload.suggestions } : {}),
+      ...(Array.isArray(payload.blocks) ? { blocks: payload.blocks } : {}),
     } as RadiosoChatStreamEvent;
   }
 

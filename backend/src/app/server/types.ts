@@ -62,7 +62,11 @@ import type { SlackInstallationService } from "../../modules/slack/public.js";
 import type { CustomerEmailConnectionService, CustomerEmailOAuthService, EmailSkillDefinitionService } from "../../modules/customerEmail/public.js";
 import type { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 import type { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
-import type { ChunkRepositoryPort, DocumentRepositoryPort } from "../../modules/documents/contracts/index.js";
+import type {
+  ChunkRepositoryPort,
+  DocumentImageObjectLookup,
+  DocumentRepositoryPort,
+} from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -310,6 +314,8 @@ export interface AppDependencies {
   websiteCrawlJobConsumer?: JobConsumerPort;
   documentDeletionService: DocumentDeletionService;
   documentStorage: DocumentStoragePort;
+  /** Finds the stored copy of a reply block's image for the public image route. */
+  replyImageObjectLookup: DocumentImageObjectLookup;
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
   closeApprovalResumeEffectJournal(): Promise<void>;

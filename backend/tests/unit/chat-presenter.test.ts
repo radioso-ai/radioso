@@ -399,6 +399,76 @@ const spyOnIterable = (events: AsyncIterable<ChatStreamEvent>) => {
   return { iterable, returnSpy };
 };
 
+describe("chat presenter reply blocks", () => {
+  const block = {
+    type: "item_list" as const,
+    id: "b1",
+    layout: "carousel" as const,
+    selection: "none" as const,
+    caption: "Two hiking guides",
+    items: [{
+      key: "image-1",
+      title: "Field Guide",
+      image: { src: "https://app.example/i/image-1/640", width: 1280, height: 960, alt: "" },
+      actions: [{ type: "open" as const, url: "https://shop.example/books/field-guide" }],
+    }],
+  };
+  const doneWithBlocks: ChatStreamEvent = {
+    type: "done",
+    conversationId: "conversation-1",
+    assistantMessageId: "message-2",
+    route: { type: "retrieval", reason: "evidence_required" },
+    answer: "We carry two hiking guides.",
+    blocks: [block],
+    activitySummary: { status: "completed", outcome: "answered", retrievalSkipped: false } as never,
+    activityTrace: { traceId: "trace-1", startedAt: new Date().toISOString(), stages: [], links: [] },
+  };
+
+  it("keeps the blocks on a JSON response", () => {
+    const payload = presentChatPayload({
+      route: { type: "retrieval", reason: "evidence_required" },
+      answer: "We carry two hiking guides.",
+      blocks: [block],
+      activitySummary: doneWithBlocks.type === "done" ? doneWithBlocks.activitySummary : ({} as never),
+      activityTrace: doneWithBlocks.type === "done" ? doneWithBlocks.activityTrace : ({} as never),
+    });
+
+    expect(payload.blocks).toEqual([block]);
+  });
+
+  it("streams each block as a block event before done, and keeps them on done", async () => {
+    const { response, writes } = createMockResponse();
+
+    await sendChatSse(response as never, (async function* () {
+      yield { type: "chunk", text: "We carry two hiking guides." } satisfies ChatStreamEvent;
+      yield doneWithBlocks;
+    })());
+
+    const events = writes.filter((entry) => entry.startsWith("event: ")).map((entry) => entry.trim());
+    expect(events).toEqual(["event: chunk", "event: block", "event: done"]);
+    const blockData = writes[writes.indexOf("event: block\n") + 1] ?? "";
+    expect(JSON.parse(blockData.replace(/^data: /, ""))).toEqual({
+      conversationId: "conversation-1",
+      assistantMessageId: "message-2",
+      block,
+    });
+    const doneData = writes[writes.indexOf("event: done\n") + 1] ?? "";
+    expect(JSON.parse(doneData.replace(/^data: /, "")).blocks).toEqual([block]);
+  });
+
+  it("writes no block event for a reply without blocks", async () => {
+    const { response, writes } = createMockResponse();
+    const { blocks: _blocks, ...withoutBlocks } = doneWithBlocks as Extract<ChatStreamEvent, { type: "done" }>;
+
+    await sendChatSse(response as never, (async function* () {
+      yield withoutBlocks;
+    })());
+
+    expect(writes).not.toContain("event: block\n");
+    expect(writes.join("")).not.toContain("\"blocks\"");
+  });
+});
+
 describe("chat presenter disconnect ceiling (#885)", () => {
   afterEach(() => {
     vi.useRealTimers();

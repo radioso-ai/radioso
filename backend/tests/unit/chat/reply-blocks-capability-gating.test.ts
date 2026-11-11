@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ChatGateway, ChatGatewayInput } from "../../../src/modules/chat/contracts/chatGateway.js";
 import { AssistantSuggestionExpansionService } from "../../../src/modules/chat/services/assistantSuggestionExpansionService.js";
@@ -10,6 +10,8 @@ import { ChatAnswerSupport } from "../../../src/modules/chat/services/chatAnswer
 import type { PreparedSession } from "../../../src/modules/chat/services/chatSessionPreparer.js";
 import type { FallbackReplyComposer } from "../../../src/modules/chat/services/fallbackReplyComposer.js";
 import { RetrievalAnswerComposer } from "../../../src/modules/chat/services/retrievalTurnSkill.js";
+import { ReplyBlockTurnFactory } from "../../../src/modules/chat/services/replyBlocks/replyBlockTurn.js";
+import type { ReplyBlocksCapability } from "../../../src/modules/chat/contracts/replyBlocks.js";
 import type { TurnStreamResult } from "../../../src/modules/chat/services/turnOutcome.js";
 import { createDirectiveAdherenceSideChannel } from "../../../src/shared/domain/directiveAdherence.js";
 import type { RetrievalPipelineResult } from "../../../src/modules/retrieval/public.js";
@@ -123,7 +125,62 @@ const composerWithoutReplyBlocks = (calls: Partial<GoldenCalls>) => new Retrieva
   { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules) },
 );
 
+const readGolden = (): GoldenCalls => JSON.parse(readFileSync(GOLDEN_PATH, "utf8")) as GoldenCalls;
+
+/** A composer wired with reply blocks whose evidence reader finds no stored image. */
+const composerWithReplyBlocks = (calls: Partial<GoldenCalls>) => {
+  const attach = vi.fn(async () => []);
+  const composer = new RetrievalAnswerComposer(
+    new ChatAnswerSupport(),
+    recordingGateway(calls),
+    presenter(),
+    fallback,
+    null,
+    { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules) },
+    new ReplyBlockTurnFactory({
+      evidenceImages: { attach },
+      imageUrls: { forImage: (imageId) => ({ src: `https://app.example/${imageId}`, srcSet: "" }) },
+    }),
+  );
+  return { composer, attach };
+};
+
+const sessionDeclaring = (replyBlocks: ReplyBlocksCapability | null) => (): PreparedSession => ({
+  ...goldenSession(),
+  replyBlocks,
+});
+
+const expectGolden = (calls: GoldenCalls) => {
+  const golden = readGolden();
+  expect(calls).toStrictEqual(golden);
+  expect(JSON.stringify(calls)).toBe(JSON.stringify(golden));
+};
+
 describe("reply blocks capability gating", () => {
+  it("sends the recorded prompt and schema, and reads no images, when the client declares no reply blocks", async () => {
+    const recorded: Partial<GoldenCalls> = {};
+    const { composer, attach } = composerWithReplyBlocks(recorded);
+
+    expectGolden(await recordCalls(composer, recorded, sessionDeclaring(null)));
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  it("sends the recorded prompt and schema, and reads no images, when the client renders no item list", async () => {
+    const recorded: Partial<GoldenCalls> = {};
+    const { composer, attach } = composerWithReplyBlocks(recorded);
+
+    expectGolden(await recordCalls(composer, recorded, sessionDeclaring({})));
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  it("sends the recorded prompt and schema when the evidence carries no stored image", async () => {
+    const recorded: Partial<GoldenCalls> = {};
+    const { composer, attach } = composerWithReplyBlocks(recorded);
+
+    expectGolden(await recordCalls(composer, recorded, sessionDeclaring({ item_list: { layouts: ["carousel", "grid"] } })));
+    expect(attach).toHaveBeenCalledTimes(2);
+  });
+
   it("sends the recorded prompt and schema on a turn without reply blocks", async () => {
     const recorded: Partial<GoldenCalls> = {};
     const calls = await recordCalls(composerWithoutReplyBlocks(recorded), recorded, goldenSession);

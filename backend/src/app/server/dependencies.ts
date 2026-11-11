@@ -1415,6 +1415,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     websiteCrawlJobConsumer: documents.websiteCrawlJobConsumer,
     documentDeletionService: documents.documentDeletionService,
     documentStorage: documents.documentStorage,
+    replyImageObjectLookup: chat.replyImageObjectLookup,
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
     closeApprovalResumeEffectJournal: chat.closeApprovalResumeEffectJournal,

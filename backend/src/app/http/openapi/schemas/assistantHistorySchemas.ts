@@ -195,6 +195,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     citations: z.array(schemas.CitationSchema).optional(),
     answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
     suggestions: z.array(ChatSuggestionSchema).optional(),
+    blocks: z.array(schemas.ReplyBlockSchema).optional(),
     ownership: z.object({
       state: z.enum(["ai_owned", "human_owned"]),
       suppressed: z.boolean(),

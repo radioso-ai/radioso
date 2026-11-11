@@ -154,6 +154,8 @@ import { connectorEncryptionKeys, type Env } from "../../config/env.js";
 import type { ChatTurnPlanHandle } from "../../../modules/chat/services/turnPlanCoordinator.js";
 import { buildInfrastructure } from "./infra.js";
 import { RoutineChatModelGateway } from "../../../modules/chat/services/routines/routineChatModelGateway.js";
+import { DocumentImageRepository } from "../../../modules/documents/composition.js";
+import { createReplyBlocksComposition } from "../../composition/replyBlocks.js";
 
 export const buildChatServices = (input: {
   abuseControlService: AbuseControlService;
@@ -453,6 +455,10 @@ export const buildChatServices = (input: {
   const fallbackReplyComposer = input.llmRegistry.createFallbackReplyComposer(
     input.usageEventRecorder,
   );
+  const documentImages = new DocumentImageRepository(input.database.kysely);
+  const replyBlocks = createReplyBlocksComposition({
+    env: input.env, evidenceImages: documentImages, metrics: input.metricsRegistry, logger: input.logger,
+  });
   // Composition assembles the chat turn runtime once and injects it, so the host does not inline composer wiring.
   const chatTurnRuntime = buildChatTurnRuntime({
     chatGateway,
@@ -464,6 +470,7 @@ export const buildChatServices = (input: {
     metrics: input.metricsRegistry,
     logger: input.logger,
     quickReplyLaneEnabled,
+    replyBlocks: replyBlocks.turnFactory,
   });
   // Behavioral steering comes from application composition. Chat and direct
   // retrieval answer surfaces share this port so extracted answer directives
@@ -890,6 +897,7 @@ export const buildChatServices = (input: {
     visitorRepository,
     input.teammateLabels,
     input.conversationActivity.reads,
+    replyBlocks.imageUrls,
   );
   // "Continue in test chat": a private test execution seeded from a live conversation's
   // thread and its current routine/clarification/directive position. Read-only on the source.
@@ -971,6 +979,7 @@ export const buildChatServices = (input: {
     agentStarterPromptReader,
     chatGateway,
     chatHistoryService,
+    replyImageObjectLookup: documentImages,
     testExecutionSeedSource,
     chatService,
     contextVariableResolutionReader: contextVariableResolver,

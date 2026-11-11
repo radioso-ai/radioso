@@ -137,6 +137,7 @@ const toRenderableTurn = (
   answer: presentation.answer,
   citations: presentation.citations,
   suggestions: presentation.suggestions,
+  ...(presentation.replyBlocks ? { blocks: presentation.replyBlocks.presented } : {}),
   metadata: {
     skillName: presentation.skillName,
     skillOutcome: presentation.skillOutcome,

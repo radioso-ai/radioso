@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { isLocaleTag } from "../../../shared/domain/locale.js";
 import { PRIVACY_NOTICE_VERSION_MAX_LENGTH } from "../../../modules/agents/public.js";
+import { pageReadCapabilitySchema, replyBlocksCapabilitySchema } from "../../../modules/chat/contracts/index.js";
 
 import { chatMessageSchema } from "../schemas/textInputLimits.js";
 import { browserTimeZoneSchema } from "../schemas/timeZoneSchemas.js";
@@ -37,11 +38,8 @@ export const pageContextSchema = z.object({
 }).optional();
 
 const clientContextCapabilitiesSchema = z.object({
-  "page.read": z.object({
-    available: z.boolean(),
-    mode: z.enum(["metadata", "content"]).nullable(),
-    supportedOperations: z.array(z.enum(["metadata", "lookup", "summarize"])).max(3),
-  }).optional(),
+  "page.read": pageReadCapabilitySchema.optional(),
+  "reply.blocks": replyBlocksCapabilitySchema.optional(),
 }).optional();
 
 export const anonymousChatSchema = z.object({

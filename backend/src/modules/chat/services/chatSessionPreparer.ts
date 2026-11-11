@@ -67,7 +67,8 @@ import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/
 import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
 import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
 import type { ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
-import type { AssistantPageContext } from "../types/assistantApi.js";
+import type { AssistantClientContextCapabilities, AssistantPageContext } from "../types/assistantApi.js";
+import { replyBlocksCapabilityFromRequest, type ReplyBlocksCapability } from "../contracts/replyBlocks.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
 import { admitsPageEvidence, capturedPageContext, type PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
@@ -114,6 +115,8 @@ export interface PreparedSession {
   /** Raw host input held aside until the page-read gate admits it. */
   pageContext?: AssistantPageContext | null;
   pageReadCapability?: PageReadCapability | null;
+  /** The reply blocks the client renders; null when it declared none, so the reply is text only. */
+  replyBlocks?: ReplyBlocksCapability | null;
   /** First-write-wins page-read decision and gate result shared by every downstream sink. */
   pageReadOutcome?: PageReadOutcome;
   priorRewriteContinuityState?: RewriteContinuityState;
@@ -231,6 +234,7 @@ export interface PrepareChatSessionInput {
   documentScope?: string[];
   pageContext?: AssistantPageContext | null;
   pageReadCapability?: PageReadCapability | null;
+  clientContextCapabilities?: AssistantClientContextCapabilities;
   /** The IANA zone the visitor's client reports; an invalid one is ignored and the workspace's zone applies. */
   visitorTimeZone?: string | null;
   sourceChannel?: string | null;
@@ -587,6 +591,7 @@ export class ChatSessionPreparer {
           effectiveQuery: input.query,
           pageContext: input.pageContext ?? null,
           pageReadCapability: input.pageReadCapability ?? null,
+          replyBlocks: replyBlocksCapabilityFromRequest(input.clientContextCapabilities?.["reply.blocks"]),
           referenceTimeZone,
           priorRewriteContinuityState: rewriteContinuityState,
           conversationSummary,
@@ -608,6 +613,7 @@ export class ChatSessionPreparer {
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       pageReadCapability: input.pageReadCapability ?? null,
+      replyBlocks: replyBlocksCapabilityFromRequest(input.clientContextCapabilities?.["reply.blocks"]),
       referenceTimeZone,
       priorRewriteContinuityState: rewriteContinuityState,
       conversationSummary,

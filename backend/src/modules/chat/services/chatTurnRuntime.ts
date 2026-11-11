@@ -15,6 +15,7 @@ import { SKILL_RESULT_REPLY_CONFIG, createSkillResultTurnRenderer } from "./skil
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import type { ReplyBlockTurnFactory } from "./replyBlocks/replyBlockTurn.js";
 import {
   createDirectiveAdherenceSideChannel,
   type DirectiveAdherenceTally,
@@ -29,6 +30,8 @@ export interface ChatTurnRuntimeDependencies {
   logger?: Pick<AppLogger, "debug" | "warn">;
   /** Composition's quick-reply kill switch (default true): false, every direct turn is composed. */
   quickReplyLaneEnabled?: boolean;
+  /** Offers grounded answers the `present` head; without it, answers carry no reply blocks. */
+  replyBlocks?: Pick<ReplyBlockTurnFactory, "forTurn">;
 }
 
 /**
@@ -113,6 +116,7 @@ export const buildChatTurnRuntime = (
             onTally: (tally) => recordDirectiveAdherenceTally(deps.metrics, tally),
           }),
         },
+        deps.replyBlocks,
       ),
     ),
     createDirectTurnSkill(

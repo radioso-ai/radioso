@@ -516,6 +516,7 @@ export const buildTurnTraceForPresentation = (
       modelId: input.session.agent.chatModelOverride?.model,
       citations: input.presentation.citations ?? [],
       answerSegments: input.presentation.answerSegments,
+      ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.stored } : {}),
       ...(hasContextVariablesSnapshot
         ? { contextVariables: contextVariablesSnapshot }
         : {}),
@@ -1037,6 +1038,7 @@ export class ChatTurnLifecycle {
         citations: input.presentation.citations,
         answerSegments: input.presentation.answerSegments,
         suggestions: input.presentation.suggestions,
+        ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.presented } : {}),
         activitySummary: presentation.resolvedActivitySummary,
         activityTrace: presentation.activityTrace,
         turnTrace: presentation.turnTrace,

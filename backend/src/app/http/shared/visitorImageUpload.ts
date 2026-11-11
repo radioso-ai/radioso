@@ -154,5 +154,8 @@ export const authenticatedVisitorImageOwner = (principal: AuthenticatedPrincipal
   return null;
 };
 
+/** A REST agent channel caller's photos belong to the credential (its access grant) that sent them. */
+export const agentChannelVisitorImageOwner = (grant: { id: string }): VisitorImageOwner => ({ kind: "api_credential", id: grant.id });
+
 /** A public chat visitor's photos belong to their public session. */
 export const publicVisitorImageOwner = (chatSessionId: string): VisitorImageOwner => ({ kind: "public_session", id: chatSessionId });

@@ -70,11 +70,13 @@ export const publicVisitorImageUploadRateLimiter = (dependencies: VisitorImageUp
   }),
 ];
 
-/** The caller an API upload is counted against: its credential, or the signed-in user. */
-const principalKeyOf = (principal: AuthenticatedPrincipal | undefined): string | null => {
+/** The caller an API upload is counted against: its credential, the agent channel credential, or the signed-in user. */
+const principalKeyOf = (locals: Record<string, unknown>): string | null => {
+  const principal = locals.authPrincipal as AuthenticatedPrincipal | undefined;
   if (principal?.type === "personal_api_credential" || principal?.type === "service_account_credential") return `credential:${principal.credentialId}`;
   if (principal?.type === "session_user") return `user:${principal.userId}`;
-  return null;
+  const grant = locals.agentChannelGrant as { id?: unknown } | undefined;
+  return typeof grant?.id === "string" ? `credential:${grant.id}` : null;
 };
 
 /** An API photo upload's two budgets, per credential (or signed-in user) and per workspace, spent before the body is read. */
@@ -84,7 +86,7 @@ export const apiVisitorImageUploadRateLimiter = (dependencies: VisitorImageUploa
     auditService: dependencies.auditService,
     resolvePolicies: (_req, res) => {
       const workspaceId = res.locals.workspaceId as string | undefined;
-      const principal = principalKeyOf(res.locals.authPrincipal as AuthenticatedPrincipal | undefined);
+      const principal = principalKeyOf(res.locals);
       if (!workspaceId || !principal) return [];
       return [
         { scope: "api.visitor_image.upload", subjectKey: `${workspaceId}:${principal}`, limit: API_BUDGETS.principal, windowMs: WINDOW_MS },

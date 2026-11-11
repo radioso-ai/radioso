@@ -61,7 +61,7 @@ export const registerAgentsPaths = (
     path: "/api/v1/agents/{agentId}/chat",
     tags: ["Agent Channels"],
     summary: "Run chat through a REST credential bound to this agent",
-    description: "Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine`.",
+    description: "Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. A message turn may carry `imageIds` the same credential uploaded with `POST /api/v1/agents/{agentId}/images`, with or without `message`. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine` or `imageIds`.",
     operationId: "createAgentChannelChatResponse",
     security: [{ [security.agentChannelBearerAuthScheme.name]: [] }],
     request: {

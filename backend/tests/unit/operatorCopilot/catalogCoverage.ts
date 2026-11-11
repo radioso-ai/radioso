@@ -583,6 +583,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   getConversationRecording: voiceRecordingAudio,
   uploadPublicChatImage: visitorImageUpload,
   uploadAssistantChatImage: visitorImageUpload,
+  uploadAgentChannelImage: visitorImageUpload,
   getPublicChatImage: visitorImageMedia,
   getConversationImage: visitorImageMedia,
   getAgentVoiceConnection: voiceRuntimeConnectionStatus,

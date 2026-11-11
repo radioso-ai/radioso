@@ -109,6 +109,26 @@ export const registerVisitorImagePaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/images",
+    tags: ["Agent Channels"],
+    summary: "Upload an image through a REST credential bound to this agent",
+    description: [
+      "The image belongs to the REST credential that uploads it, and only that credential can send the image, in `POST /api/v1/agents/{agentId}/chat`.",
+      uploadLimits,
+      "Uploads spend the channel's source budget and their own, per credential and per workspace, before the body is read.",
+    ].join(" "),
+    operationId: "uploadAgentChannelImage",
+    security: [{ [security.agentChannelBearerAuthScheme.name]: [] }],
+    request: { params: z.object({ agentId: z.string().uuid() }), body: uploadBody },
+    responses: {
+      201: uploaded,
+      401: errorResponse("The REST credential is missing, invalid, expired, or bound to a different agent", schemas),
+      ...uploadErrors(schemas),
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/conversations/{conversationId}/images/{imageId}",
     tags: ["Conversation History"],

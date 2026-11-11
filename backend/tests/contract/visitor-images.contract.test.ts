@@ -51,10 +51,20 @@ const imageWorkspace = async (options: { visitorImagesEnabled?: boolean; reader?
     });
     return { Authorization: `Bearer ${issued.secret}` };
   };
+  /** A new REST credential bound to the agent. */
+  const restCredential = async () => {
+    const issued = await request(created.app)
+      .post(`/api/v1/agents/${agentId}/channel-credentials`)
+      .set(dashboard)
+      .set("X-Radioso-CSRF", "1")
+      .send({ audience: "rest", label: `Images ${Math.random().toString(36).slice(2)}` })
+      .expect(201);
+    return { Authorization: `Bearer ${issued.body.secret as string}` };
+  };
   const auditEvents = (eventType: string) => (created.dependencies.auditService as unknown as {
     events: Array<{ eventType: string; workspaceId?: string | null; metadata?: Record<string, unknown> }>;
   }).events.filter((event) => event.eventType === eventType);
-  return { ...created, operator, dashboard, agentId, chatToken, visitor, reader, credential, auditEvents };
+  return { ...created, operator, dashboard, agentId, chatToken, visitor, reader, credential, restCredential, auditEvents };
 };
 
 describe("visitor image contract", () => {
@@ -207,6 +217,22 @@ describe("visitor image contract", () => {
 
     // A machine credential sends photos; only a teammate in the dashboard views them.
     await request(app).get(`/api/v1/conversations/${conversationId}/images/${uploaded.body.id as string}`).set(bearer).expect(401);
+  });
+
+  it("uploads through the REST agent channel and sends images with no text, for that credential only", async () => {
+    const { app, agentId, operator, dependencies, restCredential } = await imageWorkspace();
+    const rest = await restCredential();
+    const other = await restCredential();
+
+    const uploaded = await request(app).post(`/api/v1/agents/${agentId}/images`).set(rest).attach("image", await photo(), "photo.png").expect(201);
+    await request(app).post(`/api/v1/agents/${agentId}/chat`).set(other).send({ imageIds: [uploaded.body.id] }).expect(409);
+    const reply = await request(app).post(`/api/v1/agents/${agentId}/chat`).set(rest).send({ imageIds: [uploaded.body.id] }).expect(200);
+
+    const messages = await dependencies.messageRepository.listByConversationId(operator.workspaceId, reply.body.conversationId as string);
+    expect(messages.find((message) => message.role === "user")?.content).toBe(`<visitor_image index="1">${READING}</visitor_image>`);
+    await request(app).post(`/api/v1/agents/${agentId}/chat`).set(rest)
+      .send({ imageIds: [uploaded.body.id], routine: { toolName: "anything", input: {} } })
+      .expect(400);
   });
 
   it("refuses an API chat with photos and no agent id", async () => {

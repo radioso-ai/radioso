@@ -66,13 +66,7 @@ export { chatRequestInputFor, resolveAgentTurnInput, type AgentTurnInput } from 
 export type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "./routineTurnState.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
 // Reply blocks: what a reply carries beside its text, and the capability a client declares to receive them.
-export {
-  REPLY_BLOCK_LIMITS,
-  replyBlockSchema,
-  type ReplyBlock,
-  type ReplyBlocksCapability,
-  type ReplyImageUrls,
-} from "./replyBlocks.js";
+export { replyBlockSchema, type ReplyBlock, type ReplyImageUrls } from "./replyBlocks.js";
 export { pageReadCapabilitySchema, replyBlocksCapabilitySchema } from "./clientContextCapabilities.js";
 // A channel whose caller spoke over a reply marks it, or reports the part that reached the caller
 // of a reply cut off mid-stream so chat stores that part; history reads the marker back.

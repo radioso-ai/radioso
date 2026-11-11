@@ -17,7 +17,7 @@ const LARGE_WIDTH = 640;
  * public backend base (`publicApiBaseUrl`), which a browser loads cross-origin and a messaging
  * provider fetches.
  */
-export const createReplyImageUrls = (
+const createReplyImageUrls = (
   env: Pick<Env, "APP_BASE_URL" | "CONNECTOR_PUBLIC_BASE_URL" | "PORT">,
 ): ReplyImageUrls => {
   const base = `${publicApiBaseUrl(env)}${REPLY_IMAGE_ROUTE_PATH}`;

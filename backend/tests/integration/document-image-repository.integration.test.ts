@@ -64,7 +64,7 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
         JSON.stringify(stored ? [rendition(320), rendition(640)] : []),
       ],
     );
-    return rows[0]!.id;
+    return rows[0].id;
   };
 
   beforeAll(async () => {

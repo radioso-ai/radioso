@@ -12,7 +12,7 @@ import type { LedgerEntry, TurnImageLedger } from "./turnImageLedger.js";
 /** Why a handle the model named did not become an item. */
 export type ReplyBlockDropReason = "unknown_handle" | "duplicate_handle" | "over_limit";
 
-export interface ReplyBlockBuild {
+interface ReplyBlockBuild {
   block: StoredReplyBlock | null;
   dropped: ReplyBlockDropReason[];
 }

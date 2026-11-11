@@ -429,7 +429,7 @@ describe("chat presenter reply blocks", () => {
       route: { type: "retrieval", reason: "evidence_required" },
       answer: "We carry two hiking guides.",
       blocks: [block],
-      activitySummary: doneWithBlocks.type === "done" ? doneWithBlocks.activitySummary : ({} as never),
+      activitySummary: doneWithBlocks.type === "done" ? doneWithBlocks.activitySummary : ({}),
       activityTrace: doneWithBlocks.type === "done" ? doneWithBlocks.activityTrace : ({} as never),
     });
 
@@ -458,7 +458,7 @@ describe("chat presenter reply blocks", () => {
 
   it("writes no block event for a reply without blocks", async () => {
     const { response, writes } = createMockResponse();
-    const { blocks: _blocks, ...withoutBlocks } = doneWithBlocks as Extract<ChatStreamEvent, { type: "done" }>;
+    const { blocks: _blocks, ...withoutBlocks } = doneWithBlocks;
 
     await sendChatSse(response as never, (async function* () {
       yield withoutBlocks;

@@ -2,7 +2,7 @@ import type { DocumentImageRole, StoredDocumentImageRef } from "../../documents/
 import { resolveContextSourceUrl } from "../services/contextSourceUrl.js";
 
 /** At most this many images ride on one evidence item. */
-export const EVIDENCE_IMAGES_PER_ITEM = 3;
+const EVIDENCE_IMAGES_PER_ITEM = 3;
 
 /** The part of an evidence item that decides which images it carries. */
 export interface EvidenceContext {

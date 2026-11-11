@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-11T13:31:52.641Z",
+  "generatedAt": "2026-11-11T23:12:32.505Z",
   "passThreshold": 1,
   "cases": {
     "directive-refund-empathy": {
@@ -321,6 +321,16 @@
       "status": "pass",
       "passRate": 1,
       "samples": 5
+    },
+    "reply-blocks-guest-house-photos": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 2
+    },
+    "reply-blocks-hiking-books": {
+      "status": "fail",
+      "passRate": 0,
+      "samples": 2
     }
   }
 }

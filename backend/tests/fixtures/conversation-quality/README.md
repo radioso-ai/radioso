@@ -12,11 +12,12 @@ repo-committed regression suite you run from the CLI.
 
 | File | What it is |
 |------|------------|
-| `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
+| `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro), plus the 6 reply block pages from `replyBlockCases.ts` |
+| `replyBlockCases.ts` | the `reply-blocks` cases, five bookshop product pages with covers and a guest house page with photos in its text, and the images the runner seeds for them |
 | `routines.ts` | 6 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, and `kitchen-note`, whose confirm step reads a held note back |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 62 seed cases |
+| `cases.ts` | the seed cases, the reply block cases included |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -28,8 +29,8 @@ Two layers (see `src/modules/eval/suite/`):
   `routine_slots_unfilled`, `routine_slots_returned`, `routine_slots_not_returned`,
   `routine_yielded`, `turn_asks_clarification`,
   `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
-  `turn_directive_committed`, plus the product `retrieval_*`, `answer_cites_document`,
-  `answer_contains` / `answer_does_not_contain`.
+  `turn_directive_committed`, `reply_block`, `answer_excludes_image_url`, plus the product
+  `retrieval_*`, `answer_cites_document`, `answer_contains` / `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
   refusal, precision, and the quick-reply "no factual proposition" checks. The live runner
   drops them unless a case carries a tag passed with `--judge-tag`; those are graded on the
@@ -92,8 +93,8 @@ pnpm run evals -- --tag directive-withholds
 
 ## Invented-link checks
 
-The corpus gives no `Source:` URL, so a Markdown link in an answer about it points at an
-address the model made up, unless it is a `mailto:` link to an address the conversation gave.
+Outside the reply block pages, the corpus gives no `Source:` URL, so a Markdown link in an
+answer about it points at an address the model made up, unless it is a `mailto:` link to an address the conversation gave.
 The two `referent-course-*` cases gate on what the visitor gets: a regex check fails when the
 delivered answer carries `](` not followed by `mailto:`, spelled out because RE2 has no
 lookahead. The answer guard shows an invented link as its text, so the check passes whether or
@@ -101,6 +102,22 @@ not the model tried; how often it tries shows on `chat_answer_links_unwrapped_to
 the suite. A test in `tests/unit/eval-suite/suite-core.test.ts` drives
 `referent-course-behind-contact-form` through the chat pipeline with a scripted reply that links
 the course name to `#`.
+
+## Reply block cases
+
+The two `reply-blocks` cases declare `clientContextCapabilities["reply.blocks"]`, as the web
+embed does, and check the cards a grounded answer presents. `reply-blocks-hiking-books` asks
+which hiking books the shop has, over five product pages whose covers are their primary images,
+and expects a `carousel` of at least two items that link to, or are titled as, the retrieved
+pages. `reply-blocks-guest-house-photos` asks what the guest house looks like, over a page whose
+photos are anchored to its text, and expects a `grid`. Both check with
+`answer_excludes_image_url` that the answer text names no picture by address or handle.
+
+After the corpus is processed, the live runner writes their `document_images` rows itself
+(`seedReplyBlockImages` in `scripts/evalRunnerSupport.ts`), as image capture would leave them:
+a cover as its page's primary image, a photo anchored to the page's first chunk. `tests/unit/eval-suite/reply-block-cases.test.ts` drives both cases through
+the chat pipeline with scripted replies, and shows that a case without the capability gets no
+`present` field and no block.
 
 ## Slot-filling cases
 

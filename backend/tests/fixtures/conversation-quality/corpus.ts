@@ -1,3 +1,5 @@
+import { replyBlockDocuments } from "./replyBlockCases.js";
+
 /**
  * A small, self-contained corpus the conversation-quality suite grounds against. Facts
  * are concrete and quotable (a 30-day window, a $49 plan, "SOC 2 Type II", a residential
@@ -10,6 +12,8 @@ export interface ConversationQualityDocument {
   id: string;
   title: string;
   content: string;
+  /** Document metadata ingested with it, such as the page's `sourceUrl`. */
+  metadata?: Record<string, string>;
 }
 
 export const REFUND_POLICY_DOC_ID = "22222222-2222-4222-8222-222222222201";
@@ -118,4 +122,5 @@ export const conversationQualityCorpus: ConversationQualityDocument[] = [
       "Per prenotare scrivi alla reception.",
     ].join("\n"),
   },
+  ...replyBlockDocuments,
 ];

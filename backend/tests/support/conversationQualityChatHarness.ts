@@ -11,11 +11,13 @@ import type { ChatResponse, ChatReviewResult } from "../../src/modules/chat/cont
 import { AnswerCoverageHeadRecorder } from "../../src/modules/chat/services/answerCoverageHeadRecorder.js";
 import { ChatService, type ChatServiceOptions } from "../../src/modules/chat/services/chatService.js";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
+import { ReplyBlockTurnFactory } from "../../src/modules/chat/services/replyBlocks/replyBlockTurn.js";
+import { EvidenceImageAttacher } from "../../src/modules/retrieval/public.js";
+import type { InMemoryDocumentImages } from "./inMemoryDocumentImages.js";
 import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
 import { MissingFallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { publishedDraftReply } from "../../src/modules/chat/services/reviewDraft.js";
-import type { EvalRunObservedOutput } from "../../src/modules/eval/domain/types.js";
 import {
   conversationQualityCaseTurnText,
   type ConversationQualityCase,
@@ -36,12 +38,30 @@ import {
   publishedRevisionResolverFixture,
 } from "./fakes.js";
 
-/** Retrieval that always finds one seed document, so every turn is a grounded retrieval turn. */
-const singleDocumentRetrieval = (documentId: string): RetrievalTurnPort => {
+const seedDocument = (documentId: string) => {
   const document = conversationQualityCorpus.find((candidate) => candidate.id === documentId);
   if (!document) {
     throw new Error(`No conversation-quality document ${documentId}`);
   }
+  return document;
+};
+
+/** The chunk a seed document is retrieved as: one chunk per document, carrying its metadata. */
+const seedChunk = (documentId: string, rank: number) => {
+  const document = seedDocument(documentId);
+  return {
+    chunkId: `chunk-${document.id}`,
+    documentId: document.id,
+    title: document.title,
+    content: document.content,
+    promptPosition: rank,
+    metadata: document.metadata ?? {},
+  };
+};
+
+/** Retrieval that always finds the same seed documents, so every turn is a grounded retrieval turn. */
+const seedDocumentRetrieval = (documentIds: readonly string[]): RetrievalTurnPort => {
+  documentIds.forEach(seedDocument);
   return {
     async interpret(request) {
       return {
@@ -55,19 +75,14 @@ const singleDocumentRetrieval = (documentId: string): RetrievalTurnPort => {
       const request: RetrievalPipelineRequest = input.interpreted.request;
       return {
         rewrittenQuery: request.query,
-        contexts: [{
-          chunkId: `chunk-${document.id}`,
-          documentId: document.id,
-          title: document.title,
-          content: document.content,
-          promptPosition: 0,
+        contexts: documentIds.map((documentId, rank) => ({
+          ...seedChunk(documentId, rank),
           similarity: 0.8,
           fusedScore: 0.8,
           semanticScore: 0.8,
           lexicalScore: 0.8,
           lexicalRankScore: 0.3,
-          metadata: {},
-        }],
+        })),
         systemPrompt: "system",
         prompt: "prompt",
         citations: [],
@@ -82,7 +97,7 @@ const singleDocumentRetrieval = (documentId: string): RetrievalTurnPort => {
           execution: { surface: "assistant", path: "assistant_retrieval", retrievalInvoked: true },
           rewriteStatus: "skipped",
           rerankStatus: "skipped",
-          finalContextCount: 1,
+          finalContextCount: documentIds.length,
           retrievalSkipped: false,
         },
         trace: { traceId: "cq-retrieval", startedAt: new Date().toISOString(), stages: [], links: [] },
@@ -133,8 +148,15 @@ const inMemoryCoverageRepository = (): AnswerCoverageRepositoryPort & AnswerCove
 };
 
 /** A live answer as the suite scores it. */
-const observedOutputFromChatResponse = (response: ChatResponse): EvalRunObservedOutput => ({
-  retrievedChunks: [],
+const observedOutputFromChatResponse = (
+  response: ChatResponse,
+  retrievedDocumentIds: readonly string[],
+): ConversationQualityObservedOutput => ({
+  retrievedChunks: retrievedDocumentIds.map((documentId, rank) => {
+    const { content: _content, promptPosition: _position, ...chunk } = seedChunk(documentId, rank);
+    return { ...chunk, rank };
+  }),
+  ...(response.blocks ? { replyBlocks: response.blocks } : {}),
   answer: response.answer,
   citations: response.citations,
   answerSegments: response.answerSegments,
@@ -177,6 +199,10 @@ export interface ConversationQualityChatHarnessOptions {
   reply: string;
   /** The seed document every turn retrieves; the refund policy when absent. */
   retrievedDocumentId?: string;
+  /** The seed documents every turn retrieves, in rank order, in place of `retrievedDocumentId`. */
+  retrievedDocumentIds?: string[];
+  /** The documents' stored images a grounded answer can present; none when absent. */
+  documentImages?: InMemoryDocumentImages;
   /** Directives registered for every turn, as composition registers the built-ins; none when absent. */
   directives?: Directive[];
 }
@@ -189,6 +215,7 @@ export interface ConversationQualityChatHarnessOptions {
  * spies, so a test can show a review turn never reaches them.
  */
 export const conversationQualityChatHarness = (options: ConversationQualityChatHarnessOptions) => {
+  const retrievedDocumentIds = options.retrievedDocumentIds ?? [options.retrievedDocumentId ?? REFUND_POLICY_DOC_ID];
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const metrics = new MetricsRegistry();
@@ -209,7 +236,7 @@ export const conversationQualityChatHarness = (options: ConversationQualityChatH
   const service = new ChatService({
     conversationRepository,
     messageRepository,
-    retrievalTurn: singleDocumentRetrieval(options.retrievedDocumentId ?? REFUND_POLICY_DOC_ID),
+    retrievalTurn: seedDocumentRetrieval(retrievedDocumentIds),
     ...(options.directives
       ? {
           directiveSteering: createRouteScopedDirectiveSteering({
@@ -225,6 +252,15 @@ export const conversationQualityChatHarness = (options: ConversationQualityChatH
       fallbackReplyComposer: new MissingFallbackReplyComposer(),
       skillOutcomeCapabilities: { supportsGroundedAnswer: () => true },
       metrics,
+      ...(options.documentImages
+        ? {
+            replyBlocks: new ReplyBlockTurnFactory({
+              evidenceImages: new EvidenceImageAttacher(options.documentImages),
+              imageUrls: { forImage: (imageId) => ({ src: `https://app.example/backend/api/v1/public/reply-images/${imageId}/640`, srcSet: "" }) },
+              metrics,
+            }),
+          }
+        : {}),
     }),
     agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),
     turnRouter: { classify: async () => ({ route: "retrieval", framing: { isIdentityQuestion: false } }) },
@@ -269,7 +305,8 @@ export const conversationQualityChatHarness = (options: ConversationQualityChatH
         agentId: CQ_AGENT_ID,
         query: conversationQualityCaseTurnText(evalCase),
         stream: false,
-      }));
+        clientContextCapabilities: evalCase.clientContextCapabilities,
+      }), retrievedDocumentIds);
     },
     async review(evalCase) {
       const recorded = await recordReviewConversation(evalCase);
@@ -302,6 +339,8 @@ export const canonicalAnswerEnvelope = (input: {
   claims: number[][];
   grounding: "grounded" | "degraded";
   adherence?: Array<{ rule: string; satisfied: boolean; applicable: boolean; note: string }>;
+  /** The pictures to show, after the grades, for a turn that offers the `present` field. */
+  present?: { images: string[]; caption: string };
 }): string => JSON.stringify({
   coverage: input.coverage,
   requestFocus: input.requestFocus,
@@ -313,4 +352,5 @@ export const canonicalAnswerEnvelope = (input: {
   suggestions: [],
   grounding: input.grounding,
   adherence: input.adherence ?? [],
+  ...(input.present ? { present: input.present } : {}),
 });

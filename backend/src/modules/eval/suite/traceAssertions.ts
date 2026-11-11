@@ -2,6 +2,7 @@ import type { RoutineRunTrace } from "@radioso/conversation-contract";
 
 import type { AssertionVerdictStatus, EvalRunObservedOutput } from "../domain/types.js";
 import type { ConversationQualityObservedOutput } from "./observedOutput.js";
+import { answerNamesImage, judgeReplyBlock, type ReplyBlockExpectation } from "./replyBlockAssertions.js";
 
 /**
  * Trace assertions read structured signal out of a turn's {@link EvalRunObservedOutput}
@@ -69,7 +70,11 @@ export type SuiteTraceAssertion =
    * unless the case marks it `deterministicOnly`, as one does whose outcome only means something
    * beside an expectation a live run cannot check.
    */
-  | { type: "voice_turn_outcome"; kind: "continue" | "callback_requested"; deterministicOnly?: boolean };
+  | { type: "voice_turn_outcome"; kind: "continue" | "callback_requested"; deterministicOnly?: boolean }
+  /** The reply carried a block: its layout, its size, and whether its items come from the retrieved documents. */
+  | ({ type: "reply_block" } & ReplyBlockExpectation)
+  /** The answer text names no picture by address or handle: pictures belong in the block. */
+  | { type: "answer_excludes_image_url" };
 
 /**
  * Marks the voice expectations only the brain's speed decides as deterministic-only. "No bridge"
@@ -112,6 +117,8 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "voice_bridge_emitted",
   "voice_turn_limit_reached",
   "voice_turn_outcome",
+  "reply_block",
+  "answer_excludes_image_url",
 ]);
 
 export const isTraceAssertion = (assertion: { type: string }): assertion is SuiteTraceAssertion =>
@@ -555,6 +562,14 @@ export const evaluateTraceAssertion = (
           ? `The compose stage recorded nothing for "${assertion.directive}": it was not rendered into the answer prompt, or a decline replaced the graded answer.`
           : `The turn composed no answer (no compose stage); expected a commitment to "${assertion.directive}".`,
       );
+    }
+    case "reply_block": {
+      const verdict = judgeReplyBlock(assertion, output.replyBlocks, output.retrievedChunks);
+      return verdict.passed ? pass(assertion, verdict.reason) : fail(assertion, verdict.reason);
+    }
+    case "answer_excludes_image_url": {
+      const named = answerNamesImage(output.answer);
+      return named ? fail(assertion, named) : pass(assertion, "The answer names no picture.");
     }
     case "voice_bridge_emitted": {
       if (!output.voiceTurn) {

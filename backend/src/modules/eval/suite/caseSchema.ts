@@ -166,6 +166,13 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
     kind: z.enum(["continue", "callback_requested"]),
     deterministicOnly: z.boolean().optional(),
   }),
+  z.object({
+    type: z.literal("reply_block"),
+    layout: z.enum(["carousel", "grid", "list"]).optional(),
+    minItems: z.number().int().positive().optional(),
+    itemsFromEvidence: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal("answer_excludes_image_url") }),
 ]);
 
 const voiceEvalChatScriptEventSchema = z.discriminatedUnion("type", [

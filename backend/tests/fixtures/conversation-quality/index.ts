@@ -33,3 +33,10 @@ export {
   CQ_WORKSPACE_ID,
 } from "./agent.js";
 export { conversationQualityCases } from "./cases.js";
+export {
+  GUEST_HOUSE_DOC_ID,
+  HIKING_BOOK_DOC_IDS,
+  replyBlockImages,
+  replyBlocksCapabilities,
+  type ReplyBlockFixtureImage,
+} from "./replyBlockCases.js";

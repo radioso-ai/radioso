@@ -28,7 +28,7 @@ export interface ReplyBlockTurn {
   build(extras: Record<string, unknown> | undefined): PresentedReplyBlocks | undefined;
 }
 
-export interface ReplyBlockTurnFactoryDependencies {
+interface ReplyBlockTurnFactoryDependencies {
   evidenceImages: Pick<EvidenceImageAttacher, "attach">;
   imageUrls: ReplyImageUrls;
   metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;

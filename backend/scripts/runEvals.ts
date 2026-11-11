@@ -79,6 +79,7 @@ import {
   runThenClose,
   scopeCasesForLiveRun,
   seededRoutineSkillNames,
+  seedReplyBlockImages,
   seedVoiceSettings,
 } from "./evalRunnerSupport.js";
 
@@ -217,6 +218,7 @@ const seedFixtures = async (
         workspaceId: flags.workspaceId,
         title: document.title,
         content: document.content,
+        ...(document.metadata ? { metadata: document.metadata } : {}),
         externalDocumentId: document.id,
       });
       documentIds.set(document.id, result.documentId);
@@ -435,6 +437,8 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
   console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
   const { documentIds, routineIds } = await seedFixtures(deps, flags);
   await waitForDocumentsReady(deps, flags.workspaceId, documentIds);
+  const seededImages = await seedReplyBlockImages(deps.connectorDb.kysely, flags.workspaceId, documentIds);
+  console.log(`Seeded ${seededImages} reply block image row(s).`);
   if (run.runsVoiceCases) {
     await seedVoiceRoutines(deps, flags);
   }

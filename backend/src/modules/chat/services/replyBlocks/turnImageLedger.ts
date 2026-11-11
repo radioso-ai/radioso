@@ -1,7 +1,7 @@
 import type { EvidenceItemImages } from "../../../retrieval/public.js";
 
 /** At most this many images are offered to the model on one turn. */
-export const LEDGER_MAX_HANDLES = 24;
+const LEDGER_MAX_HANDLES = 24;
 
 /** The longest alt text or caption a prompt line quotes, in characters. */
 const QUOTED_TEXT_MAX_LENGTH = 120;
@@ -28,7 +28,6 @@ export interface LedgerEntry {
  * never leave its quoted line.
  */
 const quotedText = (value: string): string => {
-  // eslint-disable-next-line no-control-regex -- structural: strips control characters from untrusted document text
   const singleLine = value.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
   const capped = Array.from(singleLine).slice(0, QUOTED_TEXT_MAX_LENGTH).join("").trim();
   return capped.replace(/\\/g, "\\\\").replace(/"/g, '\\"');

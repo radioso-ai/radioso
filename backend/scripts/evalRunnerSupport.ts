@@ -4,7 +4,7 @@
  * live run gates and on what, the committed baseline file, the voice block a voice case needs, and
  * closing what the composition opened.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { closeInOrder, dependencyCloseSteps, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
@@ -18,6 +18,10 @@ import {
 } from "../src/modules/eval/suite/index.js";
 import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
+import { replyBlockImages } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
+import { workspaceStoragePrefix } from "../src/modules/documents/contracts/storage.js";
+import { toJsonb } from "../src/shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../src/shared/infra/kysely/types.js";
 import { VOICE_EVAL_LOCALE, voiceEvalVoiceLines } from "../tests/fixtures/voice-eval/agent.js";
 
 /** The account and agent calls `registerDisposableAgent` makes, narrowed so a test composition can serve them. */
@@ -271,4 +275,52 @@ export const runThenClose = async <T>(
       reportCloseFailure(error);
     }
   }
+};
+
+/**
+ * Seeds the reply block fixtures' stored images once their documents are processed, written as
+ * image capture would leave them: stored, a cover as its document's primary image, a photo from
+ * within a page anchored to the page's first chunk. The renditions name objects no eval reads, since a turn only offers the
+ * images and never serves them. Returns how many rows it wrote.
+ */
+export const seedReplyBlockImages = async (
+  db: Db,
+  workspaceId: string,
+  documentIds: ReadonlyMap<string, string>,
+): Promise<number> => {
+  let seeded = 0;
+  for (const [fixtureDocumentId, images] of Object.entries(replyBlockImages)) {
+    const documentId = documentIds.get(fixtureDocumentId);
+    if (!documentId) {
+      continue;
+    }
+    const firstChunk = await db.selectFrom("chunks").select("id")
+      .where("document_id", "=", documentId)
+      .orderBy("chunk_index")
+      .executeTakeFirst();
+    for (const [position, image] of images.entries()) {
+      const chunkId = image.role === "inline" ? firstChunk?.id ?? null : null;
+      const objectPath = `${workspaceStoragePrefix(workspaceId)}document-image-eval-${position}`;
+      const result = await db.insertInto("document_images")
+        .values({
+          workspace_id: workspaceId,
+          document_id: documentId,
+          chunk_id: chunkId,
+          role: image.role,
+          status: "stored",
+          position,
+          source_url: image.sourceUrl,
+          alt: image.alt,
+          caption: image.caption ?? null,
+          width: image.width,
+          height: image.height,
+          sha256: createHash("sha256").update(image.sourceUrl).digest("hex"),
+          renditions: toJsonb([320, 640].map((width) => ({ width, bucket: "eval", objectPath: `${objectPath}-w${width}`, generation: null, sizeBytes: 1 }))),
+        })
+        .onConflict((conflict) => conflict.columns(["document_id", "source_url"]).doUpdateSet({ chunk_id: chunkId }))
+        .executeTakeFirst();
+      seeded += Number(result.numInsertedOrUpdatedRows ?? 0n);
+    }
+  }
+  return seeded;
 };

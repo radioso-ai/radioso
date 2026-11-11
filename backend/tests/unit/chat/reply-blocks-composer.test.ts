@@ -147,7 +147,7 @@ describe("reply blocks on the grounded answer", () => {
       alt: "",
     });
     const [input] = inputs;
-    const properties = Object.keys((input?.generation?.responseFormat?.schema.properties ?? {}) as Record<string, unknown>);
+    const properties = Object.keys((input?.generation?.responseFormat?.schema.properties ?? {}));
     expect(properties.at(-1)).toBe("present");
     expect(input?.prompt).toContain("Result images");
     expect(input?.prompt).toContain("Result 1: [m1] (primary)");

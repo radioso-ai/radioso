@@ -84,7 +84,7 @@ const guidesWithCovers = async () => {
     .put("/api/v1/settings/general")
     .set(adminSessionHeaders(session))
     .send({ anonymousChatEnabled: true });
-  const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1]!;
+  const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
   const publicSession = await request(app)
     .post(`/api/v1/public/chat/${chatToken}/sessions`)
     .send({ channel: "anonymous_link" });

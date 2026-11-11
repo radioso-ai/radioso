@@ -45,8 +45,14 @@ const givenAMicrophone = (page: Page) => page.addInitScript(() => {
   };
 });
 
-/** The vendor's end of the call: what the client sent, and a way to answer as the vendor would. */
-const vendorStandIn = async (page: Page) => {
+/** A line said on the call, as the backend records the turn it belongs to in the test. */
+type SaidLine = { role: "user" | "assistant"; content: string };
+
+/**
+ * The vendor's end of the call: what the client sent, and a way to answer as the vendor would. Each
+ * line said is handed to `said`, which stands in for the backend recording the call's turn.
+ */
+const vendorStandIn = async (page: Page, said: (line: SaidLine) => void = () => undefined) => {
   const sockets: WebSocketRoute[] = [];
   const initiations: Array<Record<string, unknown>> = [];
   await page.routeWebSocket("wss://vendor.test/**", (socket) => {
@@ -65,8 +71,12 @@ const vendorStandIn = async (page: Page) => {
       type: "conversation_initiation_metadata",
       conversation_initiation_metadata_event: { conversation_id: "conv_1", agent_output_audio_format: "pcm_16000", user_input_audio_format: "pcm_16000" },
     }),
-    callerSays: (text: string, eventId: number) => send({ type: "user_transcript", user_transcription_event: { user_transcript: text, event_id: eventId } }),
+    callerSays: (text: string, eventId: number) => {
+      said({ role: "user", content: text });
+      send({ type: "user_transcript", user_transcription_event: { user_transcript: text, event_id: eventId } });
+    },
     agentAnswers: (text: string, eventId: number) => {
+      said({ role: "assistant", content: text });
       send({ type: "agent_response", agent_response_event: { agent_response: text, event_id: eventId } });
       send({ type: "audio", audio_event: { audio_base_64: SILENCE_PCM_16K, event_id: eventId } });
     },
@@ -74,11 +84,15 @@ const vendorStandIn = async (page: Page) => {
 };
 
 /**
- * Test Chat over the dashboard mocks, with the agent's voice as the readiness read reports it, a
- * session start that answers as the backend would, and the test's transcript as the backend records
- * a call's turns once the call has had them.
+ * Test Chat's backend over the dashboard mocks: the agent's voice as the readiness read reports it,
+ * a session start that answers as the backend would, and the test's transcript holding the turns the
+ * call produced (`said`), marked spoken, as the backend records them.
  */
-const openTestChat = async (page: Page, readiness: { ready: true; missing: null } | { ready: false; missing: "runtime" | "vendor_key" }) => {
+const mockTestChatBackend = async (
+  page: Page,
+  readiness: { ready: true; missing: null } | { ready: false; missing: "runtime" | "vendor_key" },
+  said: readonly SaidLine[] = [],
+) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     voiceCallReadiness: readiness,
@@ -86,7 +100,6 @@ const openTestChat = async (page: Page, readiness: { ready: true; missing: null 
   });
   const starts: Array<{ url: string; headers: Record<string, string> }> = [];
   const publicStarts: string[] = [];
-  let spokenTurnsRecorded = false;
   // The version the started test runs, as the test's own start answered it.
   let testedRevision: unknown = null;
   page.on("response", (response) => {
@@ -109,11 +122,16 @@ const openTestChat = async (page: Page, readiness: { ready: true; missing: null 
   });
   await page.route(/\/backend\/api\/v1\/agents\/[^/]+\/test-executions\/[^/?]+$/, async (route) => {
     const executionId = new URL(route.request().url()).pathname.split("/").pop()!;
-    if (route.request().method() !== "GET" || !spokenTurnsRecorded) {
+    if (route.request().method() !== "GET" || said.length === 0) {
       await route.fallback();
       return;
     }
-    const spokenAt = (role: "user" | "assistant", content: string) => ({ turnId: "spoken-turn-1", role, content, attemptId: "spoken-attempt-1", createdAt: nowIso, spoken: true, ...(role === "assistant" ? { messageId: "spoken-message-1" } : {}) });
+    // Each caller line opens a turn, and the reply after it answers that turn.
+    let turn = 0;
+    const history = said.map(({ role, content }) => {
+      if (role === "user") turn += 1;
+      return { turnId: `spoken-turn-${turn}`, role, content, attemptId: `spoken-attempt-${turn}`, createdAt: nowIso, spoken: true, ...(role === "assistant" ? { messageId: `spoken-message-${turn}` } : {}) };
+    });
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -124,23 +142,29 @@ const openTestChat = async (page: Page, readiness: { ready: true; missing: null 
             id: "side-1-0",
             revision: testedRevision,
             conversationId: "conversation-1-0", state: "completed", retryable: false,
-            history: [spokenAt("user", "Do you open on Sundays?"), spokenAt("assistant", "On Sundays we open at ten.")],
+            history,
           }],
-          attempts: [{ sideId: "side-1-0", turnId: "spoken-turn-1", attemptId: "spoken-attempt-1", fence: 1, state: "completed", failureCode: null, leaseExpiresAt: nowIso, createdAt: nowIso, updatedAt: nowIso }],
+          attempts: [],
         },
       }),
     });
   });
+  return { starts, publicStarts };
+};
+
+const openTestChat = async (page: Page, readiness: Parameters<typeof mockTestChatBackend>[1], said: readonly SaidLine[] = []) => {
+  const backend = await mockTestChatBackend(page, readiness, said);
   await page.goto(testChatUrl);
   await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
-  return { starts, publicStarts, recordSpokenTurns: () => { spokenTurnsRecorded = true; } };
+  return backend;
 };
 
 test("an operator talks to the draft from Test Chat, and the call's turns land in the test marked spoken", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
   await givenAMicrophone(page);
-  const vendor = await vendorStandIn(page);
-  const { starts, publicStarts, recordSpokenTurns } = await openTestChat(page, { ready: true, missing: null });
+  const said: SaidLine[] = [];
+  const vendor = await vendorStandIn(page, (line) => said.push(line));
+  const { starts, publicStarts } = await openTestChat(page, { ready: true, missing: null }, said);
 
   await page.getByRole("button", { name: "Talk" }).click();
   // The test the call runs on was started for it, and the start went through Test Chat's own route.
@@ -158,7 +182,6 @@ test("an operator talks to the draft from Test Chat, and the call's turns land i
   // The call bar stands in for the composer while the call runs.
   await expect(page.getByPlaceholder("Ask a question...")).toHaveCount(0);
 
-  recordSpokenTurns();
   vendor.callerSays("Do you open on Sundays?", 1);
   vendor.agentAnswers("On Sundays we open at ten.", 2);
   await expect(page.getByText("On Sundays we open at ten.")).toBeVisible();
@@ -179,4 +202,26 @@ test("Talk waits, disabled, with one line naming what the agent's voice still ne
   await expect(talk).toBeDisabled();
   await expect(page.getByText("Store the ElevenLabs key under Settings → Providers first.")).toBeVisible();
   expect(starts).toEqual([]);
+});
+
+test("an operator who signs in through / and moves to Test Chat on the client can talk", async ({ page, context }) => {
+  await context.grantPermissions(["microphone"]);
+  await givenAMicrophone(page);
+  // An established workspace, so the landing page goes to the Inbox rather than onboarding.
+  await seedDashboardStorage(page);
+  await mockTestChatBackend(page, { ready: true, missing: null });
+  await page.route("**/backend/api/v1/history/chat**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ conversations: [], total: 1, nextCursor: null, hasMore: false }) }));
+
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/w\//, { timeout: 15_000 });
+  // The document the operator entered with stays: every move from here is the client's own.
+  await page.evaluate(() => { (window as Window & { enteredThroughRoot?: boolean }).enteredThroughRoot = true; });
+  const sidebar = page.locator('[data-slot="sidebar-container"]');
+  await sidebar.getByRole("link", { name: "Agents", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Test Chat", exact: true }).click();
+
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Talk" })).toBeEnabled();
+  expect(await page.evaluate(() => (window as Window & { enteredThroughRoot?: boolean }).enteredThroughRoot)).toBe(true);
 });

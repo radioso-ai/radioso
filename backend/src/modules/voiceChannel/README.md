@@ -28,11 +28,13 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   maintained vendor agent sets reaches it as `VoiceSessionLanguageSource` (the
   vendor's code, `default`, `unsupported` or `not_allowed`), so it knows no
   vendor's language list.
-- `testChatSessionDomain.ts` (re-exported by `domain.ts`) knows a session
-  started from the dashboard's Test Chat: the private test it runs on, by an
-  opaque id (`VoiceTestChatSubject`, `VoiceTestChatBinding`), the start's
-  `VoiceSessionSurface` (`website_embed`, `test_chat`) and the port its turns
-  run through (`VoiceTestChatTurns`, `VoiceTestChatTurnEvent`).
+- `testChatSessionDomain.ts` (its types re-exported by `domain.ts`) knows a
+  session started from the dashboard's Test Chat: the private test it runs on,
+  by an opaque id (`VoiceTestChatSubject`, `VoiceTestChatBinding`), the start's
+  `VoiceSessionSurface` (`website_embed`, `test_chat`), the port its turns run
+  through (`VoiceTestChatTurns`, `VoiceTestChatTurnEvent`), and its key's
+  namespace (`testChatSessionKey`, `isTestChatSessionKey`: a version 8 UUID,
+  where a website start mints version 4).
 - `services/` runs the turn: `voiceTurnService.ts` resolves or binds the
   session's conversation, reads the agent's voice settings and the
   conversation's routine state and owner, starts the chat turn with
@@ -75,16 +77,20 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   requests (the newest request, the last bridge, the last exchange);
   `voiceTurnMetrics.ts` names the turn's series;
   `voiceSessionTurnRouter.ts` is the `VoiceTurnPort` composition hands the
-  adapters: it reads the session's `VoiceTestChatBinding` first
-  (`VoiceTestChatBindingLookup`) and runs the turn as a conversation on
-  `VoiceTurnService`, or, for a session started from Test Chat, on
+  adapters: a key outside Test Chat's namespace (`isTestChatSessionKey`) runs
+  as a conversation on `VoiceTurnService` with no extra read, and a Test Chat
+  key reads its `VoiceTestChatBinding` (`VoiceTestChatBindingLookup`) and runs on
   `testChatVoiceTurns.ts` (`TestChatVoiceTurnService`), which runs the
   utterance as a turn of the operator's private test through the narrow
   `VoiceTestChatTurns` port and cuts the answer into speech with the same
-  sentence cutter; a binding past its window is refused with a `404`, and a
-  Test Chat session never falls back to the conversation path. A Test Chat turn
-  speaks no bridge or fallback line, and a newer utterance of the session waits
-  in process for the running one to settle (a test runs one turn at a time);
+  sentence cutter; a binding that is gone or past its window is refused with a
+  `404`, and a Test Chat key never falls back to the conversation path. A Test
+  Chat turn speaks no bridge or fallback line, reads the test's stream to its
+  end (where the test settles and audits the turn) before its outcome, and a
+  newer utterance of the session waits in process for the running one to
+  settle (a test runs one turn at a time): one waits per session, a newer one
+  replaces it, and one whose request was aborted or whose runtime hung up runs
+  no turn;
   each logs one `voice.test_chat_turn` line (ids, `result`, `durationMs`,
   `firstSpeechMs`, the test's `failureCode`), apart from the `voice.turn` line
   the turn health alert counts.
@@ -402,7 +408,8 @@ helpers and the shared chat message limit from `app/http`
   that is gone `404`), then starts the session with a `test` start, which the
   registry records as the session's `VoiceTestChatBinding` (`test_execution_id`
   and `started_account_id` on `voice_sessions`, migration
-  `254_voice_sessions_test_chat.sql`). The answer is the website embed's, built
+  `255_voice_sessions_test_chat.sql`), and mints its key in Test Chat's own
+  namespace (`testChatSessionKey`, a version 8 UUID). The answer is the website embed's, built
   by `presenters/voiceSessionPresenter.ts`. A permanent copilot coverage
   exclusion (`startAgentTestExecutionVoiceSession`).
 - `backend/src/app/http/routes/publicVoiceSessionRoute.ts` — mounts
@@ -521,7 +528,7 @@ helpers and the shared chat message limit from `app/http`
   before the greeting, or a second greeting read on every call. A runtime the operator bound by hand gets no language,
   like no first message. Each started call on a maintained vendor agent logs
   `Voice session language prepared` (the vendor's code when set, and
-  `durationMs`) or a warn, and counts `voice_session_language_total{vendor,outcome}`
+  `durationMs`) or a warn, and counts `voice_session_language_total{vendor,surface,outcome}`
   (`set`, `default`, `unsupported`, `not_allowed`, `timed_out`, `failed`).
 - **The call's first message.** A maintained vendor agent keeps no first
   message of its own and allows the session to set one (the ElevenLabs
@@ -1068,7 +1075,7 @@ or an internal error message. Chat-side spans, metrics and failure logs cover th
 turn itself.
 
 A started session on a maintained vendor agent records
-`voice_session_greeting_total` (`vendor`; `outcome`: `spoken`, `none`,
+`voice_session_greeting_total` (`vendor`; `surface`; `outcome`: `spoken`, `none`,
 `timed_out`, `failed`) and logs `Voice session greeting prepared` at info
 (`spoken`, `none`) with `workspaceId`, `agentId`, `vendor`, `outcome`,
 `recordingNotice` (whether the agent had one for the call) and `durationMs`;

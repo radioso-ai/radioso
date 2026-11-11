@@ -597,8 +597,17 @@ with "Talking isn't available right now."
 
 A Test Chat session takes turns for 60 minutes after its start. Turns after
 that, and turns on a test that has since been deleted, are refused with a
-`404`; they never run on the published agent. Opening another test or
-starting a new chat ends the call.
+`404`; they never run on the published agent. Radioso mints a Test Chat
+session's key as a version 8 UUID, apart from a website start's version 4, so
+it recognizes a Test Chat turn by its key even after the session's record is
+cleared. Opening another test or starting a new chat ends the call.
+
+A Test Chat call spends the same budgets as the agent's live calls: ElevenLabs
+calls with the agent's **Voice calls** REST credential, so each turn counts
+against that credential and the workspace's REST agent-channel chat limits,
+which visitors' calls share, and the credential's last use and its
+`agent_api.chat` audit events include Test Chat turns. A busy round of testing
+can therefore slow live calls down to those limits.
 
 ElevenLabs keeps the call's recording in your account as it does for every
 call. Test Chat does not play it, and Radioso does not delete it; remove it in
@@ -1104,7 +1113,7 @@ The backend logs `Voice session language prepared` with the outcome, the
 ElevenLabs language code when the session sets one, and `durationMs`, or a
 warn when the ElevenLabs agent doesn't allow the override, answered late, or
 failed. It counts each started call on a connected agent in
-`voice_session_language_total` by `outcome`: `set`, `default` (the
+`voice_session_language_total` by `surface` (`website_embed`, `test_chat`) and `outcome`: `set`, `default` (the
 ElevenLabs agent starts calls in the session's language already),
 `unsupported` (one of the cases above), `not_allowed`, `timed_out` or
 `failed`. Each counts one read of the ElevenLabs agent, except an
@@ -1739,8 +1748,9 @@ session. A greeting that takes longer, or can't be read, leaves the call to
 open with the notice alone, or with the caller speaking first; the call itself
 always starts. The backend logs `Voice session greeting prepared`, or a warn
 when the greeting was late or failed, and counts each started call in
-`voice_session_greeting_total` by `outcome` (`spoken`, `none`, `timed_out`,
-`failed`), with ids and timings only, never the words.
+`voice_session_greeting_total` by `surface` (`website_embed`, `test_chat`) and
+`outcome` (`spoken`, `none`, `timed_out`, `failed`), with ids and timings only,
+never the words.
 
 The greeting the call says is not part of the call's conversation: the Inbox
 and Activity show the call from the caller's first words. The embed's panel

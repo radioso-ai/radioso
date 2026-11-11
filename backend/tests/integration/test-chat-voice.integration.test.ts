@@ -14,6 +14,7 @@ import {
   type VoiceTurnPort,
 } from "../../src/modules/voiceChannel/public.js";
 import type { VoiceTurnEvent, VoiceTurnInput } from "../../src/modules/voiceChannel/domain.js";
+import { testChatSessionKey } from "../../src/modules/voiceChannel/testChatSessionDomain.js";
 import { Database } from "../../src/shared/infra/database.js";
 import type { UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -48,6 +49,7 @@ describeIntegration("talking to the draft from Test Chat (#1536, Postgres)", () 
   const DRAFT = "Answer as the draft agent.";
 
   const reservations: Array<Parameters<UsageLimitPolicy["reserveAnswer"]>[0]> = [];
+  const audits: Array<{ eventType: string; metadata: Record<string, unknown> }> = [];
   /** The trusted runner's seam: it answers in the voice of the revision it was handed. */
   const stream = vi.fn<TrustedTestExecutionRunnerPort["stream"]>(async function* (input) {
     yield "Speaking. ";
@@ -64,6 +66,7 @@ describeIntegration("talking to the draft from Test Chat (#1536, Postgres)", () 
         return { commit: async () => undefined, release: async () => undefined };
       },
     },
+    audit: { record: async (event) => { audits.push(event); } },
     createId: randomUUID,
   });
 
@@ -81,7 +84,9 @@ describeIntegration("talking to the draft from Test Chat (#1536, Postgres)", () 
   });
 
   const turn = (session: VoiceSessionRef, utterance: string): VoiceTurnInput => ({ session, transport: "web", utterance, streamsSpeech: true });
+  /** A website start's session, and a Test Chat start's, whose key Radioso mints in Test Chat's namespace. */
   const sessionOf = (): VoiceSessionRef => ({ workspaceId, agentId, vendor: "elevenlabs", sessionKey: randomUUID() });
+  const testChatSessionOf = (): VoiceSessionRef => ({ ...sessionOf(), sessionKey: testChatSessionKey(randomUUID()) });
 
   const startTest = async (): Promise<string> => {
     const execution = await testExecutionService.start({
@@ -113,7 +118,7 @@ describeIntegration("talking to the draft from Test Chat (#1536, Postgres)", () 
 
   it("runs a Test Chat session's turn on the draft under test, while a website session's turn runs the published agent", async () => {
     const executionId = await startTest();
-    const testChat = sessionOf();
+    const testChat = testChatSessionOf();
     const website = sessionOf();
     const expiresAt = new Date(Date.now() + 60 * 60_000);
     await sessions.register({ session: testChat, test: { testExecutionId: executionId, accountId }, expiresAt, vendorAgent });
@@ -131,9 +136,10 @@ describeIntegration("talking to the draft from Test Chat (#1536, Postgres)", () 
 
   it("records the call's turns in the test as spoken, charges them as test runs, and leaves no conversation behind", async () => {
     const executionId = await startTest();
-    const testChat = sessionOf();
+    const testChat = testChatSessionOf();
     await sessions.register({ session: testChat, test: { testExecutionId: executionId, accountId }, expiresAt: new Date(Date.now() + 60_000), vendorAgent });
     reservations.length = 0;
+    audits.length = 0;
     const conversationsBefore = await database.query<{ count: string }>("SELECT count(*)::text AS count FROM conversations WHERE workspace_id = $1", [workspaceId]);
 
     await collect(router.runTurn(turn(testChat, "Do you open on Sundays?"), new AbortController().signal));
@@ -144,6 +150,8 @@ describeIntegration("talking to the draft from Test Chat (#1536, Postgres)", () 
       expect.objectContaining({ role: "assistant", content: `Speaking. ${DRAFT}`, spoken: true }),
     ]);
     expect(reservations).toEqual([{ accountId, workspaceId, surface: "test_execution", usage: "test_run" }]);
+    // The test settles the spoken turn and audits it, as it does a typed one.
+    expect(audits).toEqual([expect.objectContaining({ eventType: "agent.test_execution.completed", metadata: expect.objectContaining({ executionId }) })]);
     const conversationsAfter = await database.query<{ count: string }>("SELECT count(*)::text AS count FROM conversations WHERE workspace_id = $1", [workspaceId]);
     expect(conversationsAfter[0]?.count).toBe(conversationsBefore[0]?.count);
     await expect(sessions.findConversationId(testChat)).resolves.toBeNull();
@@ -151,7 +159,7 @@ describeIntegration("talking to the draft from Test Chat (#1536, Postgres)", () 
 
   it("never lets a Test Chat session bind a conversation, join a visitor, or take a recording report", async () => {
     const executionId = await startTest();
-    const testChat = sessionOf();
+    const testChat = testChatSessionOf();
     await sessions.register({ session: testChat, test: { testExecutionId: executionId, accountId }, expiresAt: new Date(Date.now() + 60_000), vendorAgent });
     const conversationId = randomUUID();
     await database.query("INSERT INTO conversations (id, workspace_id, agent_id, source_channel) VALUES ($1, $2, $3, 'voice')", [conversationId, workspaceId, agentId]);
@@ -164,8 +172,8 @@ describeIntegration("talking to the draft from Test Chat (#1536, Postgres)", () 
 
   it("refuses turns once the test is gone or the session's window passed, and never runs them as a conversation", async () => {
     const goneExecutionId = await startTest();
-    const gone = sessionOf();
-    const ended = sessionOf();
+    const gone = testChatSessionOf();
+    const ended = testChatSessionOf();
     await sessions.register({ session: gone, test: { testExecutionId: goneExecutionId, accountId }, expiresAt: new Date(Date.now() + 60_000), vendorAgent });
     await sessions.register({ session: ended, test: { testExecutionId: await startTest(), accountId }, expiresAt: new Date(Date.now() - 1_000), vendorAgent });
     await database.query("DELETE FROM agent_test_executions WHERE id = $1", [goneExecutionId]);
@@ -178,19 +186,19 @@ describeIntegration("talking to the draft from Test Chat (#1536, Postgres)", () 
     await expect(sessions.findTestChatBinding(gone)).resolves.toMatchObject({ testExecutionId: goneExecutionId });
   });
 
-  it("keeps a Test Chat session's row past its window when the next start clears out unbound rows, then lets it go", async () => {
-    const lingering = sessionOf();
-    const stale = sessionOf();
+  it("refuses a late turn on a Test Chat session whose row a start's cleanup removed, and never runs it as a conversation", async () => {
+    const lapsed = testChatSessionOf();
     const visitorStart = sessionOf();
-    await sessions.register({ session: lingering, test: { testExecutionId: randomUUID(), accountId }, expiresAt: new Date(Date.now() - 60_000), vendorAgent });
-    await sessions.register({ session: stale, test: { testExecutionId: randomUUID(), accountId }, expiresAt: new Date(Date.now() - 25 * 60 * 60_000), vendorAgent });
+    await sessions.register({ session: lapsed, test: { testExecutionId: await startTest(), accountId }, expiresAt: new Date(Date.now() - 60_000), vendorAgent });
     await sessions.register({ session: visitorStart, visitor: { publicSessionId: randomUUID(), visitorKey: null }, expiresAt: new Date(Date.now() - 60_000), vendorAgent });
 
+    // The next start clears out expired starts, the Test Chat one included, as an older revision's cleanup does.
     await sessions.register({ session: sessionOf(), visitor: { publicSessionId: randomUUID(), visitorKey: null }, expiresAt: new Date(Date.now() + 60_000), vendorAgent });
+    await expect(sessions.findTestChatBinding(lapsed)).resolves.toBeNull();
+    expect(await database.query("SELECT 1 FROM voice_sessions WHERE session_key = $1", [visitorStart.sessionKey])).toHaveLength(0);
+    conversationTurns.mockClear();
 
-    await expect(sessions.findTestChatBinding(lingering)).resolves.not.toBeNull();
-    await expect(sessions.findTestChatBinding(stale)).resolves.toBeNull();
-    const visitorRows = await database.query("SELECT 1 FROM voice_sessions WHERE session_key = $1", [visitorStart.sessionKey]);
-    expect(visitorRows).toHaveLength(0);
+    await expect(collect(router.runTurn(turn(lapsed, "Are you still there?"), new AbortController().signal))).rejects.toMatchObject({ statusCode: 404 });
+    expect(conversationTurns).not.toHaveBeenCalled();
   });
 });

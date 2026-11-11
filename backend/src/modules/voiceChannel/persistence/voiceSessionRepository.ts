@@ -1,5 +1,5 @@
 import { isVoiceVendor, isVoiceVendorRegion, type VoiceVendor } from "../../../shared/domain/voiceVendor.js";
-import { currentTimestamp, isUniqueViolation, nowMinusSeconds } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, isUniqueViolation } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
   VoiceRecordingLocation,
@@ -24,12 +24,6 @@ interface RecordingRow {
 }
 
 /** A row that names a recording a vendor adapter can reach; anything else names none. */
-/**
- * How long a Test Chat session's row outlives its window: past it the row's turns are refused, and
- * while the row stays they cannot reach the conversation path. A call is far shorter than a day.
- */
-const TEST_CHAT_SESSION_RETENTION_SECONDS = 24 * 60 * 60;
-
 const locationOf = (row: RecordingRow): VoiceRecordingLocation | null =>
   row.vendor_conversation_id && isVoiceVendor(row.vendor) && row.vendor_region && isVoiceVendorRegion(row.vendor_region)
     ? { vendor: row.vendor, region: row.vendor_region, vendorConversationId: row.vendor_conversation_id }
@@ -93,8 +87,9 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
   /**
    * Records a started session, and clears out the agent's unbound rows (starts whose first turn
    * never came, and sessions whose conversation was deleted), and the workspace's from agents since
-   * deleted. A row whose page reported a recording stays, and a Test Chat session's row stays for a
-   * day past its window, so a call that outlasts it is refused rather than read as a page's own.
+   * deleted. A row whose page reported a recording stays. A Test Chat session's row goes once its
+   * window has passed like any other start; its key stays in Test Chat's namespace, so a later turn is
+   * refused all the same.
    */
   async register(start: Parameters<VoiceSessionStartRegistry["register"]>[0]): Promise<void> {
     const { session } = start;
@@ -105,10 +100,6 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
       .where("conversation_id", "is", null)
       .where("vendor_conversation_id", "is", null)
       .where((eb) => eb.or([eb("start_expires_at", "<", currentTimestamp()), eb("start_expires_at", "is", null)]))
-      .where((eb) => eb.or([
-        eb("test_execution_id", "is", null),
-        eb("start_expires_at", "<", nowMinusSeconds(TEST_CHAT_SESSION_RETENTION_SECONDS)),
-      ]))
       .execute();
     await this.db
       .insertInto("voice_sessions")

@@ -20,7 +20,6 @@ describe('content security policy', () => {
 
   it('keeps WebAssembly compilation out of the dashboard', async () => {
     expect(await scriptSrcFor('/:path*')).not.toContain('wasm-unsafe-eval')
-    expect(await scriptSrcFor('/w/:path*')).not.toContain('wasm-unsafe-eval')
   })
 })
 
@@ -30,8 +29,11 @@ describe('permissions policy', () => {
     return rules.find((rule) => rule.source === source)?.headers.find((header) => header.key === 'Permissions-Policy')?.value
   }
 
-  it("lets the dashboard's own pages ask for the microphone, for Test Chat's Talk, and nothing else on the site", async () => {
-    expect(await permissionsFor('/w/:path*')).toContain('microphone=(self)')
-    expect(await permissionsFor('/:path*')).toContain('microphone=()')
+  // The policy is fixed when a document loads, and the dashboard is entered through `/`, `/login` or
+  // an invitation and moved to `/w/...` on the client, so the page the operator lands on must allow it.
+  it("lets every page of the app's own origin ask for the microphone, and no frame of another origin", async () => {
+    for (const source of ['/:path*', '/embed/:path*', '/embed-frame']) {
+      expect(await permissionsFor(source)).toBe('camera=(), microphone=(self), geolocation=()')
+    }
   })
 })

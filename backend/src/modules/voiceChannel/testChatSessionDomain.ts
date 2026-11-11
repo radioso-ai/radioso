@@ -54,3 +54,14 @@ export interface VoiceTestChatTurns {
     signal: AbortSignal;
   }): AsyncIterable<VoiceTestChatTurnEvent>;
 }
+
+/**
+ * Radioso mints a Test Chat session's key as a UUID of version 8 (RFC 9562's custom version) and a
+ * website start's as version 4, so a turn tells a Test Chat session apart by its key alone, even once
+ * its row is gone, and never runs one as a conversation. `uuid` is a freshly minted version 4 UUID.
+ */
+export const testChatSessionKey = (uuid: string): string => `${uuid.slice(0, 14)}8${uuid.slice(15)}`;
+
+const TEST_CHAT_SESSION_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const isTestChatSessionKey = (sessionKey: string): boolean => TEST_CHAT_SESSION_KEY.test(sessionKey);

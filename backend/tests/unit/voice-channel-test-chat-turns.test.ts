@@ -11,6 +11,7 @@ import {
   type VoiceTurnPort,
 } from "../../src/modules/voiceChannel/domain.js";
 import { TestChatVoiceTurnService, VoiceSessionTurnRouter } from "../../src/modules/voiceChannel/public.js";
+import { isTestChatSessionKey, testChatSessionKey } from "../../src/modules/voiceChannel/testChatSessionDomain.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -18,7 +19,11 @@ const testExecutionId = "77777777-7777-4777-8777-777777777777";
 const accountId = "88888888-8888-4888-8888-888888888888";
 const now = Date.parse("2026-11-11T12:00:00.000Z");
 
-const turnInput = (utterance = "Do you open on Sundays?", sessionKey = "33333333-3333-4333-8333-333333333333"): VoiceTurnInput => ({
+/** A key Radioso minted for a Test Chat session, and one a website start or a page minted. */
+const TEST_CHAT_KEY = testChatSessionKey("33333333-3333-4333-8333-333333333333");
+const WEBSITE_KEY = "33333333-3333-4333-8333-333333333333";
+
+const turnInput = (utterance = "Do you open on Sundays?", sessionKey = TEST_CHAT_KEY): VoiceTurnInput => ({
   session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey },
   transport: "web",
   utterance,
@@ -152,8 +157,77 @@ describe("a Test Chat voice turn (#1536)", () => {
   });
 });
 
+describe("a Test Chat voice turn that waits (#1536 review)", () => {
+  /** A test whose first utterance is held until released, recording which utterances it ran. */
+  const heldTest = () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const asked: string[] = [];
+    const streamTurn = vi.fn<VoiceTestChatTurns["streamTurn"]>(async function* (input) {
+      asked.push(input.utterance);
+      if (input.utterance === "first") await held;
+      yield { type: "answered", answer: `Answer to ${input.utterance}.` };
+    });
+    return { turns: { streamTurn }, asked, release };
+  };
+
+  it("lets a newer utterance replace one still waiting, which then ends without running or being charged", async () => {
+    const { turns, asked, release } = heldTest();
+    const service = new TestChatVoiceTurnService({ turns, logger: { info: vi.fn(), warn: vi.fn() }, now: () => now });
+
+    const first = collect(service.runTurn(turnInput("first"), binding(), new AbortController().signal));
+    await vi.waitFor(() => expect(asked).toEqual(["first"]));
+    const second = collect(service.runTurn(turnInput("second"), binding(), new AbortController().signal));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const third = collect(service.runTurn(turnInput("third"), binding(), new AbortController().signal));
+
+    expect(await second).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+    release();
+    expect(spoken(await first)).toBe("Answer to first.");
+    expect(spoken(await third)).toBe("Answer to third.");
+    expect(asked).toEqual(["first", "third"]);
+  });
+
+  it.each([
+    ["the runtime hung up on it", "hungUp"],
+    ["its request was aborted", "signal"],
+  ] as const)("runs no turn for a waiting utterance once %s", async (_case, which) => {
+    const { turns, asked, release } = heldTest();
+    const service = new TestChatVoiceTurnService({ turns, logger: { info: vi.fn(), warn: vi.fn() }, now: () => now });
+    const first = collect(service.runTurn(turnInput("first"), binding(), new AbortController().signal));
+    await vi.waitFor(() => expect(asked).toEqual(["first"]));
+    const request = new AbortController();
+    const hangUp = new AbortController();
+    const second = collect(service.runTurn(turnInput("second"), binding(), request.signal, hangUp.signal));
+
+    (which === "hungUp" ? hangUp : request).abort();
+    release();
+
+    expect(await second).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+    await first;
+    expect(asked).toEqual(["first"]);
+  });
+
+  it("reads the test's turn to its end before the outcome, so the test settles and audits it", async () => {
+    let drained = false;
+    const streamTurn = vi.fn<VoiceTestChatTurns["streamTurn"]>(async function* () {
+      yield { type: "answered", answer: "We open at nine." };
+      // What the test does after the answer: it reads its settled state and audits the turn.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      drained = true;
+    });
+    const service = new TestChatVoiceTurnService({ turns: { streamTurn }, logger: { info: vi.fn(), warn: vi.fn() }, now: () => now });
+
+    const seen: Array<{ event: VoiceTurnEvent; drained: boolean }> = [];
+    for await (const event of service.runTurn(turnInput(), binding(), new AbortController().signal)) seen.push({ event, drained });
+
+    expect(seen.at(-1)).toEqual({ event: { type: "outcome", outcome: { kind: "continue" } }, drained: true });
+    expect(spoken(seen.map(({ event }) => event))).toBe("We open at nine.");
+  });
+});
+
 describe("the voice turn router (#1536)", () => {
-  const routerWith = (lookup: () => Promise<VoiceTestChatBinding | null>) => {
+  const routerWith = (lookup: (session: VoiceTurnInput["session"]) => Promise<VoiceTestChatBinding | null>) => {
     const conversations = conversationPath();
     const testChat = { runTurn: vi.fn<TestChatVoiceTurnService["runTurn"]>(async function* () {
       yield { type: "speech", text: "The draft answers.", last: true };
@@ -170,14 +244,31 @@ describe("the voice turn router (#1536)", () => {
     return { router, conversations, testChat, logger };
   };
 
-  it("runs a session no Test Chat start names as a conversation on the published agent", async () => {
-    const { router, conversations, testChat } = routerWith(async () => null);
-    const input = turnInput();
+  it("runs a session outside Test Chat's key namespace as a conversation on the published agent, without a lookup", async () => {
+    const lookup = vi.fn(async () => binding());
+    const { router, conversations, testChat } = routerWith(lookup);
+    const input = turnInput("Hello", WEBSITE_KEY);
     const signal = new AbortController().signal;
+    const hungUp = new AbortController().signal;
 
-    expect(spoken(await collect(router.runTurn(input, signal)))).toBe("The published agent answers.");
-    expect(conversations.runTurn).toHaveBeenCalledWith(input, signal, undefined);
+    expect(spoken(await collect(router.runTurn(input, signal, hungUp)))).toBe("The published agent answers.");
+    expect(conversations.runTurn).toHaveBeenCalledWith(input, signal, hungUp);
     expect(testChat.runTurn).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("refuses a Test Chat key whose session row is gone, and never runs it as a conversation", async () => {
+    const { router, conversations, testChat } = routerWith(async () => null);
+
+    await expect(collect(router.runTurn(turnInput(), new AbortController().signal))).rejects.toMatchObject({ statusCode: 404 });
+    expect(conversations.runTurn).not.toHaveBeenCalled();
+    expect(testChat.runTurn).not.toHaveBeenCalled();
+  });
+
+  it("mints Test Chat keys in their own namespace, apart from a website start's", () => {
+    expect(isTestChatSessionKey(TEST_CHAT_KEY)).toBe(true);
+    expect(isTestChatSessionKey(WEBSITE_KEY)).toBe(false);
+    expect(isTestChatSessionKey("conv_01jabcdef")).toBe(false);
   });
 
   it("runs a Test Chat session's turn on its test, never on the published agent's path", async () => {
@@ -185,9 +276,10 @@ describe("the voice turn router (#1536)", () => {
     const { router, conversations, testChat } = routerWith(async () => bound);
     const input = turnInput();
     const signal = new AbortController().signal;
+    const hungUp = new AbortController().signal;
 
-    expect(spoken(await collect(router.runTurn(input, signal)))).toBe("The draft answers.");
-    expect(testChat.runTurn).toHaveBeenCalledWith(input, bound, signal);
+    expect(spoken(await collect(router.runTurn(input, signal, hungUp)))).toBe("The draft answers.");
+    expect(testChat.runTurn).toHaveBeenCalledWith(input, bound, signal, hungUp);
     expect(conversations.runTurn).not.toHaveBeenCalled();
   });
 

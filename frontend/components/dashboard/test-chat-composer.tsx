@@ -105,8 +105,10 @@ export function TestChatComposer({
   useEffect(() => {
     talkRef.current = talk
   }, [talk])
-  // The test the current call runs on, known once its start has prepared one.
-  const callExecutionRef = useRef<string | null>(null)
+  // The test the last call's start resolved to, cleared when Talk is pressed: until a call's own
+  // start resolves, no earlier call's test can end it. `press` tells a stale start from the current one.
+  const [callExecution, setCallExecution] = useState<string | null>(null)
+  const pressRef = useRef(0)
 
   const refresh = useCallback((executionId: string) => {
     const read = (attemptsLeft: number) => {
@@ -123,31 +125,35 @@ export function TestChatComposer({
   const voice = useVoiceSession({
     calls: {
       startSession: async () => {
+        const press = pressRef.current
         const executionId = await talkRef.current?.prepareExecution()
         if (!executionId) return { kind: 'refused' }
-        callExecutionRef.current = executionId
-        return startTestChatVoiceSession(agentId, executionId)
+        const start = await startTestChatVoiceSession(agentId, executionId)
+        if (start.kind === 'started' && pressRef.current === press) setCallExecution(executionId)
+        return start
       },
     },
     precedingMessageIds: noPrecedingMessages,
     offered: talkShown,
   })
-  const { stop: stopCall, isActive: callActive } = voice
+  const { stop: stopCall, isActive: callActive, talk: startCall } = voice
+  const pressTalk = () => {
+    pressRef.current += 1
+    setCallExecution(null)
+    startCall()
+  }
 
   // Each line said on the call follows a turn the test records; the call's end settles the last one.
   const lineCount = voice.lines.length
-  const callStatus = voice.state.status
   useEffect(() => {
-    const executionId = callExecutionRef.current
-    if (executionId && (lineCount > 0 || callStatus === 'ended')) refresh(executionId)
-  }, [callStatus, lineCount, refresh])
+    if (callExecution && (!callActive || lineCount > 0)) refresh(callExecution)
+  }, [callActive, callExecution, lineCount, refresh])
 
-  // A call belongs to its test: opening another test, or a new chat, ends it.
+  // A call belongs to its test: once its start has resolved, opening another test or a new chat ends it.
   const visibleExecutionId = talk?.executionId ?? null
   useEffect(() => {
-    const callExecution = callExecutionRef.current
     if (callActive && callExecution && visibleExecutionId !== callExecution) stopCall()
-  }, [callActive, stopCall, visibleExecutionId])
+  }, [callActive, callExecution, stopCall, visibleExecutionId])
 
   const submitOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
@@ -175,7 +181,7 @@ export function TestChatComposer({
               <VoiceTalkButton
                 theme={DASHBOARD_CALL_THEME}
                 copy={DEFAULT_WEBSITE_EMBED_COPY}
-                onPress={voice.talk}
+                onPress={pressTalk}
                 disabled={readiness.kind !== 'ready' || !canSend}
                 describedBy={readiness.kind === 'not_ready' ? hintId : undefined}
               />

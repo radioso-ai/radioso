@@ -9,7 +9,7 @@ import { requireWorkspacePermission } from "../../app/http/middleware/requirePer
 import { requireApiAccessCsrf } from "../../app/http/middleware/requireApiAccessCsrf.js";
 import { requireJsonContentType } from "../../app/http/middleware/requireJsonContentType.js";
 import { createRateLimitMiddleware, type RateLimitAbuseControlPort, type RateLimitAuditPort } from "../../app/http/middleware/rateLimit.js";
-import { validateBody } from "../../app/http/middleware/validate.js";
+import { validateBody, validateQuery } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound } from "../../shared/domain/errors.js";
 import type { CopilotStoredProposalTargetType } from "./contracts.js";
 import type { CopilotProposalTargetTypeSet } from "./proposalContribution.js";
@@ -20,6 +20,8 @@ import type { AccountPermission } from "../account/public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
 import { presentReviewedOperationSnapshot, reviewCodeFor } from "./reviewedOperation.js";
+import type { CopilotEmptyStateService } from "./services/emptyStateService.js";
+import { workspaceSetupStatePermissions } from "./tools/workspaceSetupState.js";
 
 /**
  * These routes are the dashboard panel and nothing else — they reject bearer auth and require a
@@ -28,6 +30,8 @@ import { presentReviewedOperationSnapshot, reviewCodeFor } from "./reviewedOpera
 const DASHBOARD_SURFACE = "dashboard" as const;
 
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
+/** A locale tag is a language the operator's browser reports; anything else would be prompt text. */
+const emptyStateQuerySchema = z.object({ locale: z.string().max(35).regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/u).optional() }).strict();
 const proposalParamsSchema = z.object({ proposalId: z.string().uuid() });
 const approveProposalSchema = z.object({ reviewDigest: z.string().min(1).max(200) }).strict();
 const dismissProposalSchema = z.object({ reason: z.literal("declined").optional() }).strict();
@@ -67,6 +71,7 @@ interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
   };
   llmCapabilityResolver: ChatCapabilityProbePort;
   operatorCopilotService: OperatorCopilotService;
+  copilotEmptyStateService: Pick<CopilotEmptyStateService, "get">;
   /** Read only for its permission declarations; the turn itself runs against the service's catalog. */
   copilotToolCatalog: ReadonlyArray<Pick<CopilotToolDescriptor, "requiredPermissions">>;
   /** The deployment's assembled target types, for which cards an operator may apply. */
@@ -84,7 +89,8 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   const proposalSession = requireSession(dependencies);
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
   const sessionOnly = rejectBearer();
-  const rateLimitTurn = copilotTurnRateLimiter(dependencies);
+  const rateLimitTurn = copilotOperatorRateLimiter(dependencies, { scope: "api.copilot_turn", route: "POST /api/v1/copilot/turns" });
+  const rateLimitEmptyState = copilotOperatorRateLimiter(dependencies, { scope: "api.copilot_empty_state", route: "GET /api/v1/copilot/empty-state" });
   const resolvableToolPermissions = copilotResolvableToolPermissions(dependencies.copilotToolCatalog);
   const proposalWorkspace: RequestHandler = async (req, res, next) => {
     try {
@@ -162,6 +168,18 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   router.get("/availability", async (_req, res, next) => {
     try { res.status(200).json(await availability(dependencies, res)); } catch (error) { next(error); }
   });
+  // The empty panel's greeting and chips. Needs a chat model like a turn does, so an unconfigured
+  // workspace gets the same 503 and the dashboard keeps showing "Connect an LLM".
+  router.get("/empty-state", rateLimitEmptyState, validateQuery(emptyStateQuerySchema), async (req, res, next) => {
+    try {
+      const { workspaceId, accountId, userId, principal } = sessionLocals(res);
+      try { await dependencies.llmCapabilityResolver.resolve("chat", { workspaceId }); } catch { res.status(503).json({ reason: "no_llm_capability" }); return; }
+      const { locale } = req.query as z.infer<typeof emptyStateQuerySchema>;
+      const permissions = new Set<string>();
+      for (const permission of workspaceSetupStatePermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) permissions.add(permission);
+      res.status(200).json(await dependencies.copilotEmptyStateService.get({ workspaceId, accountId, permissions, locale: locale ?? null }));
+    } catch (error) { next(error); }
+  });
   router.get("/conversations", async (_req, res, next) => {
     try { const { workspaceId, userId } = sessionLocals(res); res.status(200).json({ conversations: await dependencies.operatorCopilotService.list(workspaceId, userId) }); } catch (error) { next(error); }
   });
@@ -229,11 +247,11 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
  * The operator-scoped key matches how Ray's expensive tools already spend their budget, and gives
  * a Ray turn its own scope rather than competing with the operator's assistant and retrieval work.
  */
-const copilotTurnRateLimiter = (dependencies: CopilotRouteDependencies): RequestHandler =>
+const copilotOperatorRateLimiter = (dependencies: CopilotRouteDependencies, route: { scope: string; route: string }): RequestHandler =>
   createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
-    scope: "api.copilot_turn",
+    scope: route.scope,
     limit: dependencies.env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
     windowMs: dependencies.env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
     resolveSubjectKey: (_req, res) => {
@@ -246,7 +264,7 @@ const copilotTurnRateLimiter = (dependencies: CopilotRouteDependencies): Request
       return {
         accountId: locals.accountId ?? null,
         workspaceId: locals.workspaceId ?? null,
-        metadata: { principalType: "operator_copilot", operatorUserId: locals.userId, route: "POST /api/v1/copilot/turns" },
+        metadata: { principalType: "operator_copilot", operatorUserId: locals.userId, route: route.route },
       };
     },
   });

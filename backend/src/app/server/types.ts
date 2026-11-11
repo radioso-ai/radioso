@@ -163,7 +163,7 @@ import type {
   EmbeddingBindingResolverPort,
   EmbeddingCoverageReadPort,
 } from "../../modules/embeddingProfiles/public.js";
-import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import type { CopilotContextContributor, CopilotEmptyStateService, OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
 import type { OperatorMcpApplicationService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
@@ -456,6 +456,9 @@ export interface AppDependencies {
   chatInferencePipeline: ModelInferencePipeline;
   agentWizardService: AgentWizardService;
   operatorCopilotService: OperatorCopilotService;
+  /** Published beside the copilot prompt so the eval suite observes the same context a turn is given. */
+  copilotContextContributors: ReadonlyArray<CopilotContextContributor>;
+  copilotEmptyStateService: CopilotEmptyStateService;
   /**
    * The three pieces the copilot turn is assembled from, published alongside the service so the
    * behavioural eval suite can drive a real turn through the same catalog, prompt, and runner

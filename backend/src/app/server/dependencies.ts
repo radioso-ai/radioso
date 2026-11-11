@@ -37,7 +37,7 @@ import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/confi
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
-import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
+import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills } from "../../modules/agents/public.js";
 import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
 import {
   ConversationIngestService,
@@ -58,7 +58,6 @@ import { MetadataFieldSuggestionService } from "../../modules/settings/compositi
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
-import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
 import { OperatorMcpAuthorizationRepository } from "../../db/repositories/operatorMcpAuthorizationRepository.js";
 import type { AppDependencies } from "./types.js";
 import {
@@ -108,6 +107,8 @@ import {
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
+import { createCopilotContext } from "../composition/copilotContext.js";
+import { createCopilotEvidencePorts } from "../composition/copilotEvidencePorts.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { resolveCopilotContributions } from "../composition/copilotContributions.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
@@ -961,38 +962,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
     },
   });
-  const copilotReplayEvidenceRepository = new CopilotReplayEvidenceRepository(infrastructure.database.kysely);
-  const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
-  // Shared by the replay service (dates a run's baseline) and proposal-evidence resolution (reads
-  // an agent_skill proposal's captured baseline skill config) — both need the case's frozen
-  // snapshot, never the live agent.
-  const copilotEvalCaseReader = {
-    findCase: (workspaceId: string, caseId: string) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId),
-  };
-  // The live counterpart copilotEvalCaseReader's captured snapshot is compared against: an
-  // agent_skill proposal's evidence is stale when this drifts from what a cited case captured.
-  // A skill edit persists through agent_skills, a table agents.updated_at never reflects, so this
-  // reads the skill directly rather than leaning on copilotAgentVersion.
-  const copilotAgentSkillConfig = {
-    getDefaultAnswerSkill: async (workspaceId: string, agentId: string) => {
-      const skill = await agentSkillRepository.findDefaultAnswer(workspaceId, agentId);
-      return skill ? { enabled: skill.enabled, config: skill.config ?? {} } : null;
-    },
-  };
-  // Directive removal evidence needs a directive's real id and content from the live agent, never
-  // from a model-supplied replay override, so this reads through the same resolver the agent's
-  // own config serialization uses rather than trusting anything the copilot sends.
-  const copilotAgentDirectives = {
-    listDirectives: async (workspaceId: string, agentId: string) => {
-      const agent = await agentService.resolve(workspaceId, agentId);
-      // The port takes an opaque record — Ray's replay tool schema does too — so the widening from
-      // the agents module's typed config to that shape belongs at this composition boundary.
-      return serializeAuthoredDirectivesWithIds(agent).map((directive) => ({
-        id: directive.id,
-        config: directive.config as unknown as Record<string, unknown>,
-      }));
-    },
-  };
+  const {
+    replayEvidenceRepository: copilotReplayEvidenceRepository,
+    agentVersion: copilotAgentVersion,
+    evalCaseReader: copilotEvalCaseReader,
+    agentSkillConfig: copilotAgentSkillConfig,
+    agentDirectives: copilotAgentDirectives,
+  } = createCopilotEvidencePorts({ database: infrastructure.database.kysely, agentService, agentSkillRepository, evalCaseService });
   const evalCaseReplayService = new EvalCaseReplayService({
     cases: copilotEvalCaseReader,
     evidence: copilotReplayEvidenceRepository,
@@ -1158,7 +1134,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documents: documentReviewedOperations,
     logger,
   });
+  const copilotContext = createCopilotContext({ workspaceSetupState: workspace.workspaceSummaryService, capabilityRunner: copilotCapabilityRunner, usageLimitPolicy: infrastructure.usageLimitPolicy, prompt: copilotPrompt, workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver, logger });
   const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
+    contextContributors: copilotContext.contributors,
     repository: repositories.copilotRepository,
     capabilityRunner: copilotCapabilityRunner,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
@@ -1511,6 +1489,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     connectorDb: infrastructure.database,
     chatInferencePipeline,
     operatorCopilotService,
+    copilotContextContributors: copilotContext.contributors,
+    copilotEmptyStateService: copilotContext.emptyState,
     ...retentionWorkers,
     revisionEvalRunRetentionWorker,
     copilotToolCatalog,

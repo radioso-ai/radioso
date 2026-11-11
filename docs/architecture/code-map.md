@@ -762,6 +762,20 @@ say whether an interrupted apply may run again. The published OpenAPI enum lists
 the first-party types only, because the contract describes this repository's
 surfaces. Contributed propose tools stay off Operator MCP.
 
+What Ray should know on every turn, without choosing to look it up, arrives through
+context contributors (`context/contributor.ts`). The runtime asks each one once per
+turn and renders the blocks that answer into the system prompt, ahead of the
+safety boundaries; a contributor that fails costs the turn its block, not the turn.
+The workspace-setup contributor reads the same `CopilotWorkspaceSetupStatePort`
+that `workspace_setup_state` reads, through `WorkspaceSummaryService.getSetupSignals`:
+existence checks rather than the counts `GET /workspace/summary` reports, because
+it runs on every turn. It derives the next incomplete steps, each with
+the dashboard path that completes it (`dashboardLinks.ts`). The empty panel's
+greeting and suggestions come from that same derivation through
+`services/emptyStateService.ts`: the module decides which steps may be offered and
+where each one is completed, and the model writes only the words, in the
+operator's language, from `backend/prompts/copilot/empty-state.md`.
+
 Ray's operational envelope has three parts, all keyed off the turn/tool boundary.
 Every operator-initiated `copilot.*` audit event carries the operator principal
 and the calling surface; the retention sweep, which no operator starts, says
@@ -833,6 +847,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/workspaceSettingProposals.ts`, `contracts/workspaceSettingAuthoring.ts`, and `workspaceSettingProposalAdapter.ts` (`propose_workspace_setting`), applying through `backend/src/modules/settings/services/platformSettingsService.ts` via the token-dropping port in `backend/src/app/composition/copilotToolCatalog.ts`; the reach signal it puts on the card is read back in `backend/src/db/repositories/copilotRepository.ts`
 - `backend/src/modules/operatorCopilot/tools/websiteCrawlProposals.ts`, `contracts/websiteCrawlAuthoring.ts`, and `websiteCrawlProposalAdapter.ts` (`start_crawl`)
 - `backend/src/modules/operatorCopilot/tools/agentProposals.ts`, `contracts/agentAuthoring.ts`, `agentProposalAdapter.ts`, and `services/websiteAnalysisProbeService.ts` (`analyze_website`, `propose_agent`; the wizard service they reach is composed in `backend/src/app/server/dependencies.ts` and shared with `backend/src/modules/agentWizard/`)
+- `backend/src/modules/operatorCopilot/context/contributor.ts` and `context/workspaceSetup.ts`, `turnPrompt.ts` (system prompt and turn input assembly), `services/emptyStateService.ts`, `backend/prompts/copilot/empty-state.md`, and `backend/src/app/composition/copilotContext.ts` (the setup-aware empty state and the per-turn setup context; `GET /api/v1/copilot/empty-state`)
+- `frontend/components/dashboard/copilot-empty-state.tsx` and `frontend/lib/copilot-empty-state.ts` (what the empty panel shows from the server's state and the screen)
 - `backend/src/modules/operatorCopilot/proposalEvidence.ts` and `services/proposalEvidenceService.ts` (replay evidence carried on a proposal)
 - `backend/src/db/repositories/copilotReplayEvidenceRepository.ts` (evidence rows a proposal cites)
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)
@@ -860,7 +876,7 @@ Focused checks:
 - `cd backend && pnpm run evals:copilot:ci` — live Ray behaviour run, sampled (needs Postgres and
   `OPENAI_API_KEY`); on demand, not per-PR
 - `cd backend && pnpm run lint:boundaries`
-- `cd frontend && pnpm exec vitest run tests/unit/api-copilot.test.ts tests/unit/copilot-context.test.ts tests/unit/copilot-proposal-card.test.ts tests/unit/copilot-proposal-card-render.test.tsx`
+- `cd frontend && pnpm exec vitest run tests/unit/api-copilot.test.ts tests/unit/copilot-context.test.ts tests/unit/copilot-empty-state.test.ts tests/unit/copilot-proposal-card.test.ts tests/unit/copilot-proposal-card-render.test.tsx`
 
 Related docs, specs, and issues:
 

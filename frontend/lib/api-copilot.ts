@@ -49,6 +49,24 @@ export interface CopilotAvailability {
   applyableProposalTargets?: CopilotProposalTargetType[]
 }
 
+/**
+ * What Ray's empty panel shows. While setup is open (`phase: 'setup'`) every suggestion is a next
+ * incomplete step with the dashboard path that completes it; once setup is over it is a set of
+ * open-ended requests to send Ray. `greeting` is null when there is no copy to show.
+ * `firstConversationHappened` is the only thing that licenses retrospective copy: null means the
+ * server could not say, which reads as no.
+ */
+export type CopilotEmptySuggestion =
+  | { kind: 'setup_step'; step: string; text: string; href: string }
+  | { kind: 'prompt'; intent: string; text: string }
+
+export interface CopilotEmptyState {
+  phase: 'setup' | 'open'
+  firstConversationHappened: boolean | null
+  greeting: string | null
+  suggestions: CopilotEmptySuggestion[]
+}
+
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
@@ -428,6 +446,11 @@ export const copilotApi = {
       signal,
       headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined,
     }, { withSession: true })
+  },
+
+  getEmptyState(locale: string | null, signal?: AbortSignal): Promise<CopilotEmptyState> {
+    const query = locale ? `?locale=${encodeURIComponent(locale)}` : ''
+    return request<CopilotEmptyState>(copilotPath(`/empty-state${query}`), { method: 'GET', signal }, { withSession: true })
   },
 
   listConversations(signal?: AbortSignal): Promise<{ conversations: CopilotConversationSummary[] }> {

@@ -57859,6 +57859,163 @@
         }
       }
     },
+    "/api/v1/copilot/empty-state": {
+      "get": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "Read the greeting and suggestions Ray's empty panel shows",
+        "description": "Dashboard session only; bearer API tokens are rejected. The structure comes from the workspace setup state: while setup is open, each suggestion names a next incomplete step with the dashboard path that completes it; once setup is complete or dismissed, suggestions are open-ended requests to send Ray. The model writes only the words, in the requested locale. `greeting` is null when there is no copy to show.",
+        "operationId": "getCopilotEmptyState",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 35,
+              "description": "A BCP 47 language tag naming the language to write in, such as `fr` or `pt-BR`."
+            },
+            "required": false,
+            "description": "A BCP 47 language tag naming the language to write in, such as `fr` or `pt-BR`.",
+            "name": "locale",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Empty state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "setup",
+                        "open"
+                      ]
+                    },
+                    "firstConversationHappened": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ],
+                      "description": "Whether any conversation exists. A client shows retrospective copy only when this is true; null means the server could not say, which reads as no."
+                    },
+                    "greeting": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suggestions": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "setup_step"
+                                ]
+                              },
+                              "step": {
+                                "type": "string",
+                                "enum": [
+                                  "purpose",
+                                  "documents",
+                                  "conversation",
+                                  "directives_or_routines",
+                                  "notify_destination",
+                                  "credential"
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string",
+                                "description": "The dashboard path that completes the step."
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "step",
+                              "text",
+                              "href"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "prompt"
+                                ]
+                              },
+                              "intent": {
+                                "type": "string",
+                                "enum": [
+                                  "crawl_more",
+                                  "tighten_tone",
+                                  "draft_routine"
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "intent",
+                              "text"
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "phase",
+                    "firstConversationHappened",
+                    "greeting",
+                    "suggestions"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The locale is not a language tag"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "429": {
+            "description": "Copilot rate limit exceeded for this operator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No LLM capability"
+          }
+        }
+      }
+    },
     "/api/v1/copilot/conversations": {
       "get": {
         "tags": [

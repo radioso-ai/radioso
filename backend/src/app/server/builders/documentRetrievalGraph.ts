@@ -229,6 +229,7 @@ export const buildDocumentRetrievalGraph = (input: {
       dropUnusedIndexes: () => pgVectorAdapter.admin.dropUnusedIndexes(),
     },
     workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
+    workspaceTimeZones,
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const skillSettingsResolver = createRetrievalSkillSettingsResolver();

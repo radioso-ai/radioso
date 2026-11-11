@@ -11,7 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { InboxBulkDismissBar } from './inbox-bulk-dismiss-bar'
 import { InboxQueueRow, InboxRecentlyClosedRow } from './inbox-queue-row'
+import type { BulkDismissController } from './use-bulk-dismiss'
 import {
   TAKEN_BY_ANYONE,
   TAKEN_BY_ME,
@@ -55,6 +57,10 @@ interface InboxQueueProps {
   channelOptions: InboxChannelOption[]
   operatorOptions: InboxOperatorOption[]
   now: Date
+  /** The signed-in teammate, so a row a teammate holds looks different from one I hold. */
+  currentUserId: string | null
+  /** Selection and one-action dismissal of the feedback rows. */
+  bulkDismiss: BulkDismissController
   selectedKey: string | null
   selectedRecentlyClosedKey: string | null
   onSelect: (item: InboxItem) => void
@@ -73,6 +79,8 @@ export function InboxQueue({
   channelOptions,
   operatorOptions,
   now,
+  currentUserId,
+  bulkDismiss,
   selectedKey,
   selectedRecentlyClosedKey,
   onSelect,
@@ -184,17 +192,24 @@ export function InboxQueue({
             </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {items.map((item) => (
-              <InboxQueueRow
-                key={item.key}
-                item={item}
-                now={now}
-                selected={item.key === selectedKey}
-                onSelect={onSelect}
-              />
-            ))}
-          </div>
+          <>
+            <InboxBulkDismissBar bulk={bulkDismiss} />
+            <div className="flex flex-col gap-2">
+              {items.map((item) => (
+                <InboxQueueRow
+                  key={item.key}
+                  item={item}
+                  now={now}
+                  currentUserId={currentUserId}
+                  selected={item.key === selectedKey}
+                  onSelect={onSelect}
+                  bulkSelection={bulkDismiss.isSelectable(item)
+                    ? { checked: bulkDismiss.isSelected(item), onToggle: bulkDismiss.toggle }
+                    : undefined}
+                />
+              ))}
+            </div>
+          </>
         )}
 
         {recentlyClosed.length > 0 ? (

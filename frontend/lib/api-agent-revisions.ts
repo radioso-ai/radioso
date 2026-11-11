@@ -1,4 +1,5 @@
 import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api-client'
+import { withUserTimeZone } from './browser-time-zone'
 import { createClientId } from './client-id'
 import type { AgentGreetingDraft, TurnTraceEnvelope } from './api-types'
 import type { EvalSnapshot } from './api-eval'
@@ -237,7 +238,7 @@ export const agentRevisionsApi = {
       method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify(input),
+      body: JSON.stringify(withUserTimeZone(input)),
       signal,
     })
     if (!response.ok) throw await buildError(response)
@@ -252,7 +253,7 @@ export const agentRevisionsApi = {
       method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify(input),
+      body: JSON.stringify(withUserTimeZone(input)),
       signal,
     })
     if (!response.ok) throw await buildError(response)

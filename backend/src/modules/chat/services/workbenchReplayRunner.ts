@@ -244,6 +244,8 @@ export interface WorkbenchReplayInput {
   pageContext?: AssistantPageContext | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;
   userExpectedLocale?: string | null;
+  /** The IANA zone of the person chatting, when their client reports one; read before the workspace's zone. */
+  visitorTimeZone?: string | null;
   routineStartState?: WorkbenchReplayRoutineStartState | null;
   pendingClarificationStartState?: Omit<import("@radioso/conversation-contract").PendingClarification, "sessionId"> | null;
   directiveStateStartState?: import("../../directives/public.js").DirectiveFiringState | null;
@@ -411,6 +413,7 @@ export class WorkbenchReplayRunner {
         input.pageContext,
       ),
       sourceChannel: "workbench_replay",
+      visitorTimeZone: input.visitorTimeZone,
       executionMode: input.executionMode,
       skillEffects: input.skillEffects,
       // This runner builds the ephemeral in-memory effect profile (createEphemeralChatTurnEffectProfile)

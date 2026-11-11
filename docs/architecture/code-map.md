@@ -1224,11 +1224,21 @@ Related docs:
 
 Owns the zone a turn reads "today" in (#1600), so "tomorrow" and "this weekend"
 mean the visitor's day. `shared/domain/referenceTimeZone.ts` holds the one rule:
-the visitor's IANA zone when their client reports a valid one, else the
-workspace's (`workspaces.time_zone`, null for UTC), else UTC, validated with
-`Intl` and never throwing. The website embed and hosted chat page send the
-browser's zone as `pageContext.browserTimeZone`; the chat APIs and Ray's
-`test_agent_turn` take `userTimeZone`. A chat turn resolves the zone once in the
+the visitor's IANA zone when their client reports a valid one, else the zone the
+conversation last ran in (only a turn with no live visitor request names one),
+else the workspace's (`workspaces.time_zone`, null for UTC), else UTC, validated
+with `Intl` and never throwing. The website embed and hosted chat page send the
+browser's zone as `pageContext.browserTimeZone`; the chat APIs, Ray's
+`test_agent_turn` and `send_test_chat_message`, and Test Chat's message and
+retry requests take `userTimeZone` (Test Chat's reaches the replay as the
+visitor's zone). A visitor
+message that arrives with a valid zone records it in its metadata
+(`userMessageTurnMetadata`); a routine resumed by an approval click
+(`ApprovalResumeTurn`) reads it back from the conversation's last visitor
+message as the `conversation` source, and records the source on a
+`reference-time-zone` trace stage. Document enrichment
+(`DocumentProcessingService.processEnrichment`) reads the workspace zone to date
+the document's creation, which the enrichment prompt anchors relative dates to. A chat turn resolves the zone once in the
 session preparer and hands it to the planner, the turn interpreter, the
 retrieval request, and the conversation engine as `referenceTimeZone`, which
 rides on every `TurnContext` of the turn, so a routine's date slots
@@ -1236,13 +1246,15 @@ rides on every `TurnContext` of the turn, so a routine's date slots
 retrieval run reads the workspace zone in `RetrievalPipelineService.interpret`,
 and a turn without a zone reads UTC in the packages. Every "today" downstream is
 `formatIsoDate`/`formatPromptDate` (`shared/domain/clock.ts`) in that zone. The
-trace's context stage records `timeZoneSource` (`visitor`, `workspace`,
-`default`), never the zone.
+trace's context stage records `timeZoneSource` (`visitor`, `conversation`,
+`workspace`, `default`), never the zone.
 
 Public surfaces and key files:
 
 - `backend/src/shared/domain/referenceTimeZone.ts`, `backend/src/shared/domain/clock.ts`
-- `backend/src/modules/chat/services/turnReferenceTimeZone.ts` (a chat turn's zone)
+- `backend/src/modules/chat/services/turnReferenceTimeZone.ts` (a chat turn's zone, the zone a visitor's message records, the resume trace stage)
+- `backend/src/modules/chat/services/approvalResumeTurn.ts` (the zone of a routine resumed by an approval click)
+- `backend/src/modules/documents/services/documentProcessingService.ts` (the zone a document's enrichment anchors relative dates in)
 - `packages/conversation-contract/index.d.ts` (`ReferenceTimeZone` on `TurnContext` and the engine inputs)
 - `packages/conversation-defaults/src/localDate.ts` (a turn's local date for the routine selector and skill input resolver)
 - `backend/src/modules/retrieval/domain/workspaceTimeZoneReader.ts` (the workspace-zone port chat and retrieval read; `WorkspaceTimeZoneSettingsRepository` implements it)
@@ -1255,7 +1267,7 @@ Public surfaces and key files:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/shared/referenceTimeZone.test.ts tests/unit/retrieval/relativeDatesTimeZone.test.ts tests/unit/chat-session-preparer-time-zone.test.ts tests/unit/time-zone-settings-service.test.ts tests/contract/settings-time-zone.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/shared/referenceTimeZone.test.ts tests/unit/retrieval/relativeDatesTimeZone.test.ts tests/unit/chat-session-preparer-time-zone.test.ts tests/unit/approval-resume-time-zone.test.ts tests/unit/document-processing-enrichment-time-zone.test.ts tests/unit/time-zone-settings-service.test.ts tests/contract/settings-time-zone.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/workspace-time-zone.integration.test.ts --no-file-parallelism`
 - `cd frontend && pnpm exec vitest run tests/unit/public-chat-browser-time-zone.test.ts tests/unit/time-zone-options.test.ts`
 
@@ -2222,7 +2234,8 @@ Focused checks:
 - `cd backend && pnpm exec vitest run tests/unit/handoff tests/unit/approval-decision-service.test.ts tests/unit/quality-triage-service.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/handoff tests/integration/approvals tests/integration/quality-triage.integration.test.ts tests/integration/conversation-activity-backfill-migration.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/handoff/held-reply-service.test.ts tests/unit/handoff/held-reply-state.test.ts tests/unit/app-composition/held-reply-unit-of-work.test.ts tests/integration/held-reply-repository.integration.test.ts tests/contract/held-replies.contract.test.ts`
-- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts tests/unit/needs-attention.test.ts tests/unit/needs-attention-query-state.test.tsx`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts tests/unit/needs-attention.test.ts tests/unit/needs-attention-query-state.test.tsx tests/unit/needs-attention-bulk-dismiss.test.ts tests/unit/needs-attention-format.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/needs-you-filters-and-bulk-dismiss.spec.ts tests/e2e/hitl-needs-attention.spec.ts` (the Needs-you queue: filters, who holds a row, bulk dismiss, Assign and Reassign)
 
 Related docs:
 

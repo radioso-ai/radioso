@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { userTimeZoneSchema } from "../schemas/timeZoneSchemas.js";
+
 const testValueSchema = z.object({ contextVariableId: z.string().uuid(), value: z.unknown().optional() }).strict();
 
 export const revisionListQuerySchema = z.object({ include: z.literal("published").optional() }).strict();
@@ -33,6 +35,9 @@ export const sendTestExecutionMessageSchema = z.object({
   executionGeneration: z.number().int().positive(),
   turnId: z.string().uuid(),
   attemptId: z.string().uuid(),
+  userTimeZone: userTimeZoneSchema.optional().describe(
+    "The operator's IANA time zone, such as America/Los_Angeles, which Test Chat sends from the browser with every message and retry. The turn reads today, tomorrow and this weekend in it; without it, or with an unknown zone, the workspace's time zone applies, then UTC.",
+  ),
 }).strict();
 export const retryTestExecutionSideSchema = sendTestExecutionMessageSchema.omit({ message: true });
 export const startRevisionEvalRunSchema = z.object({

@@ -31,6 +31,31 @@ describe("parseGroundedAnswerEnvelope", () => {
     });
   });
 
+  // The subject is named before the verdict (#1744), so a reply that names another course
+  // cannot pass that course off as the one the visitor asked about.
+  it("asks the model to name the request's subject before its coverage verdict", () => {
+    const keys = Object.keys(buildGroundedAnswerResponseFormat().schema.properties as Record<string, unknown>);
+    expect(keys.slice(0, 2)).toEqual(["requestSubject", "coverage"]);
+    expect(buildGroundedAnswerResponseFormat().schema.required).toContain("requestSubject");
+  });
+
+  it("reads a named subject as part of the envelope, not an extra", () => {
+    const parsed = parseGroundedAnswerEnvelope(JSON.stringify({
+      requestSubject: "Il silenzio del cuore",
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the quote for Il silenzio del cuore",
+      answer: "I can't confirm a quote for that course.",
+      v: 2,
+      outcome: "no_support",
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    }));
+
+    expect(parsed.extras).toBeUndefined();
+    expect(parsed.coverage).toBe("unanswered_insufficient_evidence");
+  });
+
   it("omits extras when the envelope only has core fields", () => {
     expect(parseGroundedAnswerEnvelope(groundedV2Envelope()).extras).toBeUndefined();
   });
@@ -62,6 +87,7 @@ describe("parseGroundedAnswerEnvelope", () => {
     });
 
     expect(Object.keys(extended.schema.properties as Record<string, unknown>)).toEqual([
+      "requestSubject",
       "coverage",
       "requestFocus",
       "outcome",
@@ -74,6 +100,7 @@ describe("parseGroundedAnswerEnvelope", () => {
       "adherence",
     ]);
     expect(extended.schema.required).toEqual([
+      "requestSubject",
       "coverage",
       "requestFocus",
       "outcome",

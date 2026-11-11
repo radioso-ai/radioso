@@ -334,6 +334,9 @@ imports from `services/`.
 - Coverage verdict head (#1260): the grounded envelope's `coverage`,
   `requestFocus`, and `outcome` fields precede `answer` in schema order, so the
   model commits to its coverage verdict before writing any answer text.
+  A `requestSubject` field comes first (#1744): the model names the request's
+  subject, under the most specific name the visitor gave it, before judging
+  whether the Results cover that subject. Nothing reads it back.
   `groundedAnswerHeadReader.ts` resolves that head from partial JSON chunks —
   `pending` while streaming, `parsed` once all three fields are complete and
   valid, `invalid` the moment `answer` opens without them or the response is

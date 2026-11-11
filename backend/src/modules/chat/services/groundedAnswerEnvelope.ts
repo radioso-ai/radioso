@@ -56,7 +56,7 @@ export interface GroundedAnswerEnvelope {
 
 /** Top-level envelope keys the envelope interprets itself; anything else is an extra. */
 const CORE_ENVELOPE_KEYS = new Set([
-  "coverage", "requestFocus", "answer", "v", "outcome", "claims", "suggestions", "grounding",
+  "requestSubject", "coverage", "requestFocus", "answer", "v", "outcome", "claims", "suggestions", "grounding",
 ]);
 
 const isCoverageClassification = (value: unknown): value is AnswerCoverageClassification =>
@@ -77,8 +77,15 @@ const GROUNDED_ANSWER_RESPONSE_FORMAT_BASE: JsonSchemaResponseFormat = {
   schema: {
     type: "object",
     additionalProperties: false,
-    required: ["coverage", "requestFocus", "outcome", "answer", "v", "claims", "suggestions", "grounding"],
+    required: ["requestSubject", "coverage", "requestFocus", "outcome", "answer", "v", "claims", "suggestions", "grounding"],
     properties: {
+      // Written first so the verdict is judged for a named subject (#1744). Nothing reads
+      // it back: it exists to make the model commit to the subject before `coverage`.
+      requestSubject: {
+        type: "string",
+        description: "The concrete subject this request is about, under the most specific name the visitor gave it in the conversation; empty when the request names none.",
+        maxLength: REQUEST_FOCUS_MAX_LENGTH,
+      },
       coverage: {
         type: "string",
         description: "Your coverage verdict for this request against the admitted Results, committed before you write the answer.",
@@ -127,7 +134,7 @@ const GROUNDED_ANSWER_RESPONSE_FORMAT_BASE: JsonSchemaResponseFormat = {
  * reader acts on while the reply streams. An extension's `beforeAnswer` fields follow
  * it and precede `answer`.
  */
-const HEAD_KEYS: ReadonlySet<string> = new Set(["coverage", "requestFocus", "outcome"]);
+const HEAD_KEYS: ReadonlySet<string> = new Set(["requestSubject", "coverage", "requestFocus", "outcome"]);
 const isHeadKey = (key: string): boolean => HEAD_KEYS.has(key);
 
 /**

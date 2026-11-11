@@ -26,6 +26,7 @@ import {
 } from "./routines/routineGroundedAnswerRenderer.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
+import { routineConsentTurnFacts } from "./routines/routineConsentTurn.js";
 import {
   buildChatTurnContext,
   toConversationAgentConfig,
@@ -184,6 +185,7 @@ export class ApprovalResumeTurn {
         chatAnswerPresenter: this.options.chatAnswerPresenter,
       }),
       throwIfCancelled: () => this.checkTurnCancellation(coordination, "routing"),
+      consent: routineConsentTurnFacts(session, session.responseLanguage),
     });
     this.checkTurnCancellation(coordination, "routing");
     if (!routineTurnPorts) {
@@ -247,6 +249,8 @@ export class ApprovalResumeTurn {
       // Marks the resumed reply when the routine holds a sensitive value, as a live turn's is (#1543).
       routineReporter: routineTurnPorts.reporter,
       pendingDecisionTransition: decisionEffects.pendingDecisionTransition,
+      // A walk on from the decision can show the next consent, or pass one the channel never asks.
+      consentEvents: result.hostEffects?.consentEvents,
       suspended: Boolean(result.hostEffects?.awaitingDecision),
       additionalAuditEvent: {
         accountId: input.decidedBy,

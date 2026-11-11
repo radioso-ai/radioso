@@ -102,11 +102,11 @@ const lifecycleWith = (input: {
   );
 };
 
-const recordingPersistence = (wakeBackgroundJobs?: () => void) => {
+const recordingPersistence = (afterCommit?: () => void) => {
   const completeAssistantTurn = vi.fn<AssistantTurnPersistencePort["completeAssistantTurn"]>(async (input) => ({
     message: { id: "assistant_msg_1", conversationId: input.conversationId, workspaceId: input.workspaceId, role: "assistant", content: "Answer.", createdAt: new Date() },
     committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false },
-    ...(wakeBackgroundJobs ? { wakeBackgroundJobs } : {}),
+    ...(afterCommit ? { afterCommit } : {}),
   }));
   return { completeAssistantTurn };
 };

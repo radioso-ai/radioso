@@ -23,3 +23,17 @@ export const routineConsentWordingVersionId = (wording: RoutineConsentWording): 
     agreeLabel: wording.agreeLabel,
     declineLabel: wording.declineLabel,
   });
+
+const isText = (value: unknown): value is string => typeof value === "string";
+
+/**
+ * A wording as a routine turn carries it back unread (`RoutineConsentEvent.wording` is the host's
+ * own value), narrowed to its four fields; null for anything else.
+ */
+export const routineConsentWordingOf = (value: unknown): RoutineConsentWording | null => {
+  if (!value || typeof value !== "object") return null;
+  const { locale, body, agreeLabel, declineLabel } = value as Record<string, unknown>;
+  return isText(locale) && isText(body) && isText(agreeLabel) && isText(declineLabel)
+    ? { locale, body, agreeLabel, declineLabel }
+    : null;
+};

@@ -8,6 +8,7 @@ import { ConversationRepository } from "../../../db/repositories/conversationRep
 import { MessageRepository, type MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
+import { RoutineConsentRepository } from "../../../db/repositories/routineConsentRepository.js";
 import type { ConversationActivityRecorder } from "../../conversationActivity/contracts/index.js";
 import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
@@ -22,10 +23,16 @@ import type { CapturedRoutineTransition } from "../services/routines/deferredRou
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
 import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
+import type { RoutineConsentCommitted, RoutineConsentWritten } from "../../../shared/domain/routineConsentTurn.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { BackgroundJobQueue, BackgroundJobWakePort } from "../../../shared/background-jobs/index.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
+
+/** Told, once a turn has committed, what it recorded of its routine's consents (#1544). */
+interface RoutineConsentCommitObserver {
+  committed(input: RoutineConsentCommitted): void;
+}
 
 interface MessageRow {
   id: string;
@@ -147,6 +154,8 @@ const applyRoutineStateTransition = async (
   }
   if (transition.kind === "save") {
     await saveRoutineState(db, transition.state, ttlMs);
+    // A consent withdrawn while this turn ran never leaves its covered values in the state it saved (#1544).
+    await new RoutineConsentRepository(db).stripWithdrawnSlots({ conversationId: transition.state.sessionId });
     return;
   }
   await sql`DELETE FROM routine_states WHERE session_id = ${transition.sessionId}`.execute(db);
@@ -307,10 +316,13 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     // Writes the background jobs a turn hands to the worker inside the turn's transaction, and
     // wakes a worker once it commits.
     private readonly backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">,
+    // Told what a committed turn recorded of its routine's consents, for logs and metrics.
+    private readonly routineConsentObserver?: RoutineConsentCommitObserver,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
     let insertedBackgroundJobs = 0;
+    let consentWritten: RoutineConsentWritten[] = [];
     const run = async (db: Db): Promise<AssistantTurnPersistenceReceipt> => {
       const insertedActionTypes = await enqueueActions(db, input);
       insertedBackgroundJobs = await this.enqueueBackgroundJobs(db, input);
@@ -365,6 +377,14 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       const message = result.rows[0];
       if (!message) {
         throw new Error("Expected inserted assistant message");
+      }
+      if (input.routineConsent) {
+        consentWritten = await new RoutineConsentRepository(db).writeTurnEvents({
+          ...input.routineConsent,
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId,
+          assistantMessageId: messageId,
+        });
       }
       // Recorded after the reply that announced it, so the handoff dates after that reply.
       if (input.ownershipHandoff && ownershipResult?.changed) {
@@ -426,14 +446,44 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       : await this.db.transaction().execute(async (trx) => run(trx));
 
     await this.requestActionDrain(input.actions);
-    const queue = this.backgroundJobs;
-    if (insertedBackgroundJobs === 0 || !queue) {
+    const queue = insertedBackgroundJobs > 0 ? this.backgroundJobs : undefined;
+    const consentReport = this.consentReport(input, consentWritten);
+    if (!queue && !consentReport) {
       return result;
     }
     // Whoever owns the transaction fires this after commit (the lifecycle for its own, the caller
     // for one it supplied). Never awaited by a turn: the queue swallows and counts a failed wake,
     // and the worker's sweep runs a job whose wake was lost.
-    return { ...result, wakeBackgroundJobs: () => void queue.wake() };
+    return {
+      ...result,
+      afterCommit: () => {
+        if (queue) void queue.wake();
+        consentReport?.();
+      },
+    };
+  }
+
+  /** Reports the turn's consent events once committed; a report that fails never fails the turn. */
+  private consentReport(input: CompleteAssistantTurnInput, written: readonly RoutineConsentWritten[]): (() => void) | null {
+    const observer = this.routineConsentObserver;
+    const consent = input.routineConsent;
+    if (!observer || !consent || written.length === 0) {
+      return null;
+    }
+    const committed: RoutineConsentCommitted = {
+      workspaceId: input.workspaceId,
+      agentId: consent.agentId,
+      conversationId: input.conversationId,
+      channel: consent.channel,
+      written,
+    };
+    return () => {
+      try {
+        observer.committed(committed);
+      } catch (error) {
+        this.logger?.warn({ err: error, conversationId: input.conversationId }, "Routine consent report failed after the turn committed");
+      }
+    };
   }
 
   private async enqueueBackgroundJobs(db: Db, input: CompleteAssistantTurnInput): Promise<number> {

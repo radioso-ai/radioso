@@ -232,6 +232,8 @@ export interface ChatTurnAssemblyRoutineResult {
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
+  /** What the routine did with its consents this turn (#1544), for the turn's transaction to record. */
+  consentEvents?: NonNullable<ProcessTurnResult["hostEffects"]>["consentEvents"];
   suspended?: boolean;
   clarificationTransition?: CapturedClarificationTransition | null;
   commitRoutineState: () => Promise<void>;
@@ -532,6 +534,7 @@ export class ChatTurnAssembly {
         routineStateTransition,
         routineReporter: routineTurnPorts.reporter,
         pendingDecisionTransition,
+        consentEvents: outcome.result.hostEffects?.consentEvents,
         suspended: Boolean(outcome.result.hostEffects?.awaitingDecision),
         clarificationTransition: deferredClarificationStore?.getTransition(),
         commitRoutineState: () => deferredStore.commit(),
@@ -702,6 +705,7 @@ export class ChatTurnAssembly {
           routineStateTransition,
           routineReporter: routineTurnPorts.reporter,
           pendingDecisionTransition,
+          consentEvents: result.hostEffects?.consentEvents,
           suspended: Boolean(result.hostEffects?.awaitingDecision),
           commitRoutineState: () => deferredStore.commit(),
           clarificationTransition: deferredClarificationStore?.getTransition(),
@@ -1425,14 +1429,8 @@ export class ChatTurnAssembly {
     };
   }
 
-  private withResponseLanguage(
-    session: PreparedSession,
-    responseLanguage: string | undefined,
-  ): PreparedSession {
-    return {
-      ...session,
-      responseLanguage,
-    };
+  private withResponseLanguage(session: PreparedSession, responseLanguage: string | undefined): PreparedSession {
+    return { ...session, responseLanguage };
   }
 
   private async routeTurn(

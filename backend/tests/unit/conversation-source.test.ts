@@ -5,6 +5,7 @@ import {
   OPERATOR_TEST_SOURCE_CHANNELS,
   WORKBENCH_TEST_SOURCE_CHANNELS,
   callerKindForSourceChannel,
+  consentPresentationFor,
   isOperatorTestSourceChannel,
 } from "../../src/shared/domain/conversationSource.js";
 import { assistantChatSchema } from "../../src/app/http/schemas/assistantChatSchemas.js";
@@ -86,5 +87,31 @@ describe("conversationSource", () => {
     expect(callerKindForSourceChannel(null)).toBe("human");
     expect(callerKindForSourceChannel(undefined)).toBe("human");
     expect(callerKindForSourceChannel("")).toBe("human");
+  });
+
+  describe("consentPresentationFor (#1544)", () => {
+    it("asks no consent on voice, where a transcript is weak proof", () => {
+      expect(consentPresentationFor("voice")).toBe("not_asked");
+    });
+
+    it("asks no consent of a calling agent, which cannot give a person's consent", () => {
+      for (const channel of AGENT_SOURCE_CHANNELS) {
+        expect(consentPresentationFor(channel)).toBe("not_asked");
+      }
+    });
+
+    it("shows the wording and both choices as text where the channel has no buttons", () => {
+      for (const channel of ["email", "whatsapp", "slack"]) {
+        expect(consentPresentationFor(channel)).toBe("text");
+      }
+    });
+
+    it("offers the choices as buttons on the web, in test traffic, and on any unclassified channel", () => {
+      for (const channel of ["website_embed", "anonymous", "assistant", "authenticated_chat", "workbench_replay", "operator_copilot_probe", "a_channel_nobody_has_classified"]) {
+        expect(consentPresentationFor(channel)).toBe("buttons");
+      }
+      expect(consentPresentationFor(null)).toBe("buttons");
+      expect(consentPresentationFor(undefined)).toBe("buttons");
+    });
   });
 });

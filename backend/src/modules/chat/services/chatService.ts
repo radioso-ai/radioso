@@ -54,7 +54,7 @@ import type {
 } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
-import { CALLER_KIND_MATCH_KEY, visitorMatchContext } from "./visitorMatchContext.js";
+import { plannerVisitorContext } from "./visitorMatchContext.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -848,26 +848,6 @@ export class ChatService {
   }
 
   /**
-   * The bounded visitor context handed to the planner's directive classification.
-   * Counts only — never values — reach the trace: the context can carry visitor
-   * data, and the redaction boundary is upstream in the snapshot.
-   */
-  private planVisitorContext(session: PreparedSession): Record<string, unknown> {
-    const { context, dropped, clamped } = visitorMatchContext(session);
-    // Radioso's own facts are not operator-defined context variables. Counting them would make
-    // this attribute fire on every turn and report one more variable than resolved.
-    const variableCount = Object.keys(context).filter((key) => key !== CALLER_KIND_MATCH_KEY).length;
-    if (variableCount > 0 || dropped.length > 0) {
-      setTraceAttributes({
-        "chat.directive_match.visitor_context_variables": variableCount,
-        "chat.directive_match.visitor_context_dropped": dropped.length,
-        "chat.directive_match.visitor_context_clamped": clamped.length,
-      });
-    }
-    return context;
-  }
-
-  /**
    * Creates the lazy fused turn-plan handle for this turn when no pre-engine
    * bypass signal holds (active routine, pending clarification or
    * decision, or a parked routine). The handle is memoized on the session; the
@@ -895,7 +875,7 @@ export class ChatService {
         }, this.turnPlanInterpretationContextSettings),
         pageReadCapability: session.pageReadCapability,
         ...this.buildTurnPlanDirectiveInputs(session, input.accountId),
-        visitorContext: this.planVisitorContext(session),
+        visitorContext: plannerVisitorContext(session),
         agentId: session.agent.id,
         timeZone: session.referenceTimeZone?.timeZone,
         workspaceContext: buildAgentChatWorkspaceContext(session.agent),
@@ -1169,6 +1149,7 @@ export class ChatService {
           routineStateTransition: routineTurn.routineStateTransition,
           routineReporter: routineTurn.routineReporter,
           pendingDecisionTransition: routineTurn.pendingDecisionTransition,
+          consentEvents: routineTurn.consentEvents,
           ownershipHandoff,
           suspended: routineTurn.suspended,
           commitRoutineState: routineTurn.commitRoutineState,
@@ -1284,6 +1265,7 @@ export class ChatService {
           routineStateTransition: renderedTurn.routineStateTransition,
           routineReporter: renderedTurn.routineReporter,
           pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
+          consentEvents: renderedTurn.consentEvents,
           suspended: renderedTurn.suspended,
           commitRoutineState: renderedTurn.commitRoutineState,
           clarificationTransition: renderedTurn.clarificationTransition ?? clarification.store?.getTransition(),
@@ -1355,6 +1337,7 @@ export class ChatService {
         routineStateTransition: renderedTurn.routineStateTransition,
         routineReporter: renderedTurn.routineReporter,
         pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
+        consentEvents: renderedTurn.consentEvents,
         suspended: renderedTurn.suspended,
         commitRoutineState: renderedTurn.commitRoutineState,
         clarificationTransition: clarification.store?.getTransition(),
@@ -1743,6 +1726,7 @@ export class ChatService {
             routineStateTransition: routineTurn.routineStateTransition,
             routineReporter: routineTurn.routineReporter,
             pendingDecisionTransition: routineTurn.pendingDecisionTransition,
+            consentEvents: routineTurn.consentEvents,
             ownershipHandoff,
             suspended: routineTurn.suspended,
             commitRoutineState: routineTurn.commitRoutineState,
@@ -2075,6 +2059,7 @@ export class ChatService {
         routineStateTransition: coverageRoutineEffects.routineStateTransition,
         routineReporter: coverageRoutineEffects.routineReporter,
         pendingDecisionTransition: coverageRoutineEffects.pendingDecisionTransition,
+        consentEvents: coverageRoutineEffects.consentEvents,
         suspended: coverageRoutineEffects.suspended,
         commitRoutineState: coverageRoutineEffects.commitRoutineState,
         clarificationTransition: coverageRoutineEffects.clarificationTransition ?? clarification.store?.getTransition(),

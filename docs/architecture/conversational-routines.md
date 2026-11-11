@@ -432,6 +432,33 @@ Each turn reports what it did in `hostEffects.consentEvents`: `asked`, `decided`
 `skipped`. Each event carries keys and the host's own wording value, never the
 visitor's reply or a slot value.
 
+The backend's port is `modules/routines/consent/consentTurnPort.ts`, built per turn
+by the routines turn provider from the `RoutineConsentTurnFacts` chat hands it
+(`chat/services/routines/routineConsentTurn.ts`): the conversation, visitor, source
+channel, the visitor message, the languages to try, and the agent's default
+language. The compiler carries every language of each consent's wording on the
+compiled routine's metadata (`consent/consentWording.ts`), so the port reads the
+wording of the revision the conversation runs. `consentPresentationFor` in
+`shared/domain/conversationSource.ts` decides how a channel shows a consent:
+buttons on the web, text on email, WhatsApp and Slack, and no ask on voice or a
+calling agent's channel. The port picks the variant by the Exact Words rule, reads
+standing decisions for every language of a consent and a typed reply against the
+wording the conversation last showed (its `consentPrompt` stamp) through the
+`RoutineConsentStore` port, which `RoutineConsentRepository` satisfies.
+
+Chat carries the events unread to `PostgresAssistantTurnPersistence`, whose turn
+transaction records them (`RoutineConsentRepository.writeTurnEvents`): a shown
+consent keeps its wording version and stamps `consentPrompt` on the reply, a
+decision keeps its version and records the visitor message that carried it, and a
+skipped consent records nothing. The same transaction strips the slots of any
+consent withdrawn in the conversation from the routine state it saves. Once the
+turn commits, `consent/consentTelemetry.ts` logs `routine_consent_shown`,
+`routine_consent_decided`, `routine_consent_defaulted` and
+`routine_consent_skipped` (an error for `wording_unavailable`) and counts
+`routine_consent_outcomes_total{outcome}`, with ids, keys and codes only. A
+workbench replay keeps no records, so its port reads no standing decisions and
+reads a reply against the wording the turn would show.
+
 ## Text routine formats
 
 Routine definitions travel as JSON over the routines API. Some routine document

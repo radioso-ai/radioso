@@ -1195,7 +1195,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         payload: { workspaceId: workspace.id, conversationId: conversation.id },
       }]);
       expect(wake).not.toHaveBeenCalled();
-      receipt.wakeBackgroundJobs?.();
+      receipt.afterCommit?.();
       expect(wake).toHaveBeenCalledOnce();
     });
 
@@ -1226,7 +1226,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       }
 
       expect(await summaryJobsFor(conversation.id)).toHaveLength(1);
-      expect(receipts.map((receipt) => receipt.wakeBackgroundJobs !== undefined)).toEqual([true, false]);
+      expect(receipts.map((receipt) => receipt.afterCommit !== undefined)).toEqual([true, false]);
     });
 
     it("in a caller's transaction, leaves the wake to the caller, whose commit makes the job visible", async () => {
@@ -1247,7 +1247,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       expect(visibleBeforeCommit).toEqual([]);
       expect(wake).not.toHaveBeenCalled();
       expect(await summaryJobsFor(conversation.id)).toHaveLength(1);
-      receipt.wakeBackgroundJobs?.();
+      receipt.afterCommit?.();
       expect(wake).toHaveBeenCalledOnce();
     });
   });

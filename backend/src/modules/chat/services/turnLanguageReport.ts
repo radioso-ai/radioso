@@ -23,7 +23,8 @@ export interface TurnLanguageReport {
   close(): void;
 }
 
-const planTagOf = async (plan: ChatTurnPlanHandle): Promise<string | undefined> => {
+/** The BCP 47 tag the turn's plan gives its response language; read only once that language was read. */
+export const planTagOf = async (plan: ChatTurnPlanHandle): Promise<string | undefined> => {
   // The language was read, so the plan has been resolved already; this reads its memo.
   const outcome = await plan.resolve(null);
   return outcome.status === "planned" ? outcome.plan.responseLanguageTag : undefined;

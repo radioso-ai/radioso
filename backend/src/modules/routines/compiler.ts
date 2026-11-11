@@ -1,6 +1,7 @@
 import type { Routine, RoutineGuard, RoutineOperatorNoticeTemplate, RoutineSlotSchema, RoutineStep, RoutineTransition } from "@radioso/conversation-contract";
 import { collectContextVariableRefs, endingNotifiesOperators } from "@radioso/routine-definition";
 
+import { consentWordingMetadata } from "./consent/consentWording.js";
 import { withConsentGates } from "./consentGates.js";
 import type { RoutineDefinition, RoutineStepMetadata } from "./domain.js";
 import { collectSlotKeys, collectedSlotsByStep } from "./slotCollection.js";
@@ -294,6 +295,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
       ...(definition.exposure?.enabled && definition.exposure.toolName.length > 0
         ? { exposure: { toolName: definition.exposure.toolName } }
         : {}),
+      ...consentWordingMetadata(definition.consents),
     },
   };
 };

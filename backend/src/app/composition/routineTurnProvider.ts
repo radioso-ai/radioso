@@ -1,4 +1,5 @@
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
+import { RoutineConsentRepository } from "../../db/repositories/routineConsentRepository.js";
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import type { AgentSkillRepository } from "../../modules/agentSkills/public.js";
 import {
@@ -24,7 +25,8 @@ type ChatTurnPlanHandle = Parameters<typeof planAwareRoutineActivator>[0]["handl
  * published routine source and hands the turn plan's adapters to it. The source is the
  * composition's own, or one over the definition repository and the agent's releases that logs a
  * definition it cannot compile and skips it, and sends a routine's completion export to the
- * agent's `completion_export` webhook skill.
+ * agent's `completion_export` webhook skill. A routine's consents read what each conversation
+ * recorded from the consent records (#1544).
  */
 export const composeRoutineTurnProvider = (
   input: Pick<
@@ -111,6 +113,7 @@ export const composeRoutineTurnProvider = (
     routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
     approvalResumeEffectJournal: input.approvalResumeEffectJournal,
+    consentStore: new RoutineConsentRepository(input.db),
     turnPlanAdapters: {
       activator: ({ handle, registry, fallback }) =>
         planAwareRoutineActivator({

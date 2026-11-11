@@ -11,8 +11,13 @@ import {
   type DataSubjectExportRecord,
   type DataSubjectExportScope,
 } from "../../shared/domain/dataSubjectAccess.js";
-import { routineConsentWordingVersionId, type RoutineConsentWording } from "../../shared/domain/routineConsentWording.js";
-import { anyOf, jsonbKeyText } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { RoutineConsentTurnEvents, RoutineConsentWritten } from "../../shared/domain/routineConsentTurn.js";
+import {
+  routineConsentWordingOf,
+  routineConsentWordingVersionId,
+  type RoutineConsentWording,
+} from "../../shared/domain/routineConsentWording.js";
+import { anyOf, jsonbKeyText, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
@@ -166,6 +171,105 @@ export class RoutineConsentRepository {
     if (!row) return null;
     const stamp = consentPromptStampSchema.parse(row.prompt);
     return { messageId: row.id, wordingVersionId: stamp.wordingVersionId, locale: stamp.locale };
+  }
+
+  /**
+   * Records what a turn's routine did with its consents, inside the turn's transaction: a consent
+   * shown keeps its wording and is stamped on the reply that shows it (`consentPrompt`); a decision
+   * keeps its wording and is recorded against the visitor message that carried it; a consent not
+   * asked records nothing.
+   */
+  async writeTurnEvents(input: RoutineConsentTurnEvents & {
+    workspaceId: string;
+    conversationId: string;
+    /** The turn's reply, already stored. */
+    assistantMessageId: string;
+  }): Promise<RoutineConsentWritten[]> {
+    const written: RoutineConsentWritten[] = [];
+    for (const event of input.events) {
+      if (event.kind === "skipped") {
+        written.push({ kind: "skipped", routineId: event.routineId, consentKey: event.consentKey, reason: event.reason });
+        continue;
+      }
+      const wording = routineConsentWordingOf(event.wording);
+      if (!wording) {
+        // The host's own port produced it, so this is a wiring fault; a decision is never dropped.
+        throw new Error(`routine_consent_wording_unreadable:${event.routineId}:${event.consentKey}`);
+      }
+      const wordingVersionId = await this.upsertWordingVersion({ workspaceId: input.workspaceId, wording });
+      if (event.kind === "asked") {
+        await this.stampPrompt({ ...input, routineId: event.routineId, consentKey: event.consentKey, wordingVersionId, locale: wording.locale });
+        written.push({ kind: "asked", routineId: event.routineId, consentKey: event.consentKey, reask: event.reask, wordingVersionId });
+        continue;
+      }
+      const recorded = await this.insertRecord({
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+        conversationId: input.conversationId,
+        visitorId: input.visitorId,
+        routineId: event.routineId,
+        consentKey: event.consentKey,
+        slotKeys: event.slotKeys,
+        wordingVersionId,
+        locale: wording.locale,
+        decision: event.decision,
+        method: event.method,
+        defaulted: event.defaulted,
+        channel: input.channel,
+        decisionMessageId: input.decisionMessageId,
+      });
+      const { kind, routineId, consentKey, decision, method, defaulted } = event;
+      written.push({ kind, routineId, consentKey, decision, method, defaulted, wordingVersionId, recorded });
+    }
+    return written;
+  }
+
+  /**
+   * Erases from a conversation's routine state the slots of every consent withdrawn in it. Run in
+   * a turn's transaction after it saves the state, so a withdrawal that committed while the turn
+   * ran never leaves a covered value behind, whichever of the two commits first.
+   */
+  async stripWithdrawnSlots(input: { conversationId: string }): Promise<void> {
+    await sql`
+      UPDATE routine_states AS state
+         SET variables = state.variables - ARRAY(
+               SELECT DISTINCT slot_key
+                 FROM routine_consent_records AS record, unnest(record.slot_keys) AS slot_key
+                WHERE record.conversation_id = state.session_id
+                  AND record.routine_id = state.routine_id
+                  AND record.withdrawn_at IS NOT NULL)
+       WHERE state.session_id = ${input.conversationId}
+         AND EXISTS (
+               SELECT 1
+                 FROM routine_consent_records AS record
+                WHERE record.conversation_id = state.session_id
+                  AND record.routine_id = state.routine_id
+                  AND record.withdrawn_at IS NOT NULL)
+    `.execute(this.db);
+  }
+
+  private async stampPrompt(input: {
+    workspaceId: string;
+    conversationId: string;
+    assistantMessageId: string;
+    routineId: string;
+    consentKey: string;
+    wordingVersionId: string;
+    locale: string;
+  }): Promise<void> {
+    const stamp: z.infer<typeof consentPromptStampSchema> = {
+      routineId: input.routineId,
+      consentKey: input.consentKey,
+      wordingVersionId: input.wordingVersionId,
+      locale: input.locale,
+    };
+    await this.db
+      .updateTable("messages")
+      .set({ metadata_json: sql`coalesce(metadata_json, '{}'::jsonb) || jsonb_build_object('consentPrompt', ${toJsonb(stamp)})` })
+      .where("id", "=", input.assistantMessageId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("conversation_id", "=", input.conversationId)
+      .execute();
   }
 }
 

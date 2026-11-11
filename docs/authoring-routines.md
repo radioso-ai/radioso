@@ -301,6 +301,68 @@ A `consent_text_invalid` location points at the field, such as
 language as it is when you save, validate, or publish, so changing that language
 can stop a routine whose consent has no wording in it from publishing.
 
+#### What the visitor sees
+
+When a visitor reaches the step that asks about `@injury`, the agent sends the
+consent first, as its own reply: the `body` exactly as you wrote it, with nothing
+added around it. The language is the one the agent is answering in, or the one
+the visitor's page or browser reports, matched by its exact tag and then by its
+base language (`de` serves `de-AT`); otherwise it's the agent's default language.
+A regional sibling never stands in, so a visitor writing in `pt-BR` gets the
+default language rather than a `pt-PT` variant.
+
+How the two choices appear depends on the channel:
+
+| Channel | What the visitor gets |
+|---|---|
+| Web chat, the website embed, Test Chat, the REST assistant API | The wording, with your two labels as buttons. |
+| Email, WhatsApp, Slack | The wording, a blank line, then each label on its own line. |
+| Voice, and calling agents (MCP, the agent API, A2A) | Nothing: the routine takes its `onDecline` path straight away and keeps no record. |
+
+Voice asks no consent because a transcript is weak proof and Radioso keeps no
+audio of the call, and a calling agent can't consent on a person's behalf.
+
+The visitor answers in their own words, in any language, and a button sends its
+label as that answer. The agent reads it as agreement only when it clearly and
+fully agrees to the wording shown. A clear refusal takes the decline path.
+Anything else, such as "ok", a question about the wording, or a yes with a
+condition attached, gets a short answer drawn only from your wording, followed by
+the wording and its choices again. If the next reply is still unclear, it counts
+as a decline.
+
+The message that agrees never fills a covered field, even "Yes, and I have a sore
+knee": the step asks about `@injury` next, and the routine stores only what the
+visitor says after agreeing. Because a reply like that can still state the value,
+it's masked like any message that carries a sensitive field.
+
+A decision holds for the rest of the conversation. The routine doesn't ask again
+before another step that collects a covered field, or when it runs again, and a
+visitor who switches language isn't asked again either.
+
+On a decline, `continue` runs the routine without the covered fields: a step that
+collects nothing else moves on by its default exit, and branch conditions read the
+fields as empty. `handoff` ends the routine and hands the conversation to a person
+with the reason `routine_consent_declined`. The operator notice says the visitor
+declined consent and carries none of the values the consent covers.
+
+#### The consent record
+
+Each decision is kept as proof: the decision (`granted` or `declined`), whether
+it was a decline after two unclear replies, how it was given (`reply`, read from
+the visitor's message), the language and the exact wording shown, the channel,
+the conversation, visitor, agent and routine, the fields it covers, the message
+that carried it, and when. It holds no reply text and no field values. Every
+wording shown is kept unchanged, so a record always shows what its visitor saw:
+when you edit the wording, later conversations get the new text and earlier
+records keep the old.
+
+Records follow your workspace's conversation retention window from the moment of
+the decision; with no window set, they last as long as the workspace. Erasing a
+conversation or a visitor keeps their records and drops only the link to the
+message that carried the decision, so you can still show the consent was given.
+A data subject's export lists their records under `consent_records`, with the
+wording each one was given on. Deleting the workspace removes them.
+
 #### Changes after a routine ends
 
 Say a visitor gives an arrival date of 5 January, then tells the booking routine
@@ -612,7 +674,8 @@ When a routine reaches a hand-off, or a routine with one ends stuck on a step
 its visitor did not answer (see [Finish or hand off](#finish-or-hand-off)), the
 chat turn sends the reply, requests human ownership of the conversation, and
 queues a `handoff.notify` action. The reason is `routine_handoff` for the
-terminal and `routine_stuck` for a stuck routine. When the turn reaches a finish
+terminal, `routine_stuck` for a stuck routine, and `routine_consent_declined` for
+a consent the visitor declined (see [Ask for consent first](#ask-for-consent-first)). When the turn reaches a finish
 that notifies, it sends the reply and queues a `completion.notify` action; the
 agent goes on answering the visitor, and nothing appears in the Inbox. An ending
 with no **Send with** skill sends its email to the agent's contact recipients and

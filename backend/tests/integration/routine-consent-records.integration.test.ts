@@ -12,6 +12,8 @@ import {
   RoutineConsentRepository,
 } from "../../src/db/repositories/routineConsentRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
+import { ConversationActivityRepository } from "../../src/db/repositories/conversationActivityRepository.js";
+import { PostgresAssistantTurnPersistence } from "../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { routineConsentWordingVersionId, type RoutineConsentWording } from "../../src/shared/domain/routineConsentWording.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
@@ -365,5 +367,68 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
       [tenant.workspaceId],
     );
     expect(versions[0]?.count).toBe("0");
+  });
+
+  it("leaves no covered value of a withdrawn consent in the routine state a turn saves, whichever commits first", async () => {
+    const tenant = await seedTenant();
+    const conversation = await seedConversation(tenant);
+    await recordDecision(tenant, conversation, { routineId: "routine-intake", slotKeys: ["pregnant"] });
+    // The operator withdraws the grant while a turn that read the value is still running.
+    await database.query("UPDATE routine_consent_records SET withdrawn_at = now() WHERE conversation_id = $1", [conversation.conversationId]);
+
+    await new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000).completeAssistantTurn({
+      workspaceId: tenant.workspaceId,
+      conversationId: conversation.conversationId,
+      routineStateTransition: {
+        kind: "save",
+        state: {
+          sessionId: conversation.conversationId,
+          routineId: "routine-intake",
+          path: ["ask_health"],
+          variables: { name: "Ada", pregnant: true },
+          status: "active",
+        },
+      },
+      assistantMessage: {
+        conversationId: conversation.conversationId,
+        workspaceId: tenant.workspaceId,
+        role: "assistant",
+        content: "Thanks, Ada.",
+      },
+      auditEvent: { workspaceId: tenant.workspaceId, eventType: "chat.answer", eventStatus: "success", metadata: {} },
+    });
+
+    const [state] = await database.query<{ variables: Record<string, unknown> }>(
+      "SELECT variables FROM routine_states WHERE session_id = $1",
+      [conversation.conversationId],
+    );
+    expect(state?.variables).toEqual({ name: "Ada" });
+  });
+
+  it("records nothing for a consent the turn did not ask, and keeps a decision once however often a turn is retried", async () => {
+    const tenant = await seedTenant();
+    const conversation = await seedConversation(tenant);
+    const persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000);
+    const turn = (events: Parameters<typeof persistence.completeAssistantTurn>[0]["routineConsent"]) => persistence.completeAssistantTurn({
+      workspaceId: tenant.workspaceId,
+      conversationId: conversation.conversationId,
+      routineConsent: events,
+      assistantMessage: { conversationId: conversation.conversationId, workspaceId: tenant.workspaceId, role: "assistant", content: "Thanks." },
+      auditEvent: { workspaceId: tenant.workspaceId, eventType: "chat.answer", eventStatus: "success", metadata: {} },
+    });
+    const facts = { agentId: tenant.agentId, visitorId: conversation.visitorId, channel: "slack", decisionMessageId: conversation.userMessageId };
+
+    await turn({ ...facts, events: [{ kind: "skipped", routineId: "routine-intake", consentKey: "health", reason: "channel" }] });
+    expect(await recordsOf(conversation.conversationId)).toEqual([]);
+
+    const decided = { kind: "decided" as const, routineId: "routine-intake", consentKey: "health", slotKeys: ["pregnant"], decision: "granted" as const, method: "reply" as const, defaulted: false, wording: german };
+    await turn({ ...facts, events: [decided] });
+    await turn({ ...facts, events: [decided] });
+    expect(await recordsOf(conversation.conversationId)).toEqual([{
+      decision: "granted",
+      decision_message_id: conversation.userMessageId,
+      conversation_id: conversation.conversationId,
+      visitor_id: conversation.visitorId,
+    }]);
   });
 });

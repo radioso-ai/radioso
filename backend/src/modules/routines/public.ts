@@ -87,3 +87,5 @@ export {
   type RoutineDraftAssistTextGenerationPort,
 } from "./assist.js";
 export * from "./copilotPrimitiveRegistry.js";
+export type { RoutineConsentTurnFacts } from "./consent/consentTurnPort.js";
+export { createRoutineConsentTelemetry } from "./consent/consentTelemetry.js";

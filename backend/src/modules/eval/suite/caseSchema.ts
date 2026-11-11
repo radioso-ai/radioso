@@ -84,7 +84,7 @@ export type VoiceEvalChatScriptEvent =
   | { type: "chunk"; text: string }
   | {
       type: "done";
-      handoff?: { reason: "routine_handoff" | "routine_stuck" | "retrieval_miss"; collectedSlotCount: number };
+      handoff?: { reason: "routine_handoff" | "routine_stuck" | "routine_consent_declined" | "retrieval_miss"; collectedSlotCount: number };
     }
   | { type: "stall" };
 
@@ -177,7 +177,7 @@ const voiceEvalChatScriptEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("done"),
     handoff: z.object({
-      reason: z.enum(["routine_handoff", "routine_stuck", "retrieval_miss"]),
+      reason: z.enum(["routine_handoff", "routine_stuck", "routine_consent_declined", "retrieval_miss"]),
       collectedSlotCount: z.number().int().nonnegative(),
     }).optional(),
   }),

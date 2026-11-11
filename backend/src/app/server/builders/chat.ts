@@ -126,7 +126,7 @@ import {
   SlackSkillDefinitionRepository,
 } from "../../../modules/slackSkills/public.js";
 import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
-import type { RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
+import { createRoutineConsentTelemetry, type RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
 import type { FacetExtractionJobStore } from "../../../modules/facets/contracts.js";
 import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver, WorkspaceTimeZoneReader } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
@@ -535,6 +535,7 @@ export const buildChatServices = (input: {
     actionDrainDispatcher,
     input.logger,
     input.backgroundJobs,
+    createRoutineConsentTelemetry({ logger: input.logger, metricsRegistry: input.metricsRegistry ?? null }),
   );
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({

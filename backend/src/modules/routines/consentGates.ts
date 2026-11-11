@@ -16,6 +16,12 @@ interface CompiledRoutineGraph {
  */
 const consentGateStepId = (key: string, stepId: string): string => `consent:${key}:${stepId}`;
 
+/** The consent key a compiled consent step id names; null for any other step id. */
+export const consentKeyOfGateStepId = (stepId: string): string | null => {
+  const [prefix, key, ...rest] = stepId.split(":");
+  return prefix === "consent" && key && rest.length > 0 ? key : null;
+};
+
 const gateExit = (from: string, to: string): RoutineTransition => ({
   from,
   to,

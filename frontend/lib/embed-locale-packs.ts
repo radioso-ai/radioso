@@ -1,12 +1,10 @@
 import type { WebsiteEmbedCopy, WebsiteEmbedCopyOverrides } from '@/lib/embed-widget'
 
 // Built-in visitor-facing translations, typed and reusable across every embed
-// surface. The standalone launcher (`radioso-embed-launcher.js`) keeps its own
-// inline copy of these packs because it is served raw and cannot import a
-// module; `tests/unit/embed-locale-parity.test.ts` asserts the two stay in
-// sync, so this module is the single source of truth and the launcher mirrors
-// it. English is the baseline (`DEFAULT_WEBSITE_EMBED_COPY`) and intentionally
-// absent here. `proactiveGreetingTeaser` is launcher-only (the widget teaser
+// surface, and the single source of truth for them. The standalone launcher
+// (`radioso-embed-launcher.js`) cannot import a module, so the route serving it
+// writes these packs into the script (`lib/embed-launcher-script.ts`). English
+// is the baseline (`DEFAULT_WEBSITE_EMBED_COPY`) and intentionally absent here. `proactiveGreetingTeaser` is launcher-only (the widget teaser
 // bubble) and is not part of the in-frame copy contract.
 type EmbedLocalePack = WebsiteEmbedCopyOverrides & { proactiveGreetingTeaser?: string }
 

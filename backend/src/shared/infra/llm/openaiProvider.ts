@@ -16,6 +16,7 @@ import {
   type ReasoningEffort,
   type ReusableInputBoundary,
   type TextGenerationClient,
+  type TextGenerationImage,
   type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStopReason,
@@ -24,7 +25,7 @@ import {
 import { normalizeCacheAccounting, reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
 import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
-import { normalizeOpenAIReasoningEffort } from "./knownModels.js";
+import { imageInputCapabilityFor, normalizeOpenAIReasoningEffort } from "./knownModels.js";
 import {
   isPromptCacheKeyKnownUnsupported,
   isReasoningEffortKnownUnsupported,
@@ -106,12 +107,30 @@ const aggregateProviderUsage = (
   };
 };
 
-const buildMessages = (input: { systemPrompt?: string; prompt: string }) => {
-  const messages: Array<{ role: "system" | "user"; content: string }> = [];
+type OpenAIUserContent =
+  | string
+  | Array<
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string; detail: "auto" } }
+    >;
+
+const buildUserContent = (prompt: string, images: readonly TextGenerationImage[] | undefined): OpenAIUserContent =>
+  images && images.length > 0
+    ? [
+        { type: "text", text: prompt },
+        ...images.map((image) => ({
+          type: "image_url" as const,
+          image_url: { url: `data:${image.mediaType};base64,${image.base64Data}`, detail: "auto" as const },
+        })),
+      ]
+    : prompt;
+
+const buildMessages = (input: { systemPrompt?: string; prompt: string; images?: readonly TextGenerationImage[] }) => {
+  const messages: Array<{ role: "system"; content: string } | { role: "user"; content: OpenAIUserContent }> = [];
   if (input.systemPrompt) {
     messages.push({ role: "system", content: input.systemPrompt });
   }
-  messages.push({ role: "user", content: input.prompt });
+  messages.push({ role: "user", content: buildUserContent(input.prompt, input.images) });
   return messages;
 };
 
@@ -502,6 +521,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       provider: config.provider,
       model: config.model,
       cacheCapability: openAICacheCapability(config),
+      imageInputCapability: imageInputCapabilityFor(config.provider, config.model),
     };
   }
 

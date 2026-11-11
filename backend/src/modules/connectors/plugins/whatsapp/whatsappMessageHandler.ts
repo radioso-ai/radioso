@@ -9,7 +9,7 @@ import type {
 import { isStructuredAppError } from "../../../../shared/domain/errors.js";
 import { errorClassOf } from "../../../../shared/observability/errorClass.js";
 import { WhatsAppClient, WhatsAppClientError } from "./whatsappClient.js";
-import { CONNECTOR_IMAGES_UNUSABLE_CODE } from "../../services/connectorImageTurns.js";
+import { CONNECTOR_IMAGES_UNAVAILABLE_CODE, CONNECTOR_IMAGES_UNUSABLE_CODE } from "../../services/connectorImageTurns.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresWhatsAppPersistence, type WhatsAppPersistencePort } from "./whatsappPersistence.js";
 
@@ -51,19 +51,28 @@ interface PreparedWhatsAppReply {
 }
 
 /**
- * Raised inside a turn when none of its photos could be used and nothing was typed with them:
- * every photo was gone, over the cap, or refused by the host. It is the signal to treat the
- * messages as unsupported, not a failure to retry.
+ * Raised inside a turn when its photos are not ones the turn takes: `unusable` when none of them
+ * could be used and nothing was typed with them (gone, over the cap, or refused by the host), and
+ * `unavailable` when the agent stopped taking photos while the turn ran. Either way the photos are
+ * messages the connector does not support, not a failure to retry.
  */
-class UnusablePhotosError extends Error {
-  constructor() {
-    super("No photo of the turn could be used and nothing was typed");
-    this.name = "UnusablePhotosError";
+class PhotosNotTakenError extends Error {
+  constructor(readonly reason: "unusable" | "unavailable") {
+    super("The photos of the turn are not ones it takes");
+    this.name = "PhotosNotTakenError";
   }
 }
 
-const isUnusableImagesRefusal = (error: unknown): boolean =>
-  isStructuredAppError(error) && error.code === CONNECTOR_IMAGES_UNUSABLE_CODE;
+/** What the host's refusal of a turn's photos means for the connector, when it is one the connector acts on. */
+const photosNotTakenBy = (error: unknown): PhotosNotTakenError | null => {
+  if (!isStructuredAppError(error)) {
+    return null;
+  }
+  if (error.code === CONNECTOR_IMAGES_UNUSABLE_CODE) {
+    return new PhotosNotTakenError("unusable");
+  }
+  return error.code === CONNECTOR_IMAGES_UNAVAILABLE_CODE ? new PhotosNotTakenError("unavailable") : null;
+};
 
 const DEFAULT_RETRY_BASE_DELAY_MS = 1000;
 const DEFAULT_MAX_RETRY_ATTEMPTS = 3;
@@ -144,23 +153,10 @@ export class WhatsAppMessageHandler {
     // Rapid messages are one batch, so an album's photos and the caption that comes with them are
     // one turn, the same as a few lines of text sent in a row.
     const photoMessages = await this.selectPhotoMessages(messages, configRecord.config);
-    const turnMessages = messages.filter((message) => this.isProcessableTextMessage(message) || photoMessages.includes(message));
-    const unsupportedMessages = messages.filter((message) => !turnMessages.includes(message));
+    const unsupportedMessages: WhatsAppInboundMessage[] = [];
     const errors: unknown[] = [];
 
-    if (turnMessages.length > 0) {
-      await this.processMessageGroup(turnMessages, async () => {
-        await this.answerAndReply(turnMessages, this.buildTextQuery(turnMessages), configRecord.config);
-      }).catch((error) => {
-        if (error instanceof UnusablePhotosError) {
-          // Photos nothing could use, and nothing typed with them: no reply is ever left unsaid.
-          // They are handled exactly like any other message the connector does not support.
-          unsupportedMessages.push(...turnMessages);
-          return;
-        }
-        errors.push(error);
-      });
-    }
+    await this.answerTurn(messages, photoMessages, configRecord.config, unsupportedMessages, errors);
 
     if (unsupportedMessages.length > 0) {
       await this.processUnsupportedMessages(unsupportedMessages, configRecord.config).catch((error) => errors.push(error));
@@ -168,6 +164,41 @@ export class WhatsAppMessageHandler {
 
     if (errors.length > 0) {
       throw new AggregateError(errors, "WhatsApp batch processing failed");
+    }
+  }
+
+  /**
+   * Answers the batch's text and the photos a turn takes as one turn; whatever it does not take is
+   * collected as unsupported, for the caller to handle. Photos the turn could not use, with nothing
+   * typed, are unsupported. If the agent stops taking photos while the turn runs, the batch is
+   * handled as if it had allowed none from the start: its text is answered alone and its photos
+   * are unsupported. No reply is left unsaid.
+   */
+  private async answerTurn(
+    messages: WhatsAppInboundMessage[],
+    photoMessages: WhatsAppInboundMessage[],
+    config: Record<string, string>,
+    unsupportedMessages: WhatsAppInboundMessage[],
+    errors: unknown[],
+  ): Promise<void> {
+    const turnMessages = messages.filter((message) => this.isProcessableTextMessage(message) || photoMessages.includes(message));
+    unsupportedMessages.push(...messages.filter((message) => !turnMessages.includes(message)));
+    if (turnMessages.length === 0) {
+      return;
+    }
+
+    try {
+      await this.processMessageGroup(turnMessages, async () => {
+        await this.answerAndReply(turnMessages, this.buildTextQuery(turnMessages), config);
+      });
+    } catch (error) {
+      if (!(error instanceof PhotosNotTakenError)) {
+        errors.push(error);
+      } else if (error.reason === "unusable") {
+        unsupportedMessages.push(...turnMessages);
+      } else {
+        await this.answerTurn(turnMessages, [], config, unsupportedMessages, errors);
+      }
     }
   }
 
@@ -190,7 +221,7 @@ export class WhatsAppMessageHandler {
         await this.persistence.updateMessageLogStatus(message.wamid, "replied");
       }
     } catch (error) {
-      if (error instanceof UnusablePhotosError) {
+      if (error instanceof PhotosNotTakenError) {
         // Not a failure: the caller handles these messages as ones it does not support.
         throw error;
       }
@@ -304,7 +335,7 @@ export class WhatsAppMessageHandler {
     const { conversationId, latestTimestamp } = await this.continuingConversation(messages, config);
     const images = await this.downloadPhotos(messages, config);
     if (images.length === 0 && query.trim().length === 0) {
-      throw new UnusablePhotosError();
+      throw new PhotosNotTakenError("unusable");
     }
 
     let response: Awaited<ReturnType<ConnectorChatPort["answer"]>>;
@@ -317,7 +348,7 @@ export class WhatsAppMessageHandler {
         ...(images.length > 0 ? { images } : {}),
       });
     } catch (error) {
-      throw isUnusableImagesRefusal(error) ? new UnusablePhotosError() : error;
+      throw (images.length > 0 ? photosNotTakenBy(error) : null) ?? error;
     }
 
     await this.persistence.upsertContact({

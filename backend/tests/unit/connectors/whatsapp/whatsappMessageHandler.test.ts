@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectorChatPort, ConnectorStatePort } from "@radioso/connector-api";
 import { AppError } from "../../../../src/shared/domain/errors.js";
-import { CONNECTOR_IMAGES_UNUSABLE_CODE } from "../../../../src/modules/connectors/services/connectorImageTurns.js";
+import {
+  CONNECTOR_IMAGES_UNAVAILABLE_CODE,
+  CONNECTOR_IMAGES_UNUSABLE_CODE,
+} from "../../../../src/modules/connectors/services/connectorImageTurns.js";
 import { WhatsAppClientError } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import type { WhatsAppClient } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import { WhatsAppMessageHandler, type WhatsAppInboundMessage } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappMessageHandler.js";
@@ -883,11 +886,100 @@ describe("WhatsAppMessageHandler", () => {
       });
     });
 
+    describe("when the host refuses the turn's photos", () => {
+      const refusing = (error: AppError) => ({
+        ...photosOn(),
+        answer: vi.fn<ConnectorChatPort["answer"]>().mockRejectedValue(error),
+      });
+      const overPlan = () => new AppError(429, "usage_limit_exceeded", "Usage limit exceeded");
+
+      it("treats an over-plan photo as it treats an over-plan text turn: a retryable failure with no reply", async () => {
+        const text = createHandler({ chat: { answer: vi.fn<ConnectorChatPort["answer"]>().mockRejectedValue(overPlan()) }, client: sender(), unsupportedMessageReply: "Text only, please." });
+        const photo = createHandler({ chat: refusing(overPlan()), client: { ...sender(), downloadImage: downloads() }, unsupportedMessageReply: "Text only, please." });
+
+        await send(text.persistence, text.handler, [inbound({ wamid: "wamid-text-over-plan", textBody: "Hello" })]);
+        await send(photo.persistence, photo.handler, [photoMessage(1)]);
+
+        expect(text.persistence.messageLogs.get("wamid-text-over-plan")?.status).toBe("retryable_failed");
+        expect(photo.persistence.messageLogs.get("wamid-photo-1")?.status).toBe("retryable_failed");
+        expect(photo.client.sendTextMessage).not.toHaveBeenCalled();
+        await text.handler.shutdown();
+        await photo.handler.shutdown();
+      });
+
+      it("retries a busy upload through the existing machinery and answers once it clears", async () => {
+        const chat = {
+          ...photosOn(),
+          answer: vi.fn<ConnectorChatPort["answer"]>()
+            .mockRejectedValueOnce(new AppError(503, "visitor_image_busy", "Too many images are being processed."))
+            .mockResolvedValueOnce({ conversationId: "conversation-photo", answer: "Lovely place.", outcome: "answered" }),
+        };
+        const { handler, persistence } = createHandler({
+          chat,
+          client: { ...sender(), downloadImage: downloads() },
+          retryBaseDelayMs: 1000,
+          maxRetryAttempts: 3,
+        });
+
+        await send(persistence, handler, [photoMessage(1, { textBody: "This one" })]);
+        expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("retryable_failed");
+
+        await vi.advanceTimersByTimeAsync(1000);
+        await vi.advanceTimersByTimeAsync(3000);
+
+        expect(chat.answer).toHaveBeenCalledTimes(2);
+        expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
+      });
+
+      it("handles photos as unsupported when the agent stops taking them while the turn runs, as if the allowance had been null", async () => {
+        const chat = refusing(new AppError(409, CONNECTOR_IMAGES_UNAVAILABLE_CODE, "This agent does not read images."));
+        const { handler, persistence, client } = createHandler({
+          chat,
+          client: { ...sender(), downloadImage: downloads() },
+          unsupportedMessageReply: "Please send your request as text.",
+        });
+
+        await send(persistence, handler, [photoMessage(1, { textBody: "Something like this" })]);
+
+        expect(chat.answer).toHaveBeenCalledTimes(1);
+        expect(client.sendTextMessage).toHaveBeenCalledTimes(1);
+        expect(client.sendTextMessage).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ text: "Please send your request as text." }));
+        expect(persistence.messageLogs.get("wamid-photo-1")).toMatchObject({ status: "replied", errorDetails: null });
+      });
+
+      it("still answers the typed text of the batch once the photos turn out to be unsupported", async () => {
+        const chat = {
+          ...photosOn(),
+          answer: vi.fn<ConnectorChatPort["answer"]>()
+            .mockRejectedValueOnce(new AppError(409, CONNECTOR_IMAGES_UNAVAILABLE_CODE, "This agent does not read images."))
+            .mockResolvedValueOnce({ conversationId: "conversation-text", answer: "Happy to help.", outcome: "answered" }),
+        };
+        const client = {
+          downloadImage: downloads(),
+          sendTextMessage: vi.fn<WhatsAppClient["sendTextMessage"]>()
+            .mockResolvedValueOnce({ wamid: "wamid-out-text" })
+            .mockResolvedValueOnce({ wamid: "wamid-out-unsupported" }),
+        };
+        const { handler, persistence } = createHandler({ chat, client, unsupportedMessageReply: "Please send text." });
+
+        await send(persistence, handler, [inbound({ wamid: "wamid-text-1", textBody: "I am looking for a house" }), photoMessage(1)]);
+
+        expect(chat.answer).toHaveBeenCalledTimes(2);
+        expect(chat.answer).toHaveBeenNthCalledWith(1, expect.objectContaining({ query: "I am looking for a house", images: [{ bytes: PHOTO }] }));
+        expect(chat.answer).toHaveBeenNthCalledWith(2, expect.not.objectContaining({ images: expect.anything() }));
+        expect(chat.answer).toHaveBeenNthCalledWith(2, expect.objectContaining({ query: "I am looking for a house" }));
+        expect(client.sendTextMessage).toHaveBeenNthCalledWith(1, expect.any(Object), expect.objectContaining({ text: "Happy to help." }));
+        expect(client.sendTextMessage).toHaveBeenNthCalledWith(2, expect.any(Object), expect.objectContaining({ text: "Please send text." }));
+        expect(persistence.messageLogs.get("wamid-text-1")?.status).toBe("replied");
+        expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
+      });
+    });
+
     it("still fails a turn whose answer fails for another reason", async () => {
       const chat = {
         ...photosOn(),
         answer: vi.fn<ConnectorChatPort["answer"]>(async () => {
-          throw new AppError(409, "visitor_images_unavailable", "This agent does not read images.");
+          throw new Error("model unavailable");
         }),
       };
       const { handler, persistence, client } = createHandler({

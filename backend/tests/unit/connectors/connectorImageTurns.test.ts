@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ChatDoorPhotoTurnPort } from "../../../src/modules/chat/contracts/index.js";
-import { createConnectorImageTurns } from "../../../src/modules/connectors/services/connectorImageTurns.js";
+import { AppError } from "../../../src/shared/domain/errors.js";
+import {
+  CONNECTOR_IMAGES_UNAVAILABLE_CODE,
+  createConnectorImageTurns,
+} from "../../../src/modules/connectors/services/connectorImageTurns.js";
 import type { VisitorImageAvailability, VisitorImageService } from "../../../src/modules/visitorImages/public.js";
 
 const IMAGE_A = "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12";
@@ -159,9 +163,35 @@ describe("createConnectorImageTurns", () => {
     it.each(["disabled", "model_cannot_read"] as const)("refuses the turn when the agent no longer reads photos (%s)", async (availability) => {
       const { turns, images, door } = setup({ availability });
 
-      await expect(turns.answer(turnInput())).rejects.toMatchObject({ statusCode: 409, code: "visitor_images_unavailable" });
+      await expect(turns.answer(turnInput())).rejects.toMatchObject({ statusCode: 409, code: CONNECTOR_IMAGES_UNAVAILABLE_CODE });
       expect(images.upload).not.toHaveBeenCalled();
       expect(door.answer).not.toHaveBeenCalled();
+    });
+
+    it("tells a connector the agent stopped taking photos when the door refuses the claim, as it does before the upload", async () => {
+      const { turns, door } = setup();
+      door.answer.mockRejectedValueOnce(new AppError(409, "visitor_image_unavailable", "An attached image cannot be sent."));
+
+      await expect(turns.answer(turnInput())).rejects.toMatchObject({ statusCode: 409, code: CONNECTOR_IMAGES_UNAVAILABLE_CODE });
+    });
+
+    it("lets the refusals of the upload pass as they are: over plan, and busy", async () => {
+      const overPlan = setup();
+      overPlan.images.upload.mockRejectedValue(new AppError(429, "usage_limit_exceeded", "Usage limit exceeded"));
+      const busy = setup();
+      busy.images.upload.mockRejectedValue(new AppError(503, "visitor_image_busy", "Too many images are being processed."));
+
+      await expect(overPlan.turns.answer(turnInput())).rejects.toMatchObject({ statusCode: 429, code: "usage_limit_exceeded" });
+      await expect(busy.turns.answer(turnInput())).rejects.toMatchObject({ statusCode: 503, code: "visitor_image_busy" });
+      expect(overPlan.door.answer).not.toHaveBeenCalled();
+      expect(busy.door.answer).not.toHaveBeenCalled();
+    });
+
+    it("lets any other refusal of the door pass as it is", async () => {
+      const { turns, door } = setup();
+      door.answer.mockRejectedValueOnce(new AppError(429, "usage_limit_exceeded", "Usage limit exceeded"));
+
+      await expect(turns.answer(turnInput())).rejects.toMatchObject({ statusCode: 429, code: "usage_limit_exceeded" });
     });
 
     it("refuses more photos than a message carries", async () => {

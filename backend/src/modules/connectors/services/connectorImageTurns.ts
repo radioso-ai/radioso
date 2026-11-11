@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ConnectorImageAllowance, ConnectorInboundImage } from "@radioso/connector-api";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
-import { AppError, badRequest } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, isStructuredAppError } from "../../../shared/domain/errors.js";
 import type { ChatDoorPhotoTurnPort } from "../../chat/contracts/index.js";
 import {
   VISITOR_IMAGE_LIMITS,
@@ -18,6 +18,20 @@ import {
  * support rather than as a failure.
  */
 export const CONNECTOR_IMAGES_UNUSABLE_CODE = "visitor_images_unusable";
+
+/**
+ * The code of the refusal `ConnectorChatPort.answer` raises when the agent no longer takes
+ * photos, so a connector can treat the photos as messages it does not support, as it does when
+ * `imageAllowance` is null.
+ */
+export const CONNECTOR_IMAGES_UNAVAILABLE_CODE = "visitor_images_unavailable";
+
+const agentStoppedTakingImages = (): AppError =>
+  new AppError(409, CONNECTOR_IMAGES_UNAVAILABLE_CODE, "This agent does not read images.");
+
+/** The door's refusal of a claim: the id is unknown, already sent, or the agent takes no images now. */
+const isDoorClaimRefusal = (error: unknown): boolean =>
+  isStructuredAppError(error) && error.statusCode === 409 && error.code === "visitor_image_unavailable";
 
 /** What a turn with photos answered: the conversation it ran in and the host's reply outcome. */
 export interface ConnectorImageAnswer {
@@ -38,7 +52,9 @@ export interface ConnectorImageTurns {
    * Stores and reads each photo, then runs the turn on the text and the photos. Null, with no turn
    * run, when the module refused every photo (not an image, too many pixels), so the caller can
    * answer the text alone. Throws `visitor_images_unavailable` (409) when the agent no longer
-   * reads photos.
+   * reads photos, whether that shows before the upload or when the door claims the photos. The
+   * upload's own refusals (`429 usage_limit_exceeded` over plan, `503 visitor_image_busy`) pass
+   * as they are.
    */
   answer(input: {
     workspaceId: string;
@@ -94,7 +110,7 @@ export const createConnectorImageTurns = (deps: {
       }
       const agentId = await agentIdFor(input);
       if (await deps.availability.forAgent({ workspaceId: input.workspaceId, agentId }) !== "available") {
-        throw new AppError(409, "visitor_images_unavailable", "This agent does not read images.");
+        throw agentStoppedTakingImages();
       }
 
       const owner: VisitorImageOwner = { kind: "connector_conversation", id: input.conversationId ?? randomUUID() };
@@ -121,6 +137,10 @@ export const createConnectorImageTurns = (deps: {
         channelContext: input.channelContext,
         imageIds,
         imageOwner: owner,
+      }).catch((error: unknown) => {
+        // The door checks the agent takes photos again when it claims them, so a flag turned off
+        // after the upload ends here. The ids are this call's own, so no other claim refusal applies.
+        throw isDoorClaimRefusal(error) ? agentStoppedTakingImages() : error;
       });
       if (!response?.conversationId) {
         throw new Error("Chat turn returned no conversation");

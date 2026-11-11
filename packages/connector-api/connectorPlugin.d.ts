@@ -137,8 +137,10 @@ export interface ConnectorChatPort {
      * `query` is what they typed with them and may be empty. The host stores and reads each photo,
      * runs the turn on the text and the readings, and keeps the photos with the conversation. A
      * photo it cannot use is left out. When none is usable and `query` is empty, the turn is
-     * refused with an error whose `code` is `visitor_images_unusable`; a connector treats that
-     * message as one it does not support.
+     * refused with an error whose `code` is `visitor_images_unusable`, and when the agent stops
+     * taking photos between `imageAllowance` and the turn, with `visitor_images_unavailable`
+     * (409); a connector treats those messages as ones it does not support. Every other refusal
+     * (`usage_limit_exceeded`, `visitor_image_busy`) is the error a text turn would raise.
      */
     images?: readonly ConnectorInboundImage[];
   }): Promise<{

@@ -104,6 +104,8 @@ WhatsApp delivers an album as separate messages a few seconds apart. Radioso ans
 
 The agent that answers is the one the number's conversation already runs on, or the workspace's default agent when a new conversation starts. When that agent has photos off or its chat model cannot read images, a photo is an unsupported message, exactly as it is without this setting: Radioso sends the connector's unsupported-message reply if you configured one, and records the message as skipped otherwise. See [Connectors and webhooks](/api/connectors-and-webhooks#built-in-connectors).
 
+A WhatsApp photo counts against the plan like any other photo. When the plan is used up, or Radioso is busy processing other photos, the photo is handled as a text message would be in the same situation: Radioso retries it a few times, and a message that still cannot be answered is recorded as failed. If you turn photos off for the agent while a photo is on its way, the photo becomes an unsupported message, and the text sent with it is answered on its own.
+
 A WhatsApp photo is bounded like any other upload: 10 MiB at most, read by its bytes, and stored as a re-encoded JPEG with the conversation. A photo WhatsApp no longer holds, one over the cap, or one that is not an image Radioso can read is not read: its caption is answered as text, and a photo with no caption is an unsupported message, with the unsupported-message reply when you configured one.
 
 ## Common failure modes

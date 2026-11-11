@@ -14,6 +14,7 @@ type RoutineTurnAttempt = Pick<
   | "groundedAnswerRenderer"
   | "throwIfCancelled"
   | "includeSlotValues"
+  | "consentStore"
 >;
 
 /**
@@ -42,4 +43,5 @@ export const routineTurnRequest = (
   turnPlan: session.turnPlan,
   includeSlotValues: attempt.includeSlotValues,
   consent: routineConsentTurnFacts(session, attempt.responseLanguage),
+  consentStore: attempt.consentStore,
 });

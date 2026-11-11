@@ -27,7 +27,7 @@ import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSki
 import { turnExecutionCapabilities } from "../../../shared/domain/turnExecutionMode.js";
 import type { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
-import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
+import type { ChatRoutineConsentStore, ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
@@ -324,21 +324,14 @@ export interface ChatTurnAssemblyOptions {
    * eval persists its trace into an append-only, longer-retained record.
    */
   includeSlotValues?: boolean;
+  /** The consents of a conversation no row is kept for, held by its session (Test Chat); absent, the workspace's records. */
+  routineConsentStore?: ChatRoutineConsentStore;
 }
 
-type ChatTurnAssemblySharedOptions = Omit<
-  ChatTurnAssemblyOptions,
-  "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "includeSlotValues"
->;
-
-interface ChatTurnAssemblyEffectPorts {
-  chatSessionPreparer: ChatSessionPreparer;
-  directiveStateStore: DirectiveStateStore;
-  routineStore?: ConversationRoutineStore;
-  coverageHeadRecorder?: AnswerCoverageHeadRecorder;
-  coverageShadowAssessor?: AnswerCoverageShadowAssessor;
-  includeSlotValues?: boolean;
-}
+/** What each surface brings to an assembly: its persistence and state effects. */
+type ChatTurnAssemblyEffectKey = "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "routineConsentStore" | "includeSlotValues";
+type ChatTurnAssemblySharedOptions = Omit<ChatTurnAssemblyOptions, ChatTurnAssemblyEffectKey>;
+type ChatTurnAssemblyEffectPorts = Pick<ChatTurnAssemblyOptions, ChatTurnAssemblyEffectKey | "coverageHeadRecorder" | "coverageShadowAssessor">;
 
 /**
  * Binds the runtime behavior shared by durable chat and ephemeral replay once.
@@ -455,6 +448,7 @@ export class ChatTurnAssembly {
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
       includeSlotValues: this.options.includeSlotValues,
+      consentStore: this.options.routineConsentStore,
     }));
     if (!routineTurnPorts) {
       return null;
@@ -669,6 +663,7 @@ export class ChatTurnAssembly {
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
       includeSlotValues: this.options.includeSlotValues,
+      consentStore: this.options.routineConsentStore,
     }));
     if (!routineTurnPorts?.coverageActivator) {
       return {

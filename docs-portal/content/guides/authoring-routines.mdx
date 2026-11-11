@@ -314,8 +314,8 @@ How the two choices appear depends on the channel:
 
 | Channel | What the visitor gets |
 |---|---|
-| Web chat, the website embed, Test Chat, the REST assistant API | The wording, with your two labels as buttons. |
-| Email, WhatsApp, Slack | The wording, a blank line, then each label on its own line. |
+| Web chat, the website embed, the REST assistant API | The wording, with your two labels as buttons. |
+| Email, WhatsApp, Slack, Test Chat, Ray's test turns | The wording, a blank line, then each label on its own line. |
 | Voice, and calling agents (MCP, the agent API, A2A) | Nothing: the routine takes its `onDecline` path straight away and keeps no record. |
 
 Voice asks no consent because a transcript is weak proof and Radioso keeps no
@@ -337,6 +337,10 @@ it's masked like any message that carries a sensitive field.
 A decision holds for the rest of the conversation. The routine doesn't ask again
 before another step that collects a covered field, or when it runs again, and a
 visitor who switches language isn't asked again either.
+
+Test Chat works the same way across the turns of one test, so you can agree and
+then give the covered field. Its decisions stay with the test and never become
+consent records: the person answering is you, not a visitor.
 
 On a decline, `continue` runs the routine without the covered fields: a step that
 collects nothing else moves on by its default exit, and branch conditions read the

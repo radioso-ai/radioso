@@ -14,13 +14,16 @@ import type {
   SkillEffectPolicy,
   TurnExecutionMode,
 } from "../../../shared/domain/turnExecutionMode.js";
-import type { RoutineConsentTurnFacts } from "../../routines/public.js";
+import type { RoutineConsentStore, RoutineConsentTurnFacts } from "../../routines/public.js";
 import type { ChatTurnPlanHandle } from "../services/turnPlanCoordinator.js";
 import type { RoutineInvocation } from "./routineInvocation.js";
 import type { ChatRoutineTurnReporter } from "./routineTurnState.js";
 
 /** The conversation as a routine's consents read it (#1544); the routines module owns its shape. */
 export type ChatRoutineConsentTurnFacts = RoutineConsentTurnFacts;
+
+/** Where a conversation's consent decisions and shown prompts are read from (#1544); the routines module owns the port. */
+export type ChatRoutineConsentStore = RoutineConsentStore;
 
 /**
  * The port the chat turn consults for "which routines are eligible this turn and
@@ -78,6 +81,11 @@ export interface ChatRoutineProvider {
     includeSlotValues?: boolean;
     /** The conversation as consents read it (#1544); absent, no consent can be asked this turn. */
     consent?: ChatRoutineConsentTurnFacts;
+    /**
+     * The consents of a conversation no row is kept for, held by its own session (Test Chat).
+     * Absent, a conversation's consents are the workspace's records.
+     */
+    consentStore?: ChatRoutineConsentStore;
   }): Promise<{
     routines?: readonly Routine[];
     activator: ConversationRoutineActivator;

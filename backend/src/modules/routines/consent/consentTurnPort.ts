@@ -32,7 +32,11 @@ export interface RoutineConsentTurnFacts {
   preferredLocales(): Promise<readonly string[]>;
   /** The agent's default language, whose wording every consent carries. */
   agentDefaultLocale: string;
-  /** False for a conversation no row is kept for (a workbench replay): nothing is read back for it. */
+  /**
+   * False for a conversation no row is kept for (Test Chat, a workbench replay): its consents are
+   * what its own session carried, and a reply with no prompt carried is read against the wording
+   * this turn would show.
+   */
   durable: boolean;
 }
 
@@ -146,16 +150,14 @@ export const createRoutineConsentTurnPort = (input: {
   return {
     async standing({ routine }) {
       const decisions: Record<string, RoutineConsentDecision> = {};
-      if (facts.durable) {
-        for (const consent of routine.consents ?? []) {
-          const decision = await store.standing({
-            conversationId: facts.conversationId,
-            routineId: routine.id,
-            consentKey: consent.key,
-            versionIds: consentWordingVariants(routine, consent.key).map(routineConsentWordingVersionId),
-          });
-          if (decision) decisions[consent.key] = decision;
-        }
+      for (const consent of routine.consents ?? []) {
+        const decision = await store.standing({
+          conversationId: facts.conversationId,
+          routineId: routine.id,
+          consentKey: consent.key,
+          versionIds: consentWordingVariants(routine, consent.key).map(routineConsentWordingVersionId),
+        });
+        if (decision) decisions[consent.key] = decision;
       }
       return { asks: presentation !== "not_asked", decisions };
     },
@@ -182,13 +184,13 @@ export const createRoutineConsentTurnPort = (input: {
 
   /**
    * The wording a reply answers: the one the conversation's last prompt for this consent showed,
-   * if its revision still carries it. A replay keeps no prompt, so it reads the reply against the
-   * wording this turn would show.
+   * if its revision still carries it. A conversation no row is kept for may carry no prompt (a
+   * replayed turn, or a test continued from a conversation parked on the consent), so its reply is
+   * read against the wording this turn would show.
    */
   async function answeredWording(routine: Routine, consent: RoutineConsent): Promise<RoutineConsentWording | null> {
-    if (!facts.durable) return wordingToShow(routine, consent.key);
     const shown = await store.latestPrompt({ conversationId: facts.conversationId, routineId: routine.id, consentKey: consent.key });
-    if (!shown) return null;
+    if (!shown) return facts.durable ? null : wordingToShow(routine, consent.key);
     return consentWordingVariants(routine, consent.key)
       .find((variant) => routineConsentWordingVersionId(variant) === shown.wordingVersionId) ?? null;
   }

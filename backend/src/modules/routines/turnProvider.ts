@@ -87,8 +87,8 @@ interface RoutineTurnProviderDependencies {
   approvalResumeEffectJournal: ApprovalResumeEffectJournal;
   turnPlanAdapters: RoutineTurnPlanAdapters;
   /**
-   * What conversations recorded of their consents (#1544). Absent, no consent can be asked: a
-   * routine that reaches one takes its decline path.
+   * What durable conversations recorded of their consents (#1544), never read for one no row is
+   * kept for. Absent, no consent can be asked: a routine that reaches one takes its decline path.
    */
   consentStore?: RoutineConsentStore;
 }
@@ -138,6 +138,12 @@ interface RoutineTurnProvider {
     includeSlotValues?: boolean;
     /** The conversation as consents read it (#1544); absent, no consent can be asked this turn. */
     consent?: RoutineConsentTurnFacts;
+    /**
+     * The consents of a conversation no row is kept for, held by its own session (Test Chat).
+     * Absent, a durable conversation's consents are the workspace's records, and one no row is
+     * kept for asks none.
+     */
+    consentStore?: RoutineConsentStore;
   }): Promise<{
     routines?: readonly Routine[];
     activator: ConversationRoutineActivator;
@@ -330,6 +336,7 @@ export const createRoutineTurnProvider = (
     approvalResume,
     includeSlotValues,
     consent,
+    consentStore = consent?.durable ? dependencies.consentStore : undefined,
   }) {
     const effectiveRegistrations = await loadEffectiveRegistrations(dependencies, {
       agentId,
@@ -556,11 +563,11 @@ export const createRoutineTurnProvider = (
       {
         contextRenderer: routineContextRenderer,
         includeSlotValues,
-        ...(consent && dependencies.consentStore
+        ...(consent && consentStore
           ? {
               consent: createRoutineConsentTurnPort({
                 facts: consent,
-                store: dependencies.consentStore,
+                store: consentStore,
                 reader: new RoutineConsentReplyReader(modelGateway, {
                   promptTemplate: loadPromptTemplate("chat/routine-consent-reply.md"),
                 }),

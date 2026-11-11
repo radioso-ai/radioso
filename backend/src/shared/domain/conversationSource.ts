@@ -59,8 +59,9 @@ export const callerKindForSourceChannel = (sourceChannel: string | null | undefi
     : "human";
 
 // Channels that carry a person but show no buttons, so a consent's choices go out as text under its
-// wording and the visitor answers in writing.
-const TEXT_ONLY_SOURCE_CHANNELS: readonly string[] = ["email", "whatsapp", "slack"];
+// wording and the visitor answers in writing: email, WhatsApp and Slack, and the operator surfaces
+// that show a reply's text alone (Test Chat and eval replays, Ray's probe).
+const TEXT_ONLY_SOURCE_CHANNELS: readonly string[] = ["email", "whatsapp", "slack", "workbench_replay", OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL];
 
 /**
  * How a channel shows a routine's consent (#1544): `buttons` (the wording, with the two choices as

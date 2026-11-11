@@ -106,8 +106,14 @@ describe("conversationSource", () => {
       }
     });
 
-    it("offers the choices as buttons on the web, in test traffic, and on any unclassified channel", () => {
-      for (const channel of ["website_embed", "anonymous", "assistant", "authenticated_chat", "workbench_replay", "operator_copilot_probe", "a_channel_nobody_has_classified"]) {
+    it("shows the choices as text in Test Chat and Ray's probe, which show a reply's text alone", () => {
+      for (const channel of ["workbench_replay", "operator_copilot_probe"]) {
+        expect(consentPresentationFor(channel)).toBe("text");
+      }
+    });
+
+    it("offers the choices as buttons on the web, the REST assistant API, and on any unclassified channel", () => {
+      for (const channel of ["website_embed", "anonymous", "assistant", "authenticated_chat", "a_channel_nobody_has_classified"]) {
         expect(consentPresentationFor(channel)).toBe("buttons");
       }
       expect(consentPresentationFor(null)).toBe("buttons");

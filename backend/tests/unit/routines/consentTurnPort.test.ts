@@ -160,13 +160,12 @@ describe("what a conversation already decided (#1544)", () => {
     expect((await port().standing({ routine, turn: turn("hi") })).decisions).toEqual({});
   });
 
-  it("reads nothing back for a conversation no row is kept for, such as a replay", async () => {
-    const untouched = store();
+  it("reads a conversation no row is kept for from the store its own session carries, as Test Chat binds it", async () => {
+    const session = store({ standing: vi.fn(async () => "granted" as const) });
 
-    const standing = await port({ facts: facts({ durable: false }), store: untouched }).standing({ routine, turn: turn("hi") });
+    const standing = await port({ facts: facts({ durable: false }), store: session }).standing({ routine, turn: turn("hi") });
 
-    expect(standing).toEqual({ asks: true, decisions: {} });
-    expect(untouched.standing).not.toHaveBeenCalled();
+    expect(standing).toEqual({ asks: true, decisions: { health: "granted" } });
   });
 });
 
@@ -193,14 +192,12 @@ describe("a visitor's reply to the consent shown (#1544)", () => {
     expect(usedReplies.reader.read).not.toHaveBeenCalled();
   });
 
-  it("reads a reply in a replay against the wording the turn would show, since no prompt is kept", async () => {
+  it("reads a reply in a replay whose session carries no prompt against the wording the turn would show", async () => {
     const usedReplies = replies("declined");
-    const untouched = store();
 
-    const read = await port({ facts: facts({ durable: false, preferredLocales: async () => ["it"] }), store: untouched, replies: usedReplies })
+    const read = await port({ facts: facts({ durable: false, preferredLocales: async () => ["it"] }), store: store(), replies: usedReplies })
       .read({ routine, consent, turn: turn("no") });
 
     expect(read).toEqual({ decision: "declined", method: "reply", wording: italian });
-    expect(untouched.latestPrompt).not.toHaveBeenCalled();
   });
 });

@@ -68,6 +68,7 @@ import {
   exportTestExecutionReplayContinuation,
   type TestExecutionReplayContinuationV1,
 } from "./testExecutionContinuation.js";
+import type { RoutineConsentSessionState, SessionRoutineConsentStore } from "./routines/sessionRoutineConsentStore.js";
 import { buildTurnTraceForPresentation } from "./chatTurnLifecycle.js";
 import { observeReplayFirstAnswerChunkLatency } from "./streamPerformanceMetrics.js";
 import {
@@ -247,6 +248,8 @@ export interface WorkbenchReplayInput {
   routineStartState?: WorkbenchReplayRoutineStartState | null;
   pendingClarificationStartState?: Omit<import("@radioso/conversation-contract").PendingClarification, "sessionId"> | null;
   directiveStateStartState?: import("../../directives/public.js").DirectiveFiringState | null;
+  /** The routine consents earlier turns of the session decided and showed (#1544); Test Chat carries them. */
+  consentStartState?: RoutineConsentSessionState | null;
   /** Already validated safe-test samples. They bypass every live resolver. */
   preResolvedHostVariables?: readonly import("../../context-variables/public.js").ResolvedVariableInput[];
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
@@ -284,6 +287,7 @@ interface PreparedReplayTurn {
   assembly: ChatTurnAssembly;
   effects: EphemeralChatTurnEffectProfile;
   routineStore: ReturnType<EphemeralChatTurnEffectProfile["routineStore"]>;
+  consentStore: SessionRoutineConsentStore;
   clarificationStore: DeferredClarificationStore;
   clarification: ChatTurnAssemblyClarification;
   coordination?: ReplayCoordination;
@@ -439,6 +443,7 @@ export class WorkbenchReplayRunner {
         ? { ...input.routineStartState, sessionId: session.conversation.id }
         : null,
     );
+    const consentStore = effects.consentStore(input.consentStartState);
     const clarificationStore = new DeferredClarificationStore(
       effects.clarificationStore(
         input.pendingClarificationStartState
@@ -468,6 +473,7 @@ export class WorkbenchReplayRunner {
       chatSessionPreparer: preparer,
       directiveStateStore: effects.directiveStateStore,
       routineStore,
+      routineConsentStore: consentStore,
       coverageHeadRecorder: this.options.coverageHeadRecorder,
       includeSlotValues: input.includeSlotValues === true,
     }) ?? new ChatTurnAssembly({
@@ -482,6 +488,7 @@ export class WorkbenchReplayRunner {
       turnRouter: this.options.turnRouter,
       turnInterpreter: this.options.turnInterpreter,
       routineStore,
+      routineConsentStore: consentStore,
       routineProvider,
       includeSlotValues: input.includeSlotValues === true,
       clarifier,
@@ -505,6 +512,7 @@ export class WorkbenchReplayRunner {
       assembly,
       effects,
       routineStore,
+      consentStore,
       clarificationStore,
       clarification,
       coordination,
@@ -618,6 +626,8 @@ export class WorkbenchReplayRunner {
     await routineResult.commitRoutineState();
     await routineResult.commitClarificationState?.();
     await turn.session.directiveStateStore?.commit();
+    // A replayed reply goes out under its turn's id (`WorkbenchReplayResult.messageId`).
+    turn.consentStore.record({ events: routineResult.consentEvents, replyMessageId: turn.session.userMessage.id });
     return this.presentResult({
       input: turn.input,
       agent: turn.agent,
@@ -654,6 +664,7 @@ export class WorkbenchReplayRunner {
     await rendered.commitRoutineState?.();
     await turn.clarificationStore.commit();
     await rendered.session.directiveStateStore?.commit();
+    turn.consentStore.record({ events: rendered.consentEvents, replyMessageId: rendered.session.userMessage.id });
     return this.presentResult({
       input: turn.input,
       agent: turn.agent,

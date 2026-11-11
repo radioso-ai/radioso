@@ -440,11 +440,19 @@ language. The compiler carries every language of each consent's wording on the
 compiled routine's metadata (`consent/consentWording.ts`), so the port reads the
 wording of the revision the conversation runs. `consentPresentationFor` in
 `shared/domain/conversationSource.ts` decides how a channel shows a consent:
-buttons on the web, text on email, WhatsApp and Slack, and no ask on voice or a
-calling agent's channel. The port picks the variant by the Exact Words rule, reads
+buttons on the web, text on email, WhatsApp, Slack and the operator surfaces that
+show a reply's text alone (Test Chat, eval replay, Ray's probe), and no ask on voice
+or a calling agent's channel. The port picks the variant by the Exact Words rule, reads
 standing decisions for every language of a consent and a typed reply against the
 wording the conversation last showed (its `consentPrompt` stamp) through the
-`RoutineConsentStore` port, which `RoutineConsentRepository` satisfies.
+`RoutineConsentStore` port, which `RoutineConsentRepository` satisfies for a durable
+conversation. A conversation no row is kept for brings its own store instead: the
+replay runner binds `chat/services/routines/sessionRoutineConsentStore.ts` on the turn
+assembly (`routineConsentStore`, passed to the provider as `consentStore`), seeded from
+and saved to Test Chat's continuation (`consents`), so a decision holds across a test's
+turns and nothing reaches the consent records. The provider never reads the workspace's
+records for such a conversation; a reply whose session carries no prompt is read against
+the wording the turn would show.
 
 Chat carries the events unread to `PostgresAssistantTurnPersistence`, whose turn
 transaction records them (`RoutineConsentRepository.writeTurnEvents`): a shown

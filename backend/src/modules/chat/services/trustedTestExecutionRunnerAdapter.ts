@@ -151,6 +151,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
           })()
         : null,
       directiveStateStartState: continuation.directiveState,
+      consentStartState: continuation.consents,
       preResolvedHostVariables: sampleVariables(input.testValues, revision),
       executionMode: "safe_test",
       skillEffects: input.skillEffects,

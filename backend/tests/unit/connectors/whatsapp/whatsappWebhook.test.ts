@@ -4,7 +4,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
-import { createWhatsAppWebhookRouter } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappWebhook.js";
+import { createWhatsAppWebhookRouter, findInboundMessageInPayload } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappWebhook.js";
 import type { WhatsAppMessageHandler } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappMessageHandler.js";
 import type { WhatsAppPersistencePort } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
 
@@ -193,6 +193,68 @@ describe("createWhatsAppWebhookRouter", () => {
         textBody: "Hello there",
       }),
     );
+  });
+
+  const imagePayload = (image: Record<string, unknown> | undefined, id = "wamid-photo-1") => ({
+    object: "whatsapp_business_account",
+    entry: [{
+      changes: [{
+        value: {
+          metadata: { phone_number_id: "15550001111" },
+          contacts: [{ wa_id: "14155551234", profile: { name: "Alicia" } }],
+          messages: [{ id, from: "14155551234", timestamp: "1710752400", type: "image", ...(image ? { image } : {}) }],
+        },
+      }],
+    }],
+  });
+
+  it.each([
+    ["with a caption", { id: "media-1", mime_type: "image/jpeg", sha256: "abc", caption: "Something like this" }, "Something like this"],
+    ["without a caption", { id: "media-1", mime_type: "image/jpeg", sha256: "abc" }, undefined],
+    ["with a blank caption", { id: "media-1", mime_type: "image/jpeg", caption: "   " }, undefined],
+  ])("hands an image message %s to the handler as a photo and its typed text", async (_label, image, textBody) => {
+    const { app, handler } = setupApp();
+    const payload = JSON.stringify(imagePayload(image));
+
+    await request(app)
+      .post("/api/connectors/whatsapp/workspace-photo/webhook")
+      .set("content-type", "application/json")
+      .set("X-Hub-Signature-256", signPayload(payload))
+      .send(payload)
+      .expect(200);
+    await Promise.resolve();
+
+    expect(handler.handleInboundMessage).toHaveBeenCalledTimes(1);
+    const [message] = (handler.handleInboundMessage as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>];
+    expect(message).toMatchObject({ wamid: "wamid-photo-1", type: "image", image: { mediaId: "media-1" } });
+    expect(message.textBody).toBe(textBody);
+  });
+
+  it("leaves an image message without a media id as a plain image message", async () => {
+    const { app, handler } = setupApp();
+    const payload = JSON.stringify(imagePayload(undefined));
+
+    await request(app)
+      .post("/api/connectors/whatsapp/workspace-photo/webhook")
+      .set("content-type", "application/json")
+      .set("X-Hub-Signature-256", signPayload(payload))
+      .send(payload)
+      .expect(200);
+    await Promise.resolve();
+
+    const [message] = (handler.handleInboundMessage as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>];
+    expect(message).toMatchObject({ type: "image" });
+    expect(message.image).toBeUndefined();
+  });
+
+  it("recovers an image message, caption included, from its stored payload", () => {
+    const recovered = findInboundMessageInPayload(
+      "workspace-photo",
+      imagePayload({ id: "media-9", mime_type: "image/png", caption: "This one" }, "wamid-photo-9"),
+      "wamid-photo-9",
+    );
+
+    expect(recovered).toMatchObject({ type: "image", image: { mediaId: "media-9" }, textBody: "This one" });
   });
 
   it("ignores duplicate wamids and messages for a different configured phone number", async () => {

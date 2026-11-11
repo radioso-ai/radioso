@@ -14,6 +14,14 @@ session, the REST API the credential (or the signed-in user), and a connector
 its conversation. The owner id is never a credential; a send must come from the
 same owner, agent and workspace as the upload.
 
+A connector reaches the module through the host, never directly:
+`modules/connectors/services/connectorImageTurns.ts` uploads the bytes a
+connector hands `ConnectorChatPort.answer` (WhatsApp photos) with owner
+`connector_conversation`, whose id is the conversation the sender is in, or an
+id of its own for a first turn that has no conversation yet, and then sends the
+turn through the chat door with the uploaded ids. Whatever the door does with a
+web chat's photos it does with these.
+
 It knows the photo lifecycle and nothing about chat turns or messages. The chat
 door (`modules/chat/services/assistantChatService.ts`) depends on one narrow
 port, `VisitorImageTurnInput` (`contracts/turnInput.ts`): `claim` the ids for an

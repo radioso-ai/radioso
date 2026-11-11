@@ -182,8 +182,8 @@ describe("WhatsAppMessageHandler", () => {
 
   const createHandler = (input?: {
     persistence?: InMemoryWhatsAppPersistence;
-    chat?: Pick<ConnectorChatPort, "answer">;
-    client?: Pick<WhatsAppClient, "sendTextMessage">;
+    chat?: Pick<ConnectorChatPort, "answer"> & Partial<Pick<ConnectorChatPort, "imageAllowance">>;
+    client?: Pick<WhatsAppClient, "sendTextMessage"> & Partial<Pick<WhatsAppClient, "downloadImage">>;
     enabled?: boolean;
     setErrorStatus?: ConnectorStatePort["setErrorStatus"];
     retryBaseDelayMs?: number;
@@ -191,11 +191,20 @@ describe("WhatsAppMessageHandler", () => {
     unsupportedMessageReply?: string;
   }) => {
     const persistence = input?.persistence ?? new InMemoryWhatsAppPersistence();
-    const chat = input?.chat ?? {
-      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-1", answer: "Combined answer", outcome: "answered" })),
+    // Photos are off unless a test turns them on: the agent allows none, so an image is an unsupported message.
+    const chat = {
+      imageAllowance: vi.fn<ConnectorChatPort["imageAllowance"]>(async () => null),
+      ...(input?.chat ?? {
+        answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-1", answer: "Combined answer", outcome: "answered" })),
+      }),
     };
-    const client = input?.client ?? {
-      sendTextMessage: vi.fn<WhatsAppClient["sendTextMessage"]>(async () => ({ wamid: "wamid-out-1" })),
+    const client = {
+      downloadImage: vi.fn<WhatsAppClient["downloadImage"]>(async () => {
+        throw new Error("no photo download expected");
+      }),
+      ...(input?.client ?? {
+        sendTextMessage: vi.fn<WhatsAppClient["sendTextMessage"]>(async () => ({ wamid: "wamid-out-1" })),
+      }),
     };
     const setErrorStatus = input?.setErrorStatus ?? vi.fn<ConnectorStatePort["setErrorStatus"]>(async () => {});
     const handler = new WhatsAppMessageHandler({
@@ -603,6 +612,292 @@ describe("WhatsAppMessageHandler", () => {
     expect(persistence.messageLogs.get("wamid-image-after-fail")?.status).toBe("replied");
 
     await handler.shutdown();
+  });
+
+  describe("photos", () => {
+    const PHOTO = Buffer.from([0xff, 0xd8, 0xff, 9]);
+    const photoMessage = (n: number, overrides: Partial<WhatsAppInboundMessage> = {}): WhatsAppInboundMessage => inbound({
+      wamid: `wamid-photo-${n}`,
+      type: "image",
+      textBody: undefined,
+      image: { mediaId: `media-${n}` },
+      timestamp: new Date(`2026-03-18T10:00:0${n}.000Z`),
+      ...overrides,
+    });
+    const logInbound = async (persistence: InMemoryWhatsAppPersistence, message: WhatsAppInboundMessage) => {
+      await persistence.createMessageLog({
+        wamid: message.wamid,
+        direction: "inbound",
+        workspaceId: message.workspaceId,
+        waId: message.waId,
+        messageType: message.type,
+        payload: { wamid: message.wamid },
+        status: "received",
+      });
+    };
+    const send = async (persistence: InMemoryWhatsAppPersistence, handler: WhatsAppMessageHandler, messages: WhatsAppInboundMessage[]) => {
+      for (const message of messages) {
+        await logInbound(persistence, message);
+        await handler.handleInboundMessage(message);
+      }
+      await vi.advanceTimersByTimeAsync(3000);
+    };
+    const photosOn = (maxImages = 3) => ({
+      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-photo", answer: "Lovely place.", outcome: "answered" })),
+      imageAllowance: vi.fn<ConnectorChatPort["imageAllowance"]>(async () => ({ maxImages })),
+    });
+    const downloads = () => vi.fn<WhatsAppClient["downloadImage"]>(async () => ({ kind: "downloaded", bytes: PHOTO }));
+    const sender = () => ({ sendTextMessage: vi.fn<WhatsAppClient["sendTextMessage"]>(async () => ({ wamid: "wamid-out-1" })) });
+
+    it("answers a photo with a caption as one turn: the caption is the typed text and the photo is the image", async () => {
+      const chat = photosOn();
+      const downloadImage = downloads();
+      const { handler, persistence, client } = createHandler({ chat, client: { ...sender(), downloadImage } });
+
+      await send(persistence, handler, [photoMessage(1, { textBody: "Something like this, near the coast" })]);
+
+      expect(downloadImage).toHaveBeenCalledWith({ accessToken: "wa-access-token" }, { mediaId: "media-1", wamid: "wamid-photo-1" });
+      expect(chat.answer).toHaveBeenCalledTimes(1);
+      expect(chat.answer).toHaveBeenCalledWith({
+        workspaceId: "workspace-1",
+        conversationId: undefined,
+        query: "Something like this, near the coast",
+        sourceChannel: "whatsapp",
+        images: [{ bytes: PHOTO }],
+      });
+      expect(client.sendTextMessage).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ text: "Lovely place." }));
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
+    });
+
+    it("answers a photo with no caption on the photo alone", async () => {
+      const chat = photosOn();
+      const { handler, persistence } = createHandler({ chat, client: { ...sender(), downloadImage: downloads() } });
+
+      await send(persistence, handler, [photoMessage(1)]);
+
+      expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({ query: "", images: [{ bytes: PHOTO }] }));
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
+    });
+
+    it("turns an album sent in a row into one turn, the photos in the order they were sent", async () => {
+      const chat = photosOn();
+      const downloadImage = vi.fn<WhatsAppClient["downloadImage"]>(async (_config, input) => ({
+        kind: "downloaded",
+        bytes: Buffer.from(input.mediaId),
+      }));
+      const { handler, persistence, client } = createHandler({ chat, client: { ...sender(), downloadImage } });
+
+      // The webhook delivers them out of order; the turn follows the senders' clock.
+      await send(persistence, handler, [
+        photoMessage(2),
+        photoMessage(1),
+        photoMessage(3, { textBody: "These three" }),
+      ]);
+
+      expect(chat.answer).toHaveBeenCalledTimes(1);
+      expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({
+        query: "These three",
+        images: [{ bytes: Buffer.from("media-1") }, { bytes: Buffer.from("media-2") }, { bytes: Buffer.from("media-3") }],
+      }));
+      expect(client.sendTextMessage).toHaveBeenCalledTimes(1);
+      for (const wamid of ["wamid-photo-1", "wamid-photo-2", "wamid-photo-3"]) {
+        expect(persistence.messageLogs.get(wamid)?.status).toBe("replied");
+      }
+    });
+
+    it("carries photos beyond what a turn takes as unsupported messages", async () => {
+      const chat = photosOn(2);
+      const downloadImage = downloads();
+      const { handler, persistence, client } = createHandler({ chat, client: { ...sender(), downloadImage } });
+
+      await send(persistence, handler, [photoMessage(1), photoMessage(2), photoMessage(3)]);
+
+      expect(downloadImage).toHaveBeenCalledTimes(2);
+      expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({ images: [{ bytes: PHOTO }, { bytes: PHOTO }] }));
+      expect(client.sendTextMessage).toHaveBeenCalledTimes(1);
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
+      expect(persistence.messageLogs.get("wamid-photo-2")?.status).toBe("replied");
+      expect(persistence.messageLogs.get("wamid-photo-3")?.status).toBe("skipped");
+    });
+
+    it("answers typed text and a photo sent together as one turn", async () => {
+      const chat = photosOn();
+      const { handler, persistence } = createHandler({ chat, client: { ...sender(), downloadImage: downloads() } });
+
+      await send(persistence, handler, [
+        inbound({ wamid: "wamid-text-1", textBody: "I am looking for a house" }),
+        photoMessage(1, { textBody: "like this one" }),
+      ]);
+
+      expect(chat.answer).toHaveBeenCalledTimes(1);
+      expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({
+        query: "I am looking for a house\nlike this one",
+        images: [{ bytes: PHOTO }],
+      }));
+    });
+
+    it("treats a photo as an unsupported message when the agent allows none, without downloading it", async () => {
+      const chat = {
+        answer: vi.fn<ConnectorChatPort["answer"]>(),
+        imageAllowance: vi.fn<ConnectorChatPort["imageAllowance"]>(async () => null),
+      };
+      const downloadImage = downloads();
+      const { handler, persistence, client } = createHandler({
+        chat,
+        client: { ...sender(), downloadImage },
+        unsupportedMessageReply: "Please send your request as text.",
+      });
+
+      await send(persistence, handler, [photoMessage(1, { textBody: "Something like this" })]);
+
+      expect(downloadImage).not.toHaveBeenCalled();
+      expect(chat.answer).not.toHaveBeenCalled();
+      expect(client.sendTextMessage).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ text: "Please send your request as text." }));
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
+    });
+
+    it("skips a photo the agent cannot read when no unsupported-message reply is configured", async () => {
+      const chat = { answer: vi.fn<ConnectorChatPort["answer"]>(), imageAllowance: vi.fn<ConnectorChatPort["imageAllowance"]>(async () => null) };
+      const { handler, persistence, client } = createHandler({ chat, client: sender() });
+
+      await send(persistence, handler, [photoMessage(1)]);
+
+      expect(client.sendTextMessage).not.toHaveBeenCalled();
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("skipped");
+    });
+
+    it("asks only when a batch carries a photo", async () => {
+      const chat = photosOn();
+      const { handler, persistence } = createHandler({ chat, client: { ...sender(), downloadImage: downloads() } });
+
+      await send(persistence, handler, [inbound({ wamid: "wamid-plain", textBody: "Hello" })]);
+
+      expect(chat.imageAllowance).not.toHaveBeenCalled();
+    });
+
+    it("asks about the conversation the sender is in, and about a new one once it has timed out", async () => {
+      const chat = photosOn();
+      const { handler, persistence } = createHandler({ chat, client: { ...sender(), downloadImage: downloads() } });
+      await persistence.upsertContact({
+        workspaceId: "workspace-1",
+        waId: "14155551234",
+        profileName: "Alicia",
+        conversationId: "conversation-existing",
+        lastMessageAt: new Date("2026-03-18T09:00:00.000Z"),
+      });
+
+      await send(persistence, handler, [photoMessage(1)]);
+
+      expect(chat.imageAllowance).toHaveBeenLastCalledWith({ workspaceId: "workspace-1", conversationId: "conversation-existing" });
+      expect(chat.answer).toHaveBeenLastCalledWith(expect.objectContaining({ conversationId: "conversation-existing" }));
+
+      await send(persistence, handler, [photoMessage(2, { timestamp: new Date("2026-03-20T12:00:00.000Z") })]);
+
+      expect(chat.imageAllowance).toHaveBeenLastCalledWith({ workspaceId: "workspace-1", conversationId: undefined });
+    });
+
+    it("treats a photo as unsupported, and says why in the log, when the allowance cannot be had", async () => {
+      const chat = {
+        answer: vi.fn<ConnectorChatPort["answer"]>(),
+        imageAllowance: vi.fn<ConnectorChatPort["imageAllowance"]>(async () => {
+          throw new Error("agent lookup failed for 14155551234");
+        }),
+      };
+      const { handler, persistence } = createHandler({ chat, client: sender() });
+
+      await send(persistence, handler, [photoMessage(1)]);
+
+      expect(chat.answer).not.toHaveBeenCalled();
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("skipped");
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: "workspace-1", errorClass: "Error" }),
+        "WhatsApp photo support could not be determined",
+      );
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("14155551234");
+    });
+
+    it("answers the caption alone when its photo is gone", async () => {
+      const chat = photosOn();
+      const downloadImage = vi.fn<WhatsAppClient["downloadImage"]>(async () => ({ kind: "unavailable", reason: "not_found" }));
+      const { handler, persistence } = createHandler({ chat, client: { ...sender(), downloadImage } });
+
+      await send(persistence, handler, [photoMessage(1, { textBody: "Do you have this in blue?" })]);
+
+      expect(chat.answer).toHaveBeenCalledWith({
+        workspaceId: "workspace-1",
+        conversationId: undefined,
+        query: "Do you have this in blue?",
+        sourceChannel: "whatsapp",
+      });
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
+    });
+
+    it("fails a photo that is gone and had no caption, without replying", async () => {
+      const chat = photosOn();
+      const downloadImage = vi.fn<WhatsAppClient["downloadImage"]>(async () => ({ kind: "unavailable", reason: "too_large" }));
+      const { handler, persistence, client } = createHandler({ chat, client: { ...sender(), downloadImage } });
+
+      await send(persistence, handler, [photoMessage(1)]);
+
+      expect(chat.answer).not.toHaveBeenCalled();
+      expect(client.sendTextMessage).not.toHaveBeenCalled();
+      expect(persistence.messageLogs.get("wamid-photo-1")).toMatchObject({ status: "failed", errorDetails: "WhatsApp photo could not be downloaded" });
+    });
+
+    it("retries a transient download failure without answering twice", async () => {
+      const chat = photosOn();
+      const downloadImage = vi.fn<WhatsAppClient["downloadImage"]>()
+        .mockRejectedValueOnce(new WhatsAppClientError("WhatsApp media download timed out", 504, true))
+        .mockResolvedValueOnce({ kind: "downloaded", bytes: PHOTO });
+      const { handler, persistence } = createHandler({
+        chat,
+        client: { ...sender(), downloadImage },
+        retryBaseDelayMs: 1000,
+        maxRetryAttempts: 3,
+      });
+
+      await send(persistence, handler, [photoMessage(1, { textBody: "This one" })]);
+
+      expect(chat.answer).not.toHaveBeenCalled();
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("retryable_failed");
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(downloadImage).toHaveBeenCalledTimes(2);
+      expect(chat.answer).toHaveBeenCalledTimes(1);
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
+    });
+
+    it("does not download the photo again when only the delivery of the reply is retried", async () => {
+      const chat = photosOn();
+      const downloadImage = downloads();
+      const client = {
+        downloadImage,
+        sendTextMessage: vi.fn<WhatsAppClient["sendTextMessage"]>()
+          .mockRejectedValueOnce(new WhatsAppClientError("WhatsApp rate limited", 429, true))
+          .mockResolvedValueOnce({ wamid: "wamid-out-delivered" }),
+      };
+      const { handler, persistence } = createHandler({ chat, client, retryBaseDelayMs: 1000, maxRetryAttempts: 3 });
+
+      await send(persistence, handler, [photoMessage(1)]);
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(downloadImage).toHaveBeenCalledTimes(1);
+      expect(chat.answer).toHaveBeenCalledTimes(1);
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
+    });
+
+    it("leaves an image message without a media id unsupported", async () => {
+      const chat = photosOn();
+      const { handler, persistence } = createHandler({ chat, client: { ...sender(), downloadImage: downloads() } });
+
+      await send(persistence, handler, [photoMessage(1, { image: undefined })]);
+
+      expect(chat.answer).not.toHaveBeenCalled();
+      expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("skipped");
+    });
   });
 
   it("sets connector error status when the Cloud API rejects credentials", async () => {

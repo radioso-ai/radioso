@@ -83,7 +83,34 @@ export type ConnectorTurnResult =
   /** A person owns the conversation, so no turn ran. */
   | { kind: "human_owned"; conversationId: string; ownershipVersion: number };
 
+/**
+ * A photo the customer sent on the channel, as the channel delivered it. The host reads the type
+ * from the bytes, re-encodes the photo and reads it with the agent's chat model; a connector never
+ * judges whether the bytes are an image.
+ */
+export interface ConnectorInboundImage {
+  bytes: Uint8Array;
+}
+
+/** What one turn may carry in photos. */
+export interface ConnectorImageAllowance {
+  /** The most photos `answer` takes in one turn. */
+  maxImages: number;
+}
+
 export interface ConnectorChatPort {
+  /**
+   * Whether a turn on this conversation (a new one when `conversationId` is omitted) reads photos
+   * now, and how many: the agent that answers it has photos on and its chat model reads them.
+   * Null when it reads none. A connector asks before it downloads a photo, and treats photos as
+   * messages it does not support when the answer is null.
+   */
+  // Message-queue impact: synchronous host port only; no AMQP or worker payload changes.
+  imageAllowance(input: {
+    workspaceId: string;
+    agentId?: string;
+    conversationId?: string;
+  }): Promise<ConnectorImageAllowance | null>;
   /**
    * Records the customer's message, and the human ownership asked for, in one unit of work. Runs
    * no turn and reserves no usage.
@@ -105,6 +132,13 @@ export interface ConnectorChatPort {
     sourceChannel?: string | null;
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
     channelContext?: ConversationChannelContext | null;
+    /**
+     * The photos the customer sent with this message, at most `imageAllowance().maxImages`.
+     * `query` is what they typed with them and may be empty. The host stores and reads each photo,
+     * runs the turn on the text and the readings, and keeps the photos with the conversation. A
+     * photo it cannot use is left out; the turn is refused when none is usable and `query` is empty.
+     */
+    images?: readonly ConnectorInboundImage[];
   }): Promise<{
     conversationId: string;
     answer: string;

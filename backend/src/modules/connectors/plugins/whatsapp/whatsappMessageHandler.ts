@@ -1,10 +1,12 @@
 import type {
   ConnectorChatPort,
   ConnectorDatabasePort,
+  ConnectorInboundImage,
   ConnectorLogger,
   ConnectorStatePort,
 } from "@radioso/connector-api";
 
+import { errorClassOf } from "../../../../shared/observability/errorClass.js";
 import { WhatsAppClient, WhatsAppClientError } from "./whatsappClient.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresWhatsAppPersistence, type WhatsAppPersistencePort } from "./whatsappPersistence.js";
@@ -12,9 +14,9 @@ import { PostgresWhatsAppPersistence, type WhatsAppPersistencePort } from "./wha
 interface WhatsAppMessageHandlerOptions {
   db: ConnectorDatabasePort;
   logger: ConnectorLogger;
-  chat: Pick<ConnectorChatPort, "answer">;
+  chat: Pick<ConnectorChatPort, "answer" | "imageAllowance">;
   state: Pick<ConnectorStatePort, "getConfig" | "setErrorStatus">;
-  client: Pick<WhatsAppClient, "sendTextMessage">;
+  client: Pick<WhatsAppClient, "sendTextMessage" | "downloadImage">;
   persistence?: WhatsAppPersistencePort;
   debounceMs?: number;
   retryBaseDelayMs?: number;
@@ -29,7 +31,10 @@ export interface WhatsAppInboundMessage {
   phoneNumberId: string | null;
   timestamp: Date;
   type: string;
+  /** What the sender typed: a text message's body, or an image's caption. */
   textBody?: string;
+  /** The photo of an image message, by the media id Graph resolves to its bytes. */
+  image?: { mediaId: string };
   payload: Record<string, unknown>;
 }
 
@@ -119,13 +124,16 @@ export class WhatsAppMessageHandler {
       return;
     }
 
-    const textMessages = messages.filter((message) => this.isProcessableTextMessage(message));
-    const unsupportedMessages = messages.filter((message) => !this.isProcessableTextMessage(message));
+    // Rapid messages are one batch, so an album's photos and the caption that comes with them are
+    // one turn, the same as a few lines of text sent in a row.
+    const photoMessages = await this.selectPhotoMessages(messages, configRecord.config);
+    const turnMessages = messages.filter((message) => this.isProcessableTextMessage(message) || photoMessages.includes(message));
+    const unsupportedMessages = messages.filter((message) => !turnMessages.includes(message));
     const errors: unknown[] = [];
 
-    if (textMessages.length > 0) {
-      await this.processMessageGroup(textMessages, async () => {
-        await this.answerAndReply(textMessages, this.buildTextQuery(textMessages), configRecord.config);
+    if (turnMessages.length > 0) {
+      await this.processMessageGroup(turnMessages, async () => {
+        await this.answerAndReply(turnMessages, this.buildTextQuery(turnMessages), configRecord.config);
       }).catch((error) => errors.push(error));
     }
 
@@ -264,22 +272,19 @@ export class WhatsAppMessageHandler {
       };
     }
 
-    const latestTimestamp = [...messages]
-      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
-      .at(-1)?.timestamp ?? first.timestamp;
-
-    const contact = await this.persistence.findContact(first.workspaceId, first.waId);
-    const timeoutHours = Number(config.conversation_timeout_hours ?? "24");
-    const timeoutMs = timeoutHours * 60 * 60 * 1000;
-    const canContinueConversation =
-      contact &&
-      latestTimestamp.getTime() - contact.lastMessageAt.getTime() <= timeoutMs;
+    const { conversationId, latestTimestamp } = await this.continuingConversation(messages, config);
+    const images = await this.downloadPhotos(messages, config);
+    if (images.length === 0 && query.trim().length === 0) {
+      // Every photo was gone and nothing was typed: there is nothing to answer, and no reply to send.
+      throw new WhatsAppClientError("WhatsApp photo could not be downloaded", 410, false);
+    }
 
     const response = await this.options.chat.answer({
       workspaceId: first.workspaceId,
-      conversationId: canContinueConversation ? contact.conversationId : undefined,
+      conversationId,
       query,
       sourceChannel: "whatsapp",
+      ...(images.length > 0 ? { images } : {}),
     });
 
     await this.persistence.upsertContact({
@@ -310,6 +315,7 @@ export class WhatsAppMessageHandler {
     };
   }
 
+  /** What the sender typed across the turn: text bodies and photo captions, in the order they arrived. */
   private buildTextQuery(messages: WhatsAppInboundMessage[]): string {
     return messages
       .map((message) => message.textBody?.trim() ?? "")
@@ -319,6 +325,84 @@ export class WhatsAppMessageHandler {
 
   private isProcessableTextMessage(message: WhatsAppInboundMessage): boolean {
     return message.type === "text" && Boolean(message.textBody?.trim());
+  }
+
+  private isPhotoMessage(message: WhatsAppInboundMessage): message is WhatsAppInboundMessage & { image: { mediaId: string } } {
+    return message.type === "image" && Boolean(message.image?.mediaId);
+  }
+
+  private photosInSentOrder(messages: WhatsAppInboundMessage[]): Array<WhatsAppInboundMessage & { image: { mediaId: string } }> {
+    return messages
+      .filter((message) => this.isPhotoMessage(message))
+      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+  }
+
+  /**
+   * The conversation a turn on these messages continues: the sender's latest, unless it has been
+   * quiet longer than the connector's timeout, which starts a new one.
+   */
+  private async continuingConversation(
+    messages: WhatsAppInboundMessage[],
+    config: Record<string, string>,
+  ): Promise<{ conversationId: string | undefined; latestTimestamp: Date }> {
+    const [first] = messages;
+    const latestTimestamp = [...messages]
+      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
+      .at(-1)?.timestamp ?? first.timestamp;
+
+    const contact = await this.persistence.findContact(first.workspaceId, first.waId);
+    const timeoutHours = Number(config.conversation_timeout_hours ?? "24");
+    const timeoutMs = timeoutHours * 60 * 60 * 1000;
+    const canContinueConversation =
+      contact &&
+      latestTimestamp.getTime() - contact.lastMessageAt.getTime() <= timeoutMs;
+
+    return { conversationId: canContinueConversation ? contact.conversationId : undefined, latestTimestamp };
+  }
+
+  /**
+   * The photos of this batch a turn takes: the first the host allows, in the order they were sent,
+   * when the agent that answers reads photos. Otherwise none, so every photo is an unsupported
+   * message, as it is for any agent with photos off. The host's answer decides before a byte is
+   * downloaded; one that cannot be had is treated as photos off.
+   */
+  private async selectPhotoMessages(
+    messages: WhatsAppInboundMessage[],
+    config: Record<string, string>,
+  ): Promise<WhatsAppInboundMessage[]> {
+    const photos = this.photosInSentOrder(messages);
+    if (photos.length === 0) {
+      return [];
+    }
+
+    const [first] = messages;
+    try {
+      const { conversationId } = await this.continuingConversation(messages, config);
+      const allowance = await this.options.chat.imageAllowance({ workspaceId: first.workspaceId, conversationId });
+      return allowance ? photos.slice(0, allowance.maxImages) : [];
+    } catch (error) {
+      this.options.logger.warn(
+        { workspaceId: first.workspaceId, errorClass: errorClassOf(error) },
+        "WhatsApp photo support could not be determined",
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Downloads the turn's photos, in the order they were sent. One that is gone is left out; a
+   * transient failure throws, so the batch is retried whole.
+   */
+  private async downloadPhotos(
+    messages: WhatsAppInboundMessage[],
+    config: Record<string, string>,
+  ): Promise<ConnectorInboundImage[]> {
+    const downloads = await Promise.all(this.photosInSentOrder(messages).map((message) =>
+      this.options.client.downloadImage(
+        { accessToken: config.access_token },
+        { mediaId: message.image.mediaId, wamid: message.wamid },
+      )));
+    return downloads.flatMap((download) => (download.kind === "downloaded" ? [{ bytes: download.bytes }] : []));
   }
 
   private inboundWamids(messages: WhatsAppInboundMessage[]): string[] {

@@ -99,6 +99,11 @@ it raw bytes plus an owner, and gets back an image id.
   - multer has `files`, `fields` and `parts` limits. Rate limiting runs before the body is buffered.
 - **WhatsApp.** An inbound image message downloads the media through the Graph API with the connector's token, goes
   through the same validation and storage, and is read. Its caption becomes the typed text.
+  - The connector already answers messages from one number that arrive within three seconds as one
+    turn, so an album's photos (at most three, in the order sent) are one turn with their captions
+    joined. Photos beyond the third are unsupported messages. No new coalescing exists.
+  - The turn goes through the chat door with the ids the upload returned and owner
+    `connector_conversation`: the conversation's id, or an id of its own for a first turn.
 - **Bytes.** Stored through `DocumentStoragePort` under `workspaces/<ws>/visitor-images/<id>`, so a workspace purge
   covers them.
 - **Row.** Table `visitor_images` holds:

@@ -1,6 +1,6 @@
 ---
 title: "Let visitors send photos"
-description: "How visitors and API callers attach photos to a message, how the agent reads them, the limits, and how to match a photo against your catalogue with a routine."
+description: "How visitors, WhatsApp senders and API callers attach photos to a message, how the agent reads them, the limits, and how to match a photo against your catalogue with a routine."
 ---
 
 # Let visitors send photos
@@ -96,8 +96,19 @@ A client holding a REST credential bound to one agent uses `POST /api/v1/agents/
 
 A page of your own on the public chat uploads to `POST /api/v1/public/chat/{token}/images` with the visitor's public session in `x-radioso-public-session`, sends `imageIds` with the message, and reads a photo back with `GET /api/v1/public/chat/{token}/images/{imageId}`, which serves only the session that uploaded it. See [Public chat and embed](/api/public-chat-and-embed#send-photos).
 
+## Photos on WhatsApp
+
+A photo sent to a connected WhatsApp number is read the same way, with nothing to upload: Radioso downloads it from WhatsApp with the connector's access token, and it goes through the same checks, re-encoding, reading and storage as a photo from the web chat. The caption is the message text, and the photo is the image. A photo with no caption is a message made of the photo alone.
+
+WhatsApp delivers an album as separate messages a few seconds apart. Radioso answers messages from one number that arrive within three seconds of each other as one turn, so up to three photos sent together, with the caption on any of them, are one message to the agent and get one reply. A fourth and later photo in the same turn is handled as an unsupported message, and a photo sent after the turn has been answered starts a turn of its own.
+
+The agent that answers is the one the number's conversation already runs on, or the workspace's default agent when a new conversation starts. When that agent has photos off or its chat model cannot read images, a photo is an unsupported message, exactly as it is without this setting: Radioso sends the connector's unsupported-message reply if you configured one, and records the message as skipped otherwise. See [Connectors and webhooks](/api/connectors-and-webhooks#built-in-connectors).
+
+A WhatsApp photo is bounded like any other upload: 10 MiB at most, read by its bytes, and stored as a re-encoded JPEG with the conversation. A photo WhatsApp no longer holds, or one over the cap, is not read, and its caption is answered as text.
+
 ## Common failure modes
 
+- **A WhatsApp photo gets the unsupported-message reply, or no reply** — the agent that answers the number has photos off, or its chat model cannot read images. Turn photos on for that agent, or give it a model that reads images.
 - **`404 visitor_images_unavailable` on upload** — the agent has photos off, or its chat model cannot read images. `acceptsImages` on the public session is `false` in both cases.
 - **`415 unsupported_image_type`** — the file is not a JPEG, PNG or WebP image, whatever its name says.
 - **`413 image_too_large` or `image_too_many_pixels`** — over 10 MiB, or too many pixels to decode. Send a smaller photo.

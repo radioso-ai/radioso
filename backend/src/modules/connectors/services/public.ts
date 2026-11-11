@@ -1,6 +1,7 @@
 // The connector host's services, as application wiring builds and reads them: the host ports a
 // plugin calls, the registry the built-in catalog fills, and the management surface routes use.
 export { createConnectorChatPort } from "./connectorChatPort.js";
+export { createConnectorImageTurns } from "./connectorImageTurns.js";
 export { createConnectorIngestionPort } from "./connectorIngestionPort.js";
 export { createConnectorSourceDirectory, type ConnectorSourceDirectory } from "./connectorSourceDirectory.js";
 export { ConnectorManagementService, type ConnectorManagementPort } from "./connectorManagementService.js";

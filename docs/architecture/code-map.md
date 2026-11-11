@@ -1113,11 +1113,14 @@ Public surfaces and key files:
 - `backend/src/app/http/shared/visitorImageUpload.ts`, `backend/src/app/http/middleware/visitorImageUploadRateLimiter.ts`
 - `backend/prompts/chat/visitor-image-reading.md`
 - `backend/src/db/migrations/256_visitor_images.sql`
+- `backend/src/modules/connectors/services/connectorImageTurns.ts` (a connector turn's photos: the per-conversation allowance, the upload for owner `connector_conversation`, then the turn through the chat door's `ChatDoorPhotoTurnPort`); `connectorChatPort.ts` carries `imageAllowance` and `answer({ images })`
+- `backend/src/modules/connectors/plugins/whatsapp/whatsappMedia.ts` and `whatsappClient.ts` `downloadImage` (Graph media id to bytes: size cap, timeout, https-only redirects; counter `whatsapp_media_downloads_total{outcome}`); `whatsappMessageHandler.ts` turns an album batch into one turn of up to three photos, the caption as typed text
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/unit/agents/agent-visitor-images-flag.test.ts tests/contract/visitor-images.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/visitor-images.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/unit/connectors/connectorImageTurns.test.ts tests/unit/connectors/connectorChatPort.test.ts tests/unit/connectors/whatsapp tests/contract/connectors/connector-chat-port.contract.test.ts` (WhatsApp photos)
 - `cd typescript-sdk && pnpm exec vitest run tests/unit/chat-images.test.ts`
 
 Related specs and docs:

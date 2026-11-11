@@ -66,13 +66,19 @@ const routineExposureCarriedFlat = permanent(
   "Carried flat as `enabled`, `toolName`, and `description` — the three fields of the exposure block — rather than as a nested `exposure` object, because the tool transport renders a nested input object as the bare word \"object\" (routineExposureInputSchema in tools/routines.ts). `enabled` on this tool is the exposure's own switch, not the routine's; the routine's stays as stored.",
 );
 const routineExposureLeavesFieldsAlone = permanent(
-  "propose_routine_exposure changes only the exposure block of an already-authored routine. Its wording, trigger, fields, steps, endings, branches, and completion export stay whatever the stored routine already has — the same one-concern shape propose_directive_enablement takes toward a directive.",
+  "propose_routine_exposure changes only the exposure block of an already-authored routine. Its wording, trigger, fields, steps, endings, branches, completion export, and consents stay whatever the stored routine already has — the same one-concern shape propose_directive_enablement takes toward a directive.",
 );
 const routineStructuralPreparationNesting = permanent(
   "Carried nested: each of these is set either as an `operations[]` entry (set_enabled, insert/replace/remove_step, insert/replace/remove_slot, insert/replace/remove_terminal, insert/replace/remove_transition) or, for a brand-new routine, nested under `draft` — never as a same-named top-level field.",
 );
 const routineStructuralPreparationExposureViaOwnTool = permanent(
   "Reachable nested under `draft.exposure` when creating a routine; for an existing routine, exposure is one concern with its own reviewed card, propose_routine_exposure, rather than an `operations[]` entry here.",
+);
+const routineConsentsAwaitRayDescriptor = deferred(
+  "A routine's consents (#1544) carry the operator's own wording, shown to visitors verbatim. Ray proposes consents only once its descriptor takes that wording from the operator unchanged and an eval case holds it to that; until then propose_routine drafts none, and propose_routine_edit has no field for them.",
+);
+const routineStructuralPreparationConsentsUnreachable = deferred(
+  "Reachable only when creating a routine, nested under `draft.consents`; no `operations[]` entry edits an existing routine's consents, for the same reason propose_routine_edit has no field for them.",
 );
 const routineStructuralPreparationCompletionExportUnreachable = deferred(
   "Reachable only when creating a routine, nested under `draft.completionExport`; no `operations[]` entry updates an existing routine's completion-export destination, so editing one waits on the same Wave 5 webhook-destination review as propose_routine_edit's gap.",
@@ -208,20 +214,23 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
   },
   propose_routine: {
     ...fields(["name", "enabled", "activation", "slots", "steps", "transitions", "terminals", "completionExport", "exposure"], routineIntentDrafted),
+    ...fields(["consents"], routineConsentsAwaitRayDescriptor),
   },
   propose_routine_edit: {
     ...fields(["name", "enabled", "activation", "slots", "steps", "terminals", "exposure"], routineEditFieldPatchNesting),
     ...fields(["transitions"], routineCannotReworkBranching),
     ...fields(["completionExport"], routineEditCompletionExportUnreachable),
+    ...fields(["consents"], routineConsentsAwaitRayDescriptor),
   },
   propose_routine_exposure: {
     ...fields(["exposure"], routineExposureCarriedFlat),
-    ...fields(["name", "activation", "slots", "steps", "transitions", "terminals", "completionExport"], routineExposureLeavesFieldsAlone),
+    ...fields(["name", "activation", "slots", "steps", "transitions", "terminals", "completionExport", "consents"], routineExposureLeavesFieldsAlone),
   },
   prepare_routine_structure: {
     ...fields(["name", "enabled", "activation", "slots", "steps", "terminals", "transitions"], routineStructuralPreparationNesting),
     ...fields(["exposure"], routineStructuralPreparationExposureViaOwnTool),
     ...fields(["completionExport"], routineStructuralPreparationCompletionExportUnreachable),
+    ...fields(["consents"], routineStructuralPreparationConsentsUnreachable),
   },
   propose_skill_config: {
     ...fields(["replaceConfig"], skillConfigAlwaysMergesNeverReplaces),
@@ -291,4 +300,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
 //   15 -> 11 agentInputFieldSchemas and the reviewed agent-settings patch gained `voice` and
 //            `mechanicsReplies`, so propose_agent_setting and prepare_agent_settings both carry
 //            them; the four deferrals the two blocks added (two each) are retired.
-export const maxDeferredFieldParityExclusions = 11;
+//   11 -> 14 the routine create and update bodies gained `consents` (#1544), which propose_routine,
+//            propose_routine_edit, and prepare_routine_structure (for an existing routine) do not
+//            carry until Ray's consent descriptor exists.
+export const maxDeferredFieldParityExclusions = 14;

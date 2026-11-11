@@ -84,7 +84,8 @@ describe("routine authoring services builder", () => {
       } as never,
       logger: logger as never,
       repositories: {
-        agentRepository: {},
+        // Serving validation reads the agent's default language for the consent rules (#1544).
+        agentRepository: { findByIdAndWorkspaceId: async () => ({ assistantDefaultLocale: "en" }) },
         routineDefinitionRepository: {},
       } as never,
       routineInvocableSkillNames: { listForAgent: async () => [], listByKindForAgent: unused },

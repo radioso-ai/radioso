@@ -4,7 +4,8 @@
  * of an email, an audit event past its own age window. The owning module implements the rule;
  * application composition hands every rule to the retention sweep, which runs them in bounded
  * batches. A conversation that a workspace's own window passed is not a rule's to remove: it goes
- * through the conversation erasure, which takes every copy with it.
+ * through the conversation erasure, which takes every copy with it. A rule may read the workspace's
+ * own window for proof kept past its conversation, such as a consent record.
  */
 export interface ConversationDataRetentionRule {
   /** What the sweep reports the rule's count under: its table, or `table.column` for a cleared copy. */

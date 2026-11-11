@@ -10,6 +10,7 @@ import { createPostgresDataSubjectReadUnitOfWork } from "../../src/app/compositi
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
 import { PersonalCredentialLifecycleRepository } from "../../src/db/repositories/personalCredentialLifecycleRepository.js";
+import { RoutineConsentRepository } from "../../src/db/repositories/routineConsentRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { ConversationErasureService, DataSubjectAccessService } from "../../src/modules/privacy/public.js";
 import type { DataSubjectIdentity } from "../../src/shared/domain/dataSubjectAccess.js";
@@ -193,6 +194,24 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
        VALUES ($1, $2, $3, 'sealed-context', 'completed', 'routine_completed', now())`,
       [`task${randomUUID().replaceAll("-", "")}`, t.workspaceId, webConversationId],
     );
+    const consents = new RoutineConsentRepository(database.kysely);
+    const wording = { locale: "en", body: "We ask about injuries to place you in the right class.", agreeLabel: "I agree", declineLabel: "No thanks" };
+    await consents.insertRecord({
+      workspaceId: t.workspaceId,
+      agentId: t.agentId,
+      conversationId: webConversationId,
+      visitorId: visitor.id,
+      routineId: "booking",
+      consentKey: "health",
+      slotKeys: ["injury"],
+      wordingVersionId: await consents.upsertWordingVersion({ workspaceId: t.workspaceId, wording }),
+      locale: "en",
+      decision: "granted",
+      method: "button",
+      defaulted: false,
+      channel: "web",
+      decisionMessageId: null,
+    });
     const queueAction = (type: string, payload: Record<string, unknown>) => database.query(
       `INSERT INTO routine_action_requests (type, payload, workspace_id, conversation_id, status)
        VALUES ($1, $2::jsonb, $3, $4, 'dispatched')`,
@@ -347,6 +366,7 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       expect(Object.keys(sections).sort()).toEqual([
         "a2a_tasks",
         "answer_feedback",
+        "consent_records",
         "context_values",
         "conversation_summaries",
         "conversations",
@@ -368,6 +388,16 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       expect(sections.visitors).toEqual([expect.objectContaining({ id: jane.visitorId, verifiedCustomerId: JANE, lastCountry: "EE" })]);
       expect(sections.routine_values).toEqual([
         expect.objectContaining({ conversationId: jane.webConversationId, routineId: "booking", status: "completed", values: { injury: "knee", phone: "+372 5555 0000" } }),
+      ]);
+      expect(sections.consent_records).toEqual([
+        expect.objectContaining({
+          conversationId: jane.webConversationId,
+          routineId: "booking",
+          consentKey: "health",
+          decision: "granted",
+          method: "button",
+          wording: { body: "We ask about injuries to place you in the right class.", agreeLabel: "I agree", declineLabel: "No thanks" },
+        }),
       ]);
       expect(sections.a2a_tasks).toEqual([
         expect.objectContaining({ conversationId: jane.webConversationId, state: "completed", reason: "routine_completed" }),

@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-11-09
+last_updated: 2026-11-11
 ---
 
 # Authoring Routines
@@ -232,6 +232,74 @@ of the conversation. A value the visitor gives while no step is asking for it,
 before its step or as a correction after the routine has finished, is marked only
 when the routine stores it. Once the routine has ended, a later reply that brings
 the value up again is not masked.
+
+#### Ask for consent first
+
+Masking keeps a value from travelling. Some values need more: health details,
+religious beliefs, and the other special categories of personal data need the
+visitor's explicit consent before the routine collects them. A routine carries
+that consent in its `consents` list, which you write through the routine API
+(`POST /api/v1/agents/{agentId}/routines` and
+`PATCH /api/v1/agents/{agentId}/routines/{routineId}`). The Document view keeps
+a routine's consents when you save it from there.
+
+For the yoga booking above:
+
+```json
+"consents": [
+  {
+    "key": "health",
+    "slotKeys": ["injury"],
+    "variants": [
+      {
+        "locale": "en",
+        "body": "To place you in the right class we ask about injuries. Your answer stays with this booking and our instructors.",
+        "agreeLabel": "I agree",
+        "declineLabel": "No thanks"
+      },
+      {
+        "locale": "de",
+        "body": "Damit wir Sie im passenden Kurs einplanen, fragen wir nach Verletzungen. Ihre Antwort bleibt bei dieser Buchung und unseren Lehrkräften.",
+        "agreeLabel": "Einverstanden",
+        "declineLabel": "Nein danke"
+      }
+    ],
+    "onDecline": "continue"
+  }
+]
+```
+
+- `key` names the consent within the routine: letters, digits, and
+  underscores, starting with a letter or underscore.
+- `slotKeys` lists the sensitive fields the consent covers, at least one.
+- `variants` holds the wording, one per language. The `body` and the two labels
+  are shown exactly as you write them, so write them the way you want them read.
+  One variant must be in the agent's default language, or in English when the
+  agent has none set.
+- `onDecline` is what happens when the visitor says no: `continue` runs the
+  routine without the covered fields, and `handoff` ends it and hands the
+  conversation to a person.
+
+You don't place a consent in the flow. Radioso asks it immediately before the
+step that collects the first field it covers, so here it comes right before the
+step that asks about `@injury`. A routine exposed as a tool leaves covered fields out
+of its input schema, because a calling agent can't consent for a person.
+
+Validation names the consent or field to fix:
+
+| Code | What it means |
+|---|---|
+| `consent_slot_unknown` | The consent covers a field the routine doesn't declare. |
+| `consent_slot_not_sensitive` | The consent covers a field that isn't marked **Sensitive**. |
+| `consent_slot_covered_twice` | Two consents cover the same field. Keep it in one. |
+| `consent_key_duplicate` | Two consents share a `key`. |
+| `consent_missing_default_variant` | No variant is in the agent's default language. |
+| `consent_text_invalid` | A `body` or label is blank or too long (8,000 characters for a body, 80 for a label), a `locale` isn't a valid language tag or repeats another variant's, the text holds a `{{…}}` reference, or both labels read the same. |
+
+A `consent_text_invalid` location points at the field, such as
+`consent:health.variants[1].agreeLabel`. The checks use the agent's default
+language as it is when you save, validate, or publish, so changing that language
+can stop a routine whose consent has no wording in it from publishing.
 
 #### Changes after a routine ends
 

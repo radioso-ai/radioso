@@ -5,6 +5,7 @@ export {
   routineDefinitionDraftUpdateInputSchema,
   routineDefinitionSchema,
   routineGuardProvenance,
+  routineConsentSchema,
   routineReentryModes,
   routineSlotTypes,
   routineStepSchema,

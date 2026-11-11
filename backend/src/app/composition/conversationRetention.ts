@@ -2,6 +2,7 @@ import type { Kysely } from "kysely";
 
 import { AuditEventRetention } from "../../db/repositories/auditEventRepository.js";
 import { ConversationSummaryRetention } from "../../db/repositories/conversationSummaryRepository.js";
+import { ConsentRecordRetention, ConsentWordingVersionRetention } from "../../db/repositories/routineConsentRepository.js";
 import { RoutineStateRetention } from "../../db/repositories/routineStateRepository.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
 import { A2aMessageReceiptRetention, A2aTaskRetention } from "../../modules/a2a/public.js";
@@ -30,6 +31,10 @@ const defaultConversationDataRetentionRules = (
 ): readonly ConversationDataRetentionRuleBinding[] => [
   (db) => new ConversationSummaryRetention(db),
   (db) => new RoutineStateRetention(db),
+  // Consent proof follows the workspace's own window from its decision; a wording goes once no
+  // record names it, so records come first.
+  (db) => new ConsentRecordRetention(db),
+  (db) => new ConsentWordingVersionRetention(db),
   (db) => new EmailRawMimeRetention(db),
   (db) => new A2aTaskRetention(db),
   (db) => new A2aMessageReceiptRetention(db),

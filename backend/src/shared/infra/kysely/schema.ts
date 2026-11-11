@@ -1700,6 +1700,38 @@ export interface RoutineCompletionExport {
   updated_at: Generated<Timestamp>;
 }
 
+export interface RoutineConsentRecords {
+  agent_id: string | null;
+  channel: string | null;
+  consent_key: string;
+  conversation_id: string | null;
+  decided_at: Generated<Timestamp>;
+  decision: string;
+  decision_message_id: string | null;
+  defaulted: Generated<boolean>;
+  id: string;
+  locale: string;
+  method: string;
+  routine_id: string;
+  slot_keys: string[];
+  visitor_id: string | null;
+  withdrawn_at: Timestamp | null;
+  withdrawn_by_account_id: string | null;
+  withdrawn_by_user_id: string | null;
+  wording_version_id: string;
+  workspace_id: string;
+}
+
+export interface RoutineConsentWordingVersions {
+  agree_label: string;
+  body: string;
+  decline_label: string;
+  first_shown_at: Generated<Timestamp>;
+  id: string;
+  locale: string;
+  workspace_id: string;
+}
+
 export interface RoutineDefinition {
   activation_coverage_criteria: Json | null;
   activation_gate_ref: string | null;
@@ -1707,6 +1739,7 @@ export interface RoutineDefinition {
   activation_reentry_mode: Generated<string>;
   activation_trigger_description: string;
   agent_id: string;
+  consents: Generated<Json>;
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
   exposure_description: string | null;
@@ -2307,6 +2340,8 @@ export interface DB {
   revision_eval_runs: RevisionEvalRuns;
   routine_action_requests: RoutineActionRequests;
   routine_completion_export: RoutineCompletionExport;
+  routine_consent_records: RoutineConsentRecords;
+  routine_consent_wording_versions: RoutineConsentWordingVersions;
   routine_definition: RoutineDefinition;
   routine_slot: RoutineSlot;
   routine_states: RoutineStates;

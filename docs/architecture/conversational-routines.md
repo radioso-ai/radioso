@@ -377,10 +377,14 @@ and over.
 
 A routine can carry `consents` (#1544). Each one names the slots it covers and what
 happens on decline: `continue` runs the routine without those slots, `handoff` hands
-the conversation to a person. A `consent` step sits before a step that collects a
-covered slot, and its default exit leads on to that step. The runner treats it as a
-transit step, like a tool step, and asks the host through the `consent` option of
-`DefaultRoutineRunner` (`ConversationRoutineConsentPort`). The wording, the channel,
+the conversation to a person. The author never places a `consent` step. The backend
+compiler (`modules/routines/consentGates.ts`) puts one, with the id
+`consent:<key>:<stepId>`, before every step that collects a covered slot by the shared
+collection rule (`collectedSlotsByStep`): each transition into that step leads to the
+gate instead, the gate's default exit leads on to the step, two consents on one step
+chain in the order they are written, and a gated root hands the root to its gate. The
+runner treats it as a transit step, like a tool step, and asks the host through the
+`consent` option of `DefaultRoutineRunner` (`ConversationRoutineConsentPort`). The wording, the channel,
 and the records stay with the host.
 
 At the start of every turn the runner reads what the conversation already decided.

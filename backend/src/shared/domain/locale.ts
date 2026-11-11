@@ -1,6 +1,18 @@
 import { badRequest } from "./errors.js";
 
 const MAX_LOCALE_LENGTH = 35;
+
+/**
+ * Bootstrap never resolves `resolveChatLocale` to a hardcoded language (it returns `null`
+ * when the agent has never set `assistantDefaultLocale`), but exact content's "one
+ * mandatory default-locale variant" rule (spec 1150 FR-005/FR-007), and a routine consent's
+ * (#1544), need an actual language to require. An agent that has never set a default locale
+ * falls back to English here — at draft-save time (`AgentService.updateDraftGreeting`,
+ * `RoutineDefinitionService`) and at candidate/publish time (`AgentRevisionRepository`) — so
+ * the checks never disagree with each other.
+ */
+export const DEFAULT_AGENT_LOCALE_FALLBACK = "en";
+
 /** A BCP 47 language tag of the shape Radioso stores: language, optional script, optional region. */
 export const LOCALE_TAG_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$/;
 

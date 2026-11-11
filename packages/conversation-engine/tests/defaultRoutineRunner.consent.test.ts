@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   ConversationRoutineConsentPort,
   ConversationRoutineNextStepSelector,
+  ConversationRoutineSkillDispatcher,
   ConversationRoutineStepRenderer,
   Routine,
   RoutineConsentDecision,
@@ -356,6 +357,48 @@ describe("DefaultRoutineRunner consent before a covered slot (#1544)", () => {
 
       expect(result.endedVariables).toEqual({ name: "Ada" });
       expect(result.trace?.steps[0]?.rejectedSlots).toEqual([{ key: "pregnant", reason: "consent" }]);
+    });
+  });
+
+  describe("a covered value a tool step returns", () => {
+    // A lookup between the name and the consent maps its outputs onto the covered slot and onto a
+    // variable no consent covers.
+    const withLookup = (): Routine => {
+      const routine = intake();
+      return {
+        ...routine,
+        steps: [...routine.steps, { id: "lookup", kind: "skill", skillName: "crm_lookup", outputAssignments: { pregnant: "pregnant", tier: "tier" } }],
+        transitions: [
+          { from: "ask_name", to: "lookup", condition: "a name was given", guard: { kind: "slot_filled", slots: ["name"] } },
+          { from: "lookup", to: GATE, condition: "always" },
+          ...routine.transitions.filter((transition) => transition.from !== "ask_name"),
+        ],
+      };
+    };
+    const lookup = (): ConversationRoutineSkillDispatcher => ({
+      dispatch: vi.fn(async () => ({ status: "completed" as const, outputs: { pregnant: true, tier: "gold" } })),
+    });
+    const run = (port: ConversationRoutineConsentPort) =>
+      new DefaultRoutineRunner([withLookup()], reading({ name: "Ada" }), renderer(), lookup(), { consent: port })
+        .resume({ turn: turn("I'm Ada"), state: state(["ask_name"]) });
+
+    it.each([
+      ["not granted yet", {}],
+      ["declined", { health: "declined" as const }],
+    ])("is not kept while the consent is %s, and the trace names the consent as the reason", async (_label, decisions) => {
+      const result = await run(consentPort({ decisions }));
+
+      const variables = result.nextState?.variables ?? result.endedVariables;
+      expect(variables).toMatchObject({ name: "Ada", tier: "gold" });
+      expect(variables).not.toHaveProperty("pregnant");
+      expect(result.trace?.steps.find((step) => step.stepId === "lookup")?.rejectedSlots).toEqual([{ key: "pregnant", reason: "consent" }]);
+    });
+
+    it("is kept once the consent was granted before the turn", async () => {
+      const result = await run(consentPort({ decisions: { health: "granted" } }));
+
+      expect(result.endedVariables ?? result.nextState?.variables).toMatchObject({ name: "Ada", pregnant: true, tier: "gold" });
+      expect(result.trace?.steps.find((step) => step.stepId === "lookup")).not.toHaveProperty("rejectedSlots");
     });
   });
 

@@ -51,6 +51,7 @@ import {
   slotFilledGuardPasses,
 } from "./slotCollectionStep.js";
 import {
+  assignOutputs,
   checkDeclaredSlotValues,
   declaredSlotVariables,
   hasVariable,
@@ -73,22 +74,6 @@ const projectStep = (step: RoutineStep): SteeringRule[] =>
         description: `routine step ${step.id}`,
       }]
     : [];
-
-const assignOutputs = (
-  outputAssignments: Record<string, string> | undefined,
-  outputs: Record<string, unknown> | undefined,
-): Record<string, unknown> => {
-  if (!outputAssignments || !outputs) {
-    return {};
-  }
-  const assigned: Record<string, unknown> = {};
-  for (const [outputField, variableName] of Object.entries(outputAssignments)) {
-    if (Object.prototype.hasOwnProperty.call(outputs, outputField)) {
-      assigned[variableName] = outputs[outputField];
-    }
-  }
-  return assigned;
-};
 
 const stagedContextForSkillResult = (
   step: RoutineStep,
@@ -981,7 +966,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (skillResult.actsOutsideConversation !== false) {
         skillsWithExternalEffects.push(step.skillName);
       }
-      variables = { ...variables, ...assignOutputs(step.outputAssignments, skillResult.outputs) };
+      const assigned = consentGate.admit(assignOutputs(step.outputAssignments, skillResult.outputs));
+      variables = { ...variables, ...assigned.values };
+      const skillRejected = [...pendingRootRejected, ...assigned.rejected];
       const staged = stagedContextForSkillResult(step, skillResult);
       if (staged) {
         stagedContext = [...stagedContext, staged];
@@ -996,7 +983,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         ...(step.skillName ? { skillName: step.skillName } : {}),
         skillStatus: skillResult.status,
         ...(skillReason ? { skillReason } : {}),
-        ...(pendingRootRejected.length > 0 ? { rejectedSlots: pendingRootRejected } : {}),
+        ...(skillRejected.length > 0 ? { rejectedSlots: skillRejected } : {}),
       };
       pendingRootRejected = [];
       traceSteps.push(skillEntry);

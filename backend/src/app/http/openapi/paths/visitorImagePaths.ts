@@ -15,6 +15,7 @@ const uploadLimits = [
   "Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped,",
   "and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale.",
   "Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload.",
+  "Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing.",
 ].join(" ");
 
 const uploadErrors = (schemas: OpenApiSchemas) => ({
@@ -22,7 +23,10 @@ const uploadErrors = (schemas: OpenApiSchemas) => ({
   404: errorResponse("`visitor_images_unavailable`: the agent does not take images (its `visitorImagesEnabled` is off, or its chat model cannot read images)", schemas),
   413: errorResponse("`image_too_large`: over 10 MiB; or `image_too_many_pixels`: too many pixels to decode", schemas),
   415: errorResponse("`unsupported_image_type`: not a JPEG, PNG or WebP image", schemas),
-  429: { description: "The upload budget is spent", content: { "application/json": { schema: schemas.RateLimitExceededSchema } } },
+  429: {
+    description: "The upload budget is spent (`rate_limit_exceeded`), or the plan has no answers left for the reading (`usage_limit_exceeded`, the refusal a chat message gets; without `details` on the public route).",
+    content: { "application/json": { schema: z.union([schemas.RateLimitExceededSchema, schemas.ErrorResponseSchema]) } },
+  },
 });
 
 const imageServing = "The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`.";

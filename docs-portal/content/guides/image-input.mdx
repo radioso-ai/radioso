@@ -44,6 +44,7 @@ The stored message keeps both forms. Its `content` is the turn text above, which
 - **What is stored.** A JPEG at most 1,600 pixels on its long side and at most 512 KB, turned upright, with its EXIF and GPS data dropped. A client that shrinks photos before uploading, to about the same size, saves the visitor most of the upload.
 - **How long.** A photo sent with a message stays with its conversation and is deleted with it, by hand or by the workspace's retention window. A photo attached and never sent is deleted 24 hours after its upload. See [Data retention](/operators/data-retention).
 - **Rate.** Uploads have their own budgets: 20 per ten minutes for one visitor session and network source, 40 for the source, 600 for the workspace; 120 per ten minutes for one API credential.
+- **Plan.** Each photo the agent reads counts as one answer against the workspace's plan, on its own rather than inside a conversation's block of replies. A photo the model could not read costs nothing. Once the plan is used up, an upload is refused with `429 usage_limit_exceeded`, the same refusal a message gets.
 
 ## Match a photo against your catalogue
 
@@ -100,6 +101,7 @@ A page of your own on the public chat uploads to `POST /api/v1/public/chat/{toke
 - **`404 visitor_images_unavailable` on upload** — the agent has photos off, or its chat model cannot read images. `acceptsImages` on the public session is `false` in both cases.
 - **`415 unsupported_image_type`** — the file is not a JPEG, PNG or WebP image, whatever its name says.
 - **`413 image_too_large` or `image_too_many_pixels`** — over 10 MiB, or too many pixels to decode. Send a smaller photo.
+- **`429 usage_limit_exceeded` on upload** — the workspace's plan has no answers left for the reading. The public chat routes leave out the plan `details`; the API routes carry them.
 - **`409 visitor_image_unavailable` on send** — the id is unknown, was uploaded by another session or credential or for another agent, or a message already carried it. Upload the photo again.
 - **`readingStatus: "unread"`** — the model did not answer in time or could not describe the photo. The message still carries the photo, and the agent is told it could not see it.
 

@@ -18,6 +18,7 @@ import type {
 } from "../../modules/visitorImages/public.js";
 import type { BackgroundJobHandlerRegistration } from "../../shared/background-jobs/index.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
+import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { LlmCapabilityResolver } from "../../shared/infra/llm/capabilityResolver.js";
 import { ContextualStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import { imageInputCapabilityFor } from "../../shared/infra/llm/knownModels.js";
@@ -105,6 +106,7 @@ export const wireVisitorImages = (deps: {
   infrastructure: {
     database: { kysely: Kysely<DB> };
     usageEventRecorder: UsageEventRecorder;
+    usageLimitPolicy: Pick<UsageLimitPolicy, "reserveAnswer">;
     auditService: Pick<AuditPort, "recordForLiveConversation">;
     metricsRegistry: MetricsRegistry | null;
   };
@@ -125,6 +127,7 @@ export const wireVisitorImages = (deps: {
       objects,
       reader: new ModelVisitorImageReader({ model: visitorImageReadingModel({ agents: deps.agents, inference }), logger: deps.logger }),
       audit: visitorImageAudit(deps.infrastructure.auditService),
+      usage: deps.infrastructure.usageLimitPolicy,
       metrics: deps.infrastructure.metricsRegistry,
       logger: deps.logger,
     }),

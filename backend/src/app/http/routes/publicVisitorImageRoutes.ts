@@ -5,6 +5,7 @@ import type { AppDependencies } from "../../server/types.js";
 import type { VisitorImageAvailability, VisitorImageService } from "../../../modules/visitorImages/public.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
+import { answeredPublicUsageLimit } from "../shared/publicUsageLimit.js";
 import {
   publicVisitorImageUploadRateLimiter,
   type VisitorImageUploadRateLimiterDependencies,
@@ -86,6 +87,7 @@ export const registerPublicVisitorImageRoutes = (
         res.setHeader("Cache-Control", "no-store");
         res.status(201).json(presentVisitorImageUpload(result));
       } catch (error) {
+        if (answeredPublicUsageLimit(res, error)) return;
         next(error);
       }
     },

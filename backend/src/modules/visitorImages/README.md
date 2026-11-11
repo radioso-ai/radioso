@@ -42,8 +42,8 @@ composition. Nothing in `packages/` changes for images.
 
 ## Read First
 
-- `services/visitorImageService.ts`: upload (normalize, store, insert, read,
-  record the reading), claim, bind, release, and the two reads (owner,
+- `services/visitorImageService.ts`: upload (normalize, reserve an answer,
+  store, insert, read, record the reading), claim, bind, release, and the two reads (owner,
   conversation with an audited view).
 - `services/imageNormalizer.ts`: magic-byte sniffing (JPEG, PNG, WebP only),
   `sharp` decode under a pixel limit, auto-rotate, re-encode to JPEG at most
@@ -67,8 +67,11 @@ composition. Nothing in `packages/` changes for images.
 ## Lifecycle
 
 1. Upload: the route checks the agent takes photos and spends the rate budgets
-   before multer buffers the body; the service re-encodes, stores the object,
-   inserts the row (`pending`), reads it, and records `read` or `unread`.
+   before multer buffers the body; the service re-encodes, reserves one answer
+   against the plan (`UsageLimitPolicy.reserveAnswer`, `conversation_reply`, so
+   an over-plan workspace gets the chat turn's `429 usage_limit_exceeded`),
+   stores the object, inserts the row (`pending`), reads it, and records `read`
+   (keeping the answer) or `unread` (giving it back).
 2. Send: the door claims the ids (all or none, one send per photo), renders
    `<visitor_image index="n">reading</visitor_image>` or
    `<visitor_image index="n" unread/>` after the typed text, and runs the turn.

@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 import { AppError } from "../../../shared/domain/errors.js";
+import type { UsageLimitPolicy, UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { VisitorImageClaim, VisitorImageTurnInput } from "../contracts/turnInput.js";
 import {
   VISITOR_IMAGE_LIMITS,
   type VisitorImageAudit,
+  type VisitorImageObject,
   type VisitorImageObjectStore,
   type VisitorImageOwner,
   type VisitorImageReader,
@@ -50,6 +52,8 @@ export class VisitorImageService implements VisitorImageTurnInput {
     objects: VisitorImageObjectStore;
     reader: VisitorImageReader;
     audit: VisitorImageAudit;
+    /** The plan: each reading is one answer, reserved before the photo is stored and read. */
+    usage: Pick<UsageLimitPolicy, "reserveAnswer">;
     metrics?: VisitorImageMetricsSink | null;
     /** Ids, outcomes and error classes only; never bytes or readings. */
     logger: VisitorImageServiceLogger;
@@ -76,22 +80,30 @@ export class VisitorImageService implements VisitorImageTurnInput {
       this.deps.logger.info({ workspaceId: input.workspaceId, agentId: input.agentId, reason: normalized.reason }, "visitor_image_rejected");
       return normalized;
     }
+    // Refused over plan with the error a chat turn gets, before anything is stored or read.
+    const reservation = await this.deps.usage.reserveAnswer({ workspaceId: input.workspaceId, surface: input.surface, usage: "conversation_reply" });
     const id = this.newId();
-    const object = await this.deps.objects.put({ workspaceId: input.workspaceId, imageId: id, jpeg: normalized.jpeg });
+    let object: VisitorImageObject;
     try {
-      await this.deps.store.insert({
-        id,
-        workspaceId: input.workspaceId,
-        agentId: input.agentId,
-        owner: input.owner,
-        object,
-        byteSize: normalized.jpeg.length,
-        width: normalized.width,
-        height: normalized.height,
-        sha256: normalized.sha256,
-      });
+      object = await this.deps.objects.put({ workspaceId: input.workspaceId, imageId: id, jpeg: normalized.jpeg });
+      try {
+        await this.deps.store.insert({
+          id,
+          workspaceId: input.workspaceId,
+          agentId: input.agentId,
+          owner: input.owner,
+          object,
+          byteSize: normalized.jpeg.length,
+          width: normalized.width,
+          height: normalized.height,
+          sha256: normalized.sha256,
+        });
+      } catch (error) {
+        await this.deps.objects.remove(object).catch(() => undefined);
+        throw error;
+      }
     } catch (error) {
-      await this.deps.objects.remove(object).catch(() => undefined);
+      await this.releaseReservation(reservation, input.workspaceId);
       throw error;
     }
     recordVisitorImageUpload(this.deps.metrics, "accepted");
@@ -105,6 +117,9 @@ export class VisitorImageService implements VisitorImageTurnInput {
       surface: input.surface,
     });
     const status = reading.kind === "read" ? "read" : "unread";
+    // A photo the model could not read gave the visitor nothing, so it costs no answer.
+    if (status === "read") await reservation.commit();
+    else await this.releaseReservation(reservation, input.workspaceId);
     await this.deps.store.recordReading({
       workspaceId: input.workspaceId,
       id,
@@ -115,6 +130,12 @@ export class VisitorImageService implements VisitorImageTurnInput {
     recordVisitorImageReading(this.deps.metrics, status);
     this.deps.logger.info({ workspaceId: input.workspaceId, agentId: input.agentId, imageId: id, readingStatus: status }, "visitor_image_uploaded");
     return { kind: "accepted", id, readingStatus: status };
+  }
+
+  private async releaseReservation(reservation: UsageLimitReservation, workspaceId: string): Promise<void> {
+    await reservation.release().catch((error: unknown) => {
+      this.deps.logger.warn({ workspaceId, errorClass: errorClassOf(error) }, "visitor_image_reservation_release_failed");
+    });
   }
 
   async claim(input: Parameters<VisitorImageTurnInput["claim"]>[0]): Promise<VisitorImageClaim> {

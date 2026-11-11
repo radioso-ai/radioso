@@ -213,6 +213,21 @@ describe("visitor image contract", () => {
     expect(reader.read).not.toHaveBeenCalled();
   });
 
+  it("refuses an upload once the plan has no answers left, with the chat turn's code and no plan details for a visitor", async () => {
+    const overPlan = planWith(async () => {
+      throw new AppError(429, "usage_limit_exceeded", "Usage limit exceeded", { profileKey: "starter", limit: 100, used: 100 });
+    });
+    const { visitor, reader, app, agentId, credential } = await imageWorkspace({ usageLimitPolicy: overPlan });
+    const { upload } = await visitor();
+
+    const refused = await upload(await photo()).expect(429);
+    expect(refused.body).toEqual({ error: { code: "usage_limit_exceeded", message: "Usage limit exceeded" } });
+
+    const api = await request(app).post(`/api/v1/assistant/images?agentId=${agentId}`).set(await credential()).attach("image", await photo(), "photo.png").expect(429);
+    expect(api.body.error).toMatchObject({ code: "usage_limit_exceeded", details: { profileKey: "starter" } });
+    expect(reader.read).not.toHaveBeenCalled();
+  });
+
   it("refuses a photo field under any other name", async () => {
     const { visitor } = await imageWorkspace();
     const { upload } = await visitor();

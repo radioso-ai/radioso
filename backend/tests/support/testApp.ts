@@ -2347,6 +2347,7 @@ export const createTestDependencies = (overrides: {
     objects: visitorImageObjectStore(documentStorage),
     reader: overrides.visitorImageReader ?? { read: async () => ({ kind: "read", description: "A photo the test uploaded." }) },
     audit: visitorImageAudit(auditService),
+    usage: usageLimitPolicy,
     metrics: metricsRegistry,
     logger,
   });

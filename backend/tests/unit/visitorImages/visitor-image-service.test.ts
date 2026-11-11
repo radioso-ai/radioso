@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 
 import type { VisitorImageOwner, VisitorImageReader, VisitorImageReading } from "../../../src/modules/visitorImages/domain.js";
+import { AppError } from "../../../src/shared/domain/errors.js";
 import { VisitorImageService } from "../../../src/modules/visitorImages/services/visitorImageService.js";
 import { InMemoryVisitorImageObjects, InMemoryVisitorImageStore } from "../../support/inMemoryVisitorImages.js";
 
@@ -15,8 +16,15 @@ const STRANGER: VisitorImageOwner = { kind: "public_session", id: "9e7c5a3f-1d0b
 
 const photo = (): Promise<Buffer> => sharp({ create: { width: 2400, height: 1200, channels: 3, background: "#4a7a3a" } }).png().toBuffer();
 
-const harness = (options: { reading?: VisitorImageReading } = {}) => {
+const harness = (options: { reading?: VisitorImageReading; overPlan?: boolean } = {}) => {
   const store = new InMemoryVisitorImageStore();
+  const reservation = { commit: vi.fn(async () => undefined), release: vi.fn(async () => undefined) };
+  const usage = {
+    reserveAnswer: vi.fn(async () => {
+      if (options.overPlan) throw new AppError(429, "usage_limit_exceeded", "Usage limit exceeded");
+      return reservation;
+    }),
+  };
   const objects = new InMemoryVisitorImageObjects();
   const reader: VisitorImageReader = {
     read: vi.fn(async () => options.reading ?? { kind: "read" as const, description: "A green field under a clear sky." }),
@@ -28,6 +36,7 @@ const harness = (options: { reading?: VisitorImageReading } = {}) => {
     objects,
     reader,
     audit,
+    usage,
     metrics,
     logger: { info: vi.fn(), warn: vi.fn() },
   });
@@ -36,7 +45,7 @@ const harness = (options: { reading?: VisitorImageReading } = {}) => {
     if (result.kind !== "accepted") throw new Error(`upload rejected: ${result.reason}`);
     return result;
   };
-  return { service, store, objects, reader, audit, metrics, upload };
+  return { service, store, objects, reader, audit, usage, reservation, metrics, upload };
 };
 
 const counted = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) =>
@@ -89,6 +98,46 @@ describe("VisitorImageService.upload", () => {
     expect(objects.objects.size).toBe(0);
     expect(reader.read).not.toHaveBeenCalled();
     expect(counted(metrics)).toEqual(["visitor_image_uploads_total:{\"outcome\":\"rejected_type\"}"]);
+  });
+});
+
+describe("VisitorImageService upload against the plan", () => {
+  it("reserves one answer for each reading, as a chat reply would, and keeps it once the photo is read", async () => {
+    const { upload, usage, reservation } = harness();
+
+    await upload();
+
+    expect(usage.reserveAnswer).toHaveBeenCalledWith({ workspaceId: WORKSPACE, surface: "website_embed", usage: "conversation_reply" });
+    expect(reservation.commit).toHaveBeenCalledTimes(1);
+    expect(reservation.release).not.toHaveBeenCalled();
+  });
+
+  it("gives the answer back when the model could not read the photo", async () => {
+    const { upload, reservation } = harness({ reading: { kind: "unread", reason: "timeout" } });
+
+    await upload();
+
+    expect(reservation.release).toHaveBeenCalledTimes(1);
+    expect(reservation.commit).not.toHaveBeenCalled();
+  });
+
+  it("refuses the upload with the chat turn's error once the plan has no answers left, storing and reading nothing", async () => {
+    const { service, store, objects, reader } = harness({ overPlan: true });
+
+    await expect(service.upload({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, bytes: await photo(), locale: null, surface: "api" }))
+      .rejects.toMatchObject({ statusCode: 429, code: "usage_limit_exceeded" });
+
+    expect(store.rows.size).toBe(0);
+    expect(objects.objects.size).toBe(0);
+    expect(reader.read).not.toHaveBeenCalled();
+  });
+
+  it("spends no answer on a file it refuses", async () => {
+    const { service, usage } = harness();
+
+    await service.upload({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, bytes: Buffer.from("%PDF-1.7"), locale: null, surface: "api" });
+
+    expect(usage.reserveAnswer).not.toHaveBeenCalled();
   });
 });
 

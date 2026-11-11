@@ -164,7 +164,8 @@ import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMc
 import { NotificationRecipientStateRepository } from "../../db/repositories/notificationRecipientStateRepository.js";
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
-import { PeriodicTaskRunner, createPeriodicTasksLifecycle } from "../composition/periodicTaskRunner.js";
+import { createPeriodicTasks } from "../composition/periodicTaskRunner.js";
+import { wireVisitorImages } from "../composition/visitorImages.js";
 import { createAbuseControlComposition } from "../composition/abuseControl.js";
 
 interface BuildDependenciesOptions {
@@ -367,7 +368,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     teammateLabels,
     messages: repositories.messageRepository,
   });
+  // Photos visitors and API callers attach: stored under the workspace, read with the agent's chat model.
+  const visitorImages = wireVisitorImages({ infrastructure, storage: documents.documentStorage, agents: repositories.agentRepository, resolver: llmCapabilityResolver, logger });
   const chat = buildChatServices({
+    assistantChat: { visitorImages: visitorImages.service },
     abuseControlService: abuseControlComposition.service,
     accountAccessService: access.accountAccessService,
     agentRetrievalScope,
@@ -1261,21 +1265,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       }),
     })),
   ];
-  // The poll worker's interval loop wraps each handle in a `PeriodicTaskRunner`; the push
-  // worker's task route looks the same handle up by id instead (`periodicTaskHandlesById`
-  // below), so a registration is built exactly once regardless of which runtime drives it.
-  const periodicTasksLifecycle = createPeriodicTasksLifecycle(
-    periodicTaskEntries.map(
-      ({ id, intervalMs, handle }) =>
-        new PeriodicTaskRunner({
-          id,
-          intervalMs,
-          run: () => handle.run(),
-          logger,
-        }),
-    ),
-  );
-  const periodicTaskHandlesById = new Map(periodicTaskEntries.map(({ id, handle }) => [id, handle]));
+  const { lifecycle: periodicTasksLifecycle, handlesById: periodicTaskHandlesById } = createPeriodicTasks(periodicTaskEntries, logger);
   const conversationLinks = buildConversationLinkResolver({
     database: infrastructure.database,
     appBaseUrl: env.APP_BASE_URL,
@@ -1299,6 +1289,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ...slackInboundJobs.backgroundJobHandlers,
     // The recordings a deletion handed off, deleted at the voice vendor with the key held beside them.
     voiceRecordings.erasureJobHandler,
+    // The photos an erasure or the unbound sweep handed off.
+    visitorImages.objectDeletionJobHandler,
     // A deleted workspace's stored files: handed off by its deletion, or queued by an operator.
     workspaceStoragePurgeHandler({
       storage: documents.documentStorage,
@@ -1454,6 +1446,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
     voiceRecordingsLeftAtVendor: voiceRecordingErasures,
+    visitorImages: visitorImages.service,
+    visitorImageAvailability: visitorImages.availability,
     voiceRuntimeConnections,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,

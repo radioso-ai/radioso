@@ -8,6 +8,7 @@ import { createAccountVoiceRecordingRoutes } from "./accountVoiceRecordingRoutes
 import { createAuthRoutes } from "./authRoutes.js";
 import { createConversationActivityRoutes } from "./conversationActivityRoutes.js";
 import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
+import { createConversationImageRoutes } from "./conversationImageRoutes.js";
 import { createConversationRecordingRoutes } from "./conversationRecordingRoutes.js";
 import { createDeliveryFailureRoutes } from "./deliveryFailureRoutes.js";
 import { createNotificationDeliveryRoutes } from "./notificationDeliveryRoutes.js";
@@ -107,6 +108,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/conversations", createRouter: createConversationActivityRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationRecordingRoutes },
+  { path: "/api/v1/conversations", createRouter: createConversationImageRoutes },
   { path: "/api/v1/delivery-failures", createRouter: createDeliveryFailureRoutes },
   { path: "/api/v1/notification-deliveries", createRouter: createNotificationDeliveryRoutes },
   { path: "/api/v1", createRouter: createHeldReplyRoutes },

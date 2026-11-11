@@ -166,6 +166,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       contactRequestsEnabled: z.boolean(),
       webhookExportsEnabled: z.boolean(),
       handoffOnRetrievalMiss: z.boolean(),
+      visitorImagesEnabled: z.boolean().openapi({
+        description: "Whether visitors and API callers may attach photos to a message. The agent's chat model reads each photo at upload, so this takes effect only when that model reads images.",
+      }),
       contactRequestDelivery: AgentContactRequestDeliverySchema,
       theme: z.object({
         brand: z.string(),
@@ -237,6 +240,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       contactRequestsEnabled: z.boolean().optional(),
       webhookExportsEnabled: z.boolean().optional(),
       handoffOnRetrievalMiss: z.boolean().optional(),
+      visitorImagesEnabled: z.boolean().optional(),
       contactRequestDelivery: AgentContactRequestDeliveryRequestSchema.optional(),
       theme: z.object({
         brand: z.string().optional(),
@@ -722,6 +726,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       resumeToken: z.string(),
       assistantBootstrapActive: z.boolean(),
       assistantAvatarUrl: z.string().nullable().optional(),
+      acceptsImages: z.boolean().openapi({
+        description: "Whether the visitor may attach photos to a message: the agent has `visitorImagesEnabled` on and its chat model reads images. Upload with `POST /api/v1/public/chat/{token}/images`.",
+      }),
       theme: z.object({
         brand: z.string(),
         brandText: z.string(),

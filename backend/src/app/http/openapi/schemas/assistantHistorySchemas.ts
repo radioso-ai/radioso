@@ -33,6 +33,7 @@ import { nullableComponent } from "../zodOpenApiExtension.js";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 import type { SameType } from "../../../../shared/types/sameType.js";
 import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
+import { registerUserMessageInputMetadataSchema } from "./userMessageInputMetadataSchemas.js";
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const answerFeedbackParamsSchema = z.object({
@@ -280,13 +281,13 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const AssistantChatRequestSchema = registry.register(
     "AssistantChatRequest",
     assistantChatSchema.openapi({
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`. `imageIds` needs `agentId`.",
     }),
   );
   const PublicChatRequestSchema = registry.register(
     "PublicChatRequest",
     anonymousChatSchema.openapi({
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`.",
     }),
   );
 
@@ -631,24 +632,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  // How a recorded user message was produced. `routine_invocation` is a calling
-  // agent's tool call: `routine` carries its structured form for tool-call rendering
-  // while `content` holds the same call as text.
-  const UserMessageInputMetadataSchema = registry.register(
-    "UserMessageInputMetadata",
-    z.object({
-      method: z.enum(["typed", "suggestion_click", "intent_click", "routine_invocation"]),
-      suggestionSourceMessageId: z.string().uuid().optional(),
-      intent: z.object({
-        skillName: z.string(),
-        intentName: z.string().optional(),
-      }).optional(),
-      routine: z.object({
-        toolName: z.string(),
-        input: z.record(z.string(), z.unknown()),
-      }).optional(),
-    }),
-  );
+  const UserMessageInputMetadataSchema = registerUserMessageInputMetadataSchema(registry);
 
   const ReplyInterruptionSchema = registry.register(
     "ReplyInterruption",

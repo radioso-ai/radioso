@@ -3927,6 +3927,10 @@
               "handoffOnRetrievalMiss": {
                 "type": "boolean"
               },
+              "visitorImagesEnabled": {
+                "type": "boolean",
+                "description": "Whether visitors and API callers may attach photos to a message. The agent's chat model reads each photo at upload, so this takes effect only when that model reads images."
+              },
               "contactRequestDelivery": {
                 "$ref": "#/components/schemas/AgentContactRequestDelivery"
               },
@@ -4103,6 +4107,7 @@
               "contactRequestsEnabled",
               "webhookExportsEnabled",
               "handoffOnRetrievalMiss",
+              "visitorImagesEnabled",
               "contactRequestDelivery",
               "theme",
               "branding",
@@ -4194,6 +4199,9 @@
             "type": "boolean"
           },
           "handoffOnRetrievalMiss": {
+            "type": "boolean"
+          },
+          "visitorImagesEnabled": {
             "type": "boolean"
           },
           "contactRequestDelivery": {
@@ -8845,6 +8853,10 @@
               "null"
             ]
           },
+          "acceptsImages": {
+            "type": "boolean",
+            "description": "Whether the visitor may attach photos to a message: the agent has `visitorImagesEnabled` on and its chat model reads images. Upload with `POST /api/v1/public/chat/{token}/images`."
+          },
           "theme": {
             "type": "object",
             "properties": {
@@ -8946,6 +8958,7 @@
           "publicSessionToken",
           "resumeToken",
           "assistantBootstrapActive",
+          "acceptsImages",
           "expiresAt",
           "resumeExpiresAt"
         ]
@@ -9596,6 +9609,10 @@
           },
           "handoffOnRetrievalMiss": {
             "type": "boolean"
+          },
+          "visitorImagesEnabled": {
+            "type": "boolean",
+            "description": "Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off."
           },
           "contactRequestsEnabled": {
             "type": "boolean"
@@ -10799,6 +10816,10 @@
           },
           "handoffOnRetrievalMiss": {
             "type": "boolean"
+          },
+          "visitorImagesEnabled": {
+            "type": "boolean",
+            "description": "Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off."
           },
           "contactRequestsEnabled": {
             "type": "boolean"
@@ -15298,6 +15319,16 @@
             "minLength": 1,
             "maxLength": 4000
           },
+          "imageIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "description": "Images uploaded for this message, in the order they were attached; at most three, each sent once. The agent reads each image at upload, and the message runs on its text followed by those readings."
+          },
           "startConversation": {
             "type": "boolean",
             "default": false
@@ -15390,7 +15421,7 @@
             "maxItems": 20
           }
         },
-        "description": "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
+        "description": "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`. `imageIds` needs `agentId`."
       },
       "PublicChatRequest": {
         "type": "object",
@@ -15399,6 +15430,16 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4000
+          },
+          "imageIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "description": "Images uploaded for this message, in the order they were attached; at most three, each sent once. The agent reads each image at upload, and the message runs on its text followed by those readings."
           },
           "stream": {
             "type": "boolean",
@@ -15560,7 +15601,7 @@
             ]
           }
         },
-        "description": "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
+        "description": "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`."
       },
       "ConversationOwnership": {
         "type": "object",
@@ -16690,6 +16731,46 @@
           "cleared"
         ]
       },
+      "VisitorImageInput": {
+        "type": "object",
+        "properties": {
+          "typedText": {
+            "type": "string",
+            "description": "What the visitor typed, without the photo readings. Empty when they sent photos alone."
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "The image id; read the photo from the conversation's image route."
+                },
+                "reading": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "What the agent's chat model read in the photo, in the visitor's language; null when it could not read it."
+                }
+              },
+              "required": [
+                "id",
+                "reading"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 3
+          }
+        },
+        "required": [
+          "typedText",
+          "images"
+        ],
+        "description": "The photos a message carries. Render `typedText` and the photos in the visitor's bubble; the readings are the agent's, not the visitor's words."
+      },
       "UserMessageInputMetadata": {
         "type": "object",
         "properties": {
@@ -16735,6 +16816,9 @@
               "toolName",
               "input"
             ]
+          },
+          "imageInput": {
+            "$ref": "#/components/schemas/VisitorImageInput"
           }
         },
         "required": [
@@ -23752,6 +23836,46 @@
           "identities"
         ],
         "additionalProperties": false
+      },
+      "VisitorImageUploadRequest": {
+        "type": "object",
+        "properties": {
+          "image": {
+            "type": "string",
+            "format": "binary",
+            "description": "The image: JPEG, PNG or WebP, at most 10 MiB."
+          },
+          "locale": {
+            "type": "string",
+            "maxLength": 35,
+            "description": "BCP 47 tag of the language the agent writes the image's reading in."
+          }
+        },
+        "required": [
+          "image"
+        ]
+      },
+      "VisitorImageUploadResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Send it in the message's `imageIds`."
+          },
+          "readingStatus": {
+            "type": "string",
+            "enum": [
+              "read",
+              "unread"
+            ],
+            "description": "`read`: the agent's chat model described the image. `unread`: it could not; the message still carries the image, and the agent is told it could not see it."
+          }
+        },
+        "required": [
+          "id",
+          "readingStatus"
+        ]
       },
       "VoiceRecordingLeftAtVendor": {
         "type": "object",
@@ -55426,6 +55550,388 @@
           },
           "503": {
             "description": "`recording_unavailable`: the recording could not be read (the workspace's vendor key is missing or unreadable, or the vendor did not answer)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/chat/{token}/images": {
+      "post": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Upload an image for the visitor's next message",
+        "description": "For the website embed and the public link: send the public session as `x-radioso-public-session`, as for a chat message. The session's `acceptsImages` says whether the agent takes images. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Uploads spend their own budgets, per visitor session and source and per workspace, before the body is read.",
+        "operationId": "uploadPublicChatImage",
+        "security": [
+          {
+            "anonymousSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitorImageUploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored and read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorImageUploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No `image` field, more than one file, or an invalid `locale`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`visitor_images_unavailable`: the agent does not take images (its `visitorImagesEnabled` is off, or its chat model cannot read images)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "`image_too_large`: over 10 MiB; or `image_too_many_pixels`: too many pixels to decode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "`unsupported_image_type`: not a JPEG, PNG or WebP image",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The upload budget is spent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/chat/{token}/images/{imageId}": {
+      "get": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Read an image the visitor uploaded",
+        "description": "Only the public session that uploaded the image can read it, whether or not a message carries it yet. The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`.",
+        "operationId": "getPublicChatImage",
+        "security": [
+          {
+            "anonymousSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "imageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored image",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such image for this public session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The public session's read budget is spent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assistant/images": {
+      "post": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Upload an image for a chat message",
+        "description": "The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Uploads spend their own budgets, per credential and per workspace, before the body is read.",
+        "operationId": "uploadAssistantChatImage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitorImageUploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored and read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorImageUploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No `image` field, more than one file, or an invalid `locale`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace chat permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`visitor_images_unavailable`: the agent does not take images (its `visitorImagesEnabled` is off, or its chat model cannot read images)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "`image_too_large`: over 10 MiB; or `image_too_many_pixels`: too many pixels to decode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "`unsupported_image_type`: not a JPEG, PNG or WebP image",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The upload budget is spent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversationId}/images/{imageId}": {
+      "get": {
+        "tags": [
+          "Conversation History"
+        ],
+        "summary": "View an image a visitor sent in a conversation",
+        "description": "The image ids are in the user message's `inputMetadata.imageInput`. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<img>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`. Every response that carries the image records a `conversation.image_viewed` audit event with the teammate's user id.",
+        "operationId": "getConversationImage",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "imageId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "workspaceId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored image",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid conversation or image id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace history read permission required, the caller is not a dashboard session, or another site started the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The conversation carries no such image",
             "content": {
               "application/json": {
                 "schema": {

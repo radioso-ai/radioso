@@ -46,6 +46,8 @@ import {
 } from "../presenters/publicChatPresenter.js";
 import { resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 import { registerPublicVoiceSessionRoute } from "./publicVoiceSessionRoute.js";
+import { registerPublicVisitorImageRoutes } from "./publicVisitorImageRoutes.js";
+import { publicVisitorImageOwner } from "../shared/visitorImageUpload.js";
 import type { PublicVoiceSessionRateLimiterDependencies } from "../middleware/publicVoiceSessionRateLimiter.js";
 
 type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & PublicVoiceSessionRateLimiterDependencies & Pick<
@@ -71,7 +73,8 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & PublicVoic
   | "accessGrantService"
   | "voiceSessionStarts"
   | "voiceRecordings"
-
+  | "visitorImages"
+  | "visitorImageAvailability"
   | "voiceSessionAvailability"
 >;
 
@@ -217,6 +220,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   // Every turn runs on the agent's published release, so a session for an agent nobody published
   // could get no answer: the exchange refuses it with its own code, before the visitor types.
   const isPublished = (input: { workspaceId: string; agentId: string }) => dependencies.agentPublication.isPublished(input);
+  // Whether the chat shows an attach control: the agent takes photos, and its chat model reads them.
+  const acceptsImages = async (input: { workspaceId: string; agentId: string }) =>
+    (await dependencies.visitorImageAvailability.forAgent(input)) === "available";
   /**
    * Spec 1277 decision 6: `visitorKey` is an unauthenticated, client-persisted
    * grouping id — deliberately never usable to key or continue a *session* (that
@@ -440,6 +446,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           session,
           resume: resumeSession,
           assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, agent.logo),
+          acceptsImages: await acceptsImages({ workspaceId: workspace.id, agentId: agent.id }),
           intakeActions: await resolvePublicIntakeActions({
             workspaceId: workspace.id,
             agentId: agent.id,
@@ -628,6 +635,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         session,
         resume: resumeSession,
         assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, agent.logo),
+        acceptsImages: await acceptsImages({ workspaceId: workspace.id, agentId: agent.id }),
         intakeActions: await resolvePublicIntakeActions({
           workspaceId: workspace.id,
           agentId: agent.id,
@@ -645,6 +653,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     publicSession: sessionMiddleware,
     sessionRequestRateLimit: rateLimitPublicChatSessionRead,
   });
+
+  // POST /api/v1/public/chat/:token/images, GET /api/v1/public/chat/:token/images/:imageId — a visitor's photos
+  registerPublicVisitorImageRoutes(router, { ...dependencies, publicSession: sessionMiddleware, sessionReadRateLimit: rateLimitPublicChatSessionRead });
 
   // POST /api/v1/public/chat/:token — send a message
   router.post(
@@ -707,7 +718,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         const input = {
           workspaceId,
           agentId,
-          message: req.body.message!,
+          message: req.body.message,
+          imageIds: req.body.imageIds,
+          imageOwner: publicVisitorImageOwner(chatSessionId),
           stream: req.body.stream,
           userExpectedLocale: req.body.userExpectedLocale,
           conversationId: req.body.conversationId,

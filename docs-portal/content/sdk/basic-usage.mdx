@@ -1,7 +1,7 @@
 ---
 title: "Basic usage"
 description: "Documents, chat, settings, and error handling with the TypeScript SDK."
-last_updated: 2026-11-02
+last_updated: 2026-11-11
 ---
 
 # Basic usage
@@ -343,6 +343,30 @@ const response = await client.chat.create({
   userTimeZone: 'America/Los_Angeles',
 })
 ```
+
+## Send photos
+
+When the agent has `visitorImagesEnabled` on, a message can carry up to three photos. Upload each one with `client.chat.uploadImage`, which resolves once the agent has read it, then pass the ids with the message to the same agent:
+
+```ts
+import { readFile } from 'node:fs/promises'
+
+const photo = await client.chat.uploadImage({
+  agentId,
+  image: await readFile('farmhouse.jpg'),
+  mimeType: 'image/jpeg',
+  locale: 'it',
+})
+// { id: '6c3e9f2a-…', readingStatus: 'read' }
+
+const response = await client.chat.create({
+  agentId,
+  message: 'Something like this, near the coast',
+  imageIds: [photo.id],
+})
+```
+
+`image` takes a `Blob`, a `Uint8Array` or an `ArrayBuffer` of a JPEG, PNG or WebP photo up to 10 MiB. `readingStatus` is `unread` when the model could not describe the photo; the message still carries it. `imageIds` works the same with `client.chat.stream`, and `message` may be left out. Limits and errors are in [Let visitors send photos](/guides/image-input).
 
 ## Streaming chat
 

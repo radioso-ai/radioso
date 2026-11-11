@@ -1083,6 +1083,47 @@ Related specs:
 
 - `specs/1277-visitor-profile/`
 
+## Visitor Images
+
+Owns the photos a visitor or an API caller attaches to a chat message. The
+`visitorImages` module validates and re-encodes each upload (JPEG, PNG or WebP
+by magic bytes; `sharp` to a JPEG at most 1,600 px and 512 KB with no
+metadata), stores it under `workspaces/<ws>/visitor-images/<id>` through
+document storage, and reads it once at upload with the agent's chat model
+(`visitor_image.read`, fail-open to `unread`). The chat door
+(`AssistantChatService`) claims a send's photos for their owner through the
+`VisitorImageTurnInput` port, runs the turn on the typed text followed by
+`<visitor_image>` blocks, stores `inputMetadata.imageInput`, and settles the
+claim once the turn ends: bound to the message that carries them, or released.
+An erasure deletes a conversation's photos and queues their objects to the
+`visitor_images.object_deletion` job in its transaction; a retention rule sweeps
+photos no message carries after 24 hours. The agent flag is
+`visitorImagesEnabled`; the public session's `acceptsImages` adds whether the
+agent's chat model reads images.
+
+Public surfaces and key files:
+
+- `backend/src/modules/visitorImages/` (module brief in its `README.md`; `public.ts`, `composition.ts`, `contracts/turnInput.ts`)
+- `backend/src/app/composition/visitorImages.ts` (object store over document storage, reading model, availability, audit, wiring)
+- `backend/src/modules/chat/services/visitorImageTurn.ts` (the door's claim, rendering and settle)
+- `backend/src/app/http/routes/publicVisitorImageRoutes.ts` (`POST`/`GET /api/v1/public/chat/{token}/images[/{imageId}]`)
+- `backend/src/app/http/routes/assistantRoutes.ts` (`POST /api/v1/assistant/images`), `agentChannelImageRoute.ts` (`POST /api/v1/agents/{agentId}/images`)
+- `backend/src/app/http/routes/conversationImageRoutes.ts` (`GET /api/v1/conversations/{conversationId}/images/{imageId}`, audited)
+- `backend/src/app/http/shared/visitorImageUpload.ts`, `backend/src/app/http/middleware/visitorImageUploadRateLimiter.ts`
+- `backend/prompts/chat/visitor-image-reading.md`
+- `backend/src/db/migrations/256_visitor_images.sql`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/unit/agents/agent-visitor-images-flag.test.ts tests/contract/visitor-images.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/visitor-images.integration.test.ts --no-file-parallelism`
+- `cd typescript-sdk && pnpm exec vitest run tests/unit/chat-images.test.ts`
+
+Related specs and docs:
+
+- `specs/visitor-image-input/spec.md`
+- [Let visitors send photos](../../docs-portal/content/guides/image-input.mdx)
+
 ## Conversation Erasure
 
 Owns the permanent erasure of a conversation, or of a visitor with every

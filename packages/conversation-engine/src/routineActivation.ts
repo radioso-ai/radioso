@@ -2,11 +2,13 @@ import type {
   AttemptRoutineInput,
   ClarificationCandidate,
   ConversationMessage,
+  ConversationRoutineRunner,
   ConversationRoutineTurnClaim,
   ConversationTraceStage,
   PendingRenderableTurn,
   ProcessTurnResult,
   RenderableTurn,
+  RoutineConsent,
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
@@ -124,6 +126,14 @@ const buildSlotCorrectionTurn = async (
   });
 };
 
+/** A runner that can say which consents a routine it runs carries, as `DefaultRoutineRunner` can. */
+type RoutineConsentLookup = { consentsFor(routineId: string): readonly RoutineConsent[] };
+
+const canLookUpConsents = (
+  runner: ConversationRoutineRunner | undefined,
+): runner is ConversationRoutineRunner & RoutineConsentLookup =>
+  typeof (runner as Partial<RoutineConsentLookup> | undefined)?.consentsFor === "function";
+
 const claimCompletedRoutineCorrection = async (
   input: AttemptRoutineInput,
   baseTurn: TurnContext,
@@ -139,10 +149,13 @@ const claimCompletedRoutineCorrection = async (
   }
   const candidate = await routineSlotCorrection.detect({ turn: baseTurn, completedState });
   // A correction changes a value the run holds in a slot open to one. Anything else, a request
-  // for something new included, goes on to reentry and activation (#1714).
+  // for something new included, goes on to reentry and activation (#1714). Which slots a consent
+  // covers comes from the routine the runner runs, never from the detector (#1544); a runner that
+  // cannot say runs no consent step, so none of its slots is covered.
+  const consents = canLookUpConsents(input.routineRunner) ? input.routineRunner.consentsFor(completedState.routineId) : [];
   if (
     candidate.kind !== "correction" ||
-    !correctableSlots(candidate.slots, completedState.variables, candidate.consents).some((slot) => slot.key === candidate.slotKey)
+    !correctableSlots(candidate.slots, completedState.variables, consents).some((slot) => slot.key === candidate.slotKey)
   ) {
     return null;
   }

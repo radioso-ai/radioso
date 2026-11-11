@@ -386,9 +386,11 @@ and the records stay with the host.
 At the start of every turn the runner reads what the conversation already decided.
 A covered slot whose consent was not granted by then takes no value that turn, from
 any source: the activator's extraction, the selector, the input of a routine called
-as a tool. Its value is dropped and the trace records it as rejected with reason
-`consent`. So the message that grants a consent never fills its slots; the collecting
-step asks for them on the next turn.
+as a tool, on a routine with or without a slot schema. Its value is dropped and the
+trace records it as rejected with reason `consent`. The message still stated it, so
+the chat host marks that turn's messages sensitive with the slot's key, as it would
+had the value been captured. The message that grants a consent never fills its slots;
+the collecting step asks for them on the next turn.
 
 When the walk reaches a `consent` step:
 
@@ -406,7 +408,9 @@ When the walk reaches a `consent` step:
 
 On a `continue` decline, the covered slots count as filled for the collecting step,
 which then leaves by its rule or default exit without asking. Guards read the slots
-as absent, because they are. On a `handoff` decline, the run ends `consent_declined`
+as absent, because they are. A slot the routine runs without, after a decline or a
+withdrawn grant, is never named as missing on a re-ask or as pending on a yielded
+turn. On a `handoff` decline, the run ends `consent_declined`
 on the consent step, the way a `stuck` run ends: no terminal step runs, no completion
 export fires, and the reply says a person continues
 (`routine-step-stuck-handoff.md`). The hand-off requests the
@@ -800,7 +804,8 @@ decides whether to offer a correction, and offers one only when it would be true
   activation like any message.
 
 The engine claims a correction only to a slot `correctableSlots` returns for the run, the
-same rule the corrector offers by, then checks the value fits the slot's type
+same rule the corrector offers by, with the consents read from the routine the runner runs
+rather than from the detector, then checks the value fits the slot's type
 (`verifySlotCorrection`) before it saves the run with the new value. A value that fails its
 type gets a reply asking for a valid one and changes nothing. The confirmation
 (`routine-slot-correction-confirm.md`) says the value was noted and never that anything was

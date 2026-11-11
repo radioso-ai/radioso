@@ -359,6 +359,63 @@ describe("DefaultRoutineRunner consent before a covered slot (#1544)", () => {
     });
   });
 
+  describe("a slot the routine runs without, after a decline or a withdrawn grant", () => {
+    // ask_health collects the covered `pregnant` and the uncovered `due_date`; the run passed the
+    // consent when it was granted, and the grant has since been withdrawn.
+    const mixed = (): Routine => {
+      const routine = intake("handoff");
+      return {
+        ...routine,
+        slots: [...routine.slots!, { id: "slot_due", key: "due_date", type: "date", required: true }],
+        steps: routine.steps.map((step) =>
+          step.id === "ask_health" ? { ...step, metadata: { collectsSlots: ["pregnant", "due_date"] } } : step),
+        transitions: [
+          ...routine.transitions.filter((transition) => transition.from !== "ask_health"),
+          { from: "ask_health", to: "done", condition: "", guard: { kind: "slot_filled", slots: ["due_date"] } },
+        ],
+      };
+    };
+    const onHealth = state(["ask_name", GATE, "ask_health"], { name: "Ada", pregnant: true });
+
+    it("is never asked for again on a re-ask", async () => {
+      const render = renderer();
+      const runner = runnerWith(mixed(), consentPort({ decisions: { health: "declined" } }), reading({}), render);
+
+      const result = await runner.resume({ turn: turn("not sure yet"), state: onHealth });
+
+      expect(result.nextState?.variables).toEqual({ name: "Ada" });
+      expect(render.render).toHaveBeenCalledWith(expect.objectContaining({
+        reask: expect.objectContaining({ missingSlots: [expect.objectContaining({ key: "due_date" })] }),
+      }));
+    });
+
+    it("is not reported as pending when the turn is yielded", async () => {
+      const yielding: ConversationRoutineNextStepSelector = {
+        select: vi.fn(async () => ({ nextStepId: "ask_health", yieldTurn: true })),
+      };
+      const runner = runnerWith(mixed(), consentPort({ decisions: { health: "declined" } }), yielding);
+
+      const result = await runner.resume({ turn: turn("what are your opening hours?"), state: onHealth });
+
+      expect(result).toMatchObject({ yielded: true, pendingStep: { stepId: "ask_health", missingSlotKeys: ["due_date"] } });
+    });
+  });
+
+  it("keeps no covered value on a routine that declares no slot schema", async () => {
+    const { slots: _schema, ...untyped } = intake();
+    const runner = runnerWith(untyped, consentPort(), reading({ name: "Ada", pregnant: true }));
+
+    const result = await runner.resume({ turn: turn("I'm Ada and I'm pregnant"), state: state(["ask_name"]) });
+    const activated = await runner.resume({
+      turn: turn("I'm Ada and I'm pregnant"),
+      state: state([], { name: "Ada", pregnant: true }),
+      activationTurn: true,
+    });
+
+    expect(result.nextState?.variables).not.toHaveProperty("pregnant");
+    expect(activated.nextState?.variables).toEqual({ name: "Ada" });
+  });
+
   it("asks a routine without consents nothing and reads no standing", async () => {
     const port = consentPort();
     const { consents: _none, ...routine } = intake();

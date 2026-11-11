@@ -1,6 +1,13 @@
-import type { Routine, RoutineStep, RoutineStepReask, RoutineTraceRejectedSlot } from "@radioso/conversation-contract";
+import type {
+  Routine,
+  RoutinePendingStep,
+  RoutineStep,
+  RoutineStepReask,
+  RoutineTraceRejectedSlot,
+} from "@radioso/conversation-contract";
 
 import { collectedSlotsForStep, requiredCollectedSlots } from "./slotCollectionStep.js";
+import { STEP_REFERENCE } from "./stepReferences.js";
 
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
@@ -33,7 +40,8 @@ export const filledCollectedSlot = (
  * all, and rejected nothing: it stayed for another reason, and telling the renderer the reply
  * "fell short" made it ask again for values it already had. An optional slot counts as
  * missing only when its value was rejected. A reply the runner could not read (`replyUnread`)
- * is always named, since it may have answered the step (#1715).
+ * is always named, since it may have answered the step (#1715). A slot in `waived` is never
+ * missing: the routine runs without it, because its consent was declined or withdrawn (#1544).
  */
 export const reaskFor = (
   routine: Routine,
@@ -41,14 +49,38 @@ export const reaskFor = (
   variables: Record<string, unknown>,
   rejectedKeys: ReadonlySet<string>,
   replyUnread: boolean,
+  waived: ReadonlySet<string>,
 ): RoutineStepReask | null => {
   const collected = new Set(collectedSlotsForStep(step));
   const required = requiredCollectedSlots(routine, step);
   const missingSlots = (routine.slots ?? []).filter((slot) =>
-    collected.has(slot.key) && (rejectedKeys.has(slot.key) || (slot.required && !hasVariable(variables, slot.key))),
+    collected.has(slot.key) && !waived.has(slot.key) &&
+    (rejectedKeys.has(slot.key) || (slot.required && !hasVariable(variables, slot.key))),
   );
   if (replyUnread) {
     return { missingSlots, replyUnreadable: true };
   }
   return required.length > 0 && missingSlots.length === 0 ? null : { missingSlots };
 };
+
+/**
+ * The step a yielding routine stays parked on. The host puts it into the answer's system
+ * prompt, so it carries no captured value: a captured value is visitor text, and a slot
+ * reference shows as its bracketed key instead ("Ask [name] for the dates"). The routine
+ * claims nothing this turn, so the context staged for the turn (the visitor's page) is not
+ * the routine's to read either, and a context reference renders empty. A slot the routine runs
+ * without (`waived`, #1544) is not missing.
+ */
+export const pendingStepFor = (
+  routine: Routine,
+  step: RoutineStep,
+  variables: Record<string, unknown>,
+  waived: ReadonlySet<string>,
+): RoutinePendingStep => ({
+  stepId: step.id,
+  instruction: (step.action ?? "").replace(STEP_REFERENCE, (_match, kind: string, name: string) =>
+    kind === "slot" ? `[${name}]` : ""),
+  missingSlotKeys: requiredCollectedSlots(routine, step)
+    .filter((slot) => !hasVariable(variables, slot.key) && !waived.has(slot.key))
+    .map((slot) => slot.key),
+});

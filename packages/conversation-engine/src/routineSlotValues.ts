@@ -30,7 +30,9 @@ export const checkDeclaredSlotValues = (
   for (const [key, value] of Object.entries(values)) {
     const type = slotTypes.get(key);
     if (!type) {
-      if (slotTypes.size > 0) {
+      if (blocked.has(key)) {
+        rejected.push({ key, reason: "consent" });
+      } else if (slotTypes.size > 0) {
         rejected.push({ key, reason: "undeclared" });
       } else {
         kept[key] = value;

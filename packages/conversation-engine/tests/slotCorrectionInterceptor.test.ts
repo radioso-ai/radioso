@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DefaultConversationEngine } from "../src/index.js";
+import { DefaultConversationEngine, DefaultRoutineRunner } from "../src/index.js";
 import type {
   AttemptRoutineInput,
   ConversationEvent,
@@ -36,6 +36,7 @@ const buildInput = (overrides: {
   save?: (state: RoutineState) => Promise<void>;
   routineActivator?: ConversationRoutineActivator;
   routineReentryGate?: ConversationRoutineReentryGate;
+  routineRunner?: AttemptRoutineInput["routineRunner"];
 }): { input: AttemptRoutineInput; events: ConversationEvent[]; save: ReturnType<typeof vi.fn>; rejectInvalid: ReturnType<typeof vi.fn> } => {
   const events: ConversationEvent[] = [];
   const save = vi.fn(overrides.save ?? (async () => {}));
@@ -56,8 +57,8 @@ const buildInput = (overrides: {
       save,
       clear: vi.fn(async () => {}),
     },
-    // Unused by the correction path, but attemptRoutine requires it to be wired.
-    routineRunner: { resume: vi.fn() },
+    // Unused by the correction path unless a test says otherwise, but attemptRoutine requires it.
+    routineRunner: overrides.routineRunner ?? { resume: vi.fn() },
     routineSlotCorrection: {
       detect: overrides.detect ?? vi.fn(noCorrection),
       confirm: overrides.confirm ?? vi.fn(async () => "Updated."),
@@ -130,14 +131,23 @@ describe("completed-instance slot-correction interceptor", () => {
     expect(rejectInvalid).not.toHaveBeenCalled();
   });
 
-  it("never writes a slot a consent covers, even one marked editable (#1544)", async () => {
-    const { input, save, rejectInvalid } = buildInput({
-      detect: vi.fn(correction({
+  it("never writes a slot the routine's own consent covers, whatever the detector reports (#1544)", async () => {
+    // The detector offers the change without naming the routine's consents; the runner knows them.
+    const routineRunner = new DefaultRoutineRunner(
+      [{
+        id: "routine_intake",
+        rootStepId: "ask",
         slots: mutableEmailSlot,
         consents: [{ key: "contact", slotKeys: ["email"], onDecline: "continue" }],
-        slotKey: "email",
-        rawValue: "new@example.com",
-      })),
+        steps: [{ id: "ask", kind: "chat" }, { id: "done", kind: "terminal" }],
+        transitions: [],
+      }],
+      { select: vi.fn() },
+      { render: vi.fn() },
+    );
+    const { input, save, rejectInvalid } = buildInput({
+      detect: vi.fn(correction({ slots: mutableEmailSlot, slotKey: "email", rawValue: "new@example.com" })),
+      routineRunner,
     });
 
     const result = await new DefaultConversationEngine().attemptRoutine(input);

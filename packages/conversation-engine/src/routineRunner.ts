@@ -10,10 +10,10 @@ import type {
   PendingRenderableTurn,
   Routine,
   RoutineActionRequest,
+  RoutineConsent,
   RoutineContextRenderer,
   RoutineHostEffects,
   RoutineNextStepDecision,
-  RoutinePendingStep,
   RoutineRunTrace,
   RoutineSelectionTrace,
   RoutineSkillResult,
@@ -37,7 +37,7 @@ import {
 } from "./routineEnding.js";
 import { RoutineConsentGate } from "./routineConsentGate.js";
 import { evaluateFieldGuard } from "./routineFieldGuard.js";
-import { filledCollectedSlot, reaskFor, rejectedCollectedKeys } from "./routineReask.js";
+import { filledCollectedSlot, pendingStepFor, reaskFor, rejectedCollectedKeys } from "./routineReask.js";
 import {
   foldStepEntry,
   runSlotKeyFields,
@@ -48,7 +48,6 @@ import {
 import {
   collectedSlotsForStep,
   isSlotCollectionStepSatisfied,
-  requiredCollectedSlots,
   slotFilledGuardPasses,
 } from "./slotCollectionStep.js";
 import {
@@ -58,7 +57,7 @@ import {
   outboundVariables,
   sensitiveSlotKeys,
 } from "./routineSlotValues.js";
-import { STEP_REFERENCE, stepForReply } from "./stepReferences.js";
+import { stepForReply } from "./stepReferences.js";
 
 /**
  * Projects a step's `action` into a routine steering rule — the keystone that lets
@@ -124,26 +123,6 @@ const DEFAULT_REASK_LIMIT = 3;
  * stops asking and hands the stuck visitor to a person (#1384).
  */
 const ASK_DIFFERENTLY_TURNS_BEFORE_HANDOFF = 1;
-
-/**
- * The step a yielding routine stays parked on. The host puts it into the answer's system
- * prompt, so it carries no captured value: a captured value is visitor text, and a slot
- * reference shows as its bracketed key instead ("Ask [name] for the dates"). The routine
- * claims nothing this turn, so the context staged for the turn (the visitor's page) is not
- * the routine's to read either, and a context reference renders empty.
- */
-const pendingStepFor = (
-  routine: Routine,
-  step: RoutineStep,
-  variables: Record<string, unknown>,
-): RoutinePendingStep => ({
-  stepId: step.id,
-  instruction: (step.action ?? "").replace(STEP_REFERENCE, (_match, kind: string, name: string) =>
-    kind === "slot" ? `[${name}]` : ""),
-  missingSlotKeys: requiredCollectedSlots(routine, step)
-    .filter((slot) => !hasVariable(variables, slot.key))
-    .map((slot) => slot.key),
-});
 
 /**
  * Runner-local gate on top of the shared `isSlotCollectionStepSatisfied` rule: only a
@@ -244,6 +223,11 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     return routine.steps.find((candidate) => candidate.id === stepId) ?? null;
   }
 
+  /** The consents of the routine this runner runs as `routineId`; none for a routine it does not run. */
+  consentsFor(routineId: string): readonly RoutineConsent[] {
+    return this.routines.find((candidate) => candidate.id === routineId)?.consents ?? [];
+  }
+
   async resume(input: ConversationRoutineResumeInput): Promise<ConversationRoutineResumeResult> {
     const claim = await this.claim(input);
     if (claim.kind === "yielded") {
@@ -312,7 +296,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // on, whatever this message would have filled or walked past.
     const yieldTurn = (): ConversationRoutineClaim => ({
       kind: "yielded",
-      pendingStep: pendingStepFor(routine, currentStep, state.variables),
+      pendingStep: pendingStepFor(routine, currentStep, state.variables, consentGate.waived),
     });
 
     // Debug trace: a step-by-step log of this turn's traversal, surfaced to the panel.
@@ -456,7 +440,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (
         messageStatesSlotValues &&
         collected.length > 0 &&
-        (input.alwaysExtract || collected.some((key) => !hasVariable(input.variables, key))) &&
+        (input.alwaysExtract || collected.some((key) => !hasVariable(input.variables, key) && !consentGate.waived.has(key))) &&
         input.transitions.length > 0 &&
         !conditionedTransitions.some(isLlmTransition)
       ) {
@@ -936,6 +920,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         if (!consentExit) {
           throw new Error(`routine_consent_step_no_follow_up:${routine.id}:${step.id}`);
         }
+        // A collecting step the decline waived leaves by its rule or default exit. One whose only
+        // way on is an exit a model judges stays and is asked; publishing refuses that step under
+        // a `continue` consent (`consent_step_needs_default_exit`, #1544).
         step = stepById(consentExit.to);
         enterStep(step, path);
         await fastForwardTransitLanding();
@@ -1127,7 +1114,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // question as the flow being done (#1369). On the activation turn the step is asked for the first time.
     const missing =
       !input.activationTurn && step.kind === "chat" && step.id === currentStepId
-        ? reaskFor(routine, step, variables, rejectedCollectedKeys(step, resumeStepRejected), replyUnread)
+        ? reaskFor(routine, step, variables, rejectedCollectedKeys(step, resumeStepRejected), replyUnread, consentGate.waived)
         : null;
     // Past the re-ask limit the renderer is always told, even when the step holds its slots.
     const reask: RoutineStepReask | null = reaskExhausted

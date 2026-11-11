@@ -24,7 +24,15 @@ type Stage = { id: string; inputs?: Record<string, unknown> };
 const timeZoneStage = (trace: { stages: Stage[] }): Stage | undefined =>
   trace.stages.find((stage) => stage.id === "reference-time-zone");
 
-const setup = async (input: { workspaceTimeZone: string | null; messageMetadata?: Record<string, unknown> }) => {
+const setup = async (input: {
+  workspaceTimeZone: string | null;
+  /** The metadata of the visitor's first message. */
+  messageMetadata?: Record<string, unknown>;
+  /** A newer visitor message in the same conversation; `{}` is one whose client reported no zone. */
+  laterMessageMetadata?: Record<string, unknown>;
+  /** Another conversation of the workspace, whose visitor message is newer than this one's. */
+  otherConversationMetadata?: Record<string, unknown>;
+}) => {
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const agent = await new InMemoryAgentRepository().create(workspaceId, { name: "Support" });
@@ -36,6 +44,25 @@ const setup = async (input: { workspaceTimeZone: string | null; messageMetadata?
     content: "Book the table for tomorrow.",
     ...(input.messageMetadata ? { metadata: input.messageMetadata } : {}),
   });
+  if (input.laterMessageMetadata) {
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId,
+      role: "user",
+      content: "Actually, make it for two.",
+      metadata: input.laterMessageMetadata,
+    });
+  }
+  if (input.otherConversationMetadata) {
+    const other = await conversationRepository.create({ workspaceId, agentId: agent.id });
+    await messageRepository.create({
+      conversationId: other.id,
+      workspaceId,
+      role: "user",
+      content: "What's on this weekend?",
+      metadata: input.otherConversationMetadata,
+    });
+  }
 
   const resumeAwaitingDecision = vi.fn<ConversationEngine["resumeAwaitingDecision"]>(async () => ({
     resumed: true,
@@ -141,6 +168,41 @@ describe("an approval resume's reference time zone", () => {
     // The trace names where the zone came from, never the zone.
     expect(timeZoneStage(engineTrace)?.inputs).toEqual({ timeZoneSource: "conversation" });
     expect(JSON.stringify(engineTrace)).not.toContain("America/Los_Angeles");
+  });
+
+  it("reads the visitor's last message, so a newer message that recorded no zone leaves the workspace zone", async () => {
+    const { resume } = await setup({
+      workspaceTimeZone: "Europe/Rome",
+      messageMetadata: visitorTimeZoneTurnMetadata({ timeZone: "America/Los_Angeles", source: "visitor" }),
+      laterMessageMetadata: {},
+    });
+
+    const { engineTurn } = await resume();
+
+    expect(engineTurn.referenceTimeZone).toEqual({ timeZone: "Europe/Rome", source: "workspace" });
+  });
+
+  it("reads the newer zone when the visitor's later message recorded another", async () => {
+    const { resume } = await setup({
+      workspaceTimeZone: "Europe/Rome",
+      messageMetadata: visitorTimeZoneTurnMetadata({ timeZone: "America/Los_Angeles", source: "visitor" }),
+      laterMessageMetadata: visitorTimeZoneTurnMetadata({ timeZone: "Asia/Tokyo", source: "visitor" }),
+    });
+
+    const { engineTurn } = await resume();
+
+    expect(engineTurn.referenceTimeZone).toEqual({ timeZone: "Asia/Tokyo", source: "conversation" });
+  });
+
+  it("ignores a zone another conversation of the workspace recorded", async () => {
+    const { resume } = await setup({
+      workspaceTimeZone: "Europe/Rome",
+      otherConversationMetadata: visitorTimeZoneTurnMetadata({ timeZone: "Asia/Tokyo", source: "visitor" }),
+    });
+
+    const { engineTurn } = await resume();
+
+    expect(engineTurn.referenceTimeZone).toEqual({ timeZone: "Europe/Rome", source: "workspace" });
   });
 
   it("falls back to the workspace zone when the conversation recorded none, never to UTC", async () => {

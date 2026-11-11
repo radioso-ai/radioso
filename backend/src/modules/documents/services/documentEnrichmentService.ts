@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 
-import { formatPromptDate } from "../../../shared/domain/clock.js";
+import { describeIsoDate } from "../../../shared/domain/clock.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { EnabledDocumentTypesSnapshot } from "../../documentTypes/public.js";
@@ -197,7 +197,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     const attempts: ModelAttempts = { count: 0, firstFailureReason: null, retryCause: null };
 
     try {
-      const representation = buildBoundedDocumentRepresentation(input.document, input.anchor.timeZone);
+      const representation = buildBoundedDocumentRepresentation(input.document, input.anchor);
       const request: EnrichmentRequestInput = {
         workspaceId: input.document.workspaceId,
         documentId: input.document.id,
@@ -525,17 +525,23 @@ const failedRunOutcome = (error: unknown): DocumentEnrichmentRunOutcome => {
 
 const MAX_DOCUMENT_REPRESENTATION_CHARS = 48_000;
 
-const buildBoundedDocumentRepresentation = (document: {
-  title: string;
-  markdownContent: string;
-  createdAt: Date;
-}, timeZone: string): { text: string; body: string } => {
+// What the anchor's date is the date of, as the model reads it.
+const ANCHOR_LABELS: Record<EnrichmentAnchorSource, string> = {
+  document_created_at: "Created on",
+  source_last_sync: "Last synced on",
+};
+
+const buildBoundedDocumentRepresentation = (
+  document: { title: string; markdownContent: string },
+  anchor: DocumentEnrichmentStageInput["anchor"],
+): { text: string; body: string } => {
   const body = document.markdownContent.slice(0, MAX_DOCUMENT_REPRESENTATION_CHARS);
   const prefix = [
     `Title: ${document.title}`,
-    // The local calendar date and weekday, which "tomorrow" and "next Friday" count from: a UTC
-    // timestamp would put a document written in the evening west of UTC on the next day.
-    `Created on: ${formatPromptDate(document.createdAt, timeZone)}, ${timeZone}`,
+    // The anchor's own local calendar date and weekday, which "tomorrow" and "next Friday" count
+    // from, so the header always matches the anchor the provenance records. A UTC timestamp would
+    // put a document written in the evening west of UTC on the next day.
+    `${ANCHOR_LABELS[anchor.source]}: ${describeIsoDate(anchor.date)}, ${anchor.timeZone}`,
     "",
     "",
   ].join("\n");

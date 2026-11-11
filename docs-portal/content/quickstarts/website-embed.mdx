@@ -1,7 +1,7 @@
 ---
 title: Embed on your website
 description: Launch the Radioso embed flow against a local test site, then adapt it for production.
-last_updated: 2026-11-03
+last_updated: 2026-11-11
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -139,6 +139,8 @@ For `chat.citation_clicked` and `chat.link_clicked`, Radioso sends link metadata
 ## What the widget records
 
 Every conversation the widget starts records what the visit looked like at that moment: the request's IP address, country, region, and city when a load balancer or CDN supplied them, the browser's `User-Agent` and `Accept-Language` header, the page the widget opened on, and the page that referred the visitor there. None of this reaches the model directly. The page, referrer, language, and region make up the `visitor_request` context variable a directive can read — see [Context variables](/operators/context-variables#visitor-request) for the six fields and how the entry page is gated. The IP address and raw browser string stay operator-only, visible in the Inbox conversation drawer's Visitor panel.
+
+The widget also sends the browser's time zone, such as `America/Los_Angeles`, with every message, so "today" and "tomorrow" in a question mean the visitor's day. Radioso stores the zone on each visitor message and uses it to date a routine resumed by an approval click. It never appears in a trace or the history API, and it is erased with the conversation. See [Visitor data](/operators/visitor-data).
 
 The launcher also keeps a durable visitor key in the host page's `localStorage`, scoped to the embed token so two different embeds on the same site don't collide. The key's only job is grouping every conversation that browser starts under one visitor row for operators. It does not resume a session and it does not let the widget read a previous conversation's history — each tab still opens its own chat session, and a returning visitor still starts a fresh conversation. Where `localStorage` is unavailable, such as private browsing or a storage-blocking extension, the widget falls back to per-tab behavior silently and groups nothing across visits.
 

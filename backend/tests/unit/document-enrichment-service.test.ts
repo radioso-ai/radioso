@@ -215,6 +215,20 @@ describe("DocumentEnrichmentService", () => {
       expect(await header("UTC", "2026-11-12")).toBe("Title: Summer workshop\nCreated on: 2026-11-12 (Thursday), UTC");
     });
 
+    it("shows the anchor it was given, so the header always matches the provenance", async () => {
+      const { gateway, requests } = scriptedGateway([{ output: eventOutput([workshopFact()]) }]);
+      const input = workshopInput();
+
+      const result = await serviceWith(gateway).enrich({
+        ...input,
+        document: { ...input.document, createdAt },
+        anchor: { source: "source_last_sync" as const, date: "2026-11-09", timeZone: "Europe/Rome" },
+      });
+
+      expect(requests[0]?.documentRepresentation.split("\n\n")[0]).toBe("Title: Summer workshop\nLast synced on: 2026-11-09 (Monday), Europe/Rome");
+      expect(result.provenance).toMatchObject({ anchorDate: "2026-11-09", anchorSource: "source_last_sync" });
+    });
+
     it("records the anchor date it was given on the provenance", async () => {
       const { gateway } = scriptedGateway([{ output: eventOutput([workshopFact()]) }]);
       const input = workshopInput();

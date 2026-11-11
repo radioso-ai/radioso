@@ -13,6 +13,7 @@ import type {
   ProcessTurnResult,
   RenderableTurn,
   Routine,
+  TurnContext,
 } from "@radioso/conversation-contract";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import { BlankChatAnswerError } from "../../src/modules/chat/services/chatAnswerErrors.js";
@@ -554,6 +555,38 @@ describe("WorkbenchReplayRunner", () => {
       expect(formatIsoDate(new Date(), referenceTimeZone?.timeZone)).toBe("2026-11-11");
       expect(formatIsoDate(new Date())).toBe("2026-11-12");
       expect(readWorkspaceTimeZone).not.toHaveBeenCalled();
+    });
+
+    it("keeps the turn's input event when it also records the zone, as a tool call to a routine carries its input", async () => {
+      const activate = vi.fn(async (_input: { turn: TurnContext }) => null);
+      const runner = new WorkbenchReplayRunner({
+        retrievalTurn: retrievalTurn([]),
+        auditService: createAuditService(),
+        turnSkills: [answerSkill()],
+        conversationEngine: new DefaultConversationEngine(),
+        turnRouter: stubTurnRouter("retrieval"),
+        routineProvider: { async forTurn() { return { activator: { activate }, runner: {} as never }; } },
+        chatGateway: chatGatewayStub(),
+        chatAnswerPresenter: presenterStub(),
+      });
+
+      await runner.run({
+        workspaceId: "ws-1",
+        executionMode: "safe_test" as const,
+        sourceAgentId: "agent-1",
+        baselineAgentConfig: projectInternalAgentConfig(agent()),
+        query: 'start_return {"orderId":"A-1001"}',
+        routineInvocation: { toolName: "start_return", input: { orderId: "A-1001" } },
+        visitorTimeZone: "America/Los_Angeles",
+        history: [],
+      }).catch(() => undefined);
+
+      const turn = activate.mock.calls[0][0].turn;
+      expect(turn.referenceTimeZone).toEqual({ timeZone: "America/Los_Angeles", source: "visitor" });
+      expect(turn.inputEvent.metadata).toEqual({
+        method: "routine_invocation",
+        routine: { toolName: "start_return", input: { orderId: "A-1001" } },
+      });
     });
 
     it("reads the workspace's zone when the client sent none or an unknown one", async () => {

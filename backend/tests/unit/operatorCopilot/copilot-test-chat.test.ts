@@ -298,6 +298,18 @@ describe("Test Chat copilot descriptors", () => {
     expect(output.turn.stages[0]).toEqual({ id: "stage-0", kind: "compose", status: "applied" });
   });
 
+  it("refuses a time zone the runtime does not know, instead of testing as another zone while saying it tested as that one", () => {
+    const send = tools(port()).get("send_test_chat_message")!;
+    const parse = (userTimeZone: string) => send.inputSchema.safeParse({ message: "What's on tomorrow?", userTimeZone });
+
+    expect(parse("America/Los_Angeles").success).toBe(true);
+    for (const unknown of ["PDT", "Pacific", "Mars/Olympus_Mons", "+05:00"]) {
+      const refused = parse(unknown);
+      expect(refused.success, unknown).toBe(false);
+      expect(JSON.stringify(refused.error?.issues)).toContain("IANA time zone");
+    }
+  });
+
   it("hands the port the time zone the caller named for the turn", async () => {
     const sendMessage = vi.fn(port().sendMessage);
 

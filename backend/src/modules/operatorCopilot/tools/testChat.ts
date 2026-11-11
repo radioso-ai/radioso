@@ -1,13 +1,12 @@
 import { z } from "zod";
 
-import { TIME_ZONE_MAX_LENGTH } from "../../../shared/domain/referenceTimeZone.js";
 import { clipAtGraphemeBoundary } from "../../../shared/text/clipAtGraphemeBoundary.js";
 import { TEST_EXECUTION_LABEL_CHARS } from "../../test-execution/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import type { CopilotTestChatPort, CopilotTestChatTurn } from "../contracts/testChat.js";
 import { serializedLength, truncationRecordSchema } from "../payloadCompaction.js";
 import { boundTurnTracePayload, CONVERSATION_PAYLOAD_CHAR_BUDGET, turnTraceEnvelopeSchema } from "./chatPayloadBounds.js";
-import { describeNamedAgent, requiredPageAgent, type CopilotAgentLookupPort } from "./shared.js";
+import { describeNamedAgent, requiredPageAgent, testTurnTimeZoneSchema, type CopilotAgentLookupPort } from "./shared.js";
 
 export type { CopilotTestChatPort } from "../contracts/testChat.js";
 
@@ -38,7 +37,7 @@ const sendInputSchema = z.object({
   message: z.string().trim().min(1).max(8_000),
   testExecutionId: idSchema.optional(),
   revisionId: idSchema.optional(),
-  userTimeZone: z.string().trim().min(1).max(TIME_ZONE_MAX_LENGTH).optional(),
+  userTimeZone: testTurnTimeZoneSchema.optional(),
 }).strict();
 
 const revisionSchema = z.object({

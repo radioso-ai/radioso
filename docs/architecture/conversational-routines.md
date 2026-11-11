@@ -443,8 +443,12 @@ wording of the revision the conversation runs. `consentPresentationFor` in
 buttons on the web, text on email, WhatsApp, Slack and the operator surfaces that
 show a reply's text alone (Test Chat, eval replay, Ray's probe), and no ask on voice
 or a calling agent's channel. The port picks the variant by the Exact Words rule, reads
-standing decisions for every language of a consent and a typed reply against the
-wording the conversation last showed (its `consentPrompt` stamp) through the
+standing decisions for every language of a consent, and reads an answer against the
+wording the conversation last showed (its `consentPrompt` stamp): a click on that
+message's `agree` or `decline` chip (`suggestion_click` with `suggestionId` and
+`suggestionSourceMessageId` naming it, `shared/domain/chatInputMetadata.ts`) is a
+`button` decision taken from the chip id, and anything else, a click on an older prompt
+included, goes to the reply reader. Both reads go through the
 `RoutineConsentStore` port, which `RoutineConsentRepository` satisfies for a durable
 conversation. A conversation no row is kept for brings its own store instead: the
 replay runner binds `chat/services/routines/sessionRoutineConsentStore.ts` on the turn

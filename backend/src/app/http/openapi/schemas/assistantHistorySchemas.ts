@@ -639,10 +639,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       method: z.enum(["typed", "suggestion_click", "intent_click", "routine_invocation"]),
       suggestionSourceMessageId: z.string().uuid().optional(),
-      intent: z.object({
-        skillName: z.string(),
-        intentName: z.string().optional(),
-      }).optional(),
+      suggestionId: z.string().optional().openapi({ description: "The id of the chip clicked, such as a routine consent's `agree` or `decline`." }),
+      intent: z.object({ skillName: z.string(), intentName: z.string().optional() }).optional(),
       routine: z.object({
         toolName: z.string(),
         input: z.record(z.string(), z.unknown()),

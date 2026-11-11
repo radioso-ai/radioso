@@ -12,6 +12,7 @@ import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbench
 import { compileRoutineDefinition, type RoutineDefinition } from "../../src/modules/routines/public.js";
 import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
 import { SessionRoutineConsentStore } from "../../src/modules/chat/services/routines/sessionRoutineConsentStore.js";
+import { createRoutineConsentTurnPort } from "../../src/modules/routines/consent/consentTurnPort.js";
 import { routineConsentWordingVersionId } from "../../src/shared/domain/routineConsentWording.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { conversationQualityAgentConfig } from "../fixtures/conversation-quality/agent.js";
@@ -246,5 +247,36 @@ describe("SessionRoutineConsentStore (#1544)", () => {
     const next = new SessionRoutineConsentStore(store.snapshot());
     expect(await next.standing({ ...consent, versionIds: [versionId] })).toBe("granted");
     expect(await next.latestPrompt(consent)).toEqual({ messageId: "reply-1", wordingVersionId: versionId, locale: "en" });
+  });
+});
+
+describe("a consent button clicked in a session no row is kept for (#1544)", () => {
+  it("binds the click to the prompt the session showed last, as a live conversation's records would", async () => {
+    const promptId = "6f1c2d3e-4a5b-4c6d-8e7f-90a1b2c3d4e5";
+    const store = new SessionRoutineConsentStore();
+    store.record({ events: [{ kind: "asked", routineId: ROUTINE_ID, consentKey: "health", reask: false, wording }], replyMessageId: promptId });
+    const routine = compileRoutineDefinition(classBooking);
+    const reader = { read: vi.fn(async () => "unclear" as const) };
+    const portFor = (suggestionSourceMessageId: string) => createRoutineConsentTurnPort({
+      facts: {
+        conversationId: "test-chat-side-1",
+        visitorId: null,
+        sourceChannel: "workbench_replay",
+        userMessage: { id: "message-2", inputMetadata: { method: "suggestion_click", suggestionSourceMessageId, suggestionId: "agree" } },
+        preferredLocales: async () => [],
+        agentDefaultLocale: "en",
+        durable: false,
+      },
+      store,
+      reader,
+      answerer: { answer: vi.fn(async () => "") },
+    });
+    const turn = { agent: { id: "agent-1", name: "Classes" }, sessionId: "test-chat-side-1", inputEvent: { id: "message-2", kind: "message" as const, content: "I agree" }, history: [], stagedContext: [], steering: [] };
+
+    expect(await portFor(promptId).read({ routine, consent: routine.consents![0], turn }))
+      .toEqual({ decision: "granted", method: "button", wording });
+    expect(reader.read).not.toHaveBeenCalled();
+    expect(await portFor("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d").read({ routine, consent: routine.consents![0], turn }))
+      .toEqual({ decision: "unclear", method: "reply", wording });
   });
 });

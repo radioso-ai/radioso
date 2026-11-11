@@ -321,9 +321,11 @@ How the two choices appear depends on the channel:
 Voice asks no consent because a transcript is weak proof and Radioso keeps no
 audio of the call, and a calling agent can't consent on a person's behalf.
 
-The visitor answers in their own words, in any language, and a button sends its
-label as that answer. The agent reads it as agreement only when it clearly and
-fully agrees to the wording shown. A clear refusal takes the decline path.
+A click on a button is the visitor's decision, bound to the wording that reply
+showed; the label text plays no part. A click on the buttons of an earlier ask
+counts as a written answer. The visitor can also answer in their own words, in
+any language. The agent reads that as agreement only when it clearly and fully
+agrees to the wording shown. A clear refusal takes the decline path.
 Anything else, such as "ok", a question about the wording, or a yes with a
 condition attached, gets a short answer drawn only from your wording, followed by
 the wording and its choices again. If the next reply is still unclear, it counts
@@ -352,10 +354,11 @@ declined consent and carries none of the values the consent covers.
 ### The consent record
 
 Each decision is kept as proof: the decision (`granted` or `declined`), whether
-it was a decline after two unclear replies, how it was given (`reply`, read from
-the visitor's message), the language and the exact wording shown, the channel,
-the conversation, visitor, agent and routine, the fields it covers, the message
-that carried it, and when. It holds no reply text and no field values. Every
+it was a decline after two unclear replies, how it was given (`button` for a
+click, `reply` for an answer read from the visitor's message), the language and
+the exact wording shown, the channel, the conversation, visitor, agent and
+routine, the fields it covers, the message that carried it, and when. It holds
+no reply text and no field values. Every
 wording shown is kept unchanged, so a record always shows what its visitor saw:
 when you edit the wording, later conversations get the new text and earlier
 records keep the old.

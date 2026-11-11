@@ -74,6 +74,20 @@ const DECLINE = "decline";
 const baseLanguageOf = (tag: string): string => tag.split("-")[0] ?? tag;
 
 /**
+ * The decision a click on a consent's button gives: only a click on the `agree` or `decline` chip
+ * of the prompt the conversation showed last. The chip id decides, never the label the message
+ * carries; anything else is a typed reply.
+ */
+const clickedChoice = (
+  metadata: UserMessageInputMetadata | undefined,
+  promptMessageId: string,
+): RoutineConsentDecision | null => {
+  if (metadata?.method !== "suggestion_click" || metadata.suggestionSourceMessageId !== promptMessageId) return null;
+  if (metadata.suggestionId === AGREE) return "granted";
+  return metadata.suggestionId === DECLINE ? "declined" : null;
+};
+
+/**
  * The wording to show: the first preferred language with wording of its own exact tag or its base
  * language, then the agent's default language, by the rule Exact Words follows (never a regional
  * sibling). Returned exactly as written; null when none of those languages has wording.
@@ -135,7 +149,8 @@ const consentReply = (
 
 /**
  * The host side of a routine's consents for one turn (#1544): which consents the conversation
- * already decided, the wording to show and how the channel shows it, and what a typed reply says.
+ * already decided, the wording to show and how the channel shows it, what a click on one of its
+ * buttons decides, and what a typed reply says.
  * A decision applies to every language of its consent the conversation's revision carries, so a
  * visitor who switches language is not asked again. Knows no SQL, HTTP or chat service: the
  * records come through `store`, the readings through the two model ports.
@@ -180,22 +195,32 @@ export const createRoutineConsentTurnPort = (input: {
     },
 
     async read({ routine, consent, turn }) {
-      const wording = await answeredWording(routine, consent);
-      if (!wording) return null;
+      const answered = await answeredPrompt(routine, consent);
+      if (!answered) return null;
+      const { wording } = answered;
+      const clicked = answered.messageId ? clickedChoice(facts.userMessage.inputMetadata, answered.messageId) : null;
+      if (clicked) return { decision: clicked, method: "button", wording };
       return { decision: await input.reader.read({ turn, wording }), method: "reply", wording };
     },
   };
 
   /**
-   * The wording a reply answers: the one the conversation's last prompt for this consent showed,
-   * if its revision still carries it. A conversation no row is kept for may carry no prompt (a
-   * replayed turn, or a test continued from a conversation parked on the consent), so its reply is
-   * read against the wording this turn would show.
+   * What a reply answers: the conversation's last prompt for this consent, with the wording it
+   * showed if its revision still carries it. A conversation no row is kept for may carry no prompt
+   * (a replayed turn, or a test continued from a conversation parked on the consent), so its reply
+   * is read against the wording this turn would show, with no prompt a click could name.
    */
-  async function answeredWording(routine: Routine, consent: RoutineConsent): Promise<RoutineConsentWording | null> {
+  async function answeredPrompt(
+    routine: Routine,
+    consent: RoutineConsent,
+  ): Promise<{ wording: RoutineConsentWording; messageId: string | null } | null> {
     const shown = await store.latestPrompt({ conversationId: facts.conversationId, routineId: routine.id, consentKey: consent.key });
-    if (!shown) return facts.durable ? null : wordingToShow(routine, consent.key);
-    return consentWordingVariants(routine, consent.key)
-      .find((variant) => routineConsentWordingVersionId(variant) === shown.wordingVersionId) ?? null;
+    if (!shown) {
+      const current = facts.durable ? null : await wordingToShow(routine, consent.key);
+      return current ? { wording: current, messageId: null } : null;
+    }
+    const wording = consentWordingVariants(routine, consent.key)
+      .find((variant) => routineConsentWordingVersionId(variant) === shown.wordingVersionId);
+    return wording ? { wording, messageId: shown.messageId } : null;
   }
 };

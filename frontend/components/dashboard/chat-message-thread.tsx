@@ -954,7 +954,7 @@ export function ChatMessageThread({
                                   style={themedSuggestionButtons ? suggestionThemeVars : undefined}
                                   onClick={(event) => {
                                     event.stopPropagation()
-                                    onSuggestionSelect(suggestion, message.id)
+                                    onSuggestionSelect(suggestion, message.persistedAssistantMessageId ?? message.id)
                                   }}
                                 >
                                   {ActionIcon ? <ActionIcon className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden /> : null}

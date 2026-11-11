@@ -784,6 +784,44 @@ describe("public chat contract", () => {
     expect(detail.body.hasOlderMessages).toBe(false);
   });
 
+  it("takes a clicked chip's id with a suggestion click and keeps it on the message, and refuses it on any other input (#1544)", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-suggestion-id@example.com");
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Intro", content: "This page parses content and answers questions." });
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+    const send = (body: Record<string, unknown>) => request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ stream: false, ...body });
+
+    const first = await send({ message: "What does this page do?" });
+    expect(first.status).toBe(200);
+
+    const refused = await send({
+      message: "I agree",
+      conversationId: first.body.conversationId,
+      inputMetadata: { method: "typed", suggestionId: "agree" },
+    });
+    expect(refused.status).toBe(400);
+
+    const clickMetadata = { method: "suggestion_click", suggestionSourceMessageId: first.body.assistantMessageId, suggestionId: "agree" };
+    const clicked = await send({ message: "I agree", conversationId: first.body.conversationId, inputMetadata: clickMetadata });
+    expect(clicked.status).toBe(200);
+
+    const detail = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/history/${first.body.conversationId}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .set("Cookie", findAnonymousCookie(clicked.headers["set-cookie"] ?? first.headers["set-cookie"])!);
+    expect(detail.status).toBe(200);
+    expect(detail.body.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "user", content: "I agree", inputMetadata: clickMetadata }),
+    ]));
+  });
+
   it("rejects a malformed tail cursor as 400, not a database cast error", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-tail-malformed-cursor@example.com");

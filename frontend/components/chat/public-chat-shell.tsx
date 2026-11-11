@@ -542,7 +542,7 @@ function PublicChatCenteredIntro({
                     disabled={isLoading}
                     className={`h-auto max-w-full whitespace-normal rounded-full px-3 py-1 text-left text-sm leading-snug shadow-none ${THEMED_SUGGESTION_BUTTON_CLASS}`}
                     style={getThemedSuggestionButtonStyle(theme)}
-                    onClick={() => onSuggestionSelect(suggestion, greetingMessage.id)}
+                    onClick={() => onSuggestionSelect(suggestion, greetingMessage.persistedAssistantMessageId ?? greetingMessage.id)}
                   >
                     {suggestion.text}
                   </Button>

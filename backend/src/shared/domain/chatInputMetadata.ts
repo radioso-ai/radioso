@@ -16,6 +16,8 @@ const CLIENT_INPUT_METHODS = ["typed", "suggestion_click", "intent_click"] as co
 export interface UserMessageInputMetadata {
   method: UserMessageInputMethod;
   suggestionSourceMessageId?: string;
+  /** The id of the chip clicked (`suggestion_click`), such as a routine consent's `agree` or `decline`. */
+  suggestionId?: string;
   intent?: {
     skillName: string;
     intentName?: string;
@@ -35,6 +37,7 @@ const clientIntentSchema = z.object({
 const clientInputMetadataShape = z.object({
   method: z.enum(CLIENT_INPUT_METHODS),
   suggestionSourceMessageId: z.string().uuid().optional(),
+  suggestionId: z.string().min(1).max(200).optional(),
   intent: clientIntentSchema.optional(),
 });
 
@@ -47,6 +50,13 @@ const requireMethodFields = (
       code: z.ZodIssueCode.custom,
       message: "suggestionSourceMessageId is required for suggestion_click",
       path: ["suggestionSourceMessageId"],
+    });
+  }
+  if (value.suggestionId !== undefined && value.method !== "suggestion_click") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "suggestionId is sent only with suggestion_click",
+      path: ["suggestionId"],
     });
   }
   if (value.method === "intent_click" && !value.intent) {
@@ -78,7 +88,13 @@ export const parseStoredInputMetadata = (value: unknown): UserMessageInputMetada
     return undefined;
   }
 
-  const candidate = value as { method?: unknown; suggestionSourceMessageId?: unknown; intent?: unknown; routine?: unknown };
+  const candidate = value as {
+    method?: unknown;
+    suggestionSourceMessageId?: unknown;
+    suggestionId?: unknown;
+    intent?: unknown;
+    routine?: unknown;
+  };
   if (typeof candidate.method !== "string" || !STORED_INPUT_METHODS.has(candidate.method)) {
     return undefined;
   }
@@ -95,6 +111,8 @@ export const parseStoredInputMetadata = (value: unknown): UserMessageInputMetada
       typeof candidate.suggestionSourceMessageId === "string" && candidate.suggestionSourceMessageId.length > 0
         ? candidate.suggestionSourceMessageId
         : undefined,
+    suggestionId:
+      typeof candidate.suggestionId === "string" && candidate.suggestionId.length > 0 ? candidate.suggestionId : undefined,
     intent: typeof intent?.skillName === "string" && intent.skillName.length > 0
       ? {
           skillName: intent.skillName,

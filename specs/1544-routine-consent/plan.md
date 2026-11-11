@@ -400,7 +400,7 @@ Substrate changes that would shrink this:
 - **Agent default language changed after publish:** wording may become unavailable, and the decline path runs. The publish gate rechecks the language; consider a Needs-Attention signal.
 - **Classifier errors:** the safe default is `unclear`; SC-003 is guarded only by the live suite and the nightly evals.
 - **Latest-prompt lookup** reads message metadata within one conversation. The conversation index is enough; confirm with EXPLAIN.
-- **Chips after a page reload:** verify that history replay restores routine-reply suggestions (`chatHistoryService.ts:710-720`).
+- **Chips after a page reload:** verify that history replay restores routine-reply suggestions (`chatHistoryService.ts:710-720`). Verified in PR2b: history reads them from the turn's `chat.answer` audit event (`routine-consent-chat.integration.test.ts`).
 - **`RoutineTurnReporter.statusFor`** (`routineTurnReporter.ts:42`) must read a gate step as open with no pending input.
 - **Test Chat and Ray's probe render no chips** (found in PR2): both hand the operator a reply's text alone, so `consentPresentationFor` gives `workbench_replay` and `operator_copilot_probe` the `text` presentation. §10 item 4 and the spec's clarification ("Test Chat ... ask with buttons") assumed chips there. Test Chat keeps its decisions in its own continuation and records none.
 - **Withdrawal racing an in-flight turn:** closed by the strip inside the turn's transaction (§5). The new messages of such a turn are marked but not overwritten; that is a residual gap to document.

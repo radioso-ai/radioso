@@ -8831,6 +8831,7 @@ export interface components {
                 method: "typed" | "suggestion_click" | "intent_click";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
+                suggestionId?: string;
                 intent?: {
                     skillName: string;
                     intentName?: string;
@@ -8881,6 +8882,7 @@ export interface components {
                 method: "typed" | "suggestion_click" | "intent_click";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
+                suggestionId?: string;
                 intent?: {
                     skillName: string;
                     intentName?: string;
@@ -9191,6 +9193,8 @@ export interface components {
             method: "typed" | "suggestion_click" | "intent_click" | "routine_invocation";
             /** Format: uuid */
             suggestionSourceMessageId?: string;
+            /** @description The id of the chip clicked, such as a routine consent's `agree` or `decline`. */
+            suggestionId?: string;
             intent?: {
                 skillName: string;
                 intentName?: string;

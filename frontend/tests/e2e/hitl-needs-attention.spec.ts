@@ -1133,7 +1133,7 @@ test("handing to a teammate who can no longer take it keeps the draft and re-rea
   const readsBeforeHandOff = teammateReads();
   await page.getByRole("menuitem", { name: "Walter Skinner" }).click();
 
-  await expect(response.getByRole("status")).toBeVisible();
+  await expect(response.getByRole("status")).toHaveText("That teammate can no longer take this.");
   await expect(replyBox).toHaveValue("Draft that must survive");
   await expect.poll(teammateReads).toBeGreaterThan(readsBeforeHandOff);
 });

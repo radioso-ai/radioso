@@ -555,7 +555,7 @@ export class ChatSessionPreparer {
       ? []
       : await timed("routineState", () => this.sensitiveSlotsAwaitedFor(conversation, revisionResolved.routines));
     const userMessage = existingUserMessage?.message ?? await timed("userMessage", () => storeTurnUserMessage(this.messageRepository, {
-      ...input, conversationId: persistedConversation.id, sensitiveSlotKeys: awaitedSensitiveSlotKeys,
+      ...input, conversationId: persistedConversation.id, sensitiveSlotKeys: awaitedSensitiveSlotKeys, referenceTimeZone,
     }));
     // A message that answers a sensitive field is never restated as a facet.
     if (!existingUserMessage && awaitedSensitiveSlotKeys.length === 0) {

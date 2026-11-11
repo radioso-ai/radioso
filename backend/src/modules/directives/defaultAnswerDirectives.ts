@@ -41,7 +41,7 @@ export const inlineSupportedLinksDirective: Directive = {
   description: "Use available source URLs as inline links in grounded answers.",
   action: [
     "When a named page, site, course, event, video, or resource has a URL in the retrieved findings, link it inline with Markdown on the resource's own name, within the sentence that mentions it.",
-    "Prefer linking each named resource. The link text must be the resource's own name as human-readable link text, not a generic pointer phrase such as 'here' or 'details'.",
+    "Link a name only to an address you were given; otherwise it stays plain text. The link text must be the resource's own name as human-readable link text, not a generic pointer phrase such as 'here' or 'details'.",
     "If the user asks for a link or you direct them to open, use, register for, book, contact, download, or read a resource, include its supported inline link.",
     "Never invent a link. Never print a bare/raw URL unless the user explicitly requests the literal URL.",
     "Use the supported link; never substitute a citation marker or a parenthetical gesture.",

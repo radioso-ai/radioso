@@ -9,6 +9,38 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.30.0] - 2026-11-11
+
+### Added
+
+- **inbox:** dismiss feedback rows in bulk and show who holds each Needs-you row ([#1752](https://github.com/radioso-ai/radioso/pull/1752))
+- **directives:** show directives as a quiet list with a detail sheet ([#1748](https://github.com/radioso-ai/radioso/pull/1748))
+- **a2a:** answer A2A v1.0 JSON-RPC for published agents ([#1732](https://github.com/radioso-ai/radioso/pull/1732))
+
+### Fixed
+
+- **chat:** show a link the model was never given as plain text ([#1760](https://github.com/radioso-ai/radioso/pull/1760))
+- **retrieval:** judge a sense's relevance by its match to the question, not its fused rank ([#1747](https://github.com/radioso-ai/radioso/pull/1747))
+- **retrieval:** resolve relative dates in the local zone in Test Chat, approval resumes and document enrichment ([#1753](https://github.com/radioso-ai/radioso/pull/1753))
+- **chat:** translate the citation labels and show the source count beside them ([#1746](https://github.com/radioso-ai/radioso/pull/1746))
+- **chat:** never offer to write the visitor's message, or write it after an earlier offer ([#1741](https://github.com/radioso-ai/radioso/pull/1741))
+- **infra:** refuse unencrypted database connections on live-eu ([#1737](https://github.com/radioso-ai/radioso/pull/1737))
+- **routines:** show a variable's type read-only where its field row owns it ([#1736](https://github.com/radioso-ai/radioso/pull/1736))
+- **chat:** lay out three or more items as a crisp list, and name a few on a call ([#1733](https://github.com/radioso-ai/radioso/pull/1733))
+
+### Internal
+
+- replace the last copied example and a production eval id in tests ([#1738](https://github.com/radioso-ai/radioso/pull/1738))
+- typecheck every package's tests and fix the errors that had built up ([#1734](https://github.com/radioso-ai/radioso/pull/1734))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `253_a2a_tasks.sql`
+
+[1.30.0]: https://github.com/radioso-ai/radioso/compare/v1.29.1...v1.30.0
+
 ## [1.29.1] - 2026-11-09
 
 ### Fixed

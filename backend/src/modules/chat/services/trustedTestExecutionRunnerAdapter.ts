@@ -137,6 +137,9 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       candidateRevision: revision,
       baselineAgentConfig: agentConfig,
       query: input.message,
+      // The operator chatting in Test Chat is the visitor of this turn, so their browser's zone
+      // decides today the way a visitor's does, then the workspace's.
+      visitorTimeZone: input.userTimeZone,
       history: input.history.map((entry) => historyMessage(entry, input.conversationId, input.workspaceId)),
       routineStartState: continuation.routineState
         ? (() => {

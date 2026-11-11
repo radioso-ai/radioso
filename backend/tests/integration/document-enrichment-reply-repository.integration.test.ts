@@ -200,7 +200,7 @@ describeIntegration("DocumentEnrichmentReplyRepository (Postgres)", () => {
         createdAt: document.createdAt,
       },
       chunks: [{ chunkIndex: 0, startOffset: 0, endOffset: document.markdownContent.length, metadata: {} }],
-      anchor: { source: "document_created_at" as const, date: "2026-07-01" },
+      anchor: { source: "document_created_at" as const, date: "2026-07-01", timeZone: "UTC" },
     };
 
     await service.enrich(input);

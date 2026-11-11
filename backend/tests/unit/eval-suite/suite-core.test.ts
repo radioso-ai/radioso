@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { compileRoutineDefinition } from "../../../src/modules/routines/compiler.js";
-import type { AssertionVerdict, EvalRunObservedOutput } from "../../../src/modules/eval/domain/types.js";
+import { evaluateAssertion } from "../../../src/modules/eval/domain/outcomes.js";
+import type { AssertionVerdict, EvalAssertion, EvalRunObservedOutput } from "../../../src/modules/eval/domain/types.js";
 import {
   buildBaselineFile,
   diffAgainstBaseline,
@@ -34,7 +35,7 @@ import {
   conversationQualityCases,
   conversationQualityRoutines,
 } from "../../fixtures/conversation-quality/index.js";
-import { conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
+import { BREATH_COURSE_DOC_ID, conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
 import { pricesFromTheCoursePageDirective } from "../../fixtures/conversation-quality/directives.js";
 import {
   canonicalAnswerEnvelope,
@@ -993,6 +994,68 @@ describe("withheld-figures directive through the chat pipeline", () => {
     expect(assistantMessage?.metadata).not.toHaveProperty("unmetDirectives");
     expect(metrics).toMatch(/chat_directive_adherence_verdicts_total\{verdict="ungraded"\} 1\b/);
     expect(metrics).not.toMatch(/chat_directive_adherence_verdicts_total\{verdict="satisfied"\}/);
+  });
+});
+
+// #1751: the fixture corpus carries no Source URL, so a link in a reply about it is one the
+// model made up. The delivered answer shows its text, and the case gates on the delivered answer.
+describe("invented links through the chat pipeline", () => {
+  const { history: _history, routineStartState: _routineStartState, ...courseCase } = conversationQualityCases.find(
+    (evalCase) => evalCase.id === "referent-course-behind-contact-form",
+  )!;
+  // The harness drives one turn and records no retrieved chunks; the route, coverage, and answer
+  // assertions are its to check.
+  const pipelineCase: ConversationQualityCase = {
+    ...courseCase,
+    assertions: courseCase.assertions.filter((assertion) => !assertion.type.startsWith("retrieval_")),
+  };
+  const runCase = async (answer: string) => {
+    const harness = conversationQualityChatHarness({
+      reply: canonicalAnswerEnvelope({
+        coverage: "answered_sufficient_evidence",
+        requestFocus: "the full quote for the breath course",
+        outcome: "answer",
+        answer,
+        claims: [[1]],
+        grounding: "grounded",
+      }),
+      retrievedDocumentId: BREATH_COURSE_DOC_ID,
+    });
+    const { reports } = await runConversationQualitySuite([pipelineCase], harness.port, { workspaceId: "ws" });
+    const [assistantMessage] = [...harness.messageRepository.items.values()].flat().filter((message) => message.role === "assistant");
+    return { report: reports[0], answer: assistantMessage?.content, metrics: harness.metrics.renderPrometheus() };
+  };
+  const linkCheck = courseCase.assertions.find(
+    (assertion) => assertion.type === "answer_does_not_contain" && assertion.matchMode === "regex" && assertion.pattern.startsWith(String.raw`\]\(`),
+  )!;
+
+  it("delivers the invented link as text, so the case passes and the counter records the attempt", async () => {
+    const { report, answer, metrics } = await runCase(
+      "Per [Il respiro super consapevole](#) la quota è di 260 € in camera doppia[[1]].",
+    );
+
+    expect(answer).toBe("Per Il respiro super consapevole la quota è di 260 € in camera doppia.");
+    if (report?.status !== "pass") {
+      throw new Error(`expected pass, got ${report?.status}: ${JSON.stringify(report?.verdicts, null, 2)}`);
+    }
+    expect(metrics).toMatch(/chat_answer_links_unwrapped_total\{reason="fragment",stream="false"\} 1\b/);
+  });
+
+  it("fails a delivered answer that carries a link, unless the link is to an email address", () => {
+    const evaluateLinkCheck = (answer: string) => evaluateAssertion(linkCheck as EvalAssertion, observed({ answer })).status;
+
+    expect(evaluateLinkCheck("Per [Il respiro](#) la quota è di 260 €.")).toBe("fail");
+    expect(evaluateLinkCheck("Vedi [il corso](https://example.org/corso).")).toBe("fail");
+    expect(evaluateLinkCheck("Scrivi a [la segreteria](mailto:corsi@school.example).")).toBe("pass");
+    expect(evaluateLinkCheck("Per Il respiro la quota è di 260 € (camera doppia).")).toBe("pass");
+  });
+
+  it("passes an answer that names the course without a link", async () => {
+    const { report } = await runCase("Per Il respiro super consapevole la quota è di 260 € in camera doppia[[1]].");
+
+    if (report?.status !== "pass") {
+      throw new Error(`expected pass, got ${report?.status}: ${JSON.stringify(report?.verdicts, null, 2)}`);
+    }
   });
 });
 

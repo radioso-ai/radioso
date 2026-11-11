@@ -212,7 +212,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     errorReporter: infrastructure.errorReportingService,
     audit: infrastructure.auditService,
   });
-  const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings, copilotProposalTargetTypes: copilotContributions.proposals.targetTypes });
+  const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings, copilotProposalTargetTypes: copilotContributions.proposals.targetTypes, logger });
   const abuseControlComposition = createAbuseControlComposition({
     env,
     logger,
@@ -799,8 +799,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documents.workspaceIngestionReprocessService,
   );
   const copilotProposalAdapters = [
-    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
-    createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
+    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely, copilotContributions.proposals.targetTypes) }),
+    createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely, copilotContributions.proposals.targetTypes) }),
     createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
@@ -810,7 +810,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentService,
       routineDraftAssistService,
       routineDefinitionService,
-      routineMcpApply: createRoutineMcpApplyPort(infrastructure.database.kysely, {
+      routineMcpApply: createRoutineMcpApplyPort(infrastructure.database.kysely, { proposalTargetTypes: copilotContributions.proposals.targetTypes,
         validateScopedReferences: async (input, db) => createRoutineScopedReferenceGuard({
           listDirectiveTags: async ({ workspaceId, agentId }) => (await new AgentRepository(db).listDirectives(agentId, workspaceId)).map((directive) => directive.tags),
           buildStepScopeTag: scopeTag.step,
@@ -823,7 +823,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentService,
       agentSkillsService,
       skillCapabilityRegistry,
-      atomicMcpApply: createAgentSkillMcpApplyPort(infrastructure.database.kysely),
+      atomicMcpApply: createAgentSkillMcpApplyPort(infrastructure.database.kysely, copilotContributions.proposals.targetTypes),
       retrievalAuthoring,
     }),
     createAgentPublicationProposalAdapter({ revisions: agentRevisionService }),
@@ -834,7 +834,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
     createDocumentReviewedOperationAdapter({ operations: documentReviewedOperations }),
-    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
+    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely, copilotContributions.proposals.targetTypes) }),
     createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createPrivacySettingCopilotProposalAdapter({ privacySettings: privacySettingsService }),
     createTimeZoneSettingCopilotProposalAdapter({ timeZoneSettings: settings.timeZoneSettingsService }),
@@ -1164,8 +1164,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     auditService: infrastructure.auditService,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
-    proposalAdapters: [...copilotProposalAdapters, ...copilotContributions.proposals.adapters],
-    proposalTargetTypes: copilotContributions.proposals.targetTypes,
+    proposalAdapters: copilotProposalAdapters,
+    contributedProposals: copilotContributions.proposals,
     prompt: copilotPrompt,
     tools: copilotToolCatalog,
     probeBudgetPerTurn: env.COPILOT_PROBE_BUDGET_PER_TURN,

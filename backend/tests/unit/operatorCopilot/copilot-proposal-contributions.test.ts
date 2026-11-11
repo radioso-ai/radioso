@@ -207,7 +207,9 @@ describe("a contributed proposal", () => {
   });
 
   it("refuses a draft whose dashboard link leaves the workspace dashboard", async () => {
-    for (const dashboardPath of ["https://elsewhere.example/settings", "//elsewhere.example/settings", "settings", "/\\elsewhere.example"]) {
+    // The dashboard prefixes the path with the workspace root, so a dot segment, raw or
+    // percent-encoded, would walk out of the workspace once a browser resolves it.
+    for (const dashboardPath of ["https://elsewhere.example/settings", "//elsewhere.example/settings", "settings", "/\\elsewhere.example", "/../../login", "/%2e%2e/%2E%2E/login", "/./../w/other/agents"]) {
       const state = createAlertThresholdState();
       const contribution = createAlertThresholdContribution(state, {
         adapter: {
@@ -257,6 +259,43 @@ describe("a contributed proposal", () => {
 
     expect(output).toMatchObject({ removal: true });
     expect(presentProposalCard(await createProposal.mock.results[0].value)).toMatchObject({ removal: true });
+  });
+
+  it("drops a stored dot-segment link instead of rendering it", () => {
+    for (const dashboardPath of ["/../../login", "/%2e%2e/%2E%2E/login", "/./../w/other/agents"]) {
+      const card = presentProposalCard(storedProposal({
+        targetType: ALERT_THRESHOLD_TARGET_TYPE,
+        targetRef: {},
+        versionToken: "create",
+        payload: { name: "Alert", summary: "Alert.", presentation: { label: "usage alerts", dashboardPath }, change: { threshold: 1 } },
+      }));
+      expect(card).not.toHaveProperty("presentation");
+    }
+  });
+
+  it("keeps a contributed detail reference inside what proposal_detail publishes", async () => {
+    const state = createAlertThresholdState();
+    const [adapter] = resolveCopilotProposalContributions([createAlertThresholdContribution(state, {
+      adapter: { proposalDetailTargetRef: () => ({ alertName: "x".repeat(400), enabled: true, owner: null, threshold: 500 as never, nested: {} as never }) },
+    })]).adapters;
+    const reference = adapter.proposalDetailTargetRef?.({}) ?? {};
+
+    expect(reference).toEqual({ alertName: "x".repeat(300), enabled: true, owner: null });
+    const detail = createProposalDetailTool({
+      getProposalDetail: async () => ({
+        proposalId: PROPOSAL_ID,
+        targetType: ALERT_THRESHOLD_TARGET_TYPE,
+        target: { agentId: null, directiveId: null, routineId: null, skillId: null, documentId: null, settingKey: null, label: "Alert", reference },
+        summary: "Alert.",
+        draftedChange: { threshold: 500 },
+        status: "pending",
+        createdAt: new Date("2026-11-11T10:00:00.000Z"),
+        decidedAt: null,
+        failureReason: null,
+        reviewedOperation: false,
+      }),
+    }, resolveCopilotProposalContributions([createAlertThresholdContribution(createAlertThresholdState())]).targetTypes);
+    await expect(detail.createTool(context).invoke({ proposalId: PROPOSAL_ID }, {} as never)).resolves.toMatchObject({ target: { reference } });
   });
 
   it("hands the contributed adapter its own change, never Ray's card fields", async () => {

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { createCopilotRoutes } from "../../../src/modules/operatorCopilot/routes.js";
-import { CopilotConflictError, resolveCopilotProposalContributions } from "../../../src/modules/operatorCopilot/public.js";
+import { CopilotConflictError, firstPartyCopilotProposalTargetTypes, resolveCopilotProposalContributions } from "../../../src/modules/operatorCopilot/public.js";
 import { ALERT_THRESHOLD_TARGET_TYPE, createAlertThresholdContribution, createAlertThresholdState } from "../../support/contributedProposalModule.js";
 
 const ACCOUNT_ID = "22222222-2222-2222-8222-222222222222";
@@ -23,7 +23,7 @@ describe("createCopilotRoutes", () => {
       accountAccessService: {},
       llmCapabilityResolver: {},
       operatorCopilotService: {},
-      copilotToolCatalog: [],
+      copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never);
@@ -62,6 +62,7 @@ describe("createCopilotRoutes", () => {
       },
       operatorCopilotService: {},
       copilotToolCatalog: [],
+      copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
@@ -150,7 +151,7 @@ describe("createCopilotRoutes", () => {
       },
       llmCapabilityResolver: { async resolve() { return {}; } },
       operatorCopilotService: { resolveProposalWorkspaceForSession, getProposal },
-      copilotToolCatalog: [],
+      copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
@@ -196,7 +197,7 @@ describe("createCopilotRoutes", () => {
       accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
       llmCapabilityResolver: { async resolve() { return {}; } },
       operatorCopilotService: { resolveProposalWorkspaceForSession: vi.fn(async () => ({ kind: "found" as const, workspaceId: WORKSPACE_ID })), getProposal, describeReviewedProposalClient },
-      copilotToolCatalog: [], abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) }, auditService: { record: vi.fn(async () => {}) },
+      copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes, abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) }, auditService: { record: vi.fn(async () => {}) },
     } as never));
 
     const response = await request(app).get(`/api/v1/copilot/proposals/${proposal.id}`).set("Cookie", "radioso_session=valid-session");
@@ -227,7 +228,7 @@ describe("createCopilotRoutes", () => {
           resolveProposalWorkspaceForSession: vi.fn(async () => ({ kind: "found" as const, workspaceId: WORKSPACE_ID })),
           approveReviewedProposal,
         },
-        copilotToolCatalog: [],
+        copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
         abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
         auditService: { record: vi.fn(async () => {}) },
       } as never));
@@ -294,7 +295,7 @@ describe("createCopilotRoutes", () => {
         accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
         llmCapabilityResolver: {},
         operatorCopilotService: { dismissProposal },
-        copilotToolCatalog: [],
+        copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
         abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
         auditService: { record: vi.fn(async () => {}) },
       } as never));
@@ -374,7 +375,7 @@ describe("createCopilotRoutes", () => {
     app.use("/api/v1/copilot", createCopilotRoutes({
       env: { SESSION_COOKIE_NAME: "radioso_session" }, authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
       workspaceSessionService: {}, accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
-      llmCapabilityResolver: {}, operatorCopilotService: { resolveProposalWorkspaceForSession }, copilotToolCatalog: [],
+      llmCapabilityResolver: {}, operatorCopilotService: { resolveProposalWorkspaceForSession }, copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) }, auditService: { record: vi.fn(async () => {}) },
     } as never));
 
@@ -421,7 +422,7 @@ describe("createCopilotRoutes", () => {
       },
       llmCapabilityResolver: { async resolve() { return {}; } },
       operatorCopilotService: { applyProposal },
-      copilotToolCatalog: [],
+      copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
     } as never));
 
     const response = await request(app)
@@ -462,7 +463,7 @@ describe("createCopilotRoutes", () => {
       operatorCopilotService: {
         runTurn: async function* () { throw new CopilotConflictError(); },
       },
-      copilotToolCatalog: [],
+      copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
@@ -515,7 +516,7 @@ describe("createCopilotRoutes", () => {
       },
       llmCapabilityResolver: { async resolve() { return {}; } },
       operatorCopilotService: { runTurn },
-      copilotToolCatalog: [{ requiredPermissions: ["workspace.token.read"] }],
+      copilotToolCatalog: [{ requiredPermissions: ["workspace.token.read"] }], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
@@ -569,7 +570,7 @@ describe("copilot turn rate limit", () => {
       },
       llmCapabilityResolver: { async resolve() { return {}; } },
       operatorCopilotService: { runTurn: async function* () { throw new CopilotConflictError(); } },
-      copilotToolCatalog: [],
+      copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: input.enforce },
       auditService: { record: input.record ?? vi.fn(async () => {}) },
     } as never));

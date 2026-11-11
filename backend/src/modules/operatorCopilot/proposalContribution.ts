@@ -75,13 +75,19 @@ export interface CopilotContributedProposalAdapter<TInput = unknown> {
   applyIfVersionMatches(workspaceId: string, targetRef: unknown, change: unknown, versionToken: string, context?: CopilotProposalApplyContext): Promise<CopilotProposalApplyOutcome>;
   /**
    * Whether applying again is safe after an earlier attempt was interrupted before its outcome was
-   * recorded. Answer false when the version token cannot tell a completed first attempt from one
-   * that never ran, as for a create: Ray then resolves the proposal as interrupted instead of
-   * applying it a second time. Required, and checked at boot, because a create-shaped contribution
-   * that left it out would otherwise be retried.
+   * recorded. Required, and checked at boot, because a create-shaped contribution that left it out
+   * would otherwise be retried.
+   *
+   * Answer true only when the version token tells the two crash windows apart: `applyIfVersionMatches`
+   * writes only if the target still matches `versionToken` (a compare-and-set in the same write, not
+   * a read followed by a write), and a completed apply changes what `readVersionToken` returns. A
+   * retry after a first attempt that took effect then comes back `stale`, and nothing is applied
+   * twice. Answer false when the token cannot tell them apart, as for a create, whose target has no
+   * version before it exists: Ray then resolves the proposal as interrupted instead of applying it
+   * again.
    */
   canRetryAfterInterruptedApply(targetRef: unknown, change: unknown): boolean;
-  /** Identifiers `proposal_detail` may show for the target. */
+  /** Identifiers `proposal_detail` may show for the target; Ray keeps strings, booleans, and nulls, each string cut to 300 characters. */
   proposalDetailTargetRef?(targetRef: unknown): Record<string, string | boolean | null>;
 }
 
@@ -113,8 +119,23 @@ export interface ResolvedCopilotProposalContributions {
 const DASHBOARD_ORIGIN = "https://dashboard.invalid";
 // Structural: a path the dashboard router can take, never a URL that leaves the workspace dashboard.
 const CONTROL_OR_SPACE = /[\u0000- \u007f]/u;
+/**
+ * The dashboard prefixes the path with the workspace's own root (`/w/<routeKey>`), so a `.` or `..`
+ * segment, raw or percent-encoded, would walk out of the workspace once a browser resolves it. The
+ * path is decoded before its segments are checked; one that does not decode is refused.
+ */
+const hasDotSegment = (path: string): boolean => {
+  const pathname = path.split(/[?#]/u, 1)[0] ?? "";
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return true;
+  }
+  return decoded.includes("\\") || decoded.split("/").some((segment) => segment === "." || segment === "..");
+};
 const isWorkspaceDashboardPath = (path: string): boolean => {
-  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\") || CONTROL_OR_SPACE.test(path)) return false;
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\") || CONTROL_OR_SPACE.test(path) || hasDotSegment(path)) return false;
   try {
     return new URL(path, DASHBOARD_ORIGIN).origin === DASHBOARD_ORIGIN;
   } catch {
@@ -190,6 +211,16 @@ const assertContribution = (contribution: CopilotProposalAdapterContribution, cl
 
 const contributedPayloadSchema = z.object({ name: z.string(), change: z.unknown() });
 
+const MAX_DETAIL_REFERENCE_CHARS = 300;
+/** `proposal_detail` publishes this projection under a bounded schema, so values outside it are dropped or cut here rather than failing the read. */
+const detailReference = (reference: unknown): Record<string, string | boolean | null> => {
+  if (!reference || typeof reference !== "object" || Array.isArray(reference)) return {};
+  return Object.fromEntries(Object.entries(reference).flatMap(([key, value]): Array<[string, string | boolean | null]> => {
+    if (typeof value === "string") return [[key, value.slice(0, MAX_DETAIL_REFERENCE_CHARS)]];
+    return typeof value === "boolean" || value === null ? [[key, value]] : [];
+  }));
+};
+
 /**
  * Ray stores a contributed proposal's payload as the card's fields beside the adapter's change
  * (`{ name, summary, presentation, removesTarget?, change }`), so neither can overwrite the other.
@@ -208,7 +239,7 @@ const asProposalAdapter = (adapter: CopilotContributedProposalAdapter): CopilotP
     adapter.applyIfVersionMatches(workspaceId, targetRef, contributedPayloadSchema.parse(payload).change, versionToken, context),
   canRetryAfterInterruptedApply: (targetRef, payload) =>
     adapter.canRetryAfterInterruptedApply(targetRef, contributedPayloadSchema.parse(payload).change),
-  proposalDetailTargetRef: (targetRef) => adapter.proposalDetailTargetRef?.(targetRef) ?? {},
+  proposalDetailTargetRef: (targetRef) => detailReference(adapter.proposalDetailTargetRef?.(targetRef)),
 });
 
 /**
@@ -228,3 +259,6 @@ export const resolveCopilotProposalContributions = (
     contributions,
   };
 };
+
+/** A deployment no module contributes a proposal to: the first-party target types and no contributed adapter. */
+export const noContributedCopilotProposals: ResolvedCopilotProposalContributions = resolveCopilotProposalContributions([]);

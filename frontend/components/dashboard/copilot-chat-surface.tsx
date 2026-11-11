@@ -49,6 +49,7 @@ import {
   type CopilotProposalSummary,
 } from '@/lib/api-copilot'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { workspaceDashboardHref } from '@/lib/copilot-dashboard-path'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   resolveCopilotEntityLabel,
@@ -561,13 +562,13 @@ export function CopilotChatSurface({
     }
   }
 
-  // A contributed proposal names a page inside the workspace dashboard. The backend refuses a path
-  // that leaves it; this checks again before navigating.
+  // A contributed proposal names a page inside the workspace dashboard.
   const openDashboardPath = (dashboardPath: string) => {
     const routeKey = activeWorkspace?.publicRouteKey
-    if (!routeKey || !dashboardPath.startsWith('/') || dashboardPath.startsWith('//') || dashboardPath.includes('\\')) return
+    const href = routeKey ? workspaceDashboardHref(routeKey, dashboardPath) : null
+    if (!href) return
     closePanel()
-    router.push(`/w/${encodeURIComponent(routeKey)}${dashboardPath}`)
+    router.push(href)
   }
 
   if (session.permissionDenied) return null

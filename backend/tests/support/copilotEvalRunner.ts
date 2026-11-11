@@ -45,6 +45,7 @@ import type {
   CopilotObservedToolCall,
   CopilotObservedTurn,
 } from "./copilotEvalSuite.js";
+import { noContributedCopilotProposals } from "../../src/modules/operatorCopilot/proposalContribution.js";
 
 export const COPILOT_EVAL_WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 export const COPILOT_EVAL_WORKSPACE_KEY = "sunny-co";
@@ -156,7 +157,7 @@ export const observeCopilotTurn = async (
   };
 
   const repository = deps.repository ?? new InMemoryCopilotRepository();
-  const service = new OperatorCopilotService({
+  const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     repository,
     capabilityRunner,
     usageLimitPolicy: {

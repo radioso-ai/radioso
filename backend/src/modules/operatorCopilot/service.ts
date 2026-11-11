@@ -27,7 +27,7 @@ import {
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
 import { proposalCardFromTrace } from "./proposalCard.js";
-import { firstPartyCopilotProposalTargetTypes, type CopilotProposalTargetTypeSet } from "./proposalContribution.js";
+import type { CopilotProposalTargetTypeSet, ResolvedCopilotProposalContributions } from "./proposalContribution.js";
 import { COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT, createCopilotProbeBudget, meteredCopilotTool, type CopilotProbeBudget } from "./probeBudget.js";
 import { COPILOT_TURN_BUDGET } from "./turnBudget.js";
 import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "./catalog.js";
@@ -241,8 +241,8 @@ interface OperatorCopilotServiceDeps {
   /** Existing workspace authorization is mandatory for every protected Ray hook. */
   readonly currentAuthorization: CopilotCurrentAuthorizationPort;
   readonly proposalAdapters?: ReadonlyArray<CopilotProposalAdapter>;
-  /** The target types this deployment stores, reads and applies; the first-party list when omitted. */
-  readonly proposalTargetTypes?: CopilotProposalTargetTypeSet;
+  /** The assembled target-type set with the contributed adapters behind it, one input so the two cannot disagree. */
+  readonly contributedProposals: ResolvedCopilotProposalContributions;
   /** Probe calls one turn may spend; see {@link COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT}. */
   readonly probeBudgetPerTurn?: number;
   readonly now?: () => Date;
@@ -946,12 +946,12 @@ export class OperatorCopilotService {
   }
 
   private adapterFor(targetType: CopilotProposal["targetType"]): CopilotProposalAdapter {
-    const adapter = this.deps.proposalAdapters?.find((candidate) => candidate.targetType === targetType);
+    const adapter = [...(this.deps.proposalAdapters ?? []), ...this.deps.contributedProposals.adapters].find((candidate) => candidate.targetType === targetType);
     if (!adapter) throw new Error(`No copilot proposal adapter registered for ${targetType}`);
     return adapter;
   }
 
-  private get targetTypes(): CopilotProposalTargetTypeSet { return this.deps.proposalTargetTypes ?? firstPartyCopilotProposalTargetTypes; }
+  private get targetTypes(): CopilotProposalTargetTypeSet { return this.deps.contributedProposals.targetTypes; }
 
   private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotStoredProposalTargetType, proposal?: CopilotProposal): Promise<boolean> {
     const { currentAuthorization, ...principal } = input;

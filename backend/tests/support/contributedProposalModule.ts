@@ -93,3 +93,77 @@ export const createAlertThresholdModule = (
     context.registerCopilotProposalAdapter(() => createAlertThresholdContribution(state, overrides));
   },
 });
+
+/**
+ * A second module, owning an update-shaped target: one answer limit per deployment, versioned.
+ * Applying compares the draft's token with the stored version and bumps it in the same write, so a
+ * retry after an interrupted apply that took effect reads as stale. That is what lets it answer
+ * true to `canRetryAfterInterruptedApply`.
+ */
+export const ALERT_LIMIT_TARGET_TYPE = "alert_limit";
+export const ALERT_LIMIT_TOOL = "propose_alert_limit";
+
+export interface AlertLimitState {
+  limit: number | null;
+  version: number;
+  /** Every write that took effect, whoever made it. */
+  writes: number;
+}
+
+export const createAlertLimitState = (): AlertLimitState => ({ limit: null, version: 1, writes: 0 });
+
+/** The limit write the module owns: a compare-and-set on the version, which it bumps. */
+export const writeAlertLimit = (state: AlertLimitState, limit: number, expectedVersionToken: string): boolean => {
+  if (expectedVersionToken !== `v${state.version}`) return false;
+  state.limit = limit;
+  state.version += 1;
+  state.writes += 1;
+  return true;
+};
+
+const limitInputSchema = z.object({ limit: z.number().int().positive().max(1_000_000) }).strict();
+const limitChangeSchema = z.object({ limit: z.number().int().positive() }).strict();
+
+const createAlertLimitContribution = (state: AlertLimitState): CopilotProposalAdapterContribution<z.infer<typeof limitInputSchema>> => ({
+  moduleId: "test-alert-limits",
+  adapter: {
+    targetType: ALERT_LIMIT_TARGET_TYPE,
+    permissions: { read: ["workspace.settings.read"], manage: ["workspace.settings.manage"] },
+    async draft(input) {
+      return {
+        targetRef: {},
+        change: { limit: input.limit },
+        versionToken: `v${state.version}`,
+        targetLabel: `Answer limit ${input.limit}`,
+        summary: `Stop answering after ${input.limit} answers this month.`,
+        presentation: ALERT_THRESHOLD_PRESENTATION,
+      };
+    },
+    async readVersionToken() {
+      return `v${state.version}`;
+    },
+    async preview(_workspaceId, _targetRef, change) {
+      return { current: { limit: state.limit }, proposed: limitChangeSchema.parse(change) };
+    },
+    async applyIfVersionMatches(_workspaceId, _targetRef, change, versionToken) {
+      return writeAlertLimit(state, limitChangeSchema.parse(change).limit, versionToken)
+        ? { outcome: "applied", appliedRef: { version: state.version } }
+        : { outcome: "stale", reason: "The answer limit changed since this was drafted." };
+    },
+    canRetryAfterInterruptedApply: () => true,
+  },
+  tool: {
+    name: ALERT_LIMIT_TOOL,
+    description: "Propose the monthly answer limit, for the operator to review and apply.",
+    uiLabel: "Drafting an answer limit",
+    inputSchema: limitInputSchema,
+    capabilityProvenance: { rayOnly: { reason: "A test module's proposal, drafted and stored by Ray for operator review." } },
+  },
+});
+
+export const createAlertLimitModule = (state: AlertLimitState): ApplicationModule => ({
+  id: "test-alert-limits",
+  register(context) {
+    context.registerCopilotProposalAdapter(createAlertLimitContribution(state));
+  },
+});

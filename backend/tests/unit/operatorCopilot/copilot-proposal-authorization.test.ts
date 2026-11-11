@@ -17,6 +17,7 @@ import { createCopilotWorkspaceSettingPort } from "../../../src/app/composition/
 import { createWebsiteCrawlProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/websiteCrawlProposals.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import { createCopilotDocumentAuthoringPort } from "../../../src/app/composition/copilotToolCatalog.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const proposalRow = (overrides: Record<string, unknown> = {}) => ({
   id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -48,7 +49,7 @@ const serviceFor = (proposal = proposalRow(), holds: ReadonlyArray<string> = [])
     releaseProposalApplyClaim: vi.fn(async () => undefined),
     updateProposalOutcome: vi.fn(async () => proposal),
   };
-  const service = new OperatorCopilotService({
+  const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     repository,
     proposalAdapters: [{ targetType: proposal.targetType, readVersionToken: vi.fn(), preview: vi.fn(async () => ({ targetLabel: "Refund policy", current: null, proposed: null })), applyIfVersionMatches }],
     auditService: { record },

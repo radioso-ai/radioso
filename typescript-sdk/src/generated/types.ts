@@ -29538,6 +29538,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
+                        /** @description The proposal target types this operator may apply. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list. */
                         applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting")[];
                     };
                 };
@@ -29632,7 +29633,10 @@ export interface operations {
                             proposals: {
                                 /** Format: uuid */
                                 id: string;
-                                /** @enum {string} */
+                                /**
+                                 * @description What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list. A proposal of such a contributed type also carries an optional `presentation` ({ label, dashboardPath }): the link label and a path inside the workspace dashboard that the applied card opens.
+                                 * @enum {string}
+                                 */
                                 targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                                 targetLabel: string;
                                 summary: string;
@@ -29778,11 +29782,17 @@ export interface operations {
                         id: string;
                         /** Format: uuid */
                         workspaceId: string;
-                        /** @enum {string} */
+                        /**
+                         * @description What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list.
+                         * @enum {string}
+                         */
                         targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                         targetRef?: unknown;
                         target: {
-                            /** @enum {string} */
+                            /**
+                             * @description What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list.
+                             * @enum {string}
+                             */
                             type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                             ref?: unknown;
                         };

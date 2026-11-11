@@ -747,8 +747,10 @@ type, and boot fails when a contribution names a first-party type or one another
 module already contributed. Every reader of a stored or streamed proposal narrows
 against that set: the copilot repository's row mapping, the service's live card
 and its permission checks, `proposal_detail`, and the availability route's
-applyable targets. The `copilot_proposals.target_type` column checks only the
-identifier syntax. Ray builds the propose tool itself
+applyable targets. A stored type outside the set (a module removed or renamed, a
+rollback, a rollout in progress) leaves its card out of the conversation with a
+warning, while reading or claiming it by id refuses it. The
+`copilot_proposals.target_type` column checks only the identifier syntax. Ray builds the propose tool itself
 (`tools/contributedProposals.ts`): it drafts through the adapter, stores the
 card's label, sentence, and `presentation` (the link label and a
 workspace-relative dashboard path) beside the adapter's `change` on the payload,

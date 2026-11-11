@@ -35,6 +35,7 @@ import { REVIEWED_OPERATION_NOT_FOUND } from "../../../src/modules/operatorCopil
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
 import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import { conflict } from "../../../src/shared/domain/errors.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const workspaceId = randomUUID();
 const accountId = randomUUID();
@@ -116,7 +117,7 @@ describe("US3 copilot proposals", () => {
       evidence: null,
     });
     const audit = auditService();
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: {
         runStreaming: () => ({
@@ -178,7 +179,7 @@ describe("US3 copilot proposals", () => {
       versionToken: "version-1",
       evidence: null,
     });
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: {
         runStreaming: () => ({
@@ -578,7 +579,7 @@ describe("US3 copilot proposals", () => {
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "outdated", evidence: null });
     const applyIfVersionMatches = vi.fn(async () => ({ outcome: "stale" as const }));
     const audit = auditService();
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: noLimitPolicy(),
@@ -608,7 +609,7 @@ describe("US3 copilot proposals", () => {
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
     const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
     const audit = auditService();
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: noLimitPolicy(),
@@ -644,7 +645,7 @@ describe("US3 copilot proposals", () => {
     const authorization = vi.fn(async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
       requiredPermissions.every((permission) => permission === "workspace.agents.manage"));
     const applyIfVersionMatches = vi.fn();
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: noLimitPolicy(),
@@ -684,7 +685,7 @@ describe("US3 copilot proposals", () => {
     const authorization = vi.fn(async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
       requiredPermissions.every((permission) => permission === "workspace.agents.manage"));
     const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { agentId } }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: noLimitPolicy(),
@@ -708,7 +709,7 @@ describe("US3 copilot proposals", () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
     const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: noLimitPolicy(),
@@ -735,7 +736,7 @@ describe("US3 copilot proposals", () => {
     await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
     repository.expireApplyClaim(proposal.id);
     const applyIfVersionMatches = vi.fn();
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [],
       currentAuthorization: { hasAllPermissions: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false) },
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
@@ -760,7 +761,7 @@ describe("US3 copilot proposals", () => {
     expect(recoveredClaim?.previousAttemptStartedAt).not.toBeNull();
     const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
     const reconcileMcpInterruptedApply = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: noLimitPolicy(),
@@ -794,7 +795,7 @@ describe("US3 copilot proposals", () => {
     const recoveredClaim = (await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 }))!;
     const publish = vi.fn(async () => ({ publicationId: randomUUID(), revisionId: candidateRevisionId, publishedAt: new Date(), idempotentReplay: true }));
     const adapter = createAgentPublicationProposalAdapter({ revisions: { state: vi.fn(), detail: vi.fn(), publish, createCandidate: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn() } });
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [], proposalAdapters: [adapter],
     });
 
@@ -813,7 +814,7 @@ describe("US3 copilot proposals", () => {
     const reconcileMcpInterruptedApply = vi.fn()
       .mockResolvedValueOnce({ outcome: "unknown" as const, reason: "Publish receipt unavailable" })
       .mockResolvedValueOnce({ outcome: "applied" as const, appliedRef: { directiveId } });
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), reconcileMcpInterruptedApply }],
     });
@@ -832,7 +833,7 @@ describe("US3 copilot proposals", () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
     const claimMcpReviewedProposalApply = vi.spyOn(repository, "claimMcpReviewedProposalApply");
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } })) }],
     });
@@ -845,7 +846,7 @@ describe("US3 copilot proposals", () => {
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
     const applyIfVersionMatches = vi.fn();
     const logger = { warn: vi.fn() };
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [], logger,
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
     });
@@ -883,7 +884,7 @@ describe("US3 copilot proposals", () => {
     expect(interruptedAt).not.toBeNull();
     const reconcileMcpInterruptedApply = vi.fn();
     const applyIfVersionMatches = vi.fn();
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [],
       currentAuthorization: { hasAllPermissions: vi.fn(async () => false) },
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches, reconcileMcpInterruptedApply }],
@@ -910,7 +911,7 @@ describe("US3 copilot proposals", () => {
     if (claimed.status !== "claimed") throw new Error(`expected claim, got ${claimed.status}`);
     const receiptAttempt = { executionInvocationId: "execution-1", attemptInvocationId: "retry-1", previousAttemptInvocationId: "execution-1" };
     const release = vi.spyOn(repository, "releaseProposalApplyClaim");
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [],
       currentAuthorization: { hasAllPermissions: vi.fn(async () => false) },
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
@@ -1207,7 +1208,7 @@ describe("US3 copilot proposals", () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
     const audit = auditService();
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: noLimitPolicy(),
@@ -1229,7 +1230,7 @@ describe("US3 copilot proposals", () => {
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
     const message = await repository.createMessage({ conversationId: "conversation-1", role: "copilot", content: "Drafted", outcome: "completed", activity: [] });
     await repository.attachProposalsToMessage({ proposalIds: [proposal.id], conversationId: "conversation-1", messageId: message.id });
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: noLimitPolicy(),
@@ -1250,7 +1251,7 @@ describe("US3 copilot proposals", () => {
     const repository = new MemoryProposalRepository();
     const conversation = await repository.createConversation({ workspaceId, operatorUserId, title: "Draft routine" });
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: conversation.id, targetType: "routine", targetRef: { agentId, routineId: null }, payload: { name: "Return intake" }, versionToken: "version-1", evidence: null });
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: {
         runStreaming: () => ({
@@ -1303,7 +1304,7 @@ const reviewedOperationService = (
   audit = auditService(),
   applyIfVersionMatches: CopilotProposalAdapter["applyIfVersionMatches"] = vi.fn(),
   extra: { logger?: { warn(fields: Record<string, unknown>, message: string): void }; reconcileMcpInterruptedApply?: CopilotProposalAdapter["reconcileMcpInterruptedApply"] } = {},
-) => new OperatorCopilotService({
+) => new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
   repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: audit, prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
   ...(extra.logger ? { logger: extra.logger } : {}),
   proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches, ...(extra.reconcileMcpInterruptedApply ? { reconcileMcpInterruptedApply: extra.reconcileMcpInterruptedApply } : {}) }],

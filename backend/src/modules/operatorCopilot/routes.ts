@@ -12,7 +12,7 @@ import { createRateLimitMiddleware, type RateLimitAbuseControlPort, type RateLim
 import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound } from "../../shared/domain/errors.js";
 import type { CopilotStoredProposalTargetType } from "./contracts.js";
-import { firstPartyCopilotProposalTargetTypes, type CopilotProposalTargetTypeSet } from "./proposalContribution.js";
+import type { CopilotProposalTargetTypeSet } from "./proposalContribution.js";
 import { summarizeProposalEvidence } from "./proposalEvidence.js";
 import type { LlmCapabilityResolveInput } from "../../shared/infra/llm/workspaceContext.js";
 import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, type CopilotToolDescriptor, CopilotAuthorizationError, CopilotConflictError, CopilotNotFoundError } from "./public.js";
@@ -69,8 +69,8 @@ interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
   operatorCopilotService: OperatorCopilotService;
   /** Read only for its permission declarations; the turn itself runs against the service's catalog. */
   copilotToolCatalog: ReadonlyArray<Pick<CopilotToolDescriptor, "requiredPermissions">>;
-  /** The deployment's assembled target types, for which cards an operator may apply; the first-party list when omitted. */
-  copilotProposalTargetTypes?: Pick<CopilotProposalTargetTypeSet, "targetTypes" | "permissionsFor">;
+  /** The deployment's assembled target types, for which cards an operator may apply. */
+  copilotProposalTargetTypes: Pick<CopilotProposalTargetTypeSet, "targetTypes" | "permissionsFor">;
 }
 
 /** Ray only asks whether the workspace has a usable chat model; it never resolves a call config. */
@@ -275,7 +275,7 @@ const applyableProposalTargets = async (
     held.set(permission, allowed);
     return allowed;
   };
-  const targetTypes = dependencies.copilotProposalTargetTypes ?? firstPartyCopilotProposalTargetTypes;
+  const targetTypes = dependencies.copilotProposalTargetTypes;
   const targets: CopilotStoredProposalTargetType[] = [];
   for (const targetType of targetTypes.targetTypes) {
     const permissions = targetTypes.permissionsFor(targetType).manage;

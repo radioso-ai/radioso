@@ -156,7 +156,8 @@ may write it, offer to write, draft, word, or polish it, or offer to suggest wha
 
 The judge sees only the latest message, so each criterion restates the turn before it, and each
 reference describes the expected reply rather than quoting one. Every evals script passes
-`--judge-tag offer-scope`, so these judges gate every run. The baseline records the "mail" case
+`--judge-tag offer-scope`, so these judges gate every run; the accepted-offer case also carries
+`judge-zero-tolerance`. The baseline records the "mail" case
 at 4 of 5: the failed sample, after declining, offered help it read as help with the email.
 
 ```bash
@@ -343,7 +344,8 @@ assertions to zero tolerance: the share of samples in which no judge verdict fai
 at the case's recorded pass rate, so a case recorded at 5/5 fails the run on the first sample
 whose judge fails, at any sampling depth, even while its case rate stays within the general
 tolerance. The quick-reply positive cases and the unlisted-language case carry it, because one
-reply that states a fact is the defect their "no factual proposition" judge exists to catch. A
+reply that states a fact is the defect their "no factual proposition" judge exists to catch, and
+so does `offer-scope-accepted-writing-offer-declined`, because one drafted message is its defect. A
 judge error is not a failed verdict and counts only against the case rate. Every other
 assertion, and every other case, keeps the general tolerance; that includes
 `quick-reply-not-ack-pending-clarification`, whose judge grades the composer's wording of

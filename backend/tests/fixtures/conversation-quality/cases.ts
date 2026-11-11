@@ -1206,7 +1206,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     name: "Accepting an earlier offer to write the email gets no draft",
     description:
       "An earlier reply offered to write a draft of the email, and the visitor accepts. Writing it is still not something the agent can do, so the reply writes none of the message and does not say it is writing it; ideally it says so in the team's voice and points back to the address. The other two cases judge renewed offers; this one judges the draft.",
-    tags: ["offer-scope", "multilingual"],
+    tags: ["offer-scope", "multilingual", ZERO_TOLERANCE_JUDGE_TAG],
     agentConfigOverride: { customInstruction: friendlyGuideInstruction },
     history: [
       contactsWithWordingOffer[0],

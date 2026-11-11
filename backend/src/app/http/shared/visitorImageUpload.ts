@@ -98,7 +98,8 @@ const AVAILABILITY_ERRORS = {
 
 /**
  * Refuses the upload, before its body is read, unless the agent takes photos now: the operator
- * turned them on and its chat model reads images. `agentOf` names the agent from the request.
+ * turned them on and its chat model reads images. `agentOf` names the agent from the request. It
+ * reads the agent and resolves its model, so it runs after the upload budgets are spent.
  */
 export const requireVisitorImagesAvailable = (deps: {
   availability: VisitorImageAvailability;

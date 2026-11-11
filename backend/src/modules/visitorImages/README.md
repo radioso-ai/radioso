@@ -70,8 +70,9 @@ composition. Nothing in `packages/` changes for images.
 
 ## Lifecycle
 
-1. Upload: the route checks the agent takes photos and spends the rate budgets
-   before multer buffers the body; the service re-encodes, reserves one answer
+1. Upload: the route spends the rate budgets, then checks the agent takes
+   photos (reading the agent and resolving its model), before multer buffers
+   the body; the service re-encodes, reserves one answer
    against the plan (`UsageLimitPolicy.reserveAnswer`, `conversation_reply`, so
    an over-plan workspace gets the chat turn's `429 usage_limit_exceeded`),
    inserts the row (`pending`) naming where the object goes, then stores the

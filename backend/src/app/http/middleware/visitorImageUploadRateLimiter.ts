@@ -30,10 +30,10 @@ const publicSubjectOf = (req: Parameters<RequestHandler>[0], res: Parameters<Req
 };
 
 /**
- * Spends a public photo upload's three budgets in one consumption, after the public session and
- * agent checks and before the body is read: one on the signed public session with the request
- * source, one on the source alone, and the workspace's. A request with no session or source is
- * refused rather than let through unlimited.
+ * Spends a public photo upload's three budgets in one consumption, after the public session check
+ * and before the agent is read or the body buffered: one on the signed public session with the
+ * request source, one on the source alone, and the workspace's. A request with no session or
+ * source is refused rather than let through unlimited.
  */
 export const publicVisitorImageUploadRateLimiter = (dependencies: VisitorImageUploadRateLimiterDependencies): RequestHandler[] => [
   (req, res, next) => {

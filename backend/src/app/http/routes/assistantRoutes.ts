@@ -40,12 +40,12 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
     workspaceSession,
     requireWorkspacePermission(dependencies, "workspace.chat.use"),
     validateQuery(imageUploadQuerySchema),
+    ...countingRateLimitRefusals([apiVisitorImageUploadRateLimiter(dependencies)], metrics),
     requireVisitorImagesAvailable({
       availability: dependencies.visitorImageAvailability,
       metrics,
       agentOf: (req, res) => ({ workspaceId: (res.locals as { workspaceId: string }).workspaceId, agentId: imageUploadQuerySchema.parse(req.query).agentId }),
     }),
-    ...countingRateLimitRefusals([apiVisitorImageUploadRateLimiter(dependencies)], metrics),
     visitorImageMultipart(metrics),
     async (req, res, next) => {
       try {

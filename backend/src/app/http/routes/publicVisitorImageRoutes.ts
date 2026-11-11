@@ -40,9 +40,9 @@ interface PublicSessionLocals {
 /**
  * Mounts `POST /:token/images` and `GET /:token/images/:imageId` on the public chat router,
  * behind its public session check, so the website embed and the public link both reach them. An
- * upload runs the session, the `public_chat.turn.create` permission, the agent's photo check and
- * the three rate budgets before multer buffers a byte; it answers once the agent's model has read
- * the photo. A photo is served only to the public session that uploaded it.
+ * upload runs the session, the `public_chat.turn.create` permission, the three rate budgets and
+ * then the agent's photo check (which reads the agent and resolves its model) before multer
+ * buffers a byte; it answers once the agent's model has read the photo. A photo is served only to the public session that uploaded it.
  */
 export const registerPublicVisitorImageRoutes = (
   router: Router,
@@ -58,6 +58,7 @@ export const registerPublicVisitorImageRoutes = (
     "/:token/images",
     dependencies.publicSession,
     requirePublicChatPermission(dependencies, "public_chat.turn.create"),
+    ...countingRateLimitRefusals(publicVisitorImageUploadRateLimiter(dependencies), metrics),
     requireVisitorImagesAvailable({
       availability: dependencies.visitorImageAvailability,
       metrics,
@@ -66,7 +67,6 @@ export const registerPublicVisitorImageRoutes = (
         return workspaceId && agentId ? { workspaceId, agentId } : null;
       },
     }),
-    ...countingRateLimitRefusals(publicVisitorImageUploadRateLimiter(dependencies), metrics),
     visitorImageMultipart(metrics),
     async (req, res, next) => {
       try {

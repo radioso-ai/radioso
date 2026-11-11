@@ -24,8 +24,8 @@ type AgentChannelImageRouteDependencies = AgentChannelRateLimiterDependencies
 /**
  * `POST /:agentId/images` — an image for the REST agent channel's next message. The REST
  * credential bound to the agent uploads it, and only that credential can send it in
- * `POST /:agentId/chat`. The source budget, the credential, the agent's image check and the
- * upload budgets all run before multer buffers the body.
+ * `POST /:agentId/chat`. The source budget, the credential, the upload budgets and then the
+ * agent's image check all run before multer buffers the body.
  */
 export const registerAgentChannelImageRoute = (
   router: Router,
@@ -37,6 +37,7 @@ export const registerAgentChannelImageRoute = (
     "/:agentId/images",
     createAgentChannelSourceRateLimiter(dependencies),
     requireRestAgentChannelCredential(dependencies),
+    ...countingRateLimitRefusals([apiVisitorImageUploadRateLimiter(dependencies)], metrics),
     requireVisitorImagesAvailable({
       availability: dependencies.visitorImageAvailability,
       metrics,
@@ -45,7 +46,6 @@ export const registerAgentChannelImageRoute = (
         return agentChannelGrant ? { workspaceId: agentChannelGrant.workspaceId, agentId: agentChannelGrant.agentId } : null;
       },
     }),
-    ...countingRateLimitRefusals([apiVisitorImageUploadRateLimiter(dependencies)], metrics),
     visitorImageMultipart(metrics),
     async (req, res, next) => {
       try {

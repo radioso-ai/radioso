@@ -228,6 +228,26 @@ describe("visitor image contract", () => {
     expect(reader.read).not.toHaveBeenCalled();
   });
 
+  it("spends the upload budget before it reads the agent, so a refused upload still counts", async () => {
+    const { visitor, app, agentId, credential, dependencies } = await imageWorkspace({ visitorImagesEnabled: false });
+    const { upload } = await visitor();
+    const bytes = Buffer.from("not read");
+    const availability = vi.spyOn(dependencies.visitorImageAvailability, "forAgent");
+
+    for (let attempt = 0; attempt < 20; attempt += 1) await upload(bytes).expect(404);
+    const refused = await upload(bytes).expect(429);
+    expect(refused.body.error.code).toBe("rate_limit_exceeded");
+    expect(availability).toHaveBeenCalledTimes(20);
+
+    const bearer = await credential();
+    availability.mockClear();
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      await request(app).post(`/api/v1/assistant/images?agentId=${agentId}`).set(bearer).attach("image", bytes, "photo.png").expect(404);
+    }
+    await request(app).post(`/api/v1/assistant/images?agentId=${agentId}`).set(bearer).attach("image", bytes, "photo.png").expect(429);
+    expect(availability).toHaveBeenCalledTimes(120);
+  });
+
   it("refuses a photo field under any other name", async () => {
     const { visitor } = await imageWorkspace();
     const { upload } = await visitor();

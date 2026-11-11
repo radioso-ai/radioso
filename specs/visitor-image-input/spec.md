@@ -92,8 +92,8 @@ it raw bytes plus an owner, and gets back an image id.
   - The raw upload cap is 10 MiB. A message carries at most 3 images.
 - **Upload routes.** Each takes multipart with one file and returns the image id plus its reading status.
   - Public: `POST /api/v1/public/chat/:token/images`. The middleware chain is the public session,
-    `public_chat.turn.create`, the per-agent flag, and then a three-budget rate limiter (session plus source, source,
-    workspace) modelled on the voice-session start.
+    `public_chat.turn.create`, a three-budget rate limiter (session plus source, source, workspace) modelled on the
+    voice-session start, and then the per-agent flag, so the budget is spent before the agent is read.
   - API: an upload route beside the authenticated chat route the REST API and SDK use, under the same auth and
     permission. Rate-limited per credential and per workspace.
   - multer has `files`, `fields` and `parts` limits. Rate limiting runs before the body is buffered.

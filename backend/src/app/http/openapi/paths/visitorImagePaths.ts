@@ -68,7 +68,7 @@ export const registerVisitorImagePaths = (
       "For the website embed and the public link: send the public session as `x-radioso-public-session`, as for a chat message.",
       "The session's `acceptsImages` says whether the agent takes images.",
       uploadLimits,
-      "Uploads spend their own budgets, per visitor session and source and per workspace, before the body is read.",
+      "Uploads spend their own budgets, per visitor session and source and per workspace, before the agent is checked or the body read, so a refused upload still counts.",
     ].join(" "),
     operationId: "uploadPublicChatImage",
     security: [{ [security.anonymousSessionCookieScheme.name]: [] }],
@@ -101,7 +101,7 @@ export const registerVisitorImagePaths = (
     description: [
       "The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`.",
       uploadLimits,
-      "Uploads spend their own budgets, per credential and per workspace, before the body is read.",
+      "Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts.",
     ].join(" "),
     operationId: "uploadAssistantChatImage",
     security: [{ [security.bearerAuthScheme.name]: [] }],
@@ -123,7 +123,7 @@ export const registerVisitorImagePaths = (
     description: [
       "The image belongs to the REST credential that uploads it, and only that credential can send the image, in `POST /api/v1/agents/{agentId}/chat`.",
       uploadLimits,
-      "Uploads spend the channel's source budget and their own, per credential and per workspace, before the body is read.",
+      "Uploads spend the channel's source budget and their own, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts.",
     ].join(" "),
     operationId: "uploadAgentChannelImage",
     security: [{ [security.agentChannelBearerAuthScheme.name]: [] }],

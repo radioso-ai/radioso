@@ -4729,6 +4729,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/voice-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a voice session on a private test
+         * @description Test Chat's Talk. Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own vendor key, and returns the same answer as `createPublicVoiceSession`. Every turn of the session runs on the test's revision and is recorded in the test as spoken, never as a conversation: no Inbox, Activity, analytics, visitor or conversation metering. The session's turns are taken for 60 minutes; later ones are refused. A dashboard session only, with `X-Radioso-CSRF: 1`. The agent must take voice calls as the website embed's start requires: published, voice on, a vendor agent bound, and the vendor key stored. The call opens with the test's own greeting while no message has been sent, on a vendor agent Radioso maintains. The signed URL is a bearer credential: the response is `Cache-Control: no-store`.
+         */
+        post: operations["startAgentTestExecutionVoiceSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mcp/converse/session": {
         parameters: {
             query?: never;
@@ -11542,6 +11562,11 @@ export interface components {
                 attemptId: string;
                 /** Format: date-time */
                 createdAt: string;
+                /**
+                 * @description The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
+                 * @enum {boolean}
+                 */
+                spoken?: true;
             }[];
         };
         StartTestExecutionRequest: {
@@ -11673,6 +11698,11 @@ export interface components {
                     attemptId: string;
                     /** Format: date-time */
                     createdAt: string;
+                    /**
+                     * @description The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
+                     * @enum {boolean}
+                     */
+                    spoken?: true;
                 }[];
             }[];
             /** @description User messages copied in from the real conversation this test continues; 0 when it started fresh. */
@@ -11695,6 +11725,10 @@ export interface components {
         };
         TestExecutionHistoryDetailResponse: {
             execution: components["schemas"]["TestExecutionHistoryDetail"];
+        };
+        /** @description `locale` is the caller's language tag; without it the agent's default language applies, then `en`. */
+        TestChatVoiceSessionRequest: {
+            locale?: string;
         };
         /**
          * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
@@ -31455,6 +31489,87 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": components["schemas"]["TestExecutionEvent"];
+                };
+            };
+        };
+    };
+    startAgentTestExecutionVoiceSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TestChatVoiceSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Voice session started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicVoiceSessionResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No dashboard session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The CSRF header is missing, or the operator may not manage the agent */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The test is gone, or the agent takes no voice calls: it has never been published, voice is off, or no vendor agent is bound */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `test_execution_not_single`: a comparison test takes no spoken turns */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `voice_unavailable`: the session could not be started (the vendor key is missing or unreadable, or the vendor did not start it) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

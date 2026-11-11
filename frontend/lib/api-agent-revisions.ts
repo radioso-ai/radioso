@@ -79,6 +79,8 @@ export interface TestExecution {
       turnTrace?: TurnTraceEnvelope
       attemptId: string
       createdAt: string
+      /** The operator spoke this turn on a call from Test Chat. */
+      spoken?: true
     }>
   }>
 }
@@ -114,6 +116,8 @@ export type TestExecutionHistoryDetail = Omit<TestExecutionHistoryItem, 'sides'>
       turnTrace?: TurnTraceEnvelope
       attemptId: string
       createdAt: string
+      /** The operator spoke this turn on a call from Test Chat. */
+      spoken?: true
     }>
   }>
   attempts: Array<{

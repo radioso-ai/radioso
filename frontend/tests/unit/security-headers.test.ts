@@ -20,5 +20,18 @@ describe('content security policy', () => {
 
   it('keeps WebAssembly compilation out of the dashboard', async () => {
     expect(await scriptSrcFor('/:path*')).not.toContain('wasm-unsafe-eval')
+    expect(await scriptSrcFor('/w/:path*')).not.toContain('wasm-unsafe-eval')
+  })
+})
+
+describe('permissions policy', () => {
+  const permissionsFor = async (source: string): Promise<string | undefined> => {
+    const rules = (await nextConfig.headers?.()) as HeaderRule[]
+    return rules.find((rule) => rule.source === source)?.headers.find((header) => header.key === 'Permissions-Policy')?.value
+  }
+
+  it("lets the dashboard's own pages ask for the microphone, for Test Chat's Talk, and nothing else on the site", async () => {
+    expect(await permissionsFor('/w/:path*')).toContain('microphone=(self)')
+    expect(await permissionsFor('/:path*')).toContain('microphone=()')
   })
 })

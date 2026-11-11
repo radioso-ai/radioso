@@ -54,6 +54,11 @@ const embedSecurityHeaders = securityHeaders.map((header) => {
   return header;
 });
 
+// The dashboard asks for the microphone itself when an operator talks to a draft from Test Chat. Its
+// script policy stays the dashboard's own.
+const dashboardSecurityHeaders = securityHeaders.map((header) =>
+  header.key === "Permissions-Policy" ? { ...header, value: voicePermissionsPolicy } : header);
+
 const resolvePublicMcpUrl = () => {
   if (process.env.NEXT_PUBLIC_MCP_URL) {
     return process.env.NEXT_PUBLIC_MCP_URL;
@@ -113,6 +118,10 @@ const nextConfig = {
       {
         source: "/:path*",
         headers: securityHeaders,
+      },
+      {
+        source: "/w/:path*",
+        headers: dashboardSecurityHeaders,
       },
       {
         source: "/embed/:path*",

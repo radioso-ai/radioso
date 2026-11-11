@@ -18445,6 +18445,11 @@ components:
               createdAt:
                 type: string
                 format: date-time
+              spoken:
+                type: boolean
+                enum:
+                  - true
+                description: The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
             required:
               - turnId
               - role
@@ -18796,6 +18801,11 @@ components:
                         createdAt:
                           type: string
                           format: date-time
+                        spoken:
+                          type: boolean
+                          enum:
+                            - true
+                          description: The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
                       required:
                         - turnId
                         - role
@@ -18870,6 +18880,13 @@ components:
           $ref: "#/components/schemas/TestExecutionHistoryDetail"
       required:
         - execution
+    TestChatVoiceSessionRequest:
+      type: object
+      properties:
+        locale:
+          type: string
+      additionalProperties: false
+      description: "`locale` is the caller's language tag; without it the agent's default language applies, then `en`."
     AssistantChatSseStream:
       type: string
       description: "A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it."
@@ -40877,6 +40894,75 @@ paths:
             text/event-stream:
               schema:
                 $ref: "#/components/schemas/TestExecutionEvent"
+  /api/v1/agents/{agentId}/test-executions/{executionId}/voice-sessions:
+    post:
+      tags:
+        - Agents
+      summary: Start a voice session on a private test
+      description: "Test Chat's Talk. Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own vendor key, and returns the same answer as `createPublicVoiceSession`. Every turn of the session runs on the test's revision and is recorded in the test as spoken, never as a conversation: no Inbox, Activity, analytics, visitor or conversation metering. The session's turns are taken for 60 minutes; later ones are refused. A dashboard session only, with `X-Radioso-CSRF: 1`. The agent must take voice calls as the website embed's start requires: published, voice on, a vendor agent bound, and the vendor key stored. The call opens with the test's own greeting while no message has been sent, on a vendor agent Radioso maintains. The signed URL is a bearer credential: the response is `Cache-Control: no-store`."
+      operationId: startAgentTestExecutionVoiceSession
+      security: *a42
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: executionId
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestChatVoiceSessionRequest"
+      responses:
+        "200":
+          description: Voice session started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicVoiceSessionResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: No dashboard session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: The CSRF header is missing, or the operator may not manage the agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "The test is gone, or the agent takes no voice calls: it has never been published, voice is off, or no vendor agent is bound"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`test_execution_not_single`: a comparison test takes no spoken turns"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`voice_unavailable`: the session could not be started (the vendor key is missing or unreadable, or the vendor did not start it)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/mcp/converse/session:
     post:
       tags:

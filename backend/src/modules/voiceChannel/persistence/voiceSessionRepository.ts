@@ -1,5 +1,5 @@
 import { isVoiceVendor, isVoiceVendorRegion, type VoiceVendor } from "../../../shared/domain/voiceVendor.js";
-import { currentTimestamp, isUniqueViolation } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, isUniqueViolation, nowMinusSeconds } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
   VoiceRecordingLocation,
@@ -10,8 +10,9 @@ import type {
   VoiceSessionRef,
   VoiceSessionStartLookup,
   VoiceSessionStartRegistry,
-  VoiceSessionVendorAgent,
   VoiceSessionVisitor,
+  VoiceTestChatBinding,
+  VoiceTestChatBindingLookup,
   VoiceVendorConversationReport,
 } from "../domain.js";
 import { isEmptyScope, voiceSessionsInScope } from "./voiceSessionScope.js";
@@ -23,6 +24,12 @@ interface RecordingRow {
 }
 
 /** A row that names a recording a vendor adapter can reach; anything else names none. */
+/**
+ * How long a Test Chat session's row outlives its window: past it the row's turns are refused, and
+ * while the row stays they cannot reach the conversation path. A call is far shorter than a day.
+ */
+const TEST_CHAT_SESSION_RETENTION_SECONDS = 24 * 60 * 60;
+
 const locationOf = (row: RecordingRow): VoiceRecordingLocation | null =>
   row.vendor_conversation_id && isVoiceVendor(row.vendor) && row.vendor_region && isVoiceVendorRegion(row.vendor_region)
     ? { vendor: row.vendor, region: row.vendor_region, vendorConversationId: row.vendor_conversation_id }
@@ -35,9 +42,10 @@ const locationOf = (row: RecordingRow): VoiceRecordingLocation | null =>
  * vendor confirms it, the vendor's id for the call. A row that holds that id is the only record of
  * where the recording is, so nothing here deletes it: it goes with its workspace, and outlives its
  * agent and its conversation (both links are SET NULL; a session whose conversation is gone binds
- * the next one its turns start).
+ * the next one its turns start). A session started from Test Chat holds the test it runs on instead
+ * of a visitor, and never binds a conversation (a CHECK holds that).
  */
-export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceSessionStartLookup, VoiceRecordingStore {
+export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceSessionStartLookup, VoiceTestChatBindingLookup, VoiceRecordingStore {
   constructor(private readonly db: Db) {}
 
   private matching(session: VoiceSessionRef) {
@@ -82,14 +90,14 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
     return bound;
   }
 
-  /** Records a started session, and clears out the agent's starts whose first turn never came. */
   /**
    * Records a started session, and clears out the agent's unbound rows (starts whose first turn
    * never came, and sessions whose conversation was deleted), and the workspace's from agents since
-   * deleted. A row whose page reported a recording stays.
+   * deleted. A row whose page reported a recording stays, and a Test Chat session's row stays for a
+   * day past its window, so a call that outlasts it is refused rather than read as a page's own.
    */
-  async register(start: { session: VoiceSessionRef; visitor: VoiceSessionVisitor; expiresAt: Date; vendorAgent: VoiceSessionVendorAgent }): Promise<void> {
-    const { session, visitor } = start;
+  async register(start: Parameters<VoiceSessionStartRegistry["register"]>[0]): Promise<void> {
+    const { session } = start;
     await this.db
       .deleteFrom("voice_sessions")
       .where("workspace_id", "=", session.workspaceId)
@@ -97,6 +105,10 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
       .where("conversation_id", "is", null)
       .where("vendor_conversation_id", "is", null)
       .where((eb) => eb.or([eb("start_expires_at", "<", currentTimestamp()), eb("start_expires_at", "is", null)]))
+      .where((eb) => eb.or([
+        eb("test_execution_id", "is", null),
+        eb("start_expires_at", "<", nowMinusSeconds(TEST_CHAT_SESSION_RETENTION_SECONDS)),
+      ]))
       .execute();
     await this.db
       .insertInto("voice_sessions")
@@ -106,14 +118,24 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
         vendor: session.vendor,
         session_key: session.sessionKey,
         conversation_id: null,
-        started_public_session_id: visitor.publicSessionId,
-        started_visitor_key: visitor.visitorKey,
+        ...("test" in start
+          ? { test_execution_id: start.test.testExecutionId, started_account_id: start.test.accountId }
+          : { started_public_session_id: start.visitor.publicSessionId, started_visitor_key: start.visitor.visitorKey }),
         start_expires_at: start.expiresAt,
         vendor_agent_id: start.vendorAgent.agentId,
         vendor_region: start.vendorAgent.region,
       })
       .onConflict((oc) => oc.columns(["agent_id", "vendor", "session_key"]).doNothing())
       .execute();
+  }
+
+  async findTestChatBinding(session: VoiceSessionRef): Promise<VoiceTestChatBinding | null> {
+    const row = await this.matching(session)
+      .select(["test_execution_id", "started_account_id", "start_expires_at"])
+      .where("test_execution_id", "is not", null)
+      .executeTakeFirst();
+    if (!row?.test_execution_id || !row.start_expires_at) return null;
+    return { testExecutionId: row.test_execution_id, accountId: row.started_account_id, expiresAt: new Date(row.start_expires_at) };
   }
 
   async findStartedVisitor(session: VoiceSessionRef): Promise<VoiceSessionVisitor | null> {

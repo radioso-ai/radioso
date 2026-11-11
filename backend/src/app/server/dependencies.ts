@@ -1440,7 +1440,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,
     voiceTurns: createVoiceChannelComposition({
-      sessions: voiceSessions,
+      sessions: voiceSessions, testExecutions: testExecutionService,
       assistantChatService: chat.assistantChatService,
       agentRepository: repositories.agentRepository,
       routineStates: new RoutineStateRepository(infrastructure.database.kysely),

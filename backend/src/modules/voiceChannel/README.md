@@ -28,6 +28,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   maintained vendor agent sets reaches it as `VoiceSessionLanguageSource` (the
   vendor's code, `default`, `unsupported` or `not_allowed`), so it knows no
   vendor's language list.
+- `testChatSessionDomain.ts` (re-exported by `domain.ts`) knows a session
+  started from the dashboard's Test Chat: the private test it runs on, by an
+  opaque id (`VoiceTestChatSubject`, `VoiceTestChatBinding`), the start's
+  `VoiceSessionSurface` (`website_embed`, `test_chat`) and the port its turns
+  run through (`VoiceTestChatTurns`, `VoiceTestChatTurnEvent`).
 - `services/` runs the turn: `voiceTurnService.ts` resolves or binds the
   session's conversation, reads the agent's voice settings and the
   conversation's routine state and owner, starts the chat turn with
@@ -69,6 +74,20 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `voiceSessionMemory.ts` is the in-process memory of each session between its
   requests (the newest request, the last bridge, the last exchange);
   `voiceTurnMetrics.ts` names the turn's series;
+  `voiceSessionTurnRouter.ts` is the `VoiceTurnPort` composition hands the
+  adapters: it reads the session's `VoiceTestChatBinding` first
+  (`VoiceTestChatBindingLookup`) and runs the turn as a conversation on
+  `VoiceTurnService`, or, for a session started from Test Chat, on
+  `testChatVoiceTurns.ts` (`TestChatVoiceTurnService`), which runs the
+  utterance as a turn of the operator's private test through the narrow
+  `VoiceTestChatTurns` port and cuts the answer into speech with the same
+  sentence cutter; a binding past its window is refused with a `404`, and a
+  Test Chat session never falls back to the conversation path. A Test Chat turn
+  speaks no bridge or fallback line, and a newer utterance of the session waits
+  in process for the running one to settle (a test runs one turn at a time);
+  each logs one `voice.test_chat_turn` line (ids, `result`, `durationMs`,
+  `firstSpeechMs`, the test's `failureCode`), apart from the `voice.turn` line
+  the turn health alert counts.
   `voiceSessionStartService.ts` starts a session: it reads whether the agent
   is published (the agents module's `AgentPublicationReader`, by a type-only
   import from its `public.ts`: every turn runs on the published release, so an
@@ -374,6 +393,18 @@ helpers and the shared chat message limit from `app/http`
   REST agent channel, behind `requireRestAgentChannelCredential` (an
   `agent-api` grant whose agent matches the path) and the REST agent-channel
   rate limiters.
+- `backend/src/app/http/routes/testChatVoiceSessionRoute.ts` — mounts
+  `POST /api/v1/agents/:agentId/test-executions/:executionId/voice-sessions`
+  (dashboard sessions, `workspace.agents.manage`, `X-Radioso-CSRF`,
+  `sessionOnly` in `apiPrincipalRoutePolicy.ts`): Test Chat's Talk. It asks the
+  test-execution module what the call opens with (`spokenSessionOpening`: the
+  test's greeting while no message was sent; a comparison is `409`, a test
+  that is gone `404`), then starts the session with a `test` start, which the
+  registry records as the session's `VoiceTestChatBinding` (`test_execution_id`
+  and `started_account_id` on `voice_sessions`, migration
+  `254_voice_sessions_test_chat.sql`). The answer is the website embed's, built
+  by `presenters/voiceSessionPresenter.ts`. A permanent copilot coverage
+  exclusion (`startAgentTestExecutionVoiceSession`).
 - `backend/src/app/http/routes/publicVoiceSessionRoute.ts` — mounts
   `POST /api/v1/public/chat/:token/voice/sessions` on the public chat router,
   behind the router's public session check (launch token, website embed
@@ -1049,7 +1080,7 @@ message at all, and counts `failed`) and `errorClass`. Never the greeting, the
 notice or the first message. A start whose vendor call fails records none.
 
 A session start records `voice_session_start_total` (`vendor`: the bound
-vendor or `none`; `outcome`: `started`, `agent_not_found`, `not_published`,
+vendor or `none`; `surface`: `website_embed` or `test_chat`; `outcome`: `started`, `agent_not_found`, `not_published`,
 `voice_off`, `no_runtime`, `credential_missing`, `credential_unreadable`,
 `credential_read_failed`, `registration_failed`, `vendor_failed`). A start
 that fails logs `Voice session start failed` at warn with `workspaceId`,

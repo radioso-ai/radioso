@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DefaultConversationEngine, DefaultRoutineRunner } from "../src/index.js";
+import { DefaultConversationEngine } from "../src/index.js";
 import type {
   AttemptRoutineInput,
   ConversationEvent,

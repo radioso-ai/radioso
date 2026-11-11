@@ -18,3 +18,20 @@ export const suggestionInputMetadata = (suggestion: ChatSuggestion, messageId: s
         suggestionSourceMessageId: messageId,
         ...(suggestion.id ? { suggestionId: suggestion.id } : {}),
       }
+
+/** The messages with every chip dropped: a stretch of thread that something newer already answers. */
+export const clearMessageSuggestions = <M extends { suggestions?: unknown[] }>(messages: M[]): M[] =>
+  messages.map((message) => (message.suggestions?.length ? { ...message, suggestions: undefined } : message))
+
+/**
+ * A restored thread's chips, kept only where the visitor can still act on them: on the newest
+ * message, while it is the agent's and nothing has answered it. History returns every message's
+ * chips as they were offered, and the live thread drops them once the visitor sends, so without
+ * this a reload would bring back chips already answered, such as a decided consent's buttons.
+ */
+export const actionableSuggestionsOnly = <M extends { role: string; suggestions?: unknown[] }>(messages: M[]): M[] =>
+  messages.map((message, index) =>
+    message.suggestions?.length && (index < messages.length - 1 || message.role !== 'assistant')
+      ? { ...message, suggestions: undefined }
+      : message,
+  )

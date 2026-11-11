@@ -15,6 +15,7 @@ import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/
 import { createClientId } from '@/lib/client-id'
 import { contrastRatio, mixHex, mixHexRgba, pickForeground, relativeLuminance } from '@/lib/color'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
+import { actionableSuggestionsOnly, clearMessageSuggestions } from '@/lib/public-chat-suggestion'
 import { publicChatUnavailableReasonOf, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import { isHumanAuthoredSource } from '@/lib/reply-attribution'
 
@@ -249,16 +250,6 @@ const toChatMessages = (
 
 const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
   message.role === 'assistant' && isHumanAuthoredSource(message.source)
-
-const clearMessageSuggestions = (messages: ChatMessage[]): ChatMessage[] =>
-  messages.map((message) =>
-    message.suggestions && message.suggestions.length > 0
-      ? {
-          ...message,
-          suggestions: undefined,
-        }
-      : message,
-  )
 
 const restoreMessageSuggestions = (
   messages: ChatMessage[],
@@ -586,7 +577,7 @@ export function AnonymousChatProvider({
       })
 
       setConversationId(detail.conversationId)
-      setMessages(toChatMessages(detail, readStoredAnonymousSessionId(detailToken)))
+      setMessages(actionableSuggestionsOnly(toChatMessages(detail, readStoredAnonymousSessionId(detailToken))))
       setHasOlderMessages(detail.hasOlderMessages)
       setNextMessageCursor(detail.nextCursor)
       tailCursorRef.current = detail.tailCursor
@@ -1206,7 +1197,8 @@ export function AnonymousChatProvider({
         limit: MESSAGE_WINDOW_SIZE,
         cursor: nextMessageCursor,
       })
-      const olderMessages = toChatMessages(detail, readStoredAnonymousSessionId(activeToken))
+      // An earlier page is answered by the messages already shown, so none of its chips can still be clicked.
+      const olderMessages = clearMessageSuggestions(toChatMessages(detail, readStoredAnonymousSessionId(activeToken)))
       setMessages((current) => {
         const seen = new Set(current.map((message) => message.id))
         const nextOlder = olderMessages.filter((message) => !seen.has(message.id))

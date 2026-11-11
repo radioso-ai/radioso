@@ -1188,7 +1188,7 @@ describe("seed fixtures", () => {
     ]);
   });
 
-  it("holds the quick-reply no-facts judge to zero tolerance and leaves the clarification judge on the general tolerance", () => {
+  it("holds the quick-reply no-facts judge and the drafted-message judge to zero tolerance and leaves the clarification judge on the general tolerance", () => {
     const strict = conversationQualityCases
       .filter((evalCase) => evalCase.tags?.includes(ZERO_TOLERANCE_JUDGE_TAG))
       .map((evalCase) => evalCase.id);
@@ -1196,7 +1196,7 @@ describe("seed fixtures", () => {
       .filter((evalCase) => evalCase.tags?.includes("quick-reply") && evalCase.assertions.some((assertion) => assertion.type === "llm_judge"))
       .map((evalCase) => evalCase.id);
 
-    expect(strict.every((id) => quickReplyJudged.includes(id))).toBe(true);
+    expect(strict.filter((id) => !quickReplyJudged.includes(id))).toEqual(["offer-scope-accepted-writing-offer-declined"]);
     expect(quickReplyJudged.filter((id) => !strict.includes(id))).toEqual(["quick-reply-not-ack-pending-clarification"]);
     expect(strict).toContain("quick-reply-unlisted-language-standing-directive");
   });

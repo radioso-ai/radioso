@@ -82,8 +82,9 @@ const answerRulesAreStandingDirectives = (
  *   not `none`.
  * - The planner's derivation fields, written before it chooses the kind, agree that the
  *   message is only mechanics: no request in it (`requestPresent`), nothing the assistant
- *   asked still open (`openQuestion`, so a short "ok" answers that question rather than
- *   closing the exchange), and no retrieval rewrite written, whichever route the plan chose.
+ *   asked or specifically offered still open (`openQuestion`, so a short "ok" answers that
+ *   question or takes up that offer rather than closing the exchange), and no retrieval
+ *   rewrite written, whichever route the plan chose.
  * - The turn is not an identity question; its answer needs the agent's identity,
  *   which the planner never sees.
  * - No routine yielded the turn to this answer (the composer leads back to its step).

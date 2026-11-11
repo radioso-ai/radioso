@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-09T12:42:36.013Z",
+  "generatedAt": "2026-11-11T00:48:10.149Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -300,6 +300,21 @@
     "routine-step-without-sources-keeps-visitor-dates-theirs": {
       "status": "fail",
       "passRate": 0.8,
+      "samples": 5
+    },
+    "offer-scope-accepted-writing-offer-declined": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "offer-scope-chosen-email-gets-no-new-offer": {
+      "status": "fail",
+      "passRate": 0.8,
+      "samples": 5
+    },
+    "offer-scope-what-to-write-gets-no-draft": {
+      "status": "pass",
+      "passRate": 1,
       "samples": 5
     }
   }

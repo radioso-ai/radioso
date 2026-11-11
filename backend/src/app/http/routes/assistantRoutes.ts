@@ -6,7 +6,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
-import { validateBody } from "../middleware/validate.js";
+import { validateBody, validateQuery } from "../middleware/validate.js";
 import { expensiveAuthenticatedRateLimiter } from "../middleware/expensiveAuthenticatedRateLimiter.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { assistantChatSchema } from "../schemas/assistantChatSchemas.js";
@@ -39,13 +39,11 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
     "/images",
     workspaceSession,
     requireWorkspacePermission(dependencies, "workspace.chat.use"),
+    validateQuery(imageUploadQuerySchema),
     requireVisitorImagesAvailable({
       availability: dependencies.visitorImageAvailability,
       metrics,
-      agentOf: (req, res) => {
-        const query = imageUploadQuerySchema.safeParse(req.query);
-        return query.success ? { workspaceId: (res.locals as { workspaceId: string }).workspaceId, agentId: query.data.agentId } : null;
-      },
+      agentOf: (req, res) => ({ workspaceId: (res.locals as { workspaceId: string }).workspaceId, agentId: imageUploadQuerySchema.parse(req.query).agentId }),
     }),
     ...countingRateLimitRefusals([apiVisitorImageUploadRateLimiter(dependencies)], metrics),
     visitorImageMultipart(metrics),

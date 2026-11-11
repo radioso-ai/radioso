@@ -80,9 +80,10 @@ export const registerAgentsPaths = (
         },
       },
       204: { description: "Conversation start completed without a greeting" },
-      400: { description: "Request validation failed, or routine invocation input did not match the tool's schema", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      400: { description: "Request validation failed, including `imageIds` with `routine` or `startConversation`, more than three, or one named twice; or routine invocation input did not match the tool's schema", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Invalid, inactive, cross-audience, or cross-agent credential", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Routine tool is not in the agent's catalog; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another credential or for another agent, or was already sent; nothing was sent, so upload the image again.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       429: { description: "Agent channel rate limit exceeded", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });

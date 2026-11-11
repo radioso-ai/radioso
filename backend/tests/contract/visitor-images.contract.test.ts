@@ -308,6 +308,23 @@ describe("visitor image contract", () => {
       .expect(400);
   });
 
+  it("refuses an API upload with no agent id, or one that is not an id, with 400", async () => {
+    const { app, credential, reader } = await imageWorkspace();
+    const bearer = await credential();
+
+    const missing = await request(app).post("/api/v1/assistant/images").set(bearer).attach("image", await photo(), "photo.png").expect(400);
+    await request(app).post("/api/v1/assistant/images?agentId=not-an-id").set(bearer).attach("image", await photo(), "photo.png").expect(400);
+
+    expect(missing.body.error.code).toBe("bad_request");
+    expect(reader.read).not.toHaveBeenCalled();
+  });
+
+  it("refuses to read back a photo whose id is not an id, with 400", async () => {
+    const { visitor } = await imageWorkspace();
+
+    await (await visitor()).view("not-an-id").expect(400);
+  });
+
   it("refuses an API chat with photos and no agent id", async () => {
     const { app, credential } = await imageWorkspace();
 

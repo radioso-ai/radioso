@@ -86,6 +86,7 @@ export const registerVisitorImagePaths = (
     request: { params: publicImageParams },
     responses: {
       200: { description: "The stored image", content: jpeg },
+      400: errorResponse("`imageId` is not a UUID", schemas),
       404: errorResponse("No such image for this public session", schemas),
       429: { description: "The public session's read budget is spent", content: { "application/json": { schema: schemas.RateLimitExceededSchema } } },
     },
@@ -109,6 +110,7 @@ export const registerVisitorImagePaths = (
       401: errorResponse("Authentication required", schemas),
       403: errorResponse("Workspace chat permission required", schemas),
       ...uploadErrors(schemas),
+      400: errorResponse("`agentId` is missing or not a UUID; no `image` field, more than one file, or an invalid `locale`; or a caller that cannot own images (only an API credential or a signed-in user can)", schemas),
     },
   });
 

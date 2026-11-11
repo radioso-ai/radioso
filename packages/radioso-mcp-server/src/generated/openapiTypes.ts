@@ -17454,7 +17454,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Request validation failed, or routine invocation input did not match the tool's schema */
+            /** @description Request validation failed, including `imageIds` with `routine` or `startConversation`, more than three, or one named twice; or routine invocation input did not match the tool's schema */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -17474,6 +17474,15 @@ export interface operations {
             };
             /** @description Routine tool is not in the agent's catalog; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another credential or for another agent, or was already sent; nothing was sent, so upload the image again. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -26736,7 +26745,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, including `imageIds` without `agentId`, with `startConversation`, more than three or one named twice; or `imageIds` from a caller that cannot own images (only an API credential or a signed-in user can). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -26763,7 +26772,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Turn superseded by a newer message in the same conversation */
+            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent; nothing was sent, so upload the image again. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28419,6 +28428,15 @@ export interface operations {
                     "image/jpeg": string;
                 };
             };
+            /** @description `imageId` is not a UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description No such image for this public session */
             404: {
                 headers: {
@@ -28463,7 +28481,7 @@ export interface operations {
                     "application/json": components["schemas"]["VisitorImageUploadResponse"];
                 };
             };
-            /** @description No `image` field, more than one file, or an invalid `locale` */
+            /** @description `agentId` is missing or not a UUID; no `image` field, more than one file, or an invalid `locale`; or a caller that cannot own images (only an API credential or a signed-in user can) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -32481,7 +32499,7 @@ export interface operations {
                     "text/event-stream": components["schemas"]["PublicChatSseStream"];
                 };
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, including `imageIds` with `startConversation`, more than three, or one named twice. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -32499,7 +32517,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Turn superseded by a newer message in the same conversation */
+            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent; nothing was sent, so upload the image again. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -1,8 +1,20 @@
-import {
-  VISITOR_IMAGE_INPUT_METADATA_KEY,
-  visitorImageInputSchema,
-  type VisitorImageInput,
-} from "../../modules/visitorImages/public.js";
+import { z } from "zod";
+
+/**
+ * The photos a message carries, as stored: what the visitor typed, apart from the readings the turn
+ * text carries, and each photo's id with what the agent's model read in it (null when it could
+ * not). The UIs render the typed text and the photos from it, so a reading never shows in the
+ * visitor's own bubble.
+ */
+const messageImageInputSchema = z.object({
+  typedText: z.string(),
+  images: z.array(z.object({
+    id: z.string().uuid(),
+    reading: z.string().nullable(),
+  })).min(1).max(3),
+});
+
+type MessageImageInput = z.infer<typeof messageImageInputSchema>;
 
 export type UserMessageInputMethod = "typed" | "suggestion_click" | "intent_click" | "routine_invocation";
 
@@ -22,7 +34,7 @@ export interface UserMessageInputMetadata {
    * The photos the message carries: what the visitor typed, and each photo's id with what the
    * agent's model read in it. `content` holds the same as the turn text the agent ran on.
    */
-  imageInput?: VisitorImageInput;
+  imageInput?: MessageImageInput;
 }
 
 const USER_MESSAGE_INPUT_METHODS: ReadonlySet<string> = new Set<UserMessageInputMethod>([
@@ -46,7 +58,7 @@ export const mapUserMessageInputMetadata = (value: unknown): UserMessageInputMet
   }
   const intent = asObject(candidate.intent);
   const routine = asObject(candidate.routine);
-  const imageInput = visitorImageInputSchema.safeParse(candidate[VISITOR_IMAGE_INPUT_METADATA_KEY]);
+  const imageInput = messageImageInputSchema.safeParse(candidate.imageInput);
 
   return {
     method: candidate.method as UserMessageInputMethod,

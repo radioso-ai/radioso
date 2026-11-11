@@ -1,11 +1,4 @@
-export {
-  VISITOR_IMAGE_INPUT_METADATA_KEY,
-  visitorImageInputSchema,
-  type VisitorImageClaim,
-  type VisitorImageInput,
-  type VisitorImageOwner,
-  type VisitorImageTurnInput,
-} from "./contracts/turnInput.js";
+export type { VisitorImageClaim, VisitorImageOwner, VisitorImageTurnInput } from "./contracts/turnInput.js";
 export {
   VISITOR_IMAGE_LIMITS,
   type VisitorImageAudit,

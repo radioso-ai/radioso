@@ -16,9 +16,7 @@ const STRANGER: VisitorImageOwner = { kind: "public_session", id: "9e7c5a3f-1d0b
 const photo = (): Promise<Buffer> => sharp({ create: { width: 2400, height: 1200, channels: 3, background: "#4a7a3a" } }).png().toBuffer();
 
 const harness = (options: { reading?: VisitorImageReading } = {}) => {
-  const carried = new Map<string, string>();
-  const store = new InMemoryVisitorImageStore(({ conversationId, imageId }) =>
-    conversationId === CONVERSATION ? carried.get(imageId) ?? null : null);
+  const store = new InMemoryVisitorImageStore();
   const objects = new InMemoryVisitorImageObjects();
   const reader: VisitorImageReader = {
     read: vi.fn(async () => options.reading ?? { kind: "read" as const, description: "A green field under a clear sky." }),
@@ -33,18 +31,12 @@ const harness = (options: { reading?: VisitorImageReading } = {}) => {
     metrics,
     logger: { info: vi.fn(), warn: vi.fn() },
   });
-  /** What the chat door's message persistence does: a user message whose metadata names the photos. */
-  const carry = (imageIds: readonly string[]) => {
-    const messageId = randomUUID();
-    for (const id of imageIds) carried.set(id, messageId);
-    return messageId;
-  };
   const upload = async (owner: VisitorImageOwner = VISITOR) => {
     const result = await service.upload({ workspaceId: WORKSPACE, agentId: AGENT, owner, bytes: await photo(), locale: "it", surface: "website_embed" });
     if (result.kind !== "accepted") throw new Error(`upload rejected: ${result.reason}`);
     return result;
   };
-  return { service, store, objects, reader, audit, metrics, carry, upload };
+  return { service, store, objects, reader, audit, metrics, upload };
 };
 
 const counted = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) =>
@@ -100,7 +92,7 @@ describe("VisitorImageService.upload", () => {
   });
 });
 
-describe("VisitorImageService claim and settle", () => {
+describe("VisitorImageService claim, bind and release", () => {
   it("hands the door each photo's reading in the order the caller named them", async () => {
     const { service, upload } = harness();
     const first = await upload();
@@ -143,28 +135,48 @@ describe("VisitorImageService claim and settle", () => {
       .rejects.toMatchObject({ code: "visitor_image_unavailable" });
   });
 
-  it("binds the photos to the message that carries them, after which no send can use them again", async () => {
-    const { service, store, upload, carry } = harness();
+  it("binds the photos to the message the door names, after which no send can use them again", async () => {
+    const { service, store, upload } = harness();
     const image = await upload();
     const claim = await service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] });
-    const messageId = carry([image.id]);
+    const messageId = randomUUID();
 
-    await service.settle({ workspaceId: WORKSPACE, claim, conversationId: CONVERSATION });
-    await service.settle({ workspaceId: WORKSPACE, claim, conversationId: CONVERSATION });
+    await service.bind({ workspaceId: WORKSPACE, claim, conversationId: CONVERSATION, messageId });
 
     expect(store.rows.get(image.id)).toMatchObject({ conversationId: CONVERSATION, messageId });
     await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] }))
       .rejects.toMatchObject({ code: "visitor_image_unavailable" });
   });
 
-  it("lets go of photos a turn stored no message for, so the caller can send them again", async () => {
+  it("lets go of a claim no message took, so the caller can send the photos again", async () => {
     const { service, upload } = harness();
     const image = await upload();
     const claim = await service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] });
 
-    await service.settle({ workspaceId: WORKSPACE, claim, conversationId: null });
+    await service.release({ workspaceId: WORKSPACE, claim });
 
     await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] })).resolves.toBeDefined();
+  });
+
+  it("never lets go of photos already bound to their message", async () => {
+    const { service, store, upload } = harness();
+    const image = await upload();
+    const claim = await service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] });
+    const messageId = randomUUID();
+    await service.bind({ workspaceId: WORKSPACE, claim, conversationId: CONVERSATION, messageId });
+
+    await service.release({ workspaceId: WORKSPACE, claim });
+
+    expect(store.rows.get(image.id)).toMatchObject({ conversationId: CONVERSATION, messageId });
+  });
+
+  it("passes a failure to bind on to the turn rather than leaving the photo unbound unnoticed", async () => {
+    const { service, store, upload } = harness();
+    const image = await upload();
+    const claim = await service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] });
+    vi.spyOn(store, "bindClaim").mockRejectedValueOnce(new Error("connection reset"));
+
+    await expect(service.bind({ workspaceId: WORKSPACE, claim, conversationId: CONVERSATION, messageId: randomUUID() })).rejects.toThrow("connection reset");
   });
 
   it("refuses a second send of a photo another send holds", async () => {
@@ -188,11 +200,10 @@ describe("VisitorImageService reads", () => {
   });
 
   it("serves a conversation's photo to a teammate and records the view", async () => {
-    const { service, upload, carry, audit } = harness();
+    const { service, upload, audit } = harness();
     const image = await upload();
     const claim = await service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] });
-    carry([image.id]);
-    await service.settle({ workspaceId: WORKSPACE, claim, conversationId: CONVERSATION });
+    await service.bind({ workspaceId: WORKSPACE, claim, conversationId: CONVERSATION, messageId: randomUUID() });
 
     const bytes = await service.readInConversation({ workspaceId: WORKSPACE, conversationId: CONVERSATION, imageId: image.id, actorUserId: "user-1" });
 

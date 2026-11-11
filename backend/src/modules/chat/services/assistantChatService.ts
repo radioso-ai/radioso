@@ -9,7 +9,7 @@ import type {
 import { AssistantRouteService } from "./assistantRouteService.js";
 import { renderRoutineInvocation } from "../../routines/public.js";
 import type { VisitorImageTurnInput } from "../../visitorImages/public.js";
-import { claimVisitorImageTurn, settlingVisitorImages, type VisitorImageTurn } from "./visitorImageTurn.js";
+import { claimVisitorImageTurn } from "./visitorImageTurn.js";
 
 /**
  * The text a turn runs on: the message, or a tool call rendered as the text a
@@ -25,7 +25,7 @@ export class AssistantChatService {
   constructor(
     private readonly chatService: ChatService,
     private readonly chatBootstrapService: ChatBootstrapService,
-    /** Where a send's photos are claimed and bound; absent, a request with photos is refused. */
+    /** Where a send's photos are claimed, bound and let go; absent, a request with photos is refused. */
     options: { visitorImages?: VisitorImageTurnInput | null } = {},
   ) {
     this.visitorImages = options.visitorImages ?? null;
@@ -59,9 +59,8 @@ export class AssistantChatService {
       throw badRequest("message is required unless startConversation is true");
     }
 
-    let conversationId = input.conversationId ?? null;
     try {
-      const response = await this.chatService.answer({
+      return await this.chatService.answer({
         workspaceId: input.workspaceId,
         agentId: input.agentId,
         accountId: input.accountId,
@@ -72,6 +71,7 @@ export class AssistantChatService {
         userExpectedLocale: input.userExpectedLocale,
         visitorTimeZone: input.visitorTimeZone,
         inputMetadata: images?.inputMetadata ?? input.inputMetadata,
+        onUserMessageStored: images?.onUserMessageStored,
         metadataFilter: input.metadataFilter,
         pageContext: input.pageContext,
         clientContextCapabilities: input.clientContextCapabilities,
@@ -88,10 +88,8 @@ export class AssistantChatService {
         chatSessionId,
         sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
       });
-      conversationId = response.conversationId ?? conversationId;
-      return response;
     } finally {
-      await this.settleImages(input, images, conversationId);
+      await images?.finish();
     }
   }
 
@@ -103,44 +101,41 @@ export class AssistantChatService {
       throw badRequest("message is required for streaming assistant chat");
     }
 
-    const events = this.chatService.streamAnswer({
-      workspaceId: input.workspaceId,
-      agentId: input.agentId,
-      accountId: input.accountId,
-      conversationId: input.conversationId,
-      bootstrapGreetingId: input.bootstrapGreetingId,
-      query,
-      stream: input.stream,
-      userExpectedLocale: input.userExpectedLocale,
-      visitorTimeZone: input.visitorTimeZone,
-      inputMetadata: images?.inputMetadata ?? input.inputMetadata,
-      metadataFilter: input.metadataFilter,
-      pageContext: input.pageContext,
-      clientContextCapabilities: input.clientContextCapabilities,
-      verifiedCustomerId: input.verifiedCustomerId,
-      verifiedIdentity: input.verifiedIdentity,
-      requestContext: input.requestContext,
-      entryReferrer: input.entryReferrer,
-      privacyNoticeVersion: input.privacyNoticeVersion,
-      visitorKey: input.visitorKey,
-      previewRoutineIds: input.previewRoutineIds,
-      routineInvocation: input.routineInvocation,
-      sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
-      channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
-      chatSessionId,
-      sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
-      supersession: input.supersession,
-      deliveredReply: input.deliveredReply,
-      ...(input.reportResponseLanguage ? { reportResponseLanguage: true } : {}),
-      signal: input.signal,
-    });
-    yield* images
-      ? settlingVisitorImages(events, (conversationId) => this.settleImages(input, images, conversationId), input.conversationId ?? null)
-      : events;
-  }
-
-  private async settleImages(input: AssistantChatRequest, images: VisitorImageTurn | null, conversationId: string | null): Promise<void> {
-    if (!images || !this.visitorImages) return;
-    await this.visitorImages.settle({ workspaceId: input.workspaceId, claim: images.claim, conversationId });
+    try {
+      yield* this.chatService.streamAnswer({
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+        accountId: input.accountId,
+        conversationId: input.conversationId,
+        bootstrapGreetingId: input.bootstrapGreetingId,
+        query,
+        stream: input.stream,
+        userExpectedLocale: input.userExpectedLocale,
+        visitorTimeZone: input.visitorTimeZone,
+        inputMetadata: images?.inputMetadata ?? input.inputMetadata,
+        onUserMessageStored: images?.onUserMessageStored,
+        metadataFilter: input.metadataFilter,
+        pageContext: input.pageContext,
+        clientContextCapabilities: input.clientContextCapabilities,
+        verifiedCustomerId: input.verifiedCustomerId,
+        verifiedIdentity: input.verifiedIdentity,
+        requestContext: input.requestContext,
+        entryReferrer: input.entryReferrer,
+        privacyNoticeVersion: input.privacyNoticeVersion,
+        visitorKey: input.visitorKey,
+        previewRoutineIds: input.previewRoutineIds,
+        routineInvocation: input.routineInvocation,
+        sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
+        channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
+        chatSessionId,
+        sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
+        supersession: input.supersession,
+        deliveredReply: input.deliveredReply,
+        ...(input.reportResponseLanguage ? { reportResponseLanguage: true } : {}),
+        signal: input.signal,
+      });
+    } finally {
+      await images?.finish();
+    }
   }
 }

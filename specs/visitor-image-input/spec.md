@@ -104,8 +104,10 @@ it raw bytes plus an owner, and gets back an image id.
   - conversation and message, both `ON DELETE CASCADE` and nullable until bound;
   - the storage descriptor, byte size, dimensions, sha256;
   - the reading and its status, and the times.
-- **Binding.** At send, each id must belong to the same workspace, agent and owner, and must be unused. It is then
-  bound to the conversation and the user message. An image is used once.
+- **Binding.** At send, each id must belong to the same workspace, agent and owner, and must be unused; the door
+  claims them all or none. The preparer tells the door the moment it stores the user message
+  (`onUserMessageStored`), and the door binds the claim to that conversation and message id before the rest of the
+  turn runs. A turn that ends before storing the message releases the claim. An image is used once.
 - **Erasure.** A conversation eraser writes the object descriptors to a durable deletion backlog in the same
   transaction, and a job deletes the objects after commit (the voice-recording pattern). Retention follows the
   conversation. Photos that are never sent are deleted 24 h after upload. Data-subject export lists each photo's
@@ -139,8 +141,9 @@ it raw bytes plus an owner, and gets back an image id.
   It knows nothing about visitors.
 - **`modules/visitorImages`** knows the photo lifecycle: validate, store, read through a `VisitorImageReader` port,
   bind, serve, and erase. It does not know chat turns.
-- **The chat door** depends on one narrow port, `VisitorImageTurnInput`: resolve ids for this owner, and get back
-  readings plus the metadata to persist. It does not know storage.
+- **The chat door** depends on one narrow port, `VisitorImageTurnInput`: claim ids for this owner and get back
+  readings, bind them to the stored message, or release them. It does not know storage. The `imageInput` metadata
+  shape belongs to the message metadata, so `visitorImages` never reads `messages`.
 - **Composition** implements the reader on the agent's resolved chat model and wires the eraser, the export, the
   sweep and the routes.
 

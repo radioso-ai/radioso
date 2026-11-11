@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import { VISITOR_IMAGE_LIMITS } from "../../src/modules/visitorImages/public.js";
 import type { VisitorImageReader } from "../../src/modules/visitorImages/domain.js";
+import { AppError } from "../../src/shared/domain/errors.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 const photo = (format: "jpeg" | "png" | "webp" = "png"): Promise<Buffer> =>
@@ -12,13 +14,18 @@ const photo = (format: "jpeg" | "png" | "webp" = "png"): Promise<Buffer> =>
 
 const READING = "A stone farmhouse with a terracotta roof, possibly from the 1800s.";
 
+/** The plan as the test sets it: every reservation goes through `reserve`. */
+const planWith = (reserve: UsageLimitPolicy["reserveAnswer"]): UsageLimitPolicy =>
+  Object.assign(new NoopUsageLimitPolicy(), { reserveAnswer: reserve });
+const RESERVED = { commit: async () => undefined, release: async () => undefined };
+
 /**
  * A workspace whose default agent takes photos (unless told otherwise), with its public link on,
  * and a way to open public sessions on it.
  */
-const imageWorkspace = async (options: { visitorImagesEnabled?: boolean; reader?: VisitorImageReader } = {}) => {
+const imageWorkspace = async (options: { visitorImagesEnabled?: boolean; reader?: VisitorImageReader; usageLimitPolicy?: UsageLimitPolicy } = {}) => {
   const reader: VisitorImageReader = options.reader ?? { read: vi.fn(async () => ({ kind: "read" as const, description: READING })) };
-  const created = createTestApp({ visitorImageReader: reader });
+  const created = createTestApp({ visitorImageReader: reader, usageLimitPolicy: options.usageLimitPolicy });
   const { app } = created;
   const operator = await issueTestSession(app, `visitor-images-${Math.random().toString(36).slice(2)}@example.com`);
   const dashboard = adminSessionHeaders(operator);
@@ -94,6 +101,57 @@ describe("visitor image contract", () => {
     const userMessage = messages.find((message) => message.role === "user")!;
     expect(userMessage.content).toBe(`Something like this\n<visitor_image index="1">${READING}</visitor_image>`);
     expect(userMessage.inputMetadata?.imageInput).toEqual({ typedText: "Something like this", images: [{ id: uploaded.body.id, reading: READING }] });
+  });
+
+  it("binds a photo to the user message while the turn is still running", async () => {
+    let viewMidTurn: (conversationId: string) => Promise<Buffer | null> = async () => null;
+    let seenMidTurn: Buffer | null = null;
+    // The turn reserves its answer after it stored the visitor's message.
+    const usageLimitPolicy = planWith(async (input) => {
+      if (input.conversationId) seenMidTurn = await viewMidTurn(input.conversationId);
+      return RESERVED;
+    });
+    const { visitor, dependencies, operator } = await imageWorkspace({ usageLimitPolicy });
+    const { upload, send } = await visitor();
+    const uploaded = await upload(await photo()).expect(201);
+    viewMidTurn = (conversationId) => dependencies.visitorImages.readInConversation({
+      workspaceId: operator.workspaceId,
+      conversationId,
+      imageId: uploaded.body.id as string,
+      actorUserId: operator.userId,
+    });
+
+    await send({ message: "Something like this", imageIds: [uploaded.body.id] }).expect(200);
+
+    expect(seenMidTurn).toBeInstanceOf(Buffer);
+  });
+
+  it("keeps a photo with its stored message when the turn fails after storing it, so a retry cannot send it twice", async () => {
+    let failedConversationId: string | null = null;
+    const usageLimitPolicy = planWith(async (input) => {
+      if (!input.conversationId) return RESERVED;
+      failedConversationId = input.conversationId;
+      throw new AppError(429, "usage_limit_exceeded", "Usage limit exceeded");
+    });
+    const { visitor, dependencies, operator } = await imageWorkspace({ usageLimitPolicy });
+    const { upload, send } = await visitor();
+    const uploaded = await upload(await photo()).expect(201);
+
+    await send({ message: "Something like this", imageIds: [uploaded.body.id] }).expect(429);
+
+    expect(failedConversationId).not.toBeNull();
+    const conversationId = failedConversationId!;
+    const stored = (await dependencies.messageRepository.listByConversationId(operator.workspaceId, conversationId))
+      .find((message) => message.role === "user");
+    expect(stored?.inputMetadata?.imageInput?.images).toEqual([{ id: uploaded.body.id, reading: READING }]);
+    expect(await dependencies.visitorImages.readInConversation({
+      workspaceId: operator.workspaceId,
+      conversationId,
+      imageId: uploaded.body.id as string,
+      actorUserId: operator.userId,
+    })).toBeInstanceOf(Buffer);
+    const retry = await send({ message: "Something like this", imageIds: [uploaded.body.id] }).expect(409);
+    expect(retry.body.error.code).toBe("visitor_image_unavailable");
   });
 
   it("sends photos with no text, and shows them in the visitor's history with what they typed", async () => {

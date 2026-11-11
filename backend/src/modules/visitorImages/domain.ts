@@ -96,11 +96,8 @@ export interface VisitorImageStore {
     claimId: string;
     claimedAt: Date;
   }): Promise<ClaimedVisitorImageRow[] | null>;
-  /**
-   * Binds the claim's photos to the user message in the conversation that carries them. Idempotent:
-   * a bound photo stays as it is. Returns how many it bound.
-   */
-  bindClaim(input: { workspaceId: string; claimId: string; conversationId: string; boundAt: Date }): Promise<number>;
+  /** Binds the claim's unbound photos to one message of one conversation. Returns how many it bound. */
+  bindClaim(input: { workspaceId: string; claimId: string; conversationId: string; messageId: string; boundAt: Date }): Promise<number>;
   /** Lets the claim's photos that no message carries be claimed again. Returns how many it let go. */
   releaseClaim(input: { workspaceId: string; claimId: string }): Promise<number>;
   findForOwner(input: { workspaceId: string; owner: VisitorImageOwner; id: string }): Promise<StoredVisitorImage | null>;

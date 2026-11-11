@@ -41,6 +41,12 @@ export interface AssistantPageContext {
   referrer?: string | null;
 }
 
+/**
+ * Told the moment a turn has stored the customer message it runs on, before the rest of the turn
+ * runs, with the ids that message got. A rejection fails the turn.
+ */
+export type UserMessageStoredListener = (message: { conversationId: string; messageId: string }) => Promise<void>;
+
 export interface AssistantClientContextCapabilities {
   "page.read"?: PageReadCapability;
 }

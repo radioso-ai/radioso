@@ -1,4 +1,3 @@
-import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type {
   ClaimedVisitorImageRow,
   NewVisitorImage,
@@ -13,17 +12,9 @@ interface Row extends StoredVisitorImage {
   claimId: string | null;
 }
 
-/**
- * The visitor image rows in memory, for unit and route tests. Binding asks `messageCarrying` for
- * the user message in a conversation whose metadata names the photo, which is what the Postgres
- * store reads from `messages`.
- */
+/** The visitor image rows in memory, for unit and route tests. */
 export class InMemoryVisitorImageStore implements VisitorImageStore {
   readonly rows = new Map<string, Row>();
-
-  constructor(
-    private readonly messageCarrying: (input: { workspaceId: string; conversationId: string; imageId: string }) => Promise<string | null> | string | null = () => null,
-  ) {}
 
   async insert(image: NewVisitorImage): Promise<void> {
     if (this.rows.has(image.id)) throw new Error("duplicate visitor image");
@@ -71,9 +62,7 @@ export class InMemoryVisitorImageStore implements VisitorImageStore {
     let bound = 0;
     for (const row of this.rows.values()) {
       if (row.workspaceId !== input.workspaceId || row.claimId !== input.claimId || row.messageId !== null) continue;
-      const messageId = await this.messageCarrying({ workspaceId: input.workspaceId, conversationId: input.conversationId, imageId: row.id });
-      if (!messageId) continue;
-      this.rows.set(row.id, { ...row, conversationId: input.conversationId, messageId });
+      this.rows.set(row.id, { ...row, conversationId: input.conversationId, messageId: input.messageId });
       bound += 1;
     }
     return bound;
@@ -106,14 +95,6 @@ export class InMemoryVisitorImageStore implements VisitorImageStore {
 }
 
 const sameOwner = (left: VisitorImageOwner, right: VisitorImageOwner): boolean => left.kind === right.kind && left.id === right.id;
-
-/** The user message in a conversation whose stored photos name `imageId`, as the Postgres bind finds it. */
-export const messageCarryingImage = (messages: { listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> }) =>
-  async (input: { workspaceId: string; conversationId: string; imageId: string }): Promise<string | null> => {
-    const carrying = (await messages.listByConversationId(input.workspaceId, input.conversationId))
-      .find((message) => message.role === "user" && message.inputMetadata?.imageInput?.images.some((image) => image.id === input.imageId));
-    return carrying?.id ?? null;
-  };
 
 /** The bytes in memory, under the same path the storage adapters give them. */
 export class InMemoryVisitorImageObjects implements VisitorImageObjectStore {

@@ -1093,8 +1093,9 @@ document storage, and reads it once at upload with the agent's chat model
 (`visitor_image.read`, fail-open to `unread`). The chat door
 (`AssistantChatService`) claims a send's photos for their owner through the
 `VisitorImageTurnInput` port, runs the turn on the typed text followed by
-`<visitor_image>` blocks, stores `inputMetadata.imageInput`, and settles the
-claim once the turn ends: bound to the message that carries them, or released.
+`<visitor_image>` blocks, stores `inputMetadata.imageInput`, and binds the claim
+to the user message id the moment the preparer stores it
+(`onUserMessageStored`); a turn that stores no message releases the claim.
 An erasure deletes a conversation's photos and queues their objects to the
 `visitor_images.object_deletion` job in its transaction; a retention rule sweeps
 photos no message carries after 24 hours. The agent flag is
@@ -1105,7 +1106,7 @@ Public surfaces and key files:
 
 - `backend/src/modules/visitorImages/` (module brief in its `README.md`; `public.ts`, `composition.ts`, `contracts/turnInput.ts`)
 - `backend/src/app/composition/visitorImages.ts` (object store over document storage, reading model, availability, audit, wiring)
-- `backend/src/modules/chat/services/visitorImageTurn.ts` (the door's claim, rendering and settle)
+- `backend/src/modules/chat/services/visitorImageTurn.ts` (the door's claim, rendering, bind and release); `turnUserMessage.ts` (stores the user message, then calls `onUserMessageStored`)
 - `backend/src/app/http/routes/publicVisitorImageRoutes.ts` (`POST`/`GET /api/v1/public/chat/{token}/images[/{imageId}]`)
 - `backend/src/app/http/routes/assistantRoutes.ts` (`POST /api/v1/assistant/images`), `agentChannelImageRoute.ts` (`POST /api/v1/agents/{agentId}/images`)
 - `backend/src/app/http/routes/conversationImageRoutes.ts` (`GET /api/v1/conversations/{conversationId}/images/{imageId}`, audited)

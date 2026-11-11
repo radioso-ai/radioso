@@ -1,17 +1,18 @@
 import { badRequest } from "../../../shared/domain/errors.js";
-import {
-  renderVisitorImageTurn,
-  type VisitorImageClaim,
-  type VisitorImageTurnInput,
-} from "../../visitorImages/public.js";
-import type { AssistantChatRequest } from "../types/assistantApi.js";
+import { renderVisitorImageTurn, type VisitorImageTurnInput } from "../../visitorImages/public.js";
+import type { AssistantChatRequest, UserMessageStoredListener } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 
-/** A send's photos, claimed: the turn text it runs on, and the metadata its message stores. */
-export interface VisitorImageTurn {
-  readonly claim: VisitorImageClaim;
+/**
+ * A send's photos, claimed: the turn text it runs on, the metadata its message stores, the
+ * listener that binds the photos to that message the moment the turn stores it, and `finish`,
+ * which lets them go once the turn is over if no message took them.
+ */
+interface VisitorImageTurn {
   readonly query: string;
   readonly inputMetadata: UserMessageInputMetadata;
+  readonly onUserMessageStored: UserMessageStoredListener;
+  finish(): Promise<void>;
 }
 
 /**
@@ -27,42 +28,22 @@ export const claimVisitorImageTurn = async (
   if (!visitorImages || !input.imageOwner || !input.agentId || input.routineInvocation) {
     throw badRequest("Images are not accepted on this request");
   }
-  const claim = await visitorImages.claim({
-    workspaceId: input.workspaceId,
-    agentId: input.agentId,
-    owner: input.imageOwner,
-    imageIds: input.imageIds,
-  });
+  const { workspaceId } = input;
+  const claim = await visitorImages.claim({ workspaceId, agentId: input.agentId, owner: input.imageOwner, imageIds: input.imageIds });
   const typedText = input.message?.trim() ?? "";
+  let bound = false;
   return {
-    claim,
     query: renderVisitorImageTurn(typedText, claim.images),
     inputMetadata: {
       ...(input.inputMetadata ?? { method: "typed" }),
       imageInput: { typedText, images: claim.images.map((image) => ({ id: image.id, reading: image.reading })) },
     },
+    onUserMessageStored: async ({ conversationId, messageId }) => {
+      await visitorImages.bind({ workspaceId, claim, conversationId, messageId });
+      bound = true;
+    },
+    finish: async () => {
+      if (!bound) await visitorImages.release({ workspaceId, claim });
+    },
   };
 };
-
-const conversationIdOf = (event: object): string | null =>
-  "conversationId" in event && typeof event.conversationId === "string" ? event.conversationId : null;
-
-/**
- * Passes a streamed turn through, noting the conversation its events name, and settles the
- * photos once the stream ends, however it ends: bound to the message that carries them, or let go.
- */
-export async function* settlingVisitorImages<TEvent extends object>(
-  events: AsyncIterable<TEvent>,
-  settle: (conversationId: string | null) => Promise<void>,
-  knownConversationId: string | null,
-): AsyncGenerator<TEvent> {
-  let conversationId = knownConversationId;
-  try {
-    for await (const event of events) {
-      conversationId ??= conversationIdOf(event);
-      yield event;
-    }
-  } finally {
-    await settle(conversationId);
-  }
-}

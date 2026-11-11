@@ -1,8 +1,7 @@
-import { sql, type Kysely, type Selectable } from "kysely";
+import type { Kysely, Selectable } from "kysely";
 
 import { anyOf } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB } from "../../../shared/infra/kysely/types.js";
-import { VISITOR_IMAGE_INPUT_METADATA_KEY } from "../contracts/turnInput.js";
 import type {
   ClaimedVisitorImageRow,
   NewVisitorImage,
@@ -106,27 +105,14 @@ export class PostgresVisitorImageStore implements VisitorImageStore {
     }
   }
 
-  /**
-   * The message that carries a photo is the conversation's user message whose `imageInput`
-   * metadata names it: the door wrote that metadata from this claim, so the match is exact, and a
-   * turn whose message never got stored binds nothing.
-   */
+  /** The door names the message: the one the turn stored, in the same request, before the turn ran on. */
   async bindClaim(input: Parameters<VisitorImageStore["bindClaim"]>[0]): Promise<number> {
     const result = await this.db
-      .updateTable("visitor_images as image")
-      .from("messages as message")
-      .set((eb) => ({
-        conversation_id: eb.ref("message.conversation_id"),
-        message_id: eb.ref("message.id"),
-        bound_at: input.boundAt,
-      }))
-      .where("image.workspace_id", "=", input.workspaceId)
-      .where("image.claim_id", "=", input.claimId)
-      .where("image.message_id", "is", null)
-      .where("message.workspace_id", "=", input.workspaceId)
-      .where("message.conversation_id", "=", input.conversationId)
-      .where("message.role", "=", "user")
-      .where(sql<boolean>`message.metadata_json -> ${VISITOR_IMAGE_INPUT_METADATA_KEY}::text -> 'images' @> jsonb_build_array(jsonb_build_object('id', image.id::text))`)
+      .updateTable("visitor_images")
+      .set({ conversation_id: input.conversationId, message_id: input.messageId, bound_at: input.boundAt })
+      .where("workspace_id", "=", input.workspaceId)
+      .where("claim_id", "=", input.claimId)
+      .where("message_id", "is", null)
       .executeTakeFirst();
     return Number(result.numUpdatedRows);
   }

@@ -14,14 +14,15 @@ session, the REST API the credential (or the signed-in user), and a connector
 its conversation. The owner id is never a credential; a send must come from the
 same owner, agent and workspace as the upload.
 
-It knows the photo lifecycle and nothing about chat turns. The chat door
-(`modules/chat/services/assistantChatService.ts`) depends on one narrow port,
-`VisitorImageTurnInput` (`contracts/turnInput.ts`): `claim` the ids for an
-owner and get the readings back, then `settle` once the turn is over. The door
-renders the readings into the turn text with `renderVisitorImageTurn` and stores
-the structured form as the user message's `inputMetadata.imageInput`
-(`VISITOR_IMAGE_INPUT_METADATA_KEY`), whose shape this module owns
-(`visitorImageInputSchema`).
+It knows the photo lifecycle and nothing about chat turns or messages. The chat
+door (`modules/chat/services/assistantChatService.ts`) depends on one narrow
+port, `VisitorImageTurnInput` (`contracts/turnInput.ts`): `claim` the ids for an
+owner and get the readings back, `bind` them to the conversation and message id
+the turn stored, and `release` them when the turn stored none. The door renders
+the readings into the turn text with `renderVisitorImageTurn` and stores the
+structured form as the user message's `inputMetadata.imageInput`, whose shape
+the message metadata owns (`db/repositories/messageInputMetadata.ts`). This
+module never reads `messages`.
 
 It does not know which model reads a photo or how storage is reached:
 `VisitorImageReader` and `VisitorImageObjectStore` are ports, and
@@ -42,8 +43,8 @@ composition. Nothing in `packages/` changes for images.
 ## Read First
 
 - `services/visitorImageService.ts`: upload (normalize, store, insert, read,
-  record the reading), claim, settle (bind, then release what no message
-  carries), and the two reads (owner, conversation with an audited view).
+  record the reading), claim, bind, release, and the two reads (owner,
+  conversation with an audited view).
 - `services/imageNormalizer.ts`: magic-byte sniffing (JPEG, PNG, WebP only),
   `sharp` decode under a pixel limit, auto-rotate, re-encode to JPEG at most
   1,600 px on the long side with no metadata, quality stepped down to at most
@@ -53,8 +54,9 @@ composition. Nothing in `packages/` changes for images.
   a timeout and fail-open to `unread`. Prompt:
   `backend/prompts/chat/visitor-image-reading.md`.
 - `infra/visitorImageRepository.ts`: `visitor_images` (migration
-  `256_visitor_images.sql`). A claim is one transaction; binding matches the
-  conversation's user message whose `imageInput` names the photo.
+  `256_visitor_images.sql`). A claim is one transaction, so of two concurrent
+  sends of one photo exactly one claims it; binding sets the conversation and
+  message ids the door names.
 - `infra/visitorImagePrivacy.ts`: the conversation eraser, the 24-hour unbound
   sweep (a conversation retention rule), and the data subject export section.
 - `services/visitorImageObjectDeletion.ts`: the `visitor_images.object_deletion`
@@ -70,9 +72,12 @@ composition. Nothing in `packages/` changes for images.
 2. Send: the door claims the ids (all or none, one send per photo), renders
    `<visitor_image index="n">reading</visitor_image>` or
    `<visitor_image index="n" unread/>` after the typed text, and runs the turn.
-3. Settle: once the turn ends, the photos bind to the user message carrying
-   them in the conversation the turn named; any no message carries are released
-   so the caller can send them again.
+3. Bind: the chat-session preparer tells the door the moment it stores the user
+   message (`onUserMessageStored`), and the door binds the claim to that
+   conversation and message id in the same request, before the rest of the turn
+   runs. A turn that fails afterwards leaves the photos with the stored message;
+   one that ends before storing it (refused, superseded while waiting, a stream
+   abandoned early) releases the claim so the caller can send them again.
 4. Delete: a conversation's erasure removes its photos and queues their objects;
    photos no message carries are swept 24 hours after upload; a message deleted
    on its own leaves its photo unbound (`message_id` is `SET NULL`) for the

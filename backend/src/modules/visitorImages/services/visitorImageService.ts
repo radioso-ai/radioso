@@ -36,8 +36,9 @@ interface VisitorImageServiceLogger {
  * The photo lifecycle, channel-neutral: every channel hands it bytes and an owner. An upload is
  * validated and re-encoded, stored under the workspace, and read once with the agent's chat
  * model, so the reading is ready when the message is sent. A send claims its photos for one
- * message and, once the turn is over, binds them to the message that carries them. Photos are
- * served to their owner, or to a teammate reading the conversation, each view of which is audited.
+ * message, binds them to that message the moment the turn stores it, and lets them go when the
+ * turn stored none. Photos are served to their owner, or to a teammate reading the conversation,
+ * each view of which is audited.
  * It knows nothing about chat turns: the door renders the readings into the turn.
  */
 export class VisitorImageService implements VisitorImageTurnInput {
@@ -134,18 +135,27 @@ export class VisitorImageService implements VisitorImageTurnInput {
     };
   }
 
-  async settle(input: Parameters<VisitorImageTurnInput["settle"]>[0]): Promise<void> {
-    const ids = { workspaceId: input.workspaceId, conversationId: input.conversationId, claimId: input.claim.claimId };
+  async bind(input: Parameters<VisitorImageTurnInput["bind"]>[0]): Promise<void> {
+    const bound = await this.deps.store.bindClaim({
+      workspaceId: input.workspaceId,
+      claimId: input.claim.claimId,
+      conversationId: input.conversationId,
+      messageId: input.messageId,
+      boundAt: this.clock(),
+    });
+    if (bound < input.claim.images.length) {
+      // Only a deletion between the claim and the message (the workspace's) leaves fewer to bind.
+      this.deps.logger.warn({ workspaceId: input.workspaceId, conversationId: input.conversationId, claimId: input.claim.claimId, bound }, "visitor_image_bind_short");
+    }
+  }
+
+  async release(input: Parameters<VisitorImageTurnInput["release"]>[0]): Promise<void> {
+    const ids = { workspaceId: input.workspaceId, claimId: input.claim.claimId };
     try {
-      const bound = input.conversationId
-        ? await this.deps.store.bindClaim({ workspaceId: input.workspaceId, claimId: input.claim.claimId, conversationId: input.conversationId, boundAt: this.clock() })
-        : 0;
-      const released = bound < input.claim.images.length
-        ? await this.deps.store.releaseClaim({ workspaceId: input.workspaceId, claimId: input.claim.claimId })
-        : 0;
-      if (released > 0) this.deps.logger.info({ ...ids, bound, released }, "visitor_image_claim_released");
+      const released = await this.deps.store.releaseClaim(ids);
+      if (released > 0) this.deps.logger.info({ ...ids, released }, "visitor_image_claim_released");
     } catch (error) {
-      this.deps.logger.warn({ ...ids, errorClass: errorClassOf(error) }, "visitor_image_settle_failed");
+      this.deps.logger.warn({ ...ids, errorClass: errorClassOf(error) }, "visitor_image_release_failed");
     }
   }
 

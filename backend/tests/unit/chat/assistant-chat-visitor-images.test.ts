@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AppError } from "../../../src/shared/domain/errors.js";
 import { AssistantChatService } from "../../../src/modules/chat/composition.js";
 import type { ChatStreamEvent } from "../../../src/modules/chat/contracts/index.js";
+import type { UserMessageStoredListener } from "../../../src/modules/chat/types/assistantApi.js";
 import type { VisitorImageClaim, VisitorImageTurnInput } from "../../../src/modules/visitorImages/public.js";
 
 const IMAGE_A = "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12";
@@ -16,22 +17,30 @@ const imagesPort = (claim: VisitorImageClaim = claimOf([
   { id: IMAGE_B, reading: null },
 ])) => ({
   claim: vi.fn<VisitorImageTurnInput["claim"]>(async () => claim),
-  settle: vi.fn<VisitorImageTurnInput["settle"]>(async () => undefined),
+  bind: vi.fn<VisitorImageTurnInput["bind"]>(async () => undefined),
+  release: vi.fn<VisitorImageTurnInput["release"]>(async () => undefined),
 });
 
+type TurnInput = { onUserMessageStored?: UserMessageStoredListener };
+
+/** A turn that stores the user message, as the preparer does, then answers. */
 const answered = (conversationId = "conversation-1") => ({
-  answer: vi.fn(async () => ({
-    conversationId,
-    agentId: "agent-1",
-    answer: "Answer",
-    citations: [],
-    answerSegments: [],
-    suggestions: [],
-    activitySummary: {},
-    route: { type: "direct", reason: "social_only" },
-  })),
-  streamAnswer: vi.fn(async function* (): AsyncGenerator<ChatStreamEvent> {
+  answer: vi.fn(async (input: TurnInput) => {
+    await input.onUserMessageStored?.({ conversationId, messageId: `${conversationId}-message` });
+    return {
+      conversationId,
+      agentId: "agent-1",
+      answer: "Answer",
+      citations: [],
+      answerSegments: [],
+      suggestions: [],
+      activitySummary: {},
+      route: { type: "direct", reason: "social_only" },
+    };
+  }),
+  streamAnswer: vi.fn(async function* (input: TurnInput): AsyncGenerator<ChatStreamEvent> {
     yield { type: "status", stage: "interpreting" };
+    await input.onUserMessageStored?.({ conversationId, messageId: `${conversationId}-message` });
     yield { type: "conversation", conversationId };
     yield { type: "chunk", text: "Answer" };
   }),
@@ -102,26 +111,68 @@ describe("AssistantChatService with photos", () => {
     }));
   });
 
-  it("binds the photos to the conversation the turn answered in", async () => {
+  it("binds the photos to the user message the turn stores, while the turn is still running", async () => {
     const visitorImages = imagesPort();
-    const service = new AssistantChatService(answered("conversation-9") as never, { startConversation: vi.fn() } as never, { visitorImages });
+    let boundBeforeTurnEnded = false;
+    const chatService = {
+      answer: vi.fn(async (input: TurnInput) => {
+        await input.onUserMessageStored?.({ conversationId: "conversation-9", messageId: "message-9" });
+        boundBeforeTurnEnded = visitorImages.bind.mock.calls.length === 1;
+        return { conversationId: "conversation-9" };
+      }),
+    };
+    const service = new AssistantChatService(chatService as never, { startConversation: vi.fn() } as never, { visitorImages });
 
     await service.answer(send);
 
-    expect(visitorImages.settle).toHaveBeenCalledWith({ workspaceId: "workspace-1", claim: await visitorImages.claim.mock.results[0].value, conversationId: "conversation-9" });
+    expect(boundBeforeTurnEnded).toBe(true);
+    expect(visitorImages.bind).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      claim: await visitorImages.claim.mock.results[0].value,
+      conversationId: "conversation-9",
+      messageId: "message-9",
+    });
+    expect(visitorImages.release).not.toHaveBeenCalled();
   });
 
-  it("lets the photos go when the turn fails, so the caller can send them again", async () => {
+  it("keeps the photos with the stored message when the turn fails after storing it", async () => {
     const visitorImages = imagesPort();
-    const chatService = { answer: vi.fn(async () => { throw new AppError(429, "usage_limit_exceeded", "Usage limit exceeded"); }) };
+    const chatService = {
+      answer: vi.fn(async (input: TurnInput) => {
+        await input.onUserMessageStored?.({ conversationId: "conversation-9", messageId: "message-9" });
+        throw new AppError(429, "usage_limit_exceeded", "Usage limit exceeded");
+      }),
+    };
     const service = new AssistantChatService(chatService as never, { startConversation: vi.fn() } as never, { visitorImages });
 
     await expect(service.answer(send)).rejects.toMatchObject({ code: "usage_limit_exceeded" });
 
-    expect(visitorImages.settle).toHaveBeenCalledWith(expect.objectContaining({ conversationId: null }));
+    expect(visitorImages.bind).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-9", messageId: "message-9" }));
+    expect(visitorImages.release).not.toHaveBeenCalled();
   });
 
-  it("settles a streamed turn with the conversation its events named, once the stream ends", async () => {
+  it("lets the photos go when the turn fails before storing the message, so the caller can send them again", async () => {
+    const visitorImages = imagesPort();
+    const chatService = { answer: vi.fn(async () => { throw new AppError(409, "turn_superseded", "Superseded"); }) };
+    const service = new AssistantChatService(chatService as never, { startConversation: vi.fn() } as never, { visitorImages });
+
+    await expect(service.answer(send)).rejects.toMatchObject({ code: "turn_superseded" });
+
+    expect(visitorImages.bind).not.toHaveBeenCalled();
+    expect(visitorImages.release).toHaveBeenCalledWith({ workspaceId: "workspace-1", claim: await visitorImages.claim.mock.results[0].value });
+  });
+
+  it("fails the turn and lets the photos go when they cannot be bound", async () => {
+    const visitorImages = imagesPort();
+    visitorImages.bind.mockRejectedValueOnce(new Error("connection reset"));
+    const service = new AssistantChatService(answered() as never, { startConversation: vi.fn() } as never, { visitorImages });
+
+    await expect(service.answer(send)).rejects.toThrow("connection reset");
+
+    expect(visitorImages.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("binds a streamed turn's photos when it stores the message", async () => {
     const chatService = answered("conversation-7");
     const visitorImages = imagesPort();
     const service = new AssistantChatService(chatService as never, { startConversation: vi.fn() } as never, { visitorImages });
@@ -129,9 +180,23 @@ describe("AssistantChatService with photos", () => {
     const events = await drain(service.streamAnswer({ ...send, stream: true }));
 
     expect(events.map((event) => event.type)).toEqual(["status", "conversation", "chunk"]);
-    expect(chatService.streamAnswer).toHaveBeenCalledWith(expect.objectContaining({ query: expect.stringContaining("<visitor_image index=\"1\">") }));
-    expect(visitorImages.settle).toHaveBeenCalledTimes(1);
-    expect(visitorImages.settle).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-7" }));
+    expect(chatService.streamAnswer).toHaveBeenCalledWith(expect.objectContaining({ query: expect.stringContaining("A stone farmhouse with a terracotta roof.") }));
+    expect(visitorImages.bind).toHaveBeenCalledTimes(1);
+    expect(visitorImages.bind).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-7", messageId: "conversation-7-message" }));
+    expect(visitorImages.release).not.toHaveBeenCalled();
+  });
+
+  it("lets a streamed turn's photos go when the stream is abandoned before the message is stored", async () => {
+    const visitorImages = imagesPort();
+    const service = new AssistantChatService(answered("conversation-7") as never, { startConversation: vi.fn() } as never, { visitorImages });
+
+    for await (const event of service.streamAnswer({ ...send, stream: true })) {
+      expect(event.type).toBe("status");
+      break;
+    }
+
+    expect(visitorImages.bind).not.toHaveBeenCalled();
+    expect(visitorImages.release).toHaveBeenCalledTimes(1);
   });
 
   it("refuses photos where no owner or agent is known, claiming nothing", async () => {
@@ -158,6 +223,6 @@ describe("AssistantChatService with photos", () => {
 
     expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({ query: "Hello", inputMetadata: undefined }));
     expect(visitorImages.claim).not.toHaveBeenCalled();
-    expect(visitorImages.settle).not.toHaveBeenCalled();
+    expect(visitorImages.release).not.toHaveBeenCalled();
   });
 });

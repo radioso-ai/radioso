@@ -64,7 +64,7 @@ import { AssistantChatService } from "../../src/modules/chat/services/assistantC
 import { VisitorImageService } from "../../src/modules/visitorImages/composition.js";
 import type { VisitorImageReader } from "../../src/modules/visitorImages/domain.js";
 import { createVisitorImageAvailability, visitorImageAudit, visitorImageObjectStore } from "../../src/app/composition/visitorImages.js";
-import { InMemoryVisitorImageStore, messageCarryingImage } from "./inMemoryVisitorImages.js";
+import { InMemoryVisitorImageStore } from "./inMemoryVisitorImages.js";
 import {
   type VoiceRecordingStore,
   type VoiceRecordingsLeftAtVendorReader,
@@ -2343,7 +2343,7 @@ export const createTestDependencies = (overrides: {
     new AgentRevisionRuntimeResolver(publishedAgentRevisions),
   );
   const visitorImages = new VisitorImageService({
-    store: new InMemoryVisitorImageStore(messageCarryingImage(messageRepository)),
+    store: new InMemoryVisitorImageStore(),
     objects: visitorImageObjectStore(documentStorage),
     reader: overrides.visitorImageReader ?? { read: async () => ({ kind: "read", description: "A photo the test uploaded." }) },
     audit: visitorImageAudit(auditService),

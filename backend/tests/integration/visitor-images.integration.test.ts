@@ -77,7 +77,7 @@ describeIntegration("visitor images on Postgres", () => {
     "SELECT payload FROM background_jobs WHERE kind = 'visitor_images.object_deletion'",
   )).flatMap((job) => job.payload.objects.map((object) => object.objectPath));
 
-  it("claims a send's photos atomically for their owner, and binds them to the message that carries them", async () => {
+  it("claims a send's photos atomically for their owner, and binds them to exactly the message the door names", async () => {
     const first = await upload();
     const second = await upload(OWNER, null);
     const claimId = randomUUID();
@@ -86,11 +86,13 @@ describeIntegration("visitor images on Postgres", () => {
     expect(claimed?.map((image) => image.id).sort()).toEqual([first, second].sort());
     expect(claimed?.find((image) => image.id === second)).toMatchObject({ readingStatus: "unread", reading: null });
 
+    // An earlier message naming the same photos is not the one the turn stored.
+    await carry([first, second]);
     const message = await carry([first, second]);
-    await carry([randomUUID()], otherConversationId);
-    expect(await store.bindClaim({ workspaceId, claimId, conversationId, boundAt: new Date() })).toBe(2);
-    expect(await store.bindClaim({ workspaceId, claimId, conversationId, boundAt: new Date() })).toBe(0);
+    expect(await store.bindClaim({ workspaceId, claimId, conversationId, messageId: message.id, boundAt: new Date() })).toBe(2);
+    expect(await store.bindClaim({ workspaceId, claimId, conversationId, messageId: message.id, boundAt: new Date() })).toBe(0);
     expect(await row(first)).toMatchObject({ conversation_id: conversationId, message_id: message.id });
+    expect(await row(second)).toMatchObject({ conversation_id: conversationId, message_id: message.id });
     expect(await store.findInConversation({ workspaceId, conversationId, id: first })).toMatchObject({ id: first, readingStatus: "read", reading: "A stone farmhouse." });
   });
 
@@ -105,14 +107,28 @@ describeIntegration("visitor images on Postgres", () => {
     expect((await row(mine))?.claim_id).toBeNull();
   });
 
-  it("lets go of a claim no message carries, so the photos can be sent again", async () => {
+  it("lets exactly one of two concurrent sends of a photo claim it", async () => {
+    const image = await upload();
+
+    const outcomes = await Promise.all([randomUUID(), randomUUID()].map((claimId) =>
+      store.claim({ workspaceId, agentId, owner: OWNER, imageIds: [image], claimId, claimedAt: new Date() })));
+
+    expect(outcomes.filter((claimed) => claimed !== null)).toHaveLength(1);
+  });
+
+  it("lets go of a claim no message took, so the photos can be sent again, but never of a bound one", async () => {
     const image = await upload();
     const claimId = randomUUID();
     await store.claim({ workspaceId, agentId, owner: OWNER, imageIds: [image], claimId, claimedAt: new Date() });
 
-    expect(await store.bindClaim({ workspaceId, claimId, conversationId, boundAt: new Date() })).toBe(0);
     expect(await store.releaseClaim({ workspaceId, claimId })).toBe(1);
-    expect(await store.claim({ workspaceId, agentId, owner: OWNER, imageIds: [image], claimId: randomUUID(), claimedAt: new Date() })).toHaveLength(1);
+    const retryClaimId = randomUUID();
+    expect(await store.claim({ workspaceId, agentId, owner: OWNER, imageIds: [image], claimId: retryClaimId, claimedAt: new Date() })).toHaveLength(1);
+
+    const message = await carry([image]);
+    await store.bindClaim({ workspaceId, claimId: retryClaimId, conversationId, messageId: message.id, boundAt: new Date() });
+    expect(await store.releaseClaim({ workspaceId, claimId: retryClaimId })).toBe(0);
+    expect(await row(image)).toMatchObject({ message_id: message.id, claim_id: retryClaimId });
   });
 
   it("leaves a photo unbound when its message is deleted on its own, rather than stranding its object", async () => {
@@ -120,7 +136,7 @@ describeIntegration("visitor images on Postgres", () => {
     const claimId = randomUUID();
     await store.claim({ workspaceId, agentId, owner: OWNER, imageIds: [image], claimId, claimedAt: new Date() });
     const message = await carry([image]);
-    await store.bindClaim({ workspaceId, claimId, conversationId, boundAt: new Date() });
+    await store.bindClaim({ workspaceId, claimId, conversationId, messageId: message.id, boundAt: new Date() });
 
     await messages.deleteUserMessage({ workspaceId, conversationId, messageId: message.id });
 
@@ -149,8 +165,8 @@ describeIntegration("visitor images on Postgres", () => {
     const image = await upload();
     const claimId = randomUUID();
     await store.claim({ workspaceId, agentId, owner: OWNER, imageIds: [image], claimId, claimedAt: new Date() });
-    await carry([image], otherConversationId);
-    await store.bindClaim({ workspaceId, claimId, conversationId: otherConversationId, boundAt: new Date() });
+    const message = await carry([image], otherConversationId);
+    await store.bindClaim({ workspaceId, claimId, conversationId: otherConversationId, messageId: message.id, boundAt: new Date() });
 
     const erased = await database.kysely.transaction().execute((trx) =>
       new VisitorImageEraser(trx, new BackgroundJobRepository(trx)).erase({ kind: "conversations", workspaceId, conversationIds: [otherConversationId] }));
@@ -179,7 +195,7 @@ describeIntegration("visitor images on Postgres", () => {
     const claimId = randomUUID();
     await store.claim({ workspaceId, agentId, owner: OWNER, imageIds: [image], claimId, claimedAt: new Date() });
     const message = await carry([image]);
-    await store.bindClaim({ workspaceId, claimId, conversationId, boundAt: new Date() });
+    await store.bindClaim({ workspaceId, claimId, conversationId, messageId: message.id, boundAt: new Date() });
 
     const exported = await new VisitorImageExporter(database.kysely).export({ workspaceId, conversationIds: [conversationId], visitorIds: [], verifiedCustomerIds: [] });
 

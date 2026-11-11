@@ -25,26 +25,27 @@ the message metadata owns (`db/repositories/messageInputMetadata.ts`). This
 module never reads `messages`.
 
 It does not know which model reads a photo or how storage is reached:
-`VisitorImageReader` and `VisitorImageObjectStore` are ports, and
+`VisitorImageReader` and `VisitorImageObjectStore` (over document storage's
+`locate`, `upload`, `read` and `delete`) are ports, and
 `VisitorImageAvailability` (whether an agent takes photos now) is implemented in
 composition. Nothing in `packages/` changes for images.
 
 ## Public Surfaces
 
-- `public.ts`: the turn port and metadata schema, `renderVisitorImageTurn`,
+- `public.ts`: the turn port, `renderVisitorImageTurn`,
   `VISITOR_IMAGE_LIMITS`, `recordVisitorImageUpload`, and the service type the
   routes call.
 - `composition.ts`: concrete classes for application wiring only — the Postgres
   store, the eraser, exporter and unbound sweep, the model reader, and the
   object deletion job handler.
-- `contracts/turnInput.ts`: `VisitorImageOwner`, `VisitorImageTurnInput`,
-  `VisitorImageClaim`, and the `imageInput` metadata schema.
+- `contracts/turnInput.ts`: `VisitorImageOwner`, `VisitorImageTurnInput` and
+  `VisitorImageClaim`.
 
 ## Read First
 
 - `services/visitorImageService.ts`: upload (normalize, reserve an answer,
-  store, insert, read, record the reading), claim, bind, release, and the two reads (owner,
-  conversation with an audited view).
+  insert the row, store the object, read, record the reading), claim, bind,
+  release, and the two reads (owner, conversation with an audited view).
 - `services/imageNormalizer.ts`: magic-byte sniffing (JPEG, PNG, WebP only),
   `sharp` decode under a pixel limit, auto-rotate, re-encode to JPEG at most
   1,600 px on the long side with no metadata, quality stepped down to at most
@@ -70,8 +71,11 @@ composition. Nothing in `packages/` changes for images.
    before multer buffers the body; the service re-encodes, reserves one answer
    against the plan (`UsageLimitPolicy.reserveAnswer`, `conversation_reply`, so
    an over-plan workspace gets the chat turn's `429 usage_limit_exceeded`),
-   stores the object, inserts the row (`pending`), reads it, and records `read`
-   (keeping the answer) or `unread` (giving it back).
+   inserts the row (`pending`) naming where the object goes, then stores the
+   object (deleting the row if that fails), reads it, and records `read`
+   (keeping the answer) or `unread` (giving it back). An object never exists
+   without a row; a row whose object never landed is swept, and deleting a
+   missing object counts as deleted.
 2. Send: the door claims the ids (all or none, one send per photo), renders
    `<visitor_image index="n">reading</visitor_image>` or
    `<visitor_image index="n" unread/>` after the typed text, and runs the turn.

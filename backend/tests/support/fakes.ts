@@ -3772,6 +3772,10 @@ export class InMemoryDocumentStorage implements DocumentStorageAdapter {
     };
   }
 
+  locate(input: Pick<DocumentStorageUploadInput, "workspaceId" | "documentId" | "folder">): DocumentStorageReadInput {
+    return { bucket: "test-document-imports", objectPath: documentStorageObjectPath(input), generation: null };
+  }
+
   async read(input: DocumentStorageReadInput): Promise<Buffer> {
     const existing = this.objects.get(input.objectPath);
     if (!existing) {

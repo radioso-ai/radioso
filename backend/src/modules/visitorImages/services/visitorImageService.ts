@@ -7,7 +7,6 @@ import type { VisitorImageClaim, VisitorImageTurnInput } from "../contracts/turn
 import {
   VISITOR_IMAGE_LIMITS,
   type VisitorImageAudit,
-  type VisitorImageObject,
   type VisitorImageObjectStore,
   type VisitorImageOwner,
   type VisitorImageReader,
@@ -83,25 +82,8 @@ export class VisitorImageService implements VisitorImageTurnInput {
     // Refused over plan with the error a chat turn gets, before anything is stored or read.
     const reservation = await this.deps.usage.reserveAnswer({ workspaceId: input.workspaceId, surface: input.surface, usage: "conversation_reply" });
     const id = this.newId();
-    let object: VisitorImageObject;
     try {
-      object = await this.deps.objects.put({ workspaceId: input.workspaceId, imageId: id, jpeg: normalized.jpeg });
-      try {
-        await this.deps.store.insert({
-          id,
-          workspaceId: input.workspaceId,
-          agentId: input.agentId,
-          owner: input.owner,
-          object,
-          byteSize: normalized.jpeg.length,
-          width: normalized.width,
-          height: normalized.height,
-          sha256: normalized.sha256,
-        });
-      } catch (error) {
-        await this.deps.objects.remove(object).catch(() => undefined);
-        throw error;
-      }
+      await this.store({ ...input, id, normalized });
     } catch (error) {
       await this.releaseReservation(reservation, input.workspaceId);
       throw error;
@@ -130,6 +112,41 @@ export class VisitorImageService implements VisitorImageTurnInput {
     recordVisitorImageReading(this.deps.metrics, status);
     this.deps.logger.info({ workspaceId: input.workspaceId, agentId: input.agentId, imageId: id, readingStatus: status }, "visitor_image_uploaded");
     return { kind: "accepted", id, readingStatus: status };
+  }
+
+  /**
+   * The row first, naming where the bytes go, then the bytes: an object never exists without a
+   * row, so a conversation's erasure and the unbound sweep always find it. A row whose bytes could
+   * not be stored is deleted; one left behind is swept, and deleting bytes that never landed is
+   * a deletion of nothing.
+   */
+  private async store(input: {
+    id: string;
+    workspaceId: string;
+    agentId: string;
+    owner: VisitorImageOwner;
+    normalized: { jpeg: Buffer; width: number; height: number; sha256: string };
+  }): Promise<void> {
+    const { id, workspaceId, normalized } = input;
+    await this.deps.store.insert({
+      id,
+      workspaceId,
+      agentId: input.agentId,
+      owner: input.owner,
+      object: this.deps.objects.locate({ workspaceId, imageId: id }),
+      byteSize: normalized.jpeg.length,
+      width: normalized.width,
+      height: normalized.height,
+      sha256: normalized.sha256,
+    });
+    try {
+      await this.deps.objects.put({ workspaceId, imageId: id, jpeg: normalized.jpeg });
+    } catch (error) {
+      await this.deps.store.delete({ workspaceId, id }).catch((deleteError: unknown) => {
+        this.deps.logger.warn({ workspaceId, imageId: id, errorClass: errorClassOf(deleteError) }, "visitor_image_row_delete_failed");
+      });
+      throw error;
+    }
   }
 
   private async releaseReservation(reservation: UsageLimitReservation, workspaceId: string): Promise<void> {

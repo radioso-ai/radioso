@@ -145,5 +145,7 @@ describe("GcsDocumentStorage", () => {
     });
 
     expect(uploaded.objectPath).toBe("workspaces/workspace-1/visitor-images/image-1");
+    expect(storage.locate({ workspaceId: "workspace-1", documentId: "image-1", folder: "visitor-images" }))
+      .toEqual({ bucket: "radioso-documents", objectPath: uploaded.objectPath, generation: null });
   });
 });

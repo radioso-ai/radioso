@@ -77,7 +77,7 @@ export class LocalDocumentStorage implements DocumentStorageAdapter {
     // Path leaf is the caller-generated random documentId; the original
     // filename is untrusted client input, so it's kept on the document row's
     // `sourceFilename` rather than the storage path.
-    const objectPath = documentStorageObjectPath(input);
+    const { objectPath } = this.locate(input);
     const targetPath = ensureWithinRoot(this.rootPath, objectPath);
 
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
@@ -89,6 +89,10 @@ export class LocalDocumentStorage implements DocumentStorageAdapter {
       generation: null,
       sizeBytes: input.buffer.length,
     };
+  }
+
+  locate(input: Pick<DocumentStorageUploadInput, "workspaceId" | "documentId" | "folder">): DocumentStorageReadInput {
+    return { bucket: LOCAL_STORAGE_BUCKET, objectPath: documentStorageObjectPath(input), generation: null };
   }
 
   async read(input: DocumentStorageReadInput): Promise<Buffer> {

@@ -103,8 +103,10 @@ contract tests, and worker recovery tests.
 Every object a storage adapter writes sits under `workspaces/<workspaceId>/`,
 so `DocumentStorageInventoryPort` (`contracts/storage.ts`) finds a workspace's
 objects by its id alone, whatever path an older release gave them below it.
-Composition wires a `DocumentStorageAdapter`: the object port and the inventory
-together, in the GCS and local adapters alike.
+Composition wires a `DocumentStorageAdapter`: the object port, the locator and
+the inventory together, in the GCS and local adapters alike. `locate` says where
+an upload with given ids lands before anything is written, so a caller (visitor
+photos) records the object first and never leaves one no row names.
 
 - `services/workspaceStoragePurge.ts`: the `documents.workspace_storage_purge`
   background job, keyed `<origin>:<workspaceId>`. A workspace or organization

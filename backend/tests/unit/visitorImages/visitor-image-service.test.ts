@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { VisitorImageOwner, VisitorImageReader, VisitorImageReading } from "../../../src/modules/visitorImages/domain.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
+import { visitorImageObjectDeletionHandler } from "../../../src/modules/visitorImages/services/visitorImageObjectDeletion.js";
 import { VisitorImageService } from "../../../src/modules/visitorImages/services/visitorImageService.js";
 import { InMemoryVisitorImageObjects, InMemoryVisitorImageStore } from "../../support/inMemoryVisitorImages.js";
 
@@ -98,6 +99,45 @@ describe("VisitorImageService.upload", () => {
     expect(objects.objects.size).toBe(0);
     expect(reader.read).not.toHaveBeenCalled();
     expect(counted(metrics)).toEqual(["visitor_image_uploads_total:{\"outcome\":\"rejected_type\"}"]);
+  });
+});
+
+describe("VisitorImageService upload storage order", () => {
+  it("records the photo's row, naming where its bytes go, before it writes the bytes", async () => {
+    const { upload, store, objects } = harness();
+    const order: string[] = [];
+    const insert = store.insert.bind(store);
+    vi.spyOn(store, "insert").mockImplementation(async (image) => { order.push("row"); await insert(image); });
+    const put = objects.put.bind(objects);
+    vi.spyOn(objects, "put").mockImplementation(async (input) => { order.push("bytes"); await put(input); });
+
+    const result = await upload();
+
+    expect(order).toEqual(["row", "bytes"]);
+    expect(objects.objects.has(store.rows.get(result.id)!.object.objectPath)).toBe(true);
+  });
+
+  it("deletes the row and gives the answer back when the bytes cannot be stored", async () => {
+    const { service, store, objects, reader, reservation } = harness();
+    vi.spyOn(objects, "put").mockRejectedValueOnce(new Error("storage unavailable"));
+
+    await expect(service.upload({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, bytes: await photo(), locale: null, surface: "api" }))
+      .rejects.toThrow("storage unavailable");
+
+    expect(store.rows.size).toBe(0);
+    expect(reservation.release).toHaveBeenCalledTimes(1);
+    expect(reader.read).not.toHaveBeenCalled();
+  });
+
+  it("deletes a row whose bytes never landed as a deletion of nothing", async () => {
+    const { objects } = harness();
+    const removed = vi.spyOn(objects, "remove");
+    const handler = visitorImageObjectDeletionHandler({ objects, logger: { warn: vi.fn() } });
+    const never = objects.locate({ workspaceId: WORKSPACE, imageId: randomUUID() });
+
+    await handler.run({ objects: [never] }, { jobId: "job-1", attempt: 1, signal: new AbortController().signal });
+
+    expect(removed).toHaveBeenCalledWith(never);
   });
 });
 

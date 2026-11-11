@@ -102,14 +102,18 @@ export interface VisitorImageStore {
   releaseClaim(input: { workspaceId: string; claimId: string }): Promise<number>;
   findForOwner(input: { workspaceId: string; owner: VisitorImageOwner; id: string }): Promise<StoredVisitorImage | null>;
   findInConversation(input: { workspaceId: string; conversationId: string; id: string }): Promise<StoredVisitorImage | null>;
-  /** Removes a row an upload wrote before it failed. */
+  /** Removes the row of an upload whose bytes could not be stored. */
   delete(input: { workspaceId: string; id: string }): Promise<void>;
 }
 
 /** Where the bytes go: document storage, narrowed to one folder of the workspace. */
 export interface VisitorImageObjectStore {
-  put(input: { workspaceId: string; imageId: string; jpeg: Buffer }): Promise<VisitorImageObject>;
+  /** Where a photo's bytes go, known before they are written, so its row names them first. */
+  locate(input: { workspaceId: string; imageId: string }): VisitorImageObject;
+  /** Writes the photo's bytes where `locate` says. */
+  put(input: { workspaceId: string; imageId: string; jpeg: Buffer }): Promise<void>;
   get(object: VisitorImageObject): Promise<Buffer>;
+  /** Deletes a photo's bytes; bytes that are gone, or never landed, count as deleted. */
   remove(object: VisitorImageObject): Promise<void>;
 }
 

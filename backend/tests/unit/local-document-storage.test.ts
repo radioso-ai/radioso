@@ -68,6 +68,9 @@ describe("LocalDocumentStorage", () => {
 
     expect(uploaded.objectPath).toBe("workspaces/workspace-1/visitor-images/image-1");
     expect((await storage.read(uploaded)).toString("utf8")).toBe("jpeg bytes");
+    // Known before the write, so a caller can record where the object goes first.
+    expect(storage.locate({ workspaceId: "workspace-1", documentId: "image-1", folder: "visitor-images" }))
+      .toEqual({ bucket: uploaded.bucket, objectPath: uploaded.objectPath, generation: null });
   });
 
   const createStorage = async () => {

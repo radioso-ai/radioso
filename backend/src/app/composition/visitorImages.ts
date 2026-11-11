@@ -3,7 +3,7 @@ import type { Kysely } from "kysely";
 import { DEFAULT_AGENT_LOCALE_FALLBACK, type AgentRecord } from "../../modules/agents/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { buildAgentChatWorkspaceContext } from "../../modules/chat/public.js";
-import type { DocumentStoragePort } from "../../modules/documents/contracts/storage.js";
+import type { DocumentStorageLocator, DocumentStoragePort } from "../../modules/documents/contracts/storage.js";
 import {
   ModelVisitorImageReader,
   PostgresVisitorImageStore,
@@ -29,18 +29,17 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 
 type AgentLookup = { findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null> };
 
-/** Document storage, narrowed to one photo per object under the workspace's `visitor-images` folder. */
-export const visitorImageObjectStore = (storage: DocumentStoragePort): VisitorImageObjectStore => ({
+/**
+ * Document storage, narrowed to one photo per object under the workspace's `visitor-images`
+ * folder. A photo's path is its own id, written once, so its row names it with no generation.
+ */
+export const visitorImageObjectStore = (storage: DocumentStoragePort & DocumentStorageLocator): VisitorImageObjectStore => ({
+  locate: ({ workspaceId, imageId }) => {
+    const located = storage.locate({ workspaceId, documentId: imageId, folder: "visitor-images" });
+    return { bucket: located.bucket, objectPath: located.objectPath, generation: null };
+  },
   put: async ({ workspaceId, imageId, jpeg }) => {
-    const stored = await storage.upload({
-      workspaceId,
-      documentId: imageId,
-      folder: "visitor-images",
-      filename: "image.jpg",
-      mimeType: "image/jpeg",
-      buffer: jpeg,
-    });
-    return { bucket: stored.bucket, objectPath: stored.objectPath, generation: stored.generation ?? null };
+    await storage.upload({ workspaceId, documentId: imageId, folder: "visitor-images", filename: "image.jpg", mimeType: "image/jpeg", buffer: jpeg });
   },
   get: (object) => storage.read(object),
   remove: (object) => storage.delete(object),
@@ -110,7 +109,7 @@ export const wireVisitorImages = (deps: {
     auditService: Pick<AuditPort, "recordForLiveConversation">;
     metricsRegistry: MetricsRegistry | null;
   };
-  storage: DocumentStoragePort;
+  storage: DocumentStoragePort & DocumentStorageLocator;
   agents: AgentLookup;
   resolver: LlmCapabilityResolver;
   logger: AppLogger;

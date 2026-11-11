@@ -64,10 +64,18 @@ export interface DocumentStorageInventoryPort {
 }
 
 /**
- * A store composition can wire: it serves single objects and answers what it holds, because a
- * deleted workspace's files are found through the inventory.
+ * Where an upload with these ids lands, known before anything is written, so a caller can record
+ * the object first and never leave one behind that no record names. `generation` is null.
  */
-export type DocumentStorageAdapter = DocumentStoragePort & DocumentStorageInventoryPort;
+export interface DocumentStorageLocator {
+  locate(input: Pick<DocumentStorageUploadInput, "workspaceId" | "documentId" | "folder">): DocumentStorageReadInput;
+}
+
+/**
+ * A store composition can wire: it serves single objects, says where one will land, and answers
+ * what it holds, because a deleted workspace's files are found through the inventory.
+ */
+export type DocumentStorageAdapter = DocumentStoragePort & DocumentStorageLocator & DocumentStorageInventoryPort;
 
 /**
  * What the database knows about the workspaces document storage holds objects for. Removing

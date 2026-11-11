@@ -100,10 +100,12 @@ const sameOwner = (left: VisitorImageOwner, right: VisitorImageOwner): boolean =
 export class InMemoryVisitorImageObjects implements VisitorImageObjectStore {
   readonly objects = new Map<string, Buffer>();
 
-  async put(input: { workspaceId: string; imageId: string; jpeg: Buffer }): Promise<VisitorImageObject> {
-    const objectPath = `workspaces/${input.workspaceId}/visitor-images/${input.imageId}`;
-    this.objects.set(objectPath, input.jpeg);
-    return { bucket: "memory", objectPath, generation: null };
+  locate(input: { workspaceId: string; imageId: string }): VisitorImageObject {
+    return { bucket: "memory", objectPath: `workspaces/${input.workspaceId}/visitor-images/${input.imageId}`, generation: null };
+  }
+
+  async put(input: { workspaceId: string; imageId: string; jpeg: Buffer }): Promise<void> {
+    this.objects.set(this.locate(input).objectPath, input.jpeg);
   }
 
   async get(object: VisitorImageObject): Promise<Buffer> {

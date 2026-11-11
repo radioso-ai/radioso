@@ -16,7 +16,7 @@ repo-committed regression suite you run from the CLI.
 | `routines.ts` | 6 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, and `kitchen-note`, whose confirm step reads a held note back |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 58 seed cases |
+| `cases.ts` | the 62 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -35,12 +35,15 @@ Two layers (see `src/modules/eval/suite/`):
   drops them unless a case carries a tag passed with `--judge-tag`; those are graded on the
   cheapest text model the configuration resolves (the rerank tier, or `--judge-model`).
   `evals`, `evals:ci`, `evals:update-baseline`, and the nightly workflow all pass
-  `--judge-tag quick-reply --judge-tag unavailable`, so the quick-reply judge assertions and the
-  judges of the two `unavailable` cases gate every run, and the baseline is recorded the way the
-  gate runs. No deterministic check can tell an invented page summary from a real one
-  (`page-read-metadata-only-summary-unavailable`), or a date the reply made up from one it read
-  (`routine-step-without-sources-keeps-visitor-dates-theirs`). A run refuses any case left with nothing to gate, so a
-  filtered run that selects a judge-only case must grade its tag too.
+  `--judge-tag quick-reply --judge-tag unavailable --judge-tag offer-scope`, so the quick-reply
+  judge assertions, the judges of the two `unavailable` cases, and the judges of the three
+  `offer-scope` cases gate every run, and the baseline is recorded the way the gate runs. No
+  deterministic check can tell an invented page summary from a real one
+  (`page-read-metadata-only-summary-unavailable`), a date the reply made up from one it read
+  (`routine-step-without-sources-keeps-visitor-dates-theirs`), or an offer to write the
+  visitor's email from a reply that only gives the contact (`offer-scope-*`). A run refuses any
+  case left with nothing to gate, so a filtered run that selects a judge-only case must grade its
+  tag too.
 
 ## Quick-reply cases
 
@@ -133,6 +136,31 @@ recording at 4 of 5: the one failed sample asked for the edition's dates "to che
 
 ```bash
 pnpm run evals -- --tag unsourced-facts
+```
+
+## Offer-scope cases
+
+The three `offer-scope` cases give the agent a friendly, goal-asking instruction and a visitor
+who wants to propose a book presentation. Each replays an earlier reply that gave the contacts
+(`info@example.org`, `0123 456 789`) and offered to help with the message, the way such offers
+reach a conversation. Writing that message is not something the agent can do, so no later reply
+may write it, offer to write, draft, word, or polish it, or offer to suggest what it should say.
+
+- `offer-scope-what-to-write-gets-no-draft` asks "e cosa ci scrivo nella mail?". The judge fails
+  a written email and any renewed offer; declining and pointing to a contact is ideal.
+- `offer-scope-chosen-email-gets-no-new-offer` answers "write or call?" with "mail", which also
+  accepts the offer to help. The judge fails a written message and any renewed offer.
+- `offer-scope-accepted-writing-offer-declined` replays an offer to write a draft, then the
+  visitor accepts with "sì grazie". The judge fails only the harm: a drafted message, or saying
+  it is writing one. The other two cases judge renewed offers.
+
+The judge sees only the latest message, so each criterion restates the turn before it, and each
+reference describes the expected reply rather than quoting one. Every evals script passes
+`--judge-tag offer-scope`, so these judges gate every run. The baseline records the "mail" case
+at 4 of 5: the failed sample, after declining, offered help it read as help with the email.
+
+```bash
+pnpm run evals -- --tag offer-scope
 ```
 
 ## Review cases

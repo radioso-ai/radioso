@@ -19,7 +19,7 @@ export const conciseReadableFormattingDirective: Directive = {
     "Do not add headings unless the user asks for a structured report.",
     "Do not use tables unless the user asks for a comparison.",
     "Keep simple answers in plain prose.",
-    "When supported and the turn remains open, end with one natural next step or focused question.",
+    "When supported and the turn remains open, end with one focused question or one step the user can take themselves.",
   ].join(" "),
 };
 

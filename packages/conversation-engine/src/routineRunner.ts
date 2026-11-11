@@ -10,7 +10,6 @@ import type {
   PendingRenderableTurn,
   Routine,
   RoutineActionRequest,
-  RoutineConsent,
   RoutineContextRenderer,
   RoutineHostEffects,
   RoutineNextStepDecision,
@@ -206,11 +205,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     }
     const stepId = state.path.at(-1) ?? routine.rootStepId;
     return routine.steps.find((candidate) => candidate.id === stepId) ?? null;
-  }
-
-  /** The consents of the routine this runner runs as `routineId`; none for a routine it does not run. */
-  consentsFor(routineId: string): readonly RoutineConsent[] {
-    return this.routines.find((candidate) => candidate.id === routineId)?.consents ?? [];
   }
 
   async resume(input: ConversationRoutineResumeInput): Promise<ConversationRoutineResumeResult> {

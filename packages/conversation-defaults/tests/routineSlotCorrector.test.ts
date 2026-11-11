@@ -56,7 +56,16 @@ describe("RoutineSlotCorrector", () => {
 
     const result = await corrector.detect({ turn: turn("actually use new@example.com"), completedState });
 
-    expect(result).toEqual({ kind: "correction", slots: routine.slots, slotKey: "email", rawValue: "new@example.com" });
+    expect(result).toEqual({ kind: "correction", slots: routine.slots, consents: [], slotKey: "email", rawValue: "new@example.com" });
+  });
+
+  it("hands the engine the routine's consents with a correction, so it can refuse a covered slot itself (#1544)", async () => {
+    const consents: Routine["consents"] = [{ key: "travel", slotKeys: ["arrival"], onDecline: "continue" }];
+    const corrector = new RoutineSlotCorrector([{ ...routine, consents }], gateway(decision("correction", "email", "new@example.com")), { clock });
+
+    const result = await corrector.detect({ turn: turn("actually use new@example.com"), completedState });
+
+    expect(result).toMatchObject({ kind: "correction", slotKey: "email", consents });
   });
 
   it("shows the model only the editable values the run holds, with what each holds and today's date", async () => {

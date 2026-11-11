@@ -32,9 +32,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   session started from the dashboard's Test Chat: the private test it runs on,
   by an opaque id (`VoiceTestChatSubject`, `VoiceTestChatBinding`), the start's
   `VoiceSessionSurface` (`website_embed`, `test_chat`), the port its turns run
-  through (`VoiceTestChatTurns`, `VoiceTestChatTurnEvent`), and its key's
-  namespace (`testChatSessionKey`, `isTestChatSessionKey`: a version 8 UUID,
-  where a website start mints version 4).
+  through (`VoiceTestChatTurns`, `VoiceTestChatTurnEvent`), and the key form
+  Radioso reserves for it (`testChatSessionKey`, `isTestChatSession`:
+  `radioso-test-chat_` before a lowercase version 4 UUID, reserved only on the
+  dialect of a vendor Radioso starts sessions for, so a runtime's own keys and
+  every `generic` key stay theirs).
 - `services/` runs the turn: `voiceTurnService.ts` resolves or binds the
   session's conversation, reads the agent's voice settings and the
   conversation's routine state and owner, starts the chat turn with
@@ -77,16 +79,19 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   requests (the newest request, the last bridge, the last exchange);
   `voiceTurnMetrics.ts` names the turn's series;
   `voiceSessionTurnRouter.ts` is the `VoiceTurnPort` composition hands the
-  adapters: a key outside Test Chat's namespace (`isTestChatSessionKey`) runs
-  as a conversation on `VoiceTurnService` with no extra read, and a Test Chat
-  key reads its `VoiceTestChatBinding` (`VoiceTestChatBindingLookup`) and runs on
+  adapters: a session whose key is not in Test Chat's reserved form
+  (`isTestChatSession`) runs as a conversation on `VoiceTurnService` with no
+  extra read, and a Test Chat key reads its `VoiceTestChatBinding`
+  (`VoiceTestChatBindingLookup`) and runs on
   `testChatVoiceTurns.ts` (`TestChatVoiceTurnService`), which runs the
   utterance as a turn of the operator's private test through the narrow
   `VoiceTestChatTurns` port and cuts the answer into speech with the same
   sentence cutter; a binding that is gone or past its window is refused with a
   `404`, and a Test Chat key never falls back to the conversation path. A Test
   Chat turn speaks no bridge or fallback line, reads the test's stream to its
-  end (where the test settles and audits the turn) before its outcome, and a
+  end (where the test settles and audits the turn) before its outcome, keeps a
+  turn whose answer was spoken whole when the test fails to settle it after
+  (logged as `settle_failed`), and a
   newer utterance of the session waits in process for the running one to
   settle (a test runs one turn at a time): one waits per session, a newer one
   replaces it, and one whose request was aborted or whose runtime hung up runs
@@ -408,8 +413,8 @@ helpers and the shared chat message limit from `app/http`
   that is gone `404`), then starts the session with a `test` start, which the
   registry records as the session's `VoiceTestChatBinding` (`test_execution_id`
   and `started_account_id` on `voice_sessions`, migration
-  `255_voice_sessions_test_chat.sql`), and mints its key in Test Chat's own
-  namespace (`testChatSessionKey`, a version 8 UUID). The answer is the website embed's, built
+  `255_voice_sessions_test_chat.sql`), and mints its key in the form Radioso
+  reserves for Test Chat (`testChatSessionKey`). The answer is the website embed's, with that key, built
   by `presenters/voiceSessionPresenter.ts`. A permanent copilot coverage
   exclusion (`startAgentTestExecutionVoiceSession`).
 - `backend/src/app/http/routes/publicVoiceSessionRoute.ts` — mounts

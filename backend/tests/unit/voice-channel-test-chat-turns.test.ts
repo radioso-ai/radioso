@@ -11,7 +11,7 @@ import {
   type VoiceTurnPort,
 } from "../../src/modules/voiceChannel/domain.js";
 import { TestChatVoiceTurnService, VoiceSessionTurnRouter } from "../../src/modules/voiceChannel/public.js";
-import { isTestChatSessionKey, testChatSessionKey } from "../../src/modules/voiceChannel/testChatSessionDomain.js";
+import { isTestChatSession, testChatSessionKey } from "../../src/modules/voiceChannel/testChatSessionDomain.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -23,8 +23,8 @@ const now = Date.parse("2026-11-11T12:00:00.000Z");
 const TEST_CHAT_KEY = testChatSessionKey("33333333-3333-4333-8333-333333333333");
 const WEBSITE_KEY = "33333333-3333-4333-8333-333333333333";
 
-const turnInput = (utterance = "Do you open on Sundays?", sessionKey = TEST_CHAT_KEY): VoiceTurnInput => ({
-  session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey },
+const turnInput = (utterance = "Do you open on Sundays?", sessionKey = TEST_CHAT_KEY, vendor = "elevenlabs"): VoiceTurnInput => ({
+  session: { workspaceId, agentId, vendor, sessionKey },
   transport: "web",
   utterance,
   streamsSpeech: true,
@@ -208,6 +208,24 @@ describe("a Test Chat voice turn that waits (#1536 review)", () => {
     expect(asked).toEqual(["first"]);
   });
 
+  it("keeps a turn the caller heard whole when the test fails to settle it after the answer, and logs why", async () => {
+    const streamTurn = vi.fn<VoiceTestChatTurns["streamTurn"]>(async function* () {
+      yield { type: "answered", answer: "We open at nine." };
+      throw new Error("connection terminated");
+    });
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const service = new TestChatVoiceTurnService({ turns: { streamTurn }, logger, now: () => now });
+
+    const events = await collect(service.runTurn(turnInput(), binding(), new AbortController().signal));
+
+    expect(spoken(events)).toBe("We open at nine.");
+    expect(events.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "voice.test_chat_turn", testExecutionId, result: "settle_failed", errorClass: "Error" }),
+      expect.any(String),
+    );
+  });
+
   it("reads the test's turn to its end before the outcome, so the test settles and audits it", async () => {
     let drained = false;
     const streamTurn = vi.fn<VoiceTestChatTurns["streamTurn"]>(async function* () {
@@ -265,10 +283,29 @@ describe("the voice turn router (#1536)", () => {
     expect(testChat.runTurn).not.toHaveBeenCalled();
   });
 
-  it("mints Test Chat keys in their own namespace, apart from a website start's", () => {
-    expect(isTestChatSessionKey(TEST_CHAT_KEY)).toBe(true);
-    expect(isTestChatSessionKey(WEBSITE_KEY)).toBe(false);
-    expect(isTestChatSessionKey("conv_01jabcdef")).toBe(false);
+  it("reserves only the keys Radioso mints for Test Chat, and only on the dialect of a vendor it starts sessions for", () => {
+    expect(isTestChatSession({ vendor: "elevenlabs", sessionKey: TEST_CHAT_KEY })).toBe(true);
+    expect(isTestChatSession({ vendor: "elevenlabs", sessionKey: WEBSITE_KEY })).toBe(false);
+    // A page's own keys, however they look: a version 8 UUID, a ULID, anything else.
+    expect(isTestChatSession({ vendor: "elevenlabs", sessionKey: "33333333-3333-8333-8333-333333333333" })).toBe(false);
+    expect(isTestChatSession({ vendor: "elevenlabs", sessionKey: "01JC9T6QF7M4XK2W8RZ5N3B0VD" })).toBe(false);
+    expect(isTestChatSession({ vendor: "elevenlabs", sessionKey: `${TEST_CHAT_KEY}-suffix` })).toBe(false);
+    // The generic dialect carries a runtime's own keys only.
+    expect(isTestChatSession({ vendor: "generic", sessionKey: TEST_CHAT_KEY })).toBe(false);
+  });
+
+  it.each([
+    ["a version 8 UUID on the generic dialect", "33333333-3333-8333-8333-333333333333", "generic"],
+    ["a version 8 UUID on the elevenlabs dialect", "33333333-3333-8333-8333-333333333333", "elevenlabs"],
+    ["a key in Test Chat's form on the generic dialect", testChatSessionKey("44444444-4444-4444-8444-444444444444"), "generic"],
+  ])("runs an operator's own key, %s, as a conversation", async (_case, sessionKey, vendor) => {
+    const lookup = vi.fn(async () => binding());
+    const { router, conversations, testChat } = routerWith(lookup);
+
+    expect(spoken(await collect(router.runTurn(turnInput("Hello", sessionKey, vendor), new AbortController().signal)))).toBe("The published agent answers.");
+    expect(conversations.runTurn).toHaveBeenCalledTimes(1);
+    expect(testChat.runTurn).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
   });
 
   it("runs a Test Chat session's turn on its test, never on the published agent's path", async () => {

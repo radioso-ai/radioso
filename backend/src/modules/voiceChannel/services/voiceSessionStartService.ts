@@ -198,7 +198,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     }
     if (reading.kind !== "present") return failed(FAILED_OUTCOME_OF_READING[reading.kind]);
 
-    // A Test Chat session's key is in its own namespace, so its turns never run as a conversation.
+    // A Test Chat session's key has the form Radioso reserves, so its turns never run as a conversation.
     const sessionKey = input.test ? testChatSessionKey(this.dependencies.newSessionKey()) : this.dependencies.newSessionKey();
     const clock = this.dependencies.now ?? Date.now;
     try {

@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { act, useState } from 'react'
+import { act, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -71,9 +71,11 @@ beforeAll(() => {
 let showTest: (executionId: string | null) => void = () => undefined
 let nextTest = 'test-1'
 
-function Harness() {
+function Harness({ onShowTest }: { onShowTest: (show: (executionId: string | null) => void) => void }) {
   const [executionId, setExecutionId] = useState<string | null>('test-1')
-  showTest = setExecutionId
+  useEffect(() => {
+    onShowTest(setExecutionId)
+  }, [onShowTest])
   return (
     <TestChatComposer
       agentId="agent-1"
@@ -126,7 +128,7 @@ describe('Test Chat Talk across calls', () => {
     nextTest = 'test-1'
     container = document.createElement('div')
     root = createRoot(container)
-    await act(async () => root.render(<Harness />))
+    await act(async () => root.render(<Harness onShowTest={(show) => { showTest = show }} />))
     await settle()
   })
 

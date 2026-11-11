@@ -598,9 +598,10 @@ with "Talking isn't available right now."
 A Test Chat session takes turns for 60 minutes after its start. Turns after
 that, and turns on a test that has since been deleted, are refused with a
 `404`; they never run on the published agent. Radioso mints a Test Chat
-session's key as a version 8 UUID, apart from a website start's version 4, so
-it recognizes a Test Chat turn by its key even after the session's record is
-cleared. Opening another test or starting a new chat ends the call.
+session's key in a form it reserves, `radioso-test-chat_` followed by a UUID
+(see [Dialects](#dialects)), so it recognizes a Test Chat turn by its key even
+after the session's record is cleared. Opening another test or starting a new
+chat ends the call.
 
 A Test Chat call spends the same budgets as the agent's live calls: ElevenLabs
 calls with the agent's **Voice calls** REST credential, so each turn counts
@@ -1035,7 +1036,11 @@ falls back to one.
 
 Use `generic` for a runtime you control, such as LiveKit Agents or Pipecat:
 set the header to your own session id on every request of the session. A
-session key is opaque to Radioso and can be up to 256 characters.
+session key is opaque to Radioso and can be up to 256 characters. One form is
+reserved on `elevenlabs`: `radioso-test-chat_` followed by a lowercase UUID is
+a session Radioso started from [Test Chat](#talk-to-the-draft-from-test-chat),
+and a turn with such a key runs only on that test, or is refused. Every other
+key, and every key on `generic`, is yours.
 
 ### ElevenLabs first-sentence length
 

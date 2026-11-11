@@ -1,3 +1,5 @@
+import { isVoiceVendor } from "../../shared/domain/voiceVendor.js";
+
 /**
  * The voice domain's view of a session an operator starts from the dashboard's Test Chat (#1536):
  * its turns run on one of the operator's private tests, known here only by an opaque id, through a
@@ -55,13 +57,20 @@ export interface VoiceTestChatTurns {
   }): AsyncIterable<VoiceTestChatTurnEvent>;
 }
 
+/** The prefix Radioso reserves for the keys of the sessions it starts from Test Chat. */
+const TEST_CHAT_SESSION_KEY_PREFIX = "radioso-test-chat_";
+
+/** Exactly what Radioso mints: the prefix, then a lowercase version 4 UUID. */
+const TEST_CHAT_SESSION_KEY = /^radioso-test-chat_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** A Test Chat session's key: the reserved prefix before a freshly minted version 4 UUID. */
+export const testChatSessionKey = (uuid: string): string => `${TEST_CHAT_SESSION_KEY_PREFIX}${uuid}`;
+
 /**
- * Radioso mints a Test Chat session's key as a UUID of version 8 (RFC 9562's custom version) and a
- * website start's as version 4, so a turn tells a Test Chat session apart by its key alone, even once
- * its row is gone, and never runs one as a conversation. `uuid` is a freshly minted version 4 UUID.
+ * Whether a session is one Radioso started from Test Chat, by its key alone, so a turn whose row is
+ * gone is still known and never runs as a conversation. Only the exact form Radioso mints counts, and
+ * only on the dialect of a vendor Radioso starts sessions for (the one a Test Chat call runs on): a
+ * runtime's or a page's own key, whatever it looks like, and every key on `generic`, stays theirs.
  */
-export const testChatSessionKey = (uuid: string): string => `${uuid.slice(0, 14)}8${uuid.slice(15)}`;
-
-const TEST_CHAT_SESSION_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export const isTestChatSessionKey = (sessionKey: string): boolean => TEST_CHAT_SESSION_KEY.test(sessionKey);
+export const isTestChatSession = (session: { vendor: string; sessionKey: string }): boolean =>
+  isVoiceVendor(session.vendor) && TEST_CHAT_SESSION_KEY.test(session.sessionKey);

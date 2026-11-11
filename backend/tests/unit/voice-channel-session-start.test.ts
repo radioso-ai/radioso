@@ -12,7 +12,7 @@ import {
   type VoiceVendorCredentialReading,
 } from "../../src/modules/voiceChannel/domain.js";
 import { VoiceSessionStartService } from "../../src/modules/voiceChannel/public.js";
-import { isTestChatSessionKey, testChatSessionKey } from "../../src/modules/voiceChannel/testChatSessionDomain.js";
+import { isTestChatSession, testChatSessionKey } from "../../src/modules/voiceChannel/testChatSessionDomain.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -736,7 +736,8 @@ describe("voice session start for a Test Chat test (#1536)", () => {
 
     // Its key is in Test Chat's own namespace, so a turn tells it apart even once its row is gone.
     expect(await service.start({ workspaceId, agentId, test })).toMatchObject({ kind: "started", sessionKey: testChatSessionKey(sessionKey) });
-    expect(isTestChatSessionKey(sessionKey)).toBe(false);
+    expect(isTestChatSession({ vendor: "elevenlabs", sessionKey: testChatSessionKey(sessionKey) })).toBe(true);
+    expect(isTestChatSession({ vendor: "elevenlabs", sessionKey })).toBe(false);
 
     expect(register).toHaveBeenCalledWith({
       session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: testChatSessionKey(sessionKey) },

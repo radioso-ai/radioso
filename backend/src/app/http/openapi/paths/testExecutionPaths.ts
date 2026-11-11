@@ -2,9 +2,9 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { registerTestExecutionSchemas } from "../schemas/testExecutionSchemas.js";
 
-/** The voice session answer Test Chat's Talk shares with the website embed's start, and the error envelope. */
+/** The voice session answer of Test Chat's Talk, and the error envelope. */
 interface TestChatVoiceSchemas {
-  PublicVoiceSessionResponseSchema: z.ZodTypeAny;
+  TestChatVoiceSessionResponseSchema: z.ZodTypeAny;
   ErrorResponseSchema: z.ZodTypeAny;
 }
 
@@ -41,7 +41,7 @@ const registerTestChatVoiceSessionPath = (
     tags: ["Agents"],
     summary: "Start a voice session on a private test",
     description: [
-      "Test Chat's Talk. Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own vendor key, and returns the same answer as `createPublicVoiceSession`.",
+      "Test Chat's Talk. Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own vendor key, and returns what `createPublicVoiceSession` does, with a session key in the form Radioso reserves for Test Chat.",
       "Every turn of the session runs on the test's revision and is recorded in the test as spoken, never as a conversation: no Inbox, Activity, analytics, visitor or conversation metering.",
       "The session's turns are taken for 60 minutes; later ones are refused.",
       "A dashboard session only, with `X-Radioso-CSRF: 1`. The agent must take voice calls as the website embed's start requires: published, voice on, a vendor agent bound, and the vendor key stored.",
@@ -54,7 +54,7 @@ const registerTestChatVoiceSessionPath = (
       body: { content: { "application/json": { schema: schemas.TestChatVoiceSessionRequestSchema } } },
     },
     responses: {
-      200: { description: "Voice session started", content: { "application/json": { schema: voice.PublicVoiceSessionResponseSchema } } },
+      200: { description: "Voice session started", content: { "application/json": { schema: voice.TestChatVoiceSessionResponseSchema } } },
       400: error("Request validation failed"),
       401: error("No dashboard session"),
       403: error("The CSRF header is missing, or the operator may not manage the agent"),

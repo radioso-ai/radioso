@@ -4740,7 +4740,7 @@ export interface paths {
         put?: never;
         /**
          * Start a voice session on a private test
-         * @description Test Chat's Talk. Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own vendor key, and returns the same answer as `createPublicVoiceSession`. Every turn of the session runs on the test's revision and is recorded in the test as spoken, never as a conversation: no Inbox, Activity, analytics, visitor or conversation metering. The session's turns are taken for 60 minutes; later ones are refused. A dashboard session only, with `X-Radioso-CSRF: 1`. The agent must take voice calls as the website embed's start requires: published, voice on, a vendor agent bound, and the vendor key stored. The call opens with the test's own greeting while no message has been sent, on a vendor agent Radioso maintains. The signed URL is a bearer credential: the response is `Cache-Control: no-store`.
+         * @description Test Chat's Talk. Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own vendor key, and returns what `createPublicVoiceSession` does, with a session key in the form Radioso reserves for Test Chat. Every turn of the session runs on the test's revision and is recorded in the test as spoken, never as a conversation: no Inbox, Activity, analytics, visitor or conversation metering. The session's turns are taken for 60 minutes; later ones are refused. A dashboard session only, with `X-Radioso-CSRF: 1`. The agent must take voice calls as the website embed's start requires: published, voice on, a vendor agent bound, and the vendor key stored. The call opens with the test's own greeting while no message has been sent, on a vendor agent Radioso maintains. The signed URL is a bearer credential: the response is `Cache-Control: no-store`.
          */
         post: operations["startAgentTestExecutionVoiceSession"];
         delete?: never;
@@ -7195,6 +7195,36 @@ export interface components {
              * Format: uuid
              * @description Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.
              */
+            sessionKey: string;
+            /** @description The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`. */
+            locale: string;
+            /**
+             * Format: date-time
+             * @description When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL.
+             */
+            expiresAt?: string;
+            /** @description The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts. */
+            recordingNotice?: string;
+            /** @description What the call says first: the recording notice, then the agent's greeting in the session's language, as plain speech. Present only when the agent's vendor agent is one Radioso maintains (connected from the agent's Voice card) and there is something to say. Pass it as the session's first-message override, on `elevenlabs` the client's `overrides.agent.firstMessage`, and send no override when it is absent: a vendor agent set up outside Radioso closes a session that sets a first message it does not allow. */
+            firstMessage?: string;
+            /**
+             * @description The vendor's code for the language the call starts in: `locale` mapped onto the languages the vendor speaks, such as `it` for `it-CH` or `pt-br` for `pt-BR`. Present only when the agent's vendor agent is one Radioso maintains, that vendor agent lets a session set its language, the vendor's browser client can set `locale`'s language and the vendor agent's voice speaks it, and it is not the language the vendor agent starts calls in already. Pass it as the session's language override, on `elevenlabs` the client's `overrides.agent.language`, and send no override when it is absent: the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one. The values are the codes the `elevenlabs` browser client's language override takes.
+             * @enum {string}
+             */
+            vendorLanguage?: "en" | "zh" | "es" | "hi" | "pt" | "fr" | "de" | "ja" | "ar" | "ko" | "id" | "it" | "nl" | "tr" | "pl" | "ru" | "sv" | "tl" | "ms" | "ro" | "uk" | "el" | "cs" | "da" | "fi" | "bg" | "hr" | "sk" | "ta" | "vi" | "no" | "hu" | "af" | "hy" | "as" | "az" | "be" | "bn" | "bs" | "ca" | "et" | "gl" | "ka" | "gu" | "ha" | "he" | "is" | "ga" | "jv" | "kn" | "kk" | "ky" | "lv" | "lt" | "lb" | "mk" | "ml" | "mr" | "ne" | "ps" | "fa" | "pa" | "sr" | "sd" | "sl" | "so" | "sw" | "te" | "th" | "ur" | "cy" | "pt-br";
+        };
+        TestChatVoiceSessionResponse: {
+            /**
+             * @description The voice runtime the session opens on: the agent's `voice.runtime.vendor`.
+             * @enum {string}
+             */
+            vendor: "elevenlabs";
+            /**
+             * Format: uri
+             * @description The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. Hand it to the vendor's client once and never store, log or share it.
+             */
+            signedUrl: string;
+            /** @description Radioso's key for this Test Chat session: a correlation handle, not a credential, in the form Radioso reserves for Test Chat (`radioso-test-chat_` before a UUID). The page hands it to the vendor, which sends it back on every turn, and every turn runs on the test; on `elevenlabs` it travels as the custom LLM extra body's `session_key`. */
             sessionKey: string;
             /** @description The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`. */
             locale: string;
@@ -31515,7 +31545,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PublicVoiceSessionResponse"];
+                    "application/json": components["schemas"]["TestChatVoiceSessionResponse"];
                 };
             };
             /** @description Request validation failed */

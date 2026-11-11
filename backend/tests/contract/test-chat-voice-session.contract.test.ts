@@ -7,6 +7,7 @@ import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
 import type { TestExecutionEvent, TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
 import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
 import { conflict, forbidden, notFound } from "../../src/shared/domain/errors.js";
+import { testChatSessionKey } from "../../src/modules/voiceChannel/testChatSessionDomain.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 const VENDOR_KEY = "xi-workspace-secret-0123456789";
@@ -74,7 +75,12 @@ const operatorWith = async (options: { opening?: () => Promise<{ greeting: strin
     .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
     .set("Authorization", `Bearer ${runtimeCredential.token}`)
     .send({ messages: [{ role: "user", content }], stream: false, elevenlabs_extra_body: { session_key: sessionKey } });
-  return { ...created, ...tests, operator, dashboard, agentId, executionId, start, turn, vendorFetch };
+  /** A runtime of the operator's own on the generic dialect, with its own session key. */
+  const genericTurn = (sessionKey: string, content: string) => request(app)
+    .post(`/api/v1/agents/${agentId}/voice/generic/v1/chat/completions`)
+    .set({ Authorization: `Bearer ${runtimeCredential.token}`, "x-radioso-voice-session": sessionKey })
+    .send({ messages: [{ role: "user", content }], stream: false });
+  return { ...created, ...tests, operator, dashboard, agentId, executionId, start, turn, genericTurn, vendorFetch };
 };
 
 describe("starting a voice session from Test Chat (#1536)", () => {
@@ -86,7 +92,7 @@ describe("starting a voice session from Test Chat (#1536)", () => {
     expect(response.body).toEqual({
       vendor: "elevenlabs",
       signedUrl: SIGNED_URL,
-      sessionKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      sessionKey: expect.stringMatching(/^radioso-test-chat_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
       locale: "en",
       expiresAt: expect.any(String),
     });
@@ -118,6 +124,32 @@ describe("starting a voice session from Test Chat (#1536)", () => {
     expect(answered.headers["x-radioso-conversation-id"]).toEqual(expect.any(String));
     expect(answered.body.choices[0].message.content).not.toContain("The draft answers.");
     expect(spokenTurns).toEqual([]);
+  });
+
+  it.each([
+    ["a version 8 UUID", "33333333-3333-8333-8333-333333333333"],
+    ["a key in Test Chat's form", testChatSessionKey("44444444-4444-4444-8444-444444444444")],
+  ])("runs an operator's own key on the generic dialect, %s, as a conversation", async (_case, sessionKey) => {
+    const { genericTurn, spokenTurns } = await operatorWith();
+
+    const answered = await genericTurn(sessionKey, "Who am I talking to?").expect(200);
+
+    expect(answered.headers["x-radioso-conversation-id"]).toEqual(expect.any(String));
+    expect(spokenTurns).toEqual([]);
+  });
+
+  it("refuses a Test Chat key Radioso minted whose session it holds no record of, and never answers it as the published agent", async () => {
+    const { turn, spokenTurns, app, dashboard } = await operatorWith();
+    const sessionKey = testChatSessionKey("55555555-5555-4555-8555-555555555555");
+
+    const refused = await turn(sessionKey, "Who am I talking to?");
+
+    expect(refused.status).toBe(404);
+    expect(refused.headers["x-radioso-conversation-id"]).toBeUndefined();
+    expect(spokenTurns).toEqual([]);
+    const history = await request(app).get("/api/v1/history/chat").set(dashboard).expect(200);
+    expect((history.body.conversations as Array<{ channelContext?: { sessionKey?: string } | null }>)
+      .some((conversation) => conversation.channelContext?.sessionKey === sessionKey)).toBe(false);
   });
 
   it("counts the start on the test_chat surface", async () => {

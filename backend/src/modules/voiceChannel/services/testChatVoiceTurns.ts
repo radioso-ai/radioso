@@ -138,28 +138,38 @@ export class TestChatVoiceTurnService {
     const speech = createSentenceCutter();
     let written = "";
     let answered = false;
-    for await (const event of this.dependencies.turns.streamTurn({
+    const turn = this.dependencies.turns.streamTurn({
       workspaceId: input.session.workspaceId,
       agentId: input.session.agentId,
       testExecutionId: binding.testExecutionId,
       accountId: binding.accountId,
       utterance: input.utterance,
       signal,
-    })) {
-      if (answered) continue;
-      if (event.type === "failed") throw new VoiceTestChatTurnFailedError(event.code);
-      // The stored answer is the authority: only what it adds past the streamed text is still to say.
-      const text = event.type === "text"
-        ? event.text
-        : event.answer.startsWith(written) ? event.answer.slice(written.length) : "";
-      written += text;
-      for (const piece of speech.push(text)) yield { type: "speech", text: piece.text, last: false };
-      if (event.type === "answered") {
-        answered = true;
-        const rest = speech.finish();
-        for (const sentence of rest.sentences) yield { type: "speech", text: sentence.text, last: false };
-        yield { type: "speech", text: rest.remainder.text, last: true };
+    });
+    try {
+      for await (const event of turn) {
+        if (answered) continue;
+        if (event.type === "failed") throw new VoiceTestChatTurnFailedError(event.code);
+        // The stored answer is the authority: only what it adds past the streamed text is still to say.
+        const text = event.type === "text"
+          ? event.text
+          : event.answer.startsWith(written) ? event.answer.slice(written.length) : "";
+        written += text;
+        for (const piece of speech.push(text)) yield { type: "speech", text: piece.text, last: false };
+        if (event.type === "answered") {
+          answered = true;
+          const rest = speech.finish();
+          for (const sentence of rest.sentences) yield { type: "speech", text: sentence.text, last: false };
+          yield { type: "speech", text: rest.remainder.text, last: true };
+        }
       }
+    } catch (error) {
+      // The caller has heard the whole answer; what failed is the test settling it afterwards.
+      if (!answered) throw error;
+      this.dependencies.logger.warn(
+        { ...this.logFields(input, binding), result: "settle_failed", errorClass: errorClassOf(error) },
+        "Test Chat voice turn was spoken, but the test could not settle it",
+      );
     }
     // The test's stream is read to its end, where the test settles the turn and audits it.
     if (!answered) throw new VoiceTurnIncompleteError();

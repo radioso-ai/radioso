@@ -5,3 +5,4 @@ export * from "./builders/accessAuth.js";
 export * from "./builders/integrations.js";
 export * from "./builders/documentsRetrieval.js";
 export * from "./builders/chat.js";
+export * from "./builders/mcpConverse.js";

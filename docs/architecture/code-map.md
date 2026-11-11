@@ -2370,7 +2370,7 @@ knows nothing about what a facet is: extraction arrives as an injected port,
 registered through application composition. With no extractor registered
 neither path below is built, so queued jobs stay durable rather than being
 drained into a no-op. Eligibility for a job is decided once, at enqueue time,
-by `isEligibleForFacetExtraction` in the Chat module (`chatSessionPreparer.ts`)
+by `isEligibleForFacetExtraction` in the Chat module (`facetExtractionEligibility.ts`)
 — the same predicate Audience Pulse reads history with, restated as a
 write-time check rather than duplicated.
 

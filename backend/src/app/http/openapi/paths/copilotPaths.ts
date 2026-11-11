@@ -1,13 +1,19 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
-import { copilotPageEntityTypes, copilotProposalTargetTypes } from "../../../../modules/operatorCopilot/public.js";
+import { workspaceSetupSteps } from "../../../../db/repositories/workspaceSetupStateRepository.js";
+import { copilotOpenEndedIntents, copilotPageEntityTypes, copilotProposalTargetTypes } from "../../../../modules/operatorCopilot/public.js";
 
 const conversation = z.object({ id: z.string().uuid(), title: z.string().nullable(), status: z.enum(["idle", "running"]), createdAt: z.string(), updatedAt: z.string() });
 const pageEntityType = z.enum(copilotPageEntityTypes);
 const turn = z.object({ conversationId: z.string().uuid().nullable(), message: z.string().min(1).max(8000), pageContext: z.object({ view: z.enum(["activity", "history", "agent", "documents", "workbench", "quality", "evals", "copilot", "other"]).nullable(), agentId: z.string().uuid().nullable(), conversationId: z.string().uuid().nullable(), selection: z.string().nullable().optional(), entities: z.array(z.object({ type: pageEntityType, id: z.string(), label: z.string().max(120), focused: z.boolean() })).max(30).optional() }) });
 const proposalTargetType = z.enum(copilotProposalTargetTypes);
 const availability = z.object({ available: z.boolean(), reason: z.enum(["ok", "no_llm_capability"]), canManage: z.boolean(), applyableProposalTargets: z.array(proposalTargetType) });
+const emptyStateSuggestion = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("setup_step"), step: z.enum(workspaceSetupSteps), text: z.string(), href: z.string().describe("The dashboard path that completes the step.") }),
+  z.object({ kind: z.literal("prompt"), intent: z.enum(copilotOpenEndedIntents), text: z.string() }),
+]);
+const emptyState = z.object({ phase: z.enum(["setup", "open"]), greeting: z.string().nullable(), suggestions: z.array(emptyStateSuggestion) });
 const proposalEvidenceCase = z.object({ caseId: z.string().uuid(), caseName: z.string(), runId: z.string().uuid(), before: z.enum(["pending", "passing", "failing", "error"]), after: z.enum(["pass", "fail", "error", "recorded"]), stale: z.boolean() });
 const proposalEvidenceSummary = z.object({ total: z.number().int(), improved: z.number().int(), regressed: z.number().int(), unchanged: z.number().int(), stale: z.number().int() });
 const reviewedEffect = z.object({ exposure: z.enum(["draft", "live"]), reversibility: z.enum(["reversible", "irreversible"]), metered: z.boolean() });
@@ -27,6 +33,7 @@ export const copilotProposalOperationIds = ["getCopilotProposal", "applyCopilotP
 export const registerCopilotPaths = (registry: OpenAPIRegistry, schemas: OpenApiSchemas, security: OpenApiSecurity): void => {
   const session = security.workspaceAdminSecurity;
   registry.registerPath({ method: "get", path: "/api/v1/copilot/availability", tags: ["Copilot"], summary: "Check operator copilot availability", description: "Dashboard session only; bearer API tokens are rejected.", operationId: "getCopilotAvailability", security: session, responses: { 200: { description: "Availability", content: { "application/json": { schema: availability } } }, 403: { description: "Forbidden" } } });
+  registry.registerPath({ method: "get", path: "/api/v1/copilot/empty-state", tags: ["Copilot"], summary: "Read the greeting and suggestions Ray's empty panel shows", description: "Dashboard session only; bearer API tokens are rejected. The structure comes from the workspace setup state: while setup is open, each suggestion names a next incomplete step with the dashboard path that completes it; once setup is complete or dismissed, suggestions are open-ended requests to send Ray. The model writes only the words, in the requested locale. `greeting` is null when there is no copy to show.", operationId: "getCopilotEmptyState", security: session, request: { query: z.object({ locale: z.string().max(35).optional().describe("A BCP 47 language tag naming the language to write in, such as `fr` or `pt-BR`.") }) }, responses: { 200: { description: "Empty state", content: { "application/json": { schema: emptyState } } }, 400: { description: "The locale is not a language tag" }, 403: { description: "Forbidden" }, 429: { description: "Copilot rate limit exceeded for this operator", content: { "application/json": { schema: schemas.ErrorResponseSchema } } }, 503: { description: "No LLM capability" } } });
   registry.registerPath({ method: "get", path: "/api/v1/copilot/conversations", tags: ["Copilot"], summary: "List an operator's copilot conversations", operationId: "listCopilotConversations", security: session, responses: { 200: { description: "Conversations", content: { "application/json": { schema: z.object({ conversations: z.array(conversation) }) } } } } });
   registry.registerPath({ method: "get", path: "/api/v1/copilot/conversations/{conversationId}", tags: ["Copilot"], summary: "Read a copilot conversation", operationId: "getCopilotConversation", security: session, request: { params: z.object({ conversationId: z.string().uuid() }) }, responses: { 200: { description: "Conversation", content: { "application/json": { schema: conversationDetail } } }, 404: { description: "Not found" } } });
   registry.registerPath({ method: "delete", path: "/api/v1/copilot/conversations/{conversationId}", tags: ["Copilot"], summary: "Delete a copilot conversation", operationId: "deleteCopilotConversation", security: session, request: { params: z.object({ conversationId: z.string().uuid() }) }, responses: { 204: { description: "Deleted" }, 404: { description: "Not found" } } });

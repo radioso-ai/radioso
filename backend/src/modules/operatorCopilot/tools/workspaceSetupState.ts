@@ -10,6 +10,11 @@ export interface CopilotWorkspaceSetupStatePort {
   } }>;
 }
 
+/** The permission the tool and the setup context Ray receives on every turn are both held to. */
+export const workspaceSetupStatePermissions = ["workspace.summary.read"] as const;
+
+export type CopilotWorkspaceSetupSummary = Awaited<ReturnType<CopilotWorkspaceSetupStatePort["getSummary"]>>;
+
 const outputSchema = z.object({
   purpose: z.string().nullable(), dismissed: z.boolean(), skippedSteps: z.array(z.string()),
   shouldShowFirstRun: z.boolean(), documentsReady: z.boolean(), firstConversationHappened: z.boolean(),
@@ -19,7 +24,7 @@ const outputSchema = z.object({
 const description = "Read the workspace setup checklist. Each checklist result reports an observed outcome, not whether someone visited a page. Use this when an operator asks what still needs configuring.";
 
 export const createWorkspaceSetupStateCopilotTools = (deps: { workspaceSetupState: CopilotWorkspaceSetupStatePort }): ReadonlyArray<CopilotToolDescriptor> => [{
-  name: "workspace_setup_state", shape: "read", verificationCost: () => 0, uiLabel: "Reading workspace setup state", contributingModule: "workspace", dashboardSubject: { type: "workspace_settings" }, requiredPermissions: ["workspace.summary.read"],
+  name: "workspace_setup_state", shape: "read", verificationCost: () => 0, uiLabel: "Reading workspace setup state", contributingModule: "workspace", dashboardSubject: { type: "workspace_settings" }, requiredPermissions: workspaceSetupStatePermissions,
   description, inputSchema: z.object({}).strict(), outputSchema,
   createTool: (context) => ({ name: "workspace_setup_state", description, inputSchema: z.object({}).strict(), outputSchema, invoke: async () => {
     const summary = await deps.workspaceSetupState.getSummary(context.workspaceId);

@@ -657,6 +657,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   importAgentBundle: permanent("Creates a whole agent from an operator-supplied file. The operator choosing the file is the decision; Ray has no bundle to propose and no way to review one it did not author."),
   getAgentBundleImport: permanent("Import-job status only explains an operator-supplied bulk import. Ray cannot start or review that file import, so surfacing its recovery trail would add a detached operational read without an action Ray may take."),
   getCopilotAvailability: copilotUiOnly,
+  getCopilotEmptyState: copilotUiOnly,
   listCopilotConversations: copilotUiOnly,
   getCopilotConversation: copilotUiOnly,
   deleteCopilotConversation: copilotUiOnly,

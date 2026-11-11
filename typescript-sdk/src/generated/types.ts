@@ -4262,6 +4262,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/copilot/empty-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the greeting and suggestions Ray's empty panel shows
+         * @description Dashboard session only; bearer API tokens are rejected. The structure comes from the workspace setup state: while setup is open, each suggestion names a next incomplete step with the dashboard path that completes it; once setup is complete or dismissed, suggestions are open-ended requests to send Ray. The model writes only the words, in the requested locale. `greeting` is null when there is no copy to show.
+         */
+        get: operations["getCopilotEmptyState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/copilot/conversations": {
         parameters: {
             query?: never;
@@ -29544,6 +29564,78 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getCopilotEmptyState: {
+        parameters: {
+            query?: {
+                /** @description A BCP 47 language tag naming the language to write in, such as `fr` or `pt-BR`. */
+                locale?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Empty state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        phase: "setup" | "open";
+                        greeting: string | null;
+                        suggestions: ({
+                            /** @enum {string} */
+                            kind: "setup_step";
+                            /** @enum {string} */
+                            step: "purpose" | "documents" | "conversation" | "directives_or_routines" | "notify_destination" | "credential";
+                            text: string;
+                            /** @description The dashboard path that completes the step. */
+                            href: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "prompt";
+                            /** @enum {string} */
+                            intent: "crawl_more" | "tighten_tone" | "draft_routine";
+                            text: string;
+                        })[];
+                    };
+                };
+            };
+            /** @description The locale is not a language tag */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Copilot rate limit exceeded for this operator */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No LLM capability */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

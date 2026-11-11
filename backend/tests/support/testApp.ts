@@ -1,6 +1,7 @@
 // First: Zod 4 gives `.openapi()` only to schemas built after this runs; other packages load this harness too.
 import "../../src/app/http/openapi/zodOpenApiExtension.js";
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { createCopilotContext } from "../../src/app/composition/copilotContext.js";
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
@@ -2831,7 +2832,9 @@ export const createTestDependencies = (overrides: {
   // `copilotToolCatalog` and `operatorCopilotService` are mutually dependent (its reviewed-proposal
   // tools call back into this service; the service runs the tools), so the closures above reference
   // this `const` ahead of its declaration, mirroring production wiring in `app/server/dependencies.ts`.
+  const copilotContext = createCopilotContext({ workspaceSetupState: workspaceSummaryService, capabilityRunner: copilotCapabilityRunner, prompt: copilotPrompt, workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver, logger });
   const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
+    contextContributors: copilotContext.contributors,
     repository: copilotRepository,
     capabilityRunner: copilotCapabilityRunner,
     usageLimitPolicy,
@@ -2990,6 +2993,8 @@ export const createTestDependencies = (overrides: {
     realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
     logger,
     operatorCopilotService,
+    copilotContextContributors: copilotContext.contributors,
+    copilotEmptyStateService: copilotContext.emptyState,
     operatorMcpGrantService: { list: async () => ({ grants: [], canViewWorkspace: false }), get: async () => null, revoke: async () => null } as never,
     operatorMcpReadiness: Promise.resolve(false),
     operatorMcpClientResolver: { resolve: async () => { throw new Error("Operator MCP is disabled in the test app"); } },

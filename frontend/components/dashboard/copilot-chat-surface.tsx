@@ -9,6 +9,7 @@ import { ChatComposer } from '@/components/chat/chat-composer'
 import { ChatTurn } from '@/components/chat/chat-turn'
 import { AssistantAvatar } from '@/components/chat/public-chat-bubble-view'
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
+import { CopilotEmptyState } from './copilot-empty-state'
 import { CopilotProposalCard } from './copilot-proposal-card'
 import {
   AlertDialog,
@@ -52,7 +53,6 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   resolveCopilotEntityLabel,
-  deriveCopilotSuggestedQuestions,
   useCopilotContext,
   type CopilotEntity,
   type CopilotLocalMessage,
@@ -244,28 +244,6 @@ function ContextChip({
         <ContextDetails pageContext={pageContext} entities={entities} />
       </CollapsibleContent>
     </Collapsible>
-  )
-}
-
-function SuggestedQuestions({
-  view,
-  entities,
-  onSelect,
-}: {
-  view: string | null
-  entities: readonly CopilotEntity[]
-  onSelect: (question: string) => void
-}) {
-  const questions = deriveCopilotSuggestedQuestions(view, entities)
-
-  return (
-    <div className="mt-5 flex flex-wrap justify-center gap-2">
-      {questions.map((question) => (
-        <button type="button" key={question} className="rounded-full border border-border px-3 py-1.5 text-xs hover:border-primary/60 hover:text-primary" onClick={() => onSelect(question)}>
-          {question}
-        </button>
-      ))}
-    </div>
   )
 }
 
@@ -639,17 +617,13 @@ export function CopilotChatSurface({
               <div className="mx-auto flex max-w-3xl flex-col gap-6">
                 {mode === 'panel' ? <ContextChip pageContext={pageContext} entities={entities} /> : null}
                 {session.messages.length === 0 ? (
-                  <div className="flex h-full min-h-64 items-center justify-center">
-                    <div className="max-w-md text-center">
-                      <div className="relative mx-auto flex size-16 items-center justify-center">
-                        <div className="absolute size-16 rounded-full bg-secondary/15 blur-2xl" aria-hidden />
-                        <AssistantAvatar avatarUrl={RAY_AVATAR_URL} label={RAY_NAME} className="relative size-12" />
-                      </div>
-                      <h2 className="mt-4 text-lg font-medium">Hi, I&apos;m Ray ☀️</h2>
-                      <p className="mt-2 text-sm text-muted-foreground">Ask me about an agent or conversation and I&apos;ll shed some light on what happened.</p>
-                      <SuggestedQuestions view={pageContext.view} entities={entities} onSelect={(question) => updateSession((current) => ({ ...current, input: question }))} />
-                    </div>
-                  </div>
+                  <CopilotEmptyState
+                    view={pageContext.view}
+                    entities={entities}
+                    workspaceId={activeWorkspaceId}
+                    onPickPrompt={(question) => updateSession((current) => ({ ...current, input: question }))}
+                    onOpenHref={(href) => router.push(href)}
+                  />
                 ) : (
                   <>
                     {session.messages.map((message, index) => {

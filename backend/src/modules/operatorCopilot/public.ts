@@ -12,6 +12,9 @@ export type {
   CopilotReplayEvidenceRepositoryPort,
 } from "./contracts/evalCases.js";
 export { MAX_COPILOT_EVAL_SUITE_CASES } from "./contracts/evalCases.js";
+export * from "./context/contributor.js";
+export { WorkspaceSetupContext } from "./context/workspaceSetup.js";
+export { CopilotEmptyStateService, copilotOpenEndedIntents } from "./services/emptyStateService.js";
 export * from "./neverList.js";
 export * from "./operatorMcpDisposition.js";
 export * from "./mcpCatalog.js";

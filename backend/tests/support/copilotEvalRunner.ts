@@ -24,7 +24,8 @@ import { defaultRetrievalSettings } from "../../src/modules/settings/contracts/r
 import { defaultIngestionSettings } from "../../src/modules/settings/contracts/ingestion.js";
 import { ProductDocsService } from "../../src/modules/productDocs/public.js";
 import { enrichCopilotToolCatalog } from "../../src/modules/operatorCopilot/catalog.js";
-import { OperatorCopilotService } from "../../src/modules/operatorCopilot/public.js";
+import { OperatorCopilotService, WorkspaceSetupContext, type CopilotContextContributor } from "../../src/modules/operatorCopilot/public.js";
+import type { CopilotWorkspaceSetupSummary } from "../../src/modules/operatorCopilot/tools/workspaceSetupState.js";
 import { copilotProposalTargetTypes } from "../../src/modules/operatorCopilot/contracts.js";
 import { createPrivacySettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/privacySettingProposalAdapter.js";
 import { PrivacySettingsService } from "../../src/modules/privacy/public.js";
@@ -41,6 +42,7 @@ import { InMemoryCopilotRepository } from "./inMemoryCopilotRepository.js";
 import type { CopilotRepositoryPort } from "../../src/modules/operatorCopilot/public.js";
 import type {
   CopilotEvalCase,
+  CopilotEvalSetupState,
   CopilotObservedProposal,
   CopilotObservedToolCall,
   CopilotObservedTurn,
@@ -63,6 +65,34 @@ export const copilotSystemPrompt = (): string =>
 
 export const copilotEvalWorkspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver = {
   resolveWorkspaceKey: async () => COPILOT_EVAL_WORKSPACE_KEY,
+};
+
+const setupSummary = (overrides: { hasReadyDocuments?: boolean; hasCompletedChat?: boolean; setup?: Partial<CopilotWorkspaceSetupSummary["setup"]> } = {}): CopilotWorkspaceSetupSummary => ({
+  hasReadyDocuments: overrides.hasReadyDocuments ?? false,
+  hasCompletedChat: overrides.hasCompletedChat ?? false,
+  setup: {
+    purpose: null,
+    dismissed: false,
+    skippedSteps: [],
+    shouldShowFirstRun: !overrides.hasCompletedChat,
+    hasDirectivesOrRoutines: false,
+    hasNotifyDestination: false,
+    hasNotifyDeliveryConfirmed: false,
+    hasCredential: false,
+    ...overrides.setup,
+  },
+});
+
+/** The summaries a case's `setupState` names. The context Ray receives is derived from them by the real contributor. */
+export const COPILOT_EVAL_SETUP_STATES: Record<CopilotEvalSetupState, CopilotWorkspaceSetupSummary> = {
+  fresh: setupSummary(),
+  partly_set_up: setupSummary({ hasReadyDocuments: true, hasCompletedChat: true }),
+  complete: setupSummary({
+    hasReadyDocuments: true,
+    hasCompletedChat: true,
+    setup: { purpose: "Answer product questions", hasDirectivesOrRoutines: true, hasNotifyDestination: true, hasNotifyDeliveryConfirmed: true, hasCredential: true },
+  }),
+  dismissed_before_first_conversation: setupSummary({ setup: { dismissed: true } }),
 };
 
 /**
@@ -94,6 +124,11 @@ export interface CopilotTurnObservationDependencies {
   readonly tools: ReadonlyArray<CopilotToolDescriptor>;
   readonly capabilityRunner: Pick<AgenticCapabilityRunner, "runStreaming">;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
+  /**
+   * What the runtime tells Ray on every turn. A case that names a `setupState` replaces these with
+   * the fixture-backed setup contributor, because a live workspace holds whatever state it holds.
+   */
+  readonly contextContributors?: ReadonlyArray<CopilotContextContributor>;
   readonly workspaceId?: string;
   readonly accountId?: string;
   readonly operatorUserId?: string;
@@ -166,6 +201,9 @@ export const observeCopilotTurn = async (
     workspaceRouteKeyResolver: deps.workspaceRouteKeyResolver,
     prompt: deps.prompt,
     tools: deps.tools,
+    contextContributors: evalCase.setupState
+      ? [new WorkspaceSetupContext({ workspaceSetupState: { getSummary: async () => COPILOT_EVAL_SETUP_STATES[evalCase.setupState!] } })]
+      : deps.contextContributors ?? [],
     currentAuthorization: {
       hasAllPermissions: async ({ requiredPermissions }) =>
         requiredPermissions.every((permission) => evalCase.permissions.includes(permission)),

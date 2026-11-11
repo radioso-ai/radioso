@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  clearStoredEmbedBootstrapSession,
+  readStoredAnonymousSessionId,
   readStoredEmbedBootstrapSession,
   readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
@@ -23,6 +25,17 @@ const createSessionStorage = () => {
       store.clear()
     },
   }
+}
+
+/** A frame whose browser blocks storage: reading `sessionStorage` throws, as in a third-party iframe. */
+const createStorageBlockedWindow = () => {
+  const blocked = {}
+  Object.defineProperty(blocked, 'sessionStorage', {
+    get() {
+      throw new DOMException("Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.", 'SecurityError')
+    },
+  })
+  return blocked
 }
 
 afterEach(() => {
@@ -98,5 +111,52 @@ describe('embed session storage helpers', () => {
       publicSessionToken: 'grant-token',
     })
     expect(readStoredPublicSessionToken('public-token')).toBe('grant-token')
+  })
+
+  it('keeps the visitor session for the life of the frame when the browser blocks storage', () => {
+    // @ts-expect-error test-only window stub
+    global.window = createStorageBlockedWindow()
+
+    storeEmbedBootstrapSession('embed-token', {
+      workspaceName: 'Support concierge',
+      publicChatToken: 'public-token',
+      publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
+      publicSessionToken: 'grant-token',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      resumeToken: 'resume-token',
+      resumeExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+    })
+
+    expect(readStoredEmbedBootstrapSession('embed-token')).toMatchObject({
+      publicChatToken: 'public-token',
+      publicSessionToken: 'grant-token',
+    })
+    expect(readStoredPublicSessionToken('public-token')).toBe('grant-token')
+    expect(readStoredPublicSessionResumeToken('public-token')).toBe('resume-token')
+    expect(readStoredAnonymousSessionId('public-token')).toBe('7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11')
+
+    clearStoredEmbedBootstrapSession('embed-token')
+
+    expect(readStoredEmbedBootstrapSession('embed-token')).toBeNull()
+    expect(readStoredPublicSessionToken('public-token')).toBeNull()
+  })
+
+  it('does not carry one blocked frame\'s visitor session into another', () => {
+    // @ts-expect-error test-only window stub
+    global.window = createStorageBlockedWindow()
+    storeEmbedBootstrapSession('embed-token', {
+      workspaceName: 'Support concierge',
+      publicChatToken: 'public-token',
+      publicSessionId: '7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11',
+      publicSessionToken: 'grant-token',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      resumeToken: 'resume-token',
+      resumeExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+    })
+
+    // @ts-expect-error test-only window stub
+    global.window = createStorageBlockedWindow()
+
+    expect(readStoredEmbedBootstrapSession('embed-token')).toBeNull()
   })
 })

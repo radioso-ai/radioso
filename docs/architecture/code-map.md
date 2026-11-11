@@ -2510,7 +2510,9 @@ mapping.
 Primary paths:
 
 - `frontend/components/dashboard/README.md`
-- `frontend/app/`
+- `frontend/app/`; operator-session routes sit in `frontend/app/(workspace-app)/`,
+  whose layout mounts the auth and workspace providers, and visitor surfaces
+  (embed, public chat) sit outside it
 - `frontend/components/dashboard/`
 - `frontend/components/chat/`
 - `frontend/components/auth/`

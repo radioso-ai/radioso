@@ -13,21 +13,20 @@ import {
 
 import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import { createClientId } from '@/lib/client-id'
-import { contrastRatio, mixHex, mixHexRgba, pickForeground, relativeLuminance } from '@/lib/color'
+import { deriveThemeOverridesFromModel } from '@/lib/public-chat-theme'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
 import { publicChatUnavailableReasonOf, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import { isHumanAuthoredSource } from '@/lib/reply-attribution'
 
-const MIN_LEGIBLE_CONTRAST = 3
-const ensureLegibleForeground = (background: string, foreground: string) =>
-  contrastRatio(background, foreground) >= MIN_LEGIBLE_CONTRAST ? foreground : pickForeground(background)
 import {
   clearStoredAnonymousSession,
   publicChatApi,
   readStoredAnonymousSessionId,
   readStoredEffectivePublicChatToken,
+  readStoredPublicSessionAcceptsImages,
   readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
+  storePublicSessionAcceptsImages,
   type AgentBrandingSettings,
   type AnswerFeedbackEntry,
   type AnswerFeedbackState,
@@ -45,51 +44,11 @@ import {
   type SkillStreamPayload,
   type WebsiteEmbedPageContext,
   type WebsiteEmbedCopyPacks,
-  type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { choosePrivacyNotice, type ShownPrivacyNotice } from '@/lib/privacy-notice'
-
-export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
-  if (!theme) {
-    return null
-  }
-  const surface = theme.surface
-  const brand = theme.brand
-  const text = ensureLegibleForeground(surface, theme.text)
-  const brandText = ensureLegibleForeground(brand, theme.brandText)
-
-  const isSurfaceDark = relativeLuminance(surface) < 0.5
-  const shadowSurface = isSurfaceDark
-    ? '0 24px 60px rgba(0, 0, 0, 0.55)'
-    : '0 24px 60px rgba(15, 23, 42, 0.28)'
-  const shadowBrand = relativeLuminance(brand) < 0.5
-    ? '0 18px 40px rgba(0, 0, 0, 0.45)'
-    : '0 18px 40px rgba(15, 23, 42, 0.24)'
-
-  return {
-    launcherBackground: brand,
-    launcherForeground: brandText,
-    launcherBorder: mixHexRgba(brand, brandText, 0.16, 0.5),
-    launcherShadow: shadowBrand,
-    panelBackground: surface,
-    panelForeground: text,
-    panelBorder: mixHexRgba(surface, text, 0.18, 0.55),
-    panelShadow: shadowSurface,
-    accent: brand,
-    accentForeground: brandText,
-    mutedBackground: mixHex(surface, text, 0.06),
-    mutedForeground: mixHex(text, surface, 0.45),
-    inputBackground: surface,
-    inputForeground: text,
-    inputBorder: mixHex(surface, text, 0.2),
-    inputPlaceholder: mixHex(text, surface, 0.5),
-    assistantBubbleBackground: mixHex(surface, text, 0.04),
-    assistantBubbleForeground: text,
-    userBubbleBackground: brand,
-    userBubbleForeground: brandText,
-  }
-}
+import { rememberVisitorImage, visitorImageCacheKey } from '@/lib/visitor-image-blob-cache'
+import { withVisitorImageInput } from '@/lib/visitor-image-input'
 
 export interface ChatMessage {
   id: string
@@ -138,7 +97,12 @@ interface AnonymousChatContextValue {
   rateLimitError: string | null
   retryAfterSeconds: number | null
   loadOlderMessages: () => Promise<void>
-  sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => Promise<void>
+  /** `imageIds` are photos already uploaded with `uploadImage`; the message may carry them with no text. */
+  sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata, options?: { imageIds?: string[] }) => Promise<void>
+  /** Whether the agent takes photos in this chat: the session says, and an upload the agent refuses turns it off. */
+  acceptsImages: boolean
+  /** Uploads one photo for the visitor's session; resolves once the agent has read it. */
+  uploadImage: (file: File, signal: AbortSignal) => Promise<{ id: string }>
   startNewChat: () => Promise<void>
   trackAnalyticsEvent: (event: WebsiteEmbedAnalyticsInput) => void
   /** The visitor's language, as the greeting is asked for it; a voice call asks for the same. */
@@ -358,6 +322,7 @@ export function AnonymousChatProvider({
   // shown at that moment without re-creating the send callback on every branding change.
   const shownPrivacyNoticeRef = useRef<ShownPrivacyNotice | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
+  const [acceptsImages, setAcceptsImages] = useState(false)
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [bootstrapGreetingId, setBootstrapGreetingId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
@@ -400,6 +365,7 @@ export function AnonymousChatProvider({
       setAssistantCopyPacks(session.copy ?? {})
       setBranding(session.branding ?? null)
       setIntakeActions(session.intakeActions ?? [])
+      setAcceptsImages(session.acceptsImages === true)
       return session
     },
     [clientContextCapabilities, pageContext, sessionChannel],
@@ -547,6 +513,7 @@ export function AnonymousChatProvider({
     setAssistantCopyPacks({})
     setBranding(null)
     setIntakeActions([])
+    setAcceptsImages(false)
     setConversationId(undefined)
     setBootstrapGreetingId(undefined)
     setHasOlderMessages(false)
@@ -565,6 +532,7 @@ export function AnonymousChatProvider({
       setAssistantCopyPacks(response.copy ?? {})
       setBranding(response.branding ?? null)
       setIntakeActions(response.intakeActions ?? [])
+      setAcceptsImages(readStoredPublicSessionAcceptsImages(publicChatTokenRef.current))
 
       if (response.conversations.length === 0) {
         if (response.assistantBootstrapActive) {
@@ -851,9 +819,10 @@ export function AnonymousChatProvider({
   )
 
   const sendMessage = useCallback(
-    async (content: string, inputMetadata?: ChatUserInputMetadata) => {
+    async (content: string, inputMetadata?: ChatUserInputMetadata, options?: { imageIds?: string[] }) => {
       const query = content.trim()
-      if (!query || isLoading || isHydrating || unavailable || sendInFlightRef.current) return
+      const imageIds = options?.imageIds ?? []
+      if ((!query && imageIds.length === 0) || isLoading || isHydrating || unavailable || sendInFlightRef.current) return
       sendInFlightRef.current = true
 
       try {
@@ -884,7 +853,7 @@ export function AnonymousChatProvider({
           role: 'user',
           content: query,
           createdAt: new Date().toISOString(),
-          inputMetadata,
+          inputMetadata: withVisitorImageInput(inputMetadata, query, imageIds),
           status: 'complete',
         }
 
@@ -926,7 +895,7 @@ export function AnonymousChatProvider({
             return publicChatApi.streamMessage(
               activeToken,
               {
-                message: query,
+                message: query || undefined,
                 stream: true,
                 conversationId: resolvedConversationId,
                 bootstrapGreetingId: resolvedConversationId ? undefined : resolvedBootstrapGreetingId,
@@ -934,6 +903,7 @@ export function AnonymousChatProvider({
                   ? { privacyNoticeVersion: shownPrivacyNoticeRef.current.version }
                   : {}),
                 inputMetadata,
+                ...(imageIds.length > 0 ? { imageIds } : {}),
                 userExpectedLocale: resolveAnonymousChatBootstrapLocale({
                   localeOverride,
                   pageContext,
@@ -1236,6 +1206,25 @@ export function AnonymousChatProvider({
     () => resolveAnonymousChatBootstrapLocale({ localeOverride, pageContext }),
     [localeOverride, pageContext],
   )
+  const uploadImage = useCallback(
+    async (file: File, signal: AbortSignal) => {
+      try {
+        return await withPublicSessionRetry(async (activeToken) => {
+          const uploaded = await publicChatApi.uploadImage(activeToken, file, { locale: visitorLocale, signal })
+          // The thumbnail in the thread shows the photo the visitor just attached without fetching it back.
+          rememberVisitorImage(visitorImageCacheKey(activeToken, uploaded.id), file)
+          return uploaded
+        })
+      } catch (error) {
+        if (getErrorResponse(error)?.code === 'visitor_images_unavailable') {
+          storePublicSessionAcceptsImages(publicChatTokenRef.current, false)
+          setAcceptsImages(false)
+        }
+        throw error
+      }
+    },
+    [visitorLocale, withPublicSessionRetry],
+  )
   const privacyNotice = useMemo(
     () => choosePrivacyNotice(branding?.privacyNotice, visitorLocale),
     [branding, visitorLocale],
@@ -1266,6 +1255,8 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       loadOlderMessages,
       sendMessage,
+      acceptsImages,
+      uploadImage,
       startNewChat,
       trackAnalyticsEvent,
       visitorLocale,
@@ -1292,6 +1283,8 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       loadOlderMessages,
       sendMessage,
+      acceptsImages,
+      uploadImage,
       startNewChat,
       trackAnalyticsEvent,
       visitorLocale,

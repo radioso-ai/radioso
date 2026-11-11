@@ -1,0 +1,321 @@
+import { expect, test, type Page, type Route } from "@playwright/test";
+
+// The visitor image journey (#1754 follow-up): a visitor attaches a photo in the public chat, sees
+// its preview while it uploads, sends it with a line of text, sees it in their thread, and still
+// sees it after a reload. The backend is mocked; the photo is a real image made in the page, and the
+// upload route checks what the browser actually sent.
+
+const publicToken = "public-token-visitor-images";
+const conversationId = "11111111-1111-4111-8111-111111111111";
+const imageId = "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12";
+const publicSessionToken = "public-session-token";
+const typedText = "Something like this, near the coast";
+const reading = "A two-storey stone farmhouse with a terracotta roof and green shutters.";
+const nowIso = "2026-11-11T10:00:00.000Z";
+const theme = { brand: "#0f172a", brandText: "#f8fafc", surface: "#ffffff", text: "#0f172a" };
+
+/** A real JPEG made by the page's own canvas: smooth, then covered in shapes so it is big. */
+const makePhoto = async (page: Page, width: number, height: number): Promise<Buffer> => {
+  const base64 = await page.evaluate(async ([w, h]) => {
+    const canvas = new OffscreenCanvas(w, h);
+    const context = canvas.getContext("2d")!;
+    const gradient = context.createLinearGradient(0, 0, w, h);
+    gradient.addColorStop(0, "#7aa0c4");
+    gradient.addColorStop(1, "#c4a07a");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, w, h);
+    let seed = 7;
+    const next = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let index = 0; index < 5000; index += 1) {
+      context.fillStyle = `rgb(${Math.floor(next() * 255)},${Math.floor(next() * 255)},${Math.floor(next() * 255)})`;
+      context.fillRect(next() * w, next() * h, 4 + next() * 40, 4 + next() * 40);
+    }
+    const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.95 });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return btoa(binary);
+  }, [width, height] as const);
+  return Buffer.from(base64, "base64");
+};
+
+/** The pixel size a JPEG declares, from its start-of-frame marker. */
+const jpegSize = (jpeg: Buffer): { width: number; height: number } => {
+  let offset = 2;
+  while (offset + 9 < jpeg.length) {
+    if (jpeg[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = jpeg[offset + 1];
+    if (marker >= 0xc0 && marker <= 0xc2) {
+      return { height: jpeg.readUInt16BE(offset + 5), width: jpeg.readUInt16BE(offset + 7) };
+    }
+    offset += 2 + jpeg.readUInt16BE(offset + 2);
+  }
+  throw new Error("no JPEG frame header");
+};
+
+/** The JPEG inside a multipart upload's `image` part. */
+const uploadedJpeg = (body: Buffer): Buffer => {
+  const headerEnd = body.indexOf(Buffer.from('name="image"'));
+  const start = body.indexOf(Buffer.from("\r\n\r\n"), headerEnd) + 4;
+  const end = body.indexOf(Buffer.from("\r\n--"), start);
+  return body.subarray(start, end);
+};
+
+interface Observed {
+  uploads: Array<{ jpeg: Buffer; sessionHeader: string | undefined; locale: string | null }>;
+  imageReads: Array<{ sessionHeader: string | undefined }>;
+  sentBodies: Array<Record<string, unknown>>;
+}
+
+const mockPublicChat = async (page: Page, options: { acceptsImages: boolean; photo: Buffer; uploadDelayMs?: number }): Promise<Observed> => {
+  const observed: Observed = { uploads: [], imageReads: [], sentBodies: [] };
+  let sent = false;
+  const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, json: body });
+
+  await page.route(`**/backend/api/v1/public/chat/${publicToken}**`, async (route) => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    const method = request.method();
+    const sessionHeader = request.headers()["x-radioso-public-session"];
+
+    if (pathname.endsWith("/sessions") && method === "POST") {
+      return json(route, {
+        agentId: "22222222-2222-4222-8222-222222222222",
+        agentName: "Marta",
+        assistantLinkUtmEnabled: true,
+        workspaceName: "Acme",
+        publicChatToken: publicToken,
+        publicSessionId: "33333333-3333-4333-8333-333333333333",
+        publicSessionToken,
+        expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+        resumeToken: "resume-token",
+        resumeExpiresAt: new Date(Date.now() + 120 * 60_000).toISOString(),
+        assistantBootstrapActive: false,
+        assistantAvatarUrl: null,
+        acceptsImages: options.acceptsImages,
+        theme,
+        intakeActions: [],
+      });
+    }
+    if (pathname.endsWith("/images") && method === "POST") {
+      const body = request.postDataBuffer() ?? Buffer.alloc(0);
+      const locale = /name="locale"\r\n\r\n([^\r]*)/.exec(body.toString("latin1"))?.[1] ?? null;
+      observed.uploads.push({ jpeg: uploadedJpeg(body), sessionHeader, locale });
+      await new Promise((resolve) => setTimeout(resolve, options.uploadDelayMs ?? 0));
+      return json(route, { id: imageId, readingStatus: "read" }, 201);
+    }
+    if (pathname.endsWith(`/images/${imageId}`) && method === "GET") {
+      observed.imageReads.push({ sessionHeader });
+      return route.fulfill({ status: 200, contentType: "image/jpeg", body: options.photo });
+    }
+    if (pathname.endsWith(`/history/${conversationId}`) && method === "GET") {
+      return json(route, {
+        conversationId,
+        workspaceId: "44444444-4444-4444-8444-444444444444",
+        agentId: "22222222-2222-4222-8222-222222222222",
+        agentName: "Marta",
+        sourceChannel: "anonymous",
+        callerKind: "visitor",
+        sourceOrigin: null,
+        title: null,
+        channelContext: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        messagesTotal: 2,
+        messageWindowOffset: 0,
+        messageWindowLimit: 10,
+        hasOlderMessages: false,
+        nextCursor: null,
+        tailCursor: null,
+        messages: [
+          {
+            id: "55555555-5555-4555-8555-555555555551",
+            role: "user",
+            source: "customer",
+            // The turn text the agent saw: the typed text with the reading after it. A thread never shows this.
+            content: `${typedText}\n<attached_photo index="1">${reading}</attached_photo>`,
+            createdAt: nowIso,
+            inputMetadata: { method: "typed", imageInput: { typedText, images: [{ id: imageId, reading }] } },
+          },
+          { id: "55555555-5555-4555-8555-555555555552", role: "assistant", source: "ai_agent", content: "I found three farmhouses on the coast.", createdAt: nowIso },
+        ],
+      });
+    }
+    if (pathname.endsWith(`/tail/${conversationId}`) && method === "GET") {
+      return json(route, { messages: [], cursor: null });
+    }
+    if (pathname.includes(`/events/${conversationId}`)) {
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body: "event: ready\ndata: {}\n\n" });
+    }
+    if (method === "GET") {
+      return json(route, {
+        workspaceName: "Acme",
+        assistantAvatarUrl: null,
+        assistantLinkUtmEnabled: true,
+        citationDisplayEnabled: true,
+        theme,
+        intakeActions: [],
+        assistantBootstrapActive: false,
+        conversations: sent
+          ? [{ id: conversationId, sourceChannel: "anonymous", preview: typedText, messageCount: 2, createdAt: nowIso, updatedAt: nowIso }]
+          : [],
+        total: sent ? 1 : 0,
+        nextCursor: null,
+        hasMore: false,
+      });
+    }
+    return route.continue();
+  });
+
+  await page.route(`**/api/public/chat/${publicToken}`, async (route) => {
+    sent = true;
+    observed.sentBodies.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
+    const done = { conversationId, assistantMessageId: "55555555-5555-4555-8555-555555555552", answer: "I found three farmhouses on the coast." };
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: [
+        `event: conversation\ndata: ${JSON.stringify({ conversationId })}\n\n`,
+        `event: chunk\ndata: ${JSON.stringify({ text: done.answer })}\n\n`,
+        `event: done\ndata: ${JSON.stringify(done)}\n\n`,
+      ].join(""),
+    });
+  });
+
+  return observed;
+};
+
+const shownPhotos = (page: Page) => page.getByTestId("visitor-image-thumbnails").getByRole("img", { name: "Photo you sent" });
+
+test("a visitor attaches a photo, sees it upload, sends it, and still sees it after a reload", async ({ page }) => {
+  const photo = await makePhoto(page, 3200, 2400);
+  expect(photo.length).toBeGreaterThan(300 * 1024);
+  const observed = await mockPublicChat(page, { acceptsImages: true, photo, uploadDelayMs: 600 });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  const send = page.getByRole("button", { name: "Send message" });
+  await expect(send).toBeDisabled();
+
+  // The photo shows as a preview while it uploads, and nothing can be sent until it is read.
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: photo });
+  const chip = page.locator("[data-attachment-status]");
+  await expect(chip).toHaveAttribute("data-attachment-status", "uploading");
+  await expect(chip.locator("img")).toBeVisible();
+  await expect(send).toBeDisabled();
+
+  // Done: a photo alone makes the message sendable.
+  await expect(chip).toHaveAttribute("data-attachment-status", "ready");
+  await expect(send).toBeEnabled();
+
+  // The browser shrank it before uploading: a JPEG of at most 1600 px on its long side, not the original.
+  expect(observed.uploads).toHaveLength(1);
+  const upload = observed.uploads[0];
+  expect(upload.sessionHeader).toBe(publicSessionToken);
+  const uploadedSize = jpegSize(upload.jpeg);
+  expect(Math.max(uploadedSize.width, uploadedSize.height)).toBeLessThanOrEqual(1600);
+  expect(uploadedSize.width / uploadedSize.height).toBeCloseTo(4 / 3, 1);
+  expect(upload.jpeg.length).toBeLessThan(photo.length / 2);
+
+  await page.getByPlaceholder("Ask a question...").fill(typedText);
+  await send.click();
+
+  // The thread shows the visitor's words and their photo, and the agent answers.
+  await expect(page.getByText("I found three farmhouses on the coast.")).toBeVisible();
+  expect(observed.sentBodies).toHaveLength(1);
+  expect(observed.sentBodies[0]).toMatchObject({ message: typedText, imageIds: [imageId] });
+  await expect(page.getByText(typedText)).toBeVisible();
+  await expect(shownPhotos(page)).toHaveCount(1);
+  await expect.poll(() => shownPhotos(page).evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  // The composer is empty again.
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
+
+  // After a reload the thread comes back from history: the same text and the photo, fetched with the
+  // visitor's session, and never the agent's reading of it.
+  await page.reload();
+  await expect(page.getByText("I found three farmhouses on the coast.")).toBeVisible();
+  await expect(page.getByText(typedText)).toBeVisible();
+  await expect(shownPhotos(page)).toHaveCount(1);
+  await expect.poll(() => shownPhotos(page).evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  expect(observed.imageReads.length).toBeGreaterThan(0);
+  expect(observed.imageReads.every((read) => read.sessionHeader === publicSessionToken)).toBe(true);
+  await expect(page.getByText("terracotta roof")).toHaveCount(0);
+  await expect(page.getByText("attached_photo")).toHaveCount(0);
+  // The attach control is still there: the session remembered the agent takes photos.
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
+});
+
+test("a visitor can remove a photo before sending, and is told when a file type is not accepted", async ({ page }) => {
+  const photo = await makePhoto(page, 800, 600);
+  await mockPublicChat(page, { acceptsImages: true, photo });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "notes.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a") });
+  await expect(page.getByTestId("visitor-image-notice")).toHaveText("Use a JPEG, PNG or WebP photo.");
+  await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
+  await page.getByRole("button", { name: "Remove photo" }).click();
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
+  await expect(page.getByTestId("visitor-image-notice")).toHaveCount(0);
+
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: photo });
+  await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "ready");
+  await page.getByRole("button", { name: "Remove photo" }).click();
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
+});
+
+test("a visitor can drop a photo on the composer and paste another, up to three", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  await mockPublicChat(page, { acceptsImages: true, photo });
+
+  await page.goto(`/chat/${publicToken}`);
+  const field = page.getByPlaceholder("Ask a question...");
+  await expect(field).toBeVisible();
+
+  const transferOf = (bytes: number[], name: string) =>
+    page.evaluateHandle(
+      ({ bytes: data, name: fileName }) => {
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([new Uint8Array(data)], fileName, { type: "image/jpeg" }));
+        return transfer;
+      },
+      { bytes, name },
+    );
+  const bytes = [...photo];
+
+  await field.dispatchEvent("drop", { dataTransfer: await transferOf(bytes, "dropped.jpg") });
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(1);
+
+  const pasted = await transferOf(bytes, "pasted.jpg");
+  await field.evaluate((element, clipboardData) => {
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+  }, pasted);
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(2);
+
+  // A fourth photo does not fit: the control is full after the third, and a drop of two says why.
+  await field.dispatchEvent("drop", { dataTransfer: await transferOf(bytes, "third.jpg") });
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeDisabled();
+  await field.dispatchEvent("drop", { dataTransfer: await transferOf(bytes, "fourth.jpg") });
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(3);
+  await expect(page.getByTestId("visitor-image-notice")).toHaveText("You can send up to 3 photos at once.");
+});
+
+test("a chat whose agent takes no photos offers no attach control", async ({ page }) => {
+  await mockPublicChat(page, { acceptsImages: false, photo: Buffer.alloc(0) });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Attach photo" })).toHaveCount(0);
+  await expect(page.getByTestId("visitor-image-input")).toHaveCount(0);
+});

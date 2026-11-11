@@ -18,6 +18,7 @@ export {
   readStoredAnonymousSessionId,
   readStoredEmbedBootstrapSession,
   readStoredEffectivePublicChatToken,
+  readStoredPublicSessionAcceptsImages,
   readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
   removeWorkspaceSession,
@@ -25,6 +26,7 @@ export {
   setPendingAccountSwitchId,
   storeAnonymousSessionId,
   storeEmbedBootstrapSession,
+  storePublicSessionAcceptsImages,
   storePublicSessionToken,
 } from './api-client'
 

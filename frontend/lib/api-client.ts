@@ -13,6 +13,7 @@ export {
   readStoredAnonymousSessionId,
   readStoredEmbedBootstrapSession,
   readStoredEffectivePublicChatToken,
+  readStoredPublicSessionAcceptsImages,
   readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
   removeWorkspaceSession,
@@ -21,6 +22,7 @@ export {
   storeAnonymousSessionId,
   storeEmbedBootstrapSession,
   storeEffectivePublicChatToken,
+  storePublicSessionAcceptsImages,
   storePublicSessionResumeToken,
   storePublicSessionToken,
 } from './api-storage'

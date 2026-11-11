@@ -16,6 +16,7 @@ const behaviorSettings = (handoffOnRetrievalMiss: boolean): AssistantBehaviorSet
   contactRequestsEnabled: false,
   webhookExportsEnabled: false,
   handoffOnRetrievalMiss,
+  visitorImagesEnabled: false,
   contactRequestDelivery: { recipientEmails: [], webhook: null },
   theme: {
     brand: '#0f172a',
@@ -86,6 +87,22 @@ describe('agentsApi.updateBehaviorSettings', () => {
       { method: 'PUT', body: JSON.stringify({ handoffOnRetrievalMiss: true }) },
       { withSession: true },
     )
+  })
+
+  it('sends the photo setting in the agent update payload, as a live change', async () => {
+    const saved = behaviorSettings(false)
+    const next = { ...saved, visitorImagesEnabled: true, customInstruction: 'Private draft only' }
+    requestMock.mockResolvedValueOnce(responseAgent(next))
+
+    const { agentsApi } = await import('@/lib/api-settings')
+    const updated = await agentsApi.updateBehaviorSettings('agent-1', next, saved, 'live')
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/agents/agent-1',
+      { method: 'PUT', body: JSON.stringify({ visitorImagesEnabled: true }) },
+      { withSession: true },
+    )
+    expect(updated.visitorImagesEnabled).toBe(true)
   })
 
   it('keeps an unsaved private instruction out of a live settings update', async () => {

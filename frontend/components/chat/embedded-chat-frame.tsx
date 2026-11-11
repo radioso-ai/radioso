@@ -370,6 +370,8 @@ export function EmbeddedChatFrame({
           expiresAt,
           resumeToken: session.resumeToken,
           resumeExpiresAt,
+          // The session start decides whether the agent takes photos; the chat reads it from storage.
+          acceptsImages: session.acceptsImages === true,
         })
         const pageContext = sanitizePageContext(event.data.pageContext)
         const clientContextCapabilities = sanitizeClientContextCapabilities(event.data.clientContextCapabilities)

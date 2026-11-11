@@ -12,6 +12,7 @@ vi.mock('@/lib/api-client', () => ({
   requestLongRunning: vi.fn(),
   requireWorkspaceApiToken: async () => 'workspace-token',
   storeEffectivePublicChatToken: vi.fn(),
+  storePublicSessionAcceptsImages: vi.fn(),
   storePublicSessionResumeToken: vi.fn(),
   storePublicSessionToken: vi.fn(),
   storeWorkspaceToken: vi.fn(),

@@ -71,6 +71,18 @@ export interface WebsiteEmbedCopy {
   publicChatShowSourcesTemplate: string
   publicChatOpenSourceLinkTemplate: string
   publicChatUntitledSourceTemplate: string
+  /** The photo attachment control and its messages. `{count}` in the limit message is the most photos a message carries. */
+  publicChatAttachImageLabel: string
+  publicChatRemoveImageLabel: string
+  publicChatImageUploadingLabel: string
+  /** Alt text for a photo the visitor sent, in the thread. */
+  publicChatImageAlt: string
+  /** Stands in for a photo that can no longer be shown. */
+  publicChatImageUnavailableLabel: string
+  publicChatImageUnsupportedMessage: string
+  publicChatImageTooLargeMessage: string
+  publicChatImageFailedMessage: string
+  publicChatImageLimitTemplate: string
 }
 
 export interface WebsiteEmbedTheme {
@@ -150,6 +162,15 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatShowSourcesTemplate: 'Show sources {numbers}',
   publicChatOpenSourceLinkTemplate: 'Open {title} in a new tab',
   publicChatUntitledSourceTemplate: 'Document {number}',
+  publicChatAttachImageLabel: 'Attach photo',
+  publicChatRemoveImageLabel: 'Remove photo',
+  publicChatImageUploadingLabel: 'Uploading photo…',
+  publicChatImageAlt: 'Photo you sent',
+  publicChatImageUnavailableLabel: 'Photo unavailable',
+  publicChatImageUnsupportedMessage: 'Use a JPEG, PNG or WebP photo.',
+  publicChatImageTooLargeMessage: 'That photo is too large.',
+  publicChatImageFailedMessage: "Couldn't upload that photo. Try again.",
+  publicChatImageLimitTemplate: 'You can send up to {count} photos at once.',
 }
 const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
@@ -217,6 +238,15 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatShowSourcesTemplate',
   'publicChatOpenSourceLinkTemplate',
   'publicChatUntitledSourceTemplate',
+  'publicChatAttachImageLabel',
+  'publicChatRemoveImageLabel',
+  'publicChatImageUploadingLabel',
+  'publicChatImageAlt',
+  'publicChatImageUnavailableLabel',
+  'publicChatImageUnsupportedMessage',
+  'publicChatImageTooLargeMessage',
+  'publicChatImageFailedMessage',
+  'publicChatImageLimitTemplate',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
 const THEME_OVERRIDE_KEYS = [

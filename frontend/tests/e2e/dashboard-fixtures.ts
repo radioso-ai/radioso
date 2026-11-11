@@ -466,6 +466,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   visitorImagesEnabled: false,
   webhookExportsEnabled: false,
   handoffOnRetrievalMiss: false,
+  visitorImagesEnabled: false,
   contactRequestDelivery: {
     recipientEmails: [],
     webhook: null,

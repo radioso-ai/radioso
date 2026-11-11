@@ -97,7 +97,9 @@ directives as subordinate guidance, as the routine step renderer does (#1351).
   and maps survivors to an ordered `SteeringRule[]`; chat can also reuse its
   filtering after the engine matcher has already produced matches.
 - `defaultAnswerDirectives.ts`: built-in answer steering registered by
-  application composition.
+  application composition, plus the operator view of each built-in
+  (`BuiltInDirectiveView`), which adds a display `title` the engine `Directive`
+  does not carry.
 - `../chat/services/routeScopedDirectiveSteering.ts`: host-side route enactment
   for composition-registered answer directives; it exposes the candidate catalog
   and matcher used by the conversation engine.

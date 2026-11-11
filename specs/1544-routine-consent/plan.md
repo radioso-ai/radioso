@@ -195,7 +195,7 @@ Effects: `consentEvents?: RoutineConsentEvent[]` follows `awaitingDecision`'s ro
 - **PR0** consolidates the three copies of the input-metadata schema (`publicChatRouteSchemas.ts:62-84`, `assistantChatSchemas.ts:9-31`, `agentTurnProbe.ts:32-41`) and the stored parser (`messageRepository.ts:57-78, 217-254`) into `shared/domain/chatInputMetadata.ts`.
 - **PR2** adds optional `suggestionId` (a chip id). `public-chat-shell.tsx:833-849` sends `suggestion.id` through an extracted helper `frontend/lib/public-chat-suggestion.ts`; that shell is the one both the link and the embed render.
 - **Server check** (`port.read`):
-  - Accept the click only when `method === "suggestion_click"`, `suggestionId` is `agree` or `decline`, and `suggestionSourceMessageId` is the latest `consentPrompt` message for this (conversation, routine, consent) (`store.latestPrompt`).
+  - Accept the click only when the conversation's presentation is `buttons`, `method === "suggestion_click"`, `suggestionId` is `agree` or `decline`, and `suggestionSourceMessageId` is the latest `consentPrompt` message for this (conversation, routine, consent) (`store.latestPrompt`). A channel that shows the choices as text never showed a chip, so a click there is a typed reply.
   - The decision comes from the chip id; the visible label text is ignored. Method `button`, wording = that message's version, verified by recomputing the hash from the conversation's pinned definition.
   - Any mismatch (a stale prompt, a foreign message, an unknown chip) is read as a typed reply.
 - **No nonce:** the source message id is the handle. It is an unguessable, server-issued id scoped to the conversation, and only the visitor's own session can send against it.

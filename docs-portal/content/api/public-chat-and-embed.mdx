@@ -168,7 +168,8 @@ Send a click on one with its `suggestionId` and the `assistantMessageId` of
 that answer as `suggestionSourceMessageId`. The agent records the decision from
 the chip id, against the wording that message showed, whatever `message` says.
 A click that names an earlier consent message, or another chip id, is read as
-a typed answer from `message`.
+a typed answer from `message`, and so is any message on a conversation whose
+channel shows the consent as text (email, WhatsApp, Slack) rather than chips.
 
 Example response fragment:
 

@@ -447,7 +447,8 @@ standing decisions for every language of a consent, and reads an answer against 
 wording the conversation last showed (its `consentPrompt` stamp): a click on that
 message's `agree` or `decline` chip (`suggestion_click` with `suggestionId` and
 `suggestionSourceMessageId` naming it, `shared/domain/chatInputMetadata.ts`) is a
-`button` decision taken from the chip id, and anything else, a click on an older prompt
+`button` decision taken from the chip id on a `buttons` channel only, and anything else,
+a click on an older prompt or any click on a channel that shows the choices as text
 included, goes to the reply reader. Both reads go through the
 `RoutineConsentStore` port, which `RoutineConsentRepository` satisfies for a durable
 conversation. A conversation no row is kept for brings its own store instead: the

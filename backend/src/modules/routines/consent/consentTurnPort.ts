@@ -198,7 +198,11 @@ export const createRoutineConsentTurnPort = (input: {
       const answered = await answeredPrompt(routine, consent);
       if (!answered) return null;
       const { wording } = answered;
-      const clicked = answered.messageId ? clickedChoice(facts.userMessage.inputMetadata, answered.messageId) : null;
+      // Only a channel that shows the choices as buttons can carry a click on one; anywhere else
+      // the message is read as the visitor's own words, whatever its metadata says.
+      const clicked = presentation === "buttons" && answered.messageId
+        ? clickedChoice(facts.userMessage.inputMetadata, answered.messageId)
+        : null;
       if (clicked) return { decision: clicked, method: "button", wording };
       return { decision: await input.reader.read({ turn, wording }), method: "reply", wording };
     },

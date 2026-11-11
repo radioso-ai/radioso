@@ -243,6 +243,21 @@ describe("a click on a consent's button (#1544)", () => {
     }
   });
 
+  it("reads a click as a typed reply on a channel that shows the choices as text, where no button was ever shown", async () => {
+    for (const sourceChannel of ["email", "whatsapp", "slack", "workbench_replay", "operator_copilot_probe"]) {
+      const usedReplies = replies("unclear");
+      const textChannel = facts({
+        sourceChannel,
+        userMessage: { id: "message_2", inputMetadata: { method: "suggestion_click", suggestionSourceMessageId: PROMPT_ID, suggestionId: "agree" } },
+      });
+
+      const read = await port({ facts: textChannel, store: lastShownItalian(), replies: usedReplies }).read({ routine, consent, turn: turn("Acconsento") });
+
+      expect(read, sourceChannel).toEqual({ decision: "unclear", method: "reply", wording: italian });
+      expect(usedReplies.reader.read).toHaveBeenCalledOnce();
+    }
+  });
+
   it("cannot bind a click to wording when the conversation shows no prompt it can verify", async () => {
     expect(await port({ facts: clicked("agree"), replies: replies("granted") }).read({ routine, consent, turn: turn("I agree") })).toBeNull();
   });

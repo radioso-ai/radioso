@@ -253,7 +253,7 @@ describe('assistant directive surface-aware editing', () => {
 
     // It replaces the one built-in on every turn and nothing else, so it reads as that built-in's
     // customization rather than as a rule of its own.
-    await openRow(container, 'Default reply title')
+    await openRow(container, 'Edited rule')
     await click([...document.body.querySelectorAll('button')].find((button) => button.textContent === 'Edit your version') ?? null)
     const replySurface = container.querySelector('[aria-label="The agent\'s reply"]')
     await click(replySurface)

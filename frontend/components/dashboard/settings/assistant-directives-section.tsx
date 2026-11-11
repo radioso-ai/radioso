@@ -53,7 +53,7 @@ import {
   type AgentSkillCreateInput,
   type SkillCapabilityDescriptor,
 } from '@/lib/api-skills'
-import { buildDirectiveListViewModel } from '@/lib/directive-list-view-model'
+import { buildDirectiveListViewModel, overrideNameFor } from '@/lib/directive-list-view-model'
 import { normalizeSkillName } from '@/lib/external-skills'
 import {
   compatibleAnswerCoverageReasons,
@@ -201,8 +201,6 @@ const directiveToForm = (directive: Directive): DirectiveFormState => ({
   enabled: directive.enabled,
   coverageCriteria: directive.coverageCriteria ?? { coverage: [] },
 })
-
-const overrideNameFor = (builtInName: string): string => `Override: ${builtInName}`
 
 const parsePriority = (raw: string): number | null => {
   const trimmed = raw.trim()

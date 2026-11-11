@@ -62,7 +62,8 @@ function SheetFrame({
   children,
 }: {
   title: string
-  subtitle: string
+  // Optional: the authored sheet's switch already says whether the rule is on.
+  subtitle?: string
   headerEnd?: ReactNode
   footer?: ReactNode
   children: ReactNode
@@ -73,7 +74,8 @@ function SheetFrame({
       <SheetHeader className="flex-row items-start justify-between gap-3 pr-12">
         <div className="min-w-0 space-y-1">
           <SheetTitle className="break-words font-display text-xl">{title}</SheetTitle>
-          <SheetDescription>{subtitle}</SheetDescription>
+          {/* Radix wants a description; with nothing to add it stays for screen readers only. */}
+          <SheetDescription className={subtitle ? undefined : 'sr-only'}>{subtitle ?? title}</SheetDescription>
         </div>
         {headerEnd}
       </SheetHeader>
@@ -118,7 +120,6 @@ function AuthoredSheet({ row, actions }: { row: DirectiveRow; actions: Directive
   return (
     <SheetFrame
       title={directive.name}
-      subtitle={directive.enabled ? 'On' : 'Off'}
       headerEnd={(
         <Switch
           checked={directive.enabled}
@@ -169,7 +170,7 @@ function CustomizedSheet({
   builtIn,
   actions,
 }: {
-  row: DirectiveRow
+  row: Extract<DirectiveRow, { kind: 'customized' }>
   builtIn: BuiltInDirective
   actions: DirectiveSheetActions
 }) {
@@ -181,7 +182,7 @@ function CustomizedSheet({
   return (
     <SheetFrame
       title={row.title}
-      subtitle="Radioso default, customized · Always"
+      subtitle={row.title === row.defaultTitle ? 'Radioso default, customized · Always' : `Customizes ${row.defaultTitle} · Always`}
       footer={(
         <>
           <Button type="button" variant="outline" disabled={isPending} onClick={() => actions.onEdit(directive)}>

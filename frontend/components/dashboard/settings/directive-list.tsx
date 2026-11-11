@@ -24,6 +24,9 @@ export const focusBuiltInRow = (builtInName: string): void => focusRow(builtInRo
 // sheet the row opens, so a long list stays something to scan.
 function whenLine(row: DirectiveRow): string {
   if (row.kind === 'customized') {
+    if (row.title !== row.defaultTitle) {
+      return row.directive.enabled ? `Always · replaces ${row.defaultTitle}` : `Off · ${row.defaultTitle} applies`
+    }
     return `Always · using ${row.directive.enabled ? 'your version' : 'the Radioso default'}`
   }
   return row.directive.condition.kind === 'contextual' ? row.directive.condition.description : 'Always'

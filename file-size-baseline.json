@@ -32,7 +32,7 @@
   "frontend/components/dashboard/documents-view.tsx": 1263,
   "frontend/components/dashboard/eval-view.tsx": 2073,
   "frontend/components/dashboard/quality-view.tsx": 1834,
-  "frontend/components/dashboard/settings/assistant-directives-section.tsx": 1196,
+  "frontend/components/dashboard/settings/assistant-directives-section.tsx": 1194,
   "frontend/components/dashboard/settings/assistant-routines-section.tsx": 1024,
   "frontend/components/dashboard/settings/routine-chip-node.tsx": 1346,
   "frontend/components/dashboard/settings/skills/SkillForm.tsx": 1115,

@@ -1204,12 +1204,13 @@ test("agent directives settings keep a built-in in force while its replacement i
   await openDirectives(page);
 
   // A disabled directive never reaches the matcher, so its exclusion never fires and the
-  // built-in still governs every reply. The one row for that built-in says which version is in
-  // use, and a built-in with a customization on file is never offered for customizing again.
-  await expect(page.getByText("Always · using the Radioso default")).toBeVisible();
+  // built-in still governs every reply. The one row keeps the name its operator gave it and says
+  // which built-in applies, and a built-in with a customization on file is never offered for
+  // customizing again.
+  await expect(page.getByText("Off · Inline source links applies")).toBeVisible();
   await expect(page.getByRole("button", { name: "Radioso defaults · 2" })).toBeVisible();
 
-  await openDirective(page, "Inline source links");
+  await openDirective(page, "legal-link-policy");
   await expect(page.getByRole("button", { name: "Radioso default", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Customize Inline source links" })).toHaveCount(0);
 
@@ -1220,7 +1221,7 @@ test("agent directives settings keep a built-in in force while its replacement i
   expect(directiveUpdates[0]).toMatchObject({ method: "PATCH", directiveId, body: { enabled: true } });
   await expect(page.getByRole("button", { name: "Your version", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
-  await expect(page.getByText("Always · using your version")).toBeVisible();
+  await expect(page.getByText("Always · replaces Inline source links")).toBeVisible();
 });
 
 test("agent directives let a disabled rule with a broken binding still be edited and saved", async ({ page }) => {

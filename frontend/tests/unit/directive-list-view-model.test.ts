@@ -81,6 +81,17 @@ describe('buildDirectiveListViewModel grouping', () => {
     expect(view.defaults.map((entry) => entry.builtIn.name)).toEqual(['links'])
   })
 
+  it('keeps the name an operator gave a customization instead of the built-in title', () => {
+    const renamed = directive({ id: 'o', name: 'House style', excludes: ['formatting'] })
+    const view = build([renamed])
+
+    expect(view.rows[0]).toMatchObject({
+      kind: 'customized',
+      title: 'House style',
+      defaultTitle: 'Readable formatting',
+    })
+  })
+
   it('still folds a disabled replacer, which stands for using the Radioso default', () => {
     const view = build([
       directive({ id: 'o', name: 'Override: formatting', excludes: ['formatting'], enabled: false }),
@@ -193,7 +204,7 @@ describe('buildDirectiveListViewModel grouping', () => {
   it('falls back to the built-in name when the API sends no title', () => {
     const untitled = { ...formatting, title: '' }
     const view = buildDirectiveListViewModel({
-      directives: [directive({ id: 'o', name: 'Override', excludes: ['formatting'] })],
+      directives: [directive({ id: 'o', name: 'Override: formatting', excludes: ['formatting'] })],
       builtIns: [untitled],
       coherence: null,
       coherenceSubjectId: null,

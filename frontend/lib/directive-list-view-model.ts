@@ -29,7 +29,9 @@ type DirectiveRowBase = {
 export type DirectiveRow =
   | (DirectiveRowBase & { kind: 'authored' })
   // A built-in that exactly one authored directive replaces, folded into that directive's row.
-  | (DirectiveRowBase & { kind: 'customized'; builtIn: BuiltInDirective })
+  // Its title is the built-in's while the directive keeps the name Customize gave it, and the
+  // directive's own name once an operator renames it; defaultTitle always names the built-in.
+  | (DirectiveRowBase & { kind: 'customized'; builtIn: BuiltInDirective; defaultTitle: string })
 
 export type BuiltInDefaultEntry = {
   builtIn: BuiltInDirective
@@ -53,6 +55,10 @@ type DirectiveListViewModel = {
 }
 
 const builtInTitle = (builtIn: BuiltInDirective): string => builtIn.title || builtIn.name
+
+// The name Customize gives a new customization. Matching it is how a row tells a customization
+// nobody has named yet from one an operator named on purpose.
+export const overrideNameFor = (builtInName: string): string => `Override: ${builtInName}`
 
 // Built-ins govern the reply. An exclusion authored through an older API client may name one from
 // a suggestion-only directive, but those rules never meet on a generator, so it replaces nothing.
@@ -158,7 +164,8 @@ export const buildDirectiveListViewModel = ({
       ? [{
           kind: 'customized',
           id: directive.id,
-          title: builtInTitle(builtIn),
+          title: directive.name === overrideNameFor(builtIn.name) ? builtInTitle(builtIn) : directive.name,
+          defaultTitle: builtInTitle(builtIn),
           directive,
           builtIn,
           replaces: replacedNames(directive, directives, builtIns),

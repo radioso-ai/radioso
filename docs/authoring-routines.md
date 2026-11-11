@@ -330,10 +330,11 @@ condition attached, gets a short answer drawn only from your wording, followed b
 the wording and its choices again. If the next reply is still unclear, it counts
 as a decline.
 
-The message that agrees never fills a covered field, even "Yes, and I have a sore
-knee": the step asks about `@injury` next, and the routine stores only what the
-visitor says after agreeing. Because a reply like that can still state the value,
-it's masked like any message that carries a sensitive field.
+The message that agrees never fills a covered field on its own turn, even "Yes,
+and I have a sore knee": the step asks about `@injury` next. From there the step
+can use what the visitor already said, in that message or before the consent, so
+a reply of "no, that's all" keeps the sore knee. Because a reply like that states
+the value, it's masked like any message that carries a sensitive field.
 
 A decision holds for the rest of the conversation. The routine doesn't ask again
 before another step that collects a covered field, or when it runs again, and a

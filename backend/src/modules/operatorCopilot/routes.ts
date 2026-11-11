@@ -11,7 +11,8 @@ import { requireJsonContentType } from "../../app/http/middleware/requireJsonCon
 import { createRateLimitMiddleware, type RateLimitAbuseControlPort, type RateLimitAuditPort } from "../../app/http/middleware/rateLimit.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound } from "../../shared/domain/errors.js";
-import { copilotProposalPermissions, copilotProposalTargetTypes, type CopilotProposalTargetType } from "./contracts.js";
+import type { CopilotStoredProposalTargetType } from "./contracts.js";
+import type { CopilotProposalTargetTypeSet } from "./proposalContribution.js";
 import { summarizeProposalEvidence } from "./proposalEvidence.js";
 import type { LlmCapabilityResolveInput } from "../../shared/infra/llm/workspaceContext.js";
 import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, type CopilotToolDescriptor, CopilotAuthorizationError, CopilotConflictError, CopilotNotFoundError } from "./public.js";
@@ -68,6 +69,8 @@ interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
   operatorCopilotService: OperatorCopilotService;
   /** Read only for its permission declarations; the turn itself runs against the service's catalog. */
   copilotToolCatalog: ReadonlyArray<Pick<CopilotToolDescriptor, "requiredPermissions">>;
+  /** The deployment's assembled target types, for which cards an operator may apply. */
+  copilotProposalTargetTypes: Pick<CopilotProposalTargetTypeSet, "targetTypes" | "permissionsFor">;
 }
 
 /** Ray only asks whether the workspace has a usable chat model; it never resolves a call config. */
@@ -170,7 +173,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   });
   // No permission middleware here on purpose: what an operator must hold to apply a proposal depends
   // on what that proposal changes, and only the stored row says which domain that is. The service
-  // reads it and authorizes against copilotProposalPermissions, answering 403 the same way.
+  // reads it and authorizes against its target type's permissions, answering 403 the same way.
   router.post("/proposals/:proposalId/apply", async (req, res, next) => {
     try {
       const { workspaceId, accountId, userId } = sessionLocals(res);
@@ -260,9 +263,9 @@ const sessionLocals = (res: Response): { workspaceId: string; accountId: string;
  * or offer it where the server will refuse.
  */
 const applyableProposalTargets = async (
-  dependencies: Pick<CopilotRouteDependencies, "accountAccessService">,
+  dependencies: Pick<CopilotRouteDependencies, "accountAccessService" | "copilotProposalTargetTypes">,
   res: Response,
-): Promise<CopilotProposalTargetType[]> => {
+): Promise<CopilotStoredProposalTargetType[]> => {
   const { workspaceId, accountId, userId, principal } = sessionLocals(res);
   const held = new Map<string, boolean>();
   const holds = async (permission: AccountPermission): Promise<boolean> => {
@@ -272,16 +275,17 @@ const applyableProposalTargets = async (
     held.set(permission, allowed);
     return allowed;
   };
-  const targets: CopilotProposalTargetType[] = [];
-  for (const targetType of copilotProposalTargetTypes) {
-    const permissions = copilotProposalPermissions[targetType].manage;
+  const targetTypes = dependencies.copilotProposalTargetTypes;
+  const targets: CopilotStoredProposalTargetType[] = [];
+  for (const targetType of targetTypes.targetTypes) {
+    const permissions = targetTypes.permissionsFor(targetType).manage;
     const allowed = await Promise.all(permissions.map((permission) => holds(permission)));
     if (allowed.every(Boolean)) targets.push(targetType);
   }
   return targets;
 };
 
-const availability = async (dependencies: Pick<CopilotRouteDependencies, "accountAccessService" | "llmCapabilityResolver">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability"; canManage: boolean; applyableProposalTargets: CopilotProposalTargetType[] }> => {
+const availability = async (dependencies: Pick<CopilotRouteDependencies, "accountAccessService" | "llmCapabilityResolver" | "copilotProposalTargetTypes">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability"; canManage: boolean; applyableProposalTargets: CopilotStoredProposalTargetType[] }> => {
   const { workspaceId, accountId, userId, principal } = sessionLocals(res);
   const canManage = await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission: "workspace.agents.manage" });
   const targets = await applyableProposalTargets(dependencies, res);

@@ -6,6 +6,7 @@ import {
   type ApplicationModule,
 } from "../../src/app/composition/applicationModule.js";
 import type { Directive } from "../../src/modules/directives/public.js";
+import { createAlertThresholdContribution, createAlertThresholdState } from "../support/contributedProposalModule.js";
 
 const createLogger = () => ({
   info: vi.fn(),
@@ -136,6 +137,23 @@ describe("application modules", () => {
     ]);
 
     expect(registry.copilotToolRegistrations).toEqual([contribution, factory]);
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it("collects copilot proposal adapter registrations, keeping factories unresolved until dependencies exist", () => {
+    const logger = createLogger();
+    const registry = createApplicationExtensionRegistry();
+    const coordinator = new ApplicationModuleCoordinator({ logger, registry });
+    const state = createAlertThresholdState();
+    const contribution = createAlertThresholdContribution(state);
+    const factory = vi.fn(() => createAlertThresholdContribution(state, { moduleId: "deferred" }));
+
+    coordinator.apply([
+      { id: "first-module", register(context) { context.registerCopilotProposalAdapter(contribution); } },
+      { id: "second-module", register(context) { context.registerCopilotProposalAdapter(factory); } },
+    ]);
+
+    expect(registry.copilotProposalAdapterRegistrations).toEqual([contribution, factory]);
     expect(factory).not.toHaveBeenCalled();
   });
 

@@ -57693,7 +57693,8 @@
                           "privacy_setting",
                           "time_zone_setting"
                         ]
-                      }
+                      },
+                      "description": "The proposal target types this operator may apply. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list."
                     }
                   },
                   "required": [
@@ -57953,7 +57954,8 @@
                                         "agent_greeting",
                                         "privacy_setting",
                                         "time_zone_setting"
-                                      ]
+                                      ],
+                                      "description": "What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list. A proposal of such a contributed type also carries an optional `presentation` ({ label, dashboardPath }): the link label and a path inside the workspace dashboard that the applied card opens."
                                     },
                                     "targetLabel": {
                                       "type": "string"
@@ -58299,7 +58301,8 @@
                         "agent_greeting",
                         "privacy_setting",
                         "time_zone_setting"
-                      ]
+                      ],
+                      "description": "What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list."
                     },
                     "targetRef": {},
                     "target": {
@@ -58323,7 +58326,8 @@
                             "agent_greeting",
                             "privacy_setting",
                             "time_zone_setting"
-                          ]
+                          ],
+                          "description": "What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list."
                         },
                         "ref": {}
                       },

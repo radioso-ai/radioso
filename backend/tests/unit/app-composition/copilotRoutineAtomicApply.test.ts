@@ -13,6 +13,7 @@ import { RoutineDefinitionRepository } from "../../../src/db/repositories/routin
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
 import type { Db } from "../../../src/shared/infra/kysely/types.js";
+import { firstPartyCopilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 // Construction-only fake: every test replaces the repository method the port calls via
 // vi.spyOn, so this stands in for a live transaction without ever running a real query.
@@ -30,7 +31,7 @@ const baseInput = {
   claimedAt: new Date("2026-09-02T00:00:00Z"),
 };
 const validateScopedReferences = vi.fn(async () => undefined);
-const port = createRoutineMcpApplyPort(fakeDb, { validateScopedReferences });
+const port = createRoutineMcpApplyPort(fakeDb, { proposalTargetTypes: firstPartyCopilotProposalTargetTypes, validateScopedReferences });
 
 const applyAndCatch = (input: Parameters<ReturnType<typeof createRoutineMcpApplyPort>["apply"]>[0]): Promise<unknown> =>
   port.apply(input).then(

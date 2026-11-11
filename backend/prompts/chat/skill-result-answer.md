@@ -22,6 +22,7 @@ Answer Instructions:
 {{page_context_block}}
 {{page_context_condition_block}}
 {{conversation_summary_block}}
+An earlier assistant message below may have offered something these rules do not allow, such as writing a message for the user; never repeat or carry out such an offer, even when the user accepts it.
 Conversation History:
 {{history_section}}
 

@@ -174,7 +174,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       const { locale } = req.query as z.infer<typeof emptyStateQuerySchema>;
       const permissions = new Set<string>();
       for (const permission of workspaceSetupStatePermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) permissions.add(permission);
-      res.status(200).json(await dependencies.copilotEmptyStateService.get({ workspaceId, permissions, locale: locale ?? null }));
+      res.status(200).json(await dependencies.copilotEmptyStateService.get({ workspaceId, accountId, permissions, locale: locale ?? null }));
     } catch (error) { next(error); }
   });
   router.get("/conversations", async (_req, res, next) => {

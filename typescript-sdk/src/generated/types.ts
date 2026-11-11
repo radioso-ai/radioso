@@ -29592,6 +29592,8 @@ export interface operations {
                     "application/json": {
                         /** @enum {string} */
                         phase: "setup" | "open";
+                        /** @description Whether any conversation exists. A client shows retrospective copy only when this is true; null means the server could not say, which reads as no. */
+                        firstConversationHappened: boolean | null;
                         greeting: string | null;
                         suggestions: ({
                             /** @enum {string} */

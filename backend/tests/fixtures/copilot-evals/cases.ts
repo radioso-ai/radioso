@@ -742,10 +742,12 @@ export const copilotEvalCases: CopilotEvalCase[] = [
       { type: "turn_outcome", outcome: "completed" },
     ],
   },
-  // Setup-aware empty state (#1163). These run under a named setup state, so the context Ray is
-  // given is the one the server's own state implies. The plan is empty because a correct Ray answers
-  // from that context rather than reading anything: the retrospective tools are exactly what a
-  // workspace nobody has talked to yet has nothing for.
+  // Setup context on a Ray turn (#1163). These run under a named setup state, so the context Ray is
+  // given is the one the server's own state implies; they check that context and the tools Ray
+  // reaches for, not the empty panel's greeting, which is written outside a turn and is covered by
+  // copilot-empty-state*.test.ts. The plan is empty because a correct Ray answers from that context
+  // rather than reading anything: the retrospective tools are exactly what a workspace nobody has
+  // talked to yet has nothing for.
   {
     id: "setup-fresh-workspace-picks-up-setup",
     name: "On a workspace nothing has happened in, Ray picks up setup instead of reviewing what happened",

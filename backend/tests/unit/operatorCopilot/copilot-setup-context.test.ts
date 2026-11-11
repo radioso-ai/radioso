@@ -11,7 +11,7 @@ import {
 } from "../../../src/modules/operatorCopilot/context/contributor.js";
 import type { CopilotWorkspaceSetupStatePort } from "../../../src/modules/operatorCopilot/tools/workspaceSetupState.js";
 
-type Summary = Awaited<ReturnType<CopilotWorkspaceSetupStatePort["getSummary"]>>;
+type Summary = Awaited<ReturnType<CopilotWorkspaceSetupStatePort["getSetupSignals"]>>;
 
 /** A workspace where nothing has happened yet: the state Ray's empty state must be constructive about. */
 const freshSummary = (overrides: Partial<Omit<Summary, "setup">> & { setup?: Partial<Summary["setup"]> } = {}): Summary => ({
@@ -135,8 +135,8 @@ describe("workspace setup guidance", () => {
 });
 
 describe("workspace setup context contributor", () => {
-  const port = (summary: Summary): CopilotWorkspaceSetupStatePort & { getSummary: ReturnType<typeof vi.fn> } => ({
-    getSummary: vi.fn(async () => summary),
+  const port = (summary: Summary): CopilotWorkspaceSetupStatePort & { getSetupSignals: ReturnType<typeof vi.fn> } => ({
+    getSetupSignals: vi.fn(async () => summary),
   });
   const scope = (permissions: string[] = ["workspace.summary.read"]) => ({
     workspaceId: "workspace-1",
@@ -178,7 +178,7 @@ describe("workspace setup context contributor", () => {
     const context = new WorkspaceSetupContext({ workspaceSetupState: setupPort });
     expect(await context.contribute(scope(["workspace.agents.read"]))).toBeNull();
     expect(await context.guidance(scope(["workspace.agents.read"]))).toBeNull();
-    expect(setupPort.getSummary).not.toHaveBeenCalled();
+    expect(setupPort.getSetupSignals).not.toHaveBeenCalled();
   });
 });
 

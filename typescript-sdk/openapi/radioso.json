@@ -57744,6 +57744,13 @@
                         "open"
                       ]
                     },
+                    "firstConversationHappened": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ],
+                      "description": "Whether any conversation exists. A client shows retrospective copy only when this is true; null means the server could not say, which reads as no."
+                    },
                     "greeting": {
                       "type": [
                         "string",
@@ -57822,6 +57829,7 @@
                   },
                   "required": [
                     "phase",
+                    "firstConversationHappened",
                     "greeting",
                     "suggestions"
                   ]

@@ -58,10 +58,9 @@ export function CopilotEmptyState({
           <div className="absolute size-16 rounded-full bg-secondary/15 blur-2xl" aria-hidden />
           <AssistantAvatar avatarUrl={RAY_AVATAR_URL} label={RAY_NAME} className="relative size-12" />
         </div>
+        {/* The header says who Ray is and claims nothing, so it stands in until the server's own words arrive or fail to. */}
         {resolved.greeting ? (
           <p className="mt-4 text-lg font-medium">{resolved.greeting}</p>
-        ) : resolved.status === 'pending' ? (
-          <div className="mx-auto mt-5 h-5 w-48 animate-pulse rounded bg-muted" aria-hidden />
         ) : (
           <h2 className="mt-4 text-lg font-medium">Hi, I&apos;m Ray ☀️</h2>
         )}

@@ -2832,7 +2832,7 @@ export const createTestDependencies = (overrides: {
   // `copilotToolCatalog` and `operatorCopilotService` are mutually dependent (its reviewed-proposal
   // tools call back into this service; the service runs the tools), so the closures above reference
   // this `const` ahead of its declaration, mirroring production wiring in `app/server/dependencies.ts`.
-  const copilotContext = createCopilotContext({ workspaceSetupState: workspaceSummaryService, capabilityRunner: copilotCapabilityRunner, prompt: copilotPrompt, workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver, logger });
+  const copilotContext = createCopilotContext({ workspaceSetupState: workspaceSummaryService, capabilityRunner: copilotCapabilityRunner, usageLimitPolicy, prompt: copilotPrompt, workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver, logger });
   const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
     contextContributors: copilotContext.contributors,
     repository: copilotRepository,

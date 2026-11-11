@@ -18,7 +18,7 @@ interface ResolvedCopilotEmptyState {
   greeting: string | null
   /**
    * Whether the panel's fixed "ask me what happened" line may show. It is retrospective, so it only
-   * shows where the server has not said the workspace is still being set up.
+   * shows where the server has said a conversation exists.
    */
   showStaticSubtitle: boolean
   chips: CopilotEmptyChip[]
@@ -51,7 +51,9 @@ export const resolveCopilotEmptyState = (
   // Nothing is shown while loading: on a workspace nothing has happened in, the fixed line is the
   // one thing the operator must never read, and a flash of it before the real copy is still a claim.
   if (load.status === 'loading') return { status: 'pending', greeting: null, showStaticSubtitle: false, chips: [] }
-  if (load.status === 'failed') return { status: 'ready', greeting: null, showStaticSubtitle: true, chips: screenChips(view, entities) }
+  // Unknown state reads as "nothing has happened": the retrospective line and chips need the server
+  // to have said a conversation exists, so a failed read leaves the neutral header and nothing else.
+  if (load.status === 'failed') return { status: 'ready', greeting: null, showStaticSubtitle: false, chips: [] }
 
   const { state } = load
   if (state.phase === 'setup') {
@@ -64,11 +66,15 @@ export const resolveCopilotEmptyState = (
 
   const requests = state.suggestions.flatMap((suggestion): CopilotEmptyChip[] =>
     suggestion.kind === 'prompt' ? [{ kind: 'prompt', text: suggestion.text }] : [])
+  // Retrospective copy and screen-derived chips ("explain what happened in...") are only true once a
+  // conversation exists. Setup being over does not say so: closing the first-run takeover ends setup
+  // on a workspace nobody has talked to yet.
+  const retrospective = state.firstConversationHappened === true
   const hasSubject = entities.some((entity) => entity.focused)
   return {
     status: 'ready',
     greeting: state.greeting,
-    showStaticSubtitle: state.greeting === null,
-    chips: hasSubject || requests.length === 0 ? screenChips(view, entities) : requests,
+    showStaticSubtitle: retrospective && state.greeting === null,
+    chips: retrospective && (hasSubject || requests.length === 0) ? screenChips(view, entities) : requests,
   }
 }

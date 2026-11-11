@@ -96,7 +96,7 @@ describe("setup state eval fixtures", () => {
 
   it("agrees with the contributor about every fixture, so a case cannot assert a state the product would not derive", async () => {
     for (const state of copilotEvalSetupStates) {
-      const direct = await new WorkspaceSetupContext({ workspaceSetupState: { getSummary: async () => COPILOT_EVAL_SETUP_STATES[state] } })
+      const direct = await new WorkspaceSetupContext({ workspaceSetupState: { getSetupSignals: async () => COPILOT_EVAL_SETUP_STATES[state] } })
         .contribute({ workspaceId: "w", workspaceKey: "sunny-co", permissions: new Set(["workspace.summary.read"]) });
       const observed = await runCopilotEvalCaseDeterministically(evalCase({ setupState: state }));
       expect(observed.systemPrompt.includes('"workspace_setup"')).toBe(direct !== null);

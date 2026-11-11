@@ -10,7 +10,7 @@ const USER_ID = "33333333-3333-3333-8333-333333333333";
 const WORKSPACE_ID = "11111111-1111-1111-8111-111111111111";
 
 const mount = (overrides: { get?: ReturnType<typeof vi.fn>; permissions?: (permission: string) => boolean; llm?: () => Promise<unknown>; enforce?: ReturnType<typeof vi.fn> } = {}) => {
-  const get = overrides.get ?? vi.fn(async () => ({ phase: "setup", greeting: "Hi", suggestions: [] }));
+  const get = overrides.get ?? vi.fn(async () => ({ phase: "setup", firstConversationHappened: false, greeting: "Hi", suggestions: [] }));
   const enforce = overrides.enforce ?? vi.fn(async () => admittedAbuseControlDecision());
   const app = express();
   app.use(express.json());
@@ -49,8 +49,8 @@ describe("GET /api/v1/copilot/empty-state", () => {
     const response = await request(app).get("/api/v1/copilot/empty-state?locale=fr-CA").set("Cookie", "radioso_session=valid-session");
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ phase: "setup", greeting: "Hi", suggestions: [] });
-    expect(get).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, permissions: new Set(["workspace.summary.read"]), locale: "fr-CA" });
+    expect(response.body).toEqual({ phase: "setup", firstConversationHappened: false, greeting: "Hi", suggestions: [] });
+    expect(get).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, accountId: ACCOUNT_ID, permissions: new Set(["workspace.summary.read"]), locale: "fr-CA" });
   });
 
   it("passes no language when the browser names none", async () => {

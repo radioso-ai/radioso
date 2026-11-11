@@ -10,6 +10,7 @@ import {
 
 const setupState: CopilotEmptyState = {
   phase: 'setup',
+  firstConversationHappened: false,
   greeting: "Let's pick up your setup.",
   suggestions: [
     { kind: 'setup_step', step: 'documents', text: 'Add your documents', href: '/w/acme/knowledge' },
@@ -17,14 +18,19 @@ const setupState: CopilotEmptyState = {
   ],
 }
 
+/** Setup is over and conversations exist: the only state where retrospective copy is true. */
 const openState: CopilotEmptyState = {
   phase: 'open',
+  firstConversationHappened: true,
   greeting: 'What shall we work on?',
   suggestions: [
     { kind: 'prompt', intent: 'crawl_more', text: 'Crawl more of my website' },
     { kind: 'prompt', intent: 'draft_routine', text: 'Draft a routine' },
   ],
 }
+
+/** The first-run takeover was closed (Open chat or Skip) before anything was tried. */
+const openBeforeAnyConversation: CopilotEmptyState = { ...openState, firstConversationHappened: false }
 
 const focusedConversation: CopilotEntity = { type: 'conversation', id: 'c-1', label: 'Conversation 1', focused: true }
 
@@ -51,14 +57,14 @@ describe('resolveCopilotEmptyState', () => {
   })
 
   it('shows no retrospective copy when setup is open and the model wrote nothing', () => {
-    const resolved = resolveCopilotEmptyState({ status: 'ready', state: { phase: 'setup', greeting: null, suggestions: [] } }, 'other', [])
+    const resolved = resolveCopilotEmptyState({ status: 'ready', state: { phase: 'setup', firstConversationHappened: false, greeting: null, suggestions: [] } }, 'other', [])
     expect(resolved).toEqual({ status: 'ready', greeting: null, showStaticSubtitle: false, chips: [] })
   })
 
   it('drops a link that does not point inside the dashboard', () => {
     const resolved = resolveCopilotEmptyState({
       status: 'ready',
-      state: { phase: 'setup', greeting: 'Hi', suggestions: [
+      state: { phase: 'setup', firstConversationHappened: false, greeting: 'Hi', suggestions: [
         { kind: 'setup_step', step: 'documents', text: 'Elsewhere', href: 'https://elsewhere.example/knowledge' },
         { kind: 'setup_step', step: 'credential', text: 'Protocol relative', href: '//elsewhere.example/settings' },
         { kind: 'setup_step', step: 'conversation', text: 'Ask a first question', href: '/w/acme/agents' },
@@ -84,16 +90,34 @@ describe('resolveCopilotEmptyState', () => {
     expect(resolved.chips[0]).toEqual({ kind: 'prompt', text: 'Explain what happened in Conversation 1' })
   })
 
-  it('falls back to the screen-derived suggestions and greeting when the server has no copy', () => {
-    const resolved = resolveCopilotEmptyState({ status: 'ready', state: { phase: 'open', greeting: null, suggestions: [] } }, 'quality', [])
+  it('falls back to the screen-derived suggestions and greeting when conversations exist and the server has no copy', () => {
+    const resolved = resolveCopilotEmptyState({ status: 'ready', state: { ...openState, greeting: null, suggestions: [] } }, 'quality', [])
     expect(resolved).toMatchObject({ greeting: null, showStaticSubtitle: true })
     expect(resolved.chips.map((chip) => chip.text)).toContain('What needs attention in this workspace?')
   })
 
-  it('falls back to the screen-derived suggestions when the state could not be read', () => {
-    const resolved = resolveCopilotEmptyState({ status: 'failed' }, 'evals', [])
-    expect(resolved).toMatchObject({ status: 'ready', greeting: null, showStaticSubtitle: true })
-    expect(resolved.chips.map((chip) => chip.text)).toContain('Which eval cases need attention?')
+  it('shows nothing retrospective when setup was closed before any conversation, with or without copy', () => {
+    const withCopy = resolveCopilotEmptyState({ status: 'ready', state: openBeforeAnyConversation }, 'other', [])
+    expect(withCopy).toMatchObject({ greeting: 'What shall we work on?', showStaticSubtitle: false })
+    expect(withCopy.chips.map((chip) => chip.text)).toEqual(['Crawl more of my website', 'Draft a routine'])
+
+    const withoutCopy = resolveCopilotEmptyState({ status: 'ready', state: { ...openBeforeAnyConversation, greeting: null, suggestions: [] } }, 'quality', [])
+    expect(withoutCopy).toEqual({ status: 'ready', greeting: null, showStaticSubtitle: false, chips: [] })
+  })
+
+  it('does not let the screen lead before any conversation exists', () => {
+    const resolved = resolveCopilotEmptyState({ status: 'ready', state: openBeforeAnyConversation }, 'activity', [focusedConversation])
+    expect(resolved.chips.map((chip) => chip.text)).not.toContain('Explain what happened in Conversation 1')
+  })
+
+  it('shows nothing retrospective when the server could not say whether a conversation exists', () => {
+    // An operator without workspace.summary.read gets phase open and no conversation fact.
+    const resolved = resolveCopilotEmptyState({ status: 'ready', state: { phase: 'open', firstConversationHappened: null, greeting: null, suggestions: [] } }, 'quality', [])
+    expect(resolved).toEqual({ status: 'ready', greeting: null, showStaticSubtitle: false, chips: [] })
+  })
+
+  it('shows the neutral header and nothing else when the state could not be read', () => {
+    expect(resolveCopilotEmptyState({ status: 'failed' }, 'evals', [])).toEqual({ status: 'ready', greeting: null, showStaticSubtitle: false, chips: [] })
   })
 })
 

@@ -1139,7 +1139,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documents: documentReviewedOperations,
     logger,
   });
-  const copilotContext = createCopilotContext({ workspaceSetupState: workspace.workspaceSummaryService, capabilityRunner: copilotCapabilityRunner, prompt: copilotPrompt, workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver, logger });
+  const copilotContext = createCopilotContext({ workspaceSetupState: workspace.workspaceSummaryService, capabilityRunner: copilotCapabilityRunner, usageLimitPolicy: infrastructure.usageLimitPolicy, prompt: copilotPrompt, workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver, logger });
   const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
     contextContributors: copilotContext.contributors,
     repository: repositories.copilotRepository,

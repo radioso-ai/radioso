@@ -1,4 +1,5 @@
 import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
+import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
   CopilotEmptyStateService,
   WorkspaceSetupContext,
@@ -16,6 +17,7 @@ import type { CopilotWorkspaceSetupStatePort } from "../../modules/operatorCopil
 export const createCopilotContext = (deps: {
   readonly workspaceSetupState: CopilotWorkspaceSetupStatePort;
   readonly capabilityRunner: Pick<AgenticCapabilityRunner, "runStreaming">;
+  readonly usageLimitPolicy: Pick<UsageLimitPolicy, "reserveAnswer">;
   readonly prompt: string;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly logger: { warn(fields: Record<string, unknown>, message: string): void };
@@ -25,6 +27,7 @@ export const createCopilotContext = (deps: {
     contributors: [setup],
     emptyState: new CopilotEmptyStateService({
       capabilityRunner: deps.capabilityRunner,
+      usageLimitPolicy: deps.usageLimitPolicy,
       prompt: deps.prompt,
       workspaceRouteKeyResolver: deps.workspaceRouteKeyResolver,
       setup,

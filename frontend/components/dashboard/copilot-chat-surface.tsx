@@ -622,7 +622,11 @@ export function CopilotChatSurface({
                     entities={entities}
                     workspaceId={activeWorkspaceId}
                     onPickPrompt={(question) => updateSession((current) => ({ ...current, input: question }))}
-                    onOpenHref={(href) => router.push(href)}
+                    onOpenHref={(href) => {
+                      // Like every other handoff out of the panel: the step's screen is where the operator goes next, and a panel left open there would keep suggesting a step they are about to finish.
+                      closePanel()
+                      router.push(href)
+                    }}
                   />
                 ) : (
                   <>

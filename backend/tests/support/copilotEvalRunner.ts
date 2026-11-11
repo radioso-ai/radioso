@@ -25,7 +25,7 @@ import { defaultIngestionSettings } from "../../src/modules/settings/contracts/i
 import { ProductDocsService } from "../../src/modules/productDocs/public.js";
 import { enrichCopilotToolCatalog } from "../../src/modules/operatorCopilot/catalog.js";
 import { OperatorCopilotService, WorkspaceSetupContext, type CopilotContextContributor } from "../../src/modules/operatorCopilot/public.js";
-import type { CopilotWorkspaceSetupSummary } from "../../src/modules/operatorCopilot/tools/workspaceSetupState.js";
+import type { CopilotWorkspaceSetupSignals } from "../../src/modules/operatorCopilot/tools/workspaceSetupState.js";
 import { copilotProposalTargetTypes } from "../../src/modules/operatorCopilot/contracts.js";
 import { createPrivacySettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/privacySettingProposalAdapter.js";
 import { PrivacySettingsService } from "../../src/modules/privacy/public.js";
@@ -67,7 +67,7 @@ export const copilotEvalWorkspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResol
   resolveWorkspaceKey: async () => COPILOT_EVAL_WORKSPACE_KEY,
 };
 
-const setupSummary = (overrides: { hasReadyDocuments?: boolean; hasCompletedChat?: boolean; setup?: Partial<CopilotWorkspaceSetupSummary["setup"]> } = {}): CopilotWorkspaceSetupSummary => ({
+const setupSummary = (overrides: { hasReadyDocuments?: boolean; hasCompletedChat?: boolean; setup?: Partial<CopilotWorkspaceSetupSignals["setup"]> } = {}): CopilotWorkspaceSetupSignals => ({
   hasReadyDocuments: overrides.hasReadyDocuments ?? false,
   hasCompletedChat: overrides.hasCompletedChat ?? false,
   setup: {
@@ -84,7 +84,7 @@ const setupSummary = (overrides: { hasReadyDocuments?: boolean; hasCompletedChat
 });
 
 /** The summaries a case's `setupState` names. The context Ray receives is derived from them by the real contributor. */
-export const COPILOT_EVAL_SETUP_STATES: Record<CopilotEvalSetupState, CopilotWorkspaceSetupSummary> = {
+export const COPILOT_EVAL_SETUP_STATES: Record<CopilotEvalSetupState, CopilotWorkspaceSetupSignals> = {
   fresh: setupSummary(),
   partly_set_up: setupSummary({ hasReadyDocuments: true, hasCompletedChat: true }),
   complete: setupSummary({
@@ -202,7 +202,7 @@ export const observeCopilotTurn = async (
     prompt: deps.prompt,
     tools: deps.tools,
     contextContributors: evalCase.setupState
-      ? [new WorkspaceSetupContext({ workspaceSetupState: { getSummary: async () => COPILOT_EVAL_SETUP_STATES[evalCase.setupState!] } })]
+      ? [new WorkspaceSetupContext({ workspaceSetupState: { getSetupSignals: async () => COPILOT_EVAL_SETUP_STATES[evalCase.setupState!] } })]
       : deps.contextContributors ?? [],
     currentAuthorization: {
       hasAllPermissions: async ({ requiredPermissions }) =>
@@ -651,7 +651,7 @@ callerKind: "human" as const,
       prepareRemoval: unusedPort("documents.prepareRemoval"),
       prepareReprocess: unusedPort("documents.prepareReprocess"),
     },
-    workspaceSetupState: { getSummary: unusedPort("workspaceSetupState.getSummary") },
+    workspaceSetupState: { getSetupSignals: unusedPort("workspaceSetupState.getSetupSignals") },
     reviewedProposalExecution: { executeMcpReviewedProposal: unusedPort("reviewedProposalExecution.executeMcpReviewedProposal") },
     reviewedProposalOutcome: { getMcpReviewedProposal: unusedPort("reviewedProposalOutcome.getMcpReviewedProposal") },
     cancelReviewedProposal: { cancelMcpReviewedProposal: unusedPort("cancelReviewedProposal.cancelMcpReviewedProposal") },

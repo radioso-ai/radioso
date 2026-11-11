@@ -13,7 +13,12 @@ const emptyStateSuggestion = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("setup_step"), step: z.enum(workspaceSetupSteps), text: z.string(), href: z.string().describe("The dashboard path that completes the step.") }),
   z.object({ kind: z.literal("prompt"), intent: z.enum(copilotOpenEndedIntents), text: z.string() }),
 ]);
-const emptyState = z.object({ phase: z.enum(["setup", "open"]), greeting: z.string().nullable(), suggestions: z.array(emptyStateSuggestion) });
+const emptyState = z.object({
+  phase: z.enum(["setup", "open"]),
+  firstConversationHappened: z.boolean().nullable().describe("Whether any conversation exists. A client shows retrospective copy only when this is true; null means the server could not say, which reads as no."),
+  greeting: z.string().nullable(),
+  suggestions: z.array(emptyStateSuggestion),
+});
 const proposalEvidenceCase = z.object({ caseId: z.string().uuid(), caseName: z.string(), runId: z.string().uuid(), before: z.enum(["pending", "passing", "failing", "error"]), after: z.enum(["pass", "fail", "error", "recorded"]), stale: z.boolean() });
 const proposalEvidenceSummary = z.object({ total: z.number().int(), improved: z.number().int(), regressed: z.number().int(), unchanged: z.number().int(), stale: z.number().int() });
 const reviewedEffect = z.object({ exposure: z.enum(["draft", "live"]), reversibility: z.enum(["reversible", "irreversible"]), metered: z.boolean() });

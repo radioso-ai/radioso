@@ -3,7 +3,7 @@ import { buildCopilotSetupStepLink, isLinkedCopilotSetupStep } from "../dashboar
 import {
   workspaceSetupStatePermissions,
   type CopilotWorkspaceSetupStatePort,
-  type CopilotWorkspaceSetupSummary,
+  type CopilotWorkspaceSetupSignals,
 } from "../tools/workspaceSetupState.js";
 import type { CopilotContextBlock, CopilotContextContributor, CopilotContextScope } from "./contributor.js";
 
@@ -25,7 +25,7 @@ export interface WorkspaceSetupGuidance {
 
 const NEXT_STEP_LIMIT = 3;
 
-const stepOutcomeExists = (summary: CopilotWorkspaceSetupSummary, step: WorkspaceSetupStep): boolean => {
+const stepOutcomeExists = (summary: CopilotWorkspaceSetupSignals, step: WorkspaceSetupStep): boolean => {
   switch (step) {
     case "purpose": return summary.setup.purpose !== null && summary.setup.purpose.trim().length > 0;
     case "documents": return summary.hasReadyDocuments;
@@ -37,7 +37,7 @@ const stepOutcomeExists = (summary: CopilotWorkspaceSetupSummary, step: Workspac
   }
 };
 
-export const deriveWorkspaceSetupGuidance = (summary: CopilotWorkspaceSetupSummary): WorkspaceSetupGuidance => {
+export const deriveWorkspaceSetupGuidance = (summary: CopilotWorkspaceSetupSignals): WorkspaceSetupGuidance => {
   const steps = workspaceSetupSteps.map((step) => ({
     step,
     // An outcome outranks a skip: a step the operator skipped and later completed is done.
@@ -87,7 +87,7 @@ export class WorkspaceSetupContext implements CopilotContextContributor, Copilot
 
   async guidance(scope: Pick<CopilotContextScope, "workspaceId" | "permissions">): Promise<WorkspaceSetupGuidance | null> {
     if (!workspaceSetupStatePermissions.every((permission) => scope.permissions.has(permission))) return null;
-    return deriveWorkspaceSetupGuidance(await this.deps.workspaceSetupState.getSummary(scope.workspaceId));
+    return deriveWorkspaceSetupGuidance(await this.deps.workspaceSetupState.getSetupSignals(scope.workspaceId));
   }
 
   async contribute(scope: CopilotContextScope): Promise<CopilotContextBlock | null> {

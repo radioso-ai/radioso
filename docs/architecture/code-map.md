@@ -744,7 +744,9 @@ context contributors (`context/contributor.ts`). The runtime asks each one once 
 turn and renders the blocks that answer into the system prompt, ahead of the
 safety boundaries; a contributor that fails costs the turn its block, not the turn.
 The workspace-setup contributor reads the same `CopilotWorkspaceSetupStatePort`
-that `workspace_setup_state` reads and derives the next incomplete steps, each with
+that `workspace_setup_state` reads, through `WorkspaceSummaryService.getSetupSignals`:
+existence checks rather than the counts `GET /workspace/summary` reports, because
+it runs on every turn. It derives the next incomplete steps, each with
 the dashboard path that completes it (`dashboardLinks.ts`). The empty panel's
 greeting and suggestions come from that same derivation through
 `services/emptyStateService.ts`: the module decides which steps may be offered and

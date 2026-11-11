@@ -100,7 +100,8 @@ create an API credential. Each suggestion is a link to the screen that
 completes the step. A step you have done or skipped never appears, and "done"
 is an outcome Radioso observed, such as a ready document or a confirmed
 delivery, not a page you visited. Setup is open until you dismiss it or every
-step Ray can point to is done or skipped. Ray leaves out the purpose step,
+step Ray can point to is done or skipped. Closing the first-run screen with
+**Open chat** or **Skip** dismisses it. Ray leaves out the purpose step,
 because no dashboard screen saves it; you set it through the
 [setup-state API](/api/workspace-setup).
 
@@ -113,13 +114,17 @@ Once setup is complete or dismissed, the suggestions become open-ended
 requests: crawl more of a website, tighten how the agent sounds, or draft a
 routine. Choosing one puts the request in the composer for you to send. Ray
 answers it with its usual proposals, so nothing changes until you apply one.
-When you are looking at a conversation or an agent, suggestions about that lead.
+Once conversations exist and you are looking at one, or at an agent,
+suggestions about that lead.
 
 The model writes the greeting and the suggestion text in your browser's
-language, once for each setup state and language. If it cannot, the panel
-shows Ray's name and, while setup is open, no suggestions. A workspace with no
-LLM configured shows the provider prompt instead. An operator without
-`workspace.summary.read` sees suggestions based on the screen.
+language, once for each setup state and language. If it cannot, or the empty
+state cannot be read, the panel shows Ray's name and nothing else. The line
+"ask me what happened" and suggestions based on the screen appear only once a
+conversation exists in the workspace. An operator without
+`workspace.summary.read` cannot see setup state, so Ray shows them the plain
+header too. A workspace with no LLM configured shows the provider prompt
+instead.
 
 ## Connect an external engine to Ray
 

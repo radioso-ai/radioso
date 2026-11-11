@@ -97,7 +97,7 @@ const presenter = (): ChatAnswerPresenter => {
  * conversation row, so it must never read or write them.
  */
 const workspaceRecords = () => ({
-  standing: vi.fn(async () => { throw new Error("Test Chat read the workspace's consent records"); }),
+  standingByConsent: vi.fn(async () => { throw new Error("Test Chat read the workspace's consent records"); }),
   latestPrompt: vi.fn(async () => { throw new Error("Test Chat read the workspace's consent records"); }),
 });
 
@@ -207,7 +207,7 @@ describe("Test Chat routine consent (#1544)", () => {
     await chat.send("I have a sore knee");
     expect(chat.routineState()).toMatchObject({ variables: { name: "Ada", injury: "sore knee" } });
     // Test Chat keeps no conversation row: the workspace's consent records are never consulted.
-    expect(chat.records.standing).not.toHaveBeenCalled();
+    expect(chat.records.standingByConsent).not.toHaveBeenCalled();
     expect(chat.records.latestPrompt).not.toHaveBeenCalled();
   });
 });
@@ -215,22 +215,33 @@ describe("Test Chat routine consent (#1544)", () => {
 describe("SessionRoutineConsentStore (#1544)", () => {
   const versionId = routineConsentWordingVersionId(wording);
   const consent = { conversationId: "test-chat-side-1", routineId: ROUTINE_ID, consentKey: "health" };
+  const standing = (store: SessionRoutineConsentStore, versionIdsByConsent: Record<string, string[]>) =>
+    store.standingByConsent({ routineId: ROUTINE_ID, versionIdsByConsent: new Map(Object.entries(versionIdsByConsent)) });
+  const decided = (decision: "granted" | "declined", decidedWording = wording) => ({
+    kind: "decided" as const, routineId: ROUTINE_ID, consentKey: "health", slotKeys: ["injury"], decision, method: "reply" as const, defaulted: false, wording: decidedWording,
+  });
 
-  it("holds the latest decision on any wording of the consent, and the reply that showed it last", async () => {
+  it("holds the decision on any wording of the consent, and the reply that showed it last", async () => {
     const store = new SessionRoutineConsentStore();
     store.record({ events: [{ kind: "asked", routineId: ROUTINE_ID, consentKey: "health", reask: false, wording }], replyMessageId: "reply-1" });
     store.record({ events: [{ kind: "asked", routineId: ROUTINE_ID, consentKey: "health", reask: true, wording }], replyMessageId: "reply-2" });
     expect(await store.latestPrompt(consent)).toEqual({ messageId: "reply-2", wordingVersionId: versionId, locale: "en" });
-    expect(await store.standing({ ...consent, versionIds: [versionId] })).toBeNull();
+    expect(await standing(store, { health: [versionId] })).toEqual(new Map());
 
-    store.record({
-      events: [{ kind: "decided", routineId: ROUTINE_ID, consentKey: "health", slotKeys: ["injury"], decision: "declined", method: "reply", defaulted: false, wording }],
-      replyMessageId: "reply-3",
-    });
-    expect(await store.standing({ ...consent, versionIds: ["another-version", versionId] })).toBe("declined");
+    store.record({ events: [decided("declined")], replyMessageId: "reply-3" });
+    expect(await standing(store, { health: ["another-version", versionId] })).toEqual(new Map([["health", "declined"]]));
     // A decision is kept on the wording it was given on; a consent whose wording changed asks again.
-    expect(await store.standing({ ...consent, versionIds: ["another-version"] })).toBeNull();
-    expect(await store.standing({ ...consent, consentKey: "other", versionIds: [versionId] })).toBeNull();
+    expect(await standing(store, { health: ["another-version"] })).toEqual(new Map());
+    expect(await standing(store, { other: [versionId] })).toEqual(new Map());
+  });
+
+  it("keeps the first decision on a wording, as the workspace's records do", async () => {
+    const store = new SessionRoutineConsentStore();
+    store.record({ events: [decided("declined")], replyMessageId: "reply-1" });
+    store.record({ events: [decided("granted")], replyMessageId: "reply-2" });
+
+    expect(await standing(store, { health: [versionId] })).toEqual(new Map([["health", "declined"]]));
+    expect(new SessionRoutineConsentStore(store.snapshot()).snapshot()?.decisions).toHaveLength(1);
   });
 
   it("keeps nothing for a consent not asked, and carries what it holds into the next turn's store", async () => {
@@ -244,7 +255,7 @@ describe("SessionRoutineConsentStore (#1544)", () => {
       replyMessageId: "reply-2",
     });
     const next = new SessionRoutineConsentStore(store.snapshot());
-    expect(await next.standing({ ...consent, versionIds: [versionId] })).toBe("granted");
+    expect(await standing(next, { health: [versionId] })).toEqual(new Map([["health", "granted"]]));
     expect(await next.latestPrompt(consent)).toEqual({ messageId: "reply-1", wordingVersionId: versionId, locale: "en" });
   });
 });

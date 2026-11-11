@@ -104,7 +104,7 @@ const portFor = (wording: typeof english) =>
       durable: true,
     },
     store: {
-      standing: async () => null,
+      standingByConsent: async () => new Map(),
       latestPrompt: async () => ({ messageId: "message_1", wordingVersionId: routineConsentWordingVersionId(wording), locale: wording.locale }),
     },
     reader: new RoutineConsentReplyReader(liveModel, { promptTemplate: loadPromptTemplate("chat/routine-consent-reply.md") }),

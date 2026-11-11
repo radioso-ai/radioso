@@ -185,13 +185,12 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
       "UPDATE routine_consent_records SET withdrawn_at = now(), withdrawn_by_account_id = $2 WHERE conversation_id = $1",
       [withdrawn.conversationId, tenant.accountId],
     );
-    const standing = (conversation: SeededConversation, overrides: { routineId?: string; consentKey?: string; versionIds?: string[] } = {}) =>
-      repository.standing({
+    const standing = async (conversation: SeededConversation, overrides: { routineId?: string; consentKey?: string; versionIds?: string[] } = {}) =>
+      (await repository.standingByConsent({
         conversationId: conversation.conversationId,
         routineId: overrides.routineId ?? "routine-intake",
-        consentKey: overrides.consentKey ?? "health",
-        versionIds: overrides.versionIds ?? [englishId, germanId],
-      });
+        versionIdsByConsent: new Map([[overrides.consentKey ?? "health", overrides.versionIds ?? [englishId, germanId]]]),
+      })).get(overrides.consentKey ?? "health") ?? null;
 
     expect(await standing(granted)).toBe("granted");
     expect(await standing(declined)).toBe("declined");
@@ -202,6 +201,31 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
     expect(await standing(granted, { routineId: "routine-other" })).toBeNull();
     expect(await standing(granted, { consentKey: "allergies" })).toBeNull();
     expect(await standing(granted, { versionIds: [] })).toBeNull();
+  });
+
+  it("reads what a conversation decided for every consent of a routine at once, each on its own wordings", async () => {
+    const tenant = await seedTenant();
+    const repository = new RoutineConsentRepository(database.kysely);
+    const conversation = await seedConversation(tenant);
+    const englishId = routineConsentWordingVersionId(english);
+    const germanId = routineConsentWordingVersionId(german);
+    await recordDecision(tenant, conversation, { consentKey: "health", wording: german });
+    await recordDecision(tenant, conversation, { consentKey: "diet", slotKeys: ["allergy"], decision: "declined", wording: english });
+    // A consent whose wording is German only: the English record above is the other consent's.
+    await recordDecision(tenant, conversation, { consentKey: "travel", slotKeys: ["insurance"], wording: english });
+
+    const decisions = await repository.standingByConsent({
+      conversationId: conversation.conversationId,
+      routineId: "routine-intake",
+      versionIdsByConsent: new Map([
+        ["health", [englishId, germanId]],
+        ["diet", [englishId]],
+        ["travel", [germanId]],
+        ["undecided", [englishId, germanId]],
+      ]),
+    });
+
+    expect(decisions).toEqual(new Map([["health", "granted"], ["diet", "declined"]]));
   });
 
   it("finds the consent prompt a conversation showed last, for the routine and consent asked", async () => {

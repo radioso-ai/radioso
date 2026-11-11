@@ -245,6 +245,7 @@ const visitorVoiceSessionStart = permanent("Permanent exclusion: a visitor's pag
 const visitorVoiceVendorConversationReport = permanent("Permanent exclusion: the website embed's page reports the vendor's id for the call it opened, once, from the visitor's public session. It records where the call's recording lives; nothing about it is operator configuration.");
 const voiceRuntimeConnectionWrite = permanent("Permanent exclusion: Connect and Disconnect create or delete a vendor agent in the workspace's own voice vendor account and issue or revoke the REST credential that agent carries, an access grant the never-list's access_grants keeps from Ray. The operator presses them on the agent's Voice card; Ray carries voice.runtime over as stored in propose_agent_setting and never asks for or invents a vendor agent id.");
 const voiceRuntimeConnectionStatus = permanent("Permanent exclusion: the Voice card's dashboard read of whether the runtime is one Radioso maintains; agent_configuration already shows Ray the agent's voice.runtime binding, and only the dashboard acts on the difference.");
+const testChatVoiceSessionStart = permanent("Permanent exclusion: Test Chat's Talk opens a call in the operator's browser, with their microphone, on the workspace's vendor account, and hands that page the vendor's signed URL, a bearer credential. Ray speaks no audio and holds no microphone. Ray already tests the draft through send_test_chat_message, and test_chat_transcript reads the call's turns, which the test records like typed ones.");
 const voiceRecordingAudio = permanent("Permanent exclusion: the response is the call's audio, binary media a teammate listens to in the Inbox with each play audited against them, not a Ray operation. Ray's conversation_transcript says whether a voice conversation has a recording (recordingAvailable), and the transcript carries what was said.");
 const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
@@ -606,6 +607,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   retainAgentTestExecutionSide: revisionTestingAndEval,
   captureAgentTestExecutionEvalSnapshot: revisionTestingAndEval,
   retryAgentTestExecutionSide: revisionTestingAndEval,
+  startAgentTestExecutionVoiceSession: testChatVoiceSessionStart,
   createRevisionEvalRun: revisionTestingAndEval,
   getRevisionEvalRun: revisionTestingAndEval,
   retryRevisionEvalCase: revisionTestingAndEval,

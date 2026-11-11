@@ -22,3 +22,18 @@ describe('content security policy', () => {
     expect(await scriptSrcFor('/:path*')).not.toContain('wasm-unsafe-eval')
   })
 })
+
+describe('permissions policy', () => {
+  const permissionsFor = async (source: string): Promise<string | undefined> => {
+    const rules = (await nextConfig.headers?.()) as HeaderRule[]
+    return rules.find((rule) => rule.source === source)?.headers.find((header) => header.key === 'Permissions-Policy')?.value
+  }
+
+  // The policy is fixed when a document loads, and the dashboard is entered through `/`, `/login` or
+  // an invitation and moved to `/w/...` on the client, so the page the operator lands on must allow it.
+  it("lets every page of the app's own origin ask for the microphone, and no frame of another origin", async () => {
+    for (const source of ['/:path*', '/embed/:path*', '/embed-frame']) {
+      expect(await permissionsFor(source)).toBe('camera=(), microphone=(self), geolocation=()')
+    }
+  })
+})

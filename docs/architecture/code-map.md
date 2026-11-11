@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-09
+last_updated: 2026-11-11
 ---
 
 # Code Map
@@ -736,10 +736,31 @@ first-party surfaces. Contributed descriptors merge into the catalog before
 governance and enrichment, so duplicate names, permission parity, dashboard
 handoffs, and per-turn permission filtering apply to them unchanged, and the
 permissions a turn resolves are derived from the assembled catalog rather than a
-list a contributing module cannot edit. Contributions supply reads, probes, and
-acts; a proposal needs an adapter for its target type, and the target-type set is
-closed by the public contract enum, repository narrowing, and the dashboard's
-card presentation.
+list a contributing module cannot edit. Tool contributions supply reads, probes,
+and acts.
+
+A module contributes a proposal through `registerCopilotProposalAdapter`
+(`operatorCopilot/proposalContribution.ts`): a target type the module owns, the
+adapter that drafts, previews, and applies it, the read and manage permissions it
+asks for, and the identity of the propose tool Ray offers for it.
+`app/composition/copilotContributions.ts` resolves the contributions and
+assembles the proposal target-type set, the first-party list plus each contributed
+type, and boot fails when a contribution names a first-party type or one another
+module already contributed. Every reader of a stored or streamed proposal narrows
+against that set: the copilot repository's row mapping, the service's live card
+and its permission checks, `proposal_detail`, and the availability route's
+applyable targets. A stored type outside the set (a module removed or renamed, a
+rollback, a rollout in progress) leaves its card out of the conversation with a
+warning, while reading or claiming it by id refuses it. The
+`copilot_proposals.target_type` column checks only the identifier syntax. Ray builds the propose tool itself
+(`tools/contributedProposals.ts`): it drafts through the adapter, stores the
+card's label, sentence, and `presentation` (the link label and a
+workspace-relative dashboard path) beside the adapter's `change` on the payload,
+and audits the draft. Apply runs through the same claim, reauthorization, and
+interrupted-apply rule as a first-party proposal, and a contributed adapter must
+say whether an interrupted apply may run again. The published OpenAPI enum lists
+the first-party types only, because the contract describes this repository's
+surfaces. Contributed propose tools stay off Operator MCP.
 
 Ray's operational envelope has three parts, all keyed off the turn/tool boundary.
 Every operator-initiated `copilot.*` audit event carries the operator principal
@@ -796,6 +817,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/proposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
+- `backend/src/modules/operatorCopilot/proposalContribution.ts`, `tools/contributedProposals.ts`, and `proposalCard.ts` (a contributed proposal target type, the propose tool Ray builds for it, and both card producers); `backend/src/app/composition/copilotContributions.ts` assembles the target-type set
 - `ee/packages/backend-module/src/usageLimits/copilotTools.ts` (`workspace_usage_limits`, the Enterprise contribution)
 - `backend/src/modules/operatorCopilot/contracts/agentTurnProbe.ts` and `services/agentTurnProbeService.ts` (probe orchestration boundary)
 - `backend/src/modules/operatorCopilot/tools/eval.ts` (`eval_results`, `create_eval_case_from_turn`, `run_eval_suite`, `replay_eval_case`)
@@ -1859,6 +1881,14 @@ Primary internals:
   `turnPlanCoordinator.ts` (fused turn planning), with `turnPlanQuickReply.ts`
   (when the direct answer is the planner's own quick reply)
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
+- `backend/src/modules/chat/services/answerLinkGuard.ts` and
+  `streamedAnswerText.ts` (#1751: a grounded answer's link to an address its
+  model was not sent becomes its text, streamed and finished alike), over the
+  pure `backend/src/shared/text/markdownLinkGuard.ts` (Markdown link syntax and
+  the streaming holdback) and `shared/text/givenLinkTargets.ts` (URL forms
+  matched against the prompt text), which
+  `modules/retrieval/services/retrievalAnswerService.ts` applies to the
+  standalone retrieval answer too
 - `backend/src/modules/answerCoverage/` (validated assessment producer,
   immutable assessment/reaction storage, and history/Pulse read ports)
 - `backend/src/modules/chat/services/groundedAnswerHeadReader.ts` (parses the
@@ -1925,6 +1955,7 @@ Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/chat-service-streaming.test.ts tests/unit/chat-history-service.test.ts tests/unit/chat-presenter.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/grounded-answer-head-reader.test.ts tests/unit/retrieval-answer-coverage-verdict.test.ts tests/unit/chat/answerCoverageHeadRecorder.test.ts tests/unit/chat/answerCoverageShadowAssessor.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/shared/markdownLinkGuard.test.ts tests/unit/shared/givenLinkTargets.test.ts tests/unit/chat/answerLinkGuard.test.ts tests/unit/retrieval-answer-link-guard.test.ts tests/unit/retrieval/retrievalAnswerLinks.test.ts` (links to addresses the model was not given)
 - `cd backend && pnpm exec vitest run tests/unit/chat/agentReplyEnvelope.test.ts tests/unit/routines/routineTurnReporter.test.ts tests/contract/agent-reply-envelope.contract.test.ts tests/integration/agent-reply-envelope.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/chat/agentTurnInput.test.ts tests/contract/mcp-converse.contract.test.ts tests/integration/routine-invocation.integration.test.ts` (tool catalog route and routine invocation turns on both doors)
 - `cd frontend && pnpm test -- tests/unit/chat-message-thread.test.tsx tests/unit/chat-citations.test.tsx`

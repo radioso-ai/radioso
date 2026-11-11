@@ -169,7 +169,7 @@ import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
 import type { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import type { PeriodicTaskRunner } from "../composition/periodicTaskRunner.js";
-import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
+import type { CopilotProposalTargetTypeSet, CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
 import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
 import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.js";
@@ -462,6 +462,8 @@ export interface AppDependencies {
    * rather than assembling a parallel copilot that nobody talks to.
    */
   copilotToolCatalog: ReadonlyArray<CopilotToolDescriptor>;
+  /** The Ray proposal target types this deployment stores, reads, and applies: first-party and contributed. */
+  copilotProposalTargetTypes: CopilotProposalTargetTypeSet;
   copilotCapabilityRunner: AgenticCapabilityRunner;
   copilotPrompt: string;
   copilotWorkspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;

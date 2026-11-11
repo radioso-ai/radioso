@@ -605,6 +605,10 @@ describe("grounded answer prompt contract", () => {
     expect(prompt).toContain("has such a Source URL");
     expect(prompt).toContain("turn that resource's own name into an inline Markdown link to its Source URL");
     expect(prompt).toContain("Never invent a URL");
+    // #1751: a name links only to an address the model was given, so a list item or a
+    // directive's commitment to link it is never read as "link it anyway".
+    expect(prompt).toContain("link a name only to an address you were given, else keep it plain text.");
+    expect(loadPromptTemplate("retrieval/answer-layout-written.md")).toContain("linked only to an address you were given");
     expect(prompt).not.toContain("source you draw the answer from");
     expect(prompt).not.toContain("leaving only a bare citation marker");
   });

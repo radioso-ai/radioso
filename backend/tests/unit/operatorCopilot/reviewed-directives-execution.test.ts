@@ -24,6 +24,7 @@ import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/
 import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import type { CopilotReviewedReceiptPort } from "../../../src/modules/operatorCopilot/contracts.js";
 import { AppError, conflict, notFound } from "../../../src/shared/domain/errors.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const workspaceId = randomUUID();
 const accountId = randomUUID();
@@ -337,7 +338,7 @@ const buildFixture = () => {
     proposalRepository, proposalAdapters: [], proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, now: () => new Date(),
     directiveAuthor: directiveAuthorService, directives: authoredDirectiveService,
   });
-  const service = new OperatorCopilotService({
+  const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     repository: proposalRepository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: {
       reserveAnswer: vi.fn(), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn(),
     }, auditService: { record: vi.fn() }, prompt: "system", workspaceRouteKeyResolver: { resolveWorkspaceKey: async () => "workspace" },
@@ -623,7 +624,7 @@ describe("prepare_directive is an MCP-only tool", () => {
       capturedTools = tools;
       return { events: (async function* () {})(), result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 0, wallTimeMs: 1 }) };
     };
-    const dashboardService = new OperatorCopilotService({
+    const dashboardService = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository: new MemoryProposalRepository(), capabilityRunner: { runStreaming: runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
       auditService: { record: vi.fn() }, prompt: "system", workspaceRouteKeyResolver: { resolveWorkspaceKey: async () => "workspace" },

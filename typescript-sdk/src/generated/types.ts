@@ -6546,6 +6546,7 @@ export interface components {
         };
         BuiltInDirective: {
             name: string;
+            title: string;
             condition: components["schemas"]["AuthoredDirectiveCondition"];
             action: string;
             priority: number | null;

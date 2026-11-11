@@ -871,8 +871,14 @@ describe("agents contract", () => {
       tags: ["step:contact:ask_email"],
       binding: { kind: "skill", skillName: "order.lookup" },
     });
+    const builtInTitles: Record<string, string> = {
+      "concise-readable-formatting": "Readable formatting",
+      "represent-organization": "Speak as the organization",
+      "inline-supported-links": "Inline source links",
+    };
     expect(list.body.builtIns).toEqual(defaultAnswerDirectives.map((directive) => ({
       name: directive.name,
+      title: builtInTitles[directive.name],
       condition: directive.condition,
       action: directive.action,
       priority: directive.priority ?? null,

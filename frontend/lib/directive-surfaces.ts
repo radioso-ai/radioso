@@ -74,6 +74,14 @@ export const toggleDirectiveSurface = (
   return current.filter((entry) => entry !== surface)
 }
 
+/** The generators a directive addresses, by the names the editor gives them. */
+export const directiveSurfaceSummary = (surfaces: Directive['surfaces'] | undefined): string => {
+  const scope = directiveSurfacesToForm(surfaces)
+  return DIRECTIVE_SURFACE_CHOICES.filter((choice) => scope.includes(choice.surface))
+    .map((choice) => choice.title)
+    .join(' and ')
+}
+
 /**
  * How a card should label a directive's scope. The reply alone is the default and
  * needs no label; anything else is worth showing, because the same instruction reads
@@ -82,8 +90,6 @@ export const toggleDirectiveSurface = (
 export const directiveSurfaceLabel = (surfaces: Directive['surfaces'] | undefined): string | null => {
   const scope = directiveSurfacesToForm(surfaces)
   if (scope.length === 1 && scope[0] === 'answer') return null
-  const titles = DIRECTIVE_SURFACE_CHOICES.filter((choice) => scope.includes(choice.surface)).map(
-    (choice) => choice.title,
-  )
-  return titles.length > 0 ? `Applies to: ${titles.join(' and ')}` : null
+  const summary = directiveSurfaceSummary(surfaces)
+  return summary ? `Applies to: ${summary}` : null
 }

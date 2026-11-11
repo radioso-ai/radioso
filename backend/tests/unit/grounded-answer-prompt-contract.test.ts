@@ -578,7 +578,11 @@ describe("grounded answer prompt contract", () => {
     // Clarification and direct/non-retrieval turns each stay lean and, by AC,
     // carry no citation/link/suggestion authoring rules.
     expect(stack("chat/clarification-question.md")).toBeLessThanOrEqual(130);
-    expect(stack("chat/non-retrieval-answer.md")).toBeLessThanOrEqual(700);
+    // Widened for the rule that a direct reply never writes a message for the user to send,
+    // nor carries out an earlier reply's offer to: a bullet of its own and a note above the
+    // history. Folded into one sentence on the action bullet, the reply to an accepted
+    // offer still drafted the email in 3 of 5 samples (`offer-scope-*` eval cases).
+    expect(stack("chat/non-retrieval-answer.md")).toBeLessThanOrEqual(780);
     for (const file of ["chat/clarification-question.md", "chat/non-retrieval-answer.md", "chat/grounded-miss.md"]) {
       const template = loadPromptTemplate(file);
       expect(template).not.toMatch(/append a sourced assertion/i);

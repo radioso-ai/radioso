@@ -104,7 +104,8 @@ on a turn it runs: on a step still missing one of its slots, on a step with an
 The user may write a date in any form. A `date` slot is recorded as `YYYY-MM-DD`,
 reading day and month the way the user wrote them ("11-14 Nov" is 11 to 14
 November); the prompt carries today's date in the turn's time zone (the visitor's,
-else the workspace's, else UTC: `TurnContext.referenceTimeZone`), and a date given
+else the workspace's, else UTC: `TurnContext.referenceTimeZone`; a routine resumed by an
+approval click reads the zone of the visitor's last message before the workspace's), and a date given
 without a year resolves to its next occurrence, so "11 novembre" is stored as
 `2026-11-11`. An
 approximate time such as "mid-November" leaves the slot empty. A `number` or

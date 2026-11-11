@@ -46,6 +46,8 @@ interface CloseReviewPopoverProps {
   open: boolean
   anchor: HTMLElement | null
   state: TerminalTriageState
+  /** How many reviews one choice closes, when it closes several at once. */
+  count?: number
   submitting: boolean
   error?: string | null
   conflict?: QualityTriageRecord | null
@@ -64,6 +66,7 @@ export function CloseReviewPopover({
   open,
   anchor,
   state,
+  count = 1,
   submitting,
   error,
   conflict,
@@ -142,7 +145,9 @@ export function CloseReviewPopover({
             <div className="space-y-1">
               <h2 id={titleId} className="text-sm font-semibold">{actionLabel}</h2>
               <p id={descriptionId} className="text-xs text-muted-foreground">
-                Close now, or optionally classify this review for reporting.
+                {count > 1
+                  ? `Close these ${count} reviews now, or optionally classify them for reporting.`
+                  : 'Close now, or optionally classify this review for reporting.'}
               </p>
             </div>
 

@@ -17,6 +17,7 @@ import type { CopilotRepositoryPort } from "../service.js";
 import { summarizeProposalEvidence } from "../proposalEvidence.js";
 import { resolveProposalEvidence, type ProposalChange, type ProposalEvidenceDependencies } from "../services/proposalEvidenceService.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { canonicalTimeZone, TIME_ZONE_MAX_LENGTH } from "../../../shared/domain/referenceTimeZone.js";
 import { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "../../voiceChannel/public.js";
 
 export interface CopilotAgentListItem {
@@ -31,6 +32,17 @@ export interface CopilotAgentLookupPort {
 }
 
 export const entity = (type: string, id: string | null | undefined) => id ? { type, id } : null;
+
+/**
+ * The zone Ray names to test a turn as a visitor there. A name the runtime does not know is
+ * refused rather than ignored, as the chat APIs ignore a bad browser zone: a turn that quietly read
+ * the workspace's zone would be reported back as tested in the zone Ray asked for. It is still a
+ * plain bounded string in the tool's JSON schema.
+ */
+export const testTurnTimeZoneSchema = z.string().trim().min(1).max(TIME_ZONE_MAX_LENGTH).refine(
+  (value) => canonicalTimeZone(value) !== null,
+  { message: "userTimeZone must be an IANA time zone name the server knows, such as America/Los_Angeles or Europe/Rome; names such as PDT or Pacific, and fixed offsets such as +05:00, are not one." },
+);
 
 /**
  * The sentence a card states, clamped to what its payload can hold. A tool composes this from

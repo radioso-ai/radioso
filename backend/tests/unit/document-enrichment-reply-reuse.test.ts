@@ -92,7 +92,7 @@ const workshopInput = (overrides: {
       { chunkIndex: 0, startOffset: 0, endOffset: 15, metadata: {} },
       { chunkIndex: 1, startOffset: 17, endOffset: markdownContent.length, metadata: {} },
     ],
-    anchor: { source: "document_created_at" as const, date: "2026-07-01" },
+    anchor: { source: "document_created_at" as const, date: "2026-07-01", timeZone: "UTC" },
     ...(overrides.refreshReply ? { refreshReply: true } : {}),
   };
 };

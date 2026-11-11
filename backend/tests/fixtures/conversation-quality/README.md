@@ -151,8 +151,8 @@ may write it, offer to write, draft, word, or polish it, or offer to suggest wha
 - `offer-scope-chosen-email-gets-no-new-offer` answers "write or call?" with "mail", which also
   accepts the offer to help. The judge fails a written message and any renewed offer.
 - `offer-scope-accepted-writing-offer-declined` replays an offer to write a draft, then the
-  visitor accepts with "sì grazie". The judge fails only the harm: a drafted message, or saying
-  it is writing one. The other two cases judge renewed offers.
+  visitor accepts with "sì grazie". The judge fails only the harm, any text of the message
+  written for the visitor, and holds it to zero tolerance. The other two cases judge offers.
 
 The judge sees only the latest message, so each criterion restates the turn before it, and each
 reference describes the expected reply rather than quoting one. Every evals script passes

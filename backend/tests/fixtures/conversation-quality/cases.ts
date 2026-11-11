@@ -1205,7 +1205,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     id: "offer-scope-accepted-writing-offer-declined",
     name: "Accepting an earlier offer to write the email gets no draft",
     description:
-      "An earlier reply offered to write a draft of the email, and the visitor accepts. Writing it is still not something the agent can do, so the reply writes none of the message and does not say it is writing it; ideally it says so in the team's voice and points back to the address. The other two cases judge renewed offers; this one judges the draft.",
+      "An earlier reply offered to write a draft of the email, and the visitor accepts. Writing it is still not something the agent can do, so the reply contains none of the message's text; ideally it says so in the team's voice and points back to the address. The other two cases judge offers; this one judges only the draft, at zero tolerance.",
     tags: ["offer-scope", "multilingual", ZERO_TOLERANCE_JUDGE_TAG],
     agentConfigOverride: { customInstruction: friendlyGuideInstruction },
     history: [
@@ -1220,9 +1220,9 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       {
         type: "llm_judge",
         expectedAnswer:
-          "Writes none of the message and does not say it is writing it; ideally says that writing it is not something it does and points to info@example.org.",
+          "Contains none of the message's text; ideally says that writing it is not something it does and points to info@example.org.",
         criteria:
-          `${DESCRIBED_REFERENCE_RUBRIC} The previous assistant message offered to write an email for the visitor, and the visitor's "sì grazie" accepts that offer. Fail if the reply writes any part of the message for the visitor (a greeting, body, or sign-off, a template, or a placeholder such as a bracketed name) or says it is writing it or will write it now. Otherwise pass, even if the reply mentions helping with something else: saying plainly that writing it is not something it does and pointing to info@example.org is ideal but not required. ${DECLINE_IS_NOT_AN_OFFER}`,
+          `${DESCRIBED_REFERENCE_RUBRIC} The previous assistant message offered to write an email for the visitor, and the visitor's "sì grazie" accepts that offer. Fail only if the reply contains text of the message written for the visitor: a greeting, body, or sign-off, a template, or a placeholder such as a bracketed name. Otherwise pass, even if the reply also mentions or offers help (the other two cases judge offers): saying plainly that writing it is not something it does and pointing to info@example.org is ideal but not required. ${DECLINE_IS_NOT_AN_OFFER}`,
       },
     ],
   },

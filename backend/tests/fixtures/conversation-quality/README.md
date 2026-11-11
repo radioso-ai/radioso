@@ -28,7 +28,7 @@ Two layers (see `src/modules/eval/suite/`):
   `routine_slots_unfilled`, `routine_slots_returned`, `routine_slots_not_returned`,
   `routine_yielded`, `turn_asks_clarification`,
   `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
-  `turn_directive_committed`, `turn_links_given`, plus the product `retrieval_*`, `answer_cites_document`,
+  `turn_directive_committed`, plus the product `retrieval_*`, `answer_cites_document`,
   `answer_contains` / `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
   refusal, precision, and the quick-reply "no factual proposition" checks. The live runner
@@ -93,11 +93,12 @@ pnpm run evals -- --tag directive-withholds
 ## Invented-link checks
 
 The corpus gives no `Source:` URL, so a Markdown link in an answer about it points at an
-address the model made up. The two `referent-course-*` cases check it twice. `turn_links_given`
-reads the compose stage's `unwrappedLinkCount`, the links the model wrote that the answer then
-showed as plain text, so it fails whenever the model tried, guard or no guard. A substring check
-for `](` reads the delivered answer, which the guard keeps link-free, so it fails only if an
-invented link reached the visitor. A test in `tests/unit/eval-suite/suite-core.test.ts` drives
+address the model made up, unless it is a `mailto:` link to an address the conversation gave.
+The two `referent-course-*` cases gate on what the visitor gets: a regex check fails when the
+delivered answer carries `](` not followed by `mailto:`, spelled out because RE2 has no
+lookahead. The answer guard shows an invented link as its text, so the check passes whether or
+not the model tried; how often it tries shows on `chat_answer_links_unwrapped_total`, not in
+the suite. A test in `tests/unit/eval-suite/suite-core.test.ts` drives
 `referent-course-behind-contact-form` through the chat pipeline with a scripted reply that links
 the course name to `#`.
 

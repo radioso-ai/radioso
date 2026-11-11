@@ -13,17 +13,10 @@
  * raw brackets and the policy can reject it.
  *
  * The grammar is narrower than CommonMark, and the same in both entry points, so a streamed
- * text joins to exactly what the whole text guards to: link text stays on one line and
- * within a bound, a code span closes on its own line, and indented code and reference links
- * are read as text. Callers that hold spans which are not Markdown content (citation markers,
- * say) declare them through `ignoredRanges`; they are carried through untouched and never
- * open or close a construct.
+ * text joins to exactly what the whole text guards to: link text, a code span, and a fence
+ * line each stay on one line and within {@link MARKDOWN_LINK_BOUNDS}, and indented code and
+ * reference links are read as text. The bounds also cap how much a stream holds back.
  */
-
-export interface MarkdownRange {
-  readonly start: number;
-  readonly end: number;
-}
 
 /** Whether a link stays, or why it becomes its text. */
 export type LinkDestinationVerdict<Reason extends string> =
@@ -32,15 +25,18 @@ export type LinkDestinationVerdict<Reason extends string> =
 
 export type LinkDestinationPolicy<Reason extends string> = (destination: string) => LinkDestinationVerdict<Reason>;
 
-export interface GuardedMarkdown<Reason extends string> {
+interface GuardedMarkdown<Reason extends string> {
   readonly text: string;
   /** Why each unwrapped link was unwrapped, in text order. */
   readonly unwrapped: readonly Reason[];
 }
 
-/** Link text longer than this, or a destination longer than its bound, is read as text. */
+/**
+ * Link text, a code span, or a fence line that runs past `spanMaxLength`, or a destination
+ * that runs past `destinationMaxLength`, is read as plain text.
+ */
 const MARKDOWN_LINK_BOUNDS = {
-  textMaxLength: 1000,
+  spanMaxLength: 1000,
   destinationMaxLength: 4096,
 } as const;
 
@@ -67,7 +63,9 @@ type LinkMatch =
 const FENCE_OPENING = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const FENCE_CLOSING = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 // A line start that more characters could still turn into a fence opening.
-const FENCE_PREFIX = /^ {0,3}(?:`+|~+)?$/;
+const FENCE_OPENING_PREFIX = /^ {0,3}(?:`+|~+)?$/;
+// A line start that more characters could still turn into a fence closing.
+const FENCE_CLOSING_PREFIX = /^ {0,3}(?:(?:`+|~+)[ \t]*)?$/;
 const SPECIAL = /[\n\\`![]/g;
 const TITLE = /^(?:"[^"]*"|'[^']*'|\([^()]*\))$/;
 const WHITESPACE_RUN = /\s+/;
@@ -85,13 +83,35 @@ const readDestination = (raw: string): string => {
   return rest.length > 0 && TITLE.test(inner.slice(first.length).trim()) ? first : inner;
 };
 
+/**
+ * The fence a line opens. A tilde fence opens on its run alone; a backtick fence needs its
+ * whole line within the bound, with no backtick in its info string.
+ */
+const fenceOpening = (line: string): Fence | null => {
+  const opening = FENCE_OPENING.exec(line);
+  if (!opening) {
+    return null;
+  }
+  const marker = opening[1][0];
+  const backtickLineRejected = marker === "`"
+    && (opening[2].includes("`") || line.length > MARKDOWN_LINK_BOUNDS.spanMaxLength);
+  return backtickLineRejected ? null : { marker, length: opening[1].length };
+};
+
+const closesFence = (line: string, fence: Fence): boolean => {
+  const closing = FENCE_CLOSING.exec(line);
+  return closing !== null
+    && line.length <= MARKDOWN_LINK_BOUNDS.spanMaxLength
+    && closing[1][0] === fence.marker
+    && closing[1].length >= fence.length;
+};
+
 class LinkScanner<Reason extends string> {
   private output = "";
   private readonly unwrapped: Reason[] = [];
 
   constructor(
     private readonly text: string,
-    private readonly ranges: ReadonlyArray<MarkdownRange>,
     private readonly policy: LinkDestinationPolicy<Reason>,
     private readonly final: boolean,
     private readonly state: ScanState,
@@ -115,38 +135,40 @@ class LinkScanner<Reason extends string> {
     return to;
   }
 
-  /** The end of the declared range `index` falls in, or `index` when none. */
-  private rangeEnd(index: number): number {
-    return this.ranges.find((range) => range.start <= index && index < range.end)?.end ?? index;
-  }
-
-  /** At a line start: fence lines are emitted whole; other lines go on to inline scanning. */
+  /**
+   * At a line start, decides whether the line opens or closes a fence. A line that does is
+   * emitted whole; any other line goes on to inline scanning, or to fenced content inside a
+   * fence. `null` while the line so far could still go either way.
+   */
   private lineStart(index: number): number | null {
     const lineBreak = this.text.indexOf("\n", index);
     const lineEnd = lineBreak < 0 ? this.text.length : lineBreak;
     const line = this.text.slice(index, lineEnd).replace(/\r$/, "");
     const complete = lineBreak >= 0 || this.final;
+    const withinBound = line.length <= MARKDOWN_LINK_BOUNDS.spanMaxLength;
     const fence = this.state.fence;
     if (fence) {
-      if (!complete) {
+      if (!complete && withinBound && FENCE_CLOSING_PREFIX.test(line)) {
         return null;
       }
-      const closing = FENCE_CLOSING.exec(line);
-      if (closing && closing[1][0] === fence.marker && closing[1].length >= fence.length) {
+      if (complete && closesFence(line, fence)) {
         this.state.fence = null;
+        return this.endLine(index, lineBreak);
       }
-      return this.endLine(index, lineBreak);
+      this.state.atLineStart = false;
+      return index;
     }
-    if (!complete && FENCE_PREFIX.test(line)) {
+    if (!complete && withinBound && FENCE_OPENING_PREFIX.test(line)) {
       return null;
     }
     const opening = FENCE_OPENING.exec(line);
-    if (opening && !(opening[1][0] === "`" && opening[2].includes("`"))) {
-      if (!complete) {
-        return null;
-      }
-      this.state.fence = { marker: opening[1][0], length: opening[1].length };
-      return this.endLine(index, lineBreak);
+    // A backtick fence needs its whole line: a backtick later in it means no fence at all.
+    if (opening && !complete && withinBound && opening[1][0] === "`" && !opening[2].includes("`")) {
+      return null;
+    }
+    const opened = opening && (complete || opening[1][0] === "~") ? fenceOpening(line) : null;
+    if (opened) {
+      this.state.fence = opened;
     }
     this.state.atLineStart = false;
     return index;
@@ -161,9 +183,8 @@ class LinkScanner<Reason extends string> {
   }
 
   private inline(index: number): number | null {
-    const rangeEnd = this.rangeEnd(index);
-    if (rangeEnd > index) {
-      return this.emit(index, rangeEnd);
+    if (this.state.fence) {
+      return this.endLine(index, this.text.indexOf("\n", index));
     }
     const char = this.text[index];
     if (char === "\n") {
@@ -185,35 +206,30 @@ class LinkScanner<Reason extends string> {
       return this.link(index);
     }
     SPECIAL.lastIndex = index;
-    const special = SPECIAL.exec(this.text)?.index ?? this.text.length;
-    const nextRange = this.ranges.find((range) => range.start > index)?.start ?? this.text.length;
-    return this.emit(index, Math.min(special, nextRange));
+    return this.emit(index, SPECIAL.exec(this.text)?.index ?? this.text.length);
   }
 
   /**
-   * Where the code span opening at `index` ends, or the end of its backtick run when no run
-   * of the same length closes it on its line; `null` while that is still open.
+   * Where the code span opening at `index` ends, or the end of its backtick run when no run of
+   * the same length closes it on its line within the bound; `null` while that is still open.
    */
   private codeSpanEnd(index: number): number | null {
-    let runEnd = index;
-    while (this.text[runEnd] === "`") {
-      runEnd += 1;
-    }
-    if (runEnd === this.text.length && !this.final) {
+    const runEnd = this.backtickRunEnd(index);
+    if (runEnd === null) {
       return null;
     }
     const length = runEnd - index;
     let cursor = runEnd;
     while (cursor < this.text.length && this.text[cursor] !== "\n") {
+      if (cursor - runEnd > MARKDOWN_LINK_BOUNDS.spanMaxLength) {
+        return runEnd;
+      }
       if (this.text[cursor] !== "`") {
         cursor += 1;
         continue;
       }
-      let closeEnd = cursor;
-      while (this.text[closeEnd] === "`") {
-        closeEnd += 1;
-      }
-      if (closeEnd === this.text.length && !this.final) {
+      const closeEnd = this.backtickRunEnd(cursor);
+      if (closeEnd === null) {
         return null;
       }
       if (closeEnd - cursor === length) {
@@ -222,6 +238,15 @@ class LinkScanner<Reason extends string> {
       cursor = closeEnd;
     }
     return cursor === this.text.length && !this.final ? null : runEnd;
+  }
+
+  /** The end of the backtick run at `index`; `null` while more text could lengthen it. */
+  private backtickRunEnd(index: number): number | null {
+    let runEnd = index;
+    while (this.text[runEnd] === "`") {
+      runEnd += 1;
+    }
+    return runEnd === this.text.length && !this.final ? null : runEnd;
   }
 
   private link(index: number): number | null {
@@ -240,42 +265,25 @@ class LinkScanner<Reason extends string> {
     if (match.kind === "text") {
       return this.emit(index, open + 1);
     }
-    const label = this.guardSpan(open + 1, match.textEnd);
-    const { destination, carried } = this.destinationOf(match.destinationStart, match.end - 1);
-    const verdict = this.policy(readDestination(destination));
+    const label = this.guardLabel(open + 1, match.textEnd);
+    const verdict = this.policy(readDestination(this.text.slice(match.destinationStart, match.end - 1)));
     if (verdict.kind === "keep") {
       this.output += `${image ? "!" : ""}[${label}]${this.text.slice(match.textEnd + 1, match.end)}`;
     } else {
       this.unwrapped.push(verdict.reason);
-      this.output += `${label}${carried}`;
+      this.output += label;
     }
     return match.end;
   }
 
   /** The link text, guarded on its own: it may hold an image or another link. */
-  private guardSpan(start: number, end: number): string {
-    const ranges = this.ranges
-      .filter((range) => range.start >= start && range.end <= end)
-      .map((range) => ({ start: range.start - start, end: range.end - start }));
-    const inner = new LinkScanner(this.text.slice(start, end), ranges, this.policy, true, {
+  private guardLabel(start: number, end: number): string {
+    const inner = new LinkScanner(this.text.slice(start, end), this.policy, true, {
       fence: null,
       atLineStart: false,
     }).run();
     this.unwrapped.push(...inner.unwrapped);
     return inner.output;
-  }
-
-  /** The destination with declared ranges taken out, and those ranges' text to carry on. */
-  private destinationOf(start: number, end: number): { destination: string; carried: string } {
-    let destination = "";
-    let carried = "";
-    let cursor = start;
-    for (const range of this.ranges.filter((candidate) => candidate.start >= start && candidate.end <= end)) {
-      destination += this.text.slice(cursor, range.start);
-      carried += this.text.slice(range.start, range.end);
-      cursor = range.end;
-    }
-    return { destination: destination + this.text.slice(cursor, end), carried };
   }
 
   /** Reads `[text](destination)` from the `[` at `open`. */
@@ -284,13 +292,8 @@ class LinkScanner<Reason extends string> {
     let cursor = open;
     let textEnd = -1;
     while (cursor < this.text.length) {
-      if (cursor - open > MARKDOWN_LINK_BOUNDS.textMaxLength) {
+      if (cursor - open > MARKDOWN_LINK_BOUNDS.spanMaxLength) {
         return { kind: "text" };
-      }
-      const rangeEnd = this.rangeEnd(cursor);
-      if (rangeEnd > cursor) {
-        cursor = rangeEnd;
-        continue;
       }
       const char = this.text[cursor];
       if (char === "\n") {
@@ -335,11 +338,6 @@ class LinkScanner<Reason extends string> {
       if (cursor - destinationStart > MARKDOWN_LINK_BOUNDS.destinationMaxLength) {
         return { kind: "text" };
       }
-      const rangeEnd = this.rangeEnd(cursor);
-      if (rangeEnd > cursor) {
-        cursor = rangeEnd - 1;
-        continue;
-      }
       const char = this.text[cursor];
       if (char === "\n") {
         return { kind: "text" };
@@ -359,24 +357,13 @@ class LinkScanner<Reason extends string> {
   }
 }
 
-const scan = <Reason extends string>(
-  text: string,
-  policy: LinkDestinationPolicy<Reason>,
-  state: ScanState,
-  { final, ignoredRanges = [] }: { final: boolean; ignoredRanges?: ReadonlyArray<MarkdownRange> },
-) => {
-  const ranges = [...ignoredRanges]
-    .filter((range) => range.end > range.start)
-    .sort((left, right) => left.start - right.start);
-  return new LinkScanner(text, ranges, policy, final, state).run();
-};
+const freshState = (): ScanState => ({ fence: null, atLineStart: true });
 
 export const guardMarkdownLinks = <Reason extends string>(
   markdown: string,
   policy: LinkDestinationPolicy<Reason>,
-  options: { ignoredRanges?: ReadonlyArray<MarkdownRange> } = {},
 ): GuardedMarkdown<Reason> => {
-  const { output, unwrapped } = scan(markdown, policy, { fence: null, atLineStart: true }, { final: true, ...options });
+  const { output, unwrapped } = new LinkScanner(markdown, policy, true, freshState()).run();
   return { text: output, unwrapped };
 };
 
@@ -389,7 +376,7 @@ export const guardMarkdownLinks = <Reason extends string>(
  */
 export class MarkdownLinkGuardStream<Reason extends string> {
   private held = "";
-  private readonly state: ScanState = { fence: null, atLineStart: true };
+  private readonly state = freshState();
   private readonly reasons: Reason[] = [];
 
   constructor(private readonly policy: LinkDestinationPolicy<Reason>) {}
@@ -407,7 +394,7 @@ export class MarkdownLinkGuardStream<Reason extends string> {
   }
 
   private release(text: string, final: boolean): string {
-    const { output, consumed, unwrapped } = scan(text, this.policy, this.state, { final });
+    const { output, consumed, unwrapped } = new LinkScanner(text, this.policy, final, this.state).run();
     this.held = text.slice(consumed);
     this.reasons.push(...unwrapped);
     return output;

@@ -125,13 +125,17 @@ const MOUNTAIN_COURSE_FIGURES_ABSENT: ConversationQualityCase["assertions"] = ["
 const FULL_QUOTE_FOR_THE_EVENT_ITALIAN = "Mi mandi un preventivo completo compreso di pernottamento per l'evento?";
 
 /**
- * The corpus gives no Source URL, so any Markdown link in an answer about it is one the model
- * made up (#1751). The answer shows such a link as its text, which the substring check reads; the
- * compose stage counts what the model wrote, which `turn_links_given` reads.
+ * The corpus gives no Source URL, so the only link an answer about it may carry is to an email
+ * address the conversation gave; any other Markdown link is one the model made up (#1751), and
+ * the answer must show it as its text. RE2 has no lookahead, so "`](` not followed by
+ * `mailto:`" is spelled out.
  */
 const NO_INVENTED_LINKS: ConversationQualityCase["assertions"] = [
-  { type: "turn_links_given" },
-  { type: "answer_does_not_contain", pattern: "](", matchMode: "substring" },
+  {
+    type: "answer_does_not_contain",
+    pattern: String.raw`\]\(([^m]|m[^a]|ma[^i]|mai[^l]|mail[^t]|mailt[^o]|mailto[^:])`,
+    matchMode: "regex",
+  },
 ];
 
 /** A line that opens a Markdown bulleted or numbered list item. */

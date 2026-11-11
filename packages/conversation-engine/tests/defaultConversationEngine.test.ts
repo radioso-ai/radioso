@@ -1078,22 +1078,6 @@ describe("DefaultConversationEngine", () => {
     expect(JSON.stringify(composeStage)).not.toContain("PRIVATE ANSWER");
   });
 
-  it("records the composer's trace metrics on a whole turn's compose stage", async () => {
-    const result = await new DefaultConversationEngine().processTurn({
-      ...createInput(),
-      composer: {
-        compose: vi.fn(async () => ({
-          answer: "Your order ships tomorrow.",
-          metadata: { traceMetrics: { unwrappedLinkCount: 2, ignoredText: "PRIVATE ANSWER" } },
-        })),
-      },
-    });
-
-    const composeStage = result.trace.stages.find((stage) => stage.kind === "compose");
-    expect(composeStage?.metrics).toEqual({ unwrappedLinkCount: 2 });
-    expect(JSON.stringify(composeStage)).not.toContain("PRIVATE ANSWER");
-  });
-
   it("reports retrieval progress immediately before each streamed schedule boundary", async () => {
     const phases: string[] = [];
     const input: ProcessTurnStreamInput = {

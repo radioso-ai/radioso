@@ -1,6 +1,6 @@
 import { domainToUnicode } from "node:url";
 
-import type { LinkDestinationVerdict } from "./markdownLinkGuard.js";
+import type { LinkDestinationPolicy, LinkDestinationVerdict } from "./markdownLinkGuard.js";
 
 /** Why a link destination is not one of the given addresses. */
 export type UnwrappedLinkReason = "fragment" | "relative" | "malformed" | "not_given";
@@ -15,9 +15,10 @@ const WHITESPACE = /\s/;
 // them is a different address.
 const ADDRESS_CHAR = /[\p{L}\p{N}\-_~%+]/u;
 const ALPHANUMERIC = /[\p{L}\p{N}]/u;
-// What may precede a host: anything that does not extend it, so `school.example` is found
-// after `://`, `@`, or a space, never inside `myschool.example` or `shop.school.example`.
-const HOST_CHAR = /[\p{L}\p{N}\-_.]/u;
+// What may not precede a host: a character that extends it, so `school.example` is found
+// after `://` or a space, never inside `myschool.example` or `shop.school.example`. An `@`
+// makes it an email domain, which names a mailbox, not a website.
+const HOST_CHAR = /[\p{L}\p{N}\-_.@]/u;
 const EMAIL_CHAR = /[\p{L}\p{N}._%+-]/u;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 const PERCENT_ENCODED_RUN = /(?:%[0-9a-f]{2})+/gi;
@@ -89,7 +90,7 @@ const occurs = (text: string, key: string, startsAt: (text: string, start: numbe
  * Matching errs toward keeping: unwrapping a real link breaks a good answer, while the cost
  * of keeping a near-miss is a link to a page of a site the reader was already pointed at.
  */
-export class GivenLinkTargets {
+class GivenLinkTargets {
   private readonly text: string;
   private decodedText: string | undefined;
   private phoneDigits: string[] | undefined;
@@ -186,3 +187,9 @@ export class GivenLinkTargets {
     return given ? KEEP : unwrap("not_given");
   }
 }
+
+/** The link policy for text whose author was given `given`: every text it read, in any order. */
+export const givenLinkPolicy = (given: readonly string[]): LinkDestinationPolicy<UnwrappedLinkReason> => {
+  const targets = new GivenLinkTargets(given);
+  return (destination) => targets.verdictFor(destination);
+};

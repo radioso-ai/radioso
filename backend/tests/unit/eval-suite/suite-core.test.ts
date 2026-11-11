@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { compileRoutineDefinition } from "../../../src/modules/routines/compiler.js";
-import type { AssertionVerdict, EvalRunObservedOutput } from "../../../src/modules/eval/domain/types.js";
+import { evaluateAssertion } from "../../../src/modules/eval/domain/outcomes.js";
+import type { AssertionVerdict, EvalAssertion, EvalRunObservedOutput } from "../../../src/modules/eval/domain/types.js";
 import {
   buildBaselineFile,
   diffAgainstBaseline,
@@ -102,21 +103,6 @@ describe("trace assertions", () => {
     expect(ungraded.status).toBe("fail");
     expect(ungraded.reason).toContain("ungraded");
     expect(evaluateTraceAssertion(assertion, compose({ answerLength: 12 })).status).toBe("fail");
-    expect(evaluateTraceAssertion(assertion, observed()).status).toBe("error");
-  });
-
-  it("reads turn_links_given from the compose stage's count of links shown as plain text", () => {
-    const compose = (metrics?: Record<string, number>) => observed({
-      turnTrace: trace([{ id: "compose", kind: "compose", status: "applied", outputs: { answerLength: 42 }, ...(metrics ? { metrics } : {}) }]),
-    });
-    const assertion = { type: "turn_links_given" } as const;
-
-    expect(evaluateTraceAssertion(assertion, compose()).status).toBe("pass");
-    expect(evaluateTraceAssertion(assertion, compose({ coverageHeadMs: 120 })).status).toBe("pass");
-    const invented = evaluateTraceAssertion(assertion, compose({ unwrappedLinkCount: 2 }));
-    expect(invented.status).toBe("fail");
-    expect(invented.reason).toContain("2 links");
-    expect(evaluateTraceAssertion(assertion, observed({ turnTrace: trace([]) })).status).toBe("fail");
     expect(evaluateTraceAssertion(assertion, observed()).status).toBe("error");
   });
 
@@ -1012,7 +998,7 @@ describe("withheld-figures directive through the chat pipeline", () => {
 });
 
 // #1751: the fixture corpus carries no Source URL, so a link in a reply about it is one the
-// model made up. The delivered answer shows its text; the compose stage counts it.
+// model made up. The delivered answer shows its text, and the case gates on the delivered answer.
 describe("invented links through the chat pipeline", () => {
   const { history: _history, routineStartState: _routineStartState, ...courseCase } = conversationQualityCases.find(
     (evalCase) => evalCase.id === "referent-course-behind-contact-form",
@@ -1039,21 +1025,29 @@ describe("invented links through the chat pipeline", () => {
     const [assistantMessage] = [...harness.messageRepository.items.values()].flat().filter((message) => message.role === "assistant");
     return { report: reports[0], answer: assistantMessage?.content, metrics: harness.metrics.renderPrometheus() };
   };
-  const verdictOf = (report: CaseReport | undefined, type: string, pattern?: string) =>
-    report?.verdicts.find((verdict) =>
-      verdict.assertion.type === type && (pattern === undefined || ("pattern" in verdict.assertion && verdict.assertion.pattern === pattern)));
+  const linkCheck = courseCase.assertions.find(
+    (assertion) => assertion.type === "answer_does_not_contain" && assertion.matchMode === "regex" && assertion.pattern.startsWith(String.raw`\]\(`),
+  )!;
 
-  it("shows the invented link as text, and fails the case on the model's attempt", async () => {
+  it("delivers the invented link as text, so the case passes and the counter records the attempt", async () => {
     const { report, answer, metrics } = await runCase(
       "Per [Il respiro super consapevole](#) la quota è di 260 € in camera doppia[[1]].",
     );
 
     expect(answer).toBe("Per Il respiro super consapevole la quota è di 260 € in camera doppia.");
-    expect(verdictOf(report, "answer_does_not_contain", "](")?.status).toBe("pass");
-    expect(verdictOf(report, "turn_links_given")?.status).toBe("fail");
-    expect(report?.verdicts.filter((verdict) => verdict.status !== "pass").map((verdict) => verdict.assertion.type))
-      .toEqual(["turn_links_given"]);
+    if (report?.status !== "pass") {
+      throw new Error(`expected pass, got ${report?.status}: ${JSON.stringify(report?.verdicts, null, 2)}`);
+    }
     expect(metrics).toMatch(/chat_answer_links_unwrapped_total\{reason="fragment",stream="false"\} 1\b/);
+  });
+
+  it("fails a delivered answer that carries a link, unless the link is to an email address", () => {
+    const evaluateLinkCheck = (answer: string) => evaluateAssertion(linkCheck as EvalAssertion, observed({ answer })).status;
+
+    expect(evaluateLinkCheck("Per [Il respiro](#) la quota è di 260 €.")).toBe("fail");
+    expect(evaluateLinkCheck("Vedi [il corso](https://example.org/corso).")).toBe("fail");
+    expect(evaluateLinkCheck("Scrivi a [la segreteria](mailto:corsi@school.example).")).toBe("pass");
+    expect(evaluateLinkCheck("Per Il respiro la quota è di 260 € (camera doppia).")).toBe("pass");
   });
 
   it("passes an answer that names the course without a link", async () => {

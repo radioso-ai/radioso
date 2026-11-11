@@ -132,7 +132,7 @@ type QueuedEngineEvent =
 
 const toRenderableTurn = (
   presentation: ChatPresentedAnswer,
-  traceMetrics = presentation.traceMetrics,
+  traceMetrics?: Record<string, number>,
 ): RenderableTurn => ({
   answer: presentation.answer,
   citations: presentation.citations,

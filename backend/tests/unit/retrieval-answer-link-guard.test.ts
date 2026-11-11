@@ -113,7 +113,6 @@ describe("retrieval answer links", () => {
     const presented = await composer.composeAnswer(session(), "Which courses?", undefined, undefined);
 
     expect(presented.answer).toBe(VISIBLE_ANSWER);
-    expect(presented.traceMetrics).toEqual({ unwrappedLinkCount: 1 });
     expect(unwrappedLinkWrites()).toEqual([
       { name: "chat_answer_links_unwrapped_total", labels: { reason: "fragment", stream: "false" } },
     ]);
@@ -142,7 +141,6 @@ describe("retrieval answer links", () => {
     const presented = await composer.composeAnswer(session(), "Which courses?", undefined, undefined);
 
     expect(presented.answer).toBe(`Join [Il respiro consapevole](${COURSE_URL}), or ask us [here](${CONTACT_URL}).`);
-    expect(presented.traceMetrics).toBeUndefined();
     expect(unwrappedLinkWrites()).toEqual([]);
   });
 

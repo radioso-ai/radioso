@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { GivenLinkTargets } from "../../../src/shared/text/givenLinkTargets.js";
+import { givenLinkPolicy } from "../../../src/shared/text/givenLinkTargets.js";
 
 const verdict = (given: string[], destination: string) => {
-  const result = new GivenLinkTargets(given).verdictFor(destination);
+  const result = givenLinkPolicy(given)(destination);
   return result.kind === "keep" ? "keep" : result.reason;
 };
 
@@ -12,7 +12,7 @@ const COURSE_RESULT = [
   "Three days of breath work. Call +39 06 1234 5678 or write to Info@School.example.",
 ].join("\n");
 
-describe("GivenLinkTargets", () => {
+describe("givenLinkPolicy", () => {
   it.each([
     ["the address as given", "https://school.example/courses/breath"],
     ["a trailing slash", "https://school.example/courses/breath/"],
@@ -47,6 +47,16 @@ describe("GivenLinkTargets", () => {
     ["an empty email address", "mailto:", "malformed"],
   ])("unwraps %s", (_label, destination, reason) => {
     expect(verdict([COURSE_RESULT], destination)).toBe(reason);
+  });
+
+  it("reads an email domain as a mailbox, never as the website of that domain", () => {
+    const given = ["Result 1: Write to corsi@example.org or to visitor.name@mail.example."];
+
+    expect(verdict(given, "https://example.org")).toBe("not_given");
+    expect(verdict(given, "https://www.example.org/")).toBe("not_given");
+    expect(verdict(given, "https://mail.example")).toBe("not_given");
+    expect(verdict(given, "mailto:corsi@example.org")).toBe("keep");
+    expect(verdict(given, "mailto:visitor.name@mail.example")).toBe("keep");
   });
 
   it("reads an address written without a scheme in any given text", () => {

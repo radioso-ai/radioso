@@ -65,11 +65,6 @@ export interface ChatPresentedAnswer {
    */
   metadata?: Record<string, unknown>;
   /**
-   * Content-free measurements the composer took while writing this answer, such as how many
-   * links it showed as plain text. The turn's compose stage records them on its trace.
-   */
-  traceMetrics?: Record<string, number>;
-  /**
    * Set when a coverage verdict sink yielded this turn before any answer text was
    * composed (#1260): `answer` is empty and must not be shown — the host presents
    * whatever the sink's consumer (a coverage routine) produced instead.

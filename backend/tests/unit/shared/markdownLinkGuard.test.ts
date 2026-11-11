@@ -4,7 +4,6 @@ import {
   guardMarkdownLinks,
   MarkdownLinkGuardStream,
   type LinkDestinationPolicy,
-  type MarkdownRange,
 } from "../../../src/shared/text/markdownLinkGuard.js";
 
 /** Keeps only the listed destinations; records every destination it was asked about. */
@@ -119,18 +118,11 @@ describe("guardMarkdownLinks", () => {
     expect(guardMarkdownLinks("[See [Course](#) now](#)", policy).text).toBe("See Course now");
   });
 
-  it("reads declared ranges as opaque text, inside a link or after one", () => {
-    const { policy, asked } = keepOnly();
-    const answer = "[Course [[1]]](#)[[2]] costs 260 euro[[3]](room included).";
-    const anchors: MarkdownRange[] = [...answer.matchAll(/\[\[\d\]\]/g)].map((match) => ({
-      start: match.index,
-      end: match.index + match[0].length,
-    }));
+  it("reads a backtick with no partner within the bound as a literal backtick", () => {
+    const { policy } = keepOnly();
+    const answer = `Use \` then ${"x".repeat(1500)} [Course](#) and \`.`;
 
-    const guarded = guardMarkdownLinks(answer, policy, { ignoredRanges: anchors });
-
-    expect(guarded.text).toBe("Course [[1]][[2]] costs 260 euro[[3]](room included).");
-    expect(asked).toEqual(["#"]);
+    expect(guardMarkdownLinks(answer, policy).text).toBe(`Use \` then ${"x".repeat(1500)} Course and \`.`);
   });
 
   it("leaves a link whose text runs past the bound unread", () => {
@@ -167,6 +159,8 @@ const CORPUS = [
   "Unclosed destination [label](https://kept.example/",
   "  ```\n[a](#)\n  ```\n[b](#)",
   "`` ` `` [c](#) ```not a fence``` [d](#)",
+  "```md`x\n[e](#)\n~~~ info [f](#)\n[g](#)\n  ~~~\n[h](#)",
+  `\` unmatched ${"y".repeat(1200)} [i](#) \` [j](#)`,
 ];
 
 describe("MarkdownLinkGuardStream", () => {
@@ -198,6 +192,29 @@ describe("MarkdownLinkGuardStream", () => {
 
     expect(stream.push("Index arr[0]")).toBe("Index arr");
     expect(stream.push(" is first")).toBe("[0] is first");
+    expect(stream.flush()).toBe("");
+  });
+
+  it("holds no more than its bound behind a backtick that never closes", () => {
+    const { policy } = keepOnly();
+    const stream = new MarkdownLinkGuardStream(policy);
+    const line = `Run \`${"z".repeat(20_000)}`;
+
+    const released = [];
+    for (let offset = 0; offset < line.length; offset += 100) {
+      released.push(stream.push(line.slice(offset, offset + 100)));
+    }
+
+    expect(released.join("").length).toBeGreaterThan(line.length - 1200);
+    expect(released.join("") + stream.flush()).toBe(line);
+  });
+
+  it("releases fenced code as it arrives, without waiting for the line to end", () => {
+    const { policy } = keepOnly();
+    const stream = new MarkdownLinkGuardStream(policy);
+
+    expect(stream.push("```js\nconst link = ")).toBe("```js\nconst link = ");
+    expect(stream.push("\"[x](#)\";\n```\n[y](#)")).toBe("\"[x](#)\";\n```\ny");
     expect(stream.flush()).toBe("");
   });
 

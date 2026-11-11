@@ -17,7 +17,7 @@ import type {
   AnswerSideChannel,
   AnswerSideChannelFactory,
 } from "../../../shared/domain/answerSideChannel.js";
-import { AnswerLinkGuard, type GuardedAnswer } from "./answerLinkGuard.js";
+import { AnswerLinkGuard } from "./answerLinkGuard.js";
 import { StreamedAnswerText } from "./streamedAnswerText.js";
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import {
@@ -76,7 +76,7 @@ const measuredTraceMetrics = (metrics: Record<string, number | undefined>): { tr
 };
 
 /** How many links the answer carried to addresses its model was not given; none when it carried none. */
-const unwrappedLinkCount = (guarded: GuardedAnswer): number | undefined => guarded.unwrapped.length || undefined;
+const unwrappedLinkCount = (unwrapped: readonly unknown[]): number | undefined => unwrapped.length || undefined;
 
 const combineAbortSignals = (turnSignal: AbortSignal | undefined, gateSignal: AbortSignal): AbortSignal =>
   turnSignal ? AbortSignal.any([turnSignal, gateSignal]) : gateSignal;
@@ -325,6 +325,7 @@ export class RetrievalAnswerComposer {
    * The link guard for this turn's answer, from the grounded prompt the turn renders. Every
    * model call the turn makes is sent that prompt or part of it: the grounded and page-context
    * calls send it whole, and a focused decline sends its instructions, steering, and request.
+   * Rendered again here (the decline-only path renders none), repeating `suggestionBlockRendered`.
    */
   private answerLinkGuard(session: PreparedSession): AnswerLinkGuard {
     return new AnswerLinkGuard(
@@ -333,8 +334,8 @@ export class RetrievalAnswerComposer {
   }
 
   /** The answer as the visitor gets it: a link to an address its model was not given is its text. */
-  private guardLinks(linkGuard: AnswerLinkGuard, answer: string, stream: boolean): GuardedAnswer {
-    const guarded = linkGuard.apply(answer);
+  private guardLinks(linkGuard: AnswerLinkGuard, presented: ChatPresentedAnswer, stream: boolean) {
+    const guarded = linkGuard.present(presented);
     this.answerMetrics.unwrappedLinks(guarded.unwrapped, stream);
     return guarded;
   }
@@ -641,22 +642,20 @@ export class RetrievalAnswerComposer {
       }
     }
 
-    const guarded = this.guardLinks(linkGuard, answer, false);
-    const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
+    const { presented: presentation } = this.guardLinks(linkGuard, await this.chatAnswerPresenter.presentWithSuggestions(
       session,
-      guarded.text,
+      answer,
       query,
       plannedSuggestions,
       userExpectedLocale,
       { grounding, ...(declineReason ? { declineReason } : {}) },
-    );
+    ), false);
     this.recordSuggestionGeneratorRun(session, declineReason !== undefined);
     return {
       ...presentation,
       ...(metadataPatch
         ? { metadata: { ...presentation.metadata, ...metadataPatch } }
         : {}),
-      ...measuredTraceMetrics({ unwrappedLinkCount: unwrappedLinkCount(guarded) }),
     };
   }
 
@@ -918,12 +917,13 @@ export class RetrievalAnswerComposer {
         // Recorded once the decline is composed so the counter carries the same
         // classification the persisted turn outcome does.
         this.answerMetrics.groundingGateBound(decline.declineReason);
-        const guardedDecline = this.guardLinks(linkGuard, decline.text, true);
+        const guardedDecline = this.guardLinks(
+          linkGuard,
+          this.chatAnswerPresenter.presentRetrievalDeclineAnswer(decline.text, decline.declineReason),
+          true,
+        );
         return {
-          finalPresentation: this.chatAnswerPresenter.presentRetrievalDeclineAnswer(
-            guardedDecline.text,
-            decline.declineReason,
-          ),
+          finalPresentation: guardedDecline.presented,
           suggestions: { mode: "assistant", planned: [] },
           hasStreamedAnswer: false,
           streamedAnswer: "",
@@ -933,7 +933,7 @@ export class RetrievalAnswerComposer {
           ...measuredTraceMetrics({
             groundingGateWaitMs: gate.waitDurationMs,
             coverageHeadMs,
-            unwrappedLinkCount: unwrappedLinkCount(guardedDecline),
+            unwrappedLinkCount: unwrappedLinkCount(guardedDecline.unwrapped),
           }),
         };
       }
@@ -1009,14 +1009,14 @@ export class RetrievalAnswerComposer {
 
     // Present the same generated body from its computed assertion verdict. Suggestions
     // stay assistant-sourced; there is no semantic reconciliation generation here.
-    const guarded = this.guardLinks(linkGuard, rawAnswer, true);
-    const presentation = await this.chatAnswerPresenter.presentWithoutSuggestions(
+    const guarded = this.guardLinks(linkGuard, await this.chatAnswerPresenter.presentWithoutSuggestions(
       session,
-      guarded.text,
+      rawAnswer,
       query,
       userExpectedLocale,
       { grounding, ...(declineReason ? { declineReason } : {}) },
-    );
+    ), true);
+    const presentation = guarded.presented;
     this.recordSuggestionGeneratorRun(session, declineReason !== undefined);
     return {
       finalPresentation: {
@@ -1029,7 +1029,7 @@ export class RetrievalAnswerComposer {
       hasStreamedAnswer,
       streamedAnswer,
       deliveryMode: hasStreamedAnswer ? "live" : "committed",
-      ...measuredTraceMetrics({ groundingGateWaitMs, coverageHeadMs, unwrappedLinkCount: unwrappedLinkCount(guarded) }),
+      ...measuredTraceMetrics({ groundingGateWaitMs, coverageHeadMs, unwrappedLinkCount: unwrappedLinkCount(guarded.unwrapped) }),
     };
   }
 }

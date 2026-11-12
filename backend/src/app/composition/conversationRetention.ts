@@ -1,12 +1,14 @@
 import type { Kysely } from "kysely";
 
 import { AuditEventRetention } from "../../db/repositories/auditEventRepository.js";
+import { BackgroundJobRepository } from "../../db/repositories/backgroundJobRepository.js";
 import { ConversationSummaryRetention } from "../../db/repositories/conversationSummaryRepository.js";
 import { ConsentRecordRetention, ConsentWordingVersionRetention } from "../../db/repositories/routineConsentRepository.js";
 import { RoutineStateRetention } from "../../db/repositories/routineStateRepository.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
 import { A2aMessageReceiptRetention, A2aTaskRetention } from "../../modules/a2a/public.js";
 import { EmailRawMimeRetention } from "../../modules/emailChannel/public.js";
+import { UnboundVisitorImageRetention } from "../../modules/visitorImages/composition.js";
 import {
   ConversationRetentionSweep,
   type ConversationRetentionBudget,
@@ -38,6 +40,8 @@ const defaultConversationDataRetentionRules = (
   (db) => new EmailRawMimeRetention(db),
   (db) => new A2aTaskRetention(db),
   (db) => new A2aMessageReceiptRetention(db),
+  // Photos no message carries, 24 hours after upload; their objects go to the deletion job.
+  (db) => new UnboundVisitorImageRetention(db, (trx) => new BackgroundJobRepository(trx)),
   (db) => new AuditEventRetention(db, audit),
 ];
 

@@ -8,6 +8,7 @@ import { BlockHeading } from '@/components/dashboard/settings/block-heading'
 import { ExactGreetingEditor } from '@/components/dashboard/settings/exact-greeting-editor'
 import { ModelPicker } from '@/components/dashboard/settings/model-picker'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { VisitorImagesSetting } from '@/components/dashboard/settings/visitor-images-setting'
 import type { GreetingDraft } from '@/components/dashboard/settings/use-greeting-draft'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -388,6 +389,18 @@ export function AssistantProfileSection({
                 }
               />
             </div>
+            {assistantBehaviorSettings.visitorImagesEnabled !== undefined ? (
+              <VisitorImagesSetting
+                enabled={assistantBehaviorSettings.visitorImagesEnabled}
+                chatModelReadsImages={assistantBehaviorSettings.chatModelReadsImages}
+                onChange={(checked) =>
+                  onAssistantBehaviorDraft((current) => ({
+                    ...current,
+                    visitorImagesEnabled: checked,
+                  }))
+                }
+              />
+            ) : null}
             <div className="space-y-3 p-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">

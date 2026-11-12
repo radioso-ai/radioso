@@ -5,6 +5,7 @@ import { AgentSkillRepository } from "../../../src/modules/agentSkills/repositor
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
 import type { Db } from "../../../src/shared/infra/kysely/types.js";
+import { firstPartyCopilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 // Construction-only fake: every test replaces the repository method the port calls via
 // vi.spyOn, so this stands in for a live transaction without ever running a real query.
@@ -24,7 +25,7 @@ const baseInput = {
   operatorUserId: "operator-1",
   claimedAt: new Date("2026-09-02T00:00:00Z"),
 };
-const port = createAgentSkillMcpApplyPort(fakeDb);
+const port = createAgentSkillMcpApplyPort(fakeDb, firstPartyCopilotProposalTargetTypes);
 
 const applyAndCatch = (): Promise<unknown> =>
   port.apply(baseInput).then(

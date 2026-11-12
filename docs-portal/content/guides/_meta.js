@@ -9,6 +9,7 @@ const meta = {
   'authoring-directives': 'Author a directive',
   'authoring-routines': 'Author a routine',
   'exact-words': 'Exact words',
+  'image-input': 'Let visitors send photos',
   workbench: 'Test in the workbench',
   evals: 'Evaluate answer quality',
 }

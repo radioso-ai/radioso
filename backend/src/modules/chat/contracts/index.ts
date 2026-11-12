@@ -2,6 +2,7 @@ import type { ChatResponse } from "../types/chatResponses.js";
 import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
 import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { VisitorImageOwner } from "../../visitorImages/public.js";
 
 export type {
   AssistantClientContextCapabilities,
@@ -115,6 +116,26 @@ export type {
   ChatReviewResult,
   ReviewTurnFactsSource,
 } from "../types/chatReview.js";
+/**
+ * The chat door (`AssistantChatService`) as a channel with photos sees it: it claims the photos
+ * for their owner, renders them into the turn text, stores them with the message and binds them
+ * to it. A channel hands it the ids its upload returned and never touches that path itself.
+ */
+export interface ChatDoorPhotoTurnPort {
+  answer(input: {
+    workspaceId: string;
+    agentId: string;
+    conversationId?: string;
+    /** What the sender typed with the photos; blank when they sent none. */
+    message: string;
+    stream: false;
+    sourceChannel?: string | null;
+    channelContext?: ConversationChannelContext | null;
+    imageIds: readonly string[];
+    imageOwner: VisitorImageOwner;
+  }): Promise<{ conversationId?: string; answer: string; skillOutcome?: string } | null>;
+}
+
 /** The chat turns a connector host runs: a live answer, and a review turn that returns a draft. */
 export interface ChatAnswerPort {
   answer(input: {

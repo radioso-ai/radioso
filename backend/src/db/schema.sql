@@ -2313,7 +2313,7 @@ CREATE TABLE public.copilot_proposals (
     CONSTRAINT copilot_proposals_message_requires_conversation_check CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_reviewed_requirement_check CHECK (((review_digest IS NULL) OR (confirmation_requirement IS NOT NULL))),
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
-    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'document_operation'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text, 'agent_greeting'::text, 'privacy_setting'::text, 'time_zone_setting'::text])))
+    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type ~ '^[a-z][a-z0-9_]{0,62}$'::text))
 );
 
 
@@ -4190,6 +4190,48 @@ ALTER SEQUENCE public.vector_index_work_sequence_seq OWNED BY public.vector_inde
 
 
 --
+-- Name: visitor_images; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.visitor_images (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid,
+    owner_kind text NOT NULL,
+    owner_id text NOT NULL,
+    conversation_id uuid,
+    message_id uuid,
+    storage_bucket text NOT NULL,
+    storage_object_path text NOT NULL,
+    storage_generation text,
+    byte_size integer NOT NULL,
+    width integer NOT NULL,
+    height integer NOT NULL,
+    sha256 text NOT NULL,
+    reading_status text DEFAULT 'pending'::text NOT NULL,
+    reading text,
+    claim_id uuid,
+    claimed_at timestamp with time zone,
+    bound_at timestamp with time zone,
+    read_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT visitor_images_byte_size_check CHECK ((byte_size > 0)),
+    CONSTRAINT visitor_images_claim_complete CHECK (((claim_id IS NULL) = (claimed_at IS NULL))),
+    CONSTRAINT visitor_images_height_check CHECK ((height > 0)),
+    CONSTRAINT visitor_images_message_in_conversation CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
+    CONSTRAINT visitor_images_owner_id_check CHECK (((length(owner_id) >= 1) AND (length(owner_id) <= 200))),
+    CONSTRAINT visitor_images_owner_kind_check CHECK ((owner_kind = ANY (ARRAY['public_session'::text, 'api_credential'::text, 'user'::text, 'connector_conversation'::text]))),
+    CONSTRAINT visitor_images_read_has_reading CHECK (((reading_status = 'read'::text) = (reading IS NOT NULL))),
+    CONSTRAINT visitor_images_reading_check CHECK (((reading IS NULL) OR ((length(reading) >= 1) AND (length(reading) <= 4000)))),
+    CONSTRAINT visitor_images_reading_status_check CHECK ((reading_status = ANY (ARRAY['pending'::text, 'read'::text, 'unread'::text]))),
+    CONSTRAINT visitor_images_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT visitor_images_storage_bucket_check CHECK (((length(storage_bucket) >= 1) AND (length(storage_bucket) <= 255))),
+    CONSTRAINT visitor_images_storage_object_path_check CHECK (((length(storage_object_path) >= 1) AND (length(storage_object_path) <= 1024))),
+    CONSTRAINT visitor_images_width_check CHECK ((width > 0))
+);
+
+
+--
 -- Name: visitors; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4269,9 +4311,13 @@ CREATE TABLE public.voice_sessions (
     vendor_agent_id text,
     vendor_region text,
     vendor_conversation_id text,
+    test_execution_id uuid,
+    started_account_id uuid,
     CONSTRAINT voice_sessions_session_key_check CHECK (((length(session_key) >= 1) AND (length(session_key) <= 256))),
+    CONSTRAINT voice_sessions_started_account_is_test_chat CHECK (((started_account_id IS NULL) OR (test_execution_id IS NOT NULL))),
     CONSTRAINT voice_sessions_started_public_session_id_check CHECK (((started_public_session_id IS NULL) OR ((length(started_public_session_id) >= 1) AND (length(started_public_session_id) <= 256)))),
     CONSTRAINT voice_sessions_started_visitor_key_check CHECK (((started_visitor_key IS NULL) OR ((length(started_visitor_key) >= 1) AND (length(started_visitor_key) <= 256)))),
+    CONSTRAINT voice_sessions_test_chat_session CHECK (((test_execution_id IS NULL) OR ((conversation_id IS NULL) AND (started_public_session_id IS NULL) AND (start_expires_at IS NOT NULL)))),
     CONSTRAINT voice_sessions_vendor_agent_id_check CHECK (((vendor_agent_id IS NULL) OR ((length(vendor_agent_id) >= 1) AND (length(vendor_agent_id) <= 128)))),
     CONSTRAINT voice_sessions_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 64))),
     CONSTRAINT voice_sessions_vendor_conversation_has_origin CHECK (((vendor_conversation_id IS NULL) OR ((vendor_region IS NOT NULL) AND (vendor_agent_id IS NOT NULL)))),
@@ -6615,6 +6661,14 @@ ALTER TABLE ONLY public.vector_index_work
 
 ALTER TABLE ONLY public.vector_index_work
     ADD CONSTRAINT vector_index_work_workspace_id_embedding_space_id_chunk_id__key UNIQUE (workspace_id, embedding_space_id, chunk_id, canonical_version, operation);
+
+
+--
+-- Name: visitor_images visitor_images_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.visitor_images
+    ADD CONSTRAINT visitor_images_pkey PRIMARY KEY (id);
 
 
 --
@@ -9390,6 +9444,41 @@ CREATE INDEX usage_events_copilot_message_idx ON public.usage_events USING btree
 --
 
 CREATE INDEX usage_events_message_idx ON public.usage_events USING btree (message_id) WHERE (message_id IS NOT NULL);
+
+
+--
+-- Name: visitor_images_agent_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX visitor_images_agent_idx ON public.visitor_images USING btree (agent_id) WHERE (agent_id IS NOT NULL);
+
+
+--
+-- Name: visitor_images_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX visitor_images_conversation_idx ON public.visitor_images USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
+
+
+--
+-- Name: visitor_images_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX visitor_images_message_idx ON public.visitor_images USING btree (message_id) WHERE (message_id IS NOT NULL);
+
+
+--
+-- Name: visitor_images_unbound_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX visitor_images_unbound_idx ON public.visitor_images USING btree (created_at) WHERE (message_id IS NULL);
+
+
+--
+-- Name: visitor_images_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX visitor_images_workspace_idx ON public.visitor_images USING btree (workspace_id);
 
 
 --
@@ -12892,6 +12981,38 @@ ALTER TABLE ONLY public.vector_index_work
 
 ALTER TABLE ONLY public.vector_index_work
     ADD CONSTRAINT vector_index_work_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: visitor_images visitor_images_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.visitor_images
+    ADD CONSTRAINT visitor_images_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
+
+
+--
+-- Name: visitor_images visitor_images_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.visitor_images
+    ADD CONSTRAINT visitor_images_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: visitor_images visitor_images_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.visitor_images
+    ADD CONSTRAINT visitor_images_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: visitor_images visitor_images_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.visitor_images
+    ADD CONSTRAINT visitor_images_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

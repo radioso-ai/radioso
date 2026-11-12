@@ -186,6 +186,10 @@ export type AssistantBehaviorSettings = Pick<
   contactRequestsEnabled?: boolean
   webhookExportsEnabled?: boolean
   handoffOnRetrievalMiss?: boolean
+  // Per-agent "visitors may attach photos". It takes effect only when the agent's chat model reads images.
+  visitorImagesEnabled?: boolean
+  // Computed by the server from the agent's resolved chat model; read-only, never part of an update.
+  chatModelReadsImages?: boolean
   contactRequestDelivery?: AgentContactRequestDelivery
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
@@ -319,10 +323,15 @@ type GeneratedChatUserInputMetadata = NonNullable<
 >
 /** A calling agent's tool call as recorded on a user message (history `UserMessageInputMetadata.routine`). */
 export type ChatUserRoutineInvocation = NonNullable<ApiSchemas['UserMessageInputMetadata']['routine']>
+/** What the visitor typed and the photos they sent, as a history message records them (`inputMetadata.imageInput`). */
+export type VisitorImageInput = ApiSchemas['VisitorImageInput']
+export type VisitorImageUploadResponse = ApiSchemas['VisitorImageUploadResponse']
 export type ChatUserInputMetadata = Omit<GeneratedChatUserInputMetadata, 'method' | 'intent'> & {
   method: ApiSchemas['UserMessageInputMetadata']['method']
   intent?: PublicChatIntakeAction
   routine?: ChatUserRoutineInvocation
+  /** Set by a history read, and on the visitor's own message once it is sent; never sent as part of a request. */
+  imageInput?: VisitorImageInput
 }
 export type Citation = ApiSchemas['Citation']
 export type SkillDisplayMetadata = NonNullable<ApiSchemas['SkillCatalogEntry']['display']>
@@ -532,6 +541,8 @@ export interface ContactHistoryDetailResponse {
   conversation: ChatConversationDetail
 }
 
+/** The list a public chat session reads: the history list plus whether the agent takes photos right now. */
+export type PublicChatHistoryList = ChatHistoryListResponse & Partial<Pick<ApiSchemas['PublicConversationListResponse'], 'acceptsImages'>>
 export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   workspaceName?: string
   assistantBootstrapActive?: boolean
@@ -736,7 +747,7 @@ export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings =>
   websiteEmbedExpertOverrides: agent.surfaceSettings.websiteEmbed.expertOverrides,
 })
 
-export const agentToAssistantBehaviorSettings = (agent: AgentSettings): AssistantBehaviorSettings => ({
+export const agentToAssistantBehaviorSettings = (agent: AgentSettings & Pick<AgentDetail, 'chatModelReadsImages'>): AssistantBehaviorSettings => ({
   suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
   customInstruction: agent.customInstruction,
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
@@ -744,6 +755,8 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   contactRequestsEnabled: agent.contactRequestsEnabled,
   webhookExportsEnabled: agent.webhookExportsEnabled,
   handoffOnRetrievalMiss: agent.handoffOnRetrievalMiss,
+  visitorImagesEnabled: agent.visitorImagesEnabled,
+  chatModelReadsImages: agent.chatModelReadsImages,
   contactRequestDelivery: agent.contactRequestDelivery,
   theme: agent.theme,
   branding: agent.branding,

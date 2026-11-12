@@ -1,6 +1,6 @@
 import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
 import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
-import { payloadTooLarge } from "../../domain/errors.js";
+import { AppError, payloadTooLarge } from "../../domain/errors.js";
 import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../observability/tracing/operations.js";
 import {
   NoopUsageEventRecorder,
@@ -61,12 +61,21 @@ const estimateBudgetInputTokens = (text: string): number => {
   );
 };
 
+// An estimate, not a count: providers meter an image by tiles, patches or pixel area, so this is a
+// safe ceiling for the 1600px-long-side images callers send, not what any one provider bills.
+const IMAGE_INPUT_TOKEN_ESTIMATE = 1_600;
+
+const estimateImageInputTokens = (images: readonly unknown[] | undefined): number =>
+  (images?.length ?? 0) * IMAGE_INPUT_TOKEN_ESTIMATE;
+
 /**
  * Conservative language-aware estimate used before a provider call. This is a budget
  * guard rather than usage accounting, so non-ASCII code points count as one token.
  */
-export const estimateTextGenerationInputTokens = (request: Pick<TextGenerationRequest, "prompt" | "systemPrompt">): number =>
-  estimateBudgetInputTokens(`${request.systemPrompt ?? ""}\n${request.prompt}`);
+export const estimateTextGenerationInputTokens = (
+  request: Pick<TextGenerationRequest, "prompt" | "systemPrompt" | "images">,
+): number =>
+  estimateBudgetInputTokens(`${request.systemPrompt ?? ""}\n${request.prompt}`) + estimateImageInputTokens(request.images);
 
 const usageErrorCode = (error: unknown): string => {
   if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
@@ -118,6 +127,7 @@ const stripOperation = (
 ): TextGenerationRequest => {
   return {
     prompt: input.prompt,
+    ...(input.images && input.images.length > 0 ? { images: input.images } : {}),
     systemPrompt: input.systemPrompt,
     temperature: input.temperature,
     maxOutputTokens: input.maxOutputTokens,
@@ -145,6 +155,17 @@ const publishDispatch = (
     // Accounting is observational; recording it must not change the call.
   }
 };
+
+/**
+ * Raised before any provider call when a request carries images the resolved model cannot read.
+ * Details stay at surface and operation, as the input-budget refusal's do; the model and provider
+ * are already on the enclosing span.
+ */
+const imageInputUnsupported = (operation: ModelCallUsageContext): AppError =>
+  new AppError(422, "image_input_unsupported", "The configured model cannot read images", {
+    surface: operation.surface,
+    operation: operation.operation,
+  });
 
 const providerTraceAttributes = (
   metadata: LlmProviderMetadata,
@@ -184,6 +205,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   private async completeWithinTrace(input: ModelInferenceRequest): Promise<TextGenerationResult> {
     const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
     const request = stripOperation(input, input.dispatchRecord ? dispatchRecord : undefined);
+    this.enforceImageInputCapability(input, request);
     this.enforceInputBudget(input, request);
     const startedAtMs = Date.now();
     let result: TextGenerationResult;
@@ -241,6 +263,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   stream(input: ModelInferenceRequest): TextGenerationStreamResult {
     const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
     const request = stripOperation(input, input.dispatchRecord ? dispatchRecord : undefined);
+    this.enforceImageInputCapability(input, request);
     this.enforceInputBudget(input, request);
     const startedAtMs = Date.now();
     const result = this.delegate.stream(request);
@@ -362,7 +385,8 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   }> {
     const inputBytes = Buffer.byteLength(`${input.request.systemPrompt ?? ""}\n${input.request.prompt}`, "utf8");
     const outputBytes = Buffer.byteLength(input.outputText, "utf8");
-    const inputTokens = input.providerUsage?.inputTokens ?? estimateTokens(inputBytes);
+    const inputTokens = input.providerUsage?.inputTokens
+      ?? estimateTokens(inputBytes) + estimateImageInputTokens(input.request.images);
     const outputTokens = input.providerUsage?.outputTokens ?? (outputBytes > 0 ? estimateTokens(outputBytes) : 0);
     const provider = this.delegate.metadata.provider;
     const model = this.delegate.metadata.model;
@@ -426,6 +450,12 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       timingBoundary,
       recordRequest: timingBoundary !== "adapter_first_text",
     });
+  }
+
+  private enforceImageInputCapability(input: ModelInferenceRequest, request: TextGenerationRequest): void {
+    if (request.images && this.delegate.metadata.imageInputCapability !== "supported") {
+      throw imageInputUnsupported(input.operation);
+    }
   }
 
   private enforceInputBudget(input: ModelInferenceRequest, request: TextGenerationRequest): void {

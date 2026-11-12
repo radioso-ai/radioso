@@ -130,4 +130,22 @@ describe("GcsDocumentStorage", () => {
     await expect(upload("..")).rejects.toThrow();
     expect(client.files.map((file) => file.name)).toEqual(["workspaces/workspace-1/documents/document-1"]);
   });
+
+  it("writes a visitor's photo to its own folder under the workspace, which the workspace purge covers too", async () => {
+    const client = createClient();
+    const storage = new GcsDocumentStorage("radioso-documents", { storage: client.storage });
+
+    const uploaded = await storage.upload({
+      workspaceId: "workspace-1",
+      documentId: "image-1",
+      folder: "visitor-images",
+      filename: "image.jpg",
+      mimeType: "image/jpeg",
+      buffer: Buffer.from("abc"),
+    });
+
+    expect(uploaded.objectPath).toBe("workspaces/workspace-1/visitor-images/image-1");
+    expect(storage.locate({ workspaceId: "workspace-1", documentId: "image-1", folder: "visitor-images" }))
+      .toEqual({ bucket: "radioso-documents", objectPath: uploaded.objectPath, generation: null });
+  });
 });

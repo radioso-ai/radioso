@@ -83,7 +83,45 @@ export type ConnectorTurnResult =
   /** A person owns the conversation, so no turn ran. */
   | { kind: "human_owned"; conversationId: string; ownershipVersion: number };
 
+/**
+ * A photo the customer sent on the channel. `key` names it for the connector (for WhatsApp, the
+ * message id) and comes back on its receipt.
+ *
+ * It is the photo's `bytes` as the channel delivered them: the host reads the type from the bytes,
+ * re-encodes the photo and reads it with the agent's chat model, and a connector never judges
+ * whether the bytes are an image. Or it is the `receipt` an earlier attempt at the same message got
+ * for the same photo, so a retry neither downloads, reads nor pays for it again; the host uses the
+ * stored photo while it is unclaimed, and refuses with `visitor_images_stale` when it is not.
+ */
+export type ConnectorInboundImage =
+  | { key: string; bytes: Uint8Array; receipt?: undefined }
+  | { key: string; receipt: string; bytes?: undefined };
+
+/** A photo the host stored for a turn, and the receipt that names it for a retry. The receipt is opaque. */
+export interface ConnectorStoredImage {
+  key: string;
+  receipt: string;
+}
+
+/** What one turn may carry in photos. */
+export interface ConnectorImageAllowance {
+  /** The most photos `answer` takes in one turn. */
+  maxImages: number;
+}
+
 export interface ConnectorChatPort {
+  /**
+   * Whether a turn on this conversation (a new one when `conversationId` is omitted) reads photos
+   * now, and how many: the agent that answers it has photos on and its chat model reads them.
+   * Null when it reads none. A connector asks before it downloads a photo, and treats photos as
+   * messages it does not support when the answer is null.
+   */
+  // Message-queue impact: synchronous host port only; no AMQP or worker payload changes.
+  imageAllowance(input: {
+    workspaceId: string;
+    agentId?: string;
+    conversationId?: string;
+  }): Promise<ConnectorImageAllowance | null>;
   /**
    * Records the customer's message, and the human ownership asked for, in one unit of work. Runs
    * no turn and reserves no usage.
@@ -105,6 +143,26 @@ export interface ConnectorChatPort {
     sourceChannel?: string | null;
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
     channelContext?: ConversationChannelContext | null;
+    /**
+     * The photos the customer sent with this message, at most `imageAllowance().maxImages`.
+     * `query` is what they typed with them and may be empty. The host stores and reads each photo,
+     * runs the turn on the text and the readings, and keeps the photos with the conversation. A
+     * photo it cannot use is left out. When none is usable and `query` is empty, the turn is
+     * refused with an error whose `code` is `visitor_images_unusable`, and when the agent stops
+     * taking photos between `imageAllowance` and the turn, with `visitor_images_unavailable`
+     * (409); a connector treats those messages as ones it does not support. A receipt the host
+     * cannot use is refused with `visitor_images_stale` (409); the connector sends the photos'
+     * bytes instead. Every other refusal (`usage_limit_exceeded`, and `visitor_image_busy` (503)
+     * when the host is decoding other photos) is the error a text turn would raise, so a connector
+     * retries it as it retries a text turn.
+     */
+    images?: readonly ConnectorInboundImage[];
+    /**
+     * Called with the photos the host has just stored, before the turn runs and even when the turn
+     * then fails: the connector keeps the receipts with the message and sends them back on a retry.
+     * Photos stored before another photo's upload failed are reported too.
+     */
+    onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
   }): Promise<{
     conversationId: string;
     answer: string;

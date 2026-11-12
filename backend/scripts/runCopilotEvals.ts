@@ -492,6 +492,7 @@ const main = async (): Promise<void> => {
             prompt: deps.copilotPrompt,
             tools: deps.copilotToolCatalog,
             capabilityRunner: deps.copilotCapabilityRunner,
+            contextContributors: deps.copilotContextContributors,
             workspaceRouteKeyResolver: deps.copilotWorkspaceRouteKeyResolver,
             repository: deps.copilotRepository,
             workspaceId: resolved.workspaceId,

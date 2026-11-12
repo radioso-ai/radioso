@@ -22,7 +22,9 @@ const parseHistory = (value: unknown): TestExecutionSide["history"] => Array.isA
 const parseResult = (value: unknown): TestExecutionRunnerResult | undefined => value && typeof value === "object" ? value as TestExecutionRunnerResult : undefined;
 const isLatestTurn = (history: TestExecutionSide["history"], turnId: string): boolean =>
   history.filter((entry) => entry.role === "user").at(-1)?.turnId === turnId;
-const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now }];
+/** A spoken turn's entries say so; a typed turn's carry no marker at all. */
+const spokenMark = (input: { spoken?: true }) => (input.spoken ? { spoken: true as const } : {});
+const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now, ...spokenMark(input) }];
 const appendAssistant = (history: TestExecutionSide["history"], input: CompleteInput) => [...history, {
   turnId: input.turnId,
   attemptId: input.attemptId,
@@ -31,6 +33,7 @@ const appendAssistant = (history: TestExecutionSide["history"], input: CompleteI
   messageId: input.result.messageId,
   ...(input.result.turnTrace ? { turnTrace: input.result.turnTrace } : {}),
   createdAt: input.now,
+  ...spokenMark(input),
 }];
 const testExecutionStartLockKey = (workspaceId: string, agentId: string, idempotencyKey: string): string =>
   `test-execution-start:${workspaceId}:${agentId}:${idempotencyKey}`;

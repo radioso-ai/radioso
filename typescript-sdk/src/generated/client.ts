@@ -53,7 +53,12 @@ export interface DataSubjectLookupResponse {
 export interface DataSubjectConversationsResponse {
   conversations: DataSubjectConversation[];
 }
-export type AssistantChatTurnRequest = AssistantChatRequest & { message: string; startConversation?: false };
+/**
+ * One turn: `message`, `imageIds` (images uploaded with `chat.uploadImage`), or both. `includeDebug`
+ * defaults to false on the server, so a caller may leave it out.
+ */
+export type AssistantChatTurnRequest = Omit<AssistantChatRequest, "includeDebug"> & { includeDebug?: boolean; startConversation?: false };
+export type ChatImageUploadResponse = components["schemas"]["VisitorImageUploadResponse"];
 export type ChatCreateRequest = Omit<AssistantChatTurnRequest, "stream" | "startConversation"> & {
   stream?: false;
   startConversation?: false;

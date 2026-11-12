@@ -36,6 +36,7 @@ const coverage: Record<string, ExportCoverage> = {
   assistant_answer_feedback: { kind: "exported", section: "answer_feedback" },
   a2a_tasks: { kind: "exported", section: "a2a_tasks" },
   routine_consent_records: { kind: "exported", section: "consent_records" },
+  visitor_images: { kind: "exported", section: "visitor_images" },
 
   email_mailboxes: excluded("The workspace's own mailbox and its address, not anyone who wrote to it."),
   email_thread_links: excluded("How the email finder finds a sender's threads. Its latest subject, Cc and display name copy what email_messages carries for each mail."),

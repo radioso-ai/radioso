@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { presentProposalCard } from "../../../src/db/repositories/copilotRepository.js";
+import { presentProposalCard } from "../../../src/modules/operatorCopilot/proposalCard.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createWorkspaceSettingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/workspaceSettingProposals.js";
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";

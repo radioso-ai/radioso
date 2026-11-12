@@ -4,6 +4,7 @@ import type { ConversationChannelContext, ConversationRequestContext } from "@ra
 import type { PageReadCapability } from "../services/pageRead/pageReadDecision.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { ConversationTurnSupersession, DeliveredReplyReader } from "../contracts/interruption.js";
+import type { VisitorImageOwner } from "../../visitorImages/public.js";
 
 export type AssistantRouteType = "direct" | "retrieval";
 export type AssistantRouteReason =
@@ -39,6 +40,12 @@ export interface AssistantPageContext {
   /** FR-013 (spec 1277): document.referrer of the host page; client-claimed, capped and http(s)-only. */
   referrer?: string | null;
 }
+
+/**
+ * Told the moment a turn has stored the customer message it runs on, before the rest of the turn
+ * runs, with the ids that message got. A rejection fails the turn.
+ */
+export type UserMessageStoredListener = (message: { conversationId: string; messageId: string }) => Promise<void>;
 
 export interface AssistantClientContextCapabilities {
   "page.read"?: PageReadCapability;
@@ -89,6 +96,14 @@ export interface AssistantChatRequest {
    * derived from it and the turn admits the named routine directly.
    */
   routineInvocation?: RoutineInvocation;
+  /**
+   * Photos the caller uploaded for this message, at most three, in the order they were attached.
+   * Each is claimed for `imageOwner` and rendered into the turn after `message`, which may then be
+   * absent. Requires `agentId` and `imageOwner`.
+   */
+  imageIds?: readonly string[];
+  /** Who uploaded `imageIds`: set by the route from the caller's public session or credential, never from the body. */
+  imageOwner?: VisitorImageOwner;
   /** How a newer turn on the conversation cuts this one off, used only by `streamAnswer`; `until_emission` when absent. */
   supersession?: ConversationTurnSupersession;
   /**

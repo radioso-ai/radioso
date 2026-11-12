@@ -179,6 +179,30 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     }));
   });
 
+  it("replays the turn as a visitor in the operator's browser zone, and as none when the client sent no zone", async () => {
+    const replay = {
+      stream: vi.fn(async function* (_input: { visitorTimeZone?: string | null }) {
+        return { answer: "answer", messageId: "ephemeral-message", continuation };
+      }),
+    };
+    const adapter = new TrustedTestExecutionRunnerAdapter({
+      replay: replay as unknown as Pick<WorkbenchReplayRunner, "stream">,
+      liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
+      revisions: { findRevision: async () => revision },
+    });
+    const input = {
+      workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
+      conversationId: "private-side-1", message: "What's on tomorrow?", history: [], continuation, testValues: [],
+      executionMode: "safe_test" as const, skillEffects: "suppressed" as const,
+    };
+
+    await collect(adapter.stream({ ...input, userTimeZone: "America/Los_Angeles" }));
+    await collect(adapter.stream(input));
+
+    expect(replay.stream.mock.calls[0]?.[0]).toMatchObject({ visitorTimeZone: "America/Los_Angeles" });
+    expect(replay.stream.mock.calls[1]?.[0].visitorTimeZone).toBeUndefined();
+  });
+
   it("rejects corrupt and version-mismatched continuations before replay", async () => {
     const replay = { stream: vi.fn() };
     const adapter = new TrustedTestExecutionRunnerAdapter({

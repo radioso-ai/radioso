@@ -13,15 +13,21 @@ import {
 
 import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import { createClientId } from '@/lib/client-id'
-import { contrastRatio, mixHex, mixHexRgba, pickForeground, relativeLuminance } from '@/lib/color'
+import { deriveThemeOverridesFromModel } from '@/lib/public-chat-theme'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
 import { actionableSuggestionsOnly, clearMessageSuggestions } from '@/lib/public-chat-suggestion'
 import { publicChatUnavailableReasonOf, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
-import { isHumanAuthoredSource } from '@/lib/reply-attribution'
+import {
+  isHumanAgentReply,
+  restoreMessageSuggestions,
+  stripPublicSuggestionCitations,
+  toChatMessages,
+  toPublicAnswerSegments,
+  toChatMessagesFromTurns,
+  withoutTurn,
+  type ChatMessage,
+} from '@/lib/public-chat-messages'
 
-const MIN_LEGIBLE_CONTRAST = 3
-const ensureLegibleForeground = (background: string, foreground: string) =>
-  contrastRatio(background, foreground) >= MIN_LEGIBLE_CONTRAST ? foreground : pickForeground(background)
 import {
   clearStoredAnonymousSession,
   publicChatApi,
@@ -30,92 +36,29 @@ import {
   readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
   type AgentBrandingSettings,
-  type AnswerFeedbackEntry,
-  type AnswerFeedbackState,
-  type AnswerSegment,
-  type Citation,
-  type ChatSuggestion,
   type ChatConversationDetail,
   type ChatStreamCompletion,
   type ChatUserInputMetadata,
   type ClientContextCapabilities,
   type PublicChatIntakeAction,
-  type ErrorResponse,
-  type ActivitySummary,
-  type ActivityTrace,
-  type SkillStreamPayload,
   type WebsiteEmbedPageContext,
   type WebsiteEmbedCopyPacks,
-  type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { choosePrivacyNotice, type ShownPrivacyNotice } from '@/lib/privacy-notice'
+import { rememberVisitorImage, visitorImageCacheKey } from '@/lib/visitor-image-blob-cache'
+import { withVisitorImageInput } from '@/lib/visitor-image-input'
+import { getErrorResponse, isRateLimitError, isUsageLimitExceededError, unsentImageSendOf, type UnsentImageSend } from '@/lib/public-chat-errors'
 
-export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
-  if (!theme) {
-    return null
-  }
-  const surface = theme.surface
-  const brand = theme.brand
-  const text = ensureLegibleForeground(surface, theme.text)
-  const brandText = ensureLegibleForeground(brand, theme.brandText)
+export type { ChatMessage } from '@/lib/public-chat-messages'
 
-  const isSurfaceDark = relativeLuminance(surface) < 0.5
-  const shadowSurface = isSurfaceDark
-    ? '0 24px 60px rgba(0, 0, 0, 0.55)'
-    : '0 24px 60px rgba(15, 23, 42, 0.28)'
-  const shadowBrand = relativeLuminance(brand) < 0.5
-    ? '0 18px 40px rgba(0, 0, 0, 0.45)'
-    : '0 18px 40px rgba(15, 23, 42, 0.24)'
-
-  return {
-    launcherBackground: brand,
-    launcherForeground: brandText,
-    launcherBorder: mixHexRgba(brand, brandText, 0.16, 0.5),
-    launcherShadow: shadowBrand,
-    panelBackground: surface,
-    panelForeground: text,
-    panelBorder: mixHexRgba(surface, text, 0.18, 0.55),
-    panelShadow: shadowSurface,
-    accent: brand,
-    accentForeground: brandText,
-    mutedBackground: mixHex(surface, text, 0.06),
-    mutedForeground: mixHex(text, surface, 0.45),
-    inputBackground: surface,
-    inputForeground: text,
-    inputBorder: mixHex(surface, text, 0.2),
-    inputPlaceholder: mixHex(text, surface, 0.5),
-    assistantBubbleBackground: mixHex(surface, text, 0.04),
-    assistantBubbleForeground: text,
-    userBubbleBackground: brand,
-    userBubbleForeground: brandText,
-  }
-}
-
-export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  createdAt: string
-  inputMetadata?: ChatUserInputMetadata
-  citations?: Citation[]
-  answerSegments?: AnswerSegment[]
-  suggestions?: ChatSuggestion[]
-  answerFeedback?: AnswerFeedbackState
-  answerFeedbackEntries?: AnswerFeedbackEntry[]
-  activitySummary?: ActivitySummary
-  activityTrace?: ActivityTrace
-  persistedAssistantMessageId?: string
-  status: 'complete' | 'streaming' | 'error'
-  /** Narrows why an `error` status happened, so the view can show cause-specific
-   *  copy instead of the generic failure message. Absent for every other failure
-   *  (provider outage, timeout, etc.), which keeps the generic copy. */
-  failure?: 'unavailable'
-  skill?: SkillStreamPayload
-  /** Message provenance, so the visitor can tell a human operator reply from the AI. */
-  source?: ChatConversationDetail['messages'][number]['source']
-  /** Display name of the human operator who sent this reply (takeover). */
-  operatorDisplayName?: string
+interface SendMessageOptions {
+  imageIds?: string[]
+  /**
+   * A send with photos that did not reach the point where the server takes them: nothing ran, the
+   * thread is as it was, and the caller gives the photos and the words back to the visitor.
+   */
+  onNotSent?: (reason: UnsentImageSend) => void
 }
 
 interface AnonymousChatContextValue {
@@ -139,7 +82,12 @@ interface AnonymousChatContextValue {
   rateLimitError: string | null
   retryAfterSeconds: number | null
   loadOlderMessages: () => Promise<void>
-  sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => Promise<void>
+  /** `imageIds` are photos already uploaded with `uploadImage`; the message may carry them with no text. */
+  sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata, options?: SendMessageOptions) => Promise<void>
+  /** Whether the agent takes photos in this chat: the session says, and an upload the agent refuses turns it off. */
+  acceptsImages: boolean
+  /** Uploads one photo for the visitor's session; resolves once the agent has read it. */
+  uploadImage: (file: File, signal: AbortSignal) => Promise<{ id: string }>
   startNewChat: () => Promise<void>
   trackAnalyticsEvent: (event: WebsiteEmbedAnalyticsInput) => void
   /** The visitor's language, as the greeting is asked for it; a voice call asks for the same. */
@@ -152,124 +100,6 @@ interface AnonymousChatContextValue {
 }
 
 const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(null)
-
-const getErrorResponse = (error: unknown): ErrorResponse['error'] | null => {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'error' in error &&
-    error.error &&
-    typeof error.error === 'object' &&
-    'code' in error.error &&
-    typeof error.error.code === 'string' &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error as ErrorResponse['error']
-  }
-
-  return null
-}
-
-const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds: number } | null => {
-  const structuredError = getErrorResponse(error)
-  if (structuredError?.code !== 'rate_limit_exceeded') {
-    return null
-  }
-
-  return {
-    message: structuredError.message,
-    retryAfterSeconds: Number(structuredError.retryAfterSeconds ?? 60),
-  }
-}
-
-// The account's conversation quota is exhausted. This is the only error code the
-// public route still answers with on this path when the agent cannot reply, so it
-// gets its own visitor-facing copy instead of the generic failure message. Quota
-// can be restored at any time, so the composer stays enabled either way.
-const isUsageLimitExceededError = (error: unknown): boolean =>
-  getErrorResponse(error)?.code === 'usage_limit_exceeded'
-
-const resolveOwnFeedback = (
-  entries: AnswerFeedbackEntry[] | undefined,
-  chatSessionId: string | null | undefined,
-): AnswerFeedbackState | undefined => {
-  const entry = entries?.find((feedback) =>
-    feedback.actorType === 'anonymous_user' &&
-    feedback.anonymousSessionId === chatSessionId,
-  )
-  return entry ? { value: entry.value, comment: entry.comment } : undefined
-}
-
-const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggestion => {
-  const publicSuggestion = { ...suggestion }
-  delete publicSuggestion.citation
-  return publicSuggestion
-}
-
-const stripPublicSuggestionCitations = (suggestions?: ChatSuggestion[]) =>
-  suggestions?.map(stripPublicSuggestionCitation)
-
-const toPublicAnswerSegments = (answerSegments?: AnswerSegment[]) =>
-  answerSegments?.map((segment) => ({
-    text: segment.text,
-    ...(segment.citationIndices ? { citationIndices: segment.citationIndices } : {}),
-  }))
-
-const toChatMessagesFromTurns = (
-  messages: ChatConversationDetail['messages'],
-  chatSessionId?: string | null,
-): ChatMessage[] =>
-  messages
-    .filter((message): message is typeof message & { role: 'user' | 'assistant' } => message.role !== 'system')
-    .map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      createdAt: message.createdAt,
-      inputMetadata: message.inputMetadata,
-      citations: message.citations,
-      answerSegments: toPublicAnswerSegments(message.answerSegments),
-      suggestions: stripPublicSuggestionCitations(message.suggestions),
-      answerFeedback: message.role === 'assistant'
-        ? resolveOwnFeedback(message.answerFeedbackEntries, chatSessionId)
-        : undefined,
-      answerFeedbackEntries: message.role === 'assistant' ? message.answerFeedbackEntries : undefined,
-      activitySummary: message.debug?.activitySummary,
-      activityTrace: message.debug?.activityTrace,
-      persistedAssistantMessageId: message.role === 'assistant' ? message.id : undefined,
-      status: 'complete' as const,
-      source: message.source,
-      operatorDisplayName: message.operatorDisplayName,
-    }))
-
-const toChatMessages = (
-  detail: ChatConversationDetail,
-  chatSessionId?: string | null,
-): ChatMessage[] => toChatMessagesFromTurns(detail.messages, chatSessionId)
-
-const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
-  message.role === 'assistant' && isHumanAuthoredSource(message.source)
-
-const restoreMessageSuggestions = (
-  messages: ChatMessage[],
-  previousMessages: ChatMessage[],
-): ChatMessage[] => {
-  const suggestionsByMessageId = new Map(
-    previousMessages
-      .filter((message) => message.suggestions && message.suggestions.length > 0)
-      .map((message) => [message.id, message.suggestions]),
-  )
-
-  return messages.map((message) =>
-    suggestionsByMessageId.has(message.id)
-      ? {
-          ...message,
-          suggestions: suggestionsByMessageId.get(message.id),
-        }
-      : message,
-  )
-}
 
 const getLatestAssistantMessage = (
   detail: ChatConversationDetail,
@@ -349,6 +179,7 @@ export function AnonymousChatProvider({
   // shown at that moment without re-creating the send callback on every branding change.
   const shownPrivacyNoticeRef = useRef<ShownPrivacyNotice | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
+  const [acceptsImages, setAcceptsImages] = useState(false)
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [bootstrapGreetingId, setBootstrapGreetingId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
@@ -391,6 +222,7 @@ export function AnonymousChatProvider({
       setAssistantCopyPacks(session.copy ?? {})
       setBranding(session.branding ?? null)
       setIntakeActions(session.intakeActions ?? [])
+      setAcceptsImages(session.acceptsImages === true)
       return session
     },
     [clientContextCapabilities, pageContext, sessionChannel],
@@ -538,6 +370,7 @@ export function AnonymousChatProvider({
     setAssistantCopyPacks({})
     setBranding(null)
     setIntakeActions([])
+    setAcceptsImages(false)
     setConversationId(undefined)
     setBootstrapGreetingId(undefined)
     setHasOlderMessages(false)
@@ -556,6 +389,7 @@ export function AnonymousChatProvider({
       setAssistantCopyPacks(response.copy ?? {})
       setBranding(response.branding ?? null)
       setIntakeActions(response.intakeActions ?? [])
+      setAcceptsImages(response.acceptsImages === true)
 
       if (response.conversations.length === 0) {
         if (response.assistantBootstrapActive) {
@@ -842,9 +676,13 @@ export function AnonymousChatProvider({
   )
 
   const sendMessage = useCallback(
-    async (content: string, inputMetadata?: ChatUserInputMetadata) => {
+    async (content: string, inputMetadata?: ChatUserInputMetadata, options?: SendMessageOptions) => {
       const query = content.trim()
-      if (!query || isLoading || isHydrating || unavailable || sendInFlightRef.current) return
+      const imageIds = options?.imageIds ?? []
+      if ((!query && imageIds.length === 0) || isLoading || isHydrating || unavailable || sendInFlightRef.current) {
+        if (imageIds.length > 0) options?.onNotSent?.('not_started')
+        return
+      }
       sendInFlightRef.current = true
 
       try {
@@ -875,7 +713,7 @@ export function AnonymousChatProvider({
           role: 'user',
           content: query,
           createdAt: new Date().toISOString(),
-          inputMetadata,
+          inputMetadata: withVisitorImageInput(inputMetadata, query, imageIds),
           status: 'complete',
         }
 
@@ -906,6 +744,8 @@ export function AnonymousChatProvider({
           },
         ])
 
+        // Once the reply has started, the server has the message and its photos.
+        let streamed = false
         try {
           let didComplete = false
           let didCancel = false
@@ -917,7 +757,7 @@ export function AnonymousChatProvider({
             return publicChatApi.streamMessage(
               activeToken,
               {
-                message: query,
+                message: query || undefined,
                 stream: true,
                 conversationId: resolvedConversationId,
                 bootstrapGreetingId: resolvedConversationId ? undefined : resolvedBootstrapGreetingId,
@@ -925,6 +765,7 @@ export function AnonymousChatProvider({
                   ? { privacyNoticeVersion: shownPrivacyNoticeRef.current.version }
                   : {}),
                 inputMetadata,
+                ...(imageIds.length > 0 ? { imageIds } : {}),
                 userExpectedLocale: resolveAnonymousChatBootstrapLocale({
                   localeOverride,
                   pageContext,
@@ -935,10 +776,12 @@ export function AnonymousChatProvider({
               },
               {
                 onConversation: ({ conversationId: newId }) => {
+                  streamed = true
                   setConversationId(newId)
                   setBootstrapGreetingId(undefined)
                 },
                 onChunk: ({ text }) => {
+                  streamed = true
                   setMessages((prev) =>
                     prev.map((message) =>
                       message.id === assistantMessageId
@@ -1103,6 +946,21 @@ export function AnonymousChatProvider({
         } catch (error) {
           const structuredError = getErrorResponse(error)
           const rateLimit = isRateLimitError(error)
+          const unsent = imageIds.length > 0 && !streamed ? unsentImageSendOf(error) : null
+          if (unsent === 'images_refused' || unsent === 'not_sent') {
+            onAnalyticsEvent?.({
+              event: 'chat.failed',
+              subjectType: resolvedConversationId ? 'conversation' : undefined,
+              subjectId: resolvedConversationId,
+              properties: { inputMethod, errorCode: structuredError?.code ?? 'unknown_error', rateLimited: false },
+            })
+            setMessages((prev) => withoutTurn(prev, [assistantMessageId, userMessage.id], previousMessages))
+            setIsLoading(false)
+            // The server said the photos cannot go (turned off, or already sent), so the chat stops offering them.
+            if (unsent === 'images_refused') setAcceptsImages(false)
+            options?.onNotSent?.(unsent)
+            return
+          }
           if (rateLimit) {
             onAnalyticsEvent?.({
               event: 'chat.failed',
@@ -1117,13 +975,9 @@ export function AnonymousChatProvider({
             })
             setRateLimitError(rateLimit.message)
             setRetryAfterSeconds(rateLimit.retryAfterSeconds)
-            setMessages((prev) =>
-              restoreMessageSuggestions(
-                prev.filter((message) => message.id !== assistantMessageId && message.id !== userMessage.id),
-                previousMessages,
-              ),
-            )
+            setMessages((prev) => withoutTurn(prev, [assistantMessageId, userMessage.id], previousMessages))
             setIsLoading(false)
+            if (imageIds.length > 0) options?.onNotSent?.('rate_limited')
             return
           }
 
@@ -1197,7 +1051,6 @@ export function AnonymousChatProvider({
         limit: MESSAGE_WINDOW_SIZE,
         cursor: nextMessageCursor,
       })
-      // An earlier page is answered by the messages already shown, so none of its chips can still be clicked.
       const olderMessages = clearMessageSuggestions(toChatMessages(detail, readStoredAnonymousSessionId(activeToken)))
       setMessages((current) => {
         const seen = new Set(current.map((message) => message.id))
@@ -1227,6 +1080,24 @@ export function AnonymousChatProvider({
   const visitorLocale = useMemo(
     () => resolveAnonymousChatBootstrapLocale({ localeOverride, pageContext }),
     [localeOverride, pageContext],
+  )
+  const uploadImage = useCallback(
+    async (file: File, signal: AbortSignal) => {
+      try {
+        return await withPublicSessionRetry(async (activeToken) => {
+          const uploaded = await publicChatApi.uploadImage(activeToken, file, { locale: visitorLocale, signal })
+          // The thumbnail in the thread shows the photo the visitor just attached without fetching it back.
+          rememberVisitorImage(visitorImageCacheKey(activeToken, uploaded.id), file)
+          return uploaded
+        })
+      } catch (error) {
+        if (getErrorResponse(error)?.code === 'visitor_images_unavailable') {
+          setAcceptsImages(false)
+        }
+        throw error
+      }
+    },
+    [visitorLocale, withPublicSessionRetry],
   )
   const privacyNotice = useMemo(
     () => choosePrivacyNotice(branding?.privacyNotice, visitorLocale),
@@ -1258,6 +1129,8 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       loadOlderMessages,
       sendMessage,
+      acceptsImages,
+      uploadImage,
       startNewChat,
       trackAnalyticsEvent,
       visitorLocale,
@@ -1284,6 +1157,8 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       loadOlderMessages,
       sendMessage,
+      acceptsImages,
+      uploadImage,
       startNewChat,
       trackAnalyticsEvent,
       visitorLocale,

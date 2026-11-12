@@ -715,6 +715,28 @@ by written negative feedback ordered by its latest creation or edit.
 Automatically detected signals and uncommented feedback stay in **Quality**
 instead of creating an inbox row per answer.
 
+A handoff row names who holds it, so two teammates do not pick up the same
+conversation. One you hold reads "You are handling this" in the accent colour;
+one a teammate holds reads "Dana Scully is handling this" on a muted, dashed row.
+A handoff nobody holds names no one. Until the dashboard knows who you are, a held
+row names its holder without saying whether it is yours.
+
+Feedback rows carry a checkbox, and only feedback rows do: a handoff, an approval,
+and a delivery failure are not triage. Tick several rows, or tick one and choose
+**Select all** to take every visible feedback row, then choose **Dismiss** and pick
+why: **Expected behavior**, **Outside the agent's scope**, **Invalid or insufficient
+feedback**, **Other** with a short note, or **Close without reason**. The reason applies
+to every selected row. Each row is dismissed with its own
+`PUT /api/v1/quality/turns/{assistantMessageId}/triage` request, the call a single
+dismissal makes, so each one writes the same triage history entry and the same
+"dismissed the feedback" activity line, and each needs the same `workspace.quality.manage`
+permission. The queue and the counts update as each row lands. A row that fails stays in
+the queue, still selected, and is listed under **Not dismissed** with its own reason:
+"Could not dismiss. Try again.", "Another operator changed it. Try again." or "You do not
+have permission to dismiss feedback." A row a teammate closed first leaves the queue and is
+listed as "Another operator already closed it." Dismissing again retries the rows that
+stayed. A row a filter hides is never dismissed with the selection.
+
 Both lenses share the same reading pane. For an actionable conversation —
 one awaiting a human or already human-owned — selecting it shows a one-line
 header naming the visitor, the page they were on, and how long they have
@@ -729,7 +751,11 @@ the conversation to them, and they get an email with a link when email delivery
 is configured. When a teammate holds the conversation, the composer gives way to
 "Dana Scully is handling this · **Reassign**", so two people never reply blind;
 Reassign → **Me** transfers it to you and brings the composer back, with anything
-you had drafted still in it. Messages carry attribution: a human reply's badge
+you had drafted still in it. When a transfer's target can no longer take the
+conversation — the teammate was disabled or left the workspace since the list loaded —
+the pane says "That teammate can no longer take this." (or "You can no longer take this."
+for **Me**), keeps your draft, and reloads the teammate list; a conversation that is gone
+says "This conversation is no longer available." Messages carry attribution: a human reply's badge
 names the teammate who wrote it, by display name or email, and system messages
 have a badge of their own. Between the messages, short muted lines tell the
 conversation's story as it happened: "Handed off · No answer found", "Dana Scully

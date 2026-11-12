@@ -18,7 +18,10 @@ import {
   renderSearchText,
   type ChunkingStrategy,
   type ChunkingStrategyId,
+  type WorkspaceTimeZoneReader,
 } from "../../retrieval/public.js";
+import { formatIsoDate } from "../../../shared/domain/clock.js";
+import { resolveReferenceTimeZone, type ReferenceTimeZoneSource } from "../../../shared/domain/referenceTimeZone.js";
 import type {
   DocumentEmbeddingPort,
   EmbeddingSpaceRef,
@@ -176,6 +179,8 @@ export const buildDocumentProcessingTraceAttributes = (
     enrichmentDroppedFactCount?: number;
     enrichmentAppliedChunkCount?: number;
     enrichmentModelAttemptCount?: number;
+    /** Which input decided the zone relative dates were read in: `workspace`, or `default` for UTC. */
+    enrichmentTimeZoneSource?: ReferenceTimeZoneSource;
   } = {},
 ): TraceAttributes => compactTraceAttributes({
   "radioso.workspace_id": job.workspaceId,
@@ -196,6 +201,7 @@ export const buildDocumentProcessingTraceAttributes = (
   "document.enrichment.dropped_fact_count": input.enrichmentDroppedFactCount,
   "document.enrichment.applied_chunk_count": input.enrichmentAppliedChunkCount,
   "document.enrichment.model_attempt_count": input.enrichmentModelAttemptCount,
+  "document.enrichment.time_zone_source": input.enrichmentTimeZoneSource,
 });
 
 export class DocumentProcessingService {
@@ -220,6 +226,8 @@ export class DocumentProcessingService {
     // Carries the enrichment outcome metric; absent in tests and tools that
     // run the pipeline without one.
     private readonly telemetry?: Pick<TelemetryService, "emit">,
+    // The zone relative dates in a document are read in. Absent means UTC.
+    private readonly workspaceTimeZones?: WorkspaceTimeZoneReader,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -511,7 +519,12 @@ export class DocumentProcessingService {
         });
 
         const startedAt = Date.now();
-        const anchorDate = toIsoDate(document.createdAt);
+        // "Tomorrow" in a document means the calendar of the people the workspace serves, so the
+        // anchor is the creation date as it reads in the workspace's zone, not in UTC.
+        const anchorZone = resolveReferenceTimeZone({
+          workspaceTimeZone: await this.workspaceTimeZones?.readWorkspaceTimeZone(job.workspaceId),
+        });
+        const anchorDate = formatIsoDate(document.createdAt, anchorZone.timeZone);
         // Resolved at execution time, never carried on the job payload, so every
         // job that runs after a catalog edit sees the new catalog.
         const catalog = await this.documentTypeCatalogReader?.listEnabledTypes(job.workspaceId);
@@ -519,7 +532,7 @@ export class DocumentProcessingService {
         const source = await this.findDocumentSource(document.sourceId ?? null, job.workspaceId);
         const result = await traceActiveSpan(
           "document.processing.enrichment",
-          buildDocumentProcessingTraceAttributes(job, { stage: "enrichment" }),
+          buildDocumentProcessingTraceAttributes(job, { stage: "enrichment", enrichmentTimeZoneSource: anchorZone.source }),
           () => this.documentEnrichmentStage!.enrich({
             document: {
               id: document.id,
@@ -536,6 +549,7 @@ export class DocumentProcessingService {
             anchor: {
               source: "document_created_at",
               date: anchorDate,
+              timeZone: anchorZone.timeZone,
             },
             catalog,
             previousProvenance,
@@ -710,5 +724,3 @@ export class DocumentProcessingService {
 }
 
 const estimateTokensFromBytes = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
-
-const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);

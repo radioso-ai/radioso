@@ -1,7 +1,7 @@
 ---
 title: "Data retention"
 description: "How long Radioso keeps conversations and every copy derived from them, how to set a workspace's conversation retention window, and how long backups and logs outlive a deletion."
-last_updated: 2026-10-26
+last_updated: 2026-11-11
 ---
 
 # Data retention
@@ -35,7 +35,7 @@ A conversation is idle from its last message — the visitor's, the agent's, or 
 
 A sweep runs every 15 minutes in the worker. For each workspace with a window it erases idle conversations in batches of 25, one transaction each, taking turns across workspaces so a large backlog never holds up a small one. A run stops after a bounded number of batches, so a workspace that just set a short window over years of history drains over a few runs. Each run starts with the workspaces the last run did not reach, so every workspace gets its turn however many set a window. Two runs at once, on two instances, never erase the same conversation twice.
 
-Each batch goes through the same erasure as **Delete conversation**: messages, summaries, routine state, eval snapshots built on it, inbound mail, session context values, the turn audit events that carry its content, and a voice call's recording at ElevenLabs. Each batch records one `conversation.retention.enforced` audit event with the window, the cutoff, and how many conversations, messages, and other rows went. Like every erasure record, it names no conversation and holds none of the content.
+Each batch goes through the same erasure as **Delete conversation**: messages, summaries, routine state, eval snapshots built on it, inbound mail, session context values, the turn audit events that carry its content, the photos its visitor sent, and a voice call's recording at ElevenLabs. Each batch records one `conversation.retention.enforced` audit event with the window, the cutoff, and how many conversations, messages, and other rows went. Like every erasure record, it names no conversation and holds none of the content.
 
 ## Fixed windows
 
@@ -49,8 +49,11 @@ Some copies of a conversation have a shorter life of their own, whether or not t
 | The raw copy of an inbound email | 30 days; the parsed message and the facts threading needs stay with the conversation |
 | An inbound email that never opened a conversation | 30 days |
 | An audit or security event | 365 days from when it happened |
+| A photo a visitor uploaded and never sent | 24 hours after the upload, its stored image included |
 
 Opening the raw view of an email older than 30 days answers `410 raw_purged`.
+
+A photo that went out with a message stays with that message's conversation, under the conversation's window. One the visitor attached and then removed, or that never reached a stored message, has no conversation to follow, so it goes a day after its upload.
 
 An audit event's 365 days count from when it happened. Closing a workspace erases the turn audit events that carry a conversation's content, the same way deleting that conversation does; every other audit event for the workspace keeps its row with no workspace named, so the record of the closure itself, and everything that led up to it, keeps the same 365 days as any other event. A run that removes any audit events records one `audit_event.retention.enforced` event with the count and the window, naming no event it removed.
 

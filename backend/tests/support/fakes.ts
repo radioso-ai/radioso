@@ -215,6 +215,7 @@ import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { requestAuditMetadata } from "../../src/modules/audit/requestAuditContext.js";
 import {
   WORKSPACE_STORAGE_ROOT,
+  documentStorageObjectPath,
   workspaceStoragePrefix,
   type DocumentStorageAdapter,
   type DocumentStorageDeleteInput,
@@ -2899,6 +2900,10 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     };
   }
 
+  async hasReadyDocuments(workspaceId: string) {
+    return [...this.items.values()].some((item) => item.workspaceId === workspaceId && item.status === "ready");
+  }
+
   async summarizeWorkspace(workspaceId: string) {
     const documents = [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
     const sampleDocuments = documents.filter((item) => item.metadata.sampleDocument === true);
@@ -3754,7 +3759,7 @@ export class InMemoryDocumentStorage implements DocumentStorageAdapter {
   deleteFailures = new Set<string>();
 
   async upload(input: DocumentStorageUploadInput) {
-    const objectPath = `${workspaceStoragePrefix(input.workspaceId)}documents/${input.documentId}`;
+    const objectPath = documentStorageObjectPath(input);
     const generation = `${this.objects.size + 1}`;
     this.objects.set(objectPath, {
       buffer: Buffer.from(input.buffer),
@@ -3769,6 +3774,10 @@ export class InMemoryDocumentStorage implements DocumentStorageAdapter {
       generation,
       sizeBytes: input.buffer.length,
     };
+  }
+
+  locate(input: Pick<DocumentStorageUploadInput, "workspaceId" | "documentId" | "folder">): DocumentStorageReadInput {
+    return { bucket: "test-document-imports", objectPath: documentStorageObjectPath(input), generation: null };
   }
 
   async read(input: DocumentStorageReadInput): Promise<Buffer> {
@@ -4572,6 +4581,10 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
   async countByWorkspaceId(workspaceId: string): Promise<number> {
     return [...this.items.values()].filter((item) => item.workspaceId === workspaceId).length;
+  }
+
+  async hasAnyForWorkspace(workspaceId: string): Promise<boolean> {
+    return [...this.items.values()].some((item) => item.workspaceId === workspaceId);
   }
 
   async listPageByWorkspaceId(

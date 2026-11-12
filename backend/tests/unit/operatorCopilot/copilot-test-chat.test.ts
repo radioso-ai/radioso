@@ -298,6 +298,26 @@ describe("Test Chat copilot descriptors", () => {
     expect(output.turn.stages[0]).toEqual({ id: "stage-0", kind: "compose", status: "applied" });
   });
 
+  it("refuses a time zone the runtime does not know, instead of testing as another zone while saying it tested as that one", () => {
+    const send = tools(port()).get("send_test_chat_message")!;
+    const parse = (userTimeZone: string) => send.inputSchema.safeParse({ message: "What's on tomorrow?", userTimeZone });
+
+    expect(parse("America/Los_Angeles").success).toBe(true);
+    for (const unknown of ["PDT", "Pacific", "Mars/Olympus_Mons", "+05:00"]) {
+      const refused = parse(unknown);
+      expect(refused.success, unknown).toBe(false);
+      expect(JSON.stringify(refused.error?.issues)).toContain("IANA time zone");
+    }
+  });
+
+  it("hands the port the time zone the caller named for the turn", async () => {
+    const sendMessage = vi.fn(port().sendMessage);
+
+    await invoke(port({ sendMessage }), "send_test_chat_message", { message: "What's on tomorrow?", userTimeZone: "America/Los_Angeles" });
+
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ userTimeZone: "America/Los_Angeles" }));
+  });
+
   it("falls back to the agent the operator is looking at, and test_chat_sessions refuses without one since it has no session id to resolve one from", async () => {
     const testChat = port();
 
@@ -633,6 +653,16 @@ describe("TestChatService", () => {
       messageId: MESSAGE_ID,
       turnTrace: envelope(),
     });
+  });
+
+  it("sends the turn as a visitor in the named time zone, and names none when the caller gave none", async () => {
+    const { service, executions } = serviceHarness();
+
+    await service.sendMessage({ ...sender, message: "What's on tomorrow?", userTimeZone: "America/Los_Angeles" });
+    await service.sendMessage({ ...sender, message: "What's on tomorrow?" });
+
+    expect(executions.send).toHaveBeenNthCalledWith(1, expect.objectContaining({ userTimeZone: "America/Los_Angeles" }));
+    expect(vi.mocked(executions.send).mock.calls[1]?.[0]).not.toHaveProperty("userTimeZone");
   });
 
   it("starts on a named revision", async () => {

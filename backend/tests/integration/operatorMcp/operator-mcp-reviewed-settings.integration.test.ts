@@ -15,6 +15,7 @@ import { createReviewedReceiptSettlement } from "../../../src/app/composition/co
 import { createLogger } from "../../../src/shared/observability/logger.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
+import { firstPartyCopilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -31,8 +32,8 @@ describeIntegration("reviewed agent settings and ingestion settings execution (P
   const agentService = new AgentService(agentRepository, workspaceRepository);
   const ingestionRepository = new IngestionSettingsRepository(database.kysely);
   const ingestionService = new IngestionSettingsService(ingestionRepository, new AuditService(createLogger("silent"), noopAuditRepository));
-  const proposals = new CopilotRepository(database.kysely);
-  const reviewedReceipt = createReviewedReceiptSettlement(database.kysely);
+  const proposals = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
+  const reviewedReceipt = createReviewedReceiptSettlement(database.kysely, firstPartyCopilotProposalTargetTypes);
   const agentAdapter = createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt });
   const ingestionAdapter = createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: ingestionService, reviewedReceipt });
 

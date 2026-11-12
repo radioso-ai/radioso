@@ -523,12 +523,13 @@ Public surfaces and key files:
 - `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`), `voiceTurnOutcome.ts` (outcome from chat's `done` event) and `voiceLines.ts` (the turn's language and its lines); `voiceSessionMemory.ts` (in-process per-session memory: newest request, last bridge, replayable exchange); `languageSwitchFollowUp.ts` (a turn's switch of the call's language and the runtime's follow-up after it), `switchedTurns.ts` (the switched turn, held with its running reply) and `voiceTurnRecord.ts` (the turn record, speech helpers and the switch's pairing)
 - `backend/src/modules/agents/voiceSettings.ts` — the agent's `voice` block on `GET`/`PUT /api/v1/agents/:agentId`, read by the voice services as types from `agents/public.ts`
 - `frontend/components/dashboard/settings/voice-channel-card.tsx` (with `locale-lines-editor.tsx` and `frontend/lib/voice-settings-form.ts`) — the Voice card on the agent's Channels → API page, which saves the `voice` and `mechanicsReplies` blocks together, carrying `runtime` over as stored; its runtime section `voice-runtime-connection.tsx` (over `frontend/lib/api-agent-voice-connection.ts`) is Connect, Reconnect and Disconnect of the ElevenLabs agent Radioso maintains (`/api/v1/agents/:agentId/voice/connection`), and hands the binding each answer carries to the form; the ElevenLabs key is the **Voice runtime keys** card in `providers-panel.tsx`
-- `frontend/lib/use-voice-session.ts` with the pure `voice-session.ts` (call states, transcript lines), `voice-call.ts` (the vendor client, then the start, then the vendor's session and its microphone prompt, with `VOICE_CALL_BEHAVIOR.connectTimeoutMs`), `api-public-voice.ts` (the session start through the relay) and `voice-runtime.ts` (the vendor port; `voice-runtime-elevenlabs.ts` loads `@elevenlabs/client` when a call starts, or when Talk is offered on iOS) — the website embed's Talk button, shown when the embed config's `voice.available` (`VoiceSessionAvailabilityPort`) is true; `frontend/components/chat/voice-call-controls.tsx` draws it, and `frontend/app/voice-worklets/[name]/route.ts` serves the client's audio worklets from the app host. The operator's switch is `surfaceSettings.websiteEmbed.voiceCallsOffered`, edited by `frontend/components/dashboard/settings/website-voice-calls-setting.tsx` (readiness from `voiceCallReadiness` on `GET /api/v1/agents/:agentId`, hint text and its re-reads from `frontend/lib/voice-call-readiness.ts`, which the Voice card also uses to name the `publication` gap). A public chat session for an agent nobody published is refused with `agent_not_published`; `frontend/lib/public-chat-unavailable.ts` maps that code and `not_found` to what the public chat page and the embed frame say
+- `frontend/lib/use-voice-session.ts` (a surface hands it its own `VoiceSessionCalls`: `publicVoiceSessionCalls` from `api-public-voice.ts` for the embed, Test Chat's start for Test Chat) with the pure `voice-session.ts` (call states, transcript lines), `voice-call.ts` (the vendor client, then the start, then the vendor's session and its microphone prompt, with `VOICE_CALL_BEHAVIOR.connectTimeoutMs`), `api-public-voice.ts` (the session start through the relay) and `voice-runtime.ts` (the vendor port; `voice-runtime-elevenlabs.ts` loads `@elevenlabs/client` when a call starts, or when Talk is offered on iOS) — the website embed's Talk button, shown when the embed config's `voice.available` (`VoiceSessionAvailabilityPort`) is true; `frontend/components/chat/voice-call-controls.tsx` draws it, and `frontend/app/voice-worklets/[name]/route.ts` serves the client's audio worklets from the app host. The operator's switch is `surfaceSettings.websiteEmbed.voiceCallsOffered`, edited by `frontend/components/dashboard/settings/website-voice-calls-setting.tsx` (readiness from `voiceCallReadiness` on `GET /api/v1/agents/:agentId`, hint text and its re-reads from `frontend/lib/voice-call-readiness.ts`, which the Voice card also uses to name the `publication` gap). A public chat session for an agent nobody published is refused with `agent_not_published`; `frontend/lib/public-chat-unavailable.ts` maps that code and `not_found` to what the public chat page and the embed frame say
 - `backend/src/modules/voiceChannel/services/voiceRuntimeConnectionService.ts`, `adapters/elevenlabs/runtimeProvisioner.ts`, `persistence/voiceRuntimeConnectionRepository.ts` and `persistence/voiceRuntimeConnectionLock.ts` (one change per agent at a time, a Postgres session advisory lock) — the ElevenLabs agent Radioso creates and maintains for an agent (`VoiceRuntimeProvisioner`; `agent_voice_runtime_connections`, migration `249_agent_voice_runtime_connections.sql`), mounted at `GET|POST|DELETE /api/v1/agents/:agentId/voice/connection` by `backend/src/app/http/routes/agentVoiceConnectionRoutes.ts`; composition (`createVoiceRuntimeConnectionComposition`, `keepVoiceRuntimesInStepWithAgents`) issues its `Voice calls` REST credential through the access grants, writes `voice.runtime` through `AgentService`, and follows the agent service's default-locale and before-delete hooks; `voiceRuntimeCompletionsAddress.ts` builds the vendor's completions address under `APP_BASE_URL`'s `/backend` proxy path, null when it is unset or not reachable from the public internet
 - `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`; the recording's region and vendor conversation id, migration `230_voice_session_recordings.sql`)
 - `backend/src/modules/voiceChannel/services/voiceRecordingService.ts`, `voiceRecordingErasureService.ts`, `voiceRecordingErasureJob.ts` and `adapters/elevenlabs/recordingSource.ts` — a call's recording, kept by the vendor: the embed's report (`POST /api/v1/public/chat/:token/voice/sessions/:sessionKey/vendor-conversation`, relayed by `frontend/app/api/public/chat/[token]/voice/sessions/[sessionKey]/vendor-conversation/route.ts`), `recording.available` on the history detail (`historyRoutes.ts`), playback at `GET /api/v1/conversations/:conversationId/recording` (`conversationRecordingRoutes.ts`), and deletion with the conversation, visitor, workspace or organization through `VendorHeldConversationDataEraser` in `shared/domain/conversationDataErasure.ts`: the deletion's transaction hands each recording and the sealed vendor key to the erasure backlog (`persistence/voiceRecordingErasureRepository.ts`, migration `245_voice_recording_erasures.sql`), and the `voice.recording_erasure` background job deletes them at the vendor, retrying each recording for about a day, with a `voice-recording-erasure-recovery` periodic task for erasures no job is working on (`persistence/voiceSessionEraser.ts` is the `voice-channel` eraser); what is left at the vendor is listed for the organization's owners and admins at `GET /api/v1/account/voice-recordings/left-at-vendor` (`accountVoiceRecordingRoutes.ts`); the Inbox's Listen is `frontend/components/dashboard/inbox/conversation-recording.tsx`
 - `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter (the `language_detection` tool call of a switching turn), route (the switch's follow-up), `languageSwitches.ts` (the vendor's switch calls and results in the replayed history)
-- `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel)
+- `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel); the port the adapters call is `services/voiceSessionTurnRouter.ts`, which runs a session started from Test Chat on its private test (`services/testChatVoiceTurns.ts` over `TestExecutionService.streamSpokenMessage`, wired by `createTestChatVoiceTurns`) and every other session as a conversation
+- Test Chat's Talk: `backend/src/app/http/routes/testChatVoiceSessionRoute.ts` (`POST /api/v1/agents/:agentId/test-executions/:executionId/voice-sessions`, the session's binding in `voice_sessions.test_execution_id`, migration `255_voice_sessions_test_chat.sql`; its key `radioso-test-chat_` before a UUID, `testChatSessionDomain.ts`), and `frontend/components/dashboard/test-chat-composer.tsx` over `frontend/lib/api-test-chat-voice.ts`, which hands `useVoiceSession` Test Chat's own start
 - `backend/src/modules/voiceChannel/README.md`
 
 Useful searches:
@@ -538,9 +539,10 @@ Useful searches:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts tests/contract/test-chat-voice-session.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/test-chat-voice.integration.test.ts --no-file-parallelism`
 - `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts tests/contract/public-voice-session.contract.test.ts tests/contract/voice-recording.contract.test.ts tests/contract/account-voice-recordings-left-at-vendor.contract.test.ts tests/contract/voice-operator-reply.contract.test.ts tests/contract/voice-cut-reply.contract.test.ts tests/contract/voice-turn-language.contract.test.ts`
-- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts tests/e2e/provider-settings.spec.ts tests/e2e/embed-voice-talk.spec.ts tests/e2e/inbox-call-recording.spec.ts tests/e2e/inbox-voice-operator-reply.spec.ts tests/e2e/inbox-interrupted-reply.spec.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts tests/e2e/provider-settings.spec.ts tests/e2e/embed-voice-talk.spec.ts tests/e2e/test-chat-voice-talk.spec.ts tests/e2e/inbox-call-recording.spec.ts tests/e2e/inbox-voice-operator-reply.spec.ts tests/e2e/inbox-interrupted-reply.spec.ts`
 - `cd frontend && pnpm exec vitest run tests/unit/voice-session.test.ts tests/unit/voice-call.test.ts tests/unit/api-public-voice.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts tests/integration/voice-recording-erasure.integration.test.ts --no-file-parallelism`
 
@@ -734,10 +736,45 @@ first-party surfaces. Contributed descriptors merge into the catalog before
 governance and enrichment, so duplicate names, permission parity, dashboard
 handoffs, and per-turn permission filtering apply to them unchanged, and the
 permissions a turn resolves are derived from the assembled catalog rather than a
-list a contributing module cannot edit. Contributions supply reads, probes, and
-acts; a proposal needs an adapter for its target type, and the target-type set is
-closed by the public contract enum, repository narrowing, and the dashboard's
-card presentation.
+list a contributing module cannot edit. Tool contributions supply reads, probes,
+and acts.
+
+A module contributes a proposal through `registerCopilotProposalAdapter`
+(`operatorCopilot/proposalContribution.ts`): a target type the module owns, the
+adapter that drafts, previews, and applies it, the read and manage permissions it
+asks for, and the identity of the propose tool Ray offers for it.
+`app/composition/copilotContributions.ts` resolves the contributions and
+assembles the proposal target-type set, the first-party list plus each contributed
+type, and boot fails when a contribution names a first-party type or one another
+module already contributed. Every reader of a stored or streamed proposal narrows
+against that set: the copilot repository's row mapping, the service's live card
+and its permission checks, `proposal_detail`, and the availability route's
+applyable targets. A stored type outside the set (a module removed or renamed, a
+rollback, a rollout in progress) leaves its card out of the conversation with a
+warning, while reading or claiming it by id refuses it. The
+`copilot_proposals.target_type` column checks only the identifier syntax. Ray builds the propose tool itself
+(`tools/contributedProposals.ts`): it drafts through the adapter, stores the
+card's label, sentence, and `presentation` (the link label and a
+workspace-relative dashboard path) beside the adapter's `change` on the payload,
+and audits the draft. Apply runs through the same claim, reauthorization, and
+interrupted-apply rule as a first-party proposal, and a contributed adapter must
+say whether an interrupted apply may run again. The published OpenAPI enum lists
+the first-party types only, because the contract describes this repository's
+surfaces. Contributed propose tools stay off Operator MCP.
+
+What Ray should know on every turn, without choosing to look it up, arrives through
+context contributors (`context/contributor.ts`). The runtime asks each one once per
+turn and renders the blocks that answer into the system prompt, ahead of the
+safety boundaries; a contributor that fails costs the turn its block, not the turn.
+The workspace-setup contributor reads the same `CopilotWorkspaceSetupStatePort`
+that `workspace_setup_state` reads, through `WorkspaceSummaryService.getSetupSignals`:
+existence checks rather than the counts `GET /workspace/summary` reports, because
+it runs on every turn. It derives the next incomplete steps, each with
+the dashboard path that completes it (`dashboardLinks.ts`). The empty panel's
+greeting and suggestions come from that same derivation through
+`services/emptyStateService.ts`: the module decides which steps may be offered and
+where each one is completed, and the model writes only the words, in the
+operator's language, from `backend/prompts/copilot/empty-state.md`.
 
 Ray's operational envelope has three parts, all keyed off the turn/tool boundary.
 Every operator-initiated `copilot.*` audit event carries the operator principal
@@ -794,6 +831,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/proposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
+- `backend/src/modules/operatorCopilot/proposalContribution.ts`, `tools/contributedProposals.ts`, and `proposalCard.ts` (a contributed proposal target type, the propose tool Ray builds for it, and both card producers); `backend/src/app/composition/copilotContributions.ts` assembles the target-type set
 - `ee/packages/backend-module/src/usageLimits/copilotTools.ts` (`workspace_usage_limits`, the Enterprise contribution)
 - `backend/src/modules/operatorCopilot/contracts/agentTurnProbe.ts` and `services/agentTurnProbeService.ts` (probe orchestration boundary)
 - `backend/src/modules/operatorCopilot/tools/eval.ts` (`eval_results`, `create_eval_case_from_turn`, `run_eval_suite`, `replay_eval_case`)
@@ -809,6 +847,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/workspaceSettingProposals.ts`, `contracts/workspaceSettingAuthoring.ts`, and `workspaceSettingProposalAdapter.ts` (`propose_workspace_setting`), applying through `backend/src/modules/settings/services/platformSettingsService.ts` via the token-dropping port in `backend/src/app/composition/copilotToolCatalog.ts`; the reach signal it puts on the card is read back in `backend/src/db/repositories/copilotRepository.ts`
 - `backend/src/modules/operatorCopilot/tools/websiteCrawlProposals.ts`, `contracts/websiteCrawlAuthoring.ts`, and `websiteCrawlProposalAdapter.ts` (`start_crawl`)
 - `backend/src/modules/operatorCopilot/tools/agentProposals.ts`, `contracts/agentAuthoring.ts`, `agentProposalAdapter.ts`, and `services/websiteAnalysisProbeService.ts` (`analyze_website`, `propose_agent`; the wizard service they reach is composed in `backend/src/app/server/dependencies.ts` and shared with `backend/src/modules/agentWizard/`)
+- `backend/src/modules/operatorCopilot/context/contributor.ts` and `context/workspaceSetup.ts`, `turnPrompt.ts` (system prompt and turn input assembly), `services/emptyStateService.ts`, `backend/prompts/copilot/empty-state.md`, and `backend/src/app/composition/copilotContext.ts` (the setup-aware empty state and the per-turn setup context; `GET /api/v1/copilot/empty-state`)
+- `frontend/components/dashboard/copilot-empty-state.tsx` and `frontend/lib/copilot-empty-state.ts` (what the empty panel shows from the server's state and the screen)
 - `backend/src/modules/operatorCopilot/proposalEvidence.ts` and `services/proposalEvidenceService.ts` (replay evidence carried on a proposal)
 - `backend/src/db/repositories/copilotReplayEvidenceRepository.ts` (evidence rows a proposal cites)
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)
@@ -836,7 +876,7 @@ Focused checks:
 - `cd backend && pnpm run evals:copilot:ci` — live Ray behaviour run, sampled (needs Postgres and
   `OPENAI_API_KEY`); on demand, not per-PR
 - `cd backend && pnpm run lint:boundaries`
-- `cd frontend && pnpm exec vitest run tests/unit/api-copilot.test.ts tests/unit/copilot-context.test.ts tests/unit/copilot-proposal-card.test.ts tests/unit/copilot-proposal-card-render.test.tsx`
+- `cd frontend && pnpm exec vitest run tests/unit/api-copilot.test.ts tests/unit/copilot-context.test.ts tests/unit/copilot-empty-state.test.ts tests/unit/copilot-proposal-card.test.ts tests/unit/copilot-proposal-card-render.test.tsx`
 
 Related docs, specs, and issues:
 
@@ -1083,6 +1123,56 @@ Related specs:
 
 - `specs/1277-visitor-profile/`
 
+## Visitor Images
+
+Owns the photos a visitor or an API caller attaches to a chat message. The
+`visitorImages` module validates and re-encodes each upload (JPEG, PNG or WebP
+by magic bytes; `sharp` to a JPEG at most 1,600 px and 512 KB with no
+metadata), stores it under `workspaces/<ws>/visitor-images/<id>` through
+document storage, and reads it once at upload with the agent's chat model
+(`visitor_image.read`, fail-open to `unread`). The chat door
+(`AssistantChatService`) claims a send's photos for their owner through the
+`VisitorImageTurnInput` port, runs the turn on the typed text followed by
+`<attached_photo>` blocks, stores `inputMetadata.imageInput`, and binds the claim
+to the user message id the moment the preparer stores it
+(`onUserMessageStored`); a turn that stores no message releases the claim.
+An erasure deletes a conversation's photos and queues their objects to the
+`visitor_images.object_deletion` job in its transaction; a retention rule sweeps
+photos no message carries after 24 hours. The agent flag is
+`visitorImagesEnabled`; the public session's and the conversation list's `acceptsImages` add whether the
+agent's chat model reads images.
+
+Public surfaces and key files:
+
+- `backend/src/modules/visitorImages/` (module brief in its `README.md`; `public.ts`, `composition.ts`, `contracts/turnInput.ts`)
+- `backend/src/app/composition/visitorImages.ts` (object store over document storage, reading model, availability, audit, wiring)
+- `backend/src/modules/chat/services/visitorImageTurn.ts` (the door's claim, rendering, bind and release); `turnUserMessage.ts` (stores the user message, then calls `onUserMessageStored`)
+- `backend/src/app/http/routes/publicVisitorImageRoutes.ts` (`POST`/`GET /api/v1/public/chat/{token}/images[/{imageId}]`)
+- `backend/src/app/http/routes/assistantRoutes.ts` (`POST /api/v1/assistant/images`), `agentChannelImageRoute.ts` (`POST /api/v1/agents/{agentId}/images`)
+- `backend/src/app/http/routes/conversationImageRoutes.ts` (`GET /api/v1/conversations/{conversationId}/images/{imageId}`, audited)
+- `backend/src/app/http/shared/visitorImageUpload.ts`, `backend/src/app/http/middleware/visitorImageUploadRateLimiter.ts`
+- `backend/prompts/chat/visitor-image-reading.md`
+- `backend/src/db/migrations/256_visitor_images.sql`
+- `frontend/components/chat/visitor-image-composer.tsx` (attach button, preview chips, paste and drop) rendered by `PublicChatBubbleComposerForm` in `public-chat-bubble-view.tsx`; `frontend/lib/use-visitor-image-attachments.ts` over `visitor-image-attachment-controller.ts` (shrink, upload, remove, the three-photo limit) and the pure `visitor-image-attachments.ts` (state transitions), `visitor-image-downsize.ts` (sizing and fallbacks over an `ImageCodec`; `visitor-image-browser-codec.ts` is the browser one)
+- `frontend/components/chat/visitor-image-thumbnails.tsx` and `visitor-message-body.tsx` (the visitor's bubble from `inputMetadata.imageInput`, read with `frontend/lib/visitor-image-input.ts`; the public chat fetches a photo with its session header into `visitor-image-blob-cache.ts`, a teammate's view loads it from the conversation route), `ChatMessageThread`'s `visitorImages` prop, and the operator hosts `inbox-response-view.tsx` and `conversation-drawer.tsx`
+- `frontend/lib/anonymous-chat-context.tsx` (`acceptsImages`, `uploadImage`, `sendMessage(..., { imageIds })`), `frontend/lib/api-public-chat.ts` (`uploadImage`, `fetchImage`), `frontend/app/api/public/chat/[token]/route.ts` (the relay's `imageIds`); `acceptsImages` comes from the conversation list each load (`GET /api/v1/public/chat/:token`), and `frontend/lib/use-public-chat-photos.ts` is the shell's photo glue (composer controls, thread config, the send, which gives the photos and words back when the server did not take them, per `public-chat-errors.ts`; photos the chat stops offering are dropped with a notice; `use-file-drop-guard.ts` keeps a file dropped outside the composer from navigating the page), with the shared shapes in `visitor-image-types.ts`; a teammate's thumbnail asks for its photo only once `use-once-intersecting.ts` says it is on screen. The agent's `chatModelReadsImages` is computed by `createChatModelImageReading` in `backend/src/app/composition/visitorImages.ts` (the same port the availability check uses) for `GET`/`PUT /api/v1/agents/:agentId`
+- `frontend/components/dashboard/settings/visitor-images-setting.tsx` (the Answers switch, over the agent's `chatModelReadsImages`)
+- `backend/src/modules/connectors/services/connectorImageTurns.ts` (a connector turn's photos: the per-conversation allowance, the upload for owner `connector_conversation`, then the turn through the chat door's `ChatDoorPhotoTurnPort`; a busy decode is a retryable 503, and `ConnectorStoredImage` receipts let a retry reuse stored photos); `connectorChatPort.ts` carries `imageAllowance` and `answer({ images, onImagesStored })`; WhatsApp keeps a receipt in the inbound message log's payload (`savePhotoReceipt`)
+- `backend/src/modules/connectors/plugins/whatsapp/whatsappMedia.ts` and `whatsappClient.ts` `downloadImage` (Graph media id to bytes: size cap, timeout, https-only redirects; counter `whatsapp_media_downloads_total{outcome}`); `whatsappMessageHandler.ts` turns an album batch into one turn of up to three photos, the caption as typed text
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/unit/agents/agent-visitor-images-flag.test.ts tests/contract/visitor-images.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/visitor-images.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/unit/connectors/connectorImageTurns.test.ts tests/unit/connectors/connectorChatPort.test.ts tests/unit/connectors/whatsapp tests/contract/connectors/connector-chat-port.contract.test.ts` (WhatsApp photos)
+- `cd typescript-sdk && pnpm exec vitest run tests/unit/chat-images.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/visitor-image-*.test.ts tests/unit/anonymous-chat-images.test.tsx tests/unit/public-chat-relay-route.test.ts tests/unit/api-public-chat-images.test.ts`; the journey is `frontend/tests/e2e/visitor-image-composer.spec.ts`
+
+Related specs and docs:
+
+- `specs/visitor-image-input/spec.md`
+- [Let visitors send photos](../../docs-portal/content/guides/image-input.mdx)
+
 ## Conversation Erasure
 
 Owns the permanent erasure of a conversation, or of a visitor with every
@@ -1222,11 +1312,21 @@ Related docs:
 
 Owns the zone a turn reads "today" in (#1600), so "tomorrow" and "this weekend"
 mean the visitor's day. `shared/domain/referenceTimeZone.ts` holds the one rule:
-the visitor's IANA zone when their client reports a valid one, else the
-workspace's (`workspaces.time_zone`, null for UTC), else UTC, validated with
-`Intl` and never throwing. The website embed and hosted chat page send the
-browser's zone as `pageContext.browserTimeZone`; the chat APIs and Ray's
-`test_agent_turn` take `userTimeZone`. A chat turn resolves the zone once in the
+the visitor's IANA zone when their client reports a valid one, else the zone the
+conversation last ran in (only a turn with no live visitor request names one),
+else the workspace's (`workspaces.time_zone`, null for UTC), else UTC, validated
+with `Intl` and never throwing. The website embed and hosted chat page send the
+browser's zone as `pageContext.browserTimeZone`; the chat APIs, Ray's
+`test_agent_turn` and `send_test_chat_message`, and Test Chat's message and
+retry requests take `userTimeZone` (Test Chat's reaches the replay as the
+visitor's zone). A visitor
+message that arrives with a valid zone records it in its metadata
+(`userMessageTurnMetadata`); a routine resumed by an approval click
+(`ApprovalResumeTurn`) reads it back from the conversation's last visitor
+message as the `conversation` source, and records the source on a
+`reference-time-zone` trace stage. Document enrichment
+(`DocumentProcessingService.processEnrichment`) reads the workspace zone to date
+the document's creation, which the enrichment prompt anchors relative dates to. A chat turn resolves the zone once in the
 session preparer and hands it to the planner, the turn interpreter, the
 retrieval request, and the conversation engine as `referenceTimeZone`, which
 rides on every `TurnContext` of the turn, so a routine's date slots
@@ -1234,13 +1334,15 @@ rides on every `TurnContext` of the turn, so a routine's date slots
 retrieval run reads the workspace zone in `RetrievalPipelineService.interpret`,
 and a turn without a zone reads UTC in the packages. Every "today" downstream is
 `formatIsoDate`/`formatPromptDate` (`shared/domain/clock.ts`) in that zone. The
-trace's context stage records `timeZoneSource` (`visitor`, `workspace`,
-`default`), never the zone.
+trace's context stage records `timeZoneSource` (`visitor`, `conversation`,
+`workspace`, `default`), never the zone.
 
 Public surfaces and key files:
 
 - `backend/src/shared/domain/referenceTimeZone.ts`, `backend/src/shared/domain/clock.ts`
-- `backend/src/modules/chat/services/turnReferenceTimeZone.ts` (a chat turn's zone)
+- `backend/src/modules/chat/services/turnReferenceTimeZone.ts` (a chat turn's zone, the zone a visitor's message records, the resume trace stage)
+- `backend/src/modules/chat/services/approvalResumeTurn.ts` (the zone of a routine resumed by an approval click)
+- `backend/src/modules/documents/services/documentProcessingService.ts` (the zone a document's enrichment anchors relative dates in)
 - `packages/conversation-contract/index.d.ts` (`ReferenceTimeZone` on `TurnContext` and the engine inputs)
 - `packages/conversation-defaults/src/localDate.ts` (a turn's local date for the routine selector and skill input resolver)
 - `backend/src/modules/retrieval/domain/workspaceTimeZoneReader.ts` (the workspace-zone port chat and retrieval read; `WorkspaceTimeZoneSettingsRepository` implements it)
@@ -1253,7 +1355,7 @@ Public surfaces and key files:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/shared/referenceTimeZone.test.ts tests/unit/retrieval/relativeDatesTimeZone.test.ts tests/unit/chat-session-preparer-time-zone.test.ts tests/unit/time-zone-settings-service.test.ts tests/contract/settings-time-zone.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/shared/referenceTimeZone.test.ts tests/unit/retrieval/relativeDatesTimeZone.test.ts tests/unit/chat-session-preparer-time-zone.test.ts tests/unit/approval-resume-time-zone.test.ts tests/unit/document-processing-enrichment-time-zone.test.ts tests/unit/time-zone-settings-service.test.ts tests/contract/settings-time-zone.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/workspace-time-zone.integration.test.ts --no-file-parallelism`
 - `cd frontend && pnpm exec vitest run tests/unit/public-chat-browser-time-zone.test.ts tests/unit/time-zone-options.test.ts`
 
@@ -1848,6 +1950,14 @@ Primary internals:
   `turnPlanCoordinator.ts` (fused turn planning), with `turnPlanQuickReply.ts`
   (when the direct answer is the planner's own quick reply)
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
+- `backend/src/modules/chat/services/answerLinkGuard.ts` and
+  `streamedAnswerText.ts` (#1751: a grounded answer's link to an address its
+  model was not sent becomes its text, streamed and finished alike), over the
+  pure `backend/src/shared/text/markdownLinkGuard.ts` (Markdown link syntax and
+  the streaming holdback) and `shared/text/givenLinkTargets.ts` (URL forms
+  matched against the prompt text), which
+  `modules/retrieval/services/retrievalAnswerService.ts` applies to the
+  standalone retrieval answer too
 - `backend/src/modules/answerCoverage/` (validated assessment producer,
   immutable assessment/reaction storage, and history/Pulse read ports)
 - `backend/src/modules/chat/services/groundedAnswerHeadReader.ts` (parses the
@@ -1914,6 +2024,7 @@ Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/chat-service-streaming.test.ts tests/unit/chat-history-service.test.ts tests/unit/chat-presenter.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/grounded-answer-head-reader.test.ts tests/unit/retrieval-answer-coverage-verdict.test.ts tests/unit/chat/answerCoverageHeadRecorder.test.ts tests/unit/chat/answerCoverageShadowAssessor.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/shared/markdownLinkGuard.test.ts tests/unit/shared/givenLinkTargets.test.ts tests/unit/chat/answerLinkGuard.test.ts tests/unit/retrieval-answer-link-guard.test.ts tests/unit/retrieval/retrievalAnswerLinks.test.ts` (links to addresses the model was not given)
 - `cd backend && pnpm exec vitest run tests/unit/chat/agentReplyEnvelope.test.ts tests/unit/routines/routineTurnReporter.test.ts tests/contract/agent-reply-envelope.contract.test.ts tests/integration/agent-reply-envelope.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/chat/agentTurnInput.test.ts tests/contract/mcp-converse.contract.test.ts tests/integration/routine-invocation.integration.test.ts` (tool catalog route and routine invocation turns on both doors)
 - `cd frontend && pnpm test -- tests/unit/chat-message-thread.test.tsx tests/unit/chat-citations.test.tsx`
@@ -2001,7 +2112,7 @@ Public surfaces and contracts:
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
 - `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
 - Sensitive slots (#1543): the authored `sensitivity` lives on the slot schema (`routineSlotSensitivities`, column `routine_slot.sensitivity`, migration `248`); the masking rule is `redactSensitiveValues` / `REDACTED_VALUE` in `packages/conversation-contract` (shared with `context-variables/redaction.ts`); the runner masks its copy-outs (`sensitiveSlotKeys` in `packages/conversation-engine/src/routineSlotValues.ts`) and `resolveUntypedSkillArguments` masks unbound skill arguments; `sensitiveSlotsAwaited` (routines `sensitiveSlots.ts`) lets `ChatSessionPreparer` mark a visitor message that answers a sensitive step as it is created, and `RoutineTurnReporter.sensitiveSlotKeysHeld` lets the chat lifecycle mark a turn's messages (`chat/services/routines/sensitiveTurnMarker.ts`, which also marks a value the routine trace rejected for want of consent, #1544); `backend/src/shared/domain/sensitiveTranscript.ts` turns a marked message into withheld text for summaries, facets, notice AI summaries, eval capture, Test Chat seeds, and the stored coverage request
-- Routine consents (#1544): the authored `consents` list lives in `packages/routine-definition/src/consent.ts` (column `routine_definition.consents`, migration `254`, read back by `routineDefinitionRowMapper.ts` through `routineConsentStoredSchema`, which drops unknown fields and fails on a broken known one); `backend/src/modules/routines/consentGates.ts` is where the compiler puts a `consent` step before each step that collects a covered slot, and `consentValidation.ts` holds the authoring rules, run by `validator.ts` only when the context carries `agentDefaultLocale` (`RoutineDefinitionService` and `assertCandidateSnapshotIsRunnable` pass it): every sensitive slot covered once, the shape of each consent, and a `continue` consent's collecting step asking nothing else and having a default exit. `consentPublishRuleCodes` names the rules that hold back a publish but not a run, which agent bundle import leaves to the imported agent's first publish (`app/composition/agentBundleComposition.ts`). Operators author consents in the routine Document view (`frontend/lib/routine-consent-editor.ts`, `frontend/components/dashboard/settings/routine-consent-section.tsx`) and through Ray (`changes.consents` in `routines/authoringEdit.ts`, listed by `routine_definition` in full). `backend/src/db/repositories/routineConsentRepository.ts` keeps the proof: wording versions (id from `shared/domain/routineConsentWording.ts`), decision records, the standing and latest-prompt reads, the turn writer `PostgresAssistantTurnPersistence` calls (`writeTurnEvents`, `stripWithdrawnSlots`), the `consent_records` export section, and the two retention rules. At runtime, `backend/src/modules/routines/consent/` holds the host port (`consentTurnPort.ts`: variant choice, channel presentation from `consentPresentationFor` in `shared/domain/conversationSource.ts`, standing reuse, button clicks verified against the latest prompt, typed-reply reading), the compiled wording metadata (`consentWording.ts`) and the post-commit logs and counter (`consentTelemetry.ts`); chat produces the turn facts and carries `hostEffects.consentEvents` to persistence (`chat/services/routines/routineConsentTurn.ts`), or, for a replayed turn, to the session's own store that Test Chat's continuation carries (`chat/services/routines/sessionRoutineConsentStore.ts`). Tests: `tests/unit/routines/consentTurnPort.test.ts`, `tests/unit/test-chat-routine-consent.test.ts`, `tests/integration/routine-consent-chat.integration.test.ts`, live `tests/live/routine-consent-reply.verify.test.ts`
+- Routine consents (#1544): the authored `consents` list lives in `packages/routine-definition/src/consent.ts` (column `routine_definition.consents`, migration `257`, read back by `routineDefinitionRowMapper.ts` through `routineConsentStoredSchema`, which drops unknown fields and fails on a broken known one); `backend/src/modules/routines/consentGates.ts` is where the compiler puts a `consent` step before each step that collects a covered slot, and `consentValidation.ts` holds the authoring rules, run by `validator.ts` only when the context carries `agentDefaultLocale` (`RoutineDefinitionService` and `assertCandidateSnapshotIsRunnable` pass it): every sensitive slot covered once, the shape of each consent, and a `continue` consent's collecting step asking nothing else and having a default exit. `consentPublishRuleCodes` names the rules that hold back a publish but not a run, which agent bundle import leaves to the imported agent's first publish (`app/composition/agentBundleComposition.ts`). Operators author consents in the routine Document view (`frontend/lib/routine-consent-editor.ts`, `frontend/components/dashboard/settings/routine-consent-section.tsx`) and through Ray (`changes.consents` in `routines/authoringEdit.ts`, listed by `routine_definition` in full). `backend/src/db/repositories/routineConsentRepository.ts` keeps the proof: wording versions (id from `shared/domain/routineConsentWording.ts`), decision records, the standing and latest-prompt reads, the turn writer `PostgresAssistantTurnPersistence` calls (`writeTurnEvents`, `stripWithdrawnSlots`), the `consent_records` export section, and the two retention rules. At runtime, `backend/src/modules/routines/consent/` holds the host port (`consentTurnPort.ts`: variant choice, channel presentation from `consentPresentationFor` in `shared/domain/conversationSource.ts`, standing reuse, button clicks verified against the latest prompt, typed-reply reading), the compiled wording metadata (`consentWording.ts`) and the post-commit logs and counter (`consentTelemetry.ts`); chat produces the turn facts and carries `hostEffects.consentEvents` to persistence (`chat/services/routines/routineConsentTurn.ts`), or, for a replayed turn, to the session's own store that Test Chat's continuation carries (`chat/services/routines/sessionRoutineConsentStore.ts`). Tests: `tests/unit/routines/consentTurnPort.test.ts`, `tests/unit/test-chat-routine-consent.test.ts`, `tests/integration/routine-consent-chat.integration.test.ts`, live `tests/live/routine-consent-reply.verify.test.ts`
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD and validate)
 - `packages/conversation-contract/routineGraph.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
@@ -2226,7 +2337,8 @@ Focused checks:
 - `cd backend && pnpm exec vitest run tests/unit/handoff tests/unit/approval-decision-service.test.ts tests/unit/quality-triage-service.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/handoff tests/integration/approvals tests/integration/quality-triage.integration.test.ts tests/integration/conversation-activity-backfill-migration.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/handoff/held-reply-service.test.ts tests/unit/handoff/held-reply-state.test.ts tests/unit/app-composition/held-reply-unit-of-work.test.ts tests/integration/held-reply-repository.integration.test.ts tests/contract/held-replies.contract.test.ts`
-- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts tests/unit/needs-attention.test.ts tests/unit/needs-attention-query-state.test.tsx`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts tests/unit/needs-attention.test.ts tests/unit/needs-attention-query-state.test.tsx tests/unit/needs-attention-bulk-dismiss.test.ts tests/unit/needs-attention-format.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/needs-you-filters-and-bulk-dismiss.spec.ts tests/e2e/hitl-needs-attention.spec.ts` (the Needs-you queue: filters, who holds a row, bulk dismiss, Assign and Reassign)
 
 Related docs:
 
@@ -2354,7 +2466,7 @@ knows nothing about what a facet is: extraction arrives as an injected port,
 registered through application composition. With no extractor registered
 neither path below is built, so queued jobs stay durable rather than being
 drained into a no-op. Eligibility for a job is decided once, at enqueue time,
-by `isEligibleForFacetExtraction` in the Chat module (`chatSessionPreparer.ts`)
+by `isEligibleForFacetExtraction` in the Chat module (`facetExtractionEligibility.ts`)
 — the same predicate Audience Pulse reads history with, restated as a
 write-time check rather than duplicated.
 
@@ -2494,7 +2606,9 @@ mapping.
 Primary paths:
 
 - `frontend/components/dashboard/README.md`
-- `frontend/app/`
+- `frontend/app/`; operator-session routes sit in `frontend/app/(workspace-app)/`,
+  whose layout mounts the auth and workspace providers, and visitor surfaces
+  (embed, public chat) sit outside it
 - `frontend/components/dashboard/`
 - `frontend/components/chat/`
 - `frontend/components/auth/`

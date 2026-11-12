@@ -1,7 +1,7 @@
 ---
 title: "Deleting conversation data"
 description: "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps."
-last_updated: 2026-11-07
+last_updated: 2026-11-11
 ---
 
 # Deleting conversation data
@@ -45,6 +45,7 @@ Each deletion records one `conversation.erased` or `visitor.erased` audit event:
 Deleting a conversation removes:
 
 - its messages, summary and title, and the version of the privacy notice its visitor was shown;
+- the photos its visitor sent, with what the agent read in each: the stored image goes once the deletion has gone through (see below);
 - routine state, including the values a routine collected, pending approvals, clarifications, and directive memory;
 - held replies, ownership, activity, and delivery failures;
 - answer feedback and triage, coverage assessments, facets and topic memberships;
@@ -71,7 +72,7 @@ A few records stay on purpose. None of them holds the conversation's content:
 - **Operational audit events.** Events that name the conversation id with an outcome — a takeover, an approval, an email send — keep the id and the outcome codes.
 - **Audience Pulse topics.** Topic names and descriptions are written from many visitors' de-identified question summaries and checked for personal details, and topic sizes are counts. They stay. The Audience Pulse report itself quotes visitors' questions in its recommendations, so a report built on a deleted conversation is discarded; regenerate it from what remains.
 
-WhatsApp keeps one transport log per phone number, not per conversation, and links the number only to its latest conversation; a message after the conversation timeout starts a new conversation. Deleting a number's latest conversation therefore deletes the number's whole log, earlier conversations' entries included. Deleting one of its earlier conversations leaves the log until the latest one is deleted.
+WhatsApp keeps one transport log per phone number, not per conversation, and links the number only to its latest conversation; a message after the conversation timeout starts a new conversation. Deleting a number's latest conversation therefore deletes the number's whole log, earlier conversations' entries included. Deleting one of its earlier conversations leaves the log until the latest one is deleted. For a photo the sender sent, the log keeps the message id, WhatsApp's media id and the caption; the photo itself is stored with the conversation and goes with it.
 
 Two copies outside the conversation stay until their own lifecycle removes them:
 
@@ -99,9 +100,11 @@ A recording still there after its eighth ask, or a week after its deletion, stay
 
 Once the organization itself is deleted, nobody in it can call that endpoint. Only the deployment's operators see what its deletion left at ElevenLabs, in their error tracking and in the database ([Self-hosting operations](/operators/self-hosting-operations)). Once the workspace's ElevenLabs key is removed, or replaced with one for another ElevenLabs account, Radioso cannot delete the old account's recordings at all.
 
+A photo a visitor sent is stored as a file in the workspace's storage. The deletion removes its record and hands the file to the worker in the same database transaction, and the worker deletes it as soon as it picks the job up, usually within seconds. A delete that storage refuses is tried again, with growing waits, for about two hours; a file that is already gone counts as deleted.
+
 ## Deleting everything at once
 
-Deleting a workspace deletes every conversation and visitor in it, with the same cleanup, voice call recordings included: the list of recordings to delete and the key copy outlive the workspace, and the organization, until the job is done. It also deletes the files the workspace stored: the original of every uploaded document and every agent logo. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has, files included.
+Deleting a workspace deletes every conversation and visitor in it, with the same cleanup, voice call recordings included: the list of recordings to delete and the key copy outlive the workspace, and the organization, until the job is done. It also deletes the files the workspace stored: the original of every uploaded document, every agent logo, and every photo a visitor sent. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has, files included.
 
 The files go once the deletion has gone through. The deletion hands them to the worker in the same database transaction, so the workspace and the hand-off commit together or not at all, and the worker deletes the files in batches as soon as it picks the job up. A delete that storage refuses is tried again, with growing waits, for about a day; a file that is already gone counts as deleted. Each run of that job records one `workspace.stored_files.deleted` audit event with the deleted workspace's id and how many files went, never their names; a workspace with more than 1,000 files takes more than one run.
 

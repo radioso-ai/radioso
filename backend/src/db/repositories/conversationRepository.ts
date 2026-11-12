@@ -119,6 +119,8 @@ export interface ConversationRepositoryPort {
     },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   countByWorkspaceId(workspaceId: string): Promise<number>;
+  /** Whether any conversation exists, read with EXISTS so callers that only need that do not count a workspace's history. */
+  hasAnyForWorkspace(workspaceId: string): Promise<boolean>;
   listPageByAnonymousSession(
     workspaceId: string,
     anonymousSessionId: string,
@@ -581,6 +583,13 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .executeTakeFirst();
 
     return Number(row?.count ?? "0");
+  }
+
+  async hasAnyForWorkspace(workspaceId: string): Promise<boolean> {
+    const row = await this.db
+      .selectNoFrom((eb) => eb.exists(eb.selectFrom("conversations").select("id").where("workspace_id", "=", workspaceId)).as("has_any"))
+      .executeTakeFirstOrThrow();
+    return Boolean(row.has_any);
   }
 
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {

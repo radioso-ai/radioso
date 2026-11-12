@@ -10,6 +10,7 @@ import type {
 } from "../../modules/chat/contracts/index.js";
 import {
   PostgresVoiceRuntimeConnectionLock,
+  TestChatVoiceTurnService,
   VoiceRecordingErasureDrain,
   VoiceRecordingErasureRepository,
   VoiceRecordingErasureService,
@@ -18,6 +19,7 @@ import {
   VoiceRuntimeConnectionService,
   VoiceSessionRepository,
   VoiceSessionStartService,
+  VoiceSessionTurnRouter,
   VoiceTurnService,
   createElevenLabsRecordingSource,
   createElevenLabsRuntimeProvisioner,
@@ -44,10 +46,13 @@ import {
   type VoiceSessionStartRegistry,
   type VoiceSessionStore,
   type VoiceStoredReplyReader,
+  type VoiceTestChatBindingLookup,
+  type VoiceTestChatTurns,
   type VoiceTurnNotes,
   type VoiceTurnPort,
   VOICE_REPLY_INTERRUPTED_EVENT,
 } from "../../modules/voiceChannel/public.js";
+import type { TestExecutionService } from "../../modules/test-execution/public.js";
 import type { AccessGrantService } from "../../modules/accessGrants/public.js";
 import type { AgentPublicationReader, AgentRecord, AgentService } from "../../modules/agents/public.js";
 import type { AuditEventInput, AuditPort } from "../../modules/audit/contracts/index.js";
@@ -167,8 +172,38 @@ export const createVoiceStoredReplyReader = (messages: RecentMessages): VoiceSto
   },
 });
 
+/**
+ * A Test Chat session's turns as turns of the private test: the test-execution module runs and
+ * records each one as spoken on the revision under test, and its single side's events become what
+ * the voice turn speaks. The voice module never learns what a test is beyond its id.
+ */
+export const createTestChatVoiceTurns = (executions: Pick<TestExecutionService, "streamSpokenMessage">): VoiceTestChatTurns => ({
+  async *streamTurn(input) {
+    const turn = executions.streamSpokenMessage({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      accountId: input.accountId,
+      executionId: input.testExecutionId,
+      message: input.utterance,
+      signal: input.signal,
+    });
+    for await (const event of turn) {
+      if (event.type === "message_delta") yield { type: "text", text: event.delta };
+      else if (event.type === "side_completed") yield { type: "answered", answer: event.answer };
+      else if (event.type === "side_failed") yield { type: "failed", code: event.code };
+    }
+  },
+});
+
+/**
+ * The voice turn port the vendor adapters call: a router over the conversation path (`VoiceTurnService`
+ * over `AssistantChatService.streamAnswer`, the agent's published release) and the Test Chat path
+ * (`TestChatVoiceTurnService` over the test-execution module), chosen by what the session was started for.
+ */
 export const createVoiceChannelComposition = (deps: {
-  sessions: VoiceSessionStore & VoiceSessionStartLookup;
+  sessions: VoiceSessionStore & VoiceSessionStartLookup & VoiceTestChatBindingLookup;
+  /** The private tests a session started from Test Chat runs its turns on. */
+  testExecutions: Pick<TestExecutionService, "streamSpokenMessage">;
   assistantChatService: {
     streamAnswer(input: VoiceChatTurnRequest & { stream: true }): AsyncIterable<ChatStreamEvent>;
   };
@@ -182,20 +217,25 @@ export const createVoiceChannelComposition = (deps: {
   /** Overrides `VOICE_BEHAVIOR`'s turn timing; tests only. */
   timing?: ConstructorParameters<typeof VoiceTurnService>[0]["timing"];
 }): VoiceTurnPort =>
-  new VoiceTurnService({
-    sessions: deps.sessions,
-    starts: deps.sessions,
-    chat: { streamTurn: (request) => deps.assistantChatService.streamAnswer({ ...request, stream: true }) },
-    agents: voiceProfileSource(deps.agentRepository),
-    // A conversation's routine state is keyed by the conversation id.
-    routines: { isRoutineActive: async (conversationId) => (await deps.routineStates.loadActive({ sessionId: conversationId })) !== null },
-    ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await deps.conversationOwnership.load(conversationId)) },
-    operatorReplies: { claims: deps.replies, newClaimTurnId: randomUUID },
-    storedReplies: createVoiceStoredReplyReader(deps.replies),
-    notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
-    metrics: deps.metricsRegistry,
+  new VoiceSessionTurnRouter({
+    bindings: deps.sessions,
+    conversations: new VoiceTurnService({
+      sessions: deps.sessions,
+      starts: deps.sessions,
+      chat: { streamTurn: (request) => deps.assistantChatService.streamAnswer({ ...request, stream: true }) },
+      agents: voiceProfileSource(deps.agentRepository),
+      // A conversation's routine state is keyed by the conversation id.
+      routines: { isRoutineActive: async (conversationId) => (await deps.routineStates.loadActive({ sessionId: conversationId })) !== null },
+      ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await deps.conversationOwnership.load(conversationId)) },
+      operatorReplies: { claims: deps.replies, newClaimTurnId: randomUUID },
+      storedReplies: createVoiceStoredReplyReader(deps.replies),
+      notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
+      metrics: deps.metricsRegistry,
+      logger: deps.logger,
+      ...(deps.timing ? { timing: deps.timing } : {}),
+    }),
+    testChats: new TestChatVoiceTurnService({ turns: createTestChatVoiceTurns(deps.testExecutions), logger: deps.logger }),
     logger: deps.logger,
-    ...(deps.timing ? { timing: deps.timing } : {}),
   });
 
 /** A stored key the store cannot decrypt, as opposed to a store that cannot be read at all. */

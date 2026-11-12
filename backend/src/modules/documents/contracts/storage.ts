@@ -5,9 +5,15 @@ export interface StoredDocumentObject {
   sizeBytes: number;
 }
 
+/** The folders an object may go to under its workspace: a document's source file, or a photo a visitor sent. */
+export type DocumentStorageFolder = "documents" | "visitor-images";
+
 export interface DocumentStorageUploadInput {
   workspaceId: string;
+  /** The object's leaf: the caller's random id for it, never a filename. */
   documentId: string;
+  /** `documents` when absent. */
+  folder?: DocumentStorageFolder;
   filename: string;
   mimeType: string;
   buffer: Buffer;
@@ -58,10 +64,18 @@ export interface DocumentStorageInventoryPort {
 }
 
 /**
- * A store composition can wire: it serves single objects and answers what it holds, because a
- * deleted workspace's files are found through the inventory.
+ * Where an upload with these ids lands, known before anything is written, so a caller can record
+ * the object first and never leave one behind that no record names. `generation` is null.
  */
-export type DocumentStorageAdapter = DocumentStoragePort & DocumentStorageInventoryPort;
+export interface DocumentStorageLocator {
+  locate(input: Pick<DocumentStorageUploadInput, "workspaceId" | "documentId" | "folder">): DocumentStorageReadInput;
+}
+
+/**
+ * A store composition can wire: it serves single objects, says where one will land, and answers
+ * what it holds, because a deleted workspace's files are found through the inventory.
+ */
+export type DocumentStorageAdapter = DocumentStoragePort & DocumentStorageLocator & DocumentStorageInventoryPort;
 
 /**
  * What the database knows about the workspaces document storage holds objects for. Removing
@@ -91,6 +105,10 @@ export const workspaceStoragePrefix = (workspaceId: string): string => {
   }
   return `${WORKSPACE_STORAGE_ROOT}/${workspaceId}/`;
 };
+
+/** Where an upload goes: its folder under the workspace, then its id. Every adapter writes this path. */
+export const documentStorageObjectPath = (input: Pick<DocumentStorageUploadInput, "workspaceId" | "documentId" | "folder">): string =>
+  `${workspaceStoragePrefix(input.workspaceId)}${input.folder ?? "documents"}/${input.documentId}`;
 
 /**
  * The only form a workspace id takes in a storage path: Postgres prints UUIDs in lowercase. Removing

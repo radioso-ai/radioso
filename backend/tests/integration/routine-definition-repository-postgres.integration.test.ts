@@ -132,7 +132,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       exposure_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       exposure_tool_name TEXT NULL,
       exposure_description TEXT NULL,
-      -- Mirrors migration 254_routine_consents.sql.
+      -- Mirrors migration 257_routine_consents.sql.
       consents JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(consents) = 'array'),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

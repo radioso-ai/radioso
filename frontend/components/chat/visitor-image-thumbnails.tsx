@@ -6,27 +6,11 @@ import { ChevronRight, ImageOff } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { API_BASE } from '@/lib/api-client'
 import { publicChatApi } from '@/lib/api-public-chat'
-import type { VisitorImageInput } from '@/lib/api-types'
+import type { VisitorImage, VisitorImageSource, VisitorImageThreadConfig } from '@/lib/visitor-image-types'
+
+export type { VisitorImageThreadConfig }
+import { useOnceIntersecting } from '@/lib/use-once-intersecting'
 import { loadVisitorImage, visitorImageCacheKey } from '@/lib/visitor-image-blob-cache'
-
-/**
- * Where a thread reads a visitor's photos from. The visitor's own chat reads them with the public
- * session header, which `<img src>` cannot send, so it fetches and shows a blob. A teammate reads
- * them with the dashboard session, which `<img src>` carries, so a photo loads when it is shown
- * and each view is audited.
- */
-export type VisitorImageSource =
-  | { kind: 'public'; publicChatToken: string }
-  | { kind: 'operator'; workspaceId: string; conversationId: string }
-
-export interface VisitorImageThreadConfig {
-  source: VisitorImageSource
-  /** Alt text of a photo, and the label that stands in for one that cannot be shown. */
-  altLabel: string
-  unavailableLabel: string
-  /** Set on teammate threads, which keep the agent's reading of each photo behind a disclosure. */
-  readings?: { label: string; unreadLabel: string }
-}
 
 /** A teammate's view of a conversation's photos: loaded from the dashboard route, with the agent's readings under the bubble. */
 export const operatorVisitorImages = (workspaceId: string, conversationId: string): VisitorImageThreadConfig => ({
@@ -35,8 +19,6 @@ export const operatorVisitorImages = (workspaceId: string, conversationId: strin
   unavailableLabel: 'Photo unavailable',
   readings: { label: 'What the agent read', unreadLabel: 'The agent could not read this photo.' },
 })
-
-type VisitorImage = VisitorImageInput['images'][number]
 
 const THUMBNAIL_CLASS = 'size-24 shrink-0 overflow-hidden rounded-lg'
 const PLACEHOLDER_STYLE = { background: 'color-mix(in srgb, currentColor 14%, transparent)' } as const
@@ -69,17 +51,17 @@ function usePublicImage(publicChatToken: string, imageId: string): LoadedImage {
   return image
 }
 
-function Unavailable({ label }: { label: string }) {
+function Unavailable({ label, className = THUMBNAIL_CLASS }: { label: string; className?: string }) {
   return (
-    <div className={`${THUMBNAIL_CLASS} flex items-center justify-center`} style={PLACEHOLDER_STYLE} title={label} role="img" aria-label={label}>
+    <div className={`${className} flex items-center justify-center`} style={PLACEHOLDER_STYLE} title={label} role="img" aria-label={label}>
       <ImageOff className="size-5 opacity-70" aria-hidden />
     </div>
   )
 }
 
-function PhotoImg({ url, alt, onError }: { url: string; alt: string; onError?: () => void }) {
+function PhotoImg({ url, alt, onError, className = THUMBNAIL_CLASS }: { url: string; alt: string; onError?: () => void; className?: string }) {
   // eslint-disable-next-line @next/next/no-img-element -- a blob or dashboard-session URL the image optimizer cannot fetch
-  return <img src={url} alt={alt} loading="lazy" onError={onError} className={`${THUMBNAIL_CLASS} object-cover`} />
+  return <img src={url} alt={alt} onError={onError} className={`${className} object-cover`} />
 }
 
 function PublicThumbnail({ publicChatToken, image, config }: { publicChatToken: string; image: VisitorImage; config: VisitorImageThreadConfig }) {
@@ -89,10 +71,20 @@ function PublicThumbnail({ publicChatToken, image, config }: { publicChatToken: 
   return <PhotoImg url={loaded.url} alt={config.altLabel} />
 }
 
+/**
+ * A teammate's view of a photo is recorded each time its bytes are sent, so the photo is asked for
+ * only once it is on screen, never because it sits somewhere down a long thread.
+ */
 function OperatorThumbnail({ source, image, config }: { source: Extract<VisitorImageSource, { kind: 'operator' }>; image: VisitorImage; config: VisitorImageThreadConfig }) {
   const [failed, setFailed] = useState(false)
-  if (failed) return <Unavailable label={config.unavailableLabel} />
-  return <PhotoImg url={operatorImageUrl(source, image.id)} alt={config.altLabel} onError={() => setFailed(true)} />
+  const [frame, seen] = useOnceIntersecting<HTMLDivElement>()
+  return (
+    <div ref={frame} className={THUMBNAIL_CLASS}>
+      {!seen ? <div className="size-full animate-pulse" style={PLACEHOLDER_STYLE} aria-hidden /> : failed
+        ? <Unavailable label={config.unavailableLabel} className="size-full" />
+        : <PhotoImg url={operatorImageUrl(source, image.id)} alt={config.altLabel} className="size-full" onError={() => setFailed(true)} />}
+    </div>
+  )
 }
 
 /** The photos a visitor message carries, inside the visitor's bubble. */

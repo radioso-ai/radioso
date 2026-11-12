@@ -77,6 +77,17 @@ test("the website widget offers the attach control when the agent takes photos",
   await frame.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) });
   // The preview chip shows in the widget; the upload itself has no mock here and fails, which the chip says.
   await expect(frame.locator("[data-attachment-status]")).toHaveCount(1);
+
+  // A file dropped anywhere in the widget's own document is not opened by the browser.
+  const chatFrame = page.frames().find((candidate) => candidate.url().includes("/embed-frame"));
+  const dropCancelled = await chatFrame!.evaluate(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array([1])], "photo.jpg", { type: "image/jpeg" }));
+    const drop = new DragEvent("drop", { dataTransfer: transfer, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(drop);
+    return drop.defaultPrevented;
+  });
+  expect(dropCancelled).toBe(true);
 });
 
 test("the website widget offers no attach control when the agent takes no photos", async ({ page }) => {

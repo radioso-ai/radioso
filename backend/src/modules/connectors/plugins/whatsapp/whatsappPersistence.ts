@@ -77,9 +77,29 @@ export interface WhatsAppPersistencePort {
     status: WhatsAppMessageLogStatus,
     errorDetails?: string | null,
   ): Promise<void>;
+  /**
+   * Keeps, with an inbound photo message, the receipt of the photo the host stored for it, so a
+   * retry of the message reuses the photo. The message log survives a restart, so a recovered
+   * message finds it too. A no-op for a message the log does not hold.
+   */
+  savePhotoReceipt(wamid: string, receipt: string): Promise<void>;
   listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]>;
   nextLocalOutboundWamid(): string;
 }
+
+/** The key of an inbound row's payload under which Radioso keeps what it learned about the message. */
+const RADIOSO_STATE_KEY = "radioso";
+const PHOTO_RECEIPT_KEY = "photoReceipt";
+
+/** The receipt a previous attempt kept for this inbound message's photo, if any. */
+export const photoReceiptOf = (log: WhatsAppMessageLogRecord | null): string | null => {
+  const state = log?.payload[RADIOSO_STATE_KEY];
+  if (!state || typeof state !== "object") {
+    return null;
+  }
+  const receipt = (state as Record<string, unknown>)[PHOTO_RECEIPT_KEY];
+  return typeof receipt === "string" && receipt.length > 0 ? receipt : null;
+};
 
 interface WhatsAppContactRow {
   id: string;
@@ -337,6 +357,20 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
       .set({ status, error_details: errorDetails ?? null })
       .where("wamid", "=", wamid)
       .execute();
+  }
+
+  async savePhotoReceipt(wamid: string, receipt: string): Promise<void> {
+    // The inbound row's payload is its own copy of the webhook body, so what Radioso learned about
+    // the message is kept under one namespaced key beside it. Merging keeps the rest of the body
+    // and any other key under `radioso`; the jsonb functions are beyond the query builder.
+    await sql`
+      UPDATE connector_whatsapp_message_log
+      SET payload = payload || jsonb_build_object(
+        ${RADIOSO_STATE_KEY}::text,
+        COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) || jsonb_build_object(${PHOTO_RECEIPT_KEY}::text, ${receipt}::text)
+      )
+      WHERE wamid = ${wamid} AND direction = 'inbound'
+    `.execute(this.db);
   }
 
   async listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]> {

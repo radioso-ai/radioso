@@ -29,6 +29,7 @@ export const createConnectorChatPort = (
         images: photos,
         sourceChannel: input.sourceChannel,
         channelContext: input.channelContext,
+        onImagesStored: input.onImagesStored,
       });
       if (answered) {
         return {

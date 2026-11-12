@@ -28,6 +28,7 @@ export type {
   ConnectorSourceReference,
   ConnectorSourcesPort,
   ConnectorStatePort,
+  ConnectorStoredImage,
   ConnectorSummary,
   ConnectorTurnExecutionMode,
   ConnectorTurnFacts,

@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { ConnectorInboundImage, ConnectorStoredImage } from "@radioso/connector-api";
+
 import type { ChatDoorPhotoTurnPort } from "../../../src/modules/chat/contracts/index.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
 import {
+  CONNECTOR_IMAGES_STALE_CODE,
   CONNECTOR_IMAGES_UNAVAILABLE_CODE,
   createConnectorImageTurns,
 } from "../../../src/modules/connectors/services/connectorImageTurns.js";
@@ -10,24 +13,28 @@ import type { VisitorImageAvailability, VisitorImageService } from "../../../src
 
 const IMAGE_A = "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12";
 const IMAGE_B = "7d4f0a3b-2e5c-4c9f-8a1b-3b5d7f9c1e23";
+const IMAGE_C = "8e5a1b4c-3f6d-4d0a-9b2c-4c6e8a0d2f34";
 const PHOTO_A = new Uint8Array([0xff, 0xd8, 1]);
 const PHOTO_B = new Uint8Array([0xff, 0xd8, 2]);
 
 type Upload = Awaited<ReturnType<VisitorImageService["upload"]>>;
 type DoorAnswer = Awaited<ReturnType<ChatDoorPhotoTurnPort["answer"]>>;
 
+const accepted = (id: string): Upload => ({ kind: "accepted", id, readingStatus: "read" });
+
 const setup = (overrides: {
   availability?: Awaited<ReturnType<VisitorImageAvailability["forAgent"]>>;
   conversationAgentId?: string | null;
-  uploads?: Upload[];
+  uploads?: (Upload | Error)[];
   door?: DoorAnswer;
 } = {}) => {
-  const uploads = [...(overrides.uploads ?? [
-    { kind: "accepted" as const, id: IMAGE_A, readingStatus: "read" as const },
-    { kind: "accepted" as const, id: IMAGE_B, readingStatus: "read" as const },
-  ])];
+  const uploads = [...(overrides.uploads ?? [accepted(IMAGE_A), accepted(IMAGE_B)])];
   const images = {
-    upload: vi.fn<VisitorImageService["upload"]>(async () => uploads.shift() ?? { kind: "rejected", reason: "unsupported_type" }),
+    upload: vi.fn<VisitorImageService["upload"]>(async () => {
+      const next = uploads.shift() ?? { kind: "rejected" as const, reason: "unsupported_type" as const };
+      if (next instanceof Error) throw next;
+      return next;
+    }),
   };
   const door = {
     answer: vi.fn<ChatDoorPhotoTurnPort["answer"]>(async () => (overrides.door === undefined
@@ -45,10 +52,12 @@ const setup = (overrides: {
   return { turns, images, door, agents, conversations, availability };
 };
 
+const bytes = (key: string, data: Uint8Array = PHOTO_A): ConnectorInboundImage => ({ key, bytes: data });
+
 const turnInput = (overrides: Partial<Parameters<ReturnType<typeof setup>["turns"]["answer"]>[0]> = {}) => ({
   workspaceId: "workspace-1",
   query: "Something like this",
-  images: [{ bytes: PHOTO_A }, { bytes: PHOTO_B }],
+  images: [bytes("wamid-1", PHOTO_A), bytes("wamid-2", PHOTO_B)],
   sourceChannel: "whatsapp",
   ...overrides,
 });
@@ -121,9 +130,9 @@ describe("createConnectorImageTurns", () => {
     });
 
     it("runs a photo with no caption on the photo alone", async () => {
-      const { turns, door } = setup({ uploads: [{ kind: "accepted", id: IMAGE_A, readingStatus: "read" }] });
+      const { turns, door } = setup({ uploads: [accepted(IMAGE_A)] });
 
-      await turns.answer(turnInput({ query: "", images: [{ bytes: PHOTO_A }] }));
+      await turns.answer(turnInput({ query: "", images: [bytes("wamid-1")] }));
 
       expect(door.answer).toHaveBeenCalledWith(expect.objectContaining({ message: "", imageIds: [IMAGE_A] }));
     });
@@ -145,7 +154,7 @@ describe("createConnectorImageTurns", () => {
 
     it("leaves out a photo the module refuses, and sends the rest", async () => {
       const { turns, door } = setup({
-        uploads: [{ kind: "rejected", reason: "too_many_pixels" }, { kind: "accepted", id: IMAGE_B, readingStatus: "unread" }],
+        uploads: [{ kind: "rejected", reason: "too_many_pixels" }, accepted(IMAGE_B)],
       });
 
       await turns.answer(turnInput());
@@ -156,7 +165,7 @@ describe("createConnectorImageTurns", () => {
     it("returns nothing, running no turn, when every photo is refused", async () => {
       const { turns, door } = setup({ uploads: [{ kind: "rejected", reason: "unsupported_type" }] });
 
-      await expect(turns.answer(turnInput({ images: [{ bytes: PHOTO_A }] }))).resolves.toBeNull();
+      await expect(turns.answer(turnInput({ images: [bytes("wamid-1")] }))).resolves.toBeNull();
       expect(door.answer).not.toHaveBeenCalled();
     });
 
@@ -175,18 +184,6 @@ describe("createConnectorImageTurns", () => {
       await expect(turns.answer(turnInput())).rejects.toMatchObject({ statusCode: 409, code: CONNECTOR_IMAGES_UNAVAILABLE_CODE });
     });
 
-    it("lets the refusals of the upload pass as they are: over plan, and busy", async () => {
-      const overPlan = setup();
-      overPlan.images.upload.mockRejectedValue(new AppError(429, "usage_limit_exceeded", "Usage limit exceeded"));
-      const busy = setup();
-      busy.images.upload.mockRejectedValue(new AppError(503, "visitor_image_busy", "Too many images are being processed."));
-
-      await expect(overPlan.turns.answer(turnInput())).rejects.toMatchObject({ statusCode: 429, code: "usage_limit_exceeded" });
-      await expect(busy.turns.answer(turnInput())).rejects.toMatchObject({ statusCode: 503, code: "visitor_image_busy" });
-      expect(overPlan.door.answer).not.toHaveBeenCalled();
-      expect(busy.door.answer).not.toHaveBeenCalled();
-    });
-
     it("lets any other refusal of the door pass as it is", async () => {
       const { turns, door } = setup();
       door.answer.mockRejectedValueOnce(new AppError(429, "usage_limit_exceeded", "Usage limit exceeded"));
@@ -197,7 +194,7 @@ describe("createConnectorImageTurns", () => {
     it("refuses more photos than a message carries", async () => {
       const { turns, images } = setup();
 
-      await expect(turns.answer(turnInput({ images: [PHOTO_A, PHOTO_B, PHOTO_A, PHOTO_B].map((bytes) => ({ bytes })) })))
+      await expect(turns.answer(turnInput({ images: [PHOTO_A, PHOTO_B, PHOTO_A, PHOTO_B].map((data, n) => bytes(`wamid-${n}`, data)) })))
         .rejects.toMatchObject({ statusCode: 400 });
       expect(images.upload).not.toHaveBeenCalled();
     });
@@ -206,6 +203,167 @@ describe("createConnectorImageTurns", () => {
       const { turns } = setup({ door: null });
 
       await expect(turns.answer(turnInput())).rejects.toThrow("Chat turn returned no conversation");
+    });
+
+    describe("a photo the module is too busy to decode", () => {
+      it("is retryable, not dropped like a photo that is not an image: the turn is refused with the busy error", async () => {
+        const { turns, door } = setup({ uploads: [{ kind: "rejected", reason: "busy" }] });
+
+        await expect(turns.answer(turnInput({ images: [bytes("wamid-1")] })))
+          .rejects.toMatchObject({ statusCode: 503, code: "visitor_image_busy" });
+        expect(door.answer).not.toHaveBeenCalled();
+      });
+
+      it("still reports the photos stored beside it, so a retry does not pay for them again", async () => {
+        const { turns, door } = setup({ uploads: [accepted(IMAGE_A), { kind: "rejected", reason: "busy" }] });
+        const onImagesStored = vi.fn<(stored: readonly ConnectorStoredImage[]) => Promise<void>>(async () => undefined);
+
+        await expect(turns.answer(turnInput({ onImagesStored }))).rejects.toMatchObject({ code: "visitor_image_busy" });
+
+        expect(onImagesStored).toHaveBeenCalledTimes(1);
+        expect(onImagesStored.mock.calls[0]?.[0]).toEqual([{ key: "wamid-1", receipt: expect.any(String) }]);
+        expect(door.answer).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("receipts", () => {
+      it("reports each photo it stored by the key the connector gave it, before the turn runs", async () => {
+        const { turns, door } = setup();
+        const order: string[] = [];
+        const onImagesStored = vi.fn(async (stored: readonly ConnectorStoredImage[]) => {
+          order.push(`stored:${stored.map((item) => item.key).join(",")}`);
+        });
+        door.answer.mockImplementationOnce(async () => {
+          order.push("turn");
+          return { conversationId: "conversation-new", answer: "Looks lovely.", skillOutcome: "grounded" };
+        });
+
+        await turns.answer(turnInput({ onImagesStored }));
+
+        expect(order).toEqual(["stored:wamid-1,wamid-2", "turn"]);
+      });
+
+      it("reports them even when the turn then fails", async () => {
+        const { turns, door } = setup();
+        const onImagesStored = vi.fn(async () => undefined);
+        door.answer.mockRejectedValueOnce(new Error("model unavailable"));
+
+        await expect(turns.answer(turnInput({ onImagesStored }))).rejects.toThrow("model unavailable");
+
+        expect(onImagesStored).toHaveBeenCalledTimes(1);
+      });
+
+      it("reuses the photos of an earlier attempt, uploading nothing, under the owner they were stored for", async () => {
+        const first = setup();
+        const stored: ConnectorStoredImage[] = [];
+        first.door.answer.mockRejectedValueOnce(new Error("model unavailable"));
+        await expect(first.turns.answer(turnInput({ onImagesStored: async (items) => void stored.push(...items) }))).rejects.toThrow();
+        const firstOwner = (first.images.upload.mock.calls[0]?.[0] as { owner: unknown }).owner;
+        expect(stored.map((item) => item.key)).toEqual(["wamid-1", "wamid-2"]);
+
+        const retry = setup({ uploads: [] });
+        await retry.turns.answer(turnInput({
+          images: stored.map((item) => ({ key: item.key, receipt: item.receipt })),
+          onImagesStored: vi.fn(async () => undefined),
+        }));
+
+        expect(retry.images.upload).not.toHaveBeenCalled();
+        expect(retry.door.answer).toHaveBeenCalledWith(expect.objectContaining({ imageIds: [IMAGE_A, IMAGE_B], imageOwner: firstOwner }));
+      });
+
+      it("uploads only the photos that have no receipt, and keeps the order they were named in", async () => {
+        const first = setup({ uploads: [accepted(IMAGE_B)] });
+        const stored: ConnectorStoredImage[] = [];
+        first.door.answer.mockRejectedValueOnce(new Error("model unavailable"));
+        await expect(first.turns.answer(turnInput({ images: [bytes("wamid-2", PHOTO_B)], onImagesStored: async (items) => void stored.push(...items) }))).rejects.toThrow();
+
+        const retry = setup({ uploads: [accepted(IMAGE_C)] });
+        const onImagesStored = vi.fn<(items: readonly ConnectorStoredImage[]) => Promise<void>>(async () => undefined);
+        await retry.turns.answer(turnInput({
+          images: [bytes("wamid-1", PHOTO_A), { key: "wamid-2", receipt: stored[0].receipt }],
+          onImagesStored,
+        }));
+
+        expect(retry.images.upload).toHaveBeenCalledTimes(1);
+        expect(retry.images.upload).toHaveBeenCalledWith(expect.objectContaining({
+          owner: (first.images.upload.mock.calls[0]?.[0] as { owner: unknown }).owner,
+        }));
+        expect(retry.door.answer).toHaveBeenCalledWith(expect.objectContaining({ imageIds: [IMAGE_C, IMAGE_B] }));
+        expect(onImagesStored.mock.calls[0]?.[0]).toEqual([{ key: "wamid-1", receipt: expect.any(String) }]);
+      });
+
+      it.each([
+        ["is not one the host issued", [{ key: "wamid-1", receipt: "not-a-receipt" }]],
+      ])("refuses a receipt that %s as stale, without uploading anything", async (_label, images) => {
+        const { turns, images: service, door } = setup();
+
+        await expect(turns.answer(turnInput({ images: [...images, bytes("wamid-2")] })))
+          .rejects.toMatchObject({ statusCode: 409, code: CONNECTOR_IMAGES_STALE_CODE });
+        expect(service.upload).not.toHaveBeenCalled();
+        expect(door.answer).not.toHaveBeenCalled();
+      });
+
+      it("refuses receipts stored for different owners as stale", async () => {
+        const a = setup();
+        const b = setup({ uploads: [accepted(IMAGE_B)] });
+        const storedA: ConnectorStoredImage[] = [];
+        const storedB: ConnectorStoredImage[] = [];
+        await a.turns.answer(turnInput({ images: [bytes("wamid-1")], onImagesStored: async (items) => void storedA.push(...items) }));
+        await b.turns.answer(turnInput({ images: [bytes("wamid-2")], onImagesStored: async (items) => void storedB.push(...items) }));
+        const retry = setup();
+
+        await expect(retry.turns.answer(turnInput({
+          images: [{ key: "wamid-1", receipt: storedA[0].receipt }, { key: "wamid-2", receipt: storedB[0].receipt }],
+        }))).rejects.toMatchObject({ statusCode: 409, code: CONNECTOR_IMAGES_STALE_CODE });
+        expect(retry.door.answer).not.toHaveBeenCalled();
+      });
+
+      it("calls a receipt stale, not the agent unavailable, when the door cannot claim it and the agent still takes photos", async () => {
+        const first = setup();
+        const stored: ConnectorStoredImage[] = [];
+        await first.turns.answer(turnInput({ onImagesStored: async (items) => void stored.push(...items) }));
+        const retry = setup();
+        retry.door.answer.mockRejectedValueOnce(new AppError(409, "visitor_image_unavailable", "An attached image cannot be sent."));
+
+        await expect(retry.turns.answer(turnInput({ images: stored.map((item) => ({ key: item.key, receipt: item.receipt })) })))
+          .rejects.toMatchObject({ statusCode: 409, code: CONNECTOR_IMAGES_STALE_CODE });
+      });
+
+      it("calls it the agent stopping when the door cannot claim a receipt because photos are off", async () => {
+        const first = setup();
+        const stored: ConnectorStoredImage[] = [];
+        await first.turns.answer(turnInput({ onImagesStored: async (items) => void stored.push(...items) }));
+        const retry = setup();
+        retry.availability.forAgent.mockResolvedValueOnce("available").mockResolvedValue("disabled");
+        retry.door.answer.mockRejectedValueOnce(new AppError(409, "visitor_image_unavailable", "An attached image cannot be sent."));
+
+        await expect(retry.turns.answer(turnInput({ images: stored.map((item) => ({ key: item.key, receipt: item.receipt })) })))
+          .rejects.toMatchObject({ statusCode: 409, code: CONNECTOR_IMAGES_UNAVAILABLE_CODE });
+      });
+    });
+
+    describe("when one upload fails", () => {
+      it("waits for the others to settle and reports the photos they stored, then raises the failure", async () => {
+        const { turns, images, door } = setup();
+        const settled: string[] = [];
+        images.upload
+          .mockImplementationOnce(async () => {
+            throw new AppError(429, "usage_limit_exceeded", "Usage limit exceeded");
+          })
+          .mockImplementationOnce(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            settled.push("second upload finished");
+            return accepted(IMAGE_B);
+          });
+        const onImagesStored = vi.fn(async (items: readonly ConnectorStoredImage[]) => {
+          settled.push(`reported ${items.map((item) => item.key).join(",")}`);
+        });
+
+        await expect(turns.answer(turnInput({ onImagesStored }))).rejects.toMatchObject({ statusCode: 429, code: "usage_limit_exceeded" });
+
+        expect(settled).toEqual(["second upload finished", "reported wamid-2"]);
+        expect(door.answer).not.toHaveBeenCalled();
+      });
     });
   });
 });

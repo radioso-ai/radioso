@@ -84,12 +84,23 @@ export type ConnectorTurnResult =
   | { kind: "human_owned"; conversationId: string; ownershipVersion: number };
 
 /**
- * A photo the customer sent on the channel, as the channel delivered it. The host reads the type
- * from the bytes, re-encodes the photo and reads it with the agent's chat model; a connector never
- * judges whether the bytes are an image.
+ * A photo the customer sent on the channel. `key` names it for the connector (for WhatsApp, the
+ * message id) and comes back on its receipt.
+ *
+ * It is the photo's `bytes` as the channel delivered them: the host reads the type from the bytes,
+ * re-encodes the photo and reads it with the agent's chat model, and a connector never judges
+ * whether the bytes are an image. Or it is the `receipt` an earlier attempt at the same message got
+ * for the same photo, so a retry neither downloads, reads nor pays for it again; the host uses the
+ * stored photo while it is unclaimed, and refuses with `visitor_images_stale` when it is not.
  */
-export interface ConnectorInboundImage {
-  bytes: Uint8Array;
+export type ConnectorInboundImage =
+  | { key: string; bytes: Uint8Array; receipt?: undefined }
+  | { key: string; receipt: string; bytes?: undefined };
+
+/** A photo the host stored for a turn, and the receipt that names it for a retry. The receipt is opaque. */
+export interface ConnectorStoredImage {
+  key: string;
+  receipt: string;
 }
 
 /** What one turn may carry in photos. */
@@ -139,10 +150,19 @@ export interface ConnectorChatPort {
      * photo it cannot use is left out. When none is usable and `query` is empty, the turn is
      * refused with an error whose `code` is `visitor_images_unusable`, and when the agent stops
      * taking photos between `imageAllowance` and the turn, with `visitor_images_unavailable`
-     * (409); a connector treats those messages as ones it does not support. Every other refusal
-     * (`usage_limit_exceeded`, `visitor_image_busy`) is the error a text turn would raise.
+     * (409); a connector treats those messages as ones it does not support. A receipt the host
+     * cannot use is refused with `visitor_images_stale` (409); the connector sends the photos'
+     * bytes instead. Every other refusal (`usage_limit_exceeded`, and `visitor_image_busy` (503)
+     * when the host is decoding other photos) is the error a text turn would raise, so a connector
+     * retries it as it retries a text turn.
      */
     images?: readonly ConnectorInboundImage[];
+    /**
+     * Called with the photos the host has just stored, before the turn runs and even when the turn
+     * then fails: the connector keeps the receipts with the message and sends them back on a retry.
+     * Photos stored before another photo's upload failed are reported too.
+     */
+    onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
   }): Promise<{
     conversationId: string;
     answer: string;

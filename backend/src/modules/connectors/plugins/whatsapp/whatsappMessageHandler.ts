@@ -4,14 +4,19 @@ import type {
   ConnectorInboundImage,
   ConnectorLogger,
   ConnectorStatePort,
+  ConnectorStoredImage,
 } from "@radioso/connector-api";
 
 import { isStructuredAppError } from "../../../../shared/domain/errors.js";
 import { errorClassOf } from "../../../../shared/observability/errorClass.js";
 import { WhatsAppClient, WhatsAppClientError } from "./whatsappClient.js";
-import { CONNECTOR_IMAGES_UNAVAILABLE_CODE, CONNECTOR_IMAGES_UNUSABLE_CODE } from "../../services/connectorImageTurns.js";
+import {
+  CONNECTOR_IMAGES_STALE_CODE,
+  CONNECTOR_IMAGES_UNAVAILABLE_CODE,
+  CONNECTOR_IMAGES_UNUSABLE_CODE,
+} from "../../services/connectorImageTurns.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
-import { PostgresWhatsAppPersistence, type WhatsAppPersistencePort } from "./whatsappPersistence.js";
+import { PostgresWhatsAppPersistence, photoReceiptOf, type WhatsAppPersistencePort } from "./whatsappPersistence.js";
 
 interface WhatsAppMessageHandlerOptions {
   db: ConnectorDatabasePort;
@@ -64,6 +69,9 @@ class PhotosNotTakenError extends Error {
 }
 
 /** What the host's refusal of a turn's photos means for the connector, when it is one the connector acts on. */
+const isStaleReceiptsRefusal = (error: unknown): boolean =>
+  isStructuredAppError(error) && error.code === CONNECTOR_IMAGES_STALE_CODE;
+
 const photosNotTakenBy = (error: unknown): PhotosNotTakenError | null => {
   if (!isStructuredAppError(error)) {
     return null;
@@ -180,8 +188,12 @@ export class WhatsAppMessageHandler {
     config: Record<string, string>,
     unsupportedMessages: WhatsAppInboundMessage[],
     errors: unknown[],
+    captionsAsText = false,
   ): Promise<void> {
-    const turnMessages = messages.filter((message) => this.isProcessableTextMessage(message) || photoMessages.includes(message));
+    const turnMessages = messages.filter((message) =>
+      this.isProcessableTextMessage(message)
+      || photoMessages.includes(message)
+      || (captionsAsText && this.isPhotoMessage(message) && this.hasCaption(message)));
     unsupportedMessages.push(...messages.filter((message) => !turnMessages.includes(message)));
     if (turnMessages.length === 0) {
       return;
@@ -189,7 +201,7 @@ export class WhatsAppMessageHandler {
 
     try {
       await this.processMessageGroup(turnMessages, async () => {
-        await this.answerAndReply(turnMessages, this.buildTextQuery(turnMessages), config);
+        await this.answerAndReply(turnMessages, this.buildTextQuery(turnMessages), config, photoMessages);
       });
     } catch (error) {
       if (!(error instanceof PhotosNotTakenError)) {
@@ -197,7 +209,9 @@ export class WhatsAppMessageHandler {
       } else if (error.reason === "unusable") {
         unsupportedMessages.push(...turnMessages);
       } else {
-        await this.answerTurn(turnMessages, [], config, unsupportedMessages, errors);
+        // The agent stopped taking photos: what was typed with them is still a message, so the
+        // text and the captions are answered, and a photo with no caption is unsupported.
+        await this.answerTurn(turnMessages, [], config, unsupportedMessages, errors, true);
       }
     }
   }
@@ -260,8 +274,9 @@ export class WhatsAppMessageHandler {
     messages: WhatsAppInboundMessage[],
     query: string,
     config: Record<string, string>,
+    photoMessages: WhatsAppInboundMessage[],
   ): Promise<void> {
-    const prepared = await this.prepareReply(messages, query, config);
+    const prepared = await this.prepareReply(messages, query, config, photoMessages);
 
     await this.sendReply({
       workspaceId: messages[0].workspaceId,
@@ -316,6 +331,7 @@ export class WhatsAppMessageHandler {
     messages: WhatsAppInboundMessage[],
     query: string,
     config: Record<string, string>,
+    photoMessages: WhatsAppInboundMessage[],
   ): Promise<PreparedWhatsAppReply> {
     const [first] = messages;
     const inboundWamids = this.inboundWamids(messages);
@@ -333,23 +349,7 @@ export class WhatsAppMessageHandler {
     }
 
     const { conversationId, latestTimestamp } = await this.continuingConversation(messages, config);
-    const images = await this.downloadPhotos(messages, config);
-    if (images.length === 0 && query.trim().length === 0) {
-      throw new PhotosNotTakenError("unusable");
-    }
-
-    let response: Awaited<ReturnType<ConnectorChatPort["answer"]>>;
-    try {
-      response = await this.options.chat.answer({
-        workspaceId: first.workspaceId,
-        conversationId,
-        query,
-        sourceChannel: "whatsapp",
-        ...(images.length > 0 ? { images } : {}),
-      });
-    } catch (error) {
-      throw (images.length > 0 ? photosNotTakenBy(error) : null) ?? error;
-    }
+    const response = await this.answerOnChat({ workspaceId: first.workspaceId, conversationId, query, photoMessages, config });
 
     await this.persistence.upsertContact({
       workspaceId: first.workspaceId,
@@ -379,12 +379,21 @@ export class WhatsAppMessageHandler {
     };
   }
 
-  /** What the sender typed across the turn: text bodies and photo captions, in the order they arrived. */
+  /**
+   * What the sender typed across the turn: text bodies and photo captions, in the order they were
+   * sent, the same order the photos go in. WhatsApp can deliver a batch out of order, and the
+   * sender's clock is the one both follow.
+   */
   private buildTextQuery(messages: WhatsAppInboundMessage[]): string {
-    return messages
+    return this.inSentOrder(messages)
       .map((message) => message.textBody?.trim() ?? "")
       .filter((value) => value.length > 0)
       .join("\n");
+  }
+
+  /** Messages in the order they were sent; messages sent in the same second keep the order they arrived in. */
+  private inSentOrder<T extends WhatsAppInboundMessage>(messages: T[]): T[] {
+    return [...messages].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
   }
 
   private isProcessableTextMessage(message: WhatsAppInboundMessage): boolean {
@@ -395,10 +404,12 @@ export class WhatsAppMessageHandler {
     return message.type === "image" && Boolean(message.image?.mediaId);
   }
 
+  private hasCaption(message: WhatsAppInboundMessage): boolean {
+    return Boolean(message.textBody?.trim());
+  }
+
   private photosInSentOrder(messages: WhatsAppInboundMessage[]): Array<WhatsAppInboundMessage & { image: { mediaId: string } }> {
-    return messages
-      .filter((message) => this.isPhotoMessage(message))
-      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+    return this.inSentOrder(messages.filter((message) => this.isPhotoMessage(message)));
   }
 
   /**
@@ -454,19 +465,104 @@ export class WhatsAppMessageHandler {
   }
 
   /**
-   * Downloads the turn's photos, in the order they were sent. One that is gone is left out; a
-   * transient failure throws, so the batch is retried whole.
+   * Runs the turn on the chat port: the typed text and the photos. Photos an earlier attempt
+   * stored are sent by receipt, so a retry downloads, reads and pays for nothing twice; the host
+   * says when a receipt is stale (a message already carries the photo, or it was swept) and the
+   * photos are then sent again, once. A refusal that means the photos are not ones the turn takes
+   * becomes the signal the caller acts on.
    */
-  private async downloadPhotos(
-    messages: WhatsAppInboundMessage[],
+  private async answerOnChat(input: {
+    workspaceId: string;
+    conversationId: string | undefined;
+    query: string;
+    photoMessages: WhatsAppInboundMessage[];
+    config: Record<string, string>;
+  }): Promise<Awaited<ReturnType<ConnectorChatPort["answer"]>>> {
+    let useReceipts = true;
+    for (;;) {
+      const images = await this.collectPhotos(input.photoMessages, input.config, useReceipts);
+      if (images.length === 0 && input.query.trim().length === 0) {
+        throw new PhotosNotTakenError("unusable");
+      }
+      try {
+        return await this.options.chat.answer({
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId,
+          query: input.query,
+          sourceChannel: "whatsapp",
+          ...(images.length > 0 ? { images, onImagesStored: (stored) => this.keepPhotoReceipts(stored) } : {}),
+        });
+      } catch (error) {
+        if (useReceipts && images.some((image) => image.receipt !== undefined) && isStaleReceiptsRefusal(error)) {
+          useReceipts = false;
+          continue;
+        }
+        throw (images.length > 0 ? photosNotTakenBy(error) : null) ?? error;
+      }
+    }
+  }
+
+  /**
+   * The turn's photos in the order they were sent: by receipt where an earlier attempt stored one,
+   * otherwise downloaded. A photo that cannot be had is left out, so it counts as an unavailable
+   * photo, whether it is gone, over the cap, or its download failed for good.
+   */
+  private async collectPhotos(
+    photoMessages: WhatsAppInboundMessage[],
     config: Record<string, string>,
+    useReceipts: boolean,
   ): Promise<ConnectorInboundImage[]> {
-    const downloads = await Promise.all(this.photosInSentOrder(messages).map((message) =>
-      this.options.client.downloadImage(
+    const collected = await Promise.all(this.photosInSentOrder(photoMessages).map(async (message): Promise<ConnectorInboundImage | null> => {
+      const receipt = useReceipts ? photoReceiptOf(await this.persistence.findMessageLogByWamid(message.wamid)) : null;
+      return receipt ? { key: message.wamid, receipt } : this.downloadPhoto(message, config);
+    }));
+    return collected.filter((image) => image !== null);
+  }
+
+  /**
+   * Downloads one photo. A photo that is gone or over the cap is `null`. So is one whose download
+   * fails for good: Graph rejects the request (a rejected token also sets the connector's error
+   * status, as a rejected reply does), or a transient failure has used up its retries. A transient
+   * failure with retries left throws, so the batch is retried whole.
+   */
+  private async downloadPhoto(
+    message: WhatsAppInboundMessage & { image: { mediaId: string } },
+    config: Record<string, string>,
+  ): Promise<ConnectorInboundImage | null> {
+    try {
+      const download = await this.options.client.downloadImage(
         { accessToken: config.access_token },
         { mediaId: message.image.mediaId, wamid: message.wamid },
-      )));
-    return downloads.flatMap((download) => (download.kind === "downloaded" ? [{ bytes: download.bytes }] : []));
+      );
+      return download.kind === "downloaded" ? { key: message.wamid, bytes: download.bytes } : null;
+    } catch (error) {
+      if (!(error instanceof WhatsAppClientError)) {
+        throw error;
+      }
+      if (error.statusCode === 401) {
+        await this.options.state.setErrorStatus(message.workspaceId, error.message);
+      }
+      const attempt = (this.retryAttempts.get(message.wamid) ?? 0) + 1;
+      if (error.retryable && attempt < this.maxRetryAttempts) {
+        throw error;
+      }
+      this.options.logger.warn(
+        { workspaceId: message.workspaceId, wamid: message.wamid, statusCode: error.statusCode },
+        "WhatsApp photo could not be downloaded; answering without it",
+      );
+      return null;
+    }
+  }
+
+  /** Keeps the receipt of each photo the host stored with its message. A receipt that cannot be kept only costs a retry its reuse. */
+  private async keepPhotoReceipts(stored: readonly ConnectorStoredImage[]): Promise<void> {
+    for (const { key, receipt } of stored) {
+      try {
+        await this.persistence.savePhotoReceipt(key, receipt);
+      } catch (error) {
+        this.options.logger.warn({ wamid: key, errorClass: errorClassOf(error) }, "WhatsApp photo receipt could not be kept");
+      }
+    }
   }
 
   private inboundWamids(messages: WhatsAppInboundMessage[]): string[] {

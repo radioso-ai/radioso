@@ -69,7 +69,7 @@ describe("a WhatsApp photo through the chat door", () => {
       workspaceId: WORKSPACE,
       query: "Something like this, near the coast",
       sourceChannel: "whatsapp",
-      images: [{ bytes: await photo() }],
+      images: [{ key: "wamid-photo-1", bytes: await photo() }],
     });
 
     expect(answered).toMatchObject({ conversationId: "conversation-whatsapp", answer: "Lovely place.", outcome: "answered" });
@@ -101,7 +101,7 @@ describe("a WhatsApp photo through the chat door", () => {
       conversationId: "conversation-existing",
       query: "",
       sourceChannel: "whatsapp",
-      images: [{ bytes: await photo() }, { bytes: await photo() }],
+      images: [{ key: "wamid-photo-1", bytes: await photo() }, { key: "wamid-photo-2", bytes: await photo() }],
     });
 
     const rows = [...store.rows.values()];
@@ -125,7 +125,7 @@ describe("a WhatsApp photo through the chat door", () => {
       workspaceId: WORKSPACE,
       query: "Something like this",
       sourceChannel: "whatsapp",
-      images: [{ bytes: await photo() }],
+      images: [{ key: "wamid-photo-1", bytes: await photo() }],
     })).rejects.toMatchObject({ statusCode: 409, code: "visitor_images_unavailable" });
 
     expect(chatService.answer).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { ConnectorImageAllowance, ConnectorInboundImage } from "@radioso/connector-api";
+import type { ConnectorImageAllowance, ConnectorInboundImage, ConnectorStoredImage } from "@radioso/connector-api";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import { AppError, badRequest, isStructuredAppError } from "../../../shared/domain/errors.js";
@@ -29,6 +29,32 @@ export const CONNECTOR_IMAGES_UNAVAILABLE_CODE = "visitor_images_unavailable";
 const agentStoppedTakingImages = (): AppError =>
   new AppError(409, CONNECTOR_IMAGES_UNAVAILABLE_CODE, "This agent does not read images.");
 
+/**
+ * The code of the refusal `ConnectorChatPort.answer` raises when a receipt from an earlier attempt
+ * can no longer be used: the host did not issue it, its photos belong to different owners, or a
+ * message already carries a photo. The connector sends the photos' bytes instead.
+ */
+export const CONNECTOR_IMAGES_STALE_CODE = "visitor_images_stale";
+
+const staleReceipts = (): AppError =>
+  new AppError(409, CONNECTOR_IMAGES_STALE_CODE, "A stored image can no longer be used. Send the image again.");
+
+/** The upload's own refusal when the module is decoding other photos; the same one the routes answer with. */
+const moduleBusy = (): AppError =>
+  new AppError(503, "visitor_image_busy", "Too many images are being processed right now. Try again in a moment.", undefined, { isExpectedOutcome: true });
+
+/**
+ * A receipt names a stored photo and the owner it was stored for, so a retry claims it as the
+ * attempt that stored it would have. It is opaque to a connector, and never a credential: the door
+ * still checks the photo is this workspace's, this agent's, this owner's and unclaimed.
+ */
+const RECEIPT_SHAPE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(.{1,200})$/i;
+const encodeReceipt = (imageId: string, ownerId: string): string => `${imageId}:${ownerId}`;
+const decodeReceipt = (receipt: string): { imageId: string; ownerId: string } | null => {
+  const match = RECEIPT_SHAPE.exec(receipt);
+  return match?.[1] && match[2] ? { imageId: match[1], ownerId: match[2] } : null;
+};
+
 /** The door's refusal of a claim: the id is unknown, already sent, or the agent takes no images now. */
 const isDoorClaimRefusal = (error: unknown): boolean =>
   isStructuredAppError(error) && error.statusCode === 409 && error.code === "visitor_image_unavailable";
@@ -52,9 +78,10 @@ export interface ConnectorImageTurns {
    * Stores and reads each photo, then runs the turn on the text and the photos. Null, with no turn
    * run, when the module refused every photo (not an image, too many pixels), so the caller can
    * answer the text alone. Throws `visitor_images_unavailable` (409) when the agent no longer
-   * reads photos, whether that shows before the upload or when the door claims the photos. The
-   * upload's own refusals (`429 usage_limit_exceeded` over plan, `503 visitor_image_busy`) pass
-   * as they are.
+   * reads photos, whether that shows before the upload or when the door claims the photos, and
+   * `visitor_images_stale` (409) when a receipt can no longer be used. The upload's own refusals
+   * pass as they are: `429 usage_limit_exceeded` over plan, and `503 visitor_image_busy` when the
+   * module is decoding other photos, which a connector retries as it retries any failed turn.
    */
   answer(input: {
     workspaceId: string;
@@ -66,6 +93,8 @@ export interface ConnectorImageTurns {
     /** The channel the photos came through (`whatsapp`), for usage attribution and the turn's source. */
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    /** The photos stored just now, handed back before the turn runs, so a retry can reuse them. */
+    onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
   }): Promise<ConnectorImageAnswer | null>;
 }
 
@@ -108,21 +137,57 @@ export const createConnectorImageTurns = (deps: {
       if (input.images.length > VISITOR_IMAGE_LIMITS.maxImagesPerMessage) {
         throw badRequest(`A message carries at most ${VISITOR_IMAGE_LIMITS.maxImagesPerMessage} images`);
       }
+      // Receipts of an earlier attempt: each must be one the host issued, all for one owner.
+      const receipts = input.images.map((image) => (image.receipt === undefined ? undefined : decodeReceipt(image.receipt)));
+      const reused = receipts.filter((receipt) => receipt !== undefined);
+      if (reused.some((receipt) => receipt === null) || new Set(reused.map((receipt) => receipt?.ownerId)).size > 1) {
+        throw staleReceipts();
+      }
+
       const agentId = await agentIdFor(input);
       if (await deps.availability.forAgent({ workspaceId: input.workspaceId, agentId }) !== "available") {
         throw agentStoppedTakingImages();
       }
 
-      const owner: VisitorImageOwner = { kind: "connector_conversation", id: input.conversationId ?? randomUUID() };
-      const uploads = await Promise.all(input.images.map((image) => deps.images.upload({
-        workspaceId: input.workspaceId,
-        agentId,
-        owner,
-        bytes: Buffer.from(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength),
-        locale: null,
-        surface: input.sourceChannel ?? "connector",
-      })));
-      const imageIds = uploads.flatMap((upload) => (upload.kind === "accepted" ? [upload.id] : []));
+      const owner: VisitorImageOwner = { kind: "connector_conversation", id: reused[0]?.ownerId ?? input.conversationId ?? randomUUID() };
+      const settled = await Promise.allSettled(input.images.map(async (image) => (image.receipt === undefined
+        ? deps.images.upload({
+          workspaceId: input.workspaceId,
+          agentId,
+          owner,
+          bytes: Buffer.from(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength),
+          locale: null,
+          surface: input.sourceChannel ?? "connector",
+        })
+        : undefined)));
+
+      // Every upload has ended, so none runs on unobserved. The photos stored are kept and handed
+      // back as receipts, whether or not another upload failed, so a retry does not pay for them again.
+      const imageIds: string[] = [];
+      const stored: ConnectorStoredImage[] = [];
+      const failures: Error[] = [];
+      let busy = false;
+      settled.forEach((result, index) => {
+        if (result.status === "rejected") {
+          failures.push(result.reason instanceof Error ? result.reason : new Error("A photo could not be stored"));
+        } else if (result.value === undefined) {
+          imageIds.push(receipts[index]!.imageId);
+        } else if (result.value.kind === "accepted") {
+          imageIds.push(result.value.id);
+          stored.push({ key: input.images[index].key, receipt: encodeReceipt(result.value.id, owner.id) });
+        } else if (result.value.reason === "busy") {
+          busy = true;
+        }
+      });
+      if (stored.length > 0) {
+        await input.onImagesStored?.(stored);
+      }
+      if (failures[0]) {
+        throw failures[0];
+      }
+      if (busy) {
+        throw moduleBusy();
+      }
       if (imageIds.length === 0) {
         return null;
       }
@@ -137,10 +202,15 @@ export const createConnectorImageTurns = (deps: {
         channelContext: input.channelContext,
         imageIds,
         imageOwner: owner,
-      }).catch((error: unknown) => {
+      }).catch(async (error: unknown) => {
+        if (!isDoorClaimRefusal(error)) {
+          throw error;
+        }
         // The door checks the agent takes photos again when it claims them, so a flag turned off
-        // after the upload ends here. The ids are this call's own, so no other claim refusal applies.
-        throw isDoorClaimRefusal(error) ? agentStoppedTakingImages() : error;
+        // after the upload ends here. Otherwise a photo of an earlier attempt can no longer be
+        // claimed (a message already carries it, or it was swept), and the connector sends it again.
+        const stillTaken = await deps.availability.forAgent({ workspaceId: input.workspaceId, agentId }) === "available";
+        throw reused.length > 0 && stillTaken ? staleReceipts() : agentStoppedTakingImages();
       });
       if (!response?.conversationId) {
         throw new Error("Chat turn returned no conversation");

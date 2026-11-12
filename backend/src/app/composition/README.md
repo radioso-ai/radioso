@@ -44,6 +44,11 @@ composition calls them and assembles the result.
   route both run it. A module whose rows need their own fixed window registers
   its rule here; a rule whose own removal needs a record beyond the sweep's row
   count implements the rule's optional `onRunComplete`.
+- `consentWithdrawal.ts`: a routine consent withdrawal's unit of work and every
+  module's `MessageCopyWithholder` (`shared/domain/messageWithholding.ts`) for
+  its copies of a withheld message's text: the turn's content audit, the
+  coverage request, the inbound email, the photos. A module that keeps a copy of
+  a message's text registers its withholder here.
 - `workspaceDeletion.ts`: what deleting a workspace, or an organization with
   its workspaces, does beyond the cascade. Inside the deletion's transaction it
   hands what vendors hold (each call recording, with the workspace's vendor key

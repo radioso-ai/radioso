@@ -104,6 +104,12 @@ services.
   server's `conversation.deleted` event elsewhere; an open drawer or Inbox reading
   pane on a conversation that is gone clears itself when its tail poll answers
   `not_found` (`hooks/use-conversation-tail.ts`, `onNotFound`).
+- Withdraw a consent: `conversation-consents.tsx`, the drawer's **Consents** panel
+  under the Visitor panel, lists `GET /history/chat/{id}/consents` and, for an owner
+  or admin, withdraws a granted one after a confirm. It then reloads the detail and
+  restarts the tail (`restartKey`), since the tail never re-delivers a message that
+  was withheld. Withheld messages render through `withheldMessageView`
+  (`lib/conversation-consents.ts`) in the drawer and the Inbox reading pane.
 - Share a saved test: `agent-view.tsx` passes `testExecutionHref` (the
   `?testExecution=<id>` link above) into Test Chat, which backs the **Copy link to
   this chat** menu item and the per-row link button in `test-execution-history-view.tsx`.

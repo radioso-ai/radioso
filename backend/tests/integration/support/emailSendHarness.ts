@@ -258,9 +258,11 @@ export const createApiNode = (
   app.use("/api/v1/history", createHistoryRoutes({
     ...sessionDependencies(sessions),
     assistantHistoryService: new AssistantHistoryService(history),
-    // Document-search history is not read through this node, and nothing here erases a conversation.
+    // Document-search history is not read through this node, and nothing here erases a conversation
+    // or withdraws a consent.
     documentSearchHistoryService: {} as AppDependencies["documentSearchHistoryService"],
     conversationErasure: {} as AppDependencies["conversationErasure"],
+    conversationConsents: {} as AppDependencies["conversationConsents"],
     // Email conversations have no call recording.
     voiceRecordings: { availability: async () => null },
   }));

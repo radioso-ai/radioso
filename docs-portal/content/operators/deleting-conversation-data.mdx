@@ -1,7 +1,7 @@
 ---
 title: "Deleting conversation data"
 description: "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps."
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 ---
 
 # Deleting conversation data
@@ -33,6 +33,10 @@ Radioso deletes each of the visitor's conversations as above, then the customer-
 ## Delete one person across channels
 
 A person who also emailed you, or asked your agent in Slack, has conversations no visitor record groups. [Answering a data subject request](/operators/data-subject-requests) finds them by verified customer id, email address or Slack member id, exports what Radioso holds about them, and erases the visitors and conversations of the identities you confirm in one request.
+
+## Withdraw a consent instead
+
+A visitor who takes back the consent a routine asked them for wants the sensitive answers it covered gone, not the whole conversation. Withdraw it from the **Consents** panel in the same drawer: the values it covered are erased and the messages that carried them are withheld, and the rest of the conversation stays. [Withdrawing a consent](/guides/authoring-routines#withdrawing-a-consent) lists what changes.
 
 ## Who can delete
 
@@ -69,6 +73,7 @@ A few records stay on purpose. None of them holds the conversation's content:
 - **The billing ledger.** Usage events keep their token counts and lose the link to the conversation and its messages.
 - **The notice email cap.** The daily count of notice emails keeps its numbers, so deleting a conversation never hands its emails back to the day's budget.
 - **The Enterprise Edition reply quota.** The per-period counter keeps the conversation id and a count, so deleting conversations cannot reset a plan's quota.
+- **Routine consent records.** The proof of each consent a visitor gave or declined (the decision, the wording they saw, its language, the channel and the times) stays without the link to the message that carried it, so you can still show the consent was given or withdrawn. It follows the workspace's retention window from there.
 - **Operational audit events.** Events that name the conversation id with an outcome — a takeover, an approval, an email send — keep the id and the outcome codes.
 - **Audience Pulse topics.** Topic names and descriptions are written from many visitors' de-identified question summaries and checked for personal details, and topic sizes are counts. They stay. The Audience Pulse report itself quotes visitors' questions in its recommendations, so a report built on a deleted conversation is discarded; regenerate it from what remains.
 

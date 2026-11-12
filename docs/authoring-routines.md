@@ -417,6 +417,44 @@ message that carried the decision, so you can still show the consent was given.
 A data subject's export lists their records under `consent_records`, with the
 wording each one was given on. Deleting the workspace removes them.
 
+#### Withdrawing a consent
+
+A visitor can take back a consent they gave, and you act on their request
+(Article 7(3) of the GDPR). Open the conversation in the dashboard; from the
+Inbox, that's **Open in debug view**. The **Consents** panel under the visitor
+lists each decision in the conversation with its language, channel and time,
+and **Wording** shows the exact text the visitor saw. Owners and admins see
+**Withdraw** on a granted consent. Once you confirm:
+
+- The values of the fields the consent covered are erased from the
+  conversation's routine state, a routine that already finished included.
+- Each message that carried one of them keeps `[redacted]` as its text and
+  reads **Withheld after consent was withdrawn** in the conversation. Radioso's
+  copies of that message are withheld with it: the body and raw copy of the
+  email it came in as, the turn's debug record, the coverage assessment's
+  restatement of the question, and any photo the visitor attached.
+- The record keeps its proof and gains the withdrawal time and the teammate who
+  withdrew it. It shows as withdrawn in the panel and in the data subject's
+  export.
+- A routine still running in the conversation carries on without those fields,
+  as it would after a decline, and doesn't ask the consent again.
+
+A declined consent has nothing to withdraw, and a withdrawn one stays
+withdrawn. Over the API, withdraw with
+`POST /api/v1/history/chat/{conversationId}/consents/{recordId}/withdraw`, after
+reading the records from `GET /api/v1/history/chat/{conversationId}/consents`.
+
+Some copies sit outside what a withdrawal reaches. Text already delivered to
+Slack or WhatsApp stays with those providers, and the WhatsApp channel's own log
+of what it sent and received keeps its copy until deleting the conversation
+removes it.
+A value a routine already passed to a skill stays with the service that skill
+called, and an email reply still being sent keeps its body until the send
+settles. If the agent was answering the visitor at the moment you withdrew, that
+turn saves no covered value either, but its two messages keep their text, marked
+as sensitive so every copy of the transcript reads them as withheld. Deleting the
+conversation removes everything Radioso keeps of it.
+
 #### Changes after a routine ends
 
 Say a visitor gives an arrival date of 5 January, then tells the booking routine

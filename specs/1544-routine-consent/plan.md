@@ -256,6 +256,12 @@ Effects: `consentEvents?: RoutineConsentEvent[]` follows `awaitingDecision`'s ro
 
 **Frontend:** `frontend/components/dashboard/conversation-consents.tsx` in `conversation-drawer.tsx`, with a confirm dialog patterned on `delete-conversation-action.tsx`.
 
+**As built (PR4, 2026-11-12).**
+- A shared `MessageCopyWithholder` port (`shared/domain/messageWithholding.ts`) beside the erasure ports; composition binds four: the turn's `chat.answer` / `chat.suspended` audit events (deleted, they carry answer segments, rewritten queries and traces), the coverage assessment's `contextualized_request` / `unresolved_request` (redacted), the inbound email's `body_text` (redacted) and `raw_mime` (cleared), and the photos the message carried (rows deleted, objects to the deletion job).
+- The withheld message also drops `answerSegments`, `composedInstructions`, `suggestions` and `imageInput` from its metadata; history messages carry `withheld {reason, at}`.
+- Left as they are, with the reason: summaries, titles, eval snapshots and Test Chat seeds read a marked message as withheld already (`sensitiveTranscript.ts`); facets are deleted with the message; topics come from facets a marked message never has; routine actions and completion exports carry sensitive values masked; review turns, the only ones that hold a reply, run no routine; voice, MCP, agent API and A2A never ask consent. Known copies outside the reach: the WhatsApp message log (no link to the message row; goes with the conversation's erasure), an email send still in flight (its frozen body clears when it settles), a value already passed to a skill, and text delivered to Slack or WhatsApp.
+- The record type lives in `shared/domain/routineConsentRecord.ts`, so the repository reads it without reaching into privacy. The dashboard's tail never re-delivers a withheld message, so the drawer restarts its tail after a withdrawal.
+
 ## 6. Authoring surfaces
 
 ### 6.1 Definition schema

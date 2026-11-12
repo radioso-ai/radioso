@@ -2,8 +2,7 @@ import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
-import type { ConversationTurnStage, ReplyInterruption } from "../contracts/interruption.js";
-import type { OperatorReplySpeech } from "../contracts/operatorReplySpeech.js";
+import type { ConversationTurnStage } from "../contracts/interruption.js";
 import {
   formatActivityCursor,
   type ConversationActivityEntry,
@@ -43,7 +42,7 @@ import {
 import { skillOutcomeStatusSchema } from "../../skills/public.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
-import { messageMetadataSuggestions, normalizeChatSuggestion, voiceMarkerFields } from "./historyMessageFields.js";
+import { messageMarkerFields, messageMetadataSuggestions, normalizeChatSuggestion, type MessageMarkerFields } from "./historyMessageFields.js";
 import {
   LEGACY_TURN_TRACE_ENVELOPE_VERSION,
   buildTurnTraceEnvelope,
@@ -247,7 +246,7 @@ interface ChatConversationTurnFailure {
   errorMessage?: string | null;
 }
 
-export interface ChatConversationTurn {
+export interface ChatConversationTurn extends MessageMarkerFields {
   id: string;
   role: MessageRecord["role"];
   source: NonNullable<MessageRecord["source"]>;
@@ -280,10 +279,6 @@ export interface ChatConversationTurn {
    * shares these reads and whose presenter forwards unrecognised fields.
    */
   operatorLabel?: string;
-  /** On an assistant reply the caller spoke over: how much of it they heard, in spoken characters. */
-  interruption?: ReplyInterruption;
-  /** On a teammate's reply to a caller: pending until a turn of the call speaks it, then spoken. */
-  speech?: OperatorReplySpeech;
 }
 
 /** A tail cursor's marker watermark, read only in the form the repository writes it. */
@@ -1191,7 +1186,7 @@ export class ChatHistoryService {
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
-        ...voiceMarkerFields(message),
+        ...messageMarkerFields(message),
       })),
       ...operatorOwnershipField(ownershipRecord),
       ...(activity ? { activity: activity.present(operatorLabels) } : {}),
@@ -1269,7 +1264,7 @@ export class ChatHistoryService {
         turnFailure,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
-        ...voiceMarkerFields(message),
+        ...messageMarkerFields(message),
       },
       ...operatorOwnershipField(ownershipRecord),
     };
@@ -1368,7 +1363,7 @@ export class ChatHistoryService {
       ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
       operatorDisplayName: operatorDisplayNameFrom(message),
       ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
-      ...voiceMarkerFields(message),
+      ...messageMarkerFields(message),
     };
   }
 

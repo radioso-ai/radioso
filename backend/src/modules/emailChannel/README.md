@@ -88,6 +88,8 @@ It does not own:
   the conversation-level email facts, and the read-only Ray projection.
 - `persistence/` — one repository per table, no business rules;
   `EmailInboundEraser`, the inbound mail an erased conversation received;
+  `EmailMessageWithholder`, which withholds the body and raw MIME of the mail
+  a withheld message came in as (a consent withdrawal, #1544);
   `EmailRawMimeRetention`, the retention sweep's rule that clears a settled
   delivery's raw MIME after 30 days and keeps the row its threading and
   redelivery dedupe read; and `EmailBacklogRepository`, the cross-table overdue counts behind the

@@ -1002,6 +1002,8 @@ export const createTestDependencies = (overrides: {
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
   /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
   conversationErasure?: AppDependencies["conversationErasure"];
+  /** Consent records and their withdrawal; omitted means a conversation with none. */
+  conversationConsents?: AppDependencies["conversationConsents"];
   /** Data subject lookup, export and erasure; omitted means a workspace where a lookup finds nobody. */
   dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   /** Held replies and the decisions on them; omitted means a workspace with none. */
@@ -3274,6 +3276,11 @@ export const createTestDependencies = (overrides: {
       eraseConversation: async () => { throw notFound("Conversation not found"); },
       eraseVisitor: async () => { throw notFound("Visitor not found"); },
     },
+    conversationConsents: overrides.conversationConsents ?? {
+      // The Postgres withdrawal is covered by tests/integration/consent-withdrawal.integration.test.ts.
+      list: async () => [],
+      withdraw: async () => ({ kind: "not_found" }),
+    },
     privacySettingsService,
     timeZoneSettingsService,
     dataSubjectAccess: overrides.dataSubjectAccess ?? {
@@ -3410,6 +3417,7 @@ export const createTestApp = (overrides: {
   deliveryFailures?: AppDependencies["deliveryFailures"];
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
   conversationErasure?: AppDependencies["conversationErasure"];
+  conversationConsents?: AppDependencies["conversationConsents"];
   dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;

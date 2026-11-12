@@ -75,9 +75,11 @@ photos (WhatsApp).
   sends of one photo exactly one claims it; binding sets the conversation and
   message ids the door names.
 - `infra/visitorImagePrivacy.ts`: the conversation eraser, the 24-hour unbound
-  sweep (a conversation retention rule), and the data subject export section.
+  sweep (a conversation retention rule), the data subject export section, and
+  the withholder that deletes the photos a withheld message carried (a consent
+  withdrawal, #1544).
 - `services/visitorImageObjectDeletion.ts`: the `visitor_images.object_deletion`
-  background job. The eraser and the sweep write it in the same transaction as
+  background job. The eraser, the withholder and the sweep write it in the same transaction as
   the rows they delete; the job deletes the objects after commit and refuses any
   path outside `workspaces/<ws>/visitor-images/`.
 

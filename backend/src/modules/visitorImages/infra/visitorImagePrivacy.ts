@@ -3,6 +3,7 @@ import type { Kysely } from "kysely";
 import type { BackgroundJobWriter } from "../../../shared/background-jobs/index.js";
 import type { ConversationDataEraser, ConversationErasureScope } from "../../../shared/domain/conversationDataErasure.js";
 import type { ConversationDataRetentionRule } from "../../../shared/domain/conversationDataRetention.js";
+import type { MessageCopyWithholder, WithheldMessages } from "../../../shared/domain/messageWithholding.js";
 import {
   exportTimestamp,
   type DataSubjectDataExporter,
@@ -42,6 +43,32 @@ export class VisitorImageEraser implements ConversationDataEraser {
       .deleteFrom("visitor_images")
       .where("workspace_id", "=", scope.workspaceId)
       .where((eb) => anyOf(eb.ref("conversation_id"), scope.conversationIds, "uuid[]"))
+      .returning(OBJECT_COLUMNS)
+      .execute();
+    await handOffVisitorImageObjects(this.jobs, this.trx, rows.map(objectOf));
+    return rows.length;
+  }
+}
+
+/**
+ * The photos a withheld message carried, withheld with it: the rows and their readings are deleted
+ * here, and their stored objects handed to the deletion job in the same transaction, as a
+ * conversation's erasure does.
+ */
+export class VisitorImageWithholder implements MessageCopyWithholder {
+  readonly owner = "visitor-images";
+
+  constructor(
+    private readonly trx: Db,
+    private readonly jobs: Pick<BackgroundJobWriter, "insert">,
+  ) {}
+
+  async withhold(messages: WithheldMessages): Promise<number> {
+    const rows = await this.trx
+      .deleteFrom("visitor_images")
+      .where("workspace_id", "=", messages.workspaceId)
+      .where("conversation_id", "=", messages.conversationId)
+      .where((eb) => anyOf(eb.ref("message_id"), messages.messageIds, "uuid[]"))
       .returning(OBJECT_COLUMNS)
       .execute();
     await handOffVisitorImageObjects(this.jobs, this.trx, rows.map(objectOf));

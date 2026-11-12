@@ -1218,6 +1218,47 @@ Related docs:
 
 - [Deleting conversation data](../../docs-portal/content/operators/deleting-conversation-data.mdx)
 
+## Routine Consent Withdrawal
+
+Owns an operator's withdrawal of a visitor's routine consent on their request
+(#1544, Article 7(3)). `ConsentWithdrawalService` (`modules/privacy/`) runs it
+in one transaction over the `ConsentWithdrawalUnitOfWork` port: lock the
+record, erase its covered `slot_keys` from the conversation's `routine_states`
+row, withhold the messages whose `sensitiveSlotKeys` marker names one (text to
+`[redacted]`, a `withheld` metadata marker, text-copying metadata fields and
+facets dropped), run every module's `MessageCopyWithholder`
+(`backend/src/shared/domain/messageWithholding.ts`) for its copies of those
+messages, mark the record withdrawn with the actor, and write
+`routine_consent.withdrawn`. Withholders: the `chat.answer` / `chat.suspended`
+audit events of the turn, the coverage assessment's request text, the inbound
+email's body and raw MIME, and the photos the message carried. Privacy reads
+no routine: the record names the slots it covered. A turn racing the withdrawal
+is covered by `stripWithdrawnSlots` in the turn's own transaction; its new
+messages are marked, not overwritten. After commit the routine consent
+telemetry logs `routine_consent_withdrawn` and counts outcome `withdrawn`.
+Ray and the operator MCP do not withdraw (`consentWithdrawalIsAPersons` in
+`tests/unit/operatorCopilot/catalogCoverage.ts`).
+
+Public surfaces and key files:
+
+- `backend/src/modules/privacy/consentWithdrawal.ts` (use case and ports)
+- `backend/src/shared/domain/messageWithholding.ts` (withheld marker, `MessageCopyWithholder` port), `backend/src/shared/domain/routineConsentRecord.ts` (the record shape)
+- `backend/src/app/composition/consentWithdrawal.ts` (withholder list, unit of work, service)
+- `backend/src/db/repositories/consentWithdrawalRepository.ts` (record reads and lock, routine values, messages)
+- `backend/src/app/http/routes/historyRoutes.ts` (`GET /api/v1/history/chat/{conversationId}/consents`, `workspace.history.read`; `POST /api/v1/history/chat/{conversationId}/consents/{recordId}/withdraw`, `workspace.history.delete`), `backend/src/app/http/openapi/paths/historyConsentPaths.ts`
+- `backend/src/modules/chat/services/historyMessageFields.ts` (`withheld` on history messages)
+- `frontend/components/dashboard/conversation-consents.tsx`, `frontend/lib/conversation-consents.ts` (the drawer's **Consents** panel and withheld message view)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/privacy/consent-withdrawal-service.test.ts tests/unit/routines/consentTelemetry.test.ts tests/contract/history-consents.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/consent-withdrawal.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-consents.test.ts && pnpm exec playwright test tests/e2e/consent-withdrawal.spec.ts`
+
+Related docs:
+
+- [Withdrawing a consent](../../docs-portal/content/guides/authoring-routines.mdx)
+
 ## Privacy Notice
 
 Owns the operator's privacy notice (#1545): one line and a policy link per
@@ -2112,7 +2153,7 @@ Public surfaces and contracts:
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
 - `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
 - Sensitive slots (#1543): the authored `sensitivity` lives on the slot schema (`routineSlotSensitivities`, column `routine_slot.sensitivity`, migration `248`); the masking rule is `redactSensitiveValues` / `REDACTED_VALUE` in `packages/conversation-contract` (shared with `context-variables/redaction.ts`); the runner masks its copy-outs (`sensitiveSlotKeys` in `packages/conversation-engine/src/routineSlotValues.ts`) and `resolveUntypedSkillArguments` masks unbound skill arguments; `sensitiveSlotsAwaited` (routines `sensitiveSlots.ts`) lets `ChatSessionPreparer` mark a visitor message that answers a sensitive step as it is created, and `RoutineTurnReporter.sensitiveSlotKeysHeld` lets the chat lifecycle mark a turn's messages (`chat/services/routines/sensitiveTurnMarker.ts`, which also marks a value the routine trace rejected for want of consent, #1544); `backend/src/shared/domain/sensitiveTranscript.ts` turns a marked message into withheld text for summaries, facets, notice AI summaries, eval capture, Test Chat seeds, and the stored coverage request
-- Routine consents (#1544): the authored `consents` list lives in `packages/routine-definition/src/consent.ts` (column `routine_definition.consents`, migration `257`, read back by `routineDefinitionRowMapper.ts` through `routineConsentStoredSchema`, which drops unknown fields and fails on a broken known one); `backend/src/modules/routines/consentGates.ts` is where the compiler puts a `consent` step before each step that collects a covered slot, and `consentValidation.ts` holds the authoring rules, run by `validator.ts` only when the context carries `agentDefaultLocale` (`RoutineDefinitionService` and `assertCandidateSnapshotIsRunnable` pass it): every sensitive slot a chat step collects covered once, every covered slot one a chat step collects (`collectedSlotsByStep`, the rule the gates are placed by), the shape of each consent, and a `continue` consent's collecting step asking nothing else and having a default exit. `consentPublishRuleCodes` names the rules that hold back a publish but not a run, which agent bundle import leaves to the imported agent's first publish (`app/composition/agentBundleComposition.ts`). Operators author consents in the routine Document view (`frontend/lib/routine-consent-editor.ts`, `frontend/components/dashboard/settings/routine-consent-section.tsx`) and through Ray (`changes.consents` in `routines/authoringEdit.ts`, listed by `routine_definition` in full). `backend/src/db/repositories/routineConsentRepository.ts` keeps the proof: wording versions (id from `shared/domain/routineConsentWording.ts`), decision records, the standing and latest-prompt reads, the turn writer `PostgresAssistantTurnPersistence` calls (`writeTurnEvents`, `stripWithdrawnSlots`), the `consent_records` export section, and the two retention rules. At runtime, `backend/src/modules/routines/consent/` holds the host port (`consentTurnPort.ts`: variant choice, channel presentation from `consentPresentationFor` in `shared/domain/conversationSource.ts`, standing reuse, button clicks verified against the latest prompt, typed-reply reading), the compiled wording metadata (`consentWording.ts`) and the post-commit logs and counter (`consentTelemetry.ts`); chat produces the turn facts and carries `hostEffects.consentEvents` to persistence (`chat/services/routines/routineConsentTurn.ts`), or, for a replayed turn, to the session's own store that Test Chat's continuation carries (`chat/services/routines/sessionRoutineConsentStore.ts`). Tests: `tests/unit/routines/consentTurnPort.test.ts`, `tests/unit/test-chat-routine-consent.test.ts`, `tests/integration/routine-consent-chat.integration.test.ts`, live `tests/live/routine-consent-reply.verify.test.ts`
+- Routine consents (#1544): the authored `consents` list lives in `packages/routine-definition/src/consent.ts` (column `routine_definition.consents`, migration `257`, read back by `routineDefinitionRowMapper.ts` through `routineConsentStoredSchema`, which drops unknown fields and fails on a broken known one); `backend/src/modules/routines/consentGates.ts` is where the compiler puts a `consent` step before each step that collects a covered slot, and `consentValidation.ts` holds the authoring rules, run by `validator.ts` only when the context carries `agentDefaultLocale` (`RoutineDefinitionService` and `assertCandidateSnapshotIsRunnable` pass it): every sensitive slot a chat step collects covered once, every covered slot one a chat step collects (`collectedSlotsByStep`, the rule the gates are placed by), the shape of each consent, and a `continue` consent's collecting step asking nothing else and having a default exit. `consentPublishRuleCodes` names the rules that hold back a publish but not a run, which agent bundle import leaves to the imported agent's first publish (`app/composition/agentBundleComposition.ts`). Operators author consents in the routine Document view (`frontend/lib/routine-consent-editor.ts`, `frontend/components/dashboard/settings/routine-consent-section.tsx`) and through Ray (`changes.consents` in `routines/authoringEdit.ts`, listed by `routine_definition` in full). `backend/src/db/repositories/routineConsentRepository.ts` keeps the proof: wording versions (id from `shared/domain/routineConsentWording.ts`), decision records, the standing and latest-prompt reads, the turn writer `PostgresAssistantTurnPersistence` calls (`writeTurnEvents`, `stripWithdrawnSlots`), the `consent_records` export section, and the two retention rules. At runtime, `backend/src/modules/routines/consent/` holds the host port (`consentTurnPort.ts`: variant choice, channel presentation from `consentPresentationFor` in `shared/domain/conversationSource.ts`, standing reuse, button clicks verified against the latest prompt, typed-reply reading), the compiled wording metadata (`consentWording.ts`) and the post-commit logs and counter (`consentTelemetry.ts`); chat produces the turn facts and carries `hostEffects.consentEvents` to persistence (`chat/services/routines/routineConsentTurn.ts`), or, for a replayed turn, to the session's own store that Test Chat's continuation carries (`chat/services/routines/sessionRoutineConsentStore.ts`). An operator withdraws a grant through the privacy module (Routine Consent Withdrawal above). Tests: `tests/unit/routines/consentTurnPort.test.ts`, `tests/unit/test-chat-routine-consent.test.ts`, `tests/integration/routine-consent-chat.integration.test.ts` (harness in `tests/integration/support/routineConsentChatHarness.ts`), live `tests/live/routine-consent-reply.verify.test.ts`
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD and validate)
 - `packages/conversation-contract/routineGraph.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call

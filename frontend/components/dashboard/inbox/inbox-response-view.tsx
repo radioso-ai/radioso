@@ -52,6 +52,7 @@ import { DeliveryFailurePanel } from './delivery-failure-panel'
 import { EmailConversationHeader, useConversationEmailFacts } from './email-conversation-header'
 import { ConversationRecordingPlayer, ListenToRecordingButton } from './conversation-recording'
 import { HeldReplyPanel } from './held-reply-panel'
+import { withheldMessageView } from '@/lib/conversation-consents'
 import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
 import { useConversationOperators } from './use-conversation-operators'
@@ -310,7 +311,7 @@ export function InboxResponseView({
     () => (conversationId ? operatorVisitorImages(workspaceId, conversationId) : undefined),
     [workspaceId, conversationId],
   )
-  const renderedMessages = effectiveConversationMessages.map((message) =>
+  const renderedMessages = effectiveConversationMessages.map(withheldMessageView).map((message) =>
     message.role === 'assistant' ? { ...message, persistedAssistantMessageId: message.id } : message)
   // A reply, a released draft and a resend all wait until the conversation's channel is known, and
   // an email one until a successful read of its mailbox says it can send: unknown or stale facts

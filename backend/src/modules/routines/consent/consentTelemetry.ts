@@ -3,6 +3,19 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 const ROUTINE_CONSENT_OUTCOMES_TOTAL = "routine_consent_outcomes_total";
+const OUTCOMES_HELP = "Routine consents by outcome: asked, granted, declined, defaulted to declined, not asked, or withdrawn.";
+
+/** What a committed withdrawal reports (#1544): ids, keys and a count, never the wording or a value. */
+interface RoutineConsentWithdrawn {
+  workspaceId: string;
+  conversationId: string;
+  channel: string | null;
+  routineId: string;
+  consentKey: string;
+  wordingVersionId: string;
+  recordId: string;
+  withheldMessageCount: number;
+}
 
 /** The counter's outcome for one recorded event: asked, granted, declined, defaulted or skipped. */
 const outcomeOf = (written: RoutineConsentWritten): string => {
@@ -53,8 +66,9 @@ const logEntryOf = (written: RoutineConsentWritten): {
  * Reports what a committed turn recorded of its routine's consents (#1544): one structured log per
  * consent shown, decided, defaulted to declined, or not asked, and `routine_consent_outcomes_total`
  * by outcome, so a drift in the grant rate shows. A decision a retried turn had already recorded is
- * logged as not recorded and not counted again. Ids, keys and codes only: never the wording, the
- * visitor's reply, or a slot value.
+ * logged as not recorded and not counted again. An operator's committed withdrawal is logged and
+ * counted the same way. Ids, keys and codes only: never the wording, the visitor's reply, or a
+ * slot value.
  */
 export const createRoutineConsentTelemetry = (input: {
   logger: Pick<AppLogger, "info" | "error">;
@@ -63,10 +77,7 @@ export const createRoutineConsentTelemetry = (input: {
   committed(committed: RoutineConsentCommitted): void {
     for (const written of committed.written) {
       if (written.kind !== "decided" || written.recorded) {
-        input.metricsRegistry?.incrementCounter(ROUTINE_CONSENT_OUTCOMES_TOTAL, {
-          help: "Routine consents by outcome: asked, granted, declined, defaulted to declined, or not asked.",
-          labels: { outcome: outcomeOf(written) },
-        });
+        input.metricsRegistry?.incrementCounter(ROUTINE_CONSENT_OUTCOMES_TOTAL, { help: OUTCOMES_HELP, labels: { outcome: outcomeOf(written) } });
       }
       const { event, level, message, fields } = logEntryOf(written);
       input.logger[level](
@@ -83,5 +94,9 @@ export const createRoutineConsentTelemetry = (input: {
         message,
       );
     }
+  },
+  withdrawn(withdrawn: RoutineConsentWithdrawn): void {
+    input.metricsRegistry?.incrementCounter(ROUTINE_CONSENT_OUTCOMES_TOTAL, { help: OUTCOMES_HELP, labels: { outcome: "withdrawn" } });
+    input.logger.info({ event: "routine_consent_withdrawn", ...withdrawn }, "Routine consent withdrawn by an operator");
   },
 });

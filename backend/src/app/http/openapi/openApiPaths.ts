@@ -27,6 +27,7 @@ import { registerAgentWizardPaths } from "./paths/agentWizardPaths.js";
 import { registerDocumentsPaths } from "./paths/documentsPaths.js";
 import { registerDocumentChunksPaths } from "./paths/documentChunksPaths.js";
 import { registerHistoryPaths } from "./paths/historyPaths.js";
+import { registerHistoryConsentPaths } from "./paths/historyConsentPaths.js";
 import { registerHistoryContactPaths } from "./paths/historyContactPaths.js";
 import { registerPrivacyPaths } from "./paths/privacyPaths.js";
 import { registerConversationActivityPaths } from "./paths/conversationActivityPaths.js";
@@ -87,6 +88,7 @@ export const registerOpenApiPaths = (
   registerAssistantAuthenticatedChatPaths(registry, schemas, security);
   registerAssistantFeedbackPaths(registry, schemas, security);
   registerHistoryPaths(registry, schemas, security);
+  registerHistoryConsentPaths(registry, schemas, security);
   registerHistoryContactPaths(registry, schemas, security);
   registerPrivacyPaths(registry, schemas, security);
   registerConversationActivityPaths(registry, schemas, security);

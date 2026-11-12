@@ -17361,6 +17361,26 @@
         ],
         "description": "Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when the turn that spoke it ended. When the caller speaks over a turn before it finished, a reply the voice runtime played to its end is `spoken`, and the reply it was playing, with any after it, stays `pending` for the turn that cut in to speak whole. `skipped`: the reply has no words a call can speak, so no turn speaks it."
       },
+      "MessageWithholding": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "consent_withdrawn"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reason",
+          "at"
+        ],
+        "description": "Present on a message withheld after the consent that covered what it carried was withdrawn: `content` is `[redacted]`, and the message carries no answer segments, suggestions or photos. `at` is when the consent was withdrawn."
+      },
       "ChatConversationMessage": {
         "type": "object",
         "properties": {
@@ -17428,6 +17448,9 @@
           },
           "speech": {
             "$ref": "#/components/schemas/OperatorReplySpeech"
+          },
+          "withheld": {
+            "$ref": "#/components/schemas/MessageWithholding"
           },
           "debug": {
             "$ref": "#/components/schemas/ChatConversationMessageDebug"
@@ -17515,6 +17538,9 @@
           },
           "speech": {
             "$ref": "#/components/schemas/OperatorReplySpeech"
+          },
+          "withheld": {
+            "$ref": "#/components/schemas/MessageWithholding"
           }
         },
         "required": [
@@ -24044,6 +24070,184 @@
         "required": [
           "items",
           "nextCursor"
+        ]
+      },
+      "ConversationConsent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "routineId": {
+            "type": "string",
+            "description": "The routine that asked the consent."
+          },
+          "consentKey": {
+            "type": "string",
+            "description": "The consent's `key` within the routine."
+          },
+          "slotKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The sensitive fields the consent covered when it was decided: the values a withdrawal erases."
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "granted",
+              "declined"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "button",
+              "reply"
+            ],
+            "description": "`button`: a click on one of the two choices. `reply`: an answer read from the visitor's message."
+          },
+          "defaulted": {
+            "type": "boolean",
+            "description": "True for a decline recorded because the visitor's replies stayed unclear after the consent was asked twice."
+          },
+          "locale": {
+            "type": "string",
+            "description": "The language of the wording the visitor was shown."
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The conversation's channel, such as `website_embed` or `email`."
+          },
+          "wordingVersionId": {
+            "type": "string",
+            "description": "The immutable version of the wording shown: a hash of exactly what the visitor saw."
+          },
+          "wording": {
+            "type": "object",
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "agreeLabel": {
+                "type": "string"
+              },
+              "declineLabel": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "body",
+              "agreeLabel",
+              "declineLabel"
+            ],
+            "description": "The wording exactly as the visitor was shown it."
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "withdrawnAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When an operator withdrew the consent; null while it stands."
+          }
+        },
+        "required": [
+          "id",
+          "routineId",
+          "consentKey",
+          "slotKeys",
+          "decision",
+          "method",
+          "defaulted",
+          "locale",
+          "channel",
+          "wordingVersionId",
+          "wording",
+          "decidedAt",
+          "withdrawnAt"
+        ],
+        "description": "One consent decision a visitor gave in a conversation (#1544): the proof, with no reply text and no field values. A record outlives its conversation."
+      },
+      "ConsentNotWithdrawableError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "consent_not_withdrawable"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "declined",
+                      "already_withdrawn"
+                    ],
+                    "description": "`declined`: the visitor never granted it, so nothing was collected under it. `already_withdrawn`: it was withdrawn before."
+                  },
+                  "consent": {
+                    "$ref": "#/components/schemas/ConversationConsent"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "consent"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "details"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ConversationConsentList": {
+        "type": "object",
+        "properties": {
+          "consents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationConsent"
+            }
+          }
+        },
+        "required": [
+          "consents"
+        ]
+      },
+      "ConversationConsentWithdrawal": {
+        "type": "object",
+        "properties": {
+          "consent": {
+            "$ref": "#/components/schemas/ConversationConsent"
+          }
+        },
+        "required": [
+          "consent"
         ]
       },
       "DataSubjectIdentity": {
@@ -54910,6 +55114,171 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/chat/{conversationId}/consents": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "List a conversation's consent records",
+        "description": "Every consent decision a visitor gave in the conversation, oldest first, each with the exact wording they were shown. Records outlive their conversation, so a conversation that was erased still lists its records; one with no routine consent lists none. Requires workspace.history.read.",
+        "operationId": "listHistoryConversationConsents",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The conversation's consent records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationConsentList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.history.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/chat/{conversationId}/consents/{recordId}/withdraw": {
+      "post": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Withdraw a visitor's consent",
+        "description": "Withdraws a granted consent on the visitor's request, in one transaction. The values of the fields it covered are erased from the conversation's routine state, a finished run's included. Each message that carried one keeps `[redacted]` as its text and is marked `withheld`, and so are the copies Radioso keeps of it: the inbound email's body and raw copy, the turn's content audit, its coverage text and any photo it carried. The record keeps its proof and gains `withdrawnAt` and the acting member. A routine still running in the conversation goes on without those fields and doesn't ask the consent again. Text already delivered to Slack or WhatsApp stays with those providers. Records one `routine_consent.withdrawn` audit event with ids only. Requires workspace.history.delete.",
+        "operationId": "withdrawHistoryConversationConsent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "recordId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The consent, withdrawn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationConsentWithdrawal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.history.delete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The conversation has no such consent record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`consent_not_withdrawable`: the consent was declined or is already withdrawn, so nothing changed. `details.reason` says which, and `details.consent` is the record as it stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentNotWithdrawableError"
                 }
               }
             }

@@ -151,6 +151,7 @@ import { createConversationActivityComposition } from "../composition/conversati
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
 import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
+import { createConsentWithdrawal } from "../composition/consentWithdrawal.js";
 import { ConversationErasureService, PrivacySettingsService } from "../../modules/privacy/public.js";
 import { conversationRetentionPeriodicTask, createConversationRetentionSweep } from "../composition/conversationRetention.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
@@ -1207,13 +1208,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const accountAdministrators = createAccountAdministratorDirectory(repositories.accountMembershipRepository);
   const conversationErasure = new ConversationErasureService({
     unitOfWork: createPostgresConversationErasureUnitOfWork({
-      db: infrastructure.database.kysely,
-      logger,
+      db: infrastructure.database.kysely, logger,
       // Call recordings the voice vendor keeps: read and locked in the erasure's transaction.
       vendorHeldData: (trx) => voiceRecordings.erasureIn(trx),
     }),
-    invalidation: realtimePublisherComposition.publisher,
-    auditLog: infrastructure.auditService,
+    invalidation: realtimePublisherComposition.publisher, auditLog: infrastructure.auditService,
   });
   const periodicTaskEntries = [
     // Built in: every deployment enforces the retention its workspaces set, through the erasure.
@@ -1424,6 +1423,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceRuntimeConnections,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,
+    conversationConsents: createConsentWithdrawal({ db: infrastructure.database.kysely, logger, metricsRegistry: infrastructure.metricsRegistry, auditLog: infrastructure.auditService }),
     privacySettingsService,
     timeZoneSettingsService: settings.timeZoneSettingsService,
     dataSubjectAccess: createPostgresDataSubjectAccess({ db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService, logger }),

@@ -2899,6 +2899,10 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     };
   }
 
+  async hasReadyDocuments(workspaceId: string) {
+    return [...this.items.values()].some((item) => item.workspaceId === workspaceId && item.status === "ready");
+  }
+
   async summarizeWorkspace(workspaceId: string) {
     const documents = [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
     const sampleDocuments = documents.filter((item) => item.metadata.sampleDocument === true);
@@ -4572,6 +4576,10 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
   async countByWorkspaceId(workspaceId: string): Promise<number> {
     return [...this.items.values()].filter((item) => item.workspaceId === workspaceId).length;
+  }
+
+  async hasAnyForWorkspace(workspaceId: string): Promise<boolean> {
+    return [...this.items.values()].some((item) => item.workspaceId === workspaceId);
   }
 
   async listPageByWorkspaceId(

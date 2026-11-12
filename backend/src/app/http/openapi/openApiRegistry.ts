@@ -312,6 +312,7 @@ export interface OpenApiSchemaCatalog {
   PublicChatSessionRequestSchema: z.ZodTypeAny;
   PublicVoiceSessionRequestSchema: z.ZodTypeAny;
   PublicVoiceSessionResponseSchema: z.ZodTypeAny;
+  TestChatVoiceSessionResponseSchema: z.ZodTypeAny;
   PublicVoiceVendorConversationRequestSchema: z.ZodTypeAny;
 
   PublicChatSessionResponseSchema: z.ZodTypeAny;

@@ -18,6 +18,7 @@ import { createReviewedProposalExecutionTool } from "../../../src/modules/operat
 import { REVIEWED_APPROVAL_ACCEPT_WAIT_MS } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
 import { createTestChatCopilotTools, type CopilotTestChatPort } from "../../../src/modules/operatorCopilot/tools/testChat.js";
 import { realCatalog } from "./realCatalogTestSupport.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const uuid = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
 const now = new Date("2026-09-04T00:00:00Z");
@@ -1285,7 +1286,7 @@ describe("operator MCP operation identity", () => {
       }),
     };
     const ownerAudit = { record: vi.fn(async () => undefined), getLatestSuccessfulChatAnswerMetadata: vi.fn(), updateChatAnswerSuggestions: vi.fn() };
-    const owner = new OperatorCopilotService({
+    const owner = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository: proposals as unknown as CopilotRepositoryPort,
       capabilityRunner: { runStreaming: vi.fn() }, auditService: ownerAudit, prompt: "system", tools: [],
       usageLimitPolicy: { reserveAnswer: vi.fn(), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },

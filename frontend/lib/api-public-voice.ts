@@ -1,7 +1,8 @@
 import { PUBLIC_CHAT_STREAMING_API_PATH, attachAnonymousSessionHeader } from './api-client'
 import type { PublicVoiceSessionResponse } from './api-types'
+import type { VoiceSessionCalls } from './use-voice-session'
 import type { StartedVoiceSession, VoiceSessionStart } from './voice-call'
-import { isVoiceVendor } from './voice-runtime'
+import { isVoiceVendor, type VoiceCallPrivacyNotice } from './voice-runtime'
 
 /**
  * Whether a start's answer is the contract's session, checked before its URL reaches a vendor's
@@ -32,6 +33,10 @@ const startedSessionOf = (
   ...(hasText(vendorLanguage) ? { vendorLanguage } : {}),
 })
 
+/** A start's answer as the page keeps it, or `refused` when it is not the contract's session. */
+export const voiceSessionStartOf = (body: unknown): VoiceSessionStart =>
+  isStartedSession(body) ? { kind: 'started', session: startedSessionOf(body) } : { kind: 'refused' }
+
 /**
  * Asks Radioso to start a voice session for the website embed's visitor, with the public session
  * the embed already holds. It goes through the app host's relay, the way a chat message does, so
@@ -51,8 +56,7 @@ export async function startPublicVoiceSession(token: string, input: { locale?: s
     return { kind: 'refused' }
   }
   if (!response.ok) return { kind: 'refused' }
-  const body: unknown = await response.json().catch(() => null)
-  return isStartedSession(body) ? { kind: 'started', session: startedSessionOf(body) } : { kind: 'refused' }
+  return voiceSessionStartOf(await response.json().catch(() => null))
 }
 
 /**
@@ -99,3 +103,21 @@ export async function reportVoiceVendorConversation(
   const second = await reportOnce(url, token, input.vendorConversationId)
   return second === 'throttled' ? 'failed' : second
 }
+
+/**
+ * The website embed's calls: started with the embed's public session in the visitor's language,
+ * opened with the agent's privacy notice the panel shows (the call says it, and its conversation
+ * records it), and reported once open so the Inbox can play the recording.
+ */
+export const publicVoiceSessionCalls = (
+  token: string,
+  { locale, privacyNotice }: { locale?: string; privacyNotice?: VoiceCallPrivacyNotice | null },
+): VoiceSessionCalls => ({
+  startSession: async () => {
+    const start = await startPublicVoiceSession(token, { locale })
+    return start.kind === 'started' && privacyNotice
+      ? { ...start, session: { ...start.session, privacyNotice: { text: privacyNotice.text, version: privacyNotice.version } } }
+      : start
+  },
+  reportVendorConversation: (report) => reportVoiceVendorConversation(token, report),
+})

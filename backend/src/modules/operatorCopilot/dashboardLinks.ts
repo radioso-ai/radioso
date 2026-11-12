@@ -1,4 +1,5 @@
 import type { CopilotEntityReference } from "./contracts.js";
+import type { WorkspaceSetupStep } from "../../db/repositories/workspaceSetupStateRepository.js";
 import { appUrl } from "../../shared/domain/appUrl.js";
 
 /**
@@ -62,7 +63,27 @@ export const buildCopilotDashboardLink = (
   }
 };
 
-export const buildOperatorMcpProposalLink = (proposalId: string): string =>
+/**
+ * Where an operator completes each workspace setup step, relative to the workspace's own route.
+ * `purpose` has no entry on purpose: it is saved through the setup-state API only, and no dashboard
+ * surface completes it, so Ray has nowhere to send an operator for it.
+ */
+const SETUP_STEP_ROUTES = {
+  documents: "/knowledge",
+  conversation: "/agents",
+  directives_or_routines: "/agents?tab=behavior&anchor=assistant-directives",
+  notify_destination: "/settings?anchor=webhook-destinations",
+  credential: "/settings?tab=api-access",
+} as const satisfies Partial<Record<WorkspaceSetupStep, string>>;
+
+type LinkedSetupStep = keyof typeof SETUP_STEP_ROUTES;
+
+export const isLinkedCopilotSetupStep = (step: WorkspaceSetupStep): step is LinkedSetupStep => Object.hasOwn(SETUP_STEP_ROUTES, step);
+
+export const buildCopilotSetupStepLink = (workspaceKey: string, step: WorkspaceSetupStep): string | null =>
+  isLinkedCopilotSetupStep(step) ? `/w/${encodeURIComponent(workspaceKey)}${SETUP_STEP_ROUTES[step]}` : null;
+
+export const buildOperatorMcpProposalLink =(proposalId: string): string =>
   `/oauth/operator-mcp/proposal/${encodeURIComponent(proposalId)}`;
 
 export const buildAbsoluteOperatorMcpProposalLink = (proposalId: string, appBaseUrl?: string | null): string =>

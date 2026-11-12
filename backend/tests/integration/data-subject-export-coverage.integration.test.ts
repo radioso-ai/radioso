@@ -35,6 +35,7 @@ const coverage: Record<string, ExportCoverage> = {
   email_inbound_deliveries: { kind: "exported", section: "email_messages" },
   assistant_answer_feedback: { kind: "exported", section: "answer_feedback" },
   a2a_tasks: { kind: "exported", section: "a2a_tasks" },
+  routine_consent_records: { kind: "exported", section: "consent_records" },
   visitor_images: { kind: "exported", section: "visitor_images" },
 
   email_mailboxes: excluded("The workspace's own mailbox and its address, not anyone who wrote to it."),

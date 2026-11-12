@@ -584,7 +584,14 @@ imports from `services/`.
   to record with the turn, such as a decision gate) — and its `reply` renders or
   streams the reply, then settles the turn into a `ChatTurnAssemblyRoutineResult`.
   Both routine attempts a message turn makes (before retrieval, and as a coverage
-  reaction) ask the provider for the turn through `services/routines/routineTurnRequest.ts`.
+  reaction) ask the provider for the turn through `services/routines/routineTurnRequest.ts`,
+  which also hands it the conversation as a routine's consents read it
+  (`services/routines/routineConsentTurn.ts`, #1544). The routine's
+  `hostEffects.consentEvents` ride the result to `completeAssistantTurn` unread, and
+  `PostgresAssistantTurnPersistence` records them in the turn's transaction. A replayed
+  turn (Test Chat, eval) records them in its session's own store instead
+  (`services/routines/sessionRoutineConsentStore.ts`, the assembly's
+  `routineConsentStore`), which Test Chat's continuation carries to the next turn.
   `attemptRoutineTurn` is that claim rendered whole, the path the non-stream turn and
   eval replay take. A claim from an engine without `claimRoutine` comes from a whole
   `attemptRoutine` and reports the same effects. The stream turn — live chat's SSE turn

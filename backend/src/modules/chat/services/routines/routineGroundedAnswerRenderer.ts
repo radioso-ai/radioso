@@ -216,8 +216,16 @@ export const presentRoutineRenderableAnswer = (
   presenter: ChatAnswerPresenter,
   response: RenderableTurn,
   restore?: RoutineRenderableAnswerRestore,
-): ChatPresentedAnswer =>
-  presentationFromRenderableTurn(response, restore) ?? presenter.presentRoutineAnswer(response.answer, response.citations);
+): ChatPresentedAnswer => {
+  const presented = presentationFromRenderableTurn(response, restore);
+  if (presented) {
+    return presented;
+  }
+  // A step reply carries authored chips only when it shows a consent's two choices (#1544).
+  const suggestions = optionalChatSuggestions(response.suggestions);
+  const answer = presenter.presentRoutineAnswer(response.answer, response.citations);
+  return suggestions ? { ...answer, suggestions } : answer;
+};
 
 export const createRoutineGroundedAnswerRenderer = (
   options: RoutineGroundedAnswerRendererOptions,

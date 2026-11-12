@@ -1,5 +1,6 @@
 import type { RoutineState } from "@radioso/conversation-contract";
 
+import { consentKeyOfGateStepId } from "./consentGates.js";
 import type { RoutineDefinition } from "./domain.js";
 import { collectedSlotsByStep } from "./slotCollection.js";
 
@@ -19,7 +20,11 @@ export const sensitiveSlotsAwaited = (
   // The path records real advances only, so an empty one is still on the root step.
   const rootStepId = [...definition.steps].sort((left, right) => left.ordinal - right.ordinal)[0]?.stableStepId;
   const currentStepId = state.path.at(-1) ?? rootStepId;
-  const collected = new Set(currentStepId ? collectedSlotsByStep(definition).get(currentStepId) ?? [] : []);
+  // A consent step waits on the answer to a consent, which may already state a value it covers.
+  const consentKey = currentStepId ? consentKeyOfGateStepId(currentStepId) : null;
+  const collected = new Set(consentKey !== null
+    ? definition.consents?.find((consent) => consent.key === consentKey)?.slotKeys ?? []
+    : currentStepId ? collectedSlotsByStep(definition).get(currentStepId) ?? [] : []);
   return definition.slots
     .filter((slot) => slot.sensitivity === "sensitive" && collected.has(slot.key))
     .map((slot) => slot.key);

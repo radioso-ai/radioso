@@ -132,6 +132,8 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       exposure_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       exposure_tool_name TEXT NULL,
       exposure_description TEXT NULL,
+      -- Mirrors migration 257_routine_consents.sql.
+      consents JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(consents) = 'array'),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(agent_id, name, version),
@@ -539,6 +541,69 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
       `UPDATE routine_slot SET sensitivity = 'secret' WHERE definition_id = $1`,
       [created.id],
     )).rejects.toMatchObject({ code: "23514" });
+  });
+
+  it("round-trips a routine's consents into its agent draft, and reads a routine without them back without the field (#1544)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const base = draftInput("consent-roundtrip");
+    const consents = [{
+      key: "topic_consent",
+      slotKeys: ["topic"],
+      variants: [
+        { locale: "en", body: "We ask about your topic to route it.", agreeLabel: "Agree", declineLabel: "Decline" },
+        { locale: "de", body: "  Wir fragen nach Ihrem Thema.\n", agreeLabel: "Ja", declineLabel: "Nein" },
+      ],
+      onDecline: "handoff" as const,
+    }];
+    const created = await repository.createDraftWithAgentDraft(workspaceId, agentId, {
+      ...base,
+      slots: [{ ...base.slots[0], sensitivity: "sensitive" }],
+      consents,
+    });
+
+    expect((await repository.findById(agentId, created.id))?.consents).toEqual(consents);
+    const [draft] = await database.query<{ snapshot: { routines: Array<{ id: string; consents?: unknown }> } }>(
+      `SELECT snapshot FROM agent_drafts WHERE agent_id = $1`,
+      [agentId],
+    );
+    expect(draft?.snapshot.routines.find((routine) => routine.id === created.id)?.consents).toEqual(consents);
+
+    const cleared = await repository.updateDraftWithAgentDraft(workspaceId, agentId, created.id, { ...base, consents: [] });
+    expect(cleared).not.toHaveProperty("consents");
+    const plain = await repository.createDraft(agentId, draftInput("consent-absent"));
+    expect(plain).not.toHaveProperty("consents");
+    const [stored] = await database.query<{ consents: unknown }>(`SELECT consents FROM routine_definition WHERE id = $1`, [plain.id]);
+    expect(stored?.consents).toEqual([]);
+  });
+
+  it("refuses to read a routine whose stored consents are broken instead of dropping them (#1544)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const created = await repository.createDraft(agentId, draftInput("consent-broken"));
+    await database.execute(
+      `UPDATE routine_definition SET consents = '[{"key":"topic_consent","slotKeys":[],"variants":[],"onDecline":"continue"}]'::jsonb WHERE id = $1`,
+      [created.id],
+    );
+
+    await expect(repository.findById(agentId, created.id)).rejects.toThrow();
+    await database.execute(`UPDATE routine_definition SET consents = '[]'::jsonb WHERE id = $1`, [created.id]);
+  });
+
+  it("reads stored consents a later version wrote with more fields, dropping the fields it does not know (#1544)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const created = await repository.createDraft(agentId, draftInput("consent-later-field"));
+    const consent = {
+      key: "topic_consent",
+      slotKeys: ["topic"],
+      variants: [{ locale: "en", body: "We ask about your topic to route it.", agreeLabel: "Agree", declineLabel: "Decline" }],
+      onDecline: "continue" as const,
+    };
+    await database.execute(
+      `UPDATE routine_definition SET consents = $2::jsonb WHERE id = $1`,
+      [created.id, JSON.stringify([{ ...consent, reviewedAt: "2027-01-01", variants: [{ ...consent.variants[0], tone: "formal" }] }])],
+    );
+
+    expect((await repository.findById(agentId, created.id))?.consents).toEqual([consent]);
+    await database.execute(`UPDATE routine_definition SET consents = '[]'::jsonb WHERE id = $1`, [created.id]);
   });
 
   it("repairs dirty pre-existing data before building migration 090 lifecycle indexes", async () => {

@@ -101,6 +101,15 @@ const coverage: Record<string, ErasureCoverage> = {
     reason: "A private test can send a real email from a conversation that never becomes a conversations row.",
   },
   "usage_events.conversation_id": { kind: "retained", reason: "The billing ledger keeps its rows and loses the link (SET NULL)." },
+  "routine_consent_records.conversation_id": {
+    kind: "retained",
+    reason: "Consent proof kept for legal claims (Art. 17(3)(e)); holds no content: a decision, its wording version, language, channel and times.",
+  },
+  "routine_consent_records.visitor_id": {
+    kind: "retained",
+    reason: "Consent proof kept for legal claims (Art. 17(3)(e)); holds no content: a decision, its wording version, language, channel and times.",
+  },
+  "routine_consent_records.decision_message_id": { kind: "retained", reason: "SET NULL as its message goes; the record stays as proof." },
   "usage_events.message_id": { kind: "retained", reason: "The billing ledger keeps its rows and loses the link (SET NULL)." },
   "usage_events.copilot_conversation_id": {
     kind: "not_a_conversation",

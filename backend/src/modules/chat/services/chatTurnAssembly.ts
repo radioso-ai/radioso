@@ -27,7 +27,7 @@ import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSki
 import { turnExecutionCapabilities } from "../../../shared/domain/turnExecutionMode.js";
 import type { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
-import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
+import type { ChatRoutineConsentStore, ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
@@ -232,6 +232,8 @@ export interface ChatTurnAssemblyRoutineResult {
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
+  /** What the routine did with its consents this turn (#1544), for the turn's transaction to record. */
+  consentEvents?: NonNullable<ProcessTurnResult["hostEffects"]>["consentEvents"];
   suspended?: boolean;
   clarificationTransition?: CapturedClarificationTransition | null;
   commitRoutineState: () => Promise<void>;
@@ -322,21 +324,14 @@ export interface ChatTurnAssemblyOptions {
    * eval persists its trace into an append-only, longer-retained record.
    */
   includeSlotValues?: boolean;
+  /** The consents of a conversation no row is kept for, held by its session (Test Chat); absent, the workspace's records. */
+  routineConsentStore?: ChatRoutineConsentStore;
 }
 
-type ChatTurnAssemblySharedOptions = Omit<
-  ChatTurnAssemblyOptions,
-  "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "includeSlotValues"
->;
-
-interface ChatTurnAssemblyEffectPorts {
-  chatSessionPreparer: ChatSessionPreparer;
-  directiveStateStore: DirectiveStateStore;
-  routineStore?: ConversationRoutineStore;
-  coverageHeadRecorder?: AnswerCoverageHeadRecorder;
-  coverageShadowAssessor?: AnswerCoverageShadowAssessor;
-  includeSlotValues?: boolean;
-}
+/** What each surface brings to an assembly: its persistence and state effects. */
+type ChatTurnAssemblyEffectKey = "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "routineConsentStore" | "includeSlotValues";
+type ChatTurnAssemblySharedOptions = Omit<ChatTurnAssemblyOptions, ChatTurnAssemblyEffectKey>;
+type ChatTurnAssemblyEffectPorts = Pick<ChatTurnAssemblyOptions, ChatTurnAssemblyEffectKey | "coverageHeadRecorder" | "coverageShadowAssessor">;
 
 /**
  * Binds the runtime behavior shared by durable chat and ephemeral replay once.
@@ -453,6 +448,7 @@ export class ChatTurnAssembly {
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
       includeSlotValues: this.options.includeSlotValues,
+      consentStore: this.options.routineConsentStore,
     }));
     if (!routineTurnPorts) {
       return null;
@@ -465,7 +461,7 @@ export class ChatTurnAssembly {
     session.routineStartMessageId = input.activeRoutine
       ? input.activeRoutine.startedMessageId
       : session.userMessage.id;
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId, routineTurnPorts.routines);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
     const routineRunner = pageReadAwareRoutineRunner({
@@ -532,6 +528,7 @@ export class ChatTurnAssembly {
         routineStateTransition,
         routineReporter: routineTurnPorts.reporter,
         pendingDecisionTransition,
+        consentEvents: outcome.result.hostEffects?.consentEvents,
         suspended: Boolean(outcome.result.hostEffects?.awaitingDecision),
         clarificationTransition: deferredClarificationStore?.getTransition(),
         commitRoutineState: () => deferredStore.commit(),
@@ -666,6 +663,7 @@ export class ChatTurnAssembly {
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
       includeSlotValues: this.options.includeSlotValues,
+      consentStore: this.options.routineConsentStore,
     }));
     if (!routineTurnPorts?.coverageActivator) {
       return {
@@ -676,7 +674,7 @@ export class ChatTurnAssembly {
     }
     const routineStartMessageId = getSession().userMessage.id;
     getSession().routineStartMessageId = routineStartMessageId;
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore, routineStartMessageId);
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, routineStartMessageId, routineTurnPorts.routines);
     const deferredClarificationStore = input.clarification?.store;
     return {
       coverageRoutineActivator: routineTurnPorts.coverageActivator,
@@ -702,6 +700,7 @@ export class ChatTurnAssembly {
           routineStateTransition,
           routineReporter: routineTurnPorts.reporter,
           pendingDecisionTransition,
+          consentEvents: result.hostEffects?.consentEvents,
           suspended: Boolean(result.hostEffects?.awaitingDecision),
           commitRoutineState: () => deferredStore.commit(),
           clarificationTransition: deferredClarificationStore?.getTransition(),
@@ -1425,14 +1424,8 @@ export class ChatTurnAssembly {
     };
   }
 
-  private withResponseLanguage(
-    session: PreparedSession,
-    responseLanguage: string | undefined,
-  ): PreparedSession {
-    return {
-      ...session,
-      responseLanguage,
-    };
+  private withResponseLanguage(session: PreparedSession, responseLanguage: string | undefined): PreparedSession {
+    return { ...session, responseLanguage };
   }
 
   private async routeTurn(

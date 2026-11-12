@@ -64,6 +64,25 @@ describe("buildAgentToolDescriptor", () => {
     expect(Object.keys(descriptor.inputSchema.properties)).toEqual(["first", "second"]);
   });
 
+  it("leaves out a slot a consent covers, which no call can supply (#1544)", () => {
+    const descriptor = buildAgentToolDescriptor(source({
+      slots: [
+        slot({ key: "orderId", type: "text", required: true, ordinal: 0 }),
+        slot({ key: "injury", type: "text", required: true, ordinal: 1, sensitivity: "sensitive" }),
+        slot({ key: "allergy", type: "text", ordinal: 2, sensitivity: "sensitive" }),
+      ],
+      consents: [{
+        key: "health",
+        slotKeys: ["injury"],
+        variants: [{ locale: "en", body: "We ask about your health.", agreeLabel: "I agree", declineLabel: "No thanks" }],
+        onDecline: "handoff",
+      }],
+    }));
+
+    expect(Object.keys(descriptor.inputSchema.properties)).toEqual(["orderId", "allergy"]);
+    expect(descriptor.inputSchema.required).toEqual(["orderId"]);
+  });
+
   it("describes a routine with no slots as an empty object schema", () => {
     const descriptor = buildAgentToolDescriptor(source({ slots: [] }));
 

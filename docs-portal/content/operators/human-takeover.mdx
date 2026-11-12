@@ -20,10 +20,11 @@ Before a teammate replies, the assistant — the chat surface your agent speaks 
 
 ## How a handoff is requested
 
-Handoff is request-driven. The AI does not silently decide to transfer a conversation. There are three triggers:
+Handoff is request-driven. The AI does not silently decide to transfer a conversation. There are four triggers:
 
 - A routine reaches a `handoff` terminal — including a branch an LLM-selected transition chooses, such as an authored path for an annoyed user. The reason is `routine_handoff`.
 - A routine with a `handoff` terminal gets a visitor stuck: a step's question is re-asked three times in a row, asked once more in different words, and the visitor's reply still gives it nothing. The routine ends on that step without running its terminal or completion export, and the reason is `routine_stuck`. See [Author a routine](/guides/authoring-routines#set-branches-approvals-and-endings).
+- A visitor declines a routine's consent whose decline choice is `handoff`, or leaves it unanswered after it was asked twice. The routine ends on its consent without running its terminal or completion export, and the reason is `routine_consent_declined`. The notice says the visitor declined consent and carries none of the values that consent covers. See [Author a routine](/guides/authoring-routines#ask-for-consent-first).
 - An agent has `handoffOnRetrievalMiss` enabled and a turn produces a no-context grounded miss. This is opt-in per agent and off by default. The reason is `retrieval_miss`.
 
 In the agent's **Profile → Answers** settings, turn on **Hand off on retrieval miss** to enable this trigger.
@@ -218,7 +219,7 @@ The operator history detail and tail (`GET /api/v1/history/chat/{conversationId}
 
 | `kind` | What happened | Fields it fills |
 |---|---|---|
-| `handoff_requested` | The agent asked for a person | `handoffReason` (`routine_handoff`, `retrieval_miss`) |
+| `handoff_requested` | The agent asked for a person | `handoffReason` (`routine_handoff`, `routine_stuck`, `routine_consent_declined`, `retrieval_miss`) |
 | `claimed` | A teammate took the conversation, directly or by replying | `actor` |
 | `reassigned` | A teammate handed it to someone, themselves included | `actor`, `subject` (the new owner), `from` (the previous owner; `null` for a handoff nobody had claimed) |
 | `handed_back` | A teammate handed it back to the agent | `actor` |

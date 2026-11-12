@@ -1,6 +1,8 @@
-import type { Routine, RoutineGuard, RoutineOperatorNoticeTemplate, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
+import type { Routine, RoutineGuard, RoutineOperatorNoticeTemplate, RoutineSlotSchema, RoutineStep, RoutineTransition } from "@radioso/conversation-contract";
 import { collectContextVariableRefs, endingNotifiesOperators } from "@radioso/routine-definition";
 
+import { consentWordingMetadata } from "./consent/consentWording.js";
+import { withConsentGates } from "./consentGates.js";
 import type { RoutineDefinition, RoutineStepMetadata } from "./domain.js";
 import { collectSlotKeys, collectedSlotsByStep } from "./slotCollection.js";
 import { validateRoutineDefinition } from "./validator.js";
@@ -228,32 +230,41 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     }),
   ];
 
-  return {
-    id: routineId(definition),
-    rootStepId: sortedSteps[0].stableStepId,
-    slots,
-    steps,
-    transitions: [...definition.transitions]
-      .sort((left, right) => left.ordinal - right.ordinal)
-      .map((transition) => {
-        if (autoGatedStepIds.has(transition.fromStep)) {
-          // Promote the bare default edge to a selector-running (llm) transition: no
-          // structured guard, slot-aware condition. Extraction + gating now happen.
-          return {
-            from: transition.fromStep,
-            to: transition.toRef,
-            condition: autoGateCondition(slotsCollectedByStep.get(transition.fromStep) ?? []),
-            origin: "compiler_slot_gate",
-          };
-        }
-        const guard = guardFor(transition);
+  const transitions = [...definition.transitions]
+    .sort((left, right) => left.ordinal - right.ordinal)
+    .map((transition): RoutineTransition => {
+      if (autoGatedStepIds.has(transition.fromStep)) {
+        // Promote the bare default edge to a selector-running (llm) transition: no
+        // structured guard, slot-aware condition. Extraction + gating now happen.
         return {
           from: transition.fromStep,
           to: transition.toRef,
-          condition: conditionFor(transition.guardKind, transition.guardText),
-          ...(guard ? { guard } : {}),
+          condition: autoGateCondition(slotsCollectedByStep.get(transition.fromStep) ?? []),
+          origin: "compiler_slot_gate",
         };
-      }),
+      }
+      const guard = guardFor(transition);
+      return {
+        from: transition.fromStep,
+        to: transition.toRef,
+        condition: conditionFor(transition.guardKind, transition.guardText),
+        ...(guard ? { guard } : {}),
+      };
+    });
+  // A consent is asked immediately before each step that collects a slot it covers (#1544).
+  const graph = withConsentGates(
+    { rootStepId: sortedSteps[0].stableStepId, steps, transitions },
+    definition.consents ?? [],
+    slotsCollectedByStep,
+  );
+
+  return {
+    id: routineId(definition),
+    rootStepId: graph.rootStepId,
+    slots,
+    steps: graph.steps,
+    transitions: graph.transitions,
+    ...(graph.consents.length > 0 ? { consents: graph.consents } : {}),
     ...(definition.completionExport?.enabled
       ? {
           completionExport: {
@@ -284,6 +295,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
       ...(definition.exposure?.enabled && definition.exposure.toolName.length > 0
         ? { exposure: { toolName: definition.exposure.toolName } }
         : {}),
+      ...consentWordingMetadata(definition.consents),
     },
   };
 };

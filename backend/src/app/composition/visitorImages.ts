@@ -47,10 +47,10 @@ export const visitorImageObjectStore = (storage: DocumentStoragePort & DocumentS
 });
 
 /**
- * The agent's chat model as its turns resolve it (the agent's override, then the workspace's
- * chat preference, then the plan or the workspace's key), through the inference pipeline, so the
- * reading call has its span and usage event. The resolved client reports whether the model reads
- * images, and the pipeline refuses the call before any provider sees it when it does not.
+ * The model the agent answers with, resolved as its turns resolve it, through the inference
+ * pipeline, so the reading call has its span and usage event. The resolved client reports whether
+ * the model reads images, and the pipeline refuses the call before any provider sees it when it
+ * does not.
  */
 const visitorImageReadingModel = (deps: {
   agents: AgentLookup;

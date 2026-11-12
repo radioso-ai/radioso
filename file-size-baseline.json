@@ -34,7 +34,7 @@
   "frontend/components/dashboard/settings/skills/SkillForm.tsx": 1115,
   "frontend/components/dashboard/settings/workspace-assistant-channels-tab.tsx": 1364,
   "frontend/components/dashboard/spine-stage-detail.tsx": 1243,
-  "frontend/lib/anonymous-chat-context.tsx": 1208,
+  "frontend/lib/anonymous-chat-context.tsx": 1184,
   "frontend/lib/dashboard-routes.ts": 1223,
   "frontend/lib/radioso-embed-launcher.js": 2128,
   "packages/conversation-contract/index.d.ts": 2119,

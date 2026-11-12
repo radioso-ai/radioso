@@ -1153,7 +1153,7 @@ Public surfaces and key files:
 - `backend/src/app/http/shared/visitorImageUpload.ts`, `backend/src/app/http/middleware/visitorImageUploadRateLimiter.ts`
 - `backend/prompts/chat/visitor-image-reading.md`
 - `backend/src/db/migrations/256_visitor_images.sql`
-- `backend/src/modules/connectors/services/connectorImageTurns.ts` (a connector turn's photos: the per-conversation allowance, the upload for owner `connector_conversation`, then the turn through the chat door's `ChatDoorPhotoTurnPort`); `connectorChatPort.ts` carries `imageAllowance` and `answer({ images })`
+- `backend/src/modules/connectors/services/connectorImageTurns.ts` (a connector turn's photos: the per-conversation allowance, the upload for owner `connector_conversation`, then the turn through the chat door's `ChatDoorPhotoTurnPort`; a busy decode is a retryable 503, and `ConnectorStoredImage` receipts let a retry reuse stored photos); `connectorChatPort.ts` carries `imageAllowance` and `answer({ images, onImagesStored })`; WhatsApp keeps a receipt in the inbound message log's payload (`savePhotoReceipt`)
 - `backend/src/modules/connectors/plugins/whatsapp/whatsappMedia.ts` and `whatsappClient.ts` `downloadImage` (Graph media id to bytes: size cap, timeout, https-only redirects; counter `whatsapp_media_downloads_total{outcome}`); `whatsappMessageHandler.ts` turns an album batch into one turn of up to three photos, the caption as typed text
 
 Focused checks:

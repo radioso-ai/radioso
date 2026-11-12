@@ -7,13 +7,14 @@ import type {
   ConnectorValidationIssue,
 } from "@radioso/connector-api";
 
+import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { WhatsAppClient } from "./whatsappClient.js";
 import { WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";
 import { createWhatsAppWebhookRouter, findInboundMessageInPayload } from "./whatsappWebhook.js";
 
-export const WHATSAPP_CONFIG_KEYS = {
+const WHATSAPP_CONFIG_KEYS = {
   phoneNumberId: "phone_number_id",
   accessToken: "access_token",
   appSecret: "app_secret",
@@ -22,6 +23,11 @@ export const WHATSAPP_CONFIG_KEYS = {
   conversationTimeoutHours: "conversation_timeout_hours",
   unsupportedMessageReply: "unsupported_message_reply",
 } as const;
+
+/** The host services the registry adds to the contract's context. */
+type WhatsAppConnectorContext = ConnectorContext & {
+  metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
+};
 
 interface WhatsAppPluginOptions {
   fetch?: typeof fetch;
@@ -120,7 +126,11 @@ export class WhatsAppPlugin implements ConnectorPlugin {
     const client = new WhatsAppClient({
       logger: context.logger,
       fetch: this.fetchImpl,
+      // The media link comes from Meta's response, so its bytes are fetched on the connection-bound
+      // public transport: only public addresses, and the check holds on the connection itself.
+      mediaFetch: this.fetchImpl ?? ((input, init) => context.publicHttp.fetch(input as string | URL, init)),
       sleep: this.sleep,
+      metrics: (context as WhatsAppConnectorContext).metricsRegistry ?? null,
     });
     const persistence = new PostgresWhatsAppPersistence(connectorKyselyDb(context.db));
     this.messageHandler = new WhatsAppMessageHandler({

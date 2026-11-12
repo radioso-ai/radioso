@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { PostgresWhatsAppPersistence } from "../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
+import { PostgresWhatsAppPersistence, photoReceiptOf } from "../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -187,6 +187,40 @@ describeIntegration("PostgresWhatsAppPersistence (Postgres)", () => {
     await persistence.updateMessageLogStatus(wamid, "replied");
     const afterReply = await persistence.listRecoverableInboundLogs();
     expect(afterReply.some((log) => log.wamid === wamid)).toBe(false);
+  });
+
+  it("keeps a photo receipt with its inbound message, beside the webhook body, and reads it back after recovery", async () => {
+    const wamid = `wamid-${randomUUID()}`;
+    const body = { object: "whatsapp_business_account", entry: [{ id: "waba-1" }] };
+    await persistence.createInboundMessageLog({ wamid, workspaceId, waId, messageType: "image", payload: body });
+    expect(photoReceiptOf(await persistence.findMessageLogByWamid(wamid))).toBeNull();
+
+    await persistence.savePhotoReceipt(wamid, "receipt-1");
+    await persistence.savePhotoReceipt(wamid, "receipt-2");
+
+    const log = await persistence.findMessageLogByWamid(wamid);
+    expect(photoReceiptOf(log)).toBe("receipt-2");
+    expect(log?.payload).toMatchObject(body);
+    const recovered = (await persistence.listRecoverableInboundLogs()).find((candidate) => candidate.wamid === wamid);
+    expect(photoReceiptOf(recovered ?? null)).toBe("receipt-2");
+  });
+
+  it("keeps a receipt only for an inbound message the log holds", async () => {
+    const outboundWamid = `local-${randomUUID()}`;
+    await persistence.createMessageLog({
+      wamid: outboundWamid,
+      direction: "outbound",
+      workspaceId,
+      waId,
+      messageType: "text",
+      payload: { text: "Hello" },
+      status: "processing",
+    });
+
+    await persistence.savePhotoReceipt(outboundWamid, "receipt-x");
+    await persistence.savePhotoReceipt(`wamid-${randomUUID()}`, "receipt-y");
+
+    expect(photoReceiptOf(await persistence.findMessageLogByWamid(outboundWamid))).toBeNull();
   });
 
   it("issues a local outbound wamid", () => {

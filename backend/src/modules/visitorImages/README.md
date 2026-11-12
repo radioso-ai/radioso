@@ -14,6 +14,14 @@ session, the REST API the credential (or the signed-in user), and a connector
 its conversation. The owner id is never a credential; a send must come from the
 same owner, agent and workspace as the upload.
 
+A connector reaches the module through the host, never directly:
+`modules/connectors/services/connectorImageTurns.ts` uploads the bytes a
+connector hands `ConnectorChatPort.answer` (WhatsApp photos) with owner
+`connector_conversation`, whose id is the conversation the sender is in, or an
+id of its own for a first turn that has no conversation yet, and then sends the
+turn through the chat door with the uploaded ids. Whatever the door does with a
+web chat's photos it does with these.
+
 It knows the photo lifecycle and nothing about chat turns or messages. The chat
 door (`modules/chat/services/assistantChatService.ts`) depends on one narrow
 port, `VisitorImageTurnInput` (`contracts/turnInput.ts`): `claim` the ids for an
@@ -28,7 +36,10 @@ It does not know which model reads a photo or how storage is reached:
 `VisitorImageReader` and `VisitorImageObjectStore` (over document storage's
 `locate`, `upload`, `read` and `delete`) are ports, and
 `VisitorImageAvailability` (whether an agent takes photos now) is implemented in
-composition. Nothing in `packages/` changes for images.
+composition. The one change in `packages/` is the connector contract: `connector-api`
+gains `ConnectorChatPort.imageAllowance`, `ConnectorInboundImage`,
+`ConnectorImageAllowance` and `ConnectorStoredImage`, for a connector that takes
+photos (WhatsApp).
 
 ## Public Surfaces
 

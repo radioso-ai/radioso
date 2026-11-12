@@ -8,6 +8,12 @@ import type {
   ConversationIngestPort,
 } from "../../../src/modules/chat/contracts/index.js";
 import { createConnectorChatPort } from "../../../src/modules/connectors/services/connectorChatPort.js";
+import {
+  CONNECTOR_IMAGES_UNUSABLE_CODE,
+  type ConnectorImageAnswer,
+  type ConnectorImageTurns,
+} from "../../../src/modules/connectors/services/connectorImageTurns.js";
+import { connectorChatOutcome } from "../../../src/modules/connectors/services/connectorTurnFacts.js";
 
 const unusedIngest: ConversationIngestPort = {
   ingest: vi.fn(async () => {
@@ -103,6 +109,106 @@ describe("createConnectorChatPort", () => {
     await expect(connectorChat.ingest(input)).resolves.toEqual(ingestResult);
     expect(conversationIngest.ingest).toHaveBeenCalledWith(input);
     expect(chatService.answer).not.toHaveBeenCalled();
+  });
+
+  describe("photos", () => {
+    const PHOTO = new Uint8Array([0xff, 0xd8, 1]);
+    const setup = (answered: ConnectorImageAnswer | null) => {
+      const chatService = {
+        answer: vi.fn(async () => ({ conversationId: "conversation-text", answer: "Text answer", skillOutcome: "grounded" })),
+      } as unknown as ChatAnswerPort;
+      const imageTurns: ConnectorImageTurns = {
+        imageAllowance: vi.fn(async () => ({ maxImages: 3 })),
+        answer: vi.fn(async () => answered),
+      };
+      return { chatService, imageTurns, connectorChat: createConnectorChatPort(chatService, unusedIngest, imageTurns) };
+    };
+    const photoAnswer: ConnectorImageAnswer = { conversationId: "conversation-new", answer: "Looks lovely.", skillOutcome: "grounded" };
+
+    it("allows no photos on a port that has no photo support", async () => {
+      const connectorChat = createConnectorChatPort({ answer: vi.fn() } as unknown as ChatAnswerPort, unusedIngest);
+
+      await expect(connectorChat.imageAllowance({ workspaceId: "workspace-1" })).resolves.toBeNull();
+    });
+
+    it("reports what a turn on the conversation takes in photos", async () => {
+      const { connectorChat, imageTurns } = setup(null);
+
+      await expect(connectorChat.imageAllowance({ workspaceId: "workspace-1", conversationId: "conversation-1" }))
+        .resolves.toEqual({ maxImages: 3 });
+      expect(imageTurns.imageAllowance).toHaveBeenCalledWith({ workspaceId: "workspace-1", conversationId: "conversation-1" });
+    });
+
+    it("runs a turn with photos through the photo turns, not the text path, and maps its outcome", async () => {
+      const { connectorChat, chatService, imageTurns } = setup({ ...photoAnswer, skillOutcome: "retrieval.no_context" });
+      const channelContext = { provider: "web", origin: "https://example.com" } as const;
+      const onImagesStored = vi.fn(async () => undefined);
+
+      const response = await connectorChat.answer({
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+        conversationId: "conversation-1",
+        query: "Like this",
+        sourceChannel: "whatsapp",
+        channelContext,
+        images: [{ key: "wamid-1", bytes: PHOTO }],
+        onImagesStored,
+      });
+
+      expect(imageTurns.answer).toHaveBeenCalledWith({
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+        conversationId: "conversation-1",
+        query: "Like this",
+        images: [{ key: "wamid-1", bytes: PHOTO }],
+        sourceChannel: "whatsapp",
+        channelContext,
+        onImagesStored,
+      });
+      expect(chatService.answer).not.toHaveBeenCalled();
+      expect(response).toEqual({ conversationId: "conversation-new", answer: "Looks lovely.", outcome: connectorChatOutcome("retrieval.no_context") });
+    });
+
+    it("runs the turn on its text when every photo was refused", async () => {
+      const { connectorChat, chatService } = setup(null);
+
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Like this", images: [{ key: "wamid-1", bytes: PHOTO }] });
+
+      expect(chatService.answer).toHaveBeenCalledWith({
+        workspaceId: "workspace-1",
+        agentId: undefined,
+        conversationId: undefined,
+        query: "Like this",
+        stream: false,
+        sourceChannel: undefined,
+        channelContext: undefined,
+      });
+    });
+
+    it("refuses a turn with nothing to answer, by a code the connector can tell apart: no text and no usable photo", async () => {
+      const { connectorChat, chatService } = setup(null);
+
+      await expect(connectorChat.answer({ workspaceId: "workspace-1", query: "  ", images: [{ key: "wamid-1", bytes: PHOTO }] }))
+        .rejects.toMatchObject({ statusCode: 422, code: CONNECTOR_IMAGES_UNUSABLE_CODE });
+      expect(chatService.answer).not.toHaveBeenCalled();
+    });
+
+    it("refuses photos on a port that has no photo support, rather than dropping them", async () => {
+      const chatService = { answer: vi.fn() } as unknown as ChatAnswerPort;
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest);
+
+      await expect(connectorChat.answer({ workspaceId: "workspace-1", query: "Like this", images: [{ key: "wamid-1", bytes: PHOTO }] }))
+        .rejects.toMatchObject({ statusCode: 400 });
+      expect(chatService.answer).not.toHaveBeenCalled();
+    });
+
+    it("never touches the photo path for a turn without photos", async () => {
+      const { connectorChat, imageTurns } = setup(null);
+
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Hello", images: [] });
+
+      expect(imageTurns.answer).not.toHaveBeenCalled();
+    });
   });
 
   describe("respond", () => {

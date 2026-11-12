@@ -11,6 +11,7 @@ import {
   GUEST_HOUSE_DOC_ID,
   HIKING_BOOK_DOC_IDS,
   replyBlockImages,
+  RETURNS_POLICY_DOC_ID,
 } from "../../fixtures/conversation-quality/index.js";
 import { canonicalAnswerEnvelope, conversationQualityChatHarness } from "../../support/conversationQualityChatHarness.js";
 import { InMemoryDocumentImages } from "../../support/inMemoryDocumentImages.js";
@@ -50,6 +51,14 @@ describe("reply block assertions", () => {
     expect(evaluateTraceAssertion({ type: "reply_block", layout: "grid" }, foreign).status).toBe("fail");
     expect(evaluateTraceAssertion({ type: "reply_block", minItems: 2 }, foreign).status).toBe("fail");
     expect(evaluateTraceAssertion({ type: "reply_block", itemsFromEvidence: true }, foreign).status).toBe("fail");
+  });
+
+  it("passes no_reply_block on a reply without a block, and fails it on one with a block", () => {
+    const withBlock = observed({ replyBlocks: [block("carousel", [{ title: "Hut to Hut" }])] });
+
+    expect(evaluateTraceAssertion({ type: "no_reply_block" }, observed({})).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "no_reply_block" }, observed({ replyBlocks: [] })).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "no_reply_block" }, withBlock).status).toBe("fail");
   });
 
   it("fails answer_excludes_image_url on an image address or a handle in the answer", () => {
@@ -131,6 +140,22 @@ describe("reply block cases on the deterministic harness", () => {
     const scored = await scoreObservedOutput(guestHouseCase.assertions, await harness.port.run(guestHouseCase), scoreContext(guestHouseCase.query));
 
     expect(scored.verdicts.map((verdict) => verdict.status)).toEqual(["pass", "pass"]);
+  });
+
+  it("passes the returns policy case when the model shows no picture, and fails it when it shows the policy page's", async () => {
+    const policyCase = conversationQualityCases.find((evalCase) => evalCase.id === "reply-blocks-returns-policy-no-pictures")!;
+    const run = async (images: string[]) => {
+      const harness = conversationQualityChatHarness({
+        reply: reply({ images, caption: "Returns" }, [[1]]),
+        retrievedDocumentIds: [RETURNS_POLICY_DOC_ID],
+        documentImages: imagesFor([RETURNS_POLICY_DOC_ID]),
+      });
+      const output = await harness.port.run(policyCase);
+      return (await scoreObservedOutput(policyCase.assertions, output, scoreContext(policyCase.query))).verdicts.map((verdict) => verdict.status);
+    };
+
+    expect(await run([])).toEqual(["pass", "pass"]);
+    expect(await run(["m1"])).toEqual(["fail", "pass"]);
   });
 
   it("offers no pictures and carries no block when the case declares no reply blocks", async () => {

@@ -73,6 +73,8 @@ export type SuiteTraceAssertion =
   | { type: "voice_turn_outcome"; kind: "continue" | "callback_requested"; deterministicOnly?: boolean }
   /** The reply carried a block: its layout, its size, and whether its items come from the retrieved documents. */
   | ({ type: "reply_block" } & ReplyBlockExpectation)
+  /** The reply carried no block: the answer had nothing to show as pictures. */
+  | { type: "no_reply_block" }
   /** The answer text names no picture by address or handle: pictures belong in the block. */
   | { type: "answer_excludes_image_url" };
 
@@ -118,6 +120,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "voice_turn_limit_reached",
   "voice_turn_outcome",
   "reply_block",
+  "no_reply_block",
   "answer_excludes_image_url",
 ]);
 
@@ -566,6 +569,12 @@ export const evaluateTraceAssertion = (
     case "reply_block": {
       const verdict = judgeReplyBlock(assertion, output.replyBlocks, output.retrievedChunks);
       return verdict.passed ? pass(assertion, verdict.reason) : fail(assertion, verdict.reason);
+    }
+    case "no_reply_block": {
+      const count = output.replyBlocks?.length ?? 0;
+      return count === 0
+        ? pass(assertion, "The reply carried no block.")
+        : fail(assertion, `The reply carried ${count} block(s); expected none.`);
     }
     case "answer_excludes_image_url": {
       const named = answerNamesImage(output.answer, output.replyBlocks);

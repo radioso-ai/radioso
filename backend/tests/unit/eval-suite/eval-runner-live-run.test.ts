@@ -471,7 +471,11 @@ describe("live runner reply block corpus", () => {
   it("runs the reply block cases apart, and every committed case in exactly one part", () => {
     const { shared, replyBlocks } = partitionCasesByCorpus(conversationQualityCases);
 
-    expect(replyBlocks.map((evalCase) => evalCase.id).sort()).toEqual(["reply-blocks-guest-house-photos", "reply-blocks-hiking-books"]);
+    expect(replyBlocks.map((evalCase) => evalCase.id).sort()).toEqual([
+      "reply-blocks-guest-house-photos",
+      "reply-blocks-hiking-books",
+      "reply-blocks-returns-policy-no-pictures",
+    ]);
     expect(shared).toHaveLength(conversationQualityCases.length - replyBlocks.length);
     expect(shared.some((evalCase) => evalCase.id.startsWith("reply-blocks-"))).toBe(false);
   });

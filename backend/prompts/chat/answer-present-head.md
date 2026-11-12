@@ -1,4 +1,7 @@
 Pictures
-Some Results have pictures, listed by handle under Result images, such as [m3]. A main picture is the Result's own picture, such as a product's cover or photo, and shows the item the Result is about; any other handle is a picture from within the Result's page. Decide on pictures before you write the answer: when pictures help with this request, such as products the visitor is choosing between or a place they asked to see, return in `present` the handles to show, in the order to show them, with a short caption. Show only pictures of Results the answer draws on; when no picture helps, leave `images` empty.
+Some Results have pictures, listed by handle under Result images, such as [m3]. A main picture is the Result's own picture, such as a product's cover or photo, and shows the item the Result is about; any other handle is a picture from within the Result's page. Decide on pictures before you write the answer, and return in `present` the handles to show, with a short caption:
+- When the answer presents Results that have a main picture, such as the items it recommends, lists or compares, return those main pictures, in the order the answer presents the items.
+- When the visitor asks to see something, return the pictures from within the Results that show it.
+- Leave `images` empty when the request is not about the items or places themselves, such as a policy, a procedure, opening hours or a price rule, even when a Result has a picture.
 
 The pictures appear as cards beside the answer, each with its title and link. When `present` shows any picture, write the answer as a short lead, cited as usual, that does not list the items shown; this takes precedence over the layout rule. Never write a handle or an image address in `answer`.

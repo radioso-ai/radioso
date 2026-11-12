@@ -3,7 +3,8 @@ import type { ConversationQualityDocument } from "./corpus.js";
 
 /**
  * Reply block fixtures (#1763): five product pages of an invented bookshop, each with its cover
- * as the document's primary image, and one guest house page whose photos sit inside its text.
+ * as the document's primary image, the bookshop's returns page with a picture of its own, and
+ * one guest house page whose photos sit inside its text.
  * The runner seeds their `document_images` rows itself once the corpus is processed, as image
  * capture would leave them; an inline photo is anchored to the page's first chunk.
  */
@@ -24,6 +25,7 @@ export const HIKING_BOOK_DOC_IDS = [
   "22222222-2222-4222-8222-222222222215",
 ] as const;
 export const GUEST_HOUSE_DOC_ID = "22222222-2222-4222-8222-222222222216";
+export const RETURNS_POLICY_DOC_ID = "22222222-2222-4222-8222-222222222217";
 
 const hikingBooks = [
   { title: "A Field Guide to Alpine Flowers", slug: "alpine-flowers", pages: 240, price: "€24", about: "identifying the wildflowers met on mountain trails, with a chapter on each altitude zone" },
@@ -57,6 +59,18 @@ export const replyBlockDocuments: ConversationQualityDocument[] = [
       "Check-in is from 3 pm. Write to bookings@stay.example to book a room.",
     ].join("\n"),
   },
+  {
+    id: RETURNS_POLICY_DOC_ID,
+    title: "Returns and Refunds",
+    metadata: { sourceUrl: "https://shop.example/help/returns" },
+    content: [
+      "Returns and Refunds",
+      "",
+      "You can return a book within 14 days of delivery for a full refund, as long as it is unread and in its original condition.",
+      "Start a return by writing to returns@shop.example with your order number; we send a prepaid return label within two working days.",
+      "Refunds go back to the original payment method within five working days of the book reaching us.",
+    ].join("\n"),
+  },
 ];
 
 export const replyBlockImages: Record<string, ReplyBlockFixtureImage[]> = {
@@ -67,6 +81,13 @@ export const replyBlockImages: Record<string, ReplyBlockFixtureImage[]> = {
     width: 800,
     height: 1200,
   }]])),
+  [RETURNS_POLICY_DOC_ID]: [{
+    role: "primary",
+    sourceUrl: "https://shop.example/images/returns-parcel.jpg",
+    alt: "A parcel with a return label",
+    width: 1200,
+    height: 630,
+  }],
   [GUEST_HOUSE_DOC_ID]: [
     { role: "inline", sourceUrl: "https://stay.example/photos/farmhouse.jpg", alt: "The stone farmhouse from the lane", width: 1600, height: 1067 },
     { role: "inline", sourceUrl: "https://stay.example/photos/bedroom.jpg", alt: "A bedroom with a view over the valley", width: 1600, height: 1067 },
@@ -101,6 +122,18 @@ export const replyBlockCases: ConversationQualityCase[] = [
     clientContextCapabilities: replyBlocksCapabilities,
     assertions: [
       { type: "reply_block", layout: "grid" },
+      { type: "answer_excludes_image_url" },
+    ],
+  },
+  {
+    id: "reply-blocks-returns-policy-no-pictures",
+    name: "A question about a policy gets no pictures, even when the policy page has one",
+    description: "A shopper asks how returns work. The returns page has a main picture, but the question is about the policy, not about items or places, so the reply carries no block.",
+    tags: ["reply-blocks"],
+    query: "How do I return a book I ordered?",
+    clientContextCapabilities: replyBlocksCapabilities,
+    assertions: [
+      { type: "no_reply_block" },
       { type: "answer_excludes_image_url" },
     ],
   },

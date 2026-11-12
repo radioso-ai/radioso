@@ -38,5 +38,6 @@ export {
   HIKING_BOOK_DOC_IDS,
   replyBlockImages,
   replyBlocksCapabilities,
+  RETURNS_POLICY_DOC_ID,
   type ReplyBlockFixtureImage,
 } from "./replyBlockCases.js";

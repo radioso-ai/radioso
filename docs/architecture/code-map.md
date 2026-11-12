@@ -2455,7 +2455,7 @@ knows nothing about what a facet is: extraction arrives as an injected port,
 registered through application composition. With no extractor registered
 neither path below is built, so queued jobs stay durable rather than being
 drained into a no-op. Eligibility for a job is decided once, at enqueue time,
-by `isEligibleForFacetExtraction` in the Chat module (`chatSessionPreparer.ts`)
+by `isEligibleForFacetExtraction` in the Chat module (`facetExtractionEligibility.ts`)
 — the same predicate Audience Pulse reads history with, restated as a
 write-time check rather than duplicated.
 
@@ -2595,7 +2595,9 @@ mapping.
 Primary paths:
 
 - `frontend/components/dashboard/README.md`
-- `frontend/app/`
+- `frontend/app/`; operator-session routes sit in `frontend/app/(workspace-app)/`,
+  whose layout mounts the auth and workspace providers, and visitor surfaces
+  (embed, public chat) sit outside it
 - `frontend/components/dashboard/`
 - `frontend/components/chat/`
 - `frontend/components/auth/`

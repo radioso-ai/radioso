@@ -59,7 +59,7 @@ export function ResetPasswordScreen({ token, email: initialEmail }: { token?: st
       // Resetting a password only happens for an account that already
       // exists — never a genuinely first-run workspace — so the Inbox is
       // the normal landing surface here, same as any other authenticated
-      // entry (see app/page.tsx).
+      // entry (see app/(workspace-app)/page.tsx).
       router.replace(buildDashboardHref(response.accountId, {
         section: 'activity',
         workspaceId: response.workspaceId,

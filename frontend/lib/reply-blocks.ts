@@ -1,6 +1,6 @@
 import type { ClientContextCapabilities, ReplyBlock } from './api-types'
 
-type ReplyItem = ReplyBlock['items'][number]
+export type ReplyItem = ReplyBlock['items'][number]
 
 /** The item list layouts the chat draws. The server sends any other layout as `list`. */
 const DRAWN_ITEM_LIST_LAYOUTS = ['carousel', 'grid'] as const
@@ -17,6 +17,15 @@ export const withReplyBlocksCapability = (
   ...hostCapabilities,
   'reply.blocks': { item_list: { layouts: [...DRAWN_ITEM_LIST_LAYOUTS] } },
 })
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+
+/**
+ * Whether the chat draws a block. History returns stored blocks of every kind, including kinds
+ * newer than this chat, and the chat leaves those out rather than fail on them.
+ */
+export const isRenderableReplyBlock = (block: unknown): block is ReplyBlock =>
+  isRecord(block) && block.type === 'item_list' && Array.isArray(block.items)
 
 const isDrawnLayout = (layout: string): layout is (typeof DRAWN_ITEM_LIST_LAYOUTS)[number] =>
   (DRAWN_ITEM_LIST_LAYOUTS as readonly string[]).includes(layout)

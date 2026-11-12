@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ReplyBlock } from '@/lib/api-types'
-import { itemOpenUrl, pictureFrameOf, resolveReplyLayout, withReplyBlocksCapability } from '@/lib/reply-blocks'
-
-type ReplyItem = ReplyBlock['items'][number]
+import {
+  isRenderableReplyBlock,
+  itemOpenUrl,
+  pictureFrameOf,
+  resolveReplyLayout,
+  withReplyBlocksCapability,
+  type ReplyItem,
+} from '@/lib/reply-blocks'
 
 const item = (actions: ReplyItem['actions']): ReplyItem => ({ key: 'item-1', title: 'Garden room', actions })
 
@@ -54,5 +59,12 @@ describe('reply blocks', () => {
     expect(pictureFrameOf(blockOf([640, 480], [1200, 630]))).toBe('landscape')
     expect(pictureFrameOf(blockOf([640, 960], [640, 480]))).toBe('square')
     expect(pictureFrameOf(blockOf(null))).toBe('square')
+  })
+
+  it('draws an item list and leaves out a block of any kind it does not know', () => {
+    expect(isRenderableReplyBlock(blockOf([640, 960]))).toBe(true)
+    expect(isRenderableReplyBlock({ type: 'item_detail', id: 'block-2', item: { key: 'item-1', title: 'Garden room' } })).toBe(false)
+    expect(isRenderableReplyBlock({ type: 'item_list', id: 'block-3' })).toBe(false)
+    expect(isRenderableReplyBlock(null)).toBe(false)
   })
 })

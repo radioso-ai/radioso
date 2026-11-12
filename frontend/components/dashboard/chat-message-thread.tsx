@@ -8,6 +8,7 @@ import { VisitorImageReadings, type VisitorImageThreadConfig } from '@/component
 import { VisitorMessageBody } from '@/components/chat/visitor-message-body'
 import { InterruptedReplyBadge, OperatorReplySpeechBadge, SpokenMarker } from '@/components/chat/voice-markers'
 import { readVisitorImageInput } from '@/lib/visitor-image-input'
+import { isRenderableReplyBlock } from '@/lib/reply-blocks'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
@@ -793,7 +794,7 @@ export function ChatMessageThread({
                           </div>
                         )}
                       </div>
-                      {message.blocks?.map((block) => (
+                      {message.blocks?.filter(isRenderableReplyBlock).map((block) => (
                         <ItemListBlock
                           key={block.id}
                           block={block}

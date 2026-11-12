@@ -54,7 +54,8 @@ constructing ad hoc fetches.
   the script as `/radioso-embed.js` serves it.
 - `reply-blocks.ts`: the reply blocks the chat declares under
   `clientContextCapabilities["reply.blocks"]` (`item_list` as `carousel` or
-  `grid`), how it draws any other layout (as a list), the frame a block's
+  `grid`), which block kinds it draws (stored blocks of other kinds are left
+  out), how it draws any other layout (as a list), the frame a block's
   pictures share, and which item links it follows. `anonymous-chat-context.tsx`
   adds the declaration to the host page's capabilities on every request.
 - `privacy-notice.ts`: the agent's privacy notice on the visitor surfaces — which

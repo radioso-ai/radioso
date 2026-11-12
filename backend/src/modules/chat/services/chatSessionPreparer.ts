@@ -62,7 +62,7 @@ import type {
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { sensitiveSlotsAwaited } from "../../routines/public.js";
-import { storeTurnUserMessage } from "./turnUserMessage.js";
+import { isMessageOf, storeTurnUserMessage, type ExistingUserMessage } from "./turnUserMessage.js";
 import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/public.js";
 import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
 import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
@@ -329,21 +329,6 @@ interface PrepareChatSessionOptions {
    */
   existingUserMessage?: ExistingUserMessage;
 }
-
-interface ExistingUserMessage {
-  message: MessageRecord;
-  historyWindow: { maxMessages: number };
-}
-
-const isMessageOf = (
-  message: MessageRecord,
-  workspaceId: string,
-  conversation: ConversationRecord | null,
-): boolean =>
-  conversation !== null
-  && message.workspaceId === workspaceId
-  && message.conversationId === conversation.id
-  && message.role === "user";
 
 const historicalWorkbenchReplayBaselineBrand: unique symbol = Symbol("historicalWorkbenchReplayBaseline");
 

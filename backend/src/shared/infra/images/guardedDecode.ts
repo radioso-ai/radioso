@@ -1,4 +1,4 @@
-import sharp, { type Sharp } from "sharp";
+import sharp, { type Metadata, type Sharp } from "sharp";
 
 import { sniffImageType, type ImageSourceType } from "./imageSniff.js";
 import type { NormalizationSlots } from "./normalizationSlots.js";
@@ -27,10 +27,19 @@ type GuardedDecode<R> =
   | { readonly kind: "rejected"; readonly reason: DecodeRejection };
 
 /** The decoder's own name for each type it may read, so a file whose content disagrees with its magic bytes is refused. */
-const DECODED_FORMAT: Readonly<Record<ImageSourceType, string>> = {
-  "image/jpeg": "jpeg",
-  "image/png": "png",
-  "image/webp": "webp",
+const DECODED_FORMAT: Readonly<Record<ImageSourceType, { readonly format: string; readonly compression?: string }>> = {
+  "image/jpeg": { format: "jpeg" },
+  "image/png": { format: "png" },
+  "image/webp": { format: "webp" },
+  // A GIF decodes to its first frame only: no page count is asked for.
+  "image/gif": { format: "gif" },
+  // libvips reads AVIF through libheif, which reads HEIC too; the compression tells them apart.
+  "image/avif": { format: "heif", compression: "av1" },
+};
+
+const decodesAs = (type: ImageSourceType, metadata: Metadata): boolean => {
+  const expected = DECODED_FORMAT[type];
+  return metadata.format === expected.format && (expected.compression === undefined || metadata.compression === expected.compression);
 };
 
 const rejected = (reason: DecodeRejection): GuardedDecode<never> => ({ kind: "rejected", reason });
@@ -61,7 +70,7 @@ const decodeWithin = async <T extends ImageSourceType, R>(
   try {
     // The header alone: the size is checked here, against the same limit decoding then enforces.
     const metadata = await sharp(bytes, { limitInputPixels: false }).metadata();
-    if (metadata.format !== DECODED_FORMAT[type]) return rejected("unsupported_type");
+    if (!decodesAs(type, metadata)) return rejected("unsupported_type");
     if ((metadata.width ?? 0) * (metadata.height ?? 0) > maxInputPixels) return rejected("too_many_pixels");
     const open: OpenUprightImage = () => sharp(bytes, { limitInputPixels: maxInputPixels, failOn: "error" }).rotate();
     return { kind: "decoded", value: await encode(open, type) };

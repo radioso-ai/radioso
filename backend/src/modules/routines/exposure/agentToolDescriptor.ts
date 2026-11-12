@@ -46,7 +46,7 @@ const propertyFor = (slotType: RoutineSlotType): Pick<AgentToolInputProperty, "t
   }
 };
 
-type DescriptorSource = Pick<RoutineDefinition, "lineageId" | "slots"> & {
+type DescriptorSource = Pick<RoutineDefinition, "lineageId" | "slots" | "consents"> & {
   exposure: NonNullable<RoutineDefinition["exposure"]>;
 };
 
@@ -55,9 +55,16 @@ type DescriptorSource = Pick<RoutineDefinition, "lineageId" | "slots"> & {
  * complete input contract (a step that references an undeclared slot already
  * fails validation), so no inference is needed. A routine with no slots is a
  * tool with an empty object schema.
+ *
+ * A slot a consent covers is left out (#1544): only the visitor can consent to it, a
+ * calling agent's channel never asks, and the engine refuses its value from a call, so
+ * offering it would only invite input that is dropped.
  */
 export const buildAgentToolDescriptor = (definition: DescriptorSource): AgentToolDescriptor => {
-  const slots = [...definition.slots].sort((left, right) => left.ordinal - right.ordinal);
+  const covered = new Set((definition.consents ?? []).flatMap((consent) => consent.slotKeys));
+  const slots = [...definition.slots]
+    .filter((slot) => !covered.has(slot.key))
+    .sort((left, right) => left.ordinal - right.ordinal);
   const properties: Record<string, AgentToolInputProperty> = {};
   for (const slot of slots) {
     properties[slot.key] = {

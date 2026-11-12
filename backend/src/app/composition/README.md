@@ -35,7 +35,9 @@ composition calls them and assembles the result.
   retention window (`ConversationDataRetentionRule`), run on its own schedule
   rather than any workspace's conversation window — a summary or routine state
   that outlives its conversation, the raw copy of an email, or audit events
-  swept by age alone across every workspace. The retention sweep is a built-in
+  swept by age alone across every workspace. A rule may also read a workspace's
+  own window for proof kept past its conversation, as the routine consent
+  record and wording rules do. The retention sweep is a built-in
   periodic task (`conversation-retention`), prepended to the
   `registerPeriodicTask` entries in `dependencies.ts`, so the poll worker's
   interval loop and the push worker's `/internal/tasks/periodic-tasks/:taskId/run`

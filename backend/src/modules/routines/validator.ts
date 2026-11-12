@@ -1,6 +1,7 @@
 import type { RoutineDefinition } from "./domain.js";
 import { collectContextVariableRefs, routineExposureToolNamePattern, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
 import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
+import { consentDiagnostics, safeConsentValidationMessages } from "./consentValidation.js";
 import { reservedRoutineToolNames } from "./exposure/reservedToolNames.js";
 import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
@@ -45,6 +46,7 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   declared_unused_slot: declaredUnusedSlotMessage,
   operator_notice_skill_unavailable: "An ending's operator notice is sent with a skill that is not one of this agent's enabled notify skills.",
   operator_notice_reply_to_slot_invalid: "An ending's operator notice sends replies to a field that is not one of this routine's email fields, or to one marked sensitive.",
+  ...safeConsentValidationMessages,
 };
 
 const replyToSlotInvalidMessage = (
@@ -79,6 +81,12 @@ export interface RoutineValidationContext {
   availableSkillNames?: ReadonlySet<string>;
   skillDescriptors?: ReadonlyMap<string, SkillAuthoringDescriptor>;
   availableContextVariables?: ReadonlyMap<string, { valueType: "string" | "json" }>;
+  /**
+   * The agent's default language. The consent rules (#1544) run only when it is given: authoring
+   * and the publish gate pass it, the compile path does not, so a published revision always
+   * compiles.
+   */
+  agentDefaultLocale?: string;
 }
 
 const slotReferencePattern = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
@@ -759,6 +767,10 @@ export const validateRoutineDefinition = (
         message: `attempt-limit-without-fallback: counter guard from "${transition.fromStep}" has no fallback or terminal handoff path.`,
       });
     }
+  }
+
+  if (context.agentDefaultLocale !== undefined) {
+    diagnostics.push(...consentDiagnostics(definition, context.agentDefaultLocale));
   }
 
   // Slice 3 seam: validate referenced action types against the action registry and

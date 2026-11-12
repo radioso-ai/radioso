@@ -1,12 +1,23 @@
-import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
+import type { ConversationRoutineStore, Routine, RoutineState } from "@radioso/conversation-contract";
 
 /**
  * `startedFrom` is the state the turn first read: the step it ran on, which can differ from the
  * one session preparation saw when another instance advanced the routine in between (#1543).
+ * `asksConsent` says whether the saved routine asks consent (#1544), so a withdrawal can close
+ * slots in the state; absent when the producer cannot tell, which persistence reads as asking.
  */
 export type CapturedRoutineTransition =
-  | { kind: "save"; state: RoutineState; startedFrom?: RoutineState }
+  | { kind: "save"; state: RoutineState; startedFrom?: RoutineState; asksConsent?: boolean }
   | { kind: "clear"; sessionId: string; startedFrom?: RoutineState };
+
+/**
+ * A save's `asksConsent` for routine `routineId` among the turn's `routines`; none when the turn was
+ * given no routines or this one is not among them, since only a known routine can say it asks none.
+ */
+export const asksConsentField = (routines: readonly Routine[] | undefined, routineId: string): { asksConsent?: boolean } => {
+  const routine = routines?.find((candidate) => candidate.id === routineId);
+  return routine ? { asksConsent: (routine.consents?.length ?? 0) > 0 } : {};
+};
 
 /**
  * The host-side embodiment of the command-capture model documented on
@@ -24,7 +35,12 @@ export class DeferredRoutineStore implements ConversationRoutineStore {
   private transition: CapturedRoutineTransition | null = null;
   private startedFrom: RoutineState | null | undefined;
 
-  constructor(private readonly inner: ConversationRoutineStore, private readonly startedMessageId?: string) {}
+  constructor(
+    private readonly inner: ConversationRoutineStore,
+    private readonly startedMessageId?: string,
+    /** The routines the turn runs, which tell persistence whether a saved routine asks consent. */
+    private readonly routines?: readonly Routine[],
+  ) {}
 
   async loadActive(input: { sessionId: string }): Promise<RoutineState | null> {
     const state = await this.inner.loadActive(input);
@@ -47,6 +63,7 @@ export class DeferredRoutineStore implements ConversationRoutineStore {
       kind: "save",
       state: state.startedMessageId || !this.startedMessageId ? state : { ...state, startedMessageId: this.startedMessageId },
       ...this.startedFromField(),
+      ...asksConsentField(this.routines, state.routineId),
     };
   }
 

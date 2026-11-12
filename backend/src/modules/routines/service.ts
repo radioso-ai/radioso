@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { badRequest, conflict, notFound, type AppError } from "../../shared/domain/errors.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import { DEFAULT_AGENT_LOCALE_FALLBACK } from "../../shared/domain/locale.js";
 import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import type { AuditEventInput, AuditPort } from "../audit/contracts/index.js";
 import { resolveAvailableContextVariables, type AgentContextVariableEnablement } from "../context-variables/public.js";
@@ -57,8 +58,9 @@ export type RoutineDefinitionDeleteDraftResult =
   | { outcome: "conflict" };
 
 interface RoutineDefinitionServiceOptions {
+  /** The agent a routine belongs to; its default language is what consent wording is checked against (#1544). */
   agentRepository: {
-    findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<unknown>;
+    findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ assistantDefaultLocale: string | null } | null>;
   };
   repository: RoutineDefinitionRepositoryPort;
   actionCapabilities?: ActionCapabilityMap;
@@ -146,6 +148,10 @@ const draftDefinitionFromInput = (agentId: string, input: RoutineDefinitionDraft
   updatedAt: new Date(),
 });
 
+/** The language a routine's consents need wording in: the agent's default, or the shared fallback when it has none. */
+const agentDefaultLocaleOf = (agent: { assistantDefaultLocale: string | null }): string =>
+  agent.assistantDefaultLocale?.trim() ? agent.assistantDefaultLocale : DEFAULT_AGENT_LOCALE_FALLBACK;
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 const isUuid = (value: string): boolean => uuidPattern.test(value);
@@ -223,7 +229,7 @@ export class RoutineDefinitionService {
     agentId: string,
     input: RoutineDefinitionDraftAuthoringInput,
   ): Promise<RoutineDefinitionSaveResult> {
-    await this.requireAgent(workspaceId, agentId);
+    const agentDefaultLocale = await this.requireAgent(workspaceId, agentId);
     const draft = this.validateInput(input);
     // A retired, non-canonical row from a pre-cutover branched lineage can still occupy
     // (agent_id, name, version 1) — the identity a fresh create always takes — while being
@@ -242,7 +248,7 @@ export class RoutineDefinitionService {
     } catch (error) {
       throw translateRoutineDefinitionWriteConflict(error) ?? this.completionExportDestinationError(error, draft) ?? error;
     }
-    return this.savedRoutine(workspaceId, agentId, "routine_definition.create", saved);
+    return this.savedRoutine(workspaceId, agentId, "routine_definition.create", saved, agentDefaultLocale);
   }
 
   /**
@@ -269,7 +275,7 @@ export class RoutineDefinitionService {
     input: RoutineDefinitionDraftAuthoringInput,
     options: RoutineDefinitionWriteGuard = {},
   ): Promise<RoutineDefinitionSaveResult> {
-    await this.requireAgent(workspaceId, agentId);
+    const agentDefaultLocale = await this.requireAgent(workspaceId, agentId);
     // A caller's payload may omit a field the stored routine already carries a real value for
     // (see mergeDraftInputWithExisting); look the routine up first so an omission carries
     // forward instead of falling back to a schema default. A missing id is not a hard failure
@@ -287,7 +293,7 @@ export class RoutineDefinitionService {
       // here instead of letting the raw unique-violation escape as a 500.
       throw translateRoutineDefinitionWriteConflict(error) ?? this.completionExportDestinationError(error, draft) ?? error;
     }
-    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved);
+    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved, agentDefaultLocale);
   }
 
   /**
@@ -331,12 +337,12 @@ export class RoutineDefinitionService {
     id: string,
     enabled: boolean,
   ): Promise<RoutineDefinitionSaveResult> {
-    await this.requireAgent(workspaceId, agentId);
+    const agentDefaultLocale = await this.requireAgent(workspaceId, agentId);
     const saved = await this.options.repository.setEnabledWithAgentDraft(workspaceId, agentId, id, enabled);
     if (!saved) {
       throw notFound("Routine definition not found");
     }
-    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved);
+    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved, agentDefaultLocale);
   }
 
   async validate(
@@ -389,20 +395,22 @@ export class RoutineDefinitionService {
    * error: `persistPublished` is best-effort by its own contract (it never rejects), and
    * `recordAuthoringAudit` catches and logs rather than propagating, for the same reason and for
    * consistency with how `turnProvider.ts` treats this same embedding call as fire-and-forget on
-   * the live turn path.
+   * the live turn path. The reported diagnostics include the consent rules when the caller knows
+   * the agent's default language.
    */
   private async savedRoutine(
     workspaceId: string,
     agentId: string,
     eventType: AuditEventInput["eventType"],
     routine: RoutineDefinition,
+    agentDefaultLocale?: string,
   ): Promise<RoutineDefinitionSaveResult> {
     // Neither depends on the other's result, so they run concurrently rather than serially.
     await Promise.all([
       this.options.triggerEmbeddingService?.persistPublished({ workspaceId, agentId, routine }),
       this.recordAuthoringAudit(eventType, workspaceId, agentId, routine),
     ]);
-    return { routine, validation: validateRoutineDefinition(routine) };
+    return { routine, validation: validateRoutineDefinition(routine, agentDefaultLocale === undefined ? {} : { agentDefaultLocale }) };
   }
 
   /**
@@ -426,11 +434,13 @@ export class RoutineDefinitionService {
     return parsed.data;
   }
 
-  private async requireAgent(workspaceId: string, agentId: string): Promise<void> {
+  /** The agent's default language, once the agent is known to exist in the workspace. */
+  private async requireAgent(workspaceId: string, agentId: string): Promise<string> {
     const agent = await this.options.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!agent) {
       throw notFound("Agent not found");
     }
+    return agentDefaultLocaleOf(agent);
   }
 
   private async requireRoutine(agentId: string, id: string): Promise<RoutineDefinition> {
@@ -442,13 +452,21 @@ export class RoutineDefinitionService {
   }
 
   /**
-   * The workspace+agent-scoped half of serving validation: the skill catalog, the
-   * runtime-resolvable skill names the catalog does not enumerate, and the agent's context
-   * variables. Identical for every routine belonging to the same agent, so a caller validating
-   * several of an agent's routines in one pass (`validateManyForServing`) resolves this once and
-   * reuses it, instead of each routine independently repeating the same three reads.
+   * The workspace+agent-scoped half of serving validation: the agent's default language, the
+   * skill catalog, the runtime-resolvable skill names the catalog does not enumerate, and the
+   * agent's context variables. Identical for every routine belonging to the same agent, so a
+   * caller validating several of an agent's routines in one pass (`validateManyForServing`)
+   * resolves this once and reuses it, instead of each routine independently repeating the reads.
    */
   private async resolveServingContext(workspaceId: string, agentId: string): Promise<RoutineValidationContext> {
+    const [agent, catalogContext] = await Promise.all([
+      this.options.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId),
+      this.resolveCatalogContext(workspaceId, agentId),
+    ]);
+    return { ...catalogContext, ...(agent ? { agentDefaultLocale: agentDefaultLocaleOf(agent) } : {}) };
+  }
+
+  private async resolveCatalogContext(workspaceId: string, agentId: string): Promise<RoutineValidationContext> {
     if (!this.options.skillAuthoringCatalog) {
       return {};
     }

@@ -6609,6 +6609,72 @@
               "description"
             ],
             "additionalProperties": false
+          },
+          "consents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "slotKeys": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                  },
+                  "minItems": 1
+                },
+                "variants": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "locale": {
+                        "type": "string"
+                      },
+                      "body": {
+                        "type": "string"
+                      },
+                      "agreeLabel": {
+                        "type": "string"
+                      },
+                      "declineLabel": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "locale",
+                      "body",
+                      "agreeLabel",
+                      "declineLabel"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "minItems": 1
+                },
+                "onDecline": {
+                  "type": "string",
+                  "enum": [
+                    "continue",
+                    "handoff"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "slotKeys",
+                "variants",
+                "onDecline"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -7248,6 +7314,72 @@
                   "description"
                 ],
                 "additionalProperties": false
+              },
+              "consents": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "slotKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      },
+                      "minItems": 1
+                    },
+                    "variants": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "locale": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "agreeLabel": {
+                            "type": "string"
+                          },
+                          "declineLabel": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "locale",
+                          "body",
+                          "agreeLabel",
+                          "declineLabel"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "minItems": 1
+                    },
+                    "onDecline": {
+                      "type": "string",
+                      "enum": [
+                        "continue",
+                        "handoff"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "slotKeys",
+                    "variants",
+                    "onDecline"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -7324,7 +7456,13 @@
                     "exposure_tool_name_changed",
                     "exposure_requires_ungated_activation",
                     "operator_notice_skill_unavailable",
-                    "operator_notice_reply_to_slot_invalid"
+                    "operator_notice_reply_to_slot_invalid",
+                    "consent_slot_unknown",
+                    "consent_slot_not_sensitive",
+                    "consent_slot_covered_twice",
+                    "consent_key_duplicate",
+                    "consent_missing_default_variant",
+                    "consent_text_invalid"
                   ]
                 },
                 "location": {
@@ -7967,6 +8105,72 @@
               "description"
             ],
             "additionalProperties": false
+          },
+          "consents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "slotKeys": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                  },
+                  "minItems": 1
+                },
+                "variants": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "locale": {
+                        "type": "string"
+                      },
+                      "body": {
+                        "type": "string"
+                      },
+                      "agreeLabel": {
+                        "type": "string"
+                      },
+                      "declineLabel": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "locale",
+                      "body",
+                      "agreeLabel",
+                      "declineLabel"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "minItems": 1
+                },
+                "onDecline": {
+                  "type": "string",
+                  "enum": [
+                    "continue",
+                    "handoff"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "slotKeys",
+                "variants",
+                "onDecline"
+              ],
+              "additionalProperties": false
+            }
           },
           "id": {
             "type": "string",
@@ -8681,6 +8885,72 @@
                   "description"
                 ],
                 "additionalProperties": false
+              },
+              "consents": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "slotKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      },
+                      "minItems": 1
+                    },
+                    "variants": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "locale": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "agreeLabel": {
+                            "type": "string"
+                          },
+                          "declineLabel": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "locale",
+                          "body",
+                          "agreeLabel",
+                          "declineLabel"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "minItems": 1
+                    },
+                    "onDecline": {
+                      "type": "string",
+                      "enum": [
+                        "continue",
+                        "handoff"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "slotKeys",
+                    "variants",
+                    "onDecline"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -10691,6 +10961,72 @@
                   "description"
                 ],
                 "additionalProperties": false
+              },
+              "consents": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "slotKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      },
+                      "minItems": 1
+                    },
+                    "variants": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "locale": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "agreeLabel": {
+                            "type": "string"
+                          },
+                          "declineLabel": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "locale",
+                          "body",
+                          "agreeLabel",
+                          "declineLabel"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "minItems": 1
+                    },
+                    "onDecline": {
+                      "type": "string",
+                      "enum": [
+                        "continue",
+                        "handoff"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "slotKeys",
+                    "variants",
+                    "onDecline"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [

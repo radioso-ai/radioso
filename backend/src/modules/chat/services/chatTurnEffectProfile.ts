@@ -23,6 +23,7 @@ import {
 } from "../../directives/public.js";
 import { callerKindForSourceChannel } from "../../../shared/domain/conversationSource.js";
 import { InMemoryRoutineStore } from "./routines/inMemoryRoutineStore.js";
+import { SessionRoutineConsentStore, type RoutineConsentSessionState } from "./routines/sessionRoutineConsentStore.js";
 
 const ephemeralConversation = (
   workspaceId: string,
@@ -226,10 +227,13 @@ export interface EphemeralChatTurnEffectProfile {
   directiveStateStore: DirectiveStateStore;
   routineStore(seed?: RoutineState | null): InMemoryRoutineStore;
   clarificationStore(seed?: PendingClarification | null): InMemoryClarificationStore;
+  /** The session's own consent records (#1544), seeded with what earlier turns carried. */
+  consentStore(seed?: RoutineConsentSessionState | null): SessionRoutineConsentStore;
   snapshot(input: { sessionId: string; routineStore: InMemoryRoutineStore }): {
     routineState: RoutineState | null;
     pendingClarification: PendingClarification | null;
     directiveState: DirectiveFiringState | null;
+    consents: RoutineConsentSessionState | null;
   };
 }
 
@@ -241,6 +245,7 @@ export const createEphemeralChatTurnEffectProfile = (
     input.directiveState ?? directiveStateFromHistory(history),
   );
   let clarificationStore: InMemoryClarificationStore | null = null;
+  let consentStore: SessionRoutineConsentStore | null = null;
   return {
     conversationRepository: createEphemeralConversationRepository(input.conversationId),
     messageRepository: createEphemeralMessageRepository(),
@@ -258,10 +263,15 @@ export const createEphemeralChatTurnEffectProfile = (
       clarificationStore = new InMemoryClarificationStore(seed);
       return clarificationStore;
     },
+    consentStore: (seed) => {
+      consentStore = new SessionRoutineConsentStore(seed);
+      return consentStore;
+    },
     snapshot: ({ sessionId, routineStore }) => ({
       routineState: routineStore.snapshot(sessionId),
       pendingClarification: clarificationStore?.snapshot(sessionId) ?? null,
       directiveState: directiveStateStore.snapshot(),
+      consents: consentStore?.snapshot() ?? null,
     }),
   };
 };

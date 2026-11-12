@@ -39,7 +39,7 @@ The AI stays suppressed until an operator explicitly hands the conversation back
 Handoff is request-driven. The AI does not silently decide to transfer a
 conversation to a human owner.
 
-There are three request triggers:
+There are four request triggers:
 
 - A routine reaches a `handoff` terminal. The terminal is authored in the
   routine, including cases where an LLM-selected transition chooses that branch,
@@ -50,6 +50,12 @@ There are three request triggers:
   visitor's reply still gives it nothing. The routine ends on that step without
   running its terminal or completion export, and the reason is `routine_stuck`.
   See [Conversational Routines](./architecture/conversational-routines.md#when-a-step-keeps-being-asked).
+- A visitor declines a routine's consent whose decline choice is `handoff`, or
+  leaves it unanswered after it was asked twice. The routine ends on its
+  consent without running its terminal or completion export, and the reason is
+  `routine_consent_declined`. The notice says the visitor declined consent and
+  carries none of the values that consent covers. See
+  [Authoring Routines](./authoring-routines.md#ask-for-consent-first).
 - An agent has `handoffOnRetrievalMiss` enabled and a turn produces a
   no-context grounded miss. This behavior is opt-in per agent and is off by
   default. The reason is `retrieval_miss`.
@@ -404,7 +410,7 @@ kind.
 
 | `kind` | What happened | Fields it fills |
 |---|---|---|
-| `handoff_requested` | The agent asked for a person | `handoffReason` (`routine_handoff`, `retrieval_miss`) |
+| `handoff_requested` | The agent asked for a person | `handoffReason` (`routine_handoff`, `routine_stuck`, `routine_consent_declined`, `retrieval_miss`) |
 | `claimed` | A teammate took the conversation, directly or by replying | `actor` |
 | `reassigned` | A teammate handed it to someone, themselves included | `actor`, `subject` (the new owner), `from` (the previous owner; `null` for a handoff nobody had claimed) |
 | `handed_back` | A teammate handed it back to the agent | `actor` |

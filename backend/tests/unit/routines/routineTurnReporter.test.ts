@@ -202,6 +202,29 @@ describe("createRoutineTurnReporter sensitive slots (#1543)", () => {
   });
 });
 
+describe("createRoutineTurnReporter on a consent step (#1544)", () => {
+  // The compiler puts a consent step before ask_contact, whose company slot the consent covers.
+  const withConsent: Routine = {
+    ...bookDemo,
+    slots: bookDemo.slots?.map((slot) => slot.key === "company" ? { ...slot, sensitivity: "sensitive" as const } : slot),
+    steps: [
+      ...bookDemo.steps,
+      { id: "consent:company_use:ask_contact", kind: "consent", consentKey: "company_use" },
+    ],
+    consents: [{ key: "company_use", slotKeys: ["company"], onDecline: "continue" }],
+  };
+  const reporter = createRoutineTurnReporter([withConsent]);
+  const atGate = state({ path: ["ask_name", "consent:company_use:ask_contact"], variables: { name: "Ada" } });
+
+  it("reports a run waiting on a consent as open, asking for no field until the visitor answers it", () => {
+    expect(reporter.describe({ state: atGate })).toEqual({ name: "Book a demo", status: "active", pendingInput: [] });
+  });
+
+  it("names the sensitive slots the consent covers as awaited, since the reply to it may state one", () => {
+    expect(reporter.sensitiveSlotKeysAwaited(atGate)).toEqual(["company"]);
+  });
+});
+
 describe("createRoutineTurnReporter with exposed routines", () => {
   const exposed: Routine = {
     ...bookDemo,

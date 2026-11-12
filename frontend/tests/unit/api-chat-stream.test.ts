@@ -1,7 +1,32 @@
 import { describe, expect, it } from 'vitest'
 
 import { streamChatEvents } from '@/lib/api-chat-stream'
-import type { ChatStreamCompletion } from '@/lib/api-types'
+import type { ChatStreamBlock, ChatStreamCompletion, ReplyBlock } from '@/lib/api-types'
+
+const carousel = (id: string): ReplyBlock => ({
+  type: 'item_list',
+  id,
+  layout: 'carousel',
+  selection: 'none',
+  caption: 'Hiking guides in stock',
+  items: [{
+    key: 'item-1',
+    title: 'Ridge Walks of the North',
+    image: {
+      src: 'https://app.example/backend/api/v1/public/reply-images/image-1/640',
+      srcSet: 'https://app.example/backend/api/v1/public/reply-images/image-1/320 320w, https://app.example/backend/api/v1/public/reply-images/image-1/640 640w',
+      alt: 'Cover of Ridge Walks of the North',
+      width: 640,
+      height: 960,
+    },
+    actions: [{ type: 'open', url: 'https://shop.example/books/ridge-walks' }],
+  }],
+})
+
+const sse = (events: Array<[string, unknown]>) =>
+  new Response(events.map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`).join(''), {
+    headers: { 'content-type': 'text/event-stream' },
+  })
 
 describe('streamChatEvents', () => {
   it('preserves ownership acknowledgements from done events', async () => {
@@ -71,5 +96,46 @@ describe('streamChatEvents', () => {
     const result = await streamChatEvents(response, {})
 
     expect(result.debug).toEqual(completion.debug)
+  })
+
+  it('hands each reply block over as it arrives and keeps them for the completion', async () => {
+    const block = carousel('block-1')
+    const blocks: ChatStreamBlock[] = []
+    let donePayload: ChatStreamCompletion | undefined
+
+    const result = await streamChatEvents(sse([
+      ['chunk', { text: 'Here are two guides.' }],
+      ['block', { conversationId: 'conversation-1', assistantMessageId: 'assistant-1', block }],
+      ['done', { conversationId: 'conversation-1', assistantMessageId: 'assistant-1', answer: 'Here are two guides.' }],
+    ]), {
+      onBlock: (payload) => blocks.push(payload),
+      onDone: (payload) => {
+        donePayload = payload
+      },
+    })
+
+    expect(blocks).toEqual([{ conversationId: 'conversation-1', assistantMessageId: 'assistant-1', block }])
+    expect(donePayload?.blocks).toEqual([block])
+    expect(result.blocks).toEqual([block])
+  })
+
+  it('takes the blocks the done event repeats over the ones streamed before it', async () => {
+    const streamed = carousel('block-1')
+    const final = carousel('block-2')
+
+    const result = await streamChatEvents(sse([
+      ['block', { block: streamed }],
+      ['done', { conversationId: 'conversation-1', answer: 'Here they are.', blocks: [final] }],
+    ]), {})
+
+    expect(result.blocks).toEqual([final])
+  })
+
+  it('leaves blocks out of an answer that has none', async () => {
+    const result = await streamChatEvents(sse([
+      ['done', { conversationId: 'conversation-1', answer: 'We open at nine.' }],
+    ]), {})
+
+    expect(result).not.toHaveProperty('blocks')
   })
 })

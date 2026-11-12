@@ -8,6 +8,7 @@ import type {
   ChatSuggestion,
   ChatUserInputMetadata,
   Citation,
+  ReplyBlock,
   SkillStreamPayload,
 } from '@/lib/api'
 
@@ -22,6 +23,8 @@ export interface ChatMessage {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  /** The reply's blocks, such as picture cards, shown under its text. */
+  blocks?: ReplyBlock[]
   answerFeedback?: AnswerFeedbackState
   answerFeedbackEntries?: AnswerFeedbackEntry[]
   activitySummary?: ActivitySummary
@@ -80,6 +83,7 @@ export const toChatMessagesFromTurns = (
       citations: message.citations,
       answerSegments: toPublicAnswerSegments(message.answerSegments),
       suggestions: stripPublicSuggestionCitations(message.suggestions),
+      blocks: message.blocks,
       answerFeedback: message.role === 'assistant'
         ? resolveOwnFeedback(message.answerFeedbackEntries, chatSessionId)
         : undefined,

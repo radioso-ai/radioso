@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 
 import { AssistantIdentityLine, type AssistantIdentity } from '@/components/chat/assistant-identity'
+import { ItemListBlock } from '@/components/chat/item-list-block'
 import { InterruptedReplyBadge, OperatorReplySpeechBadge, SpokenMarker } from '@/components/chat/voice-markers'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +39,7 @@ import type {
   ChatSuggestion,
   ChatUserInputMetadata,
   Citation,
+  ReplyBlock,
   SkillDisplayMetadata,
   SkillStreamPayload,
 } from '@/lib/api'
@@ -118,6 +120,8 @@ export interface ChatThreadMessage {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  /** An assistant reply's blocks, such as picture cards, shown under its text. */
+  blocks?: ReplyBlock[]
   answerFeedback?: AnswerFeedbackState
   answerFeedbackEntries?: AnswerFeedbackEntry[]
   persistedAssistantMessageId?: string
@@ -820,6 +824,18 @@ export function ChatMessageThread({
                           </div>
                         )}
                       </div>
+                      {message.blocks?.map((block) => (
+                        <ItemListBlock
+                          key={block.id}
+                          block={block}
+                          transformHref={assistantLinkUtmEnabled ? (href) => appendAssistantLinkUtm(href, assistantAvatarLabel) : undefined}
+                          onOpen={(href) => trackAssistantLinkClick({
+                            linkType: 'assistant_url',
+                            destinationUrl: href,
+                            assistantMessageId: message.persistedAssistantMessageId ?? message.id,
+                          })}
+                        />
+                      ))}
                       {showReceipt && groupInfo.skill ? (
                         <SkillReceiptCard skill={groupInfo.skill} theme={theme} copy={copy} />
                       ) : null}

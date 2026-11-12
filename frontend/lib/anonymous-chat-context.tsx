@@ -41,6 +41,7 @@ import {
 } from '@/lib/api'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { choosePrivacyNotice, type ShownPrivacyNotice } from '@/lib/privacy-notice'
+import { withReplyBlocksCapability } from '@/lib/reply-blocks'
 import {
   getLatestAssistantMessage,
   stripPublicSuggestionCitations,
@@ -239,7 +240,7 @@ export function AnonymousChatProvider({
   consumeSessionHandoff,
   localeOverride,
   pageContext,
-  clientContextCapabilities,
+  clientContextCapabilities: hostCapabilities,
   resolveSignedIdentity,
   onAnalyticsEvent,
   children,
@@ -254,6 +255,7 @@ export function AnonymousChatProvider({
   onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
   children: ReactNode
 }) {
+  const clientContextCapabilities = useMemo(() => withReplyBlocksCapability(hostCapabilities), [hostCapabilities])
   const [effectivePublicChatToken, setEffectivePublicChatToken] = useState(() => readStoredEffectivePublicChatToken(token) ?? token)
   const publicChatTokenRef = useRef(effectivePublicChatToken)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -688,6 +690,7 @@ export function AnonymousChatProvider({
                       citations: [],
                       answerSegments: [],
                       suggestions: [],
+                      blocks: undefined,
                       status: 'complete' as const,
                     }
                   : message,
@@ -706,6 +709,7 @@ export function AnonymousChatProvider({
                 citations: completion.citations,
                 answerSegments: toPublicAnswerSegments(completion.answerSegments),
                 suggestions: stripPublicSuggestionCitations(completion.suggestions),
+                blocks: completion.blocks,
                 activitySummary: completion.debug?.activitySummary,
                 activityTrace: completion.debug?.activityTrace,
                 skill: completion.skill ?? message.skill,
@@ -744,6 +748,7 @@ export function AnonymousChatProvider({
                 citations: assistantMessage.citations,
                 answerSegments: toPublicAnswerSegments(assistantMessage.answerSegments),
                 suggestions: stripPublicSuggestionCitations(assistantMessage.suggestions),
+                blocks: assistantMessage.blocks,
                 answerFeedback: assistantMessage.answerFeedback,
                 answerFeedbackEntries: assistantMessage.answerFeedbackEntries,
                 activitySummary: assistantMessage.activitySummary,
@@ -878,6 +883,15 @@ export function AnonymousChatProvider({
                   )
                   setIsLoading(false)
                 },
+                onBlock: ({ block }) => {
+                  setMessages((prev) =>
+                    prev.map((message) =>
+                      message.id === assistantMessageId
+                        ? { ...message, blocks: [...(message.blocks ?? []).filter((shown) => shown.id !== block.id), block] }
+                        : message,
+                    ),
+                  )
+                },
                 onDone: (completion) => {
                   didComplete = true
                   applyCompletion(assistantMessageId, completion)
@@ -979,6 +993,7 @@ export function AnonymousChatProvider({
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
                 suggestions: completion.suggestions,
+                blocks: completion.blocks,
                 debug: completion.debug,
               })
             }
@@ -1004,6 +1019,7 @@ export function AnonymousChatProvider({
               citations: completion.citations,
               answerSegments: completion.answerSegments,
               suggestions: completion.suggestions,
+              blocks: completion.blocks,
               debug: completion.debug,
             })
           }

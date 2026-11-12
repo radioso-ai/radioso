@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import {
   defaultAgentId,
+  defaultPublishedRevisionId,
   installDashboardApiMocks,
   nowIso,
   seedDashboardStorage,
@@ -75,7 +76,7 @@ const mockPhotoBackend = async (
     },
   });
 
-  await page.route(/\/backend\/api\/v1\/assistant\/images\?/, async (route) => {
+  await page.route(/\/backend\/api\/v1\/agents\/[^/]+\/test-executions\/[^/]+\/images$/, async (route) => {
     const form = route.request().postDataBuffer()?.toString("latin1") ?? "";
     uploads.push({
       url: route.request().url(),
@@ -131,7 +132,7 @@ test("an operator attaches a photo in Test Chat, and the transcript shows it wit
 
   await expect(page.getByText("Here are three farmhouses like it.").first()).toBeVisible();
   // Read in the operator's browser language, as a visitor's photo is read in the visitor's.
-  expect(backend.uploads).toEqual([{ url: expect.stringContaining(`/assistant/images?agentId=${defaultAgentId}`), multipart: true, locale: "en-US" }]);
+  expect(backend.uploads).toEqual([{ url: expect.stringContaining(`/agents/${defaultAgentId}/test-executions/${executionId}/images`), multipart: true, locale: "en-US" }]);
   expect(backend.sends).toEqual([{ message: typedText, imageIds: [imageId] }]);
   // The operator's bubble holds the photo and what they typed, never the reading the turn ran on.
   const thumbnails = page.getByTestId("visitor-image-thumbnails");
@@ -179,4 +180,70 @@ test("Test Chat says why it offers no photos when the agent's chat model cannot 
 
   await expect(page.getByText("Photos are on, but this agent’s chat model can’t read them.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Attach photo" })).toHaveCount(0);
+});
+
+/**
+ * The public chat link of the agent, with nothing sent yet: whether it offers photos is what the
+ * backend decides from the agent's published revision (`publishedPhotos`).
+ */
+const publicToken = "public-token-test-chat-photos";
+const mockPublicChatLink = async (page: Page, backend: { publishedPhotos: boolean }) => {
+  const theme = { brand: "#0f172a", brandText: "#f8fafc", surface: "#ffffff", text: "#0f172a" };
+  await page.route(`**/backend/api/v1/public/chat/${publicToken}**`, async (route) => {
+    const { pathname } = new URL(route.request().url());
+    const common = { workspaceName: "Acme", assistantAvatarUrl: null, assistantLinkUtmEnabled: true, acceptsImages: backend.publishedPhotos, theme, intakeActions: [], assistantBootstrapActive: false };
+    if (pathname.endsWith("/sessions") && route.request().method() === "POST") {
+      await route.fulfill({ json: {
+        ...common, agentId: defaultAgentId, agentName: "Marta", publicChatToken: publicToken, publicSessionId: "33333333-3333-4333-8333-333333333333",
+        publicSessionToken: "public-session-token", expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(), resumeToken: "resume-token",
+        resumeExpiresAt: new Date(Date.now() + 120 * 60_000).toISOString(),
+      } });
+      return;
+    }
+    if (route.request().method() === "GET") {
+      await route.fulfill({ json: { ...common, citationDisplayEnabled: true, conversations: [], total: 0, nextCursor: null, hasMore: false } });
+      return;
+    }
+    await route.continue();
+  });
+};
+
+test("photos a draft turns on are tried in Test Chat at once, and reach the public chat link once published", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const agentUpdates: Array<{ visitorImagesEnabled?: boolean }> = [];
+  await installDashboardApiMocks(page, { agentUpdates });
+  // What the backend decides from the revisions: the switch is a draft change until it is published.
+  const backend = { publishedPhotos: false };
+  const draftPhotos = () => agentUpdates.some((update) => update.visitorImagesEnabled === true);
+  await page.route(/\/backend\/api\/v1\/agents\/[^/]+\/revision-state$/, async (route) => {
+    await route.fulfill({ json: {
+      agentId: defaultAgentId,
+      status: draftPhotos() && !backend.publishedPhotos ? "draft_dirty" : "draft_clean",
+      draft: { generation: draftPhotos() ? 2 : 1, basePublishedRevisionId: defaultPublishedRevisionId, updatedAt: nowIso },
+      publishedRevision: { id: defaultPublishedRevisionId, label: "v1", kind: "published", versionNumber: 1, createdAt: nowIso, publishedAt: nowIso },
+      canPublish: true,
+      proactiveGreetingEnabled: false,
+    } });
+  });
+  await mockPublicChatLink(page, backend);
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`);
+  await page.getByRole("switch", { name: "Let visitors send photos" }).click();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect.poll(draftPhotos).toBe(true);
+  await expect(page.getByText("Visitors get a change when you publish; Test Chat tries it first.")).toBeVisible();
+  await expect(page.getByText("Draft changes")).toBeVisible();
+
+  await page.goto(testChatUrl);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByRole("textbox")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Attach photo" })).toHaveCount(0);
+
+  // The operator publishes the draft; the public link reads the published switch when it loads.
+  backend.publishedPhotos = true;
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
 });

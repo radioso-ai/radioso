@@ -163,4 +163,17 @@ describeDb("Test Chat photos on Postgres", () => {
     await expect(repository.historyNamesImage({ workspaceId: randomUUID(), agentId, executionId, imageId: image })).resolves.toBeNull();
     await expect(repository.historyNamesImage({ workspaceId, agentId: randomUUID(), executionId, imageId: image })).resolves.toBeNull();
   });
+
+  it("reads the photo switch each side's revision holds, and nothing for another agent's test", async () => {
+    const { repository } = testChat();
+    const { executionId } = await newTest(repository);
+    const switchedId = randomUUID();
+    await database.query("INSERT INTO agent_revisions (id,agent_id,workspace_id,snapshot,source_draft_generation) VALUES ($1,$2,$3,$4::jsonb,1)", [switchedId, agentId, workspaceId, JSON.stringify({ ...snapshot, visitorImagesEnabled: true })]);
+    const switched = randomUUID();
+    await repository.create({ id: switched, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: switched, sides: [{ id: randomUUID(), executionId: switched, revision: { ...revision, id: switchedId }, conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+
+    await expect(repository.revisionPhotoSwitches({ workspaceId, agentId, executionId })).resolves.toEqual([undefined]);
+    await expect(repository.revisionPhotoSwitches({ workspaceId, agentId, executionId: switched })).resolves.toEqual([true]);
+    await expect(repository.revisionPhotoSwitches({ workspaceId, agentId: randomUUID(), executionId })).resolves.toBeNull();
+  });
 });

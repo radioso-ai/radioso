@@ -216,6 +216,17 @@ describe("VisitorImageService claim, bind and release", () => {
     await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [mine.id] })).resolves.toBeDefined();
   });
 
+  it("asks whether the revision under test takes photos when a test names it, and the published revision otherwise", async () => {
+    const { service, upload, availability } = harness();
+    const image = await upload();
+
+    await service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id], revision: { visitorImagesEnabled: true } });
+    expect(availability.forAgent).toHaveBeenLastCalledWith({ workspaceId: WORKSPACE, agentId: AGENT, revision: { visitorImagesEnabled: true } });
+    const live = await upload();
+    await service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [live.id] });
+    expect(availability.forAgent).toHaveBeenLastCalledWith({ workspaceId: WORKSPACE, agentId: AGENT });
+  });
+
   it("refuses photos once the agent no longer takes them, claiming none", async () => {
     const { service, upload, availability } = harness();
     const image = await upload();

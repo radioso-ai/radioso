@@ -167,7 +167,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       webhookExportsEnabled: z.boolean(),
       handoffOnRetrievalMiss: z.boolean(),
       visitorImagesEnabled: z.boolean().openapi({
-        description: "Whether visitors and API callers may attach photos to a message. The agent's chat model reads each photo at upload, so this takes effect only when that model reads images.",
+        description: "Whether visitors and API callers may attach photos to a message. This is the draft's value: visitors and API callers get it when the agent is published, and Test Chat tests it before then. The agent's chat model reads each photo at upload, so it takes effect only when that model reads images.",
       }),
       contactRequestDelivery: AgentContactRequestDeliverySchema,
       theme: z.object({
@@ -216,7 +216,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "AgentDetail",
     ConversationAgentSchema.extend({
       chatModelReadsImages: z.boolean().openapi({
-        description: "Computed, read-only: whether the model the agent answers with reads images. It is decided from the agent's `chatModelOverride`, the workspace's chat model and the plan, as a turn is, and without touching keys. Photos reach visitors only when this is true and `visitorImagesEnabled` is on; it is true or false whatever `visitorImagesEnabled` says, and a model Radioso cannot vet (an `openai-compatible` endpoint, or one outside the catalogue) reads as false. A request cannot set it.",
+        description: "Computed, read-only: whether the model the agent answers with reads images. It is decided from the agent's `chatModelOverride`, the workspace's chat model and the plan, as a turn is, and without touching keys. Photos reach visitors only when this is true and the published revision has `visitorImagesEnabled` on; it is true or false whatever `visitorImagesEnabled` says, and a model Radioso cannot vet (an `openai-compatible` endpoint, or one outside the catalogue) reads as false. A request cannot set it.",
       }),
       voiceCallReadiness: VoiceCallReadinessSchema.optional().openapi({
         description: "Present for dashboard sessions: whether the agent's voice is ready for the website embed's calls switch.",
@@ -331,7 +331,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const AgentGreetingDraftSchema = registry.register("AgentGreetingDraft", z.object({ exactWordsEnabled: z.boolean(), exactContent: z.union([ExactContentItemSchema, z.null()]) }));
   const AgentGreetingValidationSchema = registry.register("AgentGreetingValidation", z.object({ ok: z.boolean(), issues: z.array(z.object({ path: z.string(), code: z.string(), message: z.string() })).optional() }));
   const AgentGreetingDraftResponseSchema = registry.register("AgentGreetingDraftResponse", z.object({ greeting: AgentGreetingDraftSchema, validation: AgentGreetingValidationSchema }));
-  const AgentRevisionDetailResponseSchema = registry.register("AgentRevisionDetailResponse", z.object({ revision: AgentRevisionSummarySchema.extend({ snapshotFormatVersion: z.literal(1), scope: z.object({ customInstructions: z.literal(true), directives: z.literal(true), routines: z.literal(true), contextVariableEnablements: z.literal(true), greeting: z.literal(true) }), dependencyWarnings: z.array(z.object({ code: z.string(), message: z.string() })), enabledContextVariableIds: z.array(z.string().uuid()), scopedChanges: z.object({ customInstruction: z.object({ before: z.string().nullable(), after: z.string().nullable(), changed: z.boolean() }), directives: z.array(z.object({ id: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), routines: z.array(z.object({ definitionId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), contextVariableEnablements: z.array(z.object({ contextVariableId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), greeting: z.object({ before: AgentGreetingDraftSchema, after: AgentGreetingDraftSchema, changed: z.boolean() }) }) }) }));
+  const AgentRevisionDetailResponseSchema = registry.register("AgentRevisionDetailResponse", z.object({ revision: AgentRevisionSummarySchema.extend({ snapshotFormatVersion: z.literal(1), scope: z.object({ customInstructions: z.literal(true), directives: z.literal(true), routines: z.literal(true), contextVariableEnablements: z.literal(true), greeting: z.literal(true) }), dependencyWarnings: z.array(z.object({ code: z.string(), message: z.string() })), enabledContextVariableIds: z.array(z.string().uuid()), scopedChanges: z.object({ customInstruction: z.object({ before: z.string().nullable(), after: z.string().nullable(), changed: z.boolean() }), directives: z.array(z.object({ id: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), routines: z.array(z.object({ definitionId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), contextVariableEnablements: z.array(z.object({ contextVariableId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), greeting: z.object({ before: AgentGreetingDraftSchema, after: AgentGreetingDraftSchema, changed: z.boolean() }), visitorImagesEnabled: z.object({ before: z.boolean().nullable(), after: z.boolean().nullable(), changed: z.boolean() }).describe("The photo switch the base release and this revision hold; null where a release holds none and follows the agent's setting.") }) }) }));
   const AgentRevisionPublishRequestSchema = registry.register("AgentRevisionPublishRequest", publishRevisionBodySchema);
   const AgentRevisionPublishResponseSchema = registry.register("AgentRevisionPublishResponse", z.object({ publication: z.object({ id: z.string().uuid(), revisionId: z.string().uuid(), publishedAt: z.string().datetime(), idempotentReplay: z.boolean(), revision: AgentRevisionSummarySchema }), state: AgentRevisionStateSchema }));
 
@@ -730,7 +730,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantBootstrapActive: z.boolean(),
       assistantAvatarUrl: z.string().nullable().optional(),
       acceptsImages: z.boolean().openapi({
-        description: "Whether the visitor may attach photos to a message: the agent has `visitorImagesEnabled` on and its chat model reads images. Upload with `POST /api/v1/public/chat/{token}/images`.",
+        description: "Whether the visitor may attach photos to a message: the agent's published revision has `visitorImagesEnabled` on and its chat model reads images. Upload with `POST /api/v1/public/chat/{token}/images`.",
       }),
       theme: z.object({
         brand: z.string(),

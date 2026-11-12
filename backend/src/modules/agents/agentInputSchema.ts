@@ -171,6 +171,7 @@ export const agentSettingProposalEffect = (key: AgentReviewedSettingsKey): {
   readonly lifecycle: "live" | "agent_draft";
   readonly reach: boolean;
 } => ({
-  lifecycle: key === "customInstruction" ? "agent_draft" : "live",
+  // The instruction and the photo switch are released with the agent's revisions; the rest is live.
+  lifecycle: key === "customInstruction" || key === "visitorImagesEnabled" ? "agent_draft" : "live",
   reach: key === "agentCardEnabled" || key === "publicAgentAccessEnabled",
 });

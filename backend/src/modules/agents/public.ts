@@ -130,6 +130,8 @@ export {
   equalScopedAuthoringSnapshots,
   parseAgentRevisionSnapshot,
   readAgentRevisionGreeting,
+  revisionVisitorImagesEnabled,
+  visitorImagesSwitchChanged,
   type AgentGreetingSnapshot,
   type AgentRevision,
   type AgentDraft,

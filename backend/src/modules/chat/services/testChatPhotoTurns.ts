@@ -9,8 +9,8 @@ import { claimVisitorImageTurn } from "./visitorImageTurn.js";
  * `release` lets the photos go when no turn took them.
  */
 export const createTestChatPhotoTurns = (visitorImages: VisitorImageTurnInput): TestExecutionPhotoTurnsPort => ({
-  claim: async ({ workspaceId, agentId, message, imageIds, owner }) => {
-    const turn = await claimVisitorImageTurn(visitorImages, { workspaceId, agentId, message, imageIds, imageOwner: owner });
+  claim: async ({ workspaceId, agentId, message, imageIds, owner, revision }) => {
+    const turn = await claimVisitorImageTurn(visitorImages, { workspaceId, agentId, message, imageIds, imageOwner: owner, imageRevision: revision });
     // `claimVisitorImageTurn` answers null only for a send without photos, which never comes here.
     if (!turn) throw new Error("test_chat_photo_turn_without_photos");
     return {

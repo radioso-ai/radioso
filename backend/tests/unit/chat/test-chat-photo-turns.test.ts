@@ -28,6 +28,7 @@ const send = {
   message: "  Something like this, near the coast ",
   imageIds: [IMAGE_A, IMAGE_B],
   owner: OPERATOR,
+  revision: { visitorImagesEnabled: true },
 };
 
 describe("Test Chat photo turns", () => {
@@ -36,7 +37,7 @@ describe("Test Chat photo turns", () => {
 
     const turn = await createTestChatPhotoTurns(visitorImages).claim(send);
 
-    expect(visitorImages.claim).toHaveBeenCalledWith({ workspaceId: "workspace-1", agentId: "agent-1", owner: OPERATOR, imageIds: [IMAGE_A, IMAGE_B] });
+    expect(visitorImages.claim).toHaveBeenCalledWith({ workspaceId: "workspace-1", agentId: "agent-1", owner: OPERATOR, imageIds: [IMAGE_A, IMAGE_B], revision: { visitorImagesEnabled: true } });
     expect(turn.message).toBe([
       "Something like this, near the coast",
       "<attached_photo index=\"1\">A stone farmhouse with a terracotta roof.</attached_photo>",

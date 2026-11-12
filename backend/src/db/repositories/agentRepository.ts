@@ -36,6 +36,7 @@ import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/
 import type { DB, Db, OwnerCommitHook } from "../../shared/infra/kysely/types.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import { withAgentDraftMutation } from "./agentDraftMutation.js";
+import { withAgentDraftProjection, writesAgentDraft } from "./agentDraftProjection.js";
 
 interface AgentRow {
   id: string;
@@ -714,6 +715,7 @@ export class AgentRepository implements AgentRepositoryPort {
           directives: [],
           routines: [],
           contextVariableEnablements: [],
+          visitorImagesEnabled: normalized.visitorImagesEnabled,
         }),
       }).onConflict((oc) => oc.column("agent_id").doNothing()).execute();
       return mapAgent({
@@ -802,11 +804,8 @@ export class AgentRepository implements AgentRepositoryPort {
       { extensions: this.surfaceExtensions, skillSettings: this.skillSettings },
     );
     const expectedUpdatedAt = options.expectedUpdatedAt ?? current.updatedAt;
-    if (input.customInstruction !== undefined) {
-      return withAgentDraftMutation(this.db, workspaceId, agentId, async (trx, snapshot) => ({
-        result: await this.updateLiveAgent(trx, agentId, workspaceId, normalized, expectedUpdatedAt, input.sourceScope !== undefined),
-        snapshot: { ...snapshot, customInstruction: normalized.customInstruction },
-      }));
+    if (writesAgentDraft(input)) {
+      return withAgentDraftProjection(this.db, { workspaceId, agentId }, { input, normalized }, (trx) => this.updateLiveAgent(trx, agentId, workspaceId, normalized, expectedUpdatedAt, input.sourceScope !== undefined));
     }
     return this.db.transaction().execute(async (trx) => {
       return this.updateLiveAgent(trx, agentId, workspaceId, normalized, expectedUpdatedAt, input.sourceScope !== undefined);
@@ -854,12 +853,8 @@ export class AgentRepository implements AgentRepositoryPort {
         ...lockedInput,
         surfaceSettings: mergeAgentSurfaceSettings(previous.surfaceSettings, lockedInput.surfaceSettings),
       }, { extensions: this.surfaceExtensions, skillSettings: this.skillSettings });
-      const agent = lockedInput.customInstruction !== undefined
-        ? await withAgentDraftMutation(trx, workspaceId, agentId, async (_draftTrx, snapshot) => ({
-            result: await this.updateLiveAgent(trx, agentId, workspaceId, normalized, previous.updatedAt, lockedInput.sourceScope !== undefined),
-            snapshot: { ...snapshot, customInstruction: normalized.customInstruction },
-          }))
-        : await this.updateLiveAgent(trx, agentId, workspaceId, normalized, previous.updatedAt, lockedInput.sourceScope !== undefined);
+      const writeLive = () => this.updateLiveAgent(trx, agentId, workspaceId, normalized, previous.updatedAt, lockedInput.sourceScope !== undefined);
+      const agent = writesAgentDraft(lockedInput) ? await withAgentDraftProjection(trx, { workspaceId, agentId }, { input: lockedInput, normalized }, writeLive) : await writeLive();
       await guard.onCommitted?.(trx, { agentId });
       return { outcome: "applied", previous, agent };
     });

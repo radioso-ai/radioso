@@ -1142,10 +1142,14 @@ An erasure deletes a conversation's photos and queues their objects to the
 `visitor_images.object_deletion` job in its transaction; a retention rule sweeps
 photos no message and no test carries after 24 hours. The agent flag is
 `visitorImagesEnabled`; the public session's and the conversation list's `acceptsImages` add whether the
-agent's chat model reads images. Test Chat sends photos through the same claim
-and binds them to the test (`test_execution_id`, migration `258`), since a test
-keeps its transcript apart from conversations; it takes photos exactly when the
-agent does, since the flag and the chat model are the agent's, not a revision's.
+agent's chat model reads images. The switch is part of an agent revision
+(`visitorImagesEnabled` on the snapshot; `modules/agents/agentRevisionVisitorImages.ts`):
+the agent's setting is the draft's value, publishing freezes it, and every live
+channel follows the published revision (`createVisitorImageAvailability`). Test
+Chat uploads through the test's own route and sends through the same claim with
+the switch of the test's revisions, and binds the photos to the test
+(`test_execution_id`, migration `258`), since a test keeps its transcript apart
+from conversations.
 
 Public surfaces and key files:
 
@@ -1154,7 +1158,7 @@ Public surfaces and key files:
 - `backend/src/modules/chat/services/visitorImageTurn.ts` (the door's claim, rendering, bind and release); `turnUserMessage.ts` (stores the user message, then calls `onUserMessageStored`)
 - `backend/src/app/http/routes/publicVisitorImageRoutes.ts` (`POST`/`GET /api/v1/public/chat/{token}/images[/{imageId}]`)
 - `backend/src/app/http/routes/assistantRoutes.ts` (`POST /api/v1/assistant/images`), `agentChannelImageRoute.ts` (`POST /api/v1/agents/{agentId}/images`)
-- `backend/src/app/http/routes/conversationImageRoutes.ts` (`GET /api/v1/conversations/{conversationId}/images/{imageId}`, audited); `testChatImageRoutes.ts` (`GET /api/v1/agents/{agentId}/test-executions/{executionId}/images/{imageId}`, a photo bound to the test, one its transcript names, or the caller's unsent upload, each read narrowly; every view audited, `agent.test_execution.image_viewed` or `conversation.image_viewed`)
+- `backend/src/app/http/routes/conversationImageRoutes.ts` (`GET /api/v1/conversations/{conversationId}/images/{imageId}`, audited); `testChatImageRoutes.ts` (`POST /api/v1/agents/{agentId}/test-executions/{executionId}/images`, an upload that follows the switch of the test's revisions; `GET …/images/{imageId}`, a photo bound to the test, one its transcript names, or the caller's unsent upload, each read narrowly; every view audited, `agent.test_execution.image_viewed` or `conversation.image_viewed`)
 - `backend/src/app/http/shared/visitorImageUpload.ts`, `backend/src/app/http/middleware/visitorImageUploadRateLimiter.ts`
 - `backend/prompts/chat/visitor-image-reading.md`
 - `backend/src/db/migrations/256_visitor_images.sql`, `258_visitor_images_test_chat.sql` (the Test Chat holder)

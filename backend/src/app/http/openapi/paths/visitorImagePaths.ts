@@ -99,7 +99,7 @@ export const registerVisitorImagePaths = (
     tags: ["Assistant"],
     summary: "Upload an image for a chat message",
     description: [
-      "The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`, or in a message to one of that agent's tests (`POST /api/v1/agents/{agentId}/test-executions/{executionId}/messages`), which is how Test Chat sends photos.",
+      "The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`. Whether the agent takes images is decided by its published revision. To test a draft's images first, upload for the test with `POST /api/v1/agents/{agentId}/test-executions/{executionId}/images`.",
       uploadLimits,
       "Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts.",
     ].join(" "),
@@ -112,6 +112,29 @@ export const registerVisitorImagePaths = (
       403: errorResponse("Workspace chat permission required", schemas),
       ...uploadErrors(schemas),
       400: errorResponse("`agentId` is missing or not a UUID; no `image` field, more than one file, or an invalid `locale`; or a caller that cannot own images (only an API credential or a signed-in user can)", schemas),
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/test-executions/{executionId}/images",
+    tags: ["Agents"],
+    summary: "Upload an image for a Test Chat message",
+    description: [
+      "Whether the agent takes images is decided by the revisions the test runs, so a draft that turns images on can be tested before visitors get them; in a comparison, both versions must take them. The test must be this workspace's and agent's.",
+      "The image belongs to the signed-in user who uploads it, and only they can send it, once, as `imageIds` in `POST /api/v1/agents/{agentId}/test-executions/{executionId}/messages`.",
+      uploadLimits,
+      "Dashboard session only. Uploads spend the same per-user and per-workspace budgets as `POST /api/v1/assistant/images`.",
+    ].join(" "),
+    operationId: "uploadAgentTestExecutionImage",
+    security: security.workspaceAdminSecurity,
+    request: { params: z.object({ agentId: z.string().uuid(), executionId: z.string().uuid() }), body: uploadBody },
+    responses: {
+      201: uploaded,
+      401: errorResponse("Authentication required", schemas),
+      403: errorResponse("Agent management permission required, or the caller is not a dashboard session", schemas),
+      ...uploadErrors(schemas),
+      404: errorResponse("The test is not this workspace's and agent's; or `visitor_images_unavailable`: a revision the test runs has images off, or the agent's chat model cannot read images", schemas),
     },
   });
 

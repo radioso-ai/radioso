@@ -163,11 +163,12 @@ export class VisitorImageService implements VisitorImageTurnInput {
     if (input.imageIds.length === 0 || input.imageIds.length > VISITOR_IMAGE_LIMITS.maxImagesPerMessage || unique.size !== input.imageIds.length) {
       throw visitorImageUnavailable();
     }
-    if (await this.deps.availability.forAgent({ workspaceId: input.workspaceId, agentId: input.agentId }) !== "available") {
+    const { revision, ...photos } = input;
+    if (await this.deps.availability.forAgent({ workspaceId: input.workspaceId, agentId: input.agentId, ...(revision ? { revision } : {}) }) !== "available") {
       throw visitorImageUnavailable();
     }
     const claimId = this.newId();
-    const claimed = await this.deps.store.claim({ ...input, claimId, claimedAt: this.clock() });
+    const claimed = await this.deps.store.claim({ ...photos, claimId, claimedAt: this.clock() });
     if (!claimed) throw visitorImageUnavailable();
     const byId = new Map(claimed.map((row) => [row.id, row]));
     return {

@@ -53,15 +53,29 @@ interface TestChatPhotoSend {
  * never reached it, and answers which, for the words too. Once a test took photos, `onStored`
  * receives the test as stored, which carries the agent's reading of each one; a failed read is
  * tried again, and the photos stay pending rather than read as unreadable if it never succeeds.
- * Photos are read in the operator's browser language, as a visitor's are in the visitor's.
+ * Photos are read in the operator's browser language, as a visitor's are in the visitor's, and go up
+ * for the test the next message goes to, whose revisions decide whether it takes them.
  */
-export function useTestChatPhotos(agentId: string, onStored: (detail: TestExecutionHistoryDetail) => void) {
+export function useTestChatPhotos(
+  agentId: string,
+  onStored: (detail: TestExecutionHistoryDetail) => void,
+  /** The test the next message goes to, started as a send would start it; null when none could start. */
+  prepareExecution: () => Promise<string | null>,
+) {
   const availability = useTestChatPhotoAvailability(agentId)
   const acceptsImages = availability === 'available'
-  const upload = useCallback(
-    (file: File, signal: AbortSignal) => agentRevisionsApi.uploadTestChatImage(agentId, file, { locale: photoReadingLocale(navigator.language), signal }),
-    [agentId],
-  )
+  const prepareRef = useRef(prepareExecution)
+  useEffect(() => {
+    prepareRef.current = prepareExecution
+  }, [prepareExecution])
+  // Photos attached together wait for one test to start, never one each.
+  const preparing = useRef<Promise<string | null> | null>(null)
+  const upload = useCallback(async (file: File, signal: AbortSignal) => {
+    preparing.current ??= prepareRef.current().finally(() => { preparing.current = null })
+    const executionId = await preparing.current
+    if (!executionId) throw new Error('test_chat_not_started')
+    return agentRevisionsApi.uploadTestChatImage(agentId, executionId, file, { locale: photoReadingLocale(navigator.language), signal })
+  }, [agentId])
   const { attachments, state } = useVisitorImageAttachments(upload)
   useFileDropGuard(acceptsImages)
   const onStoredRef = useRef(onStored)

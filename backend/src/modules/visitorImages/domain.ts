@@ -1,5 +1,5 @@
 import type { LlmCapabilityOverride } from "../../shared/infra/llm/workspaceContext.js";
-import type { VisitorImageHolder, VisitorImageOwner } from "./contracts/turnInput.js";
+import type { VisitorImageHolder, VisitorImageOwner, VisitorImageRevisionSwitch } from "./contracts/turnInput.js";
 
 export type { VisitorImageHolder, VisitorImageOwner, VisitorImageOwnerKind } from "./contracts/turnInput.js";
 
@@ -165,14 +165,16 @@ export interface VisitorImageAudit {
 }
 
 /**
- * Whether an agent takes photos now: its operator turned them on, and its chat model, resolved as
- * its turns resolve it, reads images. Uploads are refused otherwise, and a client shows no attach
+ * Whether an agent takes photos now: the revision that decides has them on, and its chat model,
+ * resolved as its turns resolve it, reads images. On every live channel the agent's published
+ * revision decides; Test Chat names the revision under test (`revision`). A revision without a
+ * switch follows the agent's setting. Uploads are refused otherwise, and a client shows no attach
  * control. Composition implements it.
  */
 export type VisitorImageAgentAvailability = "available" | "disabled" | "model_cannot_read" | "agent_not_found";
 
 export interface VisitorImageAvailability {
-  forAgent(input: { workspaceId: string; agentId: string }): Promise<VisitorImageAgentAvailability>;
+  forAgent(input: { workspaceId: string; agentId: string; revision?: VisitorImageRevisionSwitch }): Promise<VisitorImageAgentAvailability>;
 }
 
 /**

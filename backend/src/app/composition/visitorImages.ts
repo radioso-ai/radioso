@@ -1,6 +1,7 @@
 import type { Kysely } from "kysely";
 
-import { DEFAULT_AGENT_LOCALE_FALLBACK, type AgentRecord } from "../../modules/agents/public.js";
+import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
+import { DEFAULT_AGENT_LOCALE_FALLBACK, revisionVisitorImagesEnabled, type AgentRecord, type AgentRevisionRuntimeReaderPort } from "../../modules/agents/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { buildAgentChatWorkspaceContext } from "../../modules/chat/public.js";
 import type { DocumentStorageLocator, DocumentStoragePort } from "../../modules/documents/contracts/storage.js";
@@ -83,15 +84,21 @@ export const createChatModelImageReading = (deps: {
   },
 });
 
-/** Photos are available where the agent has them on and its chat model reads images. */
+/**
+ * Photos are available where the revision that decides has them on and the agent's chat model
+ * reads images: the revision a Test Chat test names, or else the agent's published one. A revision
+ * without a switch, or an agent never published, follows the agent's setting.
+ */
 export const createVisitorImageAvailability = (deps: {
   agents: AgentLookup;
+  publishedRevisions: Pick<AgentRevisionRuntimeReaderPort, "findCurrentPublished">;
   modelReading: ChatModelImageReading;
 }): VisitorImageAvailability => ({
-  forAgent: async ({ workspaceId, agentId }) => {
+  forAgent: async ({ workspaceId, agentId, revision }) => {
     const agent = await deps.agents.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!agent) return "agent_not_found";
-    if (!agent.visitorImagesEnabled) return "disabled";
+    const deciding = revision ?? (await deps.publishedRevisions.findCurrentPublished({ workspaceId, agentId }))?.snapshot ?? {};
+    if (!revisionVisitorImagesEnabled(deciding, agent.visitorImagesEnabled ?? false)) return "disabled";
     return await deps.modelReading.readsImages(agent) ? "available" : "model_cannot_read";
   },
 });
@@ -137,7 +144,8 @@ export const wireVisitorImages = (deps: {
   const objects = visitorImageObjectStore(deps.storage);
   const inference = new ContextualStructuredInferenceFactory({ resolver: deps.resolver }, deps.infrastructure.usageEventRecorder);
   const modelReading = createChatModelImageReading({ resolver: deps.resolver, logger: deps.logger });
-  const availability = createVisitorImageAvailability({ agents: deps.agents, modelReading });
+  const publishedRevisions = new AgentRevisionRuntimeRepository(deps.infrastructure.database.kysely);
+  const availability = createVisitorImageAvailability({ agents: deps.agents, publishedRevisions, modelReading });
   const service = new VisitorImageService({
     store: new PostgresVisitorImageStore(deps.infrastructure.database.kysely),
     objects,

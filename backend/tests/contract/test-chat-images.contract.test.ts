@@ -28,7 +28,13 @@ const photo = (): Promise<Buffer> =>
  * One single test in memory, as the test-execution store keeps it: a turn's user entry, with its
  * photos, is stored when the turn is claimed, and its answer when the side completes.
  */
-const memoryTest = (agentId: string, workspaceId: string, bind: (input: { workspaceId: string; testExecutionId: string; claim: TestExecutionTurnPhotos["claim"] }) => Promise<void>) => {
+const memoryTest = (
+  agentId: string,
+  workspaceId: string,
+  bind: (input: { workspaceId: string; testExecutionId: string; claim: TestExecutionTurnPhotos["claim"] }) => Promise<void>,
+  /** The photo switch the tested revision holds; undefined for one frozen before it was part of a revision. */
+  testedPhotos: boolean | undefined,
+) => {
   const executionId = randomUUID();
   const sideId = randomUUID();
   const history: TestExecutionHistoryEntry[] = [];
@@ -37,7 +43,7 @@ const memoryTest = (agentId: string, workspaceId: string, bind: (input: { worksp
     id: executionId, workspaceId, agentId, mode: "single", generation: 1, state: "completed", testValues: [], skillEffects: "suppressed",
     sides: [{
       id: sideId, executionId, conversationId: randomUUID(), state: "ready", retryable: false, history: [...history], continuation: null,
-      revision: { id: randomUUID(), snapshot: { customInstruction: null, directives: [], routines: [], contextVariableEnablements: [] }, sourceDraftGeneration: 1, sourceBasePublishedRevisionId: null, createdAt: new Date(0), publishedAt: null, publishedVersion: null },
+      revision: { id: randomUUID(), snapshot: { customInstruction: null, directives: [], routines: [], contextVariableEnablements: [], ...(testedPhotos === undefined ? {} : { visitorImagesEnabled: testedPhotos }) }, sourceDraftGeneration: 1, sourceBasePublishedRevisionId: null, createdAt: new Date(0), publishedAt: null, publishedVersion: null },
     }],
     createdAt: new Date(0), seededTurnCount: 0,
   });
@@ -59,16 +65,19 @@ const memoryTest = (agentId: string, workspaceId: string, bind: (input: { worksp
     historyNamesImage: async (input: { executionId: string; imageId: string }) => (input.executionId === executionId
       ? history.some((entry) => entry.imageInput?.images.some((image) => image.id === input.imageId))
       : null),
+    revisionPhotoSwitches: async (input: { executionId: string }) => (input.executionId === executionId ? [testedPhotos] : null),
     fail: async () => execution(),
   } as unknown as TestExecutionRepositoryPort;
   return { executionId, history, repository };
 };
 
 /**
- * A workspace whose default agent takes photos unless told otherwise, with Test Chat's service
- * over one in-memory test, the chat door's own photo claim, and a runner that answers every turn.
+ * A workspace whose default agent takes photos for visitors unless told otherwise (`visitorImagesEnabled`,
+ * its setting, which an agent published before the switch was part of a revision follows), with Test
+ * Chat's service over one in-memory test whose revision holds `testedPhotos`, the chat door's own
+ * photo claim, and a runner that answers every turn.
  */
-const testChatWorkspace = async (options: { visitorImagesEnabled?: boolean } = {}) => {
+const testChatWorkspace = async (options: { visitorImagesEnabled?: boolean; testedPhotos?: boolean | undefined } = {}) => {
   let visitorImages: VisitorImageService | null = null;
   const runs: string[] = [];
   const runner: TrustedTestExecutionRunnerPort = {
@@ -88,6 +97,7 @@ const testChatWorkspace = async (options: { visitorImagesEnabled?: boolean } = {
       complete: (input: never) => test!.repository.complete(input),
       fail: (input: never) => test!.repository.fail(input),
       historyNamesImage: (input: never) => test!.repository.historyNamesImage(input),
+      revisionPhotoSwitches: (input: never) => test!.repository.revisionPhotoSwitches(input),
     } as unknown as TestExecutionRepositoryPort,
     runner,
     photos: { claim: (input) => createTestChatPhotoTurns(visitorImages!).claim(input) },
@@ -104,16 +114,17 @@ const testChatWorkspace = async (options: { visitorImagesEnabled?: boolean } = {
   if (options.visitorImagesEnabled !== false) {
     await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ visitorImagesEnabled: true }).expect(200);
   }
-  test = memoryTest(agentId, operator.workspaceId, (input) => visitorImages.bind(input));
+  test = memoryTest(agentId, operator.workspaceId, (input) => visitorImages.bind(input), "testedPhotos" in options ? options.testedPhotos : true);
   const executionId = test.executionId;
   const image = await photo();
-  const upload = () => request(app).post(`/api/v1/assistant/images?agentId=${agentId}`).set(dashboard).attach("image", image, "photo.png");
+  const upload = () => request(app).post(`/api/v1/agents/${agentId}/test-executions/${executionId}/images`).set(dashboard).attach("image", image, "photo.png");
+  const uploadForVisitors = () => request(app).post(`/api/v1/assistant/images?agentId=${agentId}`).set(dashboard).attach("image", image, "photo.png");
   const send = (body: object) => request(app)
     .post(`/api/v1/agents/${agentId}/test-executions/${executionId}/messages`)
     .set(dashboard)
     .send({ executionGeneration: 1, turnId: randomUUID(), attemptId: randomUUID(), ...body });
   const view = (imageId: string) => request(app).get(`/api/v1/agents/${agentId}/test-executions/${executionId}/images/${imageId}`).set(dashboard);
-  return { ...created, operator, dashboard, agentId, executionId, history: test.history, runs, upload, send, view };
+  return { ...created, operator, dashboard, agentId, executionId, history: test.history, runs, upload, uploadForVisitors, send, view };
 };
 
 describe("Test Chat photos", () => {
@@ -173,13 +184,37 @@ describe("Test Chat photos", () => {
     expect(created.runs).toEqual([]);
   });
 
-  it("takes no photo for a test while the agent takes none for visitors", async () => {
-    const { upload } = await testChatWorkspace({ visitorImagesEnabled: false });
+  it("takes photos for a test whose revision has them on before visitors get them, and sends them", async () => {
+    const { upload, uploadForVisitors, send, runs } = await testChatWorkspace({ visitorImagesEnabled: false, testedPhotos: true });
+
+    const uploaded = await upload().expect(201);
+    await send({ message: "Like this", imageIds: [uploaded.body.id] }).expect(200);
+
+    expect(runs).toEqual([`Like this\n<attached_photo index="1">${READING}</attached_photo>`]);
+    expect((await uploadForVisitors()).body).toMatchObject({ error: { code: "visitor_images_unavailable" } });
+  });
+
+  it("takes no photo for a test whose revision has them off, though visitors can send them", async () => {
+    const { upload } = await testChatWorkspace({ visitorImagesEnabled: true, testedPhotos: false });
 
     const refused = await upload();
 
     expect(refused.status).toBe(404);
     expect(refused.body).toMatchObject({ error: { code: "visitor_images_unavailable" } });
+  });
+
+  it("follows the agent's setting for a tested revision frozen before the switch was part of one", async () => {
+    const { upload } = await testChatWorkspace({ visitorImagesEnabled: false, testedPhotos: undefined });
+
+    expect((await upload()).body).toMatchObject({ error: { code: "visitor_images_unavailable" } });
+  });
+
+  it("takes no photo for a test that is not this workspace's", async () => {
+    const { app, agentId, dashboard } = await testChatWorkspace();
+
+    const refused = await request(app).post(`/api/v1/agents/${agentId}/test-executions/${randomUUID()}/images`).set(dashboard).attach("image", await photo(), "photo.png");
+
+    expect(refused.status).toBe(404);
   });
 
   it("replays a photo turn sent again with the same identity, rather than refusing its photos", async () => {

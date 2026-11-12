@@ -36,7 +36,10 @@ module never reads `messages`.
 It does not know which model reads a photo or how storage is reached:
 `VisitorImageReader` and `VisitorImageObjectStore` (over document storage's
 `locate`, `upload`, `read` and `delete`) are ports, and
-`VisitorImageAvailability` (whether an agent takes photos now) and
+`VisitorImageAvailability` (whether an agent takes photos now: by the switch
+its published revision holds on every live channel, or by the `revision` a Test
+Chat test names, a `VisitorImageRevisionSwitch`; a revision without a switch
+follows the agent's setting) and
 `ChatModelImageReading` (whether the agent's resolved chat model reads images,
 which the agent settings read reports as `chatModelReadsImages` and the
 availability check builds on) are implemented in composition. The one change in `packages/` is the connector contract: `connector-api`
@@ -49,14 +52,17 @@ its own store, never in `conversations` and `messages`, so its photos are bound
 to the test (`test_execution_id`, migration `258_visitor_images_test_chat.sql`)
 rather than to a message. `modules/chat/services/testChatPhotoTurns.ts`
 implements the test-execution module's `TestExecutionPhotoTurnsPort` over the
-door's `claimVisitorImageTurn`: the same owner check (the credential or
-signed-in user that uploaded through `POST /api/v1/assistant/images`), the same
-turn text and `imageInput`. The test's store binds the claim to the test in the
+door's `claimVisitorImageTurn`: the same owner check (the signed-in user who
+uploaded through the test's own `POST /api/v1/agents/:agentId/test-executions/:executionId/images`),
+the same turn text and `imageInput`, with the photo switch of the test's
+revisions deciding instead of the published one. The test's store binds the claim to the test in the
 transaction that stores the turn (`bindVisitorImageClaimIn`, wired in
 `app/composition/testExecution.ts`), so a stored turn always names photos the
-test holds; when no turn was stored the photos are let go. Whether a test takes photos is the agent's
-`VisitorImageAvailability`: the photo switch and the chat model belong to the
-agent, which every revision runs on. `readForTestChat` serves a photo bound to the test,
+test holds; when no turn was stored the photos are let go. The photo switch is part of an agent
+revision (`visitorImagesEnabled` on the snapshot): the agent's setting is the
+draft's value and publishing freezes it, so a draft can take photos in Test Chat
+before visitors get them. A test takes photos when every revision it runs does
+(`TestExecutionService.photoSwitch`). `readForTestChat` serves a photo bound to the test,
 then one its transcript names (from the comparison it continues or the
 conversation it started from), then the caller's own upload before its turn is
 stored, each read narrowly. Every view is audited, since every teammate can open

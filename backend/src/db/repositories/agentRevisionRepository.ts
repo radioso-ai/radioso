@@ -62,6 +62,17 @@ const publishedSnapshot = async (
   return row ? parseAgentRevisionSnapshot(row.snapshot) : null;
 };
 
+/**
+ * Live-reads the agent's photo setting on the same transaction a candidate is frozen on, for a
+ * draft written before the switch was part of a revision: the candidate freezes the setting the
+ * agent has now, as it does `agentSkills` for a draft that predates skill tracking.
+ */
+const liveVisitorImagesEnabled = async (trx: Transaction<DB>, workspaceId: string, agentId: string): Promise<boolean> => {
+  const row = await trx.selectFrom("agents").select("behavior_settings").where("workspace_id", "=", workspaceId).where("id", "=", agentId).executeTakeFirst();
+  const settings = row?.behavior_settings;
+  return Boolean(settings && typeof settings === "object" && !Array.isArray(settings) && (settings as Record<string, unknown>).visitorImagesEnabled === true);
+};
+
 /** Live-reads agent_skills on the same transaction a draft/candidate write is already
  * running on, for the writers below that must reconstruct `snapshot.agentSkills` the
  * first time they touch a snapshot that predates skill tracking (see agentRevision.ts). */
@@ -140,9 +151,12 @@ export class AgentRevisionRepository implements AgentRevisionRepositoryPort {
       // A candidate freezes the draft as it stands right now: reconstruct agentSkills from
       // live state when the draft predates skill tracking, so this candidate's snapshot is
       // never silently missing skills the operator never touched via AgentSkillRepository.
-      const parsedSnapshot: AgentRevisionSnapshot = draftSnapshot.agentSkills !== undefined
+      const withSkills: AgentRevisionSnapshot = draftSnapshot.agentSkills !== undefined
         ? draftSnapshot
         : { ...draftSnapshot, agentSkills: await liveAgentSkillsSnapshot(trx, workspaceId, agentId) };
+      const parsedSnapshot: AgentRevisionSnapshot = withSkills.visitorImagesEnabled !== undefined
+        ? withSkills
+        : { ...withSkills, visitorImagesEnabled: await liveVisitorImagesEnabled(trx, workspaceId, agentId) };
       const agent = await trx.selectFrom("agents").select("published_revision_id").where("workspace_id", "=", workspaceId).where("id", "=", agentId).executeTakeFirst();
       assertCandidateSnapshotIsRunnable(parsedSnapshot, {
         agentDefaultLocale: await liveAgentDefaultLocale(trx, workspaceId, agentId),

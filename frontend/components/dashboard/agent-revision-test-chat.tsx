@@ -334,7 +334,7 @@ export function AgentRevisionTestChat({
   }, [sessionKey]);
   // A photo turn's readings come from the test as stored; the bubble shows the photos until then.
   const showStoredReadings = useCallback((stored: TestExecutionHistoryDetail) => setExecutionState((current) => current && withStoredImageInputs(current, stored)), [setExecutionState]);
-  const photos = useTestChatPhotos(agentId, showStoredReadings);
+  const photos = useTestChatPhotos(agentId, showStoredReadings, async () => (await prepareExecution())?.executionId ?? null);
   const setEvalRunState = useCallback((next: SetStateAction<RevisionEvalRun | null>) => {
     const current = readAgentRevisionTestChatSession(sessionKey)?.evalRun ?? evalRunRef.current;
     const resolved = typeof next === "function" ? next(current) : next;

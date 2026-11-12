@@ -54,6 +54,10 @@ class MemoryRepository implements TestExecutionRepositoryPort {
     return this.execution ? false : null;
   }
 
+  async revisionPhotoSwitches(): Promise<ReadonlyArray<boolean | undefined> | null> {
+    return this.execution ? this.execution.sides.map((side) => side.revision.snapshot.visitorImagesEnabled) : null;
+  }
+
   async findAgentId(input: Parameters<TestExecutionRepositoryPort["findAgentId"]>[0]): Promise<string | null> {
     return this.execution && this.execution.id === input.executionId && this.execution.workspaceId === input.workspaceId
       ? this.execution.agentId

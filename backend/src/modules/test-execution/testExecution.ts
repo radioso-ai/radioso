@@ -6,7 +6,7 @@ import {
   type UsageLimitReservation,
 } from "../../shared/domain/usageLimitPolicy.js";
 import type { AgentRevision } from "../agents/public.js";
-import type { VisitorImageClaim, VisitorImageOwner } from "../visitorImages/contracts/turnInput.js";
+import type { VisitorImageClaim, VisitorImageOwner, VisitorImageRevisionSwitch } from "../visitorImages/contracts/turnInput.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 import { clipAtGraphemeBoundary } from "../../shared/text/clipAtGraphemeBoundary.js";
 import {
@@ -87,8 +87,17 @@ export type TestExecutionTurnPhotos = Pick<TestExecutionPhotoTurn, "imageInput" 
  * rendering. Chat implements it; composition wires it.
  */
 export interface TestExecutionPhotoTurnsPort {
-  claim(input: { workspaceId: string; agentId: string; message: string; imageIds: readonly string[]; owner: VisitorImageOwner }): Promise<TestExecutionPhotoTurn>;
+  /** `revision` is the photo switch the test's revisions hold (`testPhotoSwitch`), which decides instead of the published one. */
+  claim(input: { workspaceId: string; agentId: string; message: string; imageIds: readonly string[]; owner: VisitorImageOwner; revision: VisitorImageRevisionSwitch }): Promise<TestExecutionPhotoTurn>;
 }
+
+/**
+ * The photo switch a test's photos follow, from the switches its revisions hold: off when any of
+ * them has photos off, since every side answers the same message; the agent's setting when one
+ * holds none (a revision frozen before the switch was part of one); otherwise on.
+ */
+const testPhotoSwitch = (switches: ReadonlyArray<boolean | undefined>): VisitorImageRevisionSwitch =>
+  switches.includes(false) ? { visitorImagesEnabled: false } : switches.includes(undefined) ? {} : { visitorImagesEnabled: true };
 
 export interface TestExecution {
   id: string;
@@ -322,6 +331,8 @@ export interface TestExecutionRepositoryPort {
    * reading the transcript out; null for a test that is not this workspace's and agent's.
    */
   historyNamesImage(input: { workspaceId: string; agentId: string; executionId: string; imageId: string }): Promise<boolean | null>;
+  /** The photo switch each side's revision holds (undefined where it holds none); null for a test that is not this workspace's and agent's. */
+  revisionPhotoSwitches(input: { workspaceId: string; agentId: string; executionId: string }): Promise<ReadonlyArray<boolean | undefined> | null>;
   findByIdempotencyKey(input: { workspaceId: string; agentId: string; idempotencyKey: string }): Promise<TestExecution | null>;
   /** Self-heals a side stuck "running" past its lease (an abandoned attempt) into "failed, retryable". */
   recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
@@ -650,7 +661,7 @@ export class TestExecutionService {
       yield* this.runClaims(execution, await this.claimTurn(execution, sideIds, repeat, false, { inputFingerprint }), repeat);
       return;
     }
-    const photos = await this.claimPhotos(input);
+    const photos = await this.claimPhotos(input, testPhotoSwitch(execution.sides.map((side) => side.revision.snapshot.visitorImagesEnabled)));
     const turn = photos ? { ...input, message: photos.message } : input;
     let claimed: readonly TestExecutionClaim[];
     try {
@@ -664,7 +675,7 @@ export class TestExecutionService {
     yield* this.runClaims(execution, claimed, turn);
   }
 
-  private async claimPhotos(input: TestExecutionMessageInput): Promise<TestExecutionPhotoTurn | null> {
+  private async claimPhotos(input: TestExecutionMessageInput, revision: VisitorImageRevisionSwitch): Promise<TestExecutionPhotoTurn | null> {
     if (!input.photos?.ids.length) return null;
     if (!this.options.photos) throw badRequest("Photos are not accepted in this test.");
     return this.options.photos.claim({
@@ -673,7 +684,15 @@ export class TestExecutionService {
       message: input.message,
       imageIds: input.photos.ids,
       owner: input.photos.owner,
+      revision,
     });
+  }
+
+  /** The photo switch this test's uploads follow (`testPhotoSwitch`). Not-found for a test that is not this workspace's and agent's. */
+  async photoSwitch(input: { workspaceId: string; agentId: string; executionId: string }): Promise<VisitorImageRevisionSwitch> {
+    const switches = await this.options.repository.revisionPhotoSwitches(input);
+    if (!switches) throw notFound("Test execution is unavailable.");
+    return testPhotoSwitch(switches);
   }
 
   /**

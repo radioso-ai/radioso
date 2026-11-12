@@ -19,6 +19,15 @@ export type VisitorImageHolder =
   | { readonly conversationId: string; readonly messageId: string }
   | { readonly testExecutionId: string };
 
+/**
+ * The photo switch of the revision a Test Chat test runs, so its photos follow that revision
+ * rather than the published one: the revision's own value, or none for a revision frozen before
+ * the switch was part of one, which follows the agent's setting. Live channels name none.
+ */
+export interface VisitorImageRevisionSwitch {
+  readonly visitorImagesEnabled?: boolean;
+}
+
 /** The photos one send claimed, in the order the caller named them. */
 export interface VisitorImageClaim {
   readonly claimId: string;
@@ -33,14 +42,15 @@ export interface VisitorImageClaim {
 export interface VisitorImageTurnInput {
   /**
    * Claims the photos for one message. Throws `visitor_image_unavailable` (409) when the agent no
-   * longer takes photos, or any id is not this workspace's, agent's and owner's, or another send
-   * already holds it.
+   * longer takes photos (in `revision`, a Test Chat test's, or else in its published revision),
+   * or any id is not this workspace's, agent's and owner's, or another send already holds it.
    */
   claim(input: {
     workspaceId: string;
     agentId: string;
     owner: VisitorImageOwner;
     imageIds: readonly string[];
+    revision?: VisitorImageRevisionSwitch;
   }): Promise<VisitorImageClaim>;
   /** Binds the claimed photos to what carries them, the turn's stored message or test. A failure is the turn's failure. */
   bind(input: { workspaceId: string; claim: VisitorImageClaim } & VisitorImageHolder): Promise<void>;

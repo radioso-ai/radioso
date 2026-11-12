@@ -1,5 +1,5 @@
 import { badRequest } from "../../../shared/domain/errors.js";
-import { renderVisitorImageTurn, type VisitorImageClaim, type VisitorImageTurnInput } from "../../visitorImages/public.js";
+import { renderVisitorImageTurn, type VisitorImageClaim, type VisitorImageRevisionSwitch, type VisitorImageTurnInput } from "../../visitorImages/public.js";
 import type { AssistantChatRequest, UserMessageStoredListener } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 
@@ -23,14 +23,19 @@ interface VisitorImageTurn {
  */
 export const claimVisitorImageTurn = async (
   visitorImages: VisitorImageTurnInput | null,
-  input: Pick<AssistantChatRequest, "workspaceId" | "agentId" | "message" | "inputMetadata" | "imageIds" | "imageOwner" | "routineInvocation">,
+  input: Pick<AssistantChatRequest, "workspaceId" | "agentId" | "message" | "inputMetadata" | "imageIds" | "imageOwner" | "routineInvocation">
+    & { imageRevision?: VisitorImageRevisionSwitch },
 ): Promise<VisitorImageTurn | null> => {
   if (!input.imageIds || input.imageIds.length === 0) return null;
   if (!visitorImages || !input.imageOwner || !input.agentId || input.routineInvocation) {
     throw badRequest("Images are not accepted on this request");
   }
   const { workspaceId } = input;
-  const claim = await visitorImages.claim({ workspaceId, agentId: input.agentId, owner: input.imageOwner, imageIds: input.imageIds });
+  const claim = await visitorImages.claim({
+    workspaceId, agentId: input.agentId, owner: input.imageOwner, imageIds: input.imageIds,
+    // A Test Chat turn's photos follow the revision under test; every other turn's, the published one.
+    ...(input.imageRevision ? { revision: input.imageRevision } : {}),
+  });
   const typedText = input.message?.trim() ?? "";
   let bound = false;
   return {

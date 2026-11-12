@@ -589,6 +589,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   getPublicChatImage: visitorImageMedia,
   getConversationImage: visitorImageMedia,
   getAgentTestExecutionImage: testChatImageMedia,
+  uploadAgentTestExecutionImage: permanent("Permanent exclusion: Test Chat uploads a photo the operator picked in their browser for their next test message. Ray uploads no photo: send_test_chat_message sends text, and test_chat_transcript gives Ray each photo's reading."),
   getAgentVoiceConnection: voiceRuntimeConnectionStatus,
   connectAgentVoice: voiceRuntimeConnectionWrite,
   disconnectAgentVoice: voiceRuntimeConnectionWrite,

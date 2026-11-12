@@ -57,6 +57,8 @@ export interface AgentRevisionDetail extends AgentRevisionSummary {
     routines: Array<{ definitionId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     contextVariableEnablements: Array<{ contextVariableId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     greeting: { before: AgentGreetingDraft; after: AgentGreetingDraft; changed: boolean }
+    /** The photo switch; null where a release holds none and follows the agent's setting. */
+    visitorImagesEnabled?: { before: boolean | null; after: boolean | null; changed: boolean }
   }
 }
 
@@ -249,8 +251,12 @@ export const agentRevisionsApi = {
     return response
   },
 
-  /** A photo for Test Chat's next message, read by the agent's chat model before it answers; only this operator can send it. */
-  async uploadTestChatImage(agentId: string, file: Blob & { name?: string }, options: { locale?: string; signal?: AbortSignal } = {}): Promise<{ id: string }> {
+  /**
+   * A photo for the next message to a test, read by the agent's chat model before it answers. The
+   * test's own revisions decide whether it takes photos, so a draft can before visitors can; only
+   * this operator can send it.
+   */
+  async uploadTestChatImage(agentId: string, executionId: string, file: Blob & { name?: string }, options: { locale?: string; signal?: AbortSignal } = {}): Promise<{ id: string }> {
     const form = new FormData()
     form.append('image', file, file.name ?? 'photo.jpg')
     if (options.locale) form.append('locale', options.locale)
@@ -258,7 +264,7 @@ export const agentRevisionsApi = {
     const workspaceId = getStoredActiveWorkspaceId()
     if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
     // No Content-Type: the browser writes the multipart boundary.
-    const response = await fetch(`${API_BASE}/assistant/images?agentId=${encodeURIComponent(agentId)}`, { method: 'POST', headers, credentials: 'include', body: form, signal: options.signal })
+    const response = await fetch(`${API_BASE}/agents/${encodeURIComponent(agentId)}/test-executions/${encodeURIComponent(executionId)}/images`, { method: 'POST', headers, credentials: 'include', body: form, signal: options.signal })
     if (!response.ok) throw await buildError(response)
     return response.json() as Promise<{ id: string }>
   },

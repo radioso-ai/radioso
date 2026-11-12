@@ -1,4 +1,4 @@
-export type { VisitorImageClaim, VisitorImageOwner, VisitorImageTurnInput } from "./contracts/turnInput.js";
+export type { VisitorImageClaim, VisitorImageOwner, VisitorImageRevisionSwitch, VisitorImageTurnInput } from "./contracts/turnInput.js";
 export {
   VISITOR_IMAGE_LIMITS,
   type ChatModelImageReading,

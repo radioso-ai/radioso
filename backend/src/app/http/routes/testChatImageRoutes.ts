@@ -3,18 +3,33 @@ import { z } from "zod";
 
 import type { AuthenticatedPrincipal } from "../../../modules/account/services/accountAccessService.js";
 import type { TestExecutionService } from "../../../modules/test-execution/public.js";
-import type { VisitorImageService } from "../../../modules/visitorImages/public.js";
+import type { VisitorImageAvailability, VisitorImageService } from "../../../modules/visitorImages/public.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { acceptWorkspaceIdFromQuery } from "../middleware/acceptWorkspaceIdFromQuery.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { apiVisitorImageUploadRateLimiter, type VisitorImageUploadRateLimiterDependencies } from "../middleware/visitorImageUploadRateLimiter.js";
 import { refuseHeadForAuditedMedia, requireDashboardFetch } from "../shared/dashboardMediaGuards.js";
-import { authenticatedVisitorImageOwner, sendVisitorImage } from "../shared/visitorImageUpload.js";
+import {
+  authenticatedVisitorImageOwner,
+  countingRateLimitRefusals,
+  presentVisitorImageUpload,
+  requireVisitorImagesAvailable,
+  sendVisitorImage,
+  visitorImageMultipart,
+  visitorImageUploadRejection,
+  type visitorImageUploadFieldsSchema,
+} from "../shared/visitorImageUpload.js";
 
-type TestChatImageRouteDependencies = WorkspaceSessionDependencies & {
-  testExecutionService: Pick<TestExecutionService, "namesImage">;
-  visitorImages: Pick<VisitorImageService, "readForTestChat">;
+type TestChatImageRouteDependencies = WorkspaceSessionDependencies & VisitorImageUploadRateLimiterDependencies & {
+  testExecutionService: Pick<TestExecutionService, "namesImage" | "photoSwitch">;
+  visitorImages: Pick<VisitorImageService, "readForTestChat" | "upload">;
+  visitorImageAvailability: VisitorImageAvailability;
+  metricsRegistry?: MetricsRegistry | null;
 };
+
+const testChatParamsSchema = z.object({ agentId: z.string().uuid(), executionId: z.string().uuid() });
 
 const testChatImageParamsSchema = z.object({
   agentId: z.string().uuid(),
@@ -35,6 +50,44 @@ const testChatImageParamsSchema = z.object({
  */
 export const createTestChatImageRoutes = (dependencies: TestChatImageRouteDependencies): Router => {
   const router = Router();
+  const metrics = dependencies.metricsRegistry ?? null;
+
+  /**
+   * `POST /api/v1/agents/:agentId/test-executions/:executionId/images`: a photo for a message to
+   * this test, taken when the revisions it runs have photos on (a draft can, before visitors get
+   * them) and the agent's chat model reads images. The test must be this workspace's and agent's;
+   * the photo belongs to the caller who uploads it, as on `POST /api/v1/assistant/images`.
+   */
+  router.post(
+    "/:agentId/test-executions/:executionId/images",
+    requireWorkspaceSession(dependencies),
+    requireWorkspacePermission(dependencies, "workspace.agents.manage"),
+    ...countingRateLimitRefusals([apiVisitorImageUploadRateLimiter(dependencies)], metrics),
+    requireVisitorImagesAvailable({
+      availability: dependencies.visitorImageAvailability,
+      metrics,
+      agentOf: async (req, res) => {
+        const { agentId, executionId } = testChatParamsSchema.parse(req.params);
+        const { workspaceId } = res.locals as { workspaceId: string };
+        return { workspaceId, agentId, revision: await dependencies.testExecutionService.photoSwitch({ workspaceId, agentId, executionId }) };
+      },
+    }),
+    visitorImageMultipart(metrics),
+    async (req, res, next) => {
+      try {
+        const { workspaceId, authPrincipal } = res.locals as { workspaceId: string; authPrincipal?: AuthenticatedPrincipal };
+        const owner = authenticatedVisitorImageOwner(authPrincipal);
+        if (!owner) throw badRequest("Images are uploaded by an API credential or a signed-in user");
+        const { agentId } = testChatParamsSchema.parse(req.params);
+        const fields = req.body as z.infer<typeof visitorImageUploadFieldsSchema>;
+        const result = await dependencies.visitorImages.upload({ workspaceId, agentId, owner, bytes: req.file!.buffer, locale: fields.locale ?? null, surface: "test_execution" });
+        if (result.kind === "rejected") throw visitorImageUploadRejection(result.reason);
+        res.status(201).json(presentVisitorImageUpload(result));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.get(
     "/:agentId/test-executions/:executionId/images/:imageId",

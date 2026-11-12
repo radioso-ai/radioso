@@ -2361,7 +2361,7 @@ export const createTestDependencies = (overrides: {
     resolver: { resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input) },
     logger,
   });
-  const visitorImageAvailability = createVisitorImageAvailability({ agents: agentRepository, modelReading: chatModelImageReading });
+  const visitorImageAvailability = createVisitorImageAvailability({ agents: agentRepository, publishedRevisions: publishedAgentRevisions, modelReading: chatModelImageReading });
   const visitorImages = new VisitorImageService({
     store: new InMemoryVisitorImageStore(),
     objects: visitorImageObjectStore(documentStorage),

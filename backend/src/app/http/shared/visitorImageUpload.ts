@@ -9,6 +9,7 @@ import {
   type VisitorImageAvailability,
   type VisitorImageOwner,
   type VisitorImageRejection,
+  type VisitorImageRevisionSwitch,
   type VisitorImageUploadResult,
 } from "../../../modules/visitorImages/public.js";
 import { AppError, badRequest, isStructuredAppError } from "../../../shared/domain/errors.js";
@@ -97,17 +98,21 @@ const AVAILABILITY_ERRORS = {
 } as const;
 
 /**
- * Refuses the upload, before its body is read, unless the agent takes photos now: the operator
- * turned them on and its chat model reads images. `agentOf` names the agent from the request. It
- * reads the agent and resolves its model, so it runs after the upload budgets are spent.
+ * Refuses the upload, before its body is read, unless the agent takes photos now: the revision
+ * that decides has them on (the published one, or the `revision` a Test Chat test names) and its
+ * chat model reads images. `agentOf` names the agent from the request. It reads the agent and
+ * resolves its model, so it runs after the upload budgets are spent.
  */
 export const requireVisitorImagesAvailable = (deps: {
   availability: VisitorImageAvailability;
   metrics: Pick<MetricsRegistry, "incrementCounter"> | null;
-  agentOf: (req: Request, res: Response) => { workspaceId: string; agentId: string } | null;
+  agentOf: (req: Request, res: Response) =>
+    | { workspaceId: string; agentId: string; revision?: VisitorImageRevisionSwitch }
+    | null
+    | Promise<{ workspaceId: string; agentId: string; revision?: VisitorImageRevisionSwitch } | null>;
 }): RequestHandler => async (req, res, next) => {
   try {
-    const subject = deps.agentOf(req, res);
+    const subject = await deps.agentOf(req, res);
     const availability = subject ? await deps.availability.forAgent(subject) : "agent_not_found";
     if (availability === "available") {
       next();

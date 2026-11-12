@@ -9,6 +9,7 @@ import { createAgentSettingCopilotProposalAdapter, createContextVariableCopilotP
 import { CopilotAuthorizationError, OperatorCopilotService, type CopilotProposalDetailReadPort } from "../../../src/modules/operatorCopilot/service.js";
 import { createProposalDetailTool } from "../../../src/modules/operatorCopilot/tools/proposalDetail.js";
 import { InMemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const proposalId = "11111111-1111-4111-8111-111111111111";
 const context = {
@@ -56,7 +57,7 @@ describe("proposal_detail", () => {
       agentSkillsReader: agentSkillsReader,
     });
     const contextVariableAdapter = createContextVariableCopilotProposalAdapter({ contextVariables });
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       currentAuthorization,
       proposalAdapters: [
@@ -111,7 +112,7 @@ describe("proposal_detail", () => {
     const repository = new InMemoryCopilotRepository();
     const agentId = randomUUID();
     const voice = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["Let me check that for you, it only takes a moment."] } }, fallbackLine: {}, runtime: null };
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       currentAuthorization: context.currentAuthorization,
       proposalAdapters: [createAgentSettingCopilotProposalAdapter({ agentService: { readFieldProposalVersion: vi.fn(async () => "fields:current") } } as never)],

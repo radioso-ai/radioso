@@ -270,6 +270,8 @@ export interface DocumentRepositoryPort {
   createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null, guard?: DocumentReviewedWriteGuard): Promise<DocumentRecord>;
   create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord>;
   summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord>;
+  /** Whether any document is ready, read with EXISTS so callers that only need that do not aggregate a workspace's documents. */
+  hasReadyDocuments(workspaceId: string): Promise<boolean>;
   setStatus(input: {
     documentId: string;
     workspaceId: string;

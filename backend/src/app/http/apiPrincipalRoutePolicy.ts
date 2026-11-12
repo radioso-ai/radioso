@@ -260,6 +260,8 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("GET", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
   sessionOnly("POST", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
   sessionOnly("DELETE", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
+  // Test Chat's Talk hands the page the vendor's signed URL, which opens sessions on the workspace's vendor account.
+  sessionOnly("POST", "/api/v1/agents/:agentId/test-executions/:executionId/voice-sessions", "workspace.agents.manage"),
 
   // Credential-management and operator surfaces intentionally have an explicit
   // session-only policy rather than relying on default denial. This makes new
@@ -362,6 +364,7 @@ const declarations: readonly PolicyDeclaration[] = [
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   ...[
     ["GET", "/api/v1/copilot/availability", "workspace.agents.read"],
+    ["GET", "/api/v1/copilot/empty-state", "workspace.agents.read"],
     ["GET", "/api/v1/copilot/conversations", "workspace.agents.read"],
     ["GET", "/api/v1/copilot/conversations/:conversationId", "workspace.agents.read"],
     ["DELETE", "/api/v1/copilot/conversations/:conversationId", "workspace.agents.read"],

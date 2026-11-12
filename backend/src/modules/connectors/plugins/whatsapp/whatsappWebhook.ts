@@ -18,6 +18,18 @@ interface WebhookRequest extends Request {
   rawBody?: Buffer;
 }
 
+/** The media id Graph resolves to the photo's bytes, and the caption the sender typed with it. */
+const readImage = (value: unknown): { mediaId: string; caption: string | undefined } | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const { id, caption } = value as { id?: unknown; caption?: unknown };
+  if (typeof id !== "string" || id.length === 0) {
+    return undefined;
+  }
+  return { mediaId: id, caption: typeof caption === "string" && caption.trim().length > 0 ? caption : undefined };
+};
+
 const extractInboundMessages = (
   workspaceId: string,
   payload: Record<string, unknown>,
@@ -69,13 +81,14 @@ const extractInboundMessages = (
           ? new Date(Number(message.timestamp) * 1000)
           : new Date();
         const type = typeof message.type === "string" ? message.type : "unknown";
+        const image = type === "image" ? readImage(message.image) : undefined;
         const textBody =
           type === "text" &&
           message.text &&
           typeof message.text === "object" &&
           typeof (message.text as { body?: unknown }).body === "string"
             ? (message.text as { body: string }).body
-            : undefined;
+            : image?.caption;
 
         if (!wamid || !from) {
           continue;
@@ -90,6 +103,7 @@ const extractInboundMessages = (
           timestamp,
           type,
           textBody,
+          ...(image ? { image: { mediaId: image.mediaId } } : {}),
           payload,
         });
       }

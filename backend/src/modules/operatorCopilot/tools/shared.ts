@@ -17,6 +17,7 @@ import type { CopilotRepositoryPort } from "../service.js";
 import { summarizeProposalEvidence } from "../proposalEvidence.js";
 import { resolveProposalEvidence, type ProposalChange, type ProposalEvidenceDependencies } from "../services/proposalEvidenceService.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { canonicalTimeZone, TIME_ZONE_MAX_LENGTH } from "../../../shared/domain/referenceTimeZone.js";
 import { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "../../voiceChannel/public.js";
 
 export interface CopilotAgentListItem {
@@ -31,6 +32,17 @@ export interface CopilotAgentLookupPort {
 }
 
 export const entity = (type: string, id: string | null | undefined) => id ? { type, id } : null;
+
+/**
+ * The zone Ray names to test a turn as a visitor there. A name the runtime does not know is
+ * refused rather than ignored, as the chat APIs ignore a bad browser zone: a turn that quietly read
+ * the workspace's zone would be reported back as tested in the zone Ray asked for. It is still a
+ * plain bounded string in the tool's JSON schema.
+ */
+export const testTurnTimeZoneSchema = z.string().trim().min(1).max(TIME_ZONE_MAX_LENGTH).refine(
+  (value) => canonicalTimeZone(value) !== null,
+  { message: "userTimeZone must be an IANA time zone name the server knows, such as America/Los_Angeles or Europe/Rome; names such as PDT or Pacific, and fixed offsets such as +05:00, are not one." },
+);
 
 /**
  * The sentence a card states, clamped to what its payload can hold. A tool composes this from
@@ -178,9 +190,14 @@ const MAX_CITED_EVIDENCE = 10;
 /** Ids from prior replay_eval_case calls. The measurement itself is read server-side. */
 export const citedEvidenceSchema = z.array(z.string().uuid()).max(MAX_CITED_EVIDENCE).optional();
 
-export const proposalOutputSchema = z.object({
+/**
+ * What a propose tool returns, over the target types it may name. A first-party tool names a
+ * first-party type, so {@link proposalOutputSchema} reads the first-party list; a tool Ray builds
+ * for a contributed adapter reads that adapter's entry in the assembled target-type set.
+ */
+export const proposalOutputSchemaFor = <const TTargetTypes extends readonly [string, ...string[]]>(targetTypes: TTargetTypes) => z.object({
   proposalId: z.string().uuid(),
-  targetType: z.enum(copilotProposalTargetTypes),
+  targetType: z.enum(targetTypes),
   targetLabel: z.string(),
   summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY),
   /** Absent when the change was proposed unmeasured, so silence never reads as verified. */
@@ -196,6 +213,8 @@ export const proposalOutputSchema = z.object({
   /** True only for a proposal that changes who can reach the agent; absent for a wording change. */
   reach: z.boolean().optional(),
 });
+
+export const proposalOutputSchema = proposalOutputSchemaFor(copilotProposalTargetTypes);
 
 export interface CopilotProposalEvidenceDependencies {
   readonly proposalEvidence: ProposalEvidenceDependencies;

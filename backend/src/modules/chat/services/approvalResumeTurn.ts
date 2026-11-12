@@ -45,6 +45,12 @@ import {
   type ModelCallTraceCollector,
 } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { TurnSkill } from "./turnOutcome.js";
+import type { WorkspaceTimeZoneReader } from "../../retrieval/public.js";
+import {
+  recordedVisitorTimeZone,
+  referenceTimeZoneTraceStage,
+  resolveTurnReferenceTimeZone,
+} from "./turnReferenceTimeZone.js";
 
 export interface SuspendedRoutineReader {
   loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
@@ -65,6 +71,8 @@ interface ApprovalResumeTurnOptions {
   conversationTurnRegistry: Pick<ConversationTurnRegistry, "start">;
   routineProvider?: ChatRoutineProvider;
   suspendedRoutineReader?: SuspendedRoutineReader;
+  /** Read for the resumed turn's zone when the conversation recorded none. */
+  workspaceTimeZones?: WorkspaceTimeZoneReader;
   detectResponseLanguage(input: {
     workspaceId: string;
     accountId?: string;
@@ -322,6 +330,13 @@ export class ApprovalResumeTurn {
       throw new Error("approval_resume_user_message_missing");
     }
     const retrieval = this.directDecisionResumeRetrieval(record, agent);
+    // No visitor request is live on a resume, so the zone is the one the conversation last ran in,
+    // then the workspace's: the routine reads the same "today" it was parked in.
+    const referenceTimeZone = await resolveTurnReferenceTimeZone(this.options.workspaceTimeZones, {
+      workspaceId: record.workspaceId,
+      conversationTimeZone: recordedVisitorTimeZone(userMessage.metadata),
+    });
+    const startedAt = new Date().toISOString();
     return {
       agent,
       conversation,
@@ -332,12 +347,13 @@ export class ApprovalResumeTurn {
       userMessage,
       effectiveQuery: userMessage.content,
       pageContext: null,
+      referenceTimeZone,
       stagedContext: [toPreparedStagedContext(retrieval)],
       resolvedContext: resolveContextForTurn(null),
       turnTrace: {
         traceId: `approval-resume-${record.handle}`,
-        startedAt: new Date().toISOString(),
-        stages: [],
+        startedAt,
+        stages: [referenceTimeZoneTraceStage(referenceTimeZone, startedAt)],
         links: [],
       },
     };

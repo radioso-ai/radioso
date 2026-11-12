@@ -6,7 +6,6 @@ import {
   type ConversationActivityEntry,
   type RecentlyClosedInboxItem,
 } from "../../../../modules/conversationActivity/contracts/index.js";
-import { operatorReplySpeechSchema, replyInterruptionSchema } from "../../../../modules/chat/contracts/index.js";
 import { assistantChatSchema } from "../../schemas/assistantChatSchemas.js";
 import {
   conversationParamsSchema,
@@ -33,6 +32,7 @@ import { nullableComponent } from "../zodOpenApiExtension.js";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 import type { SameType } from "../../../../shared/types/sameType.js";
 import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
+import { registerChatConversationMessageSchemas } from "./chatConversationMessageSchemas.js";
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const answerFeedbackParamsSchema = z.object({
@@ -40,9 +40,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   }).openapi("AnswerFeedbackParams");
   // Registered once and shared: the list row and the detail answer the same question about the
   // same conversation, and a second inline enum would let them drift apart.
-  const CallerKindSchema = registry.register("CallerKind", z.enum(["human", "agent"]).openapi({
-    description: "Whether a person or a calling agent is on the other side of the conversation.",
-  }));
+  const CallerKindSchema = registry.register("CallerKind", z.enum(["human", "agent"]).openapi({ description: "Whether a person or a calling agent is on the other side of the conversation." }));
   const SkillAvailabilitySchema = registry.register("SkillAvailability", skillAvailabilitySchema);
   const SkillContractReferenceSchema = registry.register("SkillContractReference", skillContractReferenceSchema);
   const SkillDiagnosticsSummarySchema = registry.register("SkillDiagnosticsSummary", skillDiagnosticsSummarySchema);
@@ -280,13 +278,13 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const AssistantChatRequestSchema = registry.register(
     "AssistantChatRequest",
     assistantChatSchema.openapi({
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`. `imageIds` needs `agentId`.",
     }),
   );
   const PublicChatRequestSchema = registry.register(
     "PublicChatRequest",
     anonymousChatSchema.openapi({
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`.",
     }),
   );
 
@@ -631,74 +629,16 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  // How a recorded user message was produced. `routine_invocation` is a calling
-  // agent's tool call: `routine` carries its structured form for tool-call rendering
-  // while `content` holds the same call as text.
-  const UserMessageInputMetadataSchema = registry.register(
-    "UserMessageInputMetadata",
-    z.object({
-      method: z.enum(["typed", "suggestion_click", "intent_click", "routine_invocation"]),
-      suggestionSourceMessageId: z.string().uuid().optional(),
-      suggestionId: z.string().optional().openapi({ description: "The id of the chip clicked, such as a routine consent's `agree` or `decline`." }),
-      intent: z.object({ skillName: z.string(), intentName: z.string().optional() }).optional(),
-      routine: z.object({
-        toolName: z.string(),
-        input: z.record(z.string(), z.unknown()),
-      }).optional(),
-    }),
-  );
-
-  const ReplyInterruptionSchema = registry.register(
-    "ReplyInterruption",
-    replyInterruptionSchema.openapi({
-      description: "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`. `partial: false`: the reply had finished, and `content` keeps all of it. `partial: true`: the caller cut the reply off while it was still being said, so `content` keeps only the sentences they heard whole; `heardCharacterCount` follows the voice runtime's record of what it played, and `spokenCharacterCount` counts what reached the runtime. Without such a record, everything that reached the runtime counts as heard and the two counts are equal.",
-    }),
-  );
-
-  const OperatorReplySpeechSchema = registry.register(
-    "OperatorReplySpeech",
-    operatorReplySpeechSchema.openapi({
-      description: "Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when the turn that spoke it ended. When the caller speaks over a turn before it finished, a reply the voice runtime played to its end is `spoken`, and the reply it was playing, with any after it, stays `pending` for the turn that cut in to speak whole. `skipped`: the reply has no words a call can speak, so no turn speaks it.",
-    }),
-  );
-
-  // Shared by the operator and public message schemas. `debug`, `turnFailure`, and
-  // `operatorLabel` are operator-only and are added on top of this shape for the dashboard
-  // schema alone: the first two carry turn diagnostics (and `turnFailure` carries raw error
-  // text), `operatorLabel` can be a teammate's email, and the public presenter strips all
-  // three from every message it returns.
-  const chatConversationMessageShape = {
-    id: z.string().uuid(),
-    role: z.enum(["user", "assistant", "system"]),
-    source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]),
-    content: z.string(),
-    createdAt: z.string().datetime(),
-    inputMetadata: UserMessageInputMetadataSchema.optional(),
-    citations: z.array(schemas.CitationSchema).optional(),
-    answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
-    suggestions: z.array(ChatSuggestionSchema).optional(),
-    answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
-    operatorDisplayName: z.string().optional(),
-    interruption: ReplyInterruptionSchema.optional(),
-    speech: OperatorReplySpeechSchema.optional(),
-  };
-
-  const ChatConversationMessageSchema = registry.register(
-    "ChatConversationMessage",
-    z.object({
-      ...chatConversationMessageShape,
-      debug: ChatConversationMessageDebugSchema.optional(),
-      turnFailure: ChatConversationTurnFailureSchema.optional(),
-      operatorLabel: z.string().optional().openapi({
-        description: "Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API.",
-      }),
-    }),
-  );
-
-  const PublicChatConversationMessageSchema = registry.register(
-    "PublicChatConversationMessage",
-    z.object(chatConversationMessageShape),
-  );
+  const {
+    UserMessageInputMetadataSchema,
+    ChatConversationMessageSchema,
+    PublicChatConversationMessageSchema,
+  } = registerChatConversationMessageSchemas(registry, schemas, {
+    ChatSuggestionSchema,
+    AnswerFeedbackEntrySchema,
+    ChatConversationMessageDebugSchema,
+    ChatConversationTurnFailureSchema,
+  });
 
   const ConversationOwnershipResponseSchema = registry.register(
     "ConversationOwnershipResponse",
@@ -945,6 +885,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       workspaceName: z.string(),
       assistantBootstrapActive: z.boolean(),
+      acceptsImages: z.boolean().openapi({ description: "Whether the visitor may attach photos to a message, computed as the session response computes it: the agent has `visitorImagesEnabled` on and its chat model reads images. A chat that reloads reads it here, so it needs no new session to know." }),
       conversations: z.array(PublicConversationSummarySchema),
       total: z.number().int().min(0),
       nextCursor: z.string().nullable(),

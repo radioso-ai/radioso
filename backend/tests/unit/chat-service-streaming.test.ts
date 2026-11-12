@@ -9029,7 +9029,8 @@ describe("chat service streaming", () => {
               },
             },
           ],
-          prompt: "prompt text",
+          // The answer model reads the link's address in the Result's Source line, as `PromptBuilder` renders it.
+          prompt: "Result 1 (Guide): Source: https://example.com/guide\nThe page explains testing and parsing content for users.",
           citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
           diagnostics: {
             rewriteStatus: "skipped",

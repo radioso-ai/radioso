@@ -30,7 +30,6 @@ import type { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
 import type { DeliveredReplyPart, DeliveredReplyReader } from "../contracts/interruption.js";
 import { cutReplyContent, cutReplyMessage } from "./cutReplyMessage.js";
 import type {
-  ConversationOwnershipReason,
   ConversationOwnershipRequestHandoffInput,
   ConversationOwnershipRequestHandoffResult,
 } from "../../../db/repositories/conversationOwnershipRepository.js";
@@ -38,9 +37,7 @@ import {
   ActivitySummaryPresenter,
   ActivityTracePresenter,
   type ActivityTrace,
-  type RewriteContinuityState,
 } from "../../retrieval/public.js";
-import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import {
   type AssistantTurnOutcome,
   type SkillTurnOutcome,
@@ -48,6 +45,14 @@ import {
 } from "./assistantTurnOutcomeTypes.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
+import {
+  buildAssistantTurnSuccessAuditEvent,
+  buildAssistantTurnSuspendedAuditEvent,
+  buildOwnershipHandoffAuditEvent,
+  type AssistantTurnSuccessInput,
+  type OwnershipHandoffInput,
+} from "./assistantTurnAuditEvents.js";
+import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -255,12 +260,6 @@ interface ConversationOwnershipWriterPort {
   requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<ConversationOwnershipRequestHandoffResult>;
 }
 
-export interface OwnershipHandoffInput {
-  reason: ConversationOwnershipReason;
-  routineId?: string;
-  stepId?: string;
-}
-
 /** The hand-off a turn applies, by one of the reasons a turn can raise. */
 export interface TurnHandoffInput extends OwnershipHandoffInput {
   reason: ChatTurnHandoffReason;
@@ -277,28 +276,6 @@ const turnHandoffReport = (handoff: TurnHandoffInput): ChatTurnHandoff => ({
   reason: handoff.reason,
   collectedSlotCount: handoff.collectedSlotCount ?? 0,
 });
-
-interface AssistantTurnSuccessInput {
-  workspaceId: string;
-  accountId?: string;
-  conversationId: string;
-  userMessageId: string;
-  assistantMessageId: string;
-  skillTurnOutcome: SkillTurnOutcome;
-  answerOutcome?: AssistantTurnOutcome;
-  citations: ChatCitation[];
-  answerSegments?: AnswerSegment[];
-  suggestions?: ChatSuggestion[];
-  priorRewriteContinuityState?: RewriteContinuityState;
-  diagnostics: PreparedSession["retrieval"]["diagnostics"];
-  activityTrace: ActivityTrace;
-  turnTrace?: TurnTraceEnvelope;
-  route: ChatRoute;
-  stream: boolean;
-  groundingVerdict?: ChatPresentedAnswer["grounding"];
-  groundingProtocolVersion?: 1 | 2 | null;
-  groundingDiagnostics?: ChatPresentedAnswer["groundingDiagnostics"];
-}
 
 interface BuildTurnTraceForPresentationInput {
   workspaceId: string;
@@ -801,8 +778,8 @@ export class ChatTurnLifecycle {
     let postCommitWake: (() => void) | undefined;
     const suspended = input.suspended === true;
     const baseAuditEvent = suspended
-      ? this.buildAssistantTurnSuspendedAuditEvent(presentation.successInput)
-      : this.buildAssistantTurnSuccessAuditEvent(presentation.successInput);
+      ? buildAssistantTurnSuspendedAuditEvent(presentation.successInput)
+      : buildAssistantTurnSuccessAuditEvent(presentation.successInput);
     const modeAuditMetadata = executionModeAuditMetadata(
       input.executionMode,
       input.session.conversation.sourceChannel,
@@ -811,7 +788,7 @@ export class ChatTurnLifecycle {
       ? { ...baseAuditEvent, metadata: { ...baseAuditEvent.metadata, ...modeAuditMetadata } }
       : baseAuditEvent;
     const ownershipAuditEvent = ownershipHandoff
-      ? this.buildOwnershipHandoffAuditEvent({
+      ? buildOwnershipHandoffAuditEvent({
           ...ownershipHandoff,
           workspaceId: input.workspaceId,
           accountId: input.accountId,
@@ -1300,119 +1277,6 @@ export class ChatTurnLifecycle {
       }, "Superseded user message could not be discarded");
       return { userMessageDiscarded: false, recorded: false };
     }
-  }
-
-  private buildAssistantTurnSuccessAuditEvent(input: AssistantTurnSuccessInput): AuditEventInput {
-    const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    return {
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      eventType: "chat.answer",
-      eventStatus: "success",
-      metadata: {
-        workflow: workflowPolicy.workflow,
-        executionClass: workflowPolicy.executionClass,
-        conversationId: input.conversationId,
-        userMessageId: input.userMessageId,
-        assistantMessageId: input.assistantMessageId,
-        stream: input.stream,
-        skillTurn: input.skillTurnOutcome,
-        answerOutcome: input.answerOutcome ?? legacyAnswerOutcomeForSkillTurnOutcome(input.skillTurnOutcome),
-        route: {
-          generator: "assistant",
-          routeType: input.route.type,
-          routeReason: input.route.reason,
-          retrievalInvoked: input.route.type === "retrieval",
-        },
-        citationCount: input.citations.length,
-        citations: input.citations,
-        answerSegments: input.answerSegments,
-        suggestions: input.suggestions,
-        groundingVerdict: input.groundingVerdict,
-        groundingProtocolVersion: input.groundingProtocolVersion,
-        groundingDiagnostics: input.groundingDiagnostics,
-        rewriteContinuityState: buildRewriteContinuityState({
-          previousState: input.priorRewriteContinuityState,
-          diagnostics: input.diagnostics,
-          citations: input.citations,
-        }),
-        retrieval: input.diagnostics,
-        // Legacy flat trace, still read by the history path and the live frontend's
-        // textual diagnostics. Retained until those consume the envelope's leaf.
-        activityTrace: input.activityTrace,
-        // Turn-trace envelope: conversation spine (root span) with capability traces
-        // as typed leaves. The spine supersedes the old `conversationEngine.trace`
-        // audit key (which nothing read), so that key is no longer written.
-        ...(input.turnTrace ? { turnTrace: input.turnTrace } : {}),
-      },
-    };
-  }
-
-  private buildAssistantTurnSuspendedAuditEvent(input: AssistantTurnSuccessInput): AuditEventInput {
-    return {
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      eventType: "chat.suspended",
-      eventStatus: "success",
-      metadata: {
-        workflow: "chat.turn",
-        executionClass: "durable_async",
-        conversationId: input.conversationId,
-        userMessageId: input.userMessageId,
-        assistantMessageId: input.assistantMessageId,
-        stream: input.stream,
-        skillTurn: input.skillTurnOutcome,
-        answerOutcome: input.answerOutcome ?? legacyAnswerOutcomeForSkillTurnOutcome(input.skillTurnOutcome),
-        route: {
-          generator: "assistant",
-          routeType: input.route.type,
-          routeReason: input.route.reason,
-          retrievalInvoked: input.route.type === "retrieval",
-        },
-        citationCount: input.citations.length,
-        citations: input.citations,
-        answerSegments: input.answerSegments,
-        suggestions: input.suggestions,
-        groundingVerdict: input.groundingVerdict,
-        groundingProtocolVersion: input.groundingProtocolVersion,
-        groundingDiagnostics: input.groundingDiagnostics,
-        rewriteContinuityState: buildRewriteContinuityState({
-          previousState: input.priorRewriteContinuityState,
-          diagnostics: input.diagnostics,
-          citations: input.citations,
-        }),
-        retrieval: input.diagnostics,
-        activityTrace: input.activityTrace,
-        ...(input.turnTrace ? { turnTrace: input.turnTrace } : {}),
-      },
-    };
-  }
-
-  private buildOwnershipHandoffAuditEvent(input: OwnershipHandoffInput & {
-    workspaceId: string;
-    accountId?: string;
-    conversationId: string;
-    agentId: string;
-  }): AuditEventInput {
-    return {
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      eventType: "hitl.ownership",
-      eventStatus: "success",
-      metadata: {
-        actor: {
-          type: "system",
-          source: "routine",
-        },
-        action: "handoff_requested",
-        reason: input.reason,
-        conversationId: input.conversationId,
-        agentId: input.agentId,
-        workspaceId: input.workspaceId,
-        routineId: input.routineId,
-        stepId: input.stepId,
-      },
-    };
   }
 
   private async trackAssistantTurnCompleted(input: AssistantTurnSuccessInput): Promise<void> {

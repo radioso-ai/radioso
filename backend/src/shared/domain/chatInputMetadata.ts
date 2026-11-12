@@ -11,6 +11,22 @@ const USER_MESSAGE_INPUT_METHODS = ["typed", "suggestion_click", "intent_click",
 
 type UserMessageInputMethod = typeof USER_MESSAGE_INPUT_METHODS[number];
 
+/**
+ * The photos a message carries, as stored: what the visitor typed, apart from the readings the turn
+ * text carries, and each photo's id with what the agent's model read in it (null when it could
+ * not). The UIs render the typed text and the photos from it, so a reading never shows in the
+ * visitor's own bubble.
+ */
+const messageImageInputSchema = z.object({
+  typedText: z.string(),
+  images: z.array(z.object({
+    id: z.string().uuid(),
+    reading: z.string().nullable(),
+  })).min(1).max(3),
+});
+
+type MessageImageInput = z.infer<typeof messageImageInputSchema>;
+
 const CLIENT_INPUT_METHODS = ["typed", "suggestion_click", "intent_click"] as const satisfies readonly UserMessageInputMethod[];
 
 export interface UserMessageInputMetadata {
@@ -27,6 +43,11 @@ export interface UserMessageInputMetadata {
     toolName: string;
     input: Record<string, unknown>;
   };
+  /**
+   * The photos the message carries: what the visitor typed, and each photo's id with what the
+   * agent's model read in it. `content` holds the same as the turn text the agent ran on.
+   */
+  imageInput?: MessageImageInput;
 }
 
 const MAX_SUGGESTION_ID_LENGTH = 200;
@@ -107,6 +128,7 @@ export const parseStoredInputMetadata = (value: unknown): UserMessageInputMetada
     suggestionId?: unknown;
     intent?: unknown;
     routine?: unknown;
+    imageInput?: unknown;
   };
   if (typeof candidate.method !== "string" || !STORED_INPUT_METHODS.has(candidate.method)) {
     return undefined;
@@ -117,6 +139,7 @@ export const parseStoredInputMetadata = (value: unknown): UserMessageInputMetada
   const routine = candidate.routine && typeof candidate.routine === "object" && !Array.isArray(candidate.routine)
     ? candidate.routine as { toolName?: unknown; input?: unknown }
     : null;
+  const imageInput = messageImageInputSchema.safeParse(candidate.imageInput);
 
   return {
     method: candidate.method as UserMessageInputMethod,
@@ -140,5 +163,6 @@ export const parseStoredInputMetadata = (value: unknown): UserMessageInputMetada
             : {},
         }
       : undefined,
+    ...(imageInput.success ? { imageInput: imageInput.data } : {}),
   };
 };

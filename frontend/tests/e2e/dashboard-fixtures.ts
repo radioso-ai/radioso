@@ -15,6 +15,10 @@ export const workspaceKey = "workspace-key";
 export const accountId = "account-1";
 /** The signed-in teammate `seedDashboardStorage` seeds. */
 export const currentUserId = "user-1";
+/** What the backend computes from the agent's chat model. In these fixtures only an `openai-compatible` override cannot read images: the default model is in the catalogue. */
+const chatModelReadsImages = (agent: { chatModelOverride?: { provider: string } | null }): boolean =>
+  agent.chatModelOverride?.provider !== "openai-compatible";
+
 export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 const defaultCandidateRevisionId = "11111111-1111-4111-8111-111111111111";
 export const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
@@ -463,6 +467,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
+  visitorImagesEnabled: false,
   webhookExportsEnabled: false,
   handoffOnRetrievalMiss: false,
   contactRequestDelivery: {
@@ -2338,7 +2343,7 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}`) {
       if (request.method() === "GET") {
-        await json(route, { ...agentSettings, voiceCallReadiness: options.voiceCallReadiness ?? { ready: false, missing: "voice_channel" } });
+        await json(route, { ...agentSettings, chatModelReadsImages: chatModelReadsImages(agentSettings), voiceCallReadiness: options.voiceCallReadiness ?? { ready: false, missing: "voice_channel" } });
         return;
       }
 
@@ -2375,7 +2380,7 @@ export const installDashboardApiMocks = async (
         if (!agentSettings.publicId && (agentSettings.agentCardEnabled || agentSettings.publicAgentAccessEnabled)) {
           agentSettings = { ...agentSettings, publicId: nextAgentPublicId() };
         }
-        await json(route, agentSettings);
+        await json(route, { ...agentSettings, chatModelReadsImages: chatModelReadsImages(agentSettings) });
         return;
       }
     }

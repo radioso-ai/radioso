@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { TEST_EXECUTION_LABEL_CHARS } from "../../../../modules/test-execution/public.js";
 import { retryTestExecutionSideSchema, sendTestExecutionMessageSchema, startTestExecutionSchema } from "../../routes/agentRevisionRequestSchemas.js";
+import { publicVoiceSessionStartSchema } from "../../routes/publicChatRouteSchemas.js";
 
 const uuid = z.string().uuid();
 
@@ -15,7 +16,7 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
     z.object({ type: z.literal("execution_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid }),
   ]));
   const RevisionSummarySchema = z.object({ id: uuid, label: z.string(), kind: z.enum(["candidate", "published"]), versionNumber: z.number().int().positive().nullable(), createdAt: z.string().datetime(), publishedAt: z.string().datetime().optional() });
-  const TestExecutionHistoryEntrySchema = z.object({ turnId: uuid, role: z.enum(["user", "assistant"]), content: z.string(), messageId: uuid.optional(), turnTrace: z.unknown().optional(), attemptId: uuid, createdAt: z.string().datetime() });
+  const TestExecutionHistoryEntrySchema = z.object({ turnId: uuid, role: z.enum(["user", "assistant"]), content: z.string(), messageId: uuid.optional(), turnTrace: z.unknown().optional(), attemptId: uuid, createdAt: z.string().datetime(), spoken: z.literal(true).optional().describe("The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.") });
   const TestExecutionSideSchema = registry.register("TestExecutionSide", z.object({
     id: uuid, revision: RevisionSummarySchema,
     conversationId: uuid, state: z.enum(["running", "partial", "failed", "completed"]), retryable: z.boolean(), history: z.array(TestExecutionHistoryEntrySchema),
@@ -44,5 +45,8 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
   const TestExecutionParamsSchema = z.object({ agentId: uuid, executionId: uuid });
   const TestExecutionRetryParamsSchema = TestExecutionParamsSchema.extend({ sideId: uuid });
   const TestExecutionRetainParamsSchema = TestExecutionParamsSchema.extend({ sideId: uuid });
-  return { TestExecutionEventSchema, TestExecutionSideSchema, StartTestExecutionRequestSchema, TestExecutionSchema, TestExecutionMessageRequestSchema, TestExecutionRetryRequestSchema, TestExecutionHistoryListResponseSchema, TestExecutionHistoryDetailResponseSchema, TestExecutionParamsSchema, TestExecutionRetryParamsSchema, TestExecutionRetainParamsSchema };
+  const TestChatVoiceSessionRequestSchema = registry.register("TestChatVoiceSessionRequest", publicVoiceSessionStartSchema.openapi({
+    description: "`locale` is the caller's language tag; without it the agent's default language applies, then `en`.",
+  }));
+  return { TestChatVoiceSessionRequestSchema, TestExecutionEventSchema, TestExecutionSideSchema, StartTestExecutionRequestSchema, TestExecutionSchema, TestExecutionMessageRequestSchema, TestExecutionRetryRequestSchema, TestExecutionHistoryListResponseSchema, TestExecutionHistoryDetailResponseSchema, TestExecutionParamsSchema, TestExecutionRetryParamsSchema, TestExecutionRetainParamsSchema };
 };

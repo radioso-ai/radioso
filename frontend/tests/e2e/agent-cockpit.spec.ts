@@ -1303,6 +1303,27 @@ test('sends the next message after a failed side instead of locking the chat', a
   expect(messageBodies[1]?.turnId).not.toBe(messageBodies[0]?.turnId)
 })
 
+test.describe('in a browser on Los Angeles time', () => {
+  test.use({ timezoneId: 'America/Los_Angeles' })
+
+  test("sends the operator's browser time zone with each Test Chat message, so tomorrow is their tomorrow", async ({ page }) => {
+    const messageBodies: Array<{ message: string; userTimeZone?: string }> = []
+    await installCockpitMocks(page, { messageBodies })
+    await page.goto(testUrl)
+
+    await testChatComposer(page).fill("What's on tomorrow?")
+    await page.getByRole('button', { name: 'Send' }).click()
+    await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
+    await testChatComposer(page).fill('And this weekend?')
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+
+    await expect.poll(() => messageBodies.map((body) => [body.message, body.userTimeZone])).toEqual([
+      ["What's on tomorrow?", 'America/Los_Angeles'],
+      ['And this weekend?', 'America/Los_Angeles'],
+    ])
+  })
+})
+
 test('saves the mounted dirty editor before lazily starting a private test', async ({ page }) => {
   const requestBodies: unknown[] = []
   const draftWrites: unknown[] = []

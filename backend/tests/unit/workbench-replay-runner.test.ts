@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DefaultConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import { RoutineStepRenderer } from "@radioso/conversation-defaults";
@@ -13,6 +13,7 @@ import type {
   ProcessTurnResult,
   RenderableTurn,
   Routine,
+  TurnContext,
 } from "@radioso/conversation-contract";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import { BlankChatAnswerError } from "../../src/modules/chat/services/chatAnswerErrors.js";
@@ -36,6 +37,7 @@ import {
 } from "../../src/modules/chat/services/turnPlanCoordinator.js";
 import { TurnPlanService } from "../../src/modules/chat/services/turnPlanService.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import { formatIsoDate } from "../../src/shared/domain/clock.js";
 import type { ResponseLanguageDetectorInput } from "../../src/shared/services/responseLanguageDetector.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
@@ -512,6 +514,91 @@ describe("WorkbenchReplayRunner", () => {
 
     expect(readWorkspaceTimeZone).toHaveBeenCalledWith("ws-1");
     expect(capturedRequests[0]?.referenceTimeZone).toEqual({ timeZone: "America/Los_Angeles", source: "workspace" });
+  });
+
+  // Test Chat sends the operator's browser zone, so a turn replayed from it reads the operator's
+  // day, ahead of the workspace's zone. At 18:00 in Los Angeles it is already tomorrow in UTC.
+  describe("with the zone of the person chatting", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-11-12T02:00:00.000Z"));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    const replayTurn = async (input: { visitorTimeZone?: string; workspaceTimeZone: string | null }) => {
+      const capturedRequests: RetrievalPipelineRequest[] = [];
+      const readWorkspaceTimeZone = vi.fn(async () => input.workspaceTimeZone);
+      const runner = new WorkbenchReplayRunner({
+        retrievalTurn: retrievalTurn(capturedRequests),
+        auditService: createAuditService(),
+        turnSkills: [answerSkill()],
+        conversationEngine: new DefaultConversationEngine(),
+        turnRouter: stubTurnRouter(),
+        workspaceTimeZones: { readWorkspaceTimeZone },
+      });
+      await runner.run({
+        workspaceId: "ws-1",
+        executionMode: "safe_test" as const,
+        sourceAgentId: "agent-1",
+        baselineAgentConfig: projectInternalAgentConfig(agent()),
+        query: "What's on tomorrow?",
+        history: [],
+        ...(input.visitorTimeZone ? { visitorTimeZone: input.visitorTimeZone } : {}),
+      });
+      return { referenceTimeZone: capturedRequests[0]?.referenceTimeZone, readWorkspaceTimeZone };
+    };
+
+    it("reads today in that zone ahead of the workspace's", async () => {
+      const { referenceTimeZone, readWorkspaceTimeZone } = await replayTurn({ visitorTimeZone: "America/Los_Angeles", workspaceTimeZone: "Europe/Rome" });
+
+      expect(referenceTimeZone).toEqual({ timeZone: "America/Los_Angeles", source: "visitor" });
+      expect(formatIsoDate(new Date(), referenceTimeZone?.timeZone)).toBe("2026-11-11");
+      expect(formatIsoDate(new Date())).toBe("2026-11-12");
+      expect(readWorkspaceTimeZone).not.toHaveBeenCalled();
+    });
+
+    it("keeps the turn's input event when it also records the zone, as a tool call to a routine carries its input", async () => {
+      const activate = vi.fn(async (_input: { turn: TurnContext }) => null);
+      const runner = new WorkbenchReplayRunner({
+        retrievalTurn: retrievalTurn([]),
+        auditService: createAuditService(),
+        turnSkills: [answerSkill()],
+        conversationEngine: new DefaultConversationEngine(),
+        turnRouter: stubTurnRouter("retrieval"),
+        routineProvider: { async forTurn() { return { activator: { activate }, runner: {} as never }; } },
+        chatGateway: chatGatewayStub(),
+        chatAnswerPresenter: presenterStub(),
+      });
+
+      await runner.run({
+        workspaceId: "ws-1",
+        executionMode: "safe_test" as const,
+        sourceAgentId: "agent-1",
+        baselineAgentConfig: projectInternalAgentConfig(agent()),
+        query: 'start_return {"orderId":"A-1001"}',
+        routineInvocation: { toolName: "start_return", input: { orderId: "A-1001" } },
+        visitorTimeZone: "America/Los_Angeles",
+        history: [],
+      }).catch(() => undefined);
+
+      const turn = activate.mock.calls[0][0].turn;
+      expect(turn.referenceTimeZone).toEqual({ timeZone: "America/Los_Angeles", source: "visitor" });
+      expect(turn.inputEvent.metadata).toEqual({
+        method: "routine_invocation",
+        routine: { toolName: "start_return", input: { orderId: "A-1001" } },
+      });
+    });
+
+    it("reads the workspace's zone when the client sent none or an unknown one", async () => {
+      expect((await replayTurn({ workspaceTimeZone: "America/Los_Angeles" })).referenceTimeZone)
+        .toEqual({ timeZone: "America/Los_Angeles", source: "workspace" });
+      expect((await replayTurn({ visitorTimeZone: "Not/AZone", workspaceTimeZone: "America/Los_Angeles" })).referenceTimeZone)
+        .toEqual({ timeZone: "America/Los_Angeles", source: "workspace" });
+    });
+
+    it("reads UTC only when neither the client nor the workspace names a zone", async () => {
+      expect((await replayTurn({ workspaceTimeZone: null })).referenceTimeZone).toEqual({ timeZone: "UTC", source: "default" });
+    });
   });
 
   it("shares live turn interpretation, rewrite, response-language, and retrieval override assembly", async () => {

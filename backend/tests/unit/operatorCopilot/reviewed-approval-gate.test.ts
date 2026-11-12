@@ -10,6 +10,7 @@ import { canonicalReviewedOperationDigest } from "../../../src/modules/operatorC
 import type { CopilotAuditPort, CopilotProposalAdapter, CopilotProposalDraft } from "../../../src/modules/operatorCopilot/contracts.js";
 import type { OperatorMcpBoundGrantClientDescriptionPort } from "../../../src/modules/operatorMcpAuthorization/contracts.js";
 import { InMemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 /**
  * Design §5.3/§5.4: `execute_reviewed_proposal` refuses a `signed_in_approval` operation until the
@@ -39,7 +40,7 @@ const directiveAdapter = (): CopilotProposalAdapter => ({
   readVersionToken: vi.fn(async () => "v1"),
   preview: vi.fn(),
   applyIfVersionMatches: vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId: "directive-1" } })),
-}) as never;
+});
 
 const buildService = (
   repository: InMemoryCopilotRepository,
@@ -51,7 +52,7 @@ const buildService = (
     now?: () => Date;
     sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   } = {},
-) => new OperatorCopilotService({
+) => new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
   repository,
   capabilityRunner: { runStreaming: vi.fn() },
   usageLimitPolicy: {} as never,

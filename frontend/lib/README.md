@@ -23,7 +23,9 @@ constructing ad hoc fetches.
 - `api-storage.ts`: keeps the active workspace ID and public route key together
   in each tab's session storage. Local storage remembers the default for a fresh
   tab as one serialized value; request adapters use the tab's selection through
-  the shared getters.
+  the shared getters. It also keeps a visitor's public chat session in session
+  storage. Where the browser blocks storage, as it can in the embed's
+  third-party frame, that session lives in memory for the life of the frame.
 - `api-types.ts`: shared frontend API types.
 - `auth-context.tsx`, `workspace-context.tsx`: React providers for major client
   state; `anonymous-chat-context.tsx` is the public embed's chat session.

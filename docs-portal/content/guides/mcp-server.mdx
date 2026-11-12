@@ -56,7 +56,7 @@ Operator MCP has five scoped capabilities. `operator:read` reads bounded workspa
 
 `propose_privacy_setting` drafts the workspace's conversation retention window, `conversationRetentionDays` from 7 to 3650 or `null` to keep conversations until they are deleted; `workspace_settings` reads the current one as `privacy.conversationRetentionDays`. Applying it needs `workspace.history.delete` as well as `workspace.settings.manage`, because the retention sweep then erases conversations idle longer than the window.
 
-`propose_time_zone_setting` drafts the IANA zone the workspace reads today's date in, such as `America/Los_Angeles`, or `null` for UTC; `workspace_settings` reads the current one as `timeZone.timeZone`. `test_agent_turn` takes `userTimeZone` to test a turn as a visitor in that zone.
+`propose_time_zone_setting` drafts the IANA zone the workspace reads today's date in, such as `America/Los_Angeles`, or `null` for UTC; `workspace_settings` reads the current one as `timeZone.timeZone`. `test_agent_turn` and `send_test_chat_message` take `userTimeZone` to test a turn as a visitor in that zone.
 
 Proposal fences compare only the settings a proposal changes. An unrelated update stays out of its way; a stale result names the changed field, or reports `Target deleted` when its target disappeared.
 

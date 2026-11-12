@@ -6,6 +6,7 @@ import {
   type ProviderCacheCapability,
   type ProviderUsage,
   type TextGenerationClient,
+  type TextGenerationImage,
   type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStopReason,
@@ -16,6 +17,7 @@ import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import { parseSseEvents } from "./sse.js";
 import { normalizeCacheAccounting, reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
+import { imageInputCapabilityFor } from "./knownModels.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -33,8 +35,14 @@ const renderGeminiSystem = (
     ? `${input.reusableInputBoundary.stableSystemPrefix}${input.reusableInputBoundary.dynamicSystemSuffix}`
     : input.systemPrompt;
 
+const buildGeminiUserParts = (prompt: string, images: readonly TextGenerationImage[] | undefined) => [
+  ...(images ?? []).map((image) => ({ inlineData: { mimeType: image.mediaType, data: image.base64Data } })),
+  { text: prompt },
+];
+
 const buildGenerateBody = (config: LlmCapabilityConfig, input: {
   prompt: string;
+  images?: readonly TextGenerationImage[];
   systemPrompt?: string;
   temperature?: number;
   maxOutputTokens?: number;
@@ -43,7 +51,7 @@ const buildGenerateBody = (config: LlmCapabilityConfig, input: {
   contents: [
     {
       role: "user",
-      parts: [{ text: input.prompt }],
+      parts: buildGeminiUserParts(input.prompt, input.images),
     },
   ],
   ...(renderGeminiSystem(config, input)
@@ -112,6 +120,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
       provider: config.provider,
       model: config.model,
       cacheCapability: geminiCacheCapability(config.model),
+      imageInputCapability: imageInputCapabilityFor(config.provider, config.model),
     };
   }
 

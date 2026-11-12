@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { routineInvocationRequestSchema } from "./routineInvocationSchemas.js";
 import { chatMessageSchema } from "./textInputLimits.js";
+import { visitorImageIdsSchema } from "./visitorImageSchemas.js";
 import { userTimeZoneSchema } from "./timeZoneSchemas.js";
 
 const labelControlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
@@ -45,6 +46,8 @@ export const agentChannelCredentialParamsSchema = z.object({
 export const agentChannelChatSchema = z.object({
   conversationId: z.string().uuid().optional(),
   message: chatMessageSchema.optional(),
+  /** Images uploaded with `POST /:agentId/images` by the same credential; `message` may then be absent. */
+  imageIds: visitorImageIdsSchema.optional(),
   routine: routineInvocationRequestSchema.optional(),
   startConversation: z.boolean().optional().default(false),
   stream: z.boolean().optional().default(false),
@@ -61,11 +64,18 @@ export const agentChannelChatSchema = z.object({
       path: ["routine"],
     });
   }
-  if (value.message === undefined && value.routine === undefined && !value.startConversation) {
+  if (value.message === undefined && value.routine === undefined && value.imageIds === undefined && !value.startConversation) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "message or routine is required unless startConversation is true",
+      message: "message, imageIds or routine is required unless startConversation is true",
       path: ["message"],
+    });
+  }
+  if (value.imageIds !== undefined && (value.routine !== undefined || value.startConversation)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "imageIds go with a message turn, never with a routine or a bootstrap greeting",
+      path: ["imageIds"],
     });
   }
   if (value.startConversation && value.routine !== undefined) {

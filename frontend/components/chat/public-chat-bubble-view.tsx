@@ -13,6 +13,12 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import {
+  VisitorImageAttachButton,
+  VisitorImageChips,
+  useVisitorImageComposer,
+} from '@/components/chat/visitor-image-composer'
+import type { ComposerImages } from '@/lib/visitor-image-types'
+import {
   formatWebsiteEmbedDisclaimer,
   getWebsiteEmbedTheme,
   type WebsiteEmbedCopy,
@@ -223,6 +229,10 @@ interface PublicChatBubbleComposerFormProps {
   readOnly?: boolean
   /** A control beside Send, such as the Talk button. */
   accessory?: ReactNode
+  /** The photos attached to the message, when the agent takes them: the attach control, the chips, paste and drop. */
+  images?: ComposerImages
+  /** Whether the message can be sent; defaults to there being text. Photos make a message sendable without text. */
+  canSend?: boolean
 }
 
 export function PublicChatBubbleComposerForm({
@@ -238,8 +248,11 @@ export function PublicChatBubbleComposerForm({
   hero = false,
   readOnly = false,
   accessory,
+  images,
+  canSend = Boolean(value.trim()),
 }: PublicChatBubbleComposerFormProps) {
-  const sendDisabled = readOnly || isLoading || !value.trim()
+  const sendDisabled = readOnly || isLoading || !canSend
+  const { formRef, dragging, dropProps, onPaste, removeChip } = useVisitorImageComposer(images)
   const containerPadding = hero ? 'px-3 py-3' : 'px-2 py-1.5'
   const textareaSize = hero
     ? 'min-h-[44px] max-h-48 px-3 py-2.5 text-base'
@@ -251,6 +264,7 @@ export function PublicChatBubbleComposerForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         if (readOnly) {
           event.preventDefault()
@@ -261,50 +275,56 @@ export function PublicChatBubbleComposerForm({
       className="mx-auto max-w-3xl"
     >
       <div
-        className={`flex items-end gap-1 rounded-3xl border ${containerPadding} transition-colors focus-within:ring-2 focus-within:ring-offset-0 ${hero ? 'shadow-sm' : ''} ${readOnly ? 'pointer-events-none' : ''}`}
+        className={`rounded-3xl border ${containerPadding} transition-colors focus-within:ring-2 focus-within:ring-offset-0 ${dragging ? 'ring-2 ring-offset-0' : ''} ${hero ? 'shadow-sm' : ''} ${readOnly ? 'pointer-events-none' : ''}`}
         style={{
           background: theme.inputBackground,
           borderColor: theme.inputBorder,
           ['--tw-ring-color' as string]: theme.accent,
         }}
+        {...dropProps}
       >
-        <Textarea
-          ref={inputRef}
-          value={value}
-          onChange={(event) => onChange?.(event.target.value)}
-          onKeyDown={onKeyDown}
-          readOnly={readOnly}
-          tabIndex={readOnly ? -1 : undefined}
-          placeholder={copy.startPrompt}
-          className={`${textareaSize} flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 placeholder:text-[var(--radioso-input-placeholder)] dark:bg-transparent`}
-          style={{ color: theme.inputForeground }}
-          aria-hidden={readOnly ? 'true' : undefined}
-        />
-        {accessory}
-        <Button
-          type="submit"
-          size="icon"
-          className={`${buttonSize} shrink-0 rounded-full transition-colors hover:opacity-90 disabled:opacity-100`}
-          disabled={sendDisabled}
-          // Keep focus on the textarea so tapping send on mobile submits on the
-          // first tap instead of just dismissing the keyboard. Moving focus to
-          // the button blurs the input, which hides the keyboard and reflows the
-          // layout out from under the finger before the click lands. Guarding on
-          // mousedown blocks the focus shift while leaving the click/submit
-          // intact (preventing pointerdown can cancel the synthesized click).
-          onMouseDown={(event) => event.preventDefault()}
-          tabIndex={readOnly ? -1 : undefined}
-          // Disabled reads as neutral rather than as a faded brand color, which looks broken.
-          style={
-            sendDisabled
-              ? { background: theme.mutedBackground, color: theme.mutedForeground }
-              : { background: theme.accent, color: theme.accentForeground }
-          }
-          aria-hidden={readOnly ? 'true' : undefined}
-        >
-          <Send className={buttonIconSize} />
-          <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
-        </Button>
+        {images ? <VisitorImageChips images={images} theme={theme} copy={copy} onRemove={removeChip} /> : null}
+        <div className="flex items-end gap-1">
+          {images?.canAttach ? <VisitorImageAttachButton theme={theme} copy={copy} images={images} className={buttonSize} /> : null}
+          <Textarea
+            ref={inputRef}
+            value={value}
+            onChange={(event) => onChange?.(event.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            readOnly={readOnly}
+            tabIndex={readOnly ? -1 : undefined}
+            placeholder={copy.startPrompt}
+            className={`${textareaSize} flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 placeholder:text-[var(--radioso-input-placeholder)] dark:bg-transparent`}
+            style={{ color: theme.inputForeground }}
+            aria-hidden={readOnly ? 'true' : undefined}
+          />
+          {accessory}
+          <Button
+            type="submit"
+            size="icon"
+            className={`${buttonSize} shrink-0 rounded-full transition-colors hover:opacity-90 disabled:opacity-100`}
+            disabled={sendDisabled}
+            // Keep focus on the textarea so tapping send on mobile submits on the
+            // first tap instead of just dismissing the keyboard. Moving focus to
+            // the button blurs the input, which hides the keyboard and reflows the
+            // layout out from under the finger before the click lands. Guarding on
+            // mousedown blocks the focus shift while leaving the click/submit
+            // intact (preventing pointerdown can cancel the synthesized click).
+            onMouseDown={(event) => event.preventDefault()}
+            tabIndex={readOnly ? -1 : undefined}
+            // Disabled reads as neutral rather than as a faded brand color, which looks broken.
+            style={
+              sendDisabled
+                ? { background: theme.mutedBackground, color: theme.mutedForeground }
+                : { background: theme.accent, color: theme.accentForeground }
+            }
+            aria-hidden={readOnly ? 'true' : undefined}
+          >
+            <Send className={buttonIconSize} />
+            <span className="sr-only">{copy.publicChatSendMessageLabel}</span>
+          </Button>
+        </div>
       </div>
     </form>
   )

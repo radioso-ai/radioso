@@ -57,7 +57,7 @@ export class TestChatService implements Port {
       // itself (see `TestExecutionService.send`).
       const execution = continued ?? await this.dependencies.executions.start({ workspaceId, agentId: requiredStartAgentId(agentId), accountId, mode: "single", ...revision, testValues: [], idempotencyKey: this.dependencies.createId(), skillEffects: "suppressed" });
       const turnId = this.dependencies.createId();
-      const { side, turn } = await this.dependencies.executions.send({ workspaceId, agentId, accountId, executionId: execution.id, message, generation: execution.generation, turnId, attemptId: this.dependencies.createId() });
+      const { side, turn } = await this.dependencies.executions.send({ workspaceId, agentId, accountId, executionId: execution.id, message, generation: execution.generation, turnId, attemptId: this.dependencies.createId(), ...(input.userTimeZone ? { userTimeZone: input.userTimeZone } : {}) });
       // The session records the refused turn; the caller gets the same refusal every probe gives.
       if (turn.failureCode === USAGE_LIMIT_EXCEEDED_CODE) throw new CopilotUsageLimitReachedError();
       return {

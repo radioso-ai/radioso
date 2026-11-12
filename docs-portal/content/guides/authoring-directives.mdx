@@ -251,6 +251,17 @@ with.
   reply's **Flow** and read the rule's commitment and grade. When the commitment
   was right and the answer still broke it, raise the rule's **Priority** above
   the built-in rules it competes with (80 for representing the organization).
+- A rule asks the agent to link a page, and the reply shows the page's name as
+  plain text: an answer from your documents links only to an address the agent
+  was given in that turn, such as a document's source URL, the page the visitor
+  is on, your instructions and directives, or the conversation. An email address
+  counts for `mailto:` links, never for a link to its domain's website. Put the
+  address in the directive, or give the document a source URL. A link to any
+  other address shows as its text in chat on the web and in the embed, over the
+  chat API and MCP, in email, and in answers from `POST /api/v1/retrieval/answer`,
+  whoever calls it. On a streamed reply the compose stage counts it as
+  `unwrappedLinkCount`. Replies that do not answer from your documents, such as
+  a direct reply or a routine's question, keep the links they are written with.
 - An answer-coverage rule did not run: open Turn diagnostics and check whether
   coverage was assessed. Older turns and failed assessments have no semantic
   verdict to match.

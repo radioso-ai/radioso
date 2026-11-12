@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 
 import { AssistantIdentityLine, type AssistantIdentity } from '@/components/chat/assistant-identity'
+import { VisitorImageReadings, type VisitorImageThreadConfig } from '@/components/chat/visitor-image-thumbnails'
+import { VisitorMessageBody } from '@/components/chat/visitor-message-body'
+import { readVisitorImageInput } from '@/lib/visitor-image-input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Check, CircleCheckBig, Clock, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, Volume2, VolumeX, Wrench, Workflow } from 'lucide-react'
+import { Check, CircleCheckBig, Clock, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, Volume2, VolumeX, Workflow } from 'lucide-react'
 import { appendAssistantLinkUtm, sanitizeDestinationForAnalytics } from '@/lib/assistant-link-analytics'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
@@ -18,7 +21,6 @@ import {
   AssistantMessageContent,
   type AssistantLinkClickAnalyticsInput,
   type CitationOpenResult,
-  linkifyText,
 } from './chat-citations'
 import { SendToEvalAction, type SendToEvalActionProps } from './send-to-eval-action'
 import { API_BASE } from '@/lib/api-client'
@@ -185,41 +187,6 @@ function OperatorReplySpeechBadge({ speech }: { speech: OperatorReplySpeech }) {
       </TooltipTrigger>
       <TooltipContent side="bottom">{tooltip}</TooltipContent>
     </Tooltip>
-  )
-}
-
-/**
- * A calling agent's tool call, recorded with its structured form. Renders the tool
- * name and each slot value it supplied; the message content stays the fallback.
- */
-const RoutineInvocationBlock = ({
-  invocation,
-  fallback,
-}: {
-  invocation: NonNullable<ChatUserInputMetadata['routine']>
-  fallback: string
-}) => {
-  const entries = Object.entries(invocation.input ?? {})
-  if (!invocation.toolName) {
-    return <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(fallback)}</p>
-  }
-  return (
-    <div className="select-text text-sm" data-testid="routine-invocation-block">
-      <div className="flex items-center gap-1.5 font-mono text-xs">
-        <Wrench className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        <span>{invocation.toolName}</span>
-      </div>
-      {entries.length > 0 ? (
-        <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-          {entries.map(([key, value]) => (
-            <div key={key} className="contents">
-              <dt className="font-mono text-xs opacity-80">{key}</dt>
-              <dd className="break-words">{typeof value === 'string' ? value : JSON.stringify(value)}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-    </div>
   )
 }
 
@@ -474,6 +441,7 @@ export function ChatMessageThread({
   audience = 'visitor',
   activity = NO_ACTIVITY,
   hasOlderMessages = false,
+  visitorImages,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -519,6 +487,8 @@ export function ChatMessageThread({
   activity?: readonly ConversationActivityEntry[]
   // Whether older messages exist above the loaded window, so older events are held back too.
   hasOlderMessages?: boolean
+  // Where the photos a visitor sent are read from. Without it a message with photos shows only the typed text.
+  visitorImages?: VisitorImageThreadConfig
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
   const activityPlacement = useMemo(
@@ -783,12 +753,11 @@ export function ChatMessageThread({
                           : undefined
                       }
                     >
-                      {message.inputMetadata?.method === 'routine_invocation' && message.inputMetadata.routine ? (
-                        <RoutineInvocationBlock invocation={message.inputMetadata.routine} fallback={message.content} />
-                      ) : (
-                        <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(message.content)}</p>
-                      )}
+                      <VisitorMessageBody message={message} imageConfig={visitorImages} />
                     </div>
+                    {visitorImages?.readings ? (
+                      <VisitorImageReadings images={readVisitorImageInput(message.inputMetadata)?.images ?? []} {...visitorImages.readings} />
+                    ) : null}
                     {message.spokenLabel ? <SpokenMarker label={message.spokenLabel} theme={theme} /> : null}
                     {message.createdAt ? <p
                       className="px-1 text-xs text-muted-foreground"

@@ -8,6 +8,7 @@ import { createAccountVoiceRecordingRoutes } from "./accountVoiceRecordingRoutes
 import { createAuthRoutes } from "./authRoutes.js";
 import { createConversationActivityRoutes } from "./conversationActivityRoutes.js";
 import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
+import { createConversationImageRoutes } from "./conversationImageRoutes.js";
 import { createConversationRecordingRoutes } from "./conversationRecordingRoutes.js";
 import { createDeliveryFailureRoutes } from "./deliveryFailureRoutes.js";
 import { createNotificationDeliveryRoutes } from "./notificationDeliveryRoutes.js";
@@ -52,6 +53,7 @@ import { createAgentDiscoveryRoutes } from "../../../modules/agentDiscovery/publ
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 import { createTestExecutionRoutes } from "./testExecutionRoutes.js";
+import { createTestChatVoiceSessionRoutes } from "./testChatVoiceSessionRoute.js";
 import { createNotificationRecipientConfirmationRoutes } from "./notificationRecipientConfirmationRoutes.js";
 import { createNotificationDeliveryWebhookRoutes } from "./notificationDeliveryWebhookRoutes.js";
 
@@ -92,6 +94,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
       evalSnapshotService: appDependencies.evalSnapshotService,
     }),
   },
+  { path: "/api/v1/agents", createRouter: createTestChatVoiceSessionRoutes },
   { path: "/api/v1", createRouter: createContextVariableRoutes },
   { path: "/api/v1/agents", createRouter: createDecisionRoutes },
   { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },
@@ -107,6 +110,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/conversations", createRouter: createConversationActivityRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationRecordingRoutes },
+  { path: "/api/v1/conversations", createRouter: createConversationImageRoutes },
   { path: "/api/v1/delivery-failures", createRouter: createDeliveryFailureRoutes },
   { path: "/api/v1/notification-deliveries", createRouter: createNotificationDeliveryRoutes },
   { path: "/api/v1", createRouter: createHeldReplyRoutes },

@@ -63,39 +63,47 @@ export const registerPublicVoiceSessionSchemas = (registry: OpenAPIRegistry, sch
     }),
   );
 
-  const PublicVoiceSessionResponseSchema = registry.register(
-    "PublicVoiceSessionResponse",
-    z.object({
-      vendor: z.enum(VOICE_VENDORS).openapi({ description: "The voice runtime the session opens on: the agent's `voice.runtime.vendor`." }),
-      signedUrl: z.string().url().openapi({
-        description: "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: "
-          + "for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. "
-          + "Hand it to the vendor's client once and never store, log or share it.",
-      }),
-      sessionKey: z.string().uuid().openapi({
-        description: "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn "
-          + "so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.",
-      }),
-      locale: z.string().openapi({ description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`." }),
-      expiresAt: z.string().datetime().optional().openapi({
-        description: "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL.",
-      }),
-      recordingNotice: z.string().optional().openapi({
-        description: "The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts.",
-      }),
-      firstMessage: z.string().optional().openapi({
-        description: "What the call says first: the recording notice, then the agent's greeting in the session's language, as plain speech. "
-          + "Present only when the agent's vendor agent is one Radioso maintains (connected from the agent's Voice card) and there is something to say. "
-          + "Pass it as the session's first-message override, on `elevenlabs` the client's `overrides.agent.firstMessage`, and send no override when it is absent: "
-          + "a vendor agent set up outside Radioso closes a session that sets a first message it does not allow.",
-      }),
-      vendorLanguage: z.enum(ELEVENLABS_SESSION_LANGUAGES).optional().openapi({
-        description: "The vendor's code for the language the call starts in: `locale` mapped onto the languages the vendor speaks, such as `it` for `it-CH` or `pt-br` for `pt-BR`. "
-          + "Present only when the agent's vendor agent is one Radioso maintains, that vendor agent lets a session set its language, the vendor's browser client can set `locale`'s language and the vendor agent's voice speaks it, "
-          + "and it is not the language the vendor agent starts calls in already. "
-          + "Pass it as the session's language override, on `elevenlabs` the client's `overrides.agent.language`, and send no override when it is absent: "
-          + "the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one. "
-          + "The values are the codes the `elevenlabs` browser client's language override takes.",
+  const voiceSessionResponse = z.object({
+    vendor: z.enum(VOICE_VENDORS).openapi({ description: "The voice runtime the session opens on: the agent's `voice.runtime.vendor`." }),
+    signedUrl: z.string().url().openapi({
+      description: "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: "
+        + "for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. "
+        + "Hand it to the vendor's client once and never store, log or share it.",
+    }),
+    sessionKey: z.string().uuid().openapi({
+      description: "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn "
+        + "so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.",
+    }),
+    locale: z.string().openapi({ description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`." }),
+    expiresAt: z.string().datetime().optional().openapi({
+      description: "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL.",
+    }),
+    recordingNotice: z.string().optional().openapi({
+      description: "The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts.",
+    }),
+    firstMessage: z.string().optional().openapi({
+      description: "What the call says first: the recording notice, then the agent's greeting in the session's language, as plain speech. "
+        + "Present only when the agent's vendor agent is one Radioso maintains (connected from the agent's Voice card) and there is something to say. "
+        + "Pass it as the session's first-message override, on `elevenlabs` the client's `overrides.agent.firstMessage`, and send no override when it is absent: "
+        + "a vendor agent set up outside Radioso closes a session that sets a first message it does not allow.",
+    }),
+    vendorLanguage: z.enum(ELEVENLABS_SESSION_LANGUAGES).optional().openapi({
+      description: "The vendor's code for the language the call starts in: `locale` mapped onto the languages the vendor speaks, such as `it` for `it-CH` or `pt-br` for `pt-BR`. "
+        + "Present only when the agent's vendor agent is one Radioso maintains, that vendor agent lets a session set its language, the vendor's browser client can set `locale`'s language and the vendor agent's voice speaks it, "
+        + "and it is not the language the vendor agent starts calls in already. "
+        + "Pass it as the session's language override, on `elevenlabs` the client's `overrides.agent.language`, and send no override when it is absent: "
+        + "the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one. "
+        + "The values are the codes the `elevenlabs` browser client's language override takes.",
+    }),
+  });
+  const PublicVoiceSessionResponseSchema = registry.register("PublicVoiceSessionResponse", voiceSessionResponse);
+  const TestChatVoiceSessionResponseSchema = registry.register(
+    "TestChatVoiceSessionResponse",
+    voiceSessionResponse.extend({
+      sessionKey: z.string().openapi({
+        description: "Radioso's key for this Test Chat session: a correlation handle, not a credential, in the form Radioso reserves for Test Chat "
+          + "(`radioso-test-chat_` before a UUID). The page hands it to the vendor, which sends it back on every turn, and every turn runs on the test; "
+          + "on `elevenlabs` it travels as the custom LLM extra body's `session_key`.",
       }),
     }),
   );
@@ -110,6 +118,7 @@ export const registerPublicVoiceSessionSchemas = (registry: OpenAPIRegistry, sch
   Object.assign(schemas, {
     PublicVoiceSessionRequestSchema,
     PublicVoiceSessionResponseSchema,
+    TestChatVoiceSessionResponseSchema,
     PublicVoiceVendorConversationRequestSchema,
   });
 };

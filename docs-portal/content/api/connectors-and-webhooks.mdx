@@ -30,7 +30,11 @@ For WordPress, set **Post types to sync** to the comma-separated list you want, 
 
 For WhatsApp, configure the phone number ID, access token, app secret, business account ID, and generated webhook verify token. Use the connector detail's `webhookUrl` as the Meta webhook callback URL. Radioso verifies `X-Hub-Signature-256`, ignores duplicate message IDs, and stores message logs for retry and recovery.
 
-WhatsApp text messages are sent through assistant chat. Non-text WhatsApp messages are not converted into assistant user turns. If you configure an unsupported-message reply, Radioso sends that exact reply through WhatsApp; otherwise those messages are recorded as skipped.
+WhatsApp text messages are sent through assistant chat. Messages from one number that arrive within three seconds of each other are answered as one turn.
+
+When the agent that answers a number's messages has [photos turned on](/guides/image-input), a photo is one of those messages. Radioso downloads it through the Cloud API with the connector's access token, and the agent reads it as it reads a photo from the web chat: the caption is what the sender typed, and the photo is the image. A photo with no caption is a message of its own, made of the photo alone. WhatsApp delivers an album as separate messages seconds apart, so a few photos sent together are one turn with up to three photos; a fourth and later photo is an unsupported message. The agent is the one the number's conversation already runs on, or the workspace's default agent when a new conversation starts.
+
+Every other WhatsApp message (voice notes, documents, stickers, locations, and photos sent to an agent that has photos off or whose chat model cannot read images) is not converted into an assistant user turn. If you configure an unsupported-message reply, Radioso sends that exact reply through WhatsApp; otherwise those messages are recorded as skipped. A photo larger than 10 MiB, one that WhatsApp no longer holds, or one that is not a JPEG, PNG or WebP image is not read. Its caption, if it has one, is still answered as text; without a caption it is an unsupported message, so the sender gets your unsupported-message reply when you configured one.
 
 ## Save connector config
 

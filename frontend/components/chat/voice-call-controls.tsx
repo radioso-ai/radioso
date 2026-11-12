@@ -6,18 +6,37 @@ import { Button } from '@/components/ui/button'
 import type { WebsiteEmbedCopy, WebsiteEmbedTheme } from '@/lib/embed-widget'
 import type { VoiceSessionState } from '@/lib/voice-session'
 
+/** The colours a call's controls take: the website embed's theme, or the dashboard's tokens in Test Chat. */
+export type VoiceCallTheme = Pick<WebsiteEmbedTheme, 'accent' | 'accentForeground' | 'inputBackground' | 'inputBorder' | 'inputForeground' | 'mutedForeground'>
+
+/** The words a call's controls say, from the embed's copy, which Test Chat reads in English. */
+type VoiceCallCopy = Pick<
+  WebsiteEmbedCopy,
+  | 'publicChatTalkLabel'
+  | 'publicChatEndCallLabel'
+  | 'publicChatVoiceConnectingStatus'
+  | 'publicChatVoiceListeningStatus'
+  | 'publicChatVoiceSpeakingStatus'
+  | 'publicChatVoiceEndedStatus'
+  | 'publicChatVoiceMicrophoneError'
+  | 'publicChatVoiceUnavailableError'
+>
+
 /** The composer's Talk button: it starts a voice call with the agent. */
 export function VoiceTalkButton({
   theme,
   copy,
   onPress,
   disabled = false,
+  describedBy,
 }: {
-  theme: WebsiteEmbedTheme
-  copy: WebsiteEmbedCopy
+  theme: VoiceCallTheme
+  copy: VoiceCallCopy
   onPress: () => void
   /** While the chat loads, a typed reply streams, or the agent is unavailable. */
   disabled?: boolean
+  /** Names what the disabled button waits for, read by a screen reader. */
+  describedBy?: string
 }) {
   return (
     <Button
@@ -27,6 +46,7 @@ export function VoiceTalkButton({
       className="h-9 w-9 shrink-0 rounded-full hover:opacity-80"
       onClick={onPress}
       disabled={disabled}
+      aria-describedby={describedBy}
       title={copy.publicChatTalkLabel}
       style={{ color: theme.inputForeground }}
     >
@@ -36,7 +56,7 @@ export function VoiceTalkButton({
   )
 }
 
-const liveStatusText = (state: VoiceSessionState, copy: WebsiteEmbedCopy): string => {
+const liveStatusText = (state: VoiceSessionState, copy: VoiceCallCopy): string => {
   if (state.status === 'live') {
     return state.mode === 'speaking' ? copy.publicChatVoiceSpeakingStatus : copy.publicChatVoiceListeningStatus
   }
@@ -54,8 +74,8 @@ export function VoiceCallBar({
   onStop,
   recordingNotice = null,
 }: {
-  theme: WebsiteEmbedTheme
-  copy: WebsiteEmbedCopy
+  theme: VoiceCallTheme
+  copy: VoiceCallCopy
   state: VoiceSessionState
   onStop: () => void
   recordingNotice?: string | null
@@ -102,8 +122,8 @@ export function VoiceCallNotice({
   copy,
   state,
 }: {
-  theme: WebsiteEmbedTheme
-  copy: WebsiteEmbedCopy
+  theme: VoiceCallTheme
+  copy: VoiceCallCopy
   state: VoiceSessionState
 }) {
   const text =

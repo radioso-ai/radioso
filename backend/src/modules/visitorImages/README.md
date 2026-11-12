@@ -30,7 +30,7 @@ stored (`VisitorImageHolder`: a conversation and message id, or a Test Chat
 test), and `release` them when the turn stored none. The door renders
 the readings into the turn text with `renderVisitorImageTurn` and stores the
 structured form as the user message's `inputMetadata.imageInput`, whose shape
-the message metadata owns (`db/repositories/messageInputMetadata.ts`). This
+the shared input-metadata vocabulary owns (`shared/domain/chatInputMetadata.ts`). This
 module never reads `messages`.
 
 It does not know which model reads a photo or how storage is reached:

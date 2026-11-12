@@ -70,7 +70,7 @@ constructing ad hoc fetches.
   `audience-pulse-evidence-handoff.ts` keep transient recommendations and evidence
   out of the URL.
 - Embedded/public chat: `api-public-chat.ts`, `public-chat-session-handoff.ts`,
-  `embed-widget.ts`.
+  `public-chat-suggestion.ts` (what a clicked suggestion chip sends), `embed-widget.ts`.
 
 ## Tests
 

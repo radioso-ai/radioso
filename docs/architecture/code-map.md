@@ -1669,6 +1669,7 @@ Public surfaces and contracts:
 
 - `packages/conversation-contract/index.d.ts`
 - `packages/conversation-contract/modelGateway.d.ts` (the model port a host implements: request, completion with its stop reason, and `ConversationModelGateway`; re-exported from `index.d.ts`)
+- `packages/conversation-contract/routineGraph.d.ts` (the authored routine graph: steps, transitions, guards, slots, and ending kinds; re-exported from `index.d.ts`)
 - `packages/conversation-contract/routineTrace.d.ts` (the routine sub-trace: per-step entries, captured and replaced slot keys, opt-in slot values; re-exported from `index.d.ts`)
 - `packages/conversation-contract/index.js` (runtime values of the `declare const` code lists; change the two together)
 
@@ -2122,9 +2123,9 @@ Public surfaces and contracts:
 - `packages/routine-definition` (shared definition schemas and types, including `routineExposureSchema` and `routineExposureToolNamePattern`)
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
 - `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
-- Sensitive slots (#1543): the authored `sensitivity` lives on the slot schema (`routineSlotSensitivities`, column `routine_slot.sensitivity`, migration `248`); the masking rule is `redactSensitiveValues` / `REDACTED_VALUE` in `packages/conversation-contract` (shared with `context-variables/redaction.ts`); the runner masks its copy-outs (`sensitiveSlotKeys` in `packages/conversation-engine/src/routineRunner.ts`) and `resolveUntypedSkillArguments` masks unbound skill arguments; `sensitiveSlotsAwaited` (routines `sensitiveSlots.ts`) lets `ChatSessionPreparer` mark a visitor message that answers a sensitive step as it is created, and `RoutineTurnReporter.sensitiveSlotKeysHeld` lets the chat lifecycle mark a turn's messages; `backend/src/shared/domain/sensitiveTranscript.ts` turns a marked message into withheld text for summaries, facets, notice AI summaries, eval capture, Test Chat seeds, and the stored coverage request
+- Sensitive slots (#1543): the authored `sensitivity` lives on the slot schema (`routineSlotSensitivities`, column `routine_slot.sensitivity`, migration `248`); the masking rule is `redactSensitiveValues` / `REDACTED_VALUE` in `packages/conversation-contract` (shared with `context-variables/redaction.ts`); the runner masks its copy-outs (`sensitiveSlotKeys` in `packages/conversation-engine/src/routineSlotValues.ts`) and `resolveUntypedSkillArguments` masks unbound skill arguments; `sensitiveSlotsAwaited` (routines `sensitiveSlots.ts`) lets `ChatSessionPreparer` mark a visitor message that answers a sensitive step as it is created, and `RoutineTurnReporter.sensitiveSlotKeysHeld` lets the chat lifecycle mark a turn's messages (`chat/services/routines/sensitiveTurnMarker.ts`); `backend/src/shared/domain/sensitiveTranscript.ts` turns a marked message into withheld text for summaries, facets, notice AI summaries, eval capture, Test Chat seeds, and the stored coverage request
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD and validate)
-- `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
+- `packages/conversation-contract/routineGraph.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
   activation over registered `{ routine, trigger: { description, priority } }`
   metadata)
@@ -2132,9 +2133,10 @@ Public surfaces and contracts:
 Primary internals:
 
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
-- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
-- `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
-- `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit; `claim` decides the turn before the reply exists, `resume` claims and renders)
+- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns); `routineDefinitionRowMapper.ts` reads a row back into a definition
+- `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume); `routineTurnProvider.ts` wires that source and the turn plan's adapters into the routines module's `createRoutineTurnProvider`
+- `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit; `claim` decides the turn before the reply exists, `resume` claims and renders), with `routineSlotValues.ts` (which values may enter a run's state, and how they read in a copy that leaves) and `routineEnding.ts` (how a run ends: the terminal it reports, the completion export, the hand-off and notice effects)
+- `RoutineHostEffects` in `packages/conversation-contract/index.d.ts` (what a routine turn asks its host to record with the turn, such as a decision gate; the engine carries it unread from the runner to the claim's effects and `ProcessTurnResult` as `hostEffects`)
 - `packages/conversation-engine/src/routineReask.ts` (what a step asked again is told it lacks, whether its reply went unread, and which turns count as progress toward the re-ask limit)
 - `backend/src/modules/routines/selectorCompletionTelemetry.ts` (counts every next-step selector completion in `routine_next_step_completions_total` by model, step kind, call, and result, and logs an unreadable one)
 - `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector

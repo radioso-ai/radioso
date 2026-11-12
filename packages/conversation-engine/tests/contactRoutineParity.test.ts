@@ -297,7 +297,7 @@ describe("approval gate — engine surfaces awaitingDecision and suspends", () =
 
     const result = await engine.processTurn(input);
 
-    expect(result.awaitingDecision).toEqual({
+    expect(result.hostEffects?.awaitingDecision).toEqual({
       stepId: "gate",
       captureKey: "refund_decision",
       options: [

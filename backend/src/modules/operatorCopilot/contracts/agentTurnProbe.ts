@@ -1,4 +1,4 @@
-import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "./expensiveOperation.js";
 import type {

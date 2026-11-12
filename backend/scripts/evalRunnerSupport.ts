@@ -19,7 +19,7 @@ import {
 } from "../src/modules/eval/suite/index.js";
 import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
-import { replyBlockImages } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
+import { replyBlockCases, replyBlockImages } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
 import { workspaceStoragePrefix } from "../src/modules/documents/contracts/storage.js";
 import { toJsonb } from "../src/shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../src/shared/infra/kysely/types.js";
@@ -276,6 +276,58 @@ export const runThenClose = async <T>(
       reportCloseFailure(error);
     }
   }
+};
+
+/**
+ * Splits a run's cases by the corpus they ground against. The reply block cases run in a
+ * workspace of their own, seeded with their pages alone; every other case runs in the run's
+ * target, which never holds those pages. The pages carry `Source:` addresses, which the
+ * invented-link checks assume no document has, and hiking books, which a mountain-course
+ * question could otherwise retrieve.
+ */
+export const partitionCasesByCorpus = (
+  cases: readonly ConversationQualityCase[],
+): { shared: ConversationQualityCase[]; replyBlocks: ConversationQualityCase[] } => {
+  const replyBlockIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
+  return {
+    shared: cases.filter((evalCase) => !replyBlockIds.has(evalCase.id)),
+    replyBlocks: cases.filter((evalCase) => replyBlockIds.has(evalCase.id)),
+  };
+};
+
+/** The name of the workspace the reply block cases run in, so a repeat run finds it. */
+export const REPLY_BLOCK_EVAL_WORKSPACE_NAME = "Conversation-quality reply blocks";
+
+/** The workspace reads and writes `ensureReplyBlockTarget` makes, narrowed so a test can hand it fakes. */
+interface ReplyBlockTargetPorts {
+  workspaces: { findById(workspaceId: string): Promise<{ accountId: string } | null> };
+  workspaceService: {
+    listForAccount(accountId: string): Promise<Array<{ id: string; name: string }>>;
+    create(accountId: string, name: string): Promise<{ id: string }>;
+  };
+  agentService: { resolve(workspaceId: string): Promise<{ id: string }> };
+}
+
+/**
+ * The workspace and agent the reply block cases run on: a workspace in the run target's own
+ * account, created on the first run and found by name after. It goes through the account rather
+ * than registering one, since a single-organization install closes registration after its first
+ * account.
+ */
+export const ensureReplyBlockTarget = async (
+  ports: ReplyBlockTargetPorts,
+  targetWorkspaceId: string,
+): Promise<{ workspaceId: string; agentId: string }> => {
+  const target = await ports.workspaces.findById(targetWorkspaceId);
+  if (!target) {
+    throw new Error(`Workspace ${targetWorkspaceId} not found; the reply block cases run in a workspace beside it.`);
+  }
+  const existing = (await ports.workspaceService.listForAccount(target.accountId))
+    .find((workspace) => workspace.name === REPLY_BLOCK_EVAL_WORKSPACE_NAME);
+  const workspaceId = existing?.id
+    ?? (await ports.workspaceService.create(target.accountId, REPLY_BLOCK_EVAL_WORKSPACE_NAME)).id;
+  const agent = await ports.agentService.resolve(workspaceId);
+  return { workspaceId, agentId: agent.id };
 };
 
 /**

@@ -31,6 +31,7 @@ import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capability
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { CQ_AGENT_ID, CQ_WORKSPACE_ID } from "../fixtures/conversation-quality/index.js";
 import { conversationQualityCorpus, REFUND_POLICY_DOC_ID } from "../fixtures/conversation-quality/corpus.js";
+import { replyBlockDocuments } from "../fixtures/conversation-quality/replyBlockCases.js";
 import {
   createAuditService,
   InMemoryConversationRepository,
@@ -39,8 +40,9 @@ import {
   publishedRevisionResolverFixture,
 } from "./fakes.js";
 
+/** The reply block pages are a corpus of their own, which a live run seeds into its own workspace. */
 const seedDocument = (documentId: string) => {
-  const document = conversationQualityCorpus.find((candidate) => candidate.id === documentId);
+  const document = [...conversationQualityCorpus, ...replyBlockDocuments].find((candidate) => candidate.id === documentId);
   if (!document) {
     throw new Error(`No conversation-quality document ${documentId}`);
   }

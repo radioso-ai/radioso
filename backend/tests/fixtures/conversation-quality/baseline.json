@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-12T00:49:42.327Z",
+  "generatedAt": "2026-11-12T21:27:46.534Z",
   "passThreshold": 1,
   "cases": {
     "directive-refund-empathy": {
@@ -328,13 +328,18 @@
       "samples": 3
     },
     "reply-blocks-hiking-books": {
-      "status": "pass",
-      "passRate": 1,
+      "status": "fail",
+      "passRate": 0,
       "samples": 3
     },
     "reply-blocks-returns-policy-no-pictures": {
       "status": "fail",
       "passRate": 0.6666666666666666,
+      "samples": 3
+    },
+    "reply-blocks-unanswered-no-pictures": {
+      "status": "pass",
+      "passRate": 1,
       "samples": 3
     }
   }

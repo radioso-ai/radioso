@@ -59,7 +59,7 @@ export default function LegacyAccountDashboardPage() {
       if (!parsedRoute) {
         // No specific place to land (unparseable legacy segments) — same as
         // any other entry with no explicit destination, this defaults to
-        // the Inbox rather than a hardcoded section (see app/page.tsx).
+        // the Inbox rather than a hardcoded section (see app/(workspace-app)/page.tsx).
         const workspaceId = getStoredActiveWorkspaceId() ?? undefined
         const workspacePublicRouteKey = getStoredActiveWorkspacePublicRouteKey() ?? undefined
         router.replace(buildDashboardHref(signedInAccountId, {

@@ -72,7 +72,7 @@ export function InvitationAcceptForm({
       // An invited teammate joins an existing workspace (invitations only
       // exist on workspaces someone already set up) — the Inbox, not
       // onboarding, is the normal landing surface here, same as any other
-      // authenticated entry (see app/page.tsx).
+      // authenticated entry (see app/(workspace-app)/page.tsx).
       router.replace(buildDashboardHref(response.accountId, {
         section: 'activity',
         workspaceId: response.workspaceId,

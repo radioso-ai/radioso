@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ChatSessionPreparer, isEligibleForFacetExtraction } from "../../../src/modules/chat/services/chatSessionPreparer.js";
+import { ChatSessionPreparer } from "../../../src/modules/chat/services/chatSessionPreparer.js";
+import { isEligibleForFacetExtraction } from "../../../src/modules/chat/services/facetExtractionEligibility.js";
 import type { RetrievalTurnPort } from "../../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../../src/modules/retrieval/public.js";
 import type { FacetExtractionJobStore } from "../../../src/modules/facets/contracts.js";

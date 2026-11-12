@@ -918,11 +918,7 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'assistant' && agentId && showSection('context-variables') ? (
           <section id="assistant-context-variables" className="space-y-6 scroll-mt-24">
-            <AssistantContextVariablesSection
-              agentId={agentId}
-              onSaveStateChange={onSaveStateChange}
-              onEnablementSaved={dispatchDraftSaved}
-            />
+            <AssistantContextVariablesSection agentId={agentId} onSaveStateChange={onSaveStateChange} onEnablementSaved={dispatchDraftSaved} />
           </section>
           ) : null}
 
@@ -939,6 +935,7 @@ export function WorkspaceAssistantChannelsTab({
               agentId={agentId}
               routeState={routeState}
               onSaveStateChange={handleRevisionSaveStateChange}
+              agentDefaultLocale={anonSettings?.assistantDefaultLocale ?? undefined}
             />
           </section>
           ) : null}

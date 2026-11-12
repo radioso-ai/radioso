@@ -2,6 +2,7 @@ import type {
   RoutineDefinition,
   RoutineDefinitionDraft,
   RoutineCompletionExport,
+  RoutineConsent,
   RoutineExposure,
   RoutineFieldGuardOp,
   RoutineFieldGuardUnit,
@@ -96,6 +97,8 @@ export type RoutineFormState = {
   // Carried as authored: the Form has no exposure controls (they live in the Document
   // header), so the form only has to keep the block a document edit wrote.
   exposure?: RoutineExposure
+  // Carried as authored, like exposure: consents are edited in the Document.
+  consents?: RoutineConsent[]
 }
 
 export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'enabled' | 'activation'>
@@ -103,7 +106,7 @@ export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'enabled' | 'ac
 // The artifact a validation diagnostic is rendered against. Terminals share the step id
 // namespace in the producer grammar, so they are addressed with the `step` scope; there is
 // no `terminal` scope because the backend never emits one.
-export type DiagnosticScope = 'routine' | 'slot' | 'step' | 'transition' | 'completionExport'
+export type DiagnosticScope = 'routine' | 'slot' | 'step' | 'transition' | 'completionExport' | 'consent'
 
 export type DiagnosticTarget = {
   scope: DiagnosticScope
@@ -304,6 +307,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       destinationRef: routine.completionExport?.destinationRef ?? '',
     },
     ...(routine.exposure ? { exposure: { ...routine.exposure } } : {}),
+    ...(routine.consents ? { consents: structuredClone(routine.consents) } : {}),
   }
 }
 
@@ -409,7 +413,43 @@ export const formToRoutineDraft = (
     })),
     ...(completionExport ? { completionExport } : {}),
     ...(form.exposure ? { exposure: { ...form.exposure } } : {}),
+    ...(form.consents ? { consents: structuredClone(form.consents) } : {}),
   }
+}
+
+/**
+ * Why a draft cannot be saved yet, in the editor's words, or null when it can. These are the
+ * structural requirements the save body's schema holds a draft to, checked before sending it so
+ * the editor names what to fix instead of showing a rejected request.
+ */
+export const routineDraftError = (draft: RoutineDefinitionDraft): string | null => {
+  if (!draft.name.trim()) return 'Name is required.'
+  if (!draft.activation.triggerDescription.trim()) return 'Activation trigger is required.'
+  if (draft.steps.length === 0 || draft.steps.some((step) => !step.instruction.trim())) {
+    return 'Each routine needs at least one step with an instruction.'
+  }
+  if (draft.terminals.length === 0) return 'At least one terminal is required.'
+  if (draft.steps.some((step) => step.kind === 'tool' && !step.toolRef?.trim())) {
+    return 'Tool steps need a tool reference.'
+  }
+  if (draft.steps.some((step) => step.kind === 'action' && !step.actionType?.trim())) {
+    return 'Action steps need an action type.'
+  }
+  if (draft.steps.some((step) => (step.options ?? []).some((option) => !option.label.trim()))) {
+    return 'Each approval option needs a label.'
+  }
+  if (draft.completionExport?.enabled && !draft.completionExport.destinationRef.trim()) {
+    return 'Completion export needs a webhook destination.'
+  }
+  if (draft.completionExport?.enabled && draft.completionExport.triggerKinds.length === 0) {
+    return 'Completion export needs at least one terminal trigger.'
+  }
+  // A consent left covering no field (its field removed, or set back to normal) is kept for its
+  // wording, but the stored shape needs one field (#1544).
+  if ((draft.consents ?? []).some((consent) => consent.slotKeys.length === 0)) {
+    return 'Each consent needs a field it covers.'
+  }
+  return null
 }
 
 /**
@@ -464,6 +504,8 @@ const SLOT_PREFIX = 'slot:'
 const TRANSITION_PREFIX = 'transition:'
 const ROUTINE_PREFIX = 'routine:'
 const COMPLETION_EXPORT_PREFIX = 'completionExport.'
+// `consent:<key>` and `consent:<key>.<field>`; a consent key takes no dot.
+const CONSENT_LOCATION_PATTERN = /^consent:([A-Za-z_][A-Za-z0-9_]*)(?:\.|$)/u
 const STEP_FIELD_MARKERS = ['.inputBindings.', '.outputAssignments.'] as const
 
 // Node ids may contain `.` and `-`, so a field location cannot be split at its first dot.
@@ -520,6 +562,9 @@ export const diagnosticTargetFor = (
     const nodeId = resolveNodeId(location.slice(prefixLength), knownNodeIds)
     return nodeId.length > 0 ? { scope: 'step', id: nodeId } : routineTarget
   }
+
+  const consent = CONSENT_LOCATION_PATTERN.exec(location)
+  if (consent) return { scope: 'consent', id: consent[1] }
 
   if (location.startsWith(COMPLETION_EXPORT_PREFIX)) {
     const field = location.slice(COMPLETION_EXPORT_PREFIX.length)
@@ -586,6 +631,7 @@ export const renderedDraftTargets = (draft: RoutineDefinitionDraft): DiagnosticT
     ...draft.steps.map((step): DiagnosticTarget => ({ scope: 'step', id: step.stableStepId })),
     ...draft.terminals.map((terminal): DiagnosticTarget => ({ scope: 'step', id: terminal.stableStepId })),
     ...draft.transitions.map((transition): DiagnosticTarget => ({ scope: 'transition', id: `${transition.fromStep}->${transition.toRef}` })),
+    ...(draft.consents ?? []).map((consent): DiagnosticTarget => ({ scope: 'consent', id: consent.key })),
   ]
   if (draft.completionExport?.enabled) {
     targets.push({ scope: 'completionExport', id: 'destinationRef' })

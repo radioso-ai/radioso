@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   ROUTINE_DEFINITION_LIMITS,
+  routineConsentSchema,
   routineExposureSchema,
   routineReentryModes,
   routineSlotSensitivities,
@@ -87,6 +88,11 @@ export const routineFieldPatchSchema = z.object({
   // routine's stored one (`resolveRoutineFieldPatch`), so an edit that only switches the
   // exposure or rewords its description need not repeat it.
   exposure: routineExposureSchema.extend({ toolName: routineExposureSchema.shape.toolName.optional() }).optional(),
+  // The routine's consents (#1544), replaced whole like `exposure`: an edit that keeps one consent
+  // and changes another carries both, and an empty list removes them all. The wording in each is
+  // the operator's own, shown to visitors verbatim; validation, not this schema, holds it to the
+  // agent's language and to covering every sensitive field a step asks the visitor for.
+  consents: z.array(routineConsentSchema).optional(),
 }).strict().refine((patch) => Object.keys(patch).length > 0, {
   message: "a routine edit must change at least one field",
 });
@@ -222,6 +228,7 @@ export const applyRoutineFieldPatch = (
     ...(patch.name ? { name: patch.name } : {}),
     ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
     ...(patch.exposure === undefined ? {} : { exposure: patch.exposure }),
+    ...(patch.consents === undefined ? {} : { consents: patch.consents }),
     activation: { ...draft.activation, ...patch.activation },
     slots: draft.slots?.map((slot) => {
       const edit = slotEdits.get(slot.key);
@@ -264,6 +271,9 @@ export const describeRoutineFieldPatch = (patch: RoutineFieldPatch): string => {
   for (const terminal of patch.terminals ?? []) parts.push(`ending ${terminal.stableStepId}`);
   for (const slot of patch.slots ?? []) parts.push(`field ${slot.key}`);
   if (patch.exposure) parts.push(patch.exposure.enabled ? `exposed as tool ${patch.exposure.toolName}` : "tool exposure off");
+  if (patch.consents) {
+    parts.push(patch.consents.length === 0 ? "consents removed" : patch.consents.map((consent) => `consent ${consent.key}`).join(", "));
+  }
   return parts.join(", ");
 };
 
@@ -328,6 +338,18 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
   }]))),
   completionExport: routine.completionExport ?? null,
   exposure: routine.exposure ?? null,
+  // Keyed by consent key, and each consent's wording by language, so a reviewer sees which
+  // consent and which language an edit rewords rather than one changed list.
+  consents: Object.fromEntries(uniquelyKeyed((routine.consents ?? []).map((consent, ordinal) => [consent.key, {
+    slotKeys: consent.slotKeys,
+    onDecline: consent.onDecline,
+    variants: Object.fromEntries(consent.variants.map((variant) => [variant.locale, {
+      body: variant.body,
+      agreeLabel: variant.agreeLabel,
+      declineLabel: variant.declineLabel,
+    }])),
+    ordinal,
+  }]))),
 });
 
 // Two transitions may share a from/to pair with different guards; the ordinal disambiguates

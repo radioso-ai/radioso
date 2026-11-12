@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, check the email channel and its held replies, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 ---
 
 # Ray
@@ -524,6 +524,16 @@ after completion** switch on the field's row in the routine's Document tab). The
 proposal card
 shows one row per changed element, so you review the step that changed rather
 than the whole flow.
+
+A sensitive field a step asks the visitor for needs a consent the visitor agrees
+to before the field is collected, and Ray edits a routine's consents too: which
+fields each one covers, what a decline does, and its wording in each language.
+The wording is yours. Give Ray the text and the two labels, one to agree and one
+to decline, and it proposes them exactly as you wrote them. Ask for a consent
+without wording and Ray asks you for it, because it never writes or translates
+consent text itself. Marking such a field sensitive and adding its consent go in
+one edit, since it doesn't publish without one. See
+[Ask for consent first](/guides/authoring-routines#ask-for-consent-first).
 
 Changing the routine's shape — adding or removing a step, or rewiring which step
 leads where — happens in the routine editor. Ask Ray for one of those and it

@@ -102,11 +102,11 @@ export interface RoutineDefinitionCopilotToolDependencies {
 export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "routine_definition", shape: "read", verificationCost: () => 0, uiLabel: "Reading routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermissions: ["workspace.agents.read"],
-    description: "List an agent's routines, or read one routine: its wording as portable Markdown, plus the stable ids of every step, ending, and information field an edit can address.",
+    description: "List an agent's routines, or read one routine: its wording as portable Markdown, plus the stable ids of every step, ending, and information field an edit can address, and its consents with their whole wording.",
     inputSchema: routineDefinitionInputSchema, outputSchema: routineDefinitionOutputSchema,
     createTool: (context) => ({
       name: "routine_definition",
-      description: "List an agent's routines, or read one routine: its wording as portable Markdown, plus the stable ids of every step, ending, and information field an edit can address.",
+      description: "List an agent's routines, or read one routine: its wording as portable Markdown, plus the stable ids of every step, ending, and information field an edit can address, and its consents with their whole wording.",
       inputSchema: routineDefinitionInputSchema,
       outputSchema: routineDefinitionOutputSchema,
       invoke: async ({ agentId, routineId, authoringDetail }) => {
@@ -148,11 +148,11 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
     // nothing, and is safe to retry. Declaring it a probe would tell a transport not to retry a
     // call that is free and deterministic.
     name: "validate_routine", shape: "read", verificationCost: () => 0, uiLabel: "Validating routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermissions: ["workspace.agents.read"],
-    description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills — and report each diagnostic. Also reports non-blocking advisories, such as a notifying ending with no reply-to, that never block compile, validation, or publish.",
+    description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills, a sensitive field no consent covers — and report each diagnostic. Also reports non-blocking advisories, such as a notifying ending with no reply-to, that never block compile, validation, or publish.",
     inputSchema: validateRoutineInputSchema, outputSchema: validateRoutineOutputSchema,
     createTool: (context) => ({
       name: "validate_routine",
-      description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills — and report each diagnostic. Also reports non-blocking advisories, such as a notifying ending with no reply-to, that never block compile, validation, or publish.",
+      description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills, a sensitive field no consent covers — and report each diagnostic. Also reports non-blocking advisories, such as a notifying ending with no reply-to, that never block compile, validation, or publish.",
       inputSchema: validateRoutineInputSchema,
       outputSchema: validateRoutineOutputSchema,
       invoke: async ({ agentId, routineId }) => {
@@ -273,6 +273,14 @@ const projectRoutineEditableElements = (routine: RoutineDefinition) => {
     sensitivity: slot.sensitivity ?? "normal",
     mutable: slot.mutable ?? false,
   })));
+  // An edit replaces consents whole, so each one carries its wording unshortened: a kept consent
+  // goes back exactly as it is. There is at most one per sensitive field, so the list stays short.
+  const consents = (routine.consents ?? []).map((consent) => ({
+    key: consent.key,
+    slotKeys: [...consent.slotKeys],
+    onDecline: consent.onDecline,
+    variants: consent.variants.map(({ locale, body, agreeLabel, declineLabel }) => ({ locale, body, agreeLabel, declineLabel })),
+  }));
   return {
     steps: steps.items,
     stepsTruncated: steps.truncated,
@@ -280,6 +288,7 @@ const projectRoutineEditableElements = (routine: RoutineDefinition) => {
     endingsTruncated: endings.truncated,
     fields: fields.items,
     fieldsTruncated: fields.truncated,
+    consents,
   };
 };
 
@@ -391,7 +400,7 @@ const routineExposureDescription = `Propose offering a routine to calling AI age
 // The tool transport renders a nested input object as the bare word "object", so the shape of
 // `changes` has to live in the description or the model invents one of its own. Shared by both
 // descriptor variants below so the two copies cannot drift out of step with the schema.
-const routineEditDescription = `Propose an edit to an existing routine's wording, name, trigger, or whether it is enabled. \`changes\` takes at least one of: \`name\` (string); \`enabled\` (boolean, takes the routine in or out of service without touching its wording); \`activation\` ({triggerDescription?, priority?, reentryMode?, coverageCriteria?: {coverage: [...], reasons?: [...]}}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction?, operatorNotice?: {skillName?, replyToSlot?, includeAiSummary?}}], an ending's message and its operator notice, the email sent when the routine ends there, shown as \`operatorNotice\` on \`editable.endings\`; \`includeAiSummary\` asks for a background AI summary of details not collected in fields; \`skillName\` is a notify skill from \`operator_notice_destinations\`, null for the default destination; \`replyToSlot\` is the key of an email field in \`editable.fields\` that replies go to, null for none, and only ever the field the operator names since a routine can collect several addresses; the notice's subject and intro change only in the routine editor); \`slots\` ([{key, description?, required?, sensitivity?, mutable?}], an information field; \`sensitivity\` "sensitive" or "normal" and \`mutable\` ("Editable after completion") only when the operator asks). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. ${scopedAgentDraftPublicationNote}`;
+const routineEditDescription = `Propose an edit to an existing routine's wording, name, trigger, fields, consents, or whether it is enabled. \`changes\` takes at least one of: \`name\` (string); \`enabled\` (boolean, in or out of service); \`activation\` ({triggerDescription?, priority?, reentryMode?, coverageCriteria?: {coverage: [...], reasons?: [...]}}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction?, operatorNotice?: {skillName?, replyToSlot?, includeAiSummary?}}], an ending's message and the notice email operators get; \`includeAiSummary\` adds an AI summary; \`skillName\` is a notify skill from \`operator_notice_destinations\`, null for the default; \`replyToSlot\` is the email field the operator names, null for none); \`slots\` ([{key, description?, required?, sensitivity?, mutable?}]; set \`sensitivity\` "sensitive"/"normal" and \`mutable\` ("Editable after completion") only when the operator asks); \`consents\` ([{key, slotKeys, onDecline: "continue"|"handoff", variants: [{locale, body, agreeLabel, declineLabel}]}], replacing every consent; resend each one in \`editable.consents\` you keep; each sensitive field a step asks for needs one, with wording in the agent's default language). Consent wording is the operator's own, used verbatim: never write, translate, or improve it. Without it, ask for the text and both labels before proposing anything, since marking a field sensitive needs its consent in the same edit. Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why."}]}. Every id comes from \`editable\` in \`routine_definition\`; never invent one. It cannot add or remove a step or rework branching; send the operator to the routine editor for those. ${scopedAgentDraftPublicationNote}`;
 
 const routineValidationOutput = (draft: CopilotRoutineProposalDraft) => ({
   ok: draft.diagnostics.length === 0,

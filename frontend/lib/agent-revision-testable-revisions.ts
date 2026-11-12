@@ -69,13 +69,19 @@ const readCandidateRefusalDiagnosticMessages = (details: unknown): string[] => {
  * published revisions. Diagnostics never carry a routine name, only a `routineId`, so
  * the message does not invent one.
  */
-export const describeCandidateRefusal = (cause: unknown): string => {
-  if (!(cause instanceof Error)) return 'Draft not testable: The draft candidate is unavailable.'
+export const describeCandidateRefusal = (cause: unknown): string =>
+  `Draft not testable: ${describeReleaseRefusal(cause, 'The draft candidate is unavailable.')}`
+
+/**
+ * A refused review or publication (`422 revision_invalid`) as one line: the refusal, then what
+ * each diagnostic says is wrong, since the refusal alone never names the field or step to fix.
+ */
+export const describeReleaseRefusal = (cause: unknown, fallback: string): string => {
+  if (!(cause instanceof Error)) return fallback
   const body = 'error' in cause ? (cause as { error?: unknown }).error : undefined
   const details = body && typeof body === 'object' && 'details' in body
     ? (body as { details?: unknown }).details
     : undefined
   const diagnosticMessages = readCandidateRefusalDiagnosticMessages(details)
-  const summary = `Draft not testable: ${cause.message}`
-  return diagnosticMessages.length ? `${summary} ${diagnosticMessages.join('; ')}` : summary
+  return diagnosticMessages.length ? `${cause.message} ${diagnosticMessages.join('; ')}` : cause.message
 }

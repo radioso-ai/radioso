@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AGENT_DRAFT_SAVED_EVENT } from '@/lib/agent-draft-save-port'
+import { describeReleaseRefusal } from '@/lib/agent-revision-testable-revisions'
 import { agentRevisionsApi, type AgentRevisionDetail, type AgentRevisionState, type PublishRevisionCommand } from '@/lib/api-agent-revisions'
 import { contextVariablesApi } from '@/lib/api-context-variables'
 import type { ContextVariable } from '@/lib/api-types'
@@ -129,7 +130,7 @@ export function AgentRevisionHeader({
         idempotencyKey: crypto.randomUUID(),
       })
     } catch (cause) {
-      if (agentRequestGeneration.current === requestGeneration) setError(cause instanceof Error ? cause.message : 'Unable to load publication review.')
+      if (agentRequestGeneration.current === requestGeneration) setError(describeReleaseRefusal(cause, 'Unable to load publication review.'))
     } finally { if (agentRequestGeneration.current === requestGeneration) setReviewing(false) }
   }
   const publish = async () => {
@@ -142,7 +143,7 @@ export function AgentRevisionHeader({
       setPublicationCommand(null)
       window.dispatchEvent(new CustomEvent(AGENT_DRAFT_SAVED_EVENT, { detail: { agentId } }))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Publication failed. Retry this same publication or cancel the review.')
+      setError(describeReleaseRefusal(cause, 'Publication failed. Retry this same publication or cancel the review.'))
     }
     finally { setPublishing(false) }
   }

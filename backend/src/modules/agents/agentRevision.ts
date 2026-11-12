@@ -40,6 +40,8 @@ export { DEFAULT_AGENT_LOCALE_FALLBACK };
 export const agentPublicationReviewedEffect: ReviewedChangeEffect = { exposure: "live", reversibility: "reversible", metered: false };
 
 const persistedDate = z.coerce.date();
+// A routine finding takes the routine owner's safe message, which names the field, step or consent
+// to fix from its structural location and never quotes authored text.
 const safeRevisionDiagnostic = (diagnostic: { readonly routineId: string | null; readonly code: string; readonly location: string }): { readonly safeDiagnostic: true; readonly routineId: string | null; readonly code: string; readonly location: string; readonly message: string } => ({
   safeDiagnostic: true,
   routineId: diagnostic.routineId,
@@ -49,7 +51,9 @@ const safeRevisionDiagnostic = (diagnostic: { readonly routineId: string | null;
     ? "Exact greeting content is required when exact words is enabled."
     : diagnostic.code.startsWith("missing_scoped_routine")
       ? "A directive references a routine or step that is unavailable in this revision."
-      : "The agent revision contains content that is not valid for serving.",
+      : diagnostic.routineId !== null
+        ? toSafeRoutineValidationDiagnostic(diagnostic).message
+        : "The agent revision contains content that is not valid for serving.",
 });
 const revisionConflict = (message: string): AppError => new AppError(409, "revision_conflict", message);
 const authoredDirectiveSnapshotSchema = authoredDirectiveInputSchema.extend({

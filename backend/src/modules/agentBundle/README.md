@@ -122,6 +122,10 @@ agent. Cloud Run task deployments invoke the same sweep on a schedule.
   skills. A directive whose binding still cannot be satisfied is written disabled
   rather than dropped — the directive service skips binding validation for a
   disabled directive, so the retry defers to its rules instead of restating them.
+- **A publish rule does not park a routine.** Import only drafts, so a routine is
+  imported out of service only for what stops it running. A sensitive field no
+  consent covers (`consentPublishRuleCodes` in the routines module) leaves it in
+  service, and the new agent's first publish asks for the consent.
 - **Versions are checked, not guessed.** An unsupported `bundleVersion` or
   `agent.schemaVersion` is rejected before anything is written.
 

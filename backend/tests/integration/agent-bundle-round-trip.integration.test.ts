@@ -319,6 +319,29 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
     expect(enablements).toHaveLength(0);
   });
 
+  it("keeps an imported routine in service when a sensitive field has no consent, leaving the consent to publishing (#1544)", async () => {
+    // A bundle exported before consents existed. Import only drafts: the new agent serves nothing
+    // until its first publish, and that publish asks for the consent, so the routine is not parked.
+    const { workspace } = await seedWorkspace();
+    const source = await agentRepository.create(workspace.id, { name: "Intake Bot" });
+    await routineDefinitionRepository.createDraft(source.id, {
+      name: "health-intake",
+      activation: { triggerDescription: "The visitor wants to book a session.", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
+      slots: [{ stableSlotId: "slot_pregnant", key: "pregnant", type: "boolean", required: true, description: null, ordinal: 0, sensitivity: "sensitive" }],
+      steps: [{ stableStepId: "ask_pregnant", kind: "chat", instruction: "Ask whether {{slot.pregnant}}.", toolRef: null, ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: "ask_pregnant", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Thank the visitor.", ordinal: 1 }],
+    } as never);
+    const services = buildServices();
+    const bundle = await services.exportService.export(workspace.id, source.id);
+
+    const imported = await services.importService.import({ workspaceId: workspace.id, actorAccountId: null, bundle });
+
+    expect(imported.unresolved).toEqual([]);
+    const [routine] = await routineDefinitionRepository.listByAgent(imported.agentId);
+    expect(routine?.enabled).toBe(true);
+  });
+
   /**
    * Assembled through the same `createAgentBundleServices` the server uses, so the
    * composition adapters are under test here too rather than being re-implemented

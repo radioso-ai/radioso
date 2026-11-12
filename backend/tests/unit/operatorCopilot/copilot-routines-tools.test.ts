@@ -107,7 +107,41 @@ describe("copilot routine readers", () => {
       endingsTruncated: false,
       fields: [{ key: "order_number", type: "text", required: true, description: "The order", sensitivity: "normal", mutable: false }],
       fieldsTruncated: false,
+      consents: [],
     });
+  });
+
+  it("lists each consent with the fields it covers and its whole wording, so an edit can resend it verbatim (#1544)", async () => {
+    // Consents are replaced whole, so an edit that keeps one has to carry its wording back
+    // unchanged; a shortened locator would turn every kept consent into a rewording.
+    const body = `We ask about your injury so the right therapist sees you. ${"It stays in this conversation. ".repeat(8)}`;
+    const ports = dependencies([routine({
+      slots: [{ stableSlotId: "slot_injury", key: "injury", type: "text", required: true, description: "Any injury", ordinal: 0, sensitivity: "sensitive" }],
+      consents: [{
+        key: "injury_details",
+        slotKeys: ["injury"],
+        onDecline: "handoff",
+        variants: [
+          { locale: "en", body, agreeLabel: "I agree", declineLabel: "No thanks" },
+          { locale: "it", body: "Chiediamo dell'infortunio.", agreeLabel: "Accetto", declineLabel: "No, grazie" },
+        ],
+      }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { consents: unknown[] } } };
+
+    expect(body.length).toBeGreaterThan(160);
+    expect(result.routine.editable.consents).toEqual([{
+      key: "injury_details",
+      slotKeys: ["injury"],
+      onDecline: "handoff",
+      variants: [
+        { locale: "en", body, agreeLabel: "I agree", declineLabel: "No thanks" },
+        { locale: "it", body: "Chiediamo dell'infortunio.", agreeLabel: "Accetto", declineLabel: "No, grazie" },
+      ],
+    }]);
   });
 
   it("shows which fields are sensitive, so an edit can mark one or set it back (#1543)", async () => {

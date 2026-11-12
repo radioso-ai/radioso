@@ -5,6 +5,7 @@ import {
   candidateIsTestable,
   compareSelectionRepeatsRevision,
   describeCandidateRefusal,
+  describeReleaseRefusal,
 } from '@/lib/agent-revision-testable-revisions'
 import { ApiError } from '@/lib/api-client'
 import type { AgentRevisionState, AgentRevisionSummary } from '@/lib/api-agent-revisions'
@@ -175,5 +176,23 @@ describe('compareSelectionRepeatsRevision', () => {
   it('never flags a single chat or an incomplete comparison', () => {
     expect(compareSelectionRepeatsRevision('single', ['p1'])).toBe(false)
     expect(compareSelectionRepeatsRevision('compare', ['p1'])).toBe(false)
+  })
+})
+
+describe('describeReleaseRefusal', () => {
+  it('names what blocks a publication, so the operator knows which field to fix (#1544)', () => {
+    const cause = new ApiError({
+      status: 422,
+      error: {
+        code: 'revision_invalid',
+        message: 'The draft contains content that cannot be released.',
+        details: { diagnostics: [{ routineId: 'r1', code: 'sensitive_slot_without_consent', location: 'slot:dietary', message: 'Field "dietary" is sensitive, so visitors must agree to a consent before it is collected. Add a consent that covers it.' }] },
+      },
+    })
+
+    expect(describeReleaseRefusal(cause, 'Unable to load publication review.')).toBe(
+      'The draft contains content that cannot be released. Field "dietary" is sensitive, so visitors must agree to a consent before it is collected. Add a consent that covers it.',
+    )
+    expect(describeReleaseRefusal('not an error', 'Unable to load publication review.')).toBe('Unable to load publication review.')
   })
 })

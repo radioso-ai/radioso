@@ -124,10 +124,19 @@ describe("routine consent schema", () => {
     expect(routineValidationCodes).toEqual(expect.arrayContaining([
       "consent_slot_unknown",
       "consent_slot_not_sensitive",
+      "consent_slot_not_collected",
       "consent_slot_covered_twice",
       "consent_key_duplicate",
       "consent_missing_default_variant",
       "consent_text_invalid",
+    ]));
+  });
+
+  it("publishes the coverage codes that hold a routine back from publishing", () => {
+    expect(routineValidationCodes).toEqual(expect.arrayContaining([
+      "sensitive_slot_without_consent",
+      "consent_step_mixes_fields",
+      "consent_step_needs_default_exit",
     ]));
   });
 });

@@ -150,6 +150,11 @@ export {
 export { RoutineSlotCorrector } from "./routineSlotCorrector.js";
 export { RoutineReentryGate } from "./routineReentryGate.js";
 export {
+  RoutineConsentReplyReader,
+  RoutineConsentUnclearAnswerer,
+  type RoutineConsentWordingText,
+} from "./routineConsentReplies.js";
+export {
   DEFAULT_CLARIFICATION_QUESTION_PROMPT,
   DEFAULT_CLARIFICATION_REPLY_MAP_PROMPT,
   DefaultClarifier,

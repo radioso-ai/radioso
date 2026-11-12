@@ -554,7 +554,7 @@ export interface RoutineTurnWithConversationEngineClaim {
   };
 }
 
-const ROUTINE_TERMINAL_KINDS: ReadonlySet<string> = new Set<RoutineTerminalKind>(["complete", "handoff", "action", "stuck"]);
+const ROUTINE_TERMINAL_KINDS: ReadonlySet<string> = new Set<RoutineTerminalKind>(["complete", "handoff", "action", "stuck", "consent_declined"]);
 
 const isRoutineTerminalKind = (value: unknown): value is RoutineTerminalKind =>
   typeof value === "string" && ROUTINE_TERMINAL_KINDS.has(value);
@@ -575,7 +575,7 @@ const routineTurnEffectsOf = (result: ProcessTurnResult): RoutineTurnEffects => 
     ...(result.routineExecution ? { routineExecution: result.routineExecution } : {}),
     ...(terminalKind ? { terminalKind } : {}),
     ...(result.actions ? { actions: result.actions } : {}),
-    ...(result.awaitingDecision ? { awaitingDecision: result.awaitingDecision } : {}),
+    ...(result.hostEffects ? { hostEffects: result.hostEffects } : {}),
     ...(result.handoff ? { handoff: result.handoff } : {}),
     ...(result.operatorNotice ? { operatorNotice: result.operatorNotice } : {}),
     ...(result.skillsWithExternalEffects ? { skillsWithExternalEffects: result.skillsWithExternalEffects } : {}),

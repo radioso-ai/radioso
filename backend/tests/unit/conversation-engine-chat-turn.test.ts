@@ -252,6 +252,7 @@ describe("claimRoutineTurnWithConversationEngine", () => {
         { id: "confirm_sent", kind: "chat", action: "Say a copy is on its way and ask if anything else is needed." },
         { id: "done", kind: "terminal", action: "Confirm.", metadata: { terminalKind: "complete", operatorNotice: { subject: "New contact" } } },
         { id: "to_person", kind: "terminal", action: "Say a person continues.", metadata: { terminalKind: "handoff" } },
+        { id: "consent:contact:ask_message", kind: "consent", consentKey: "contact" },
         {
           id: "approve",
           kind: "await",
@@ -262,6 +263,8 @@ describe("claimRoutineTurnWithConversationEngine", () => {
       transitions: [
         { from: "ask_email", to: "ask_message", condition: "an email was given" },
         { from: "ask_email", to: "to_person", condition: "they want a person" },
+        { from: "ask_email", to: "consent:contact:ask_message", condition: "they agree to share a message" },
+        { from: "consent:contact:ask_message", to: "ask_message", condition: "", guard: { kind: "default" } },
         { from: "ask_message", to: "notify", condition: "a message was given" },
         { from: "ask_message", to: "approve", condition: "it needs approval" },
         { from: "ask_message", to: "send_copy", condition: "they want a copy" },
@@ -269,6 +272,8 @@ describe("claimRoutineTurnWithConversationEngine", () => {
         { from: "notify", to: "done", condition: "always" },
       ],
       completionExport: { enabled: true, destinationRef: "dest_1", triggerKinds: ["complete"] },
+      // No consent port is wired here, so the consent is never asked and its decline path runs.
+      consents: [{ key: "contact", slotKeys: ["message"], onDecline: "handoff" }],
     };
     const onStep = (stepId: string, extra: Partial<RoutineState> = {}): RoutineState => ({
       sessionId: "conv_1",
@@ -289,6 +294,7 @@ describe("claimRoutineTurnWithConversationEngine", () => {
       { name: "terminal with action", active: onStep("ask_message"), nextStepId: "notify", terminalKind: "complete" },
       { name: "handoff", active: onStep("ask_email"), nextStepId: "to_person", terminalKind: "handoff" },
       { name: "stuck", active: onStep("ask_email", { reaskCount: 4 }), nextStepId: "ask_email", terminalKind: "stuck" },
+      { name: "declined consent", active: onStep("ask_email"), nextStepId: "consent:contact:ask_message", terminalKind: "consent_declined" },
       { name: "approval", active: onStep("ask_message"), nextStepId: "approve" },
       { name: "a skill step, then a chat step", active: onStep("ask_message"), nextStepId: "send_copy", skillsWithExternalEffects: ["customer_email.send"] },
     ];

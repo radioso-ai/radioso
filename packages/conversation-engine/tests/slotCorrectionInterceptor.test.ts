@@ -25,8 +25,11 @@ const mutableEmailSlot: RoutineSlotCorrectionCandidate["slots"] = [
 
 const noCorrection: ConversationRoutineSlotCorrection["detect"] = async () => ({ kind: "none", reason: "not_a_correction" });
 
-const correction = (candidate: RoutineSlotCorrectionCandidate): ConversationRoutineSlotCorrection["detect"] =>
-  async () => ({ kind: "correction", ...candidate });
+// A routine without consents unless a test gives it some.
+const correction = (
+  candidate: Omit<RoutineSlotCorrectionCandidate, "consents"> & Partial<Pick<RoutineSlotCorrectionCandidate, "consents">>,
+): ConversationRoutineSlotCorrection["detect"] =>
+  async () => ({ kind: "correction", consents: [], ...candidate });
 
 const buildInput = (overrides: {
   detect?: ConversationRoutineSlotCorrection["detect"];
@@ -36,6 +39,7 @@ const buildInput = (overrides: {
   save?: (state: RoutineState) => Promise<void>;
   routineActivator?: ConversationRoutineActivator;
   routineReentryGate?: ConversationRoutineReentryGate;
+  routineRunner?: AttemptRoutineInput["routineRunner"];
 }): { input: AttemptRoutineInput; events: ConversationEvent[]; save: ReturnType<typeof vi.fn>; rejectInvalid: ReturnType<typeof vi.fn> } => {
   const events: ConversationEvent[] = [];
   const save = vi.fn(overrides.save ?? (async () => {}));
@@ -56,8 +60,8 @@ const buildInput = (overrides: {
       save,
       clear: vi.fn(async () => {}),
     },
-    // Unused by the correction path, but attemptRoutine requires it to be wired.
-    routineRunner: { resume: vi.fn() },
+    // Unused by the correction path unless a test says otherwise, but attemptRoutine requires it.
+    routineRunner: overrides.routineRunner ?? { resume: vi.fn() },
     routineSlotCorrection: {
       detect: overrides.detect ?? vi.fn(noCorrection),
       confirm: overrides.confirm ?? vi.fn(async () => "Updated."),
@@ -125,6 +129,26 @@ describe("completed-instance slot-correction interceptor", () => {
       })),
     });
     const result = await new DefaultConversationEngine().attemptRoutine(input);
+    expect(result).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(rejectInvalid).not.toHaveBeenCalled();
+  });
+
+  it("never writes a slot the routine's consent covers, whatever runner runs the routine (#1544)", async () => {
+    // The routine's consents come with the correction, as its slots do; the runner is one that can
+    // say nothing about the routine it runs, as a host's wrapper around the engine's runner is.
+    const { input, save, rejectInvalid } = buildInput({
+      detect: vi.fn(correction({
+        slots: mutableEmailSlot,
+        consents: [{ key: "contact", slotKeys: ["email"], onDecline: "continue" }],
+        slotKey: "email",
+        rawValue: "new@example.com",
+      })),
+      routineRunner: { resume: vi.fn() },
+    });
+
+    const result = await new DefaultConversationEngine().attemptRoutine(input);
+
     expect(result).toBeNull();
     expect(save).not.toHaveBeenCalled();
     expect(rejectInvalid).not.toHaveBeenCalled();

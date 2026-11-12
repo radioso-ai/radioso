@@ -241,6 +241,7 @@ const harness = (scenario: ParityScenario) => {
               return {
                 kind: "correction",
                 slots: [{ id: "slot_email", key: "email", type: "email", required: true, mutable: true }],
+                consents: [],
                 slotKey: "email",
                 rawValue: "new@example.com",
               };
@@ -360,7 +361,7 @@ describe("DefaultConversationEngine.claimRoutine", () => {
         routineExecution: settled.routineExecution,
         terminalKind: routineStage?.outputs?.terminalKind,
         actions: settled.actions,
-        awaitingDecision: settled.awaitingDecision,
+        hostEffects: settled.hostEffects,
         handoff: settled.handoff,
         operatorNotice: settled.operatorNotice,
         skillsWithExternalEffects: settled.skillsWithExternalEffects,

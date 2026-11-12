@@ -48,7 +48,7 @@ export interface ChatOwnershipAck {
  * Why a turn handed its conversation to a person: a routine reached an authored hand-off end, a
  * routine's visitor got stuck, or a grounded miss on an agent that hands those off.
  */
-export type ChatTurnHandoffReason = "routine_handoff" | "routine_stuck" | "retrieval_miss";
+export type ChatTurnHandoffReason = "routine_handoff" | "routine_stuck" | "routine_consent_declined" | "retrieval_miss";
 
 /**
  * The hand-off a turn applied, for the channel that delivers its reply. `collectedSlotCount` is how

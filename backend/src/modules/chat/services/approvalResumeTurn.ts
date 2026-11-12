@@ -233,7 +233,7 @@ export class ApprovalResumeTurn {
     // Parked at its next gate, the routine asks operators for that decision as a live turn does.
     const decisionEffects = routineAwaitingDecisionEffects({
       session,
-      awaitingDecision: result.awaitingDecision,
+      awaitingDecision: result.hostEffects?.awaitingDecision,
       routineStateTransition,
       actions: routineEnding.actions,
     });
@@ -255,7 +255,7 @@ export class ApprovalResumeTurn {
       // Marks the resumed reply when the routine holds a sensitive value, as a live turn's is (#1543).
       routineReporter: routineTurnPorts.reporter,
       pendingDecisionTransition: decisionEffects.pendingDecisionTransition,
-      suspended: Boolean(result.awaitingDecision),
+      suspended: Boolean(result.hostEffects?.awaitingDecision),
       additionalAuditEvent: {
         accountId: input.decidedBy,
         workspaceId: input.record.workspaceId,

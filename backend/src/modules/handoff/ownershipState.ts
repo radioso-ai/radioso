@@ -5,6 +5,8 @@ export type ConversationOwnershipScope = "human_owned";
 export type ConversationOwnershipReason =
   | "routine_handoff"
   | "routine_stuck"
+  /** A visitor declined a routine's consent, and its decline choice hands off (#1544). */
+  | "routine_consent_declined"
   | "retrieval_miss"
   | "operator_takeover"
   /** The conversation arrived at a mailbox that only operators answer. */

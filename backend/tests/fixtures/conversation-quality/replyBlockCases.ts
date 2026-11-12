@@ -137,4 +137,18 @@ export const replyBlockCases: ConversationQualityCase[] = [
       { type: "answer_excludes_image_url" },
     ],
   },
+  {
+    id: "reply-blocks-unanswered-no-pictures",
+    name: "A question the pictured pages leave unanswered gets a plain decline and no pictures",
+    description: "A shopper asks who wrote one of the books. Its product page has a cover but names no author, so the reply declines as it would without pictures and carries no block.",
+    tags: ["reply-blocks"],
+    query: "Who wrote Hut to Hut: Ten Classic Treks?",
+    clientContextCapabilities: replyBlocksCapabilities,
+    assertions: [
+      { type: "retrieval_includes_document", documentId: HIKING_BOOK_DOC_IDS[1] },
+      { type: "turn_answer_coverage", coverage: "unanswered" },
+      { type: "no_reply_block" },
+      { type: "answer_excludes_image_url" },
+    ],
+  },
 ];

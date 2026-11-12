@@ -105,15 +105,19 @@ the course name to `#`.
 
 ## Reply block cases
 
-The three `reply-blocks` cases declare `clientContextCapabilities["reply.blocks"]`, as a client
+The four `reply-blocks` cases declare `clientContextCapabilities["reply.blocks"]`, as a client
 that draws item lists does, and check the cards a grounded answer presents. `reply-blocks-hiking-books` asks
 which hiking books the shop has, over five product pages whose covers are their primary images,
 and expects a `carousel` of at least two items that link to, or are titled as, the retrieved
 pages. `reply-blocks-guest-house-photos` asks what the guest house looks like, over a page whose
 photos are anchored to its text, and expects a `grid`. `reply-blocks-returns-policy-no-pictures`
 asks how to return a book, over the returns page, whose picture is its primary image, and
-expects `no_reply_block`: the question is about a policy, not the items. Each checks with
-`answer_excludes_image_url` that the answer text names no picture by address or handle.
+expects `no_reply_block`: the question is about a policy, not the items.
+`reply-blocks-unanswered-no-pictures` asks who wrote one of the books, over its product page,
+which has a cover but names no author, and expects an `unanswered` coverage verdict and
+`no_reply_block`: a decline carries no cards, so its text is the decline it would be without
+pictures. Each checks with `answer_excludes_image_url` that the answer text names no picture by
+address or handle.
 
 Their pages are a corpus of their own, with `Source:` URLs, so the live runner keeps them out
 of the workspace every other case grounds against. It runs them in a workspace beside

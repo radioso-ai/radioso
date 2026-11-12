@@ -475,6 +475,7 @@ describe("live runner reply block corpus", () => {
       "reply-blocks-guest-house-photos",
       "reply-blocks-hiking-books",
       "reply-blocks-returns-policy-no-pictures",
+      "reply-blocks-unanswered-no-pictures",
     ]);
     expect(shared).toHaveLength(conversationQualityCases.length - replyBlocks.length);
     expect(shared.some((evalCase) => evalCase.id.startsWith("reply-blocks-"))).toBe(false);

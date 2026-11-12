@@ -6,6 +6,7 @@ import type { AppLogger } from "../../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { setTraceAttributes } from "../../../../shared/observability/tracing/operations.js";
 import type { EvidenceImageAttacher } from "../../../retrieval/public.js";
+import type { ToolImageSource } from "../../../toolImages/contracts/index.js";
 import type { ReplyImageUrls, StoredReplyBlock } from "../../contracts/replyBlocks.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
 import type { GroundedAnswerEnvelope } from "../groundedAnswerEnvelope.js";
@@ -13,10 +14,15 @@ import { presentHeadSchemaExtension, readPresentHead } from "./presentHead.js";
 import { buildReplyBlock, presentReplyBlocks, type ReplyBlockDropReason } from "./replyBlockBuilder.js";
 import { TurnImageLedger } from "./turnImageLedger.js";
 
-/** A reply's blocks in both forms: as the message row stores them, and as a client receives them. */
+/**
+ * A reply's blocks in both forms: as the message row stores them, and as a client receives them.
+ * `toolImages` are the pictures the blocks show from a skill's result, which the reply's
+ * transaction records; server-only, never stored on the message or sent.
+ */
 export interface PresentedReplyBlocks {
   stored: StoredReplyBlock[];
   presented: ReplyBlock[];
+  toolImages?: ToolImageSource[];
 }
 
 /** One grounded answer's offer of the `present` head, built from the images its evidence carries. */
@@ -40,7 +46,7 @@ interface ReplyBlockTurnFactoryDependencies {
 }
 
 /** A conversation's source channel as a metric label: identifier-shaped values only, so the series stays bounded. */
-const channelLabel = (sourceChannel: string | null | undefined): string =>
+export const channelLabel = (sourceChannel: string | null | undefined): string =>
   sourceChannel && /^[a-z][a-z0-9_]{0,31}$/.test(sourceChannel) ? sourceChannel : "other";
 
 /**
@@ -79,8 +85,8 @@ export class ReplyBlockTurnFactory {
           return undefined;
         }
         this.deps.metrics?.incrementCounter("reply_blocks_emitted_total", {
-          help: "Reply blocks built for grounded answers, by layout and conversation channel",
-          labels: { layout: block.layout, channel },
+          help: "Reply blocks built for replies, by layout, conversation channel and where the items came from",
+          labels: { layout: block.layout, channel, source: "evidence" },
         });
         return { stored: [block], presented: presentReplyBlocks([block], this.deps.imageUrls) };
       },
@@ -105,7 +111,7 @@ export class ReplyBlockTurnFactory {
   private countDropped(dropped: readonly ReplyBlockDropReason[]): void {
     for (const reason of dropped) {
       this.deps.metrics?.incrementCounter("reply_block_items_dropped_total", {
-        help: "Images the model named for a reply block that did not become items, by reason",
+        help: "Items the model named for a reply block that did not become items, or fields left off them, by reason",
         labels: { reason },
       });
     }

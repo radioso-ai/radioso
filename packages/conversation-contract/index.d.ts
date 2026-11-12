@@ -413,7 +413,7 @@ export interface SkillDefinition {
   metadata?: Record<string, unknown>;
 }
 
-export type { RoutineSkillOutcomeStatus, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeStatus } from "./skillOutcome.js";
+export type { RoutineSkillOutcomeStatus, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeMedia, SkillOutcomeStatus } from "./skillOutcome.js";
 
 /**
  * Narrow, per-turn channel handed to a skill executor so it can append

@@ -747,10 +747,10 @@ describe("RepositoryAgentSkillTurnSkillProvider dispatch failures", () => {
     expect.any(String),
   ];
 
-  it("settles a completed outcome with no answer text as failed, because a terminal skill must answer", async () => {
+  it("settles a completed outcome with neither text nor records as failed, because a terminal skill must answer", async () => {
     const { outcome, logger } = await dispatchBoundSkill(async () => ({
       disposition: "settled",
-      outcome: { status: "completed", answer: "  ", outputs: { structuredContent: { orders: [] } } },
+      outcome: { status: "completed", answer: "  ", outputs: {} },
     }));
 
     expect(outcome.outcome).toMatchObject({
@@ -759,6 +759,16 @@ describe("RepositoryAgentSkillTurnSkillProvider dispatch failures", () => {
       error: { code: "empty_answer" },
     });
     expect(logger.warn).toHaveBeenCalledWith(...failureLog("empty_answer"));
+  });
+
+  it("settles a completed outcome with records and no text, because the reply is written from the records (#1763)", async () => {
+    const { outcome, logger } = await dispatchBoundSkill(async () => ({
+      disposition: "settled",
+      outcome: { status: "completed", outputs: { structuredContent: [{ order: "123", status: "shipped" }] } },
+    }));
+
+    expect(outcome.outcome).toMatchObject({ status: "completed", outputs: { structuredContent: [{ order: "123" }] } });
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("passes an executor's failed outcome through without a second warn, since the executor logs its own", async () => {

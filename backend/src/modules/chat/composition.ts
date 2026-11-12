@@ -28,7 +28,7 @@ export { ChatTurnAssemblyFactory } from "./services/chatTurnAssembly.js";
 export type { PreparedSession } from "./services/chatSessionPreparer.js";
 export {
   AGENT_SKILL_OUTCOME_KIND,
-  hasAnswerText,
+  hasRenderableResult,
   type AgentSkillTurnRuntime,
   type AgentSkillTurnSkillProvider,
 } from "./services/agentSkillTurnSkillProvider.js";

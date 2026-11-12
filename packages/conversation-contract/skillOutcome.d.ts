@@ -18,10 +18,20 @@ export interface SkillOutcomeControl {
   lifespan?: "response" | "session";
 }
 
+/**
+ * A picture a skill returned as bytes, which the host stored while the skill ran. The outcome
+ * carries only this reference, never the bytes, so an outcome stays small wherever it is kept.
+ */
+export interface SkillOutcomeMedia {
+  kind: "image";
+  imageId: string;
+}
+
 export interface SkillOutcome {
   status: SkillOutcomeStatus;
   answer?: string;
   outputs?: Record<string, unknown>;
+  media?: SkillOutcomeMedia[];
   control?: SkillOutcomeControl;
   guidance?: SkillTransientGuidance[];
   metadata?: Record<string, unknown>;

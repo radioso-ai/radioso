@@ -6,6 +6,9 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import { buildAssistantReplyPrompt, type AssistantReplyPromptInput } from "./assistantReplyPromptBuilder.js";
 import type { TurnStreamResult } from "./turnOutcome.js";
+import { presentReplyResponseFormat, readPresentReplyEnvelope } from "./replyBlocks/presentReplyEnvelope.js";
+import type { ReplyPresentOffer } from "./replyBlocks/skillResultReplyBlocks.js";
+import { StructuredAnswerFieldReader } from "./structuredAnswerFieldReader.js";
 
 /**
  * Writes one capability's reply prompt from the turn the composer reads and, for a reply
@@ -33,6 +36,11 @@ export interface AssistantReplyConfig {
  * rather than borrowing the grounded chain. Only the capability identity and its
  * prompt vary, via {@link AssistantReplyConfig}; generation, streaming, and the
  * blank fallback are identical, so there is one implementation, not one per voice.
+ *
+ * A caller that offers the `present` head ({@link ReplyPresentOffer}) gets the reply as a
+ * structured envelope with that field ahead of `answer`; the text streams from `answer` alone,
+ * and the blocks are built from the envelope once it is whole. Without an offer, the request is
+ * the plain text generation it always was. A blank reply's fallback never carries blocks.
  */
 export class AssistantReplyComposer {
   constructor(
@@ -42,6 +50,14 @@ export class AssistantReplyComposer {
     private readonly fallbackReplyComposer: FallbackReplyComposer,
     private readonly config: AssistantReplyConfig,
   ) {}
+
+  /** The reply prompt and generation options, with the offer's rules and schema when there is one. */
+  private request(session: PreparedSession, query: string, skillFindings: string | undefined, offer: ReplyPresentOffer | null | undefined) {
+    const prompt = this.buildPrompt(session, query, skillFindings);
+    return offer
+      ? { prompt: `${prompt}\n\n${offer.promptSection}`, generation: { responseFormat: presentReplyResponseFormat(offer.schemaExtension) } }
+      : { prompt };
+  }
 
   /** Builds the capability's reply prompt (the assistant's own voice, no retrieval). */
   private buildPrompt(session: PreparedSession, query: string, skillFindings: string | undefined): string {
@@ -79,26 +95,37 @@ export class AssistantReplyComposer {
     query: string,
     accountId: string | undefined,
     skillFindings?: string,
+    offer?: ReplyPresentOffer | null,
   ): Promise<ChatPresentedAnswer | null> {
-    let answer: string;
+    let raw: string;
     try {
-      answer = (await this.chatGateway.answer({
+      raw = await this.chatGateway.answer({
         query,
         history: session.history,
-        prompt: this.buildPrompt(session, query, skillFindings),
+        ...this.request(session, query, skillFindings, offer),
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, this.config.outcomeKind),
-      })).trim();
+      });
     } catch (error) {
       if (isBlankChatAnswerError(error)) {
         return null;
       }
       throw error;
     }
+    const { answer, extras } = offer ? readPresentReplyEnvelope(raw) : { answer: raw.trim(), extras: undefined };
     if (!answer) {
       return null;
     }
-    return this.presentReply(answer);
+    return this.withBlocks(this.presentReply(answer), offer, extras);
+  }
+
+  private withBlocks(
+    presentation: ChatPresentedAnswer,
+    offer: ReplyPresentOffer | null | undefined,
+    extras: Record<string, unknown> | undefined,
+  ): ChatPresentedAnswer {
+    const replyBlocks = offer?.build(extras);
+    return replyBlocks ? { ...presentation, replyBlocks } : presentation;
   }
 
   async composeAnswer(
@@ -107,8 +134,9 @@ export class AssistantReplyComposer {
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
     skillFindings?: string,
+    offer?: ReplyPresentOffer | null,
   ): Promise<ChatPresentedAnswer> {
-    const reply = await this.tryComposeAnswer(session, query, accountId, skillFindings);
+    const reply = await this.tryComposeAnswer(session, query, accountId, skillFindings, offer);
     if (reply) {
       return reply;
     }
@@ -141,16 +169,20 @@ export class AssistantReplyComposer {
     accountId: string | undefined,
     signal?: AbortSignal,
     skillFindings?: string,
+    offer?: ReplyPresentOffer | null,
   ): AsyncGenerator<string, TurnStreamResult> {
     let streamedAnswer = "";
-    for await (const text of this.chatGateway.streamAnswer({
+    // With an offer the model writes the envelope; only its `answer` field reaches the visitor.
+    const envelope = offer ? new StructuredAnswerFieldReader() : null;
+    for await (const chunk of this.chatGateway.streamAnswer({
       query,
       history: session.history,
-      prompt: this.buildPrompt(session, query, skillFindings),
+      ...this.request(session, query, skillFindings, offer),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}`),
       signal,
     })) {
+      const text = envelope ? envelope.push(chunk) : chunk;
       if (!text) {
         continue;
       }
@@ -158,10 +190,10 @@ export class AssistantReplyComposer {
       yield text;
     }
 
-    const answer = streamedAnswer.trim();
+    const { answer, extras } = envelope ? readPresentReplyEnvelope(envelope.raw) : { answer: streamedAnswer.trim(), extras: undefined };
     if (answer) {
       return {
-        finalPresentation: this.presentReply(answer),
+        finalPresentation: this.withBlocks(this.presentReply(answer), offer, extras),
         suggestions: { mode: "presentation" },
         hasStreamedAnswer: true,
         streamedAnswer,

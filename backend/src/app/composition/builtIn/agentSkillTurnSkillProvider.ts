@@ -7,7 +7,7 @@ import type { FinalPromptContext } from "../../../modules/retrieval/public.js";
 import {
   AGENT_SKILL_OUTCOME_KIND,
   buildPreparedTurnOutcome,
-  hasAnswerText,
+  hasRenderableResult,
   toConversationAgentConfig,
   toConversationInputEvent,
   toConversationMessages,
@@ -441,8 +441,8 @@ const turnSkillForAgentSkill = (
       if (result.outcome.status !== "completed") {
         return outcomeFor(session, agentSkill.skillName, result.outcome);
       }
-      // The visitor's reply is written from the skill's text; structured content alone leaves it nothing.
-      if (!hasAnswerText(result.outcome.answer)) {
+      // The visitor's reply is written from the skill's text or its records; neither leaves it nothing.
+      if (!hasRenderableResult(result.outcome)) {
         return fail("empty_answer");
       }
       return outcomeFor(session, agentSkill.skillName, result.outcome);

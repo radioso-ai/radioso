@@ -41,8 +41,14 @@ export interface StoredReplyImage {
 
 export type StoredReplyItem = Omit<ReplyItem, "image" | "facts"> & { image?: StoredReplyImage };
 
+/**
+ * Where a stored block's items came from, when not from the answer's evidence. Server-only: it is
+ * kept on the message for whatever acts on a block later, and presenting a block never sends it.
+ */
+export type StoredReplyBlockOrigin = { kind: "skill_result"; skillName: string };
+
 /** A reply block as `messages.metadata_json.blocks` keeps it. */
-export type StoredReplyBlock = Omit<ItemListBlock, "items"> & { items: StoredReplyItem[] };
+export type StoredReplyBlock = Omit<ItemListBlock, "items"> & { items: StoredReplyItem[]; origin?: StoredReplyBlockOrigin };
 
 /** Builds the served addresses of a stored image: `src` at the larger width, `srcSet` at both. */
 export interface ReplyImageUrls {
@@ -88,7 +94,9 @@ const storedReplyImageSchema = z.object({
 export const replyBlockSchema = itemListBlockSchemaWith(replyImageSchema) satisfies z.ZodType<ReplyBlock>;
 
 /** A reply block as the message row stores it; history reads it back through this. */
-export const storedReplyBlockSchema = itemListBlockSchemaWith(storedReplyImageSchema) satisfies z.ZodType<StoredReplyBlock>;
+export const storedReplyBlockSchema = itemListBlockSchemaWith(storedReplyImageSchema).extend({
+  origin: z.object({ kind: z.literal("skill_result"), skillName: z.string().min(1).max(200) }).optional(),
+}) satisfies z.ZodType<StoredReplyBlock>;
 
 /**
  * The capability as the server keeps it for a turn, or null when the client declared none. Only

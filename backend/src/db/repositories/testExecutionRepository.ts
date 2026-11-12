@@ -246,7 +246,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
     return row ? Boolean(row.names) : null;
   }
 
-  async revisionPhotoSwitches(input: Parameters<TestExecutionRepositoryPort["revisionPhotoSwitches"]>[0]): Promise<ReadonlyArray<boolean | undefined> | null> {
+  async revisionPhotoSwitches(input: Parameters<TestExecutionRepositoryPort["revisionPhotoSwitches"]>[0]): Promise<ReadonlyArray<{ visitorImagesEnabled?: boolean }> | null> {
     const rows = await this.db.selectFrom("agent_test_executions as execution")
       .innerJoin("agent_test_execution_sides as side", "side.execution_id", "execution.id")
       .innerJoin("agent_revisions as revision", "revision.id", "side.revision_id")
@@ -256,7 +256,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       .where("execution.agent_id", "=", input.agentId)
       .orderBy("side.side_ordinal")
       .execute();
-    return rows.length > 0 ? rows.map((row) => row.enabled ?? undefined) : null;
+    return rows.length > 0 ? rows.map((row) => (row.enabled === null ? {} : { visitorImagesEnabled: row.enabled })) : null;
   }
 
   async listAttempts(input: { workspaceId: string; agentId: string; executionId: string }): Promise<readonly TestExecutionAttemptRecord[]> {

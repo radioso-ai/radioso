@@ -56,7 +56,8 @@ export const createTestChatImageRoutes = (dependencies: TestChatImageRouteDepend
    * `POST /api/v1/agents/:agentId/test-executions/:executionId/images`: a photo for a message to
    * this test, taken when the revisions it runs have photos on (a draft can, before visitors get
    * them) and the agent's chat model reads images. The test must be this workspace's and agent's;
-   * the photo belongs to the caller who uploads it, as on `POST /api/v1/assistant/images`.
+   * the photo belongs to the caller who uploads it (the signed-in user, or the API credential), as
+   * on `POST /api/v1/assistant/images`, and its reading counts as a test run, as a test turn does.
    */
   router.post(
     "/:agentId/test-executions/:executionId/images",
@@ -75,12 +76,15 @@ export const createTestChatImageRoutes = (dependencies: TestChatImageRouteDepend
     visitorImageMultipart(metrics),
     async (req, res, next) => {
       try {
-        const { workspaceId, authPrincipal } = res.locals as { workspaceId: string; authPrincipal?: AuthenticatedPrincipal };
+        const { workspaceId, accountId, authPrincipal } = res.locals as { workspaceId: string; accountId?: string | null; authPrincipal?: AuthenticatedPrincipal };
         const owner = authenticatedVisitorImageOwner(authPrincipal);
         if (!owner) throw badRequest("Images are uploaded by an API credential or a signed-in user");
         const { agentId } = testChatParamsSchema.parse(req.params);
         const fields = req.body as z.infer<typeof visitorImageUploadFieldsSchema>;
-        const result = await dependencies.visitorImages.upload({ workspaceId, agentId, owner, bytes: req.file!.buffer, locale: fields.locale ?? null, surface: "test_execution" });
+        const result = await dependencies.visitorImages.upload({
+          workspaceId, agentId, owner, bytes: req.file!.buffer, locale: fields.locale ?? null,
+          surface: "test_execution", usage: "test_run", accountId: accountId ?? null,
+        });
         if (result.kind === "rejected") throw visitorImageUploadRejection(result.reason);
         res.status(201).json(presentVisitorImageUpload(result));
       } catch (error) {

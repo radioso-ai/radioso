@@ -1,4 +1,5 @@
 import type { AgentRevisionSnapshot } from "./agentRevision.js";
+import { revisionTakesPhotos } from "../visitorImages/contracts/revisionSwitch.js";
 import { visitorImagesSwitchChanged } from "./agentRevisionVisitorImages.js";
 import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 
@@ -33,7 +34,7 @@ const greetingChange = (base: AgentRevisionSnapshot | null, candidate: AgentRevi
 /** The photo switch, when publishing the candidate changes it (see `visitorImagesSwitchChanged`). */
 const visitorImagesChange = (base: AgentRevisionSnapshot | null, candidate: AgentRevisionSnapshot): CandidateReleaseChange[] => {
   if (!visitorImagesSwitchChanged(base, candidate)) return [];
-  return [{ field: "visitorImagesEnabled", id: "agent", before: base?.visitorImagesEnabled === undefined ? null : String(base.visitorImagesEnabled), after: String(candidate.visitorImagesEnabled), truncated: false }];
+  return [{ field: "visitorImagesEnabled", id: "agent", before: base ? String(revisionTakesPhotos(base)) : null, after: String(revisionTakesPhotos(candidate)), truncated: false }];
 };
 
 export const describeCandidateReleaseDiff = (base: AgentRevisionSnapshot | null, candidate: AgentRevisionSnapshot, page: { offset?: number; limit?: number } = {}): { changes: ReadonlyArray<CandidateReleaseChange>; truncated: boolean; nextOffset: number | null } => {

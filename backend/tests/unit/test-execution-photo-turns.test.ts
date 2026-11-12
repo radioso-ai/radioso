@@ -101,7 +101,7 @@ const serviceOver = (current: TestExecution, options: {
     complete: vi.fn(async () => ({ ...current, state: "completed" as const })),
     fail: vi.fn(async () => ({ ...current, state: "partial" as const })),
     historyNamesImage: vi.fn(async () => (options.namesImage === undefined ? false : options.namesImage)),
-    revisionPhotoSwitches: vi.fn(async () => current.sides.map((side) => side.revision.snapshot.visitorImagesEnabled)),
+    revisionPhotoSwitches: vi.fn(async () => current.sides.map((side) => side.revision.snapshot)),
   } as unknown as TestExecutionRepositoryPort;
   const stream = vi.fn<TrustedTestExecutionRunnerPort["stream"]>(async function* () {
     if (options.runnerFails) throw new Error("provider down");
@@ -141,7 +141,7 @@ describe("a Test Chat message with photos", () => {
 
     const events = await drain(service.streamMessage(send(" Something like this ", { ids: [IMAGE], owner: OPERATOR })));
 
-    expect(port.claim).toHaveBeenCalledWith({ workspaceId, agentId, message: " Something like this ", imageIds: [IMAGE], owner: OPERATOR, revision: {} });
+    expect(port.claim).toHaveBeenCalledWith({ workspaceId, agentId, message: " Something like this ", imageIds: [IMAGE], owner: OPERATOR, revision: { visitorImagesEnabled: false } });
     expect(claims[0]).toMatchObject({ message: renderedTurn, photos: { imageInput, claim } });
     expect(stream.mock.calls.map(([input]) => input.message)).toEqual([renderedTurn, renderedTurn]);
     expect(turn.release).not.toHaveBeenCalled();
@@ -329,7 +329,7 @@ describe("whose photo switch decides a Test Chat message", () => {
     ["the tested draft's", [true], { visitorImagesEnabled: true }],
     ["a tested version's that has photos off", [false], { visitorImagesEnabled: false }],
     ["both compared versions', which must both take photos", [true, false], { visitorImagesEnabled: false }],
-    ["the agent's setting, for versions frozen before the switch was part of a revision", [undefined, true], {}],
+    ["off when a compared version holds no switch, since such a version takes no photos", [undefined, true], { visitorImagesEnabled: false }],
   ] as const)("is %s", async (_name, switches, revision) => {
     const { port } = photoPort();
     const { service } = serviceOver(withSwitches(switches), { photos: port });

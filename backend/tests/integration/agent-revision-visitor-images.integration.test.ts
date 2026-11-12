@@ -89,7 +89,15 @@ describeDb("the photo switch across an agent's draft and releases", () => {
     expect((await revisions.readDraft(workspaceId, agent.id))?.snapshot.visitorImagesEnabled).toBe(true);
   });
 
-  it("follows the agent's setting for a release frozen before the switch was part of a revision, and freezes it into the next candidate", async () => {
+  it("takes no photos on a live channel for an agent never published, whatever its draft holds", async () => {
+    const agent = await agents.create(workspaceId, { name: "Unpublished photos", customInstruction: "Be brief.", visitorImagesEnabled: true });
+
+    expect(await takesPhotos(agent.id)).toBe("disabled");
+    const draft = await revisions.readDraft(workspaceId, agent.id);
+    expect(await takesPhotos(agent.id, draft!.snapshot)).toBe("available");
+  });
+
+  it("takes no photos from a release that holds no switch, whatever the agent's setting, and its draft reads clean", async () => {
     const agentId = randomUUID();
     const snapshot = JSON.stringify({ customInstruction: "Be brief.", directives: [], routines: [], contextVariableEnablements: [] });
     await database.query("INSERT INTO agents (id,workspace_id,name,behavior_settings) VALUES ($1,$2,$3,$4::jsonb)", [agentId, workspaceId, "Older release", JSON.stringify({ visitorImagesEnabled: true })]);
@@ -99,10 +107,10 @@ describeDb("the photo switch across an agent's draft and releases", () => {
     const published = await revisions.publish({ workspaceId, agentId, actorAccountId: null, revisionId: releaseId, expectedDraftGeneration: 1, expectedPublishedRevisionId: null, idempotencyKey: `older-${agentId}` });
     if (published === "conflict" || published === "idempotency_mismatch") throw new Error("first publication failed");
 
-    expect(await takesPhotos(agentId)).toBe("available");
+    expect(await takesPhotos(agentId)).toBe("disabled");
     await expect(revisions.readState(workspaceId, agentId)).resolves.toMatchObject({ status: "draft_clean" });
 
     const candidate = await service.createCandidate(workspaceId, agentId, 1);
-    expect(candidate.snapshot.visitorImagesEnabled).toBe(true);
+    expect(candidate.snapshot).not.toHaveProperty("visitorImagesEnabled");
   });
 });

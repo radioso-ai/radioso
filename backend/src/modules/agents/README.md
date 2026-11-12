@@ -16,9 +16,9 @@ the mutable draft directly. `AgentRevisionService.resolveDefaultTestRevision`
 decides which revision a test runs when the operator names none. The photo
 switch (`visitorImagesEnabled`) is part of a revision: an agent write projects a
 changed switch into the draft in the same transaction as `customInstruction`
-(`AgentRepository.update` and `applyProposalPatch`), a candidate freezes it (the
-agent's setting, for a draft that predates the switch), and a release without
-one follows the agent's setting (`revisionVisitorImagesEnabled`). Writer modules continue to own their resource
+(`agentDraftChange`, applied by `AgentRepository.update` and `applyProposalPatch`),
+a candidate and a publication freeze it, and a revision that holds none takes no
+photos (`revisionTakesPhotos`, owned by the visitorImages contract). Writer modules continue to own their resource
 validation and use the shared draft-mutation boundary.
 
 An agent nobody has published answers nothing: `AgentRevisionRuntimeResolver.resolveNew`

@@ -27,7 +27,7 @@ import {
   type NormalizedAuthoredDirectiveInput,
   type AgentGreetingSnapshot,
   changedAgentProposalFields,
-  storedAgentFieldReaders,
+  storedAgentFieldReaders, writesAgentDraft,
 } from "../../modules/agents/public.js";
 import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
@@ -36,7 +36,7 @@ import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/
 import type { DB, Db, OwnerCommitHook } from "../../shared/infra/kysely/types.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import { withAgentDraftMutation } from "./agentDraftMutation.js";
-import { withAgentDraftProjection, writesAgentDraft } from "./agentDraftProjection.js";
+import { withAgentDraftProjection } from "./agentDraftProjection.js";
 
 interface AgentRow {
   id: string;

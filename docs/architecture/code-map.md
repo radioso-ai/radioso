@@ -1143,9 +1143,12 @@ An erasure deletes a conversation's photos and queues their objects to the
 photos no message and no test carries after 24 hours. The agent flag is
 `visitorImagesEnabled`; the public session's and the conversation list's `acceptsImages` add whether the
 agent's chat model reads images. The switch is part of an agent revision
-(`visitorImagesEnabled` on the snapshot; `modules/agents/agentRevisionVisitorImages.ts`):
-the agent's setting is the draft's value, publishing freezes it, and every live
-channel follows the published revision (`createVisitorImageAvailability`). Test
+(`visitorImagesEnabled` on the snapshot; the rule is `revisionTakesPhotos` in
+`modules/visitorImages/contracts/revisionSwitch.ts`, where a revision without a
+switch takes none): the agent's setting is the draft's value
+(`modules/agents/agentDraftChange.ts`), publishing freezes it, and every live
+channel follows the published revision, so an unpublished agent takes none
+(`createVisitorImageAvailability`). Test
 Chat uploads through the test's own route and sends through the same claim with
 the switch of the test's revisions, and binds the photos to the test
 (`test_execution_id`, migration `258`), since a test keeps its transcript apart

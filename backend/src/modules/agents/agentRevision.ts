@@ -129,12 +129,12 @@ export const agentRevisionSnapshotSchema = z.object({
   // treat it as an empty list.
   agentSkills: z.array(agentSkillSnapshotSchema).optional(),
   // Whether visitors may attach photos in this release. The agent's own setting is the draft's
-  // value; publishing freezes it here. Optional for the same reason as `greeting`: a release
-  // frozen before the switch was part of one holds none and follows the agent's setting.
+  // value; publishing freezes it here. Optional: a release that holds none takes no photos
+  // (`revisionTakesPhotos`).
   visitorImagesEnabled: z.boolean().optional(),
 }).strict();
 export type AgentRevisionSnapshot = z.infer<typeof agentRevisionSnapshotSchema>;
-export { revisionVisitorImagesEnabled, visitorImagesSwitchChanged } from "./agentRevisionVisitorImages.js";
+export { visitorImagesSwitchChanged } from "./agentRevisionVisitorImages.js";
 export type AgentGreetingSnapshot = z.infer<typeof agentGreetingSnapshotSchema>;
 export const parseAgentRevisionSnapshot = (value: unknown): AgentRevisionSnapshot => agentRevisionSnapshotSchema.parse(value);
 

@@ -9,12 +9,13 @@ import {
   agentReviewedSettingsPatchSchema,
   equalScopedAuthoringSnapshots,
   materializeAgentFromConfig,
+  agentDraftChange,
   parseAgentRevisionSnapshot,
-  revisionVisitorImagesEnabled,
   projectInternalAgentConfig,
   serializeAgentConfig,
   validateAgentInput,
 } from "../../../src/modules/agents/public.js";
+import { revisionTakesPhotos } from "../../../src/modules/visitorImages/public.js";
 import { conversationQualityAgent } from "../../fixtures/conversation-quality/agent.js";
 
 describe("the agent's visitorImagesEnabled flag", () => {
@@ -57,46 +58,64 @@ describe("the agent's visitorImagesEnabled flag", () => {
 describe("the photo switch in an agent revision", () => {
   const release = { customInstruction: "Be brief.", directives: [], routines: [], contextVariableEnablements: [] };
 
-  it("round-trips through a revision snapshot, and is absent from one frozen before it was part of a revision", () => {
+  it("round-trips through a revision snapshot, and is absent from one frozen without it", () => {
     expect(parseAgentRevisionSnapshot(JSON.parse(JSON.stringify({ ...release, visitorImagesEnabled: true }))).visitorImagesEnabled).toBe(true);
     expect(parseAgentRevisionSnapshot({ ...release, visitorImagesEnabled: false }).visitorImagesEnabled).toBe(false);
     expect(parseAgentRevisionSnapshot(release)).not.toHaveProperty("visitorImagesEnabled");
   });
 
-  it("is the revision's own value, or the agent's setting for a revision that holds none", () => {
-    expect(revisionVisitorImagesEnabled({ visitorImagesEnabled: false }, true)).toBe(false);
-    expect(revisionVisitorImagesEnabled({ visitorImagesEnabled: true }, false)).toBe(true);
-    expect(revisionVisitorImagesEnabled({}, true)).toBe(true);
-    expect(revisionVisitorImagesEnabled({}, false)).toBe(false);
+  it("takes photos only in a revision that turns them on: one that holds no switch takes none", () => {
+    expect(revisionTakesPhotos({ visitorImagesEnabled: true })).toBe(true);
+    expect(revisionTakesPhotos({ visitorImagesEnabled: false })).toBe(false);
+    expect(revisionTakesPhotos({})).toBe(false);
+    expect(revisionTakesPhotos(null)).toBe(false);
   });
 
-  it("makes a draft differ from its release when the two switches differ, and never from a release that follows the agent's setting", () => {
+  it("makes a draft differ from its release only when one takes photos and the other does not", () => {
     expect(equalScopedAuthoringSnapshots({ ...release, visitorImagesEnabled: true }, { ...release, visitorImagesEnabled: false })).toBe(false);
+    expect(equalScopedAuthoringSnapshots({ ...release, visitorImagesEnabled: true }, release)).toBe(false);
+    expect(equalScopedAuthoringSnapshots({ ...release, visitorImagesEnabled: false }, release)).toBe(true);
     expect(equalScopedAuthoringSnapshots({ ...release, visitorImagesEnabled: true }, { ...release, visitorImagesEnabled: true })).toBe(true);
-    // A release without a switch follows the agent's setting, which the draft holds.
-    expect(equalScopedAuthoringSnapshots({ ...release, visitorImagesEnabled: true }, release)).toBe(true);
   });
 
   it("is a draft change when Ray prepares it, which visitors get once it is published", () => {
     expect(agentSettingProposalEffect("visitorImagesEnabled")).toEqual({ lifecycle: "agent_draft", reach: false });
   });
 
-  it("is listed among a release's changes when a candidate turns it on or off", () => {
+  it("is listed among a release's changes only when the release takes photos where its base did not, or the other way", () => {
     expect(describeCandidateReleaseDiff({ ...release, visitorImagesEnabled: false }, { ...release, visitorImagesEnabled: true }).changes)
       .toEqual([{ field: "visitorImagesEnabled", id: "agent", before: "false", after: "true", truncated: false }]);
-    expect(describeCandidateReleaseDiff(release, { ...release, visitorImagesEnabled: true }).changes).toEqual([]);
+    expect(describeCandidateReleaseDiff(release, { ...release, visitorImagesEnabled: true }).changes)
+      .toEqual([{ field: "visitorImagesEnabled", id: "agent", before: "false", after: "true", truncated: false }]);
+    expect(describeCandidateReleaseDiff(release, { ...release, visitorImagesEnabled: false }).changes).toEqual([]);
+    expect(describeCandidateReleaseDiff(null, { ...release, visitorImagesEnabled: false }).changes).not.toContainEqual(expect.objectContaining({ field: "visitorImagesEnabled" }));
     expect(describeCandidateReleaseDiff(null, { ...release, visitorImagesEnabled: true }).changes)
       .toContainEqual({ field: "visitorImagesEnabled", id: "agent", before: null, after: "true", truncated: false });
   });
 
-  it("shows in a revision's review what publishing it does to the switch", () => {
+  it("shows in a revision's review whether publishing it turns photos on or off", () => {
     const revision = (id: string, snapshot: object) => ({ id, snapshot: { ...release, ...snapshot }, sourceDraftGeneration: 1, sourceBasePublishedRevisionId: null, createdAt: new Date(0), publishedAt: null, publishedVersion: null });
 
     expect(presentRevisionDetail(revision("candidate", { visitorImagesEnabled: true }), revision("published", { visitorImagesEnabled: false })).scopedChanges.visitorImagesEnabled)
       .toEqual({ before: false, after: true, changed: true });
     expect(presentRevisionDetail(revision("candidate", { visitorImagesEnabled: true }), revision("published", {})).scopedChanges.visitorImagesEnabled)
-      .toEqual({ before: null, after: true, changed: false });
-    expect(presentRevisionDetail(revision("candidate", { visitorImagesEnabled: true }), null).scopedChanges.visitorImagesEnabled)
-      .toEqual({ before: null, after: true, changed: true });
+      .toEqual({ before: false, after: true, changed: true });
+    expect(presentRevisionDetail(revision("candidate", { visitorImagesEnabled: false }), null).scopedChanges.visitorImagesEnabled)
+      .toEqual({ before: false, after: false, changed: false });
+  });
+});
+
+describe("what an agent write changes in its draft", () => {
+  const draft = { customInstruction: "Be brief.", directives: [], routines: [], contextVariableEnablements: [] };
+
+  it("writes the photo switch when it changes, and leaves a draft that takes no photos alone when it is saved off", () => {
+    expect(agentDraftChange({ visitorImagesEnabled: true }, validateAgentInput({ visitorImagesEnabled: true }), draft)).toEqual({ ...draft, visitorImagesEnabled: true });
+    expect(agentDraftChange({ visitorImagesEnabled: false }, validateAgentInput({ visitorImagesEnabled: false }), draft)).toBeNull();
+    expect(agentDraftChange({ visitorImagesEnabled: false }, validateAgentInput({}), { ...draft, visitorImagesEnabled: true })).toEqual({ ...draft, visitorImagesEnabled: false });
+  });
+
+  it("writes the instruction whenever it is written, and nothing for a write that names neither", () => {
+    expect(agentDraftChange({ customInstruction: "Be warm." }, validateAgentInput({ customInstruction: "Be warm." }), draft)).toEqual({ ...draft, customInstruction: "Be warm." });
+    expect(agentDraftChange({ name: "Renamed" }, validateAgentInput({ name: "Renamed" }), draft)).toBeNull();
   });
 });

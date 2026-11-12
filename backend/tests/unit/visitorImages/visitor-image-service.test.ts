@@ -144,6 +144,22 @@ describe("VisitorImageService upload storage order", () => {
 });
 
 describe("VisitorImageService upload against the plan", () => {
+  it("reserves the answer as the kind of answer the caller names: a Test Chat photo as a test run, for the account", async () => {
+    const { service, usage } = harness();
+
+    await service.upload({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, bytes: await photo(), locale: null, surface: "test_execution", usage: "test_run", accountId: "account-1" });
+
+    expect(usage.reserveAnswer).toHaveBeenCalledWith({ workspaceId: WORKSPACE, accountId: "account-1", surface: "test_execution", usage: "test_run" });
+  });
+
+  it("reserves a reply in a conversation when the caller names none", async () => {
+    const { usage, upload } = harness();
+
+    await upload();
+
+    expect(usage.reserveAnswer).toHaveBeenCalledWith({ workspaceId: WORKSPACE, surface: "website_embed", usage: "conversation_reply" });
+  });
+
   it("reserves one answer for each reading, as a chat reply would, and keeps it once the photo is read", async () => {
     const { upload, usage, reservation } = harness();
 

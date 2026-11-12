@@ -1,7 +1,7 @@
 import type { Kysely } from "kysely";
 
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
-import { DEFAULT_AGENT_LOCALE_FALLBACK, revisionVisitorImagesEnabled, type AgentRecord, type AgentRevisionRuntimeReaderPort } from "../../modules/agents/public.js";
+import { DEFAULT_AGENT_LOCALE_FALLBACK, type AgentRecord, type AgentRevisionRuntimeReaderPort } from "../../modules/agents/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { buildAgentChatWorkspaceContext } from "../../modules/chat/public.js";
 import type { DocumentStorageLocator, DocumentStoragePort } from "../../modules/documents/contracts/storage.js";
@@ -12,11 +12,12 @@ import {
   visitorImageObjectDeletionHandler,
   type VisitorImageReadingModel,
 } from "../../modules/visitorImages/composition.js";
-import type {
-  ChatModelImageReading,
-  VisitorImageAudit,
-  VisitorImageAvailability,
-  VisitorImageObjectStore,
+import {
+  revisionTakesPhotos,
+  type ChatModelImageReading,
+  type VisitorImageAudit,
+  type VisitorImageAvailability,
+  type VisitorImageObjectStore,
 } from "../../modules/visitorImages/public.js";
 import type { BackgroundJobHandlerRegistration } from "../../shared/background-jobs/index.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
@@ -85,9 +86,9 @@ export const createChatModelImageReading = (deps: {
 });
 
 /**
- * Photos are available where the revision that decides has them on and the agent's chat model
- * reads images: the revision a Test Chat test names, or else the agent's published one. A revision
- * without a switch, or an agent never published, follows the agent's setting.
+ * Photos are available where the revision that decides takes them (`revisionTakesPhotos`) and the
+ * agent's chat model reads images: the revision a Test Chat test names, or else the agent's
+ * published one, so an agent never published takes none.
  */
 export const createVisitorImageAvailability = (deps: {
   agents: AgentLookup;
@@ -97,8 +98,8 @@ export const createVisitorImageAvailability = (deps: {
   forAgent: async ({ workspaceId, agentId, revision }) => {
     const agent = await deps.agents.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!agent) return "agent_not_found";
-    const deciding = revision ?? (await deps.publishedRevisions.findCurrentPublished({ workspaceId, agentId }))?.snapshot ?? {};
-    if (!revisionVisitorImagesEnabled(deciding, agent.visitorImagesEnabled ?? false)) return "disabled";
+    const deciding = revision ?? (await deps.publishedRevisions.findCurrentPublished({ workspaceId, agentId }))?.snapshot;
+    if (!revisionTakesPhotos(deciding)) return "disabled";
     return await deps.modelReading.readsImages(agent) ? "available" : "model_cannot_read";
   },
 });

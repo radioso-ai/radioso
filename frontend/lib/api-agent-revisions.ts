@@ -57,8 +57,8 @@ export interface AgentRevisionDetail extends AgentRevisionSummary {
     routines: Array<{ definitionId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     contextVariableEnablements: Array<{ contextVariableId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     greeting: { before: AgentGreetingDraft; after: AgentGreetingDraft; changed: boolean }
-    /** The photo switch; null where a release holds none and follows the agent's setting. */
-    visitorImagesEnabled?: { before: boolean | null; after: boolean | null; changed: boolean }
+    /** Whether the base release and this revision take photos; a release that holds no switch takes none. */
+    visitorImagesEnabled?: { before: boolean; after: boolean; changed: boolean }
   }
 }
 

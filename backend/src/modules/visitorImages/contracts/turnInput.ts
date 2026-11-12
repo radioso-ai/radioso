@@ -1,3 +1,5 @@
+import type { VisitorImageRevisionSwitch } from "./revisionSwitch.js";
+
 /**
  * Who may send a photo in a turn, recorded at upload and checked at send. Every channel hands the
  * module bytes plus one of these: the website embed and the public link their public chat session,
@@ -18,15 +20,6 @@ export interface VisitorImageOwner {
 export type VisitorImageHolder =
   | { readonly conversationId: string; readonly messageId: string }
   | { readonly testExecutionId: string };
-
-/**
- * The photo switch of the revision a Test Chat test runs, so its photos follow that revision
- * rather than the published one: the revision's own value, or none for a revision frozen before
- * the switch was part of one, which follows the agent's setting. Live channels name none.
- */
-export interface VisitorImageRevisionSwitch {
-  readonly visitorImagesEnabled?: boolean;
-}
 
 /** The photos one send claimed, in the order the caller named them. */
 export interface VisitorImageClaim {

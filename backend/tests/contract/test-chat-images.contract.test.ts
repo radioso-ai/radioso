@@ -65,7 +65,7 @@ const memoryTest = (
     historyNamesImage: async (input: { executionId: string; imageId: string }) => (input.executionId === executionId
       ? history.some((entry) => entry.imageInput?.images.some((image) => image.id === input.imageId))
       : null),
-    revisionPhotoSwitches: async (input: { executionId: string }) => (input.executionId === executionId ? [testedPhotos] : null),
+    revisionPhotoSwitches: async (input: { executionId: string }) => (input.executionId === executionId ? [testedPhotos === undefined ? {} : { visitorImagesEnabled: testedPhotos }] : null),
     fail: async () => execution(),
   } as unknown as TestExecutionRepositoryPort;
   return { executionId, history, repository };
@@ -166,8 +166,8 @@ describe("Test Chat photos", () => {
     expect(again.body).toMatchObject({ error: { code: "visitor_image_unavailable" } });
   });
 
-  it("refuses a photo another caller of the workspace uploaded", async () => {
-    const created = await testChatWorkspace();
+  /** An API credential of the operator's, in the same workspace. */
+  const apiCredential = async (created: Awaited<ReturnType<typeof testChatWorkspace>>) => {
     const issued = await created.dependencies.personalCredentialService.issue({
       accountId: created.operator.accountId,
       workspaceId: created.operator.workspaceId,
@@ -176,7 +176,26 @@ describe("Test Chat photos", () => {
       roleCeiling: "admin",
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
     });
-    const theirs = await request(created.app).post(`/api/v1/assistant/images?agentId=${created.agentId}`).set({ Authorization: `Bearer ${issued.secret}` }).attach("image", await photo(), "photo.png").expect(201);
+    return { Authorization: `Bearer ${issued.secret}` };
+  };
+
+  it("lets an API credential upload a photo for a test and send it in the test's messages", async () => {
+    const created = await testChatWorkspace();
+    const bearer = await apiCredential(created);
+
+    const uploaded = await request(created.app).post(`/api/v1/agents/${created.agentId}/test-executions/${created.executionId}/images`).set(bearer).attach("image", await photo(), "photo.png").expect(201);
+    await request(created.app)
+      .post(`/api/v1/agents/${created.agentId}/test-executions/${created.executionId}/messages`)
+      .set(bearer)
+      .send({ executionGeneration: 1, turnId: randomUUID(), attemptId: randomUUID(), imageIds: [uploaded.body.id] })
+      .expect(200);
+
+    expect(created.runs).toEqual([`<attached_photo index="1">${READING}</attached_photo>`]);
+  });
+
+  it("refuses a photo another caller of the workspace uploaded", async () => {
+    const created = await testChatWorkspace();
+    const theirs = await request(created.app).post(`/api/v1/agents/${created.agentId}/test-executions/${created.executionId}/images`).set(await apiCredential(created)).attach("image", await photo(), "photo.png").expect(201);
 
     const sent = await created.send({ message: "Like this", imageIds: [theirs.body.id] });
 
@@ -203,8 +222,8 @@ describe("Test Chat photos", () => {
     expect(refused.body).toMatchObject({ error: { code: "visitor_images_unavailable" } });
   });
 
-  it("follows the agent's setting for a tested revision frozen before the switch was part of one", async () => {
-    const { upload } = await testChatWorkspace({ visitorImagesEnabled: false, testedPhotos: undefined });
+  it("takes no photo for a tested revision that holds no switch, whatever the agent's setting", async () => {
+    const { upload } = await testChatWorkspace({ visitorImagesEnabled: true, testedPhotos: undefined });
 
     expect((await upload()).body).toMatchObject({ error: { code: "visitor_images_unavailable" } });
   });

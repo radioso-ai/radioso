@@ -565,6 +565,8 @@ class PublishedTestAgentRevisionReader implements AgentRevisionRuntimeReaderPort
         contextVariableEnablements: this.contextVariables
           ? await this.contextVariables.listByAgent(agent.workspaceId, agent.id)
           : [],
+        // Publishing freezes the agent's photo switch, the draft's value, as a candidate does.
+        visitorImagesEnabled: agent.visitorImagesEnabled ?? false,
       },
       sourceDraftGeneration: (previous?.sourceDraftGeneration ?? 0) + 1,
       sourceBasePublishedRevisionId: previous?.id ?? null,

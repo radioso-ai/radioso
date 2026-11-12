@@ -50,7 +50,7 @@ const makePhoto = async (page: Page): Promise<Buffer> => {
 const mockPhotoBackend = async (
   page: Page,
   agent: { visitorImagesEnabled: boolean; chatModelOverride?: { provider: "openai-compatible"; model: string } },
-  options: { sendFails?: boolean } = {},
+  options: { sendFails?: boolean; sendDelayMs?: number } = {},
 ) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { agentSettingsOverrides: agent });
@@ -93,6 +93,7 @@ const mockPhotoBackend = async (
       return;
     }
     sentTurn = { turnId: body.turnId, attemptId: body.attemptId };
+    await new Promise((resolve) => setTimeout(resolve, options.sendDelayMs ?? 0));
     const identity = { executionId, generation: 1, sideId: "side-1-0", turnId: body.turnId, attemptId: body.attemptId };
     await route.fulfill({
       status: 200,
@@ -165,6 +166,20 @@ test("a message that never reaches the test gives back what was typed and the ph
   expect(backend.sends).toEqual([{ message: typedText, imageIds: [imageId] }]);
 });
 
+test("Test Chat holds off attaching a photo while an answer is still coming in", async ({ page }) => {
+  await mockPhotoBackend(page, { visitorImagesEnabled: true }, { sendDelayMs: 1_500 });
+  await page.goto(testChatUrl);
+  const attach = page.getByRole("button", { name: "Attach photo" });
+  await expect(attach).toBeEnabled();
+
+  await page.getByPlaceholder("Ask a question...").fill("Do you open on Sundays?");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  await expect(attach).toBeDisabled();
+  await expect(page.getByText("Here are three farmhouses like it.").first()).toBeVisible();
+  await expect(attach).toBeEnabled();
+});
+
 test("Test Chat offers no attach control while the agent takes no photos from visitors", async ({ page }) => {
   await mockPhotoBackend(page, { visitorImagesEnabled: false });
   await page.goto(testChatUrl);
@@ -231,12 +246,12 @@ test("photos a draft turns on are tried in Test Chat at once, and reach the publ
   await page.getByRole("switch", { name: "Let visitors send photos" }).click();
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect.poll(draftPhotos).toBe(true);
-  await expect(page.getByText("Visitors get a change when you publish; Test Chat tries it first.")).toBeVisible();
+  await expect(page.getByText("Test Chat tries it once the draft is saved; visitors get it when you publish.")).toBeVisible();
   await expect(page.getByText("Draft changes")).toBeVisible();
 
   await page.goto(testChatUrl);
   await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeEnabled();
 
   await page.goto(`/chat/${publicToken}`);
   await expect(page.getByRole("textbox")).toBeVisible();

@@ -6,7 +6,8 @@ import {
   type UsageLimitReservation,
 } from "../../shared/domain/usageLimitPolicy.js";
 import type { AgentRevision } from "../agents/public.js";
-import type { VisitorImageClaim, VisitorImageOwner, VisitorImageRevisionSwitch } from "../visitorImages/contracts/turnInput.js";
+import { revisionTakesPhotos, type VisitorImageRevisionSwitch } from "../visitorImages/contracts/revisionSwitch.js";
+import type { VisitorImageClaim, VisitorImageOwner } from "../visitorImages/contracts/turnInput.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 import { clipAtGraphemeBoundary } from "../../shared/text/clipAtGraphemeBoundary.js";
 import {
@@ -92,12 +93,11 @@ export interface TestExecutionPhotoTurnsPort {
 }
 
 /**
- * The photo switch a test's photos follow, from the switches its revisions hold: off when any of
- * them has photos off, since every side answers the same message; the agent's setting when one
- * holds none (a revision frozen before the switch was part of one); otherwise on.
+ * The photo switch a test's photos follow: on only when every revision it runs takes photos
+ * (`revisionTakesPhotos`), since every side answers the same message.
  */
-const testPhotoSwitch = (switches: ReadonlyArray<boolean | undefined>): VisitorImageRevisionSwitch =>
-  switches.includes(false) ? { visitorImagesEnabled: false } : switches.includes(undefined) ? {} : { visitorImagesEnabled: true };
+const testPhotoSwitch = (revisions: ReadonlyArray<VisitorImageRevisionSwitch>): VisitorImageRevisionSwitch =>
+  ({ visitorImagesEnabled: revisions.every(revisionTakesPhotos) });
 
 export interface TestExecution {
   id: string;
@@ -331,8 +331,8 @@ export interface TestExecutionRepositoryPort {
    * reading the transcript out; null for a test that is not this workspace's and agent's.
    */
   historyNamesImage(input: { workspaceId: string; agentId: string; executionId: string; imageId: string }): Promise<boolean | null>;
-  /** The photo switch each side's revision holds (undefined where it holds none); null for a test that is not this workspace's and agent's. */
-  revisionPhotoSwitches(input: { workspaceId: string; agentId: string; executionId: string }): Promise<ReadonlyArray<boolean | undefined> | null>;
+  /** The photo switch each side's revision holds; null for a test that is not this workspace's and agent's. */
+  revisionPhotoSwitches(input: { workspaceId: string; agentId: string; executionId: string }): Promise<ReadonlyArray<VisitorImageRevisionSwitch> | null>;
   findByIdempotencyKey(input: { workspaceId: string; agentId: string; idempotencyKey: string }): Promise<TestExecution | null>;
   /** Self-heals a side stuck "running" past its lease (an abandoned attempt) into "failed, retryable". */
   recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
@@ -661,7 +661,7 @@ export class TestExecutionService {
       yield* this.runClaims(execution, await this.claimTurn(execution, sideIds, repeat, false, { inputFingerprint }), repeat);
       return;
     }
-    const photos = await this.claimPhotos(input, testPhotoSwitch(execution.sides.map((side) => side.revision.snapshot.visitorImagesEnabled)));
+    const photos = await this.claimPhotos(input, testPhotoSwitch(execution.sides.map((side) => side.revision.snapshot)));
     const turn = photos ? { ...input, message: photos.message } : input;
     let claimed: readonly TestExecutionClaim[];
     try {

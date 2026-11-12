@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { AppError } from "../../../shared/domain/errors.js";
-import type { UsageLimitPolicy, UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
+import type { AnswerUsageKind, UsageLimitPolicy, UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { VisitorImageClaim, VisitorImageTurnInput } from "../contracts/turnInput.js";
 import {
@@ -75,6 +75,10 @@ export class VisitorImageService implements VisitorImageTurnInput {
     locale: string | null;
     /** The channel the photo came through, for usage attribution. */
     surface: string;
+    /** The kind of answer the reading counts as: a Test Chat photo as a test run, any other as a reply in a conversation. */
+    usage?: Extract<AnswerUsageKind, "conversation_reply" | "test_run">;
+    /** The account a test run is charged to, as a test turn is. */
+    accountId?: string | null;
   }): Promise<VisitorImageUploadResult> {
     const normalized = await normalizeVisitorImage(input.bytes);
     if (normalized.kind === "rejected") {
@@ -83,7 +87,12 @@ export class VisitorImageService implements VisitorImageTurnInput {
       return normalized;
     }
     // Refused over plan with the error a chat turn gets, before anything is stored or read.
-    const reservation = await this.deps.usage.reserveAnswer({ workspaceId: input.workspaceId, surface: input.surface, usage: "conversation_reply" });
+    const reservation = await this.deps.usage.reserveAnswer({
+      workspaceId: input.workspaceId,
+      ...(input.accountId ? { accountId: input.accountId } : {}),
+      surface: input.surface,
+      usage: input.usage ?? "conversation_reply",
+    });
     const id = this.newId();
     try {
       await this.store({ ...input, id, normalized });

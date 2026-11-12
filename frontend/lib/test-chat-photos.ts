@@ -2,10 +2,11 @@ import { normalizeWebsiteEmbedLocale } from '@/lib/embed-widget'
 import { unsentImageSendOf } from '@/lib/public-chat-errors'
 
 /**
- * Whether Test Chat offers photos for the agent: exactly when its chats take them from visitors,
- * since the photo switch and the chat model belong to the agent rather than to a version. `off`
- * while the switch is off (or the agent is still loading); `model_cannot_read` while it is on but
- * the chat model the agent answers with cannot read images.
+ * Whether Test Chat offers photos, from the agent's saved settings: the photo switch is the draft's
+ * value, which Test Chat tests, and the chat model belongs to the agent. `off` while the draft has
+ * photos off (or the agent is still loading); `model_cannot_read` while they are on but the chat
+ * model the agent answers with cannot read images. The server decides by the revisions a test
+ * runs, so a version picked from the history is refused when its switch is off.
  */
 export type TestChatPhotoAvailability = 'available' | 'off' | 'model_cannot_read'
 

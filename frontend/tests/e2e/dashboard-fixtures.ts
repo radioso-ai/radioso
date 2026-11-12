@@ -276,7 +276,7 @@ const buildRevisionDetail = (
         after: greeting,
         changed: JSON.stringify(greeting) !== JSON.stringify(noGreeting),
       },
-      visitorImagesEnabled: { before: null, after: null, changed: false },
+      visitorImagesEnabled: { before: false, after: false, changed: false },
     },
   },
 });

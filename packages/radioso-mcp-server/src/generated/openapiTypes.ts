@@ -3904,7 +3904,7 @@ export interface paths {
         put?: never;
         /**
          * Upload an image for a Test Chat message
-         * @description Whether the agent takes images is decided by the revisions the test runs, so a draft that turns images on can be tested before visitors get them; in a comparison, both versions must take them. The test must be this workspace's and agent's. The image belongs to the signed-in user who uploads it, and only they can send it, once, as `imageIds` in `POST /api/v1/agents/{agentId}/test-executions/{executionId}/messages`. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Dashboard session only. Uploads spend the same per-user and per-workspace budgets as `POST /api/v1/assistant/images`.
+         * @description Whether the agent takes images is decided by the revisions the test runs, so a draft that turns images on can be tested before visitors get them; in a comparison, both versions must take them. The test must be this workspace's and agent's. The image belongs to the caller who uploads it, the API credential or the signed-in user, and only it can send the image, once, as `imageIds` in `POST /api/v1/agents/{agentId}/test-executions/{executionId}/messages`. Its reading counts against the plan as a test run, as a test turn does. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend the same per-caller and per-workspace budgets as `POST /api/v1/assistant/images`.
          */
         post: operations["uploadAgentTestExecutionImage"];
         delete?: never;
@@ -6514,10 +6514,10 @@ export interface components {
                         after: components["schemas"]["AgentGreetingDraft"];
                         changed: boolean;
                     };
-                    /** @description The photo switch the base release and this revision hold; null where a release holds none and follows the agent's setting. */
+                    /** @description Whether the base release and this revision take photos. A release that holds no switch takes none. */
                     visitorImagesEnabled: {
-                        before: boolean | null;
-                        after: boolean | null;
+                        before: boolean;
+                        after: boolean;
                         changed: boolean;
                     };
                 };
@@ -28764,7 +28764,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Agent management permission required, or the caller is not a dashboard session */
+            /** @description Agent management permission required */
             403: {
                 headers: {
                     [name: string]: unknown;

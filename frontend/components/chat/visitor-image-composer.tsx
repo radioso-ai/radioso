@@ -68,11 +68,14 @@ export function VisitorImageAttachButton({
   copy,
   images,
   className,
+  disabled = false,
 }: {
   theme: VisitorImageComposerTheme
   copy: ImageCopy
   images: ComposerImages
   className: string
+  /** Held off while the composer cannot send, as Send is. */
+  disabled?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const full = images.attachments.length >= MAX_VISITOR_IMAGES_PER_MESSAGE
@@ -96,7 +99,7 @@ export function VisitorImageAttachButton({
         size="icon"
         variant="ghost"
         className={`${className} shrink-0 rounded-full hover:opacity-80`}
-        disabled={full}
+        disabled={full || disabled}
         title={copy.publicChatAttachImageLabel}
         data-visitor-image-attach
         style={{ color: theme.inputForeground }}

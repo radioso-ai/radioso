@@ -120,7 +120,10 @@ export function TestChatComposer({
 }) {
   const hintId = useId()
   const readiness = useTalkReadiness(agentId)
-  const { formRef, dragging, dropProps, onPaste, removeChip } = useVisitorImageComposer(images)
+  // No photo goes up while an answer streams or the test is being prepared, as no message is sent
+  // then: an upload prepares the test, which could start another and end the answer in progress.
+  const attachOpen = canSend && !isStarting
+  const { formRef, dragging, dropProps, onPaste, removeChip } = useVisitorImageComposer(images && !attachOpen ? { ...images, canAttach: false } : images)
   const talkWanted = talk !== undefined && readiness.kind !== 'hidden'
   const talkShown = useCanAskForMicrophone(talkWanted)
   const talkRef = useRef(talk)
@@ -193,7 +196,7 @@ export function TestChatComposer({
           <div className={`rounded-2xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 ${dragging ? 'ring-2 ring-ring' : ''}`}>
             {images ? <VisitorImageChips images={images} theme={DASHBOARD_IMAGE_THEME} copy={DEFAULT_WEBSITE_EMBED_COPY} onRemove={removeChip} /> : null}
             <div className="flex items-end gap-1">
-              {images?.canAttach ? <VisitorImageAttachButton theme={DASHBOARD_IMAGE_THEME} copy={DEFAULT_WEBSITE_EMBED_COPY} images={images} className="h-9 w-9" /> : null}
+              {images?.canAttach ? <VisitorImageAttachButton theme={DASHBOARD_IMAGE_THEME} copy={DEFAULT_WEBSITE_EMBED_COPY} images={images} className="h-9 w-9" disabled={!attachOpen} /> : null}
               <Textarea
                 value={message}
                 onChange={(event) => onMessageChange(event.target.value)}

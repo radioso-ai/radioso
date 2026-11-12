@@ -54,8 +54,8 @@ class MemoryRepository implements TestExecutionRepositoryPort {
     return this.execution ? false : null;
   }
 
-  async revisionPhotoSwitches(): Promise<ReadonlyArray<boolean | undefined> | null> {
-    return this.execution ? this.execution.sides.map((side) => side.revision.snapshot.visitorImagesEnabled) : null;
+  async revisionPhotoSwitches(): Promise<ReadonlyArray<{ visitorImagesEnabled?: boolean }> | null> {
+    return this.execution ? this.execution.sides.map((side) => side.revision.snapshot) : null;
   }
 
   async findAgentId(input: Parameters<TestExecutionRepositoryPort["findAgentId"]>[0]): Promise<string | null> {

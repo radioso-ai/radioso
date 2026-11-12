@@ -130,7 +130,6 @@ export {
   equalScopedAuthoringSnapshots,
   parseAgentRevisionSnapshot,
   readAgentRevisionGreeting,
-  revisionVisitorImagesEnabled,
   visitorImagesSwitchChanged,
   type AgentGreetingSnapshot,
   type AgentRevision,
@@ -166,3 +165,4 @@ export {
 } from "./authoredDirectives.js";
 export * from "./copilotPrimitiveRegistry.js";
 export { changedAgentProposalFields, storedAgentFieldReaders } from "./proposalFence.js";
+export { agentDraftChange, writesAgentDraft } from "./agentDraftChange.js";

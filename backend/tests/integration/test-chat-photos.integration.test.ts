@@ -172,8 +172,8 @@ describeDb("Test Chat photos on Postgres", () => {
     const switched = randomUUID();
     await repository.create({ id: switched, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: switched, sides: [{ id: randomUUID(), executionId: switched, revision: { ...revision, id: switchedId }, conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
 
-    await expect(repository.revisionPhotoSwitches({ workspaceId, agentId, executionId })).resolves.toEqual([undefined]);
-    await expect(repository.revisionPhotoSwitches({ workspaceId, agentId, executionId: switched })).resolves.toEqual([true]);
+    await expect(repository.revisionPhotoSwitches({ workspaceId, agentId, executionId })).resolves.toEqual([{}]);
+    await expect(repository.revisionPhotoSwitches({ workspaceId, agentId, executionId: switched })).resolves.toEqual([{ visitorImagesEnabled: true }]);
     await expect(repository.revisionPhotoSwitches({ workspaceId, agentId: randomUUID(), executionId })).resolves.toBeNull();
   });
 });

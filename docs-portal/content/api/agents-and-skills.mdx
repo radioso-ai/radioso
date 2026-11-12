@@ -76,10 +76,12 @@ request for an attempt that already completed replays its stored answer as one
 
 A test message can carry photos. Upload each one with
 `POST /api/v1/agents/{agentId}/test-executions/{executionId}/images` and send the
-ids as `imageIds`, at most three, with or without `message`; only the user who
-uploaded a photo can send it, once. The upload and the send follow the photo
+ids as `imageIds`, at most three, with or without `message`; only the credential
+or signed-in user that uploaded a photo can send it, once, and its reading counts
+as a test run. The upload and the send follow the photo
 switch of the versions the test runs (`visitorImagesEnabled` in a revision
-snapshot), so a draft can take photos before the published version does. Every side runs on the message followed by
+snapshot; a version that holds none takes no photos), so a draft can take photos
+before the published version does. Every side runs on the message followed by
 one `<attached_photo>` block per photo, and the user entry in the side's
 `history` keeps `content` as that turn text and `imageInput` as what was typed
 and each photo's id and reading. A repeat of a completed photo turn, with the

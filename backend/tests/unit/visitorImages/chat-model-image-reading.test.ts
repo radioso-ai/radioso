@@ -98,11 +98,10 @@ describe("whether an agent takes photos", () => {
     expect(tested.findCurrentPublished).not.toHaveBeenCalled();
   });
 
-  it("follows the agent's setting for a revision that holds no switch, and for an agent never published", async () => {
-    expect(await availability(true, true, undefined).forAgent()).toBe("available");
-    expect(await availability(false, true, undefined).forAgent()).toBe("disabled");
-    expect(await availability(true, true, null).forAgent()).toBe("available");
-    expect(await availability(true, true).forAgent({})).toBe("available");
+  it("takes none from a revision that holds no switch, or for an agent never published, whatever the agent's setting", async () => {
+    expect(await availability(true, true, undefined).forAgent()).toBe("disabled");
+    expect(await availability(true, true, null).forAgent()).toBe("disabled");
+    expect(await availability(true, true).forAgent({})).toBe("disabled");
   });
 
   it("says the model cannot read when photos are on and the model does not read images", async () => {

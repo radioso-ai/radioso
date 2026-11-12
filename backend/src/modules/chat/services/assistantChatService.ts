@@ -8,6 +8,8 @@ import type {
 } from "../types/assistantApi.js";
 import { AssistantRouteService } from "./assistantRouteService.js";
 import { renderRoutineInvocation } from "../../routines/public.js";
+import type { VisitorImageTurnInput } from "../../visitorImages/public.js";
+import { claimVisitorImageTurn } from "./visitorImageTurn.js";
 
 /**
  * The text a turn runs on: the message, or a tool call rendered as the text a
@@ -17,11 +19,17 @@ const queryFor = (input: Pick<AssistantChatRequest, "message" | "routineInvocati
   input.routineInvocation ? renderRoutineInvocation(input.routineInvocation) : input.message?.trim();
 
 export class AssistantChatService {
+  private readonly assistantRouteService = new AssistantRouteService();
+  private readonly visitorImages: VisitorImageTurnInput | null;
+
   constructor(
     private readonly chatService: ChatService,
     private readonly chatBootstrapService: ChatBootstrapService,
-    private readonly assistantRouteService = new AssistantRouteService(),
-  ) {}
+    /** Where a send's photos are claimed, bound and let go; absent, a request with photos is refused. */
+    options: { visitorImages?: VisitorImageTurnInput | null } = {},
+  ) {
+    this.visitorImages = options.visitorImages ?? null;
+  }
 
   async answer(input: AssistantChatRequest): Promise<AssistantChatResponse | null> {
     const chatSessionId = input.chatSessionId ?? input.anonymousSessionId;
@@ -45,79 +53,89 @@ export class AssistantChatService {
         : null;
     }
 
-    const query = queryFor(input);
+    const images = await claimVisitorImageTurn(this.visitorImages, input);
+    const query = images?.query ?? queryFor(input);
     if (!query) {
       throw badRequest("message is required unless startConversation is true");
     }
 
-    const response = await this.chatService.answer({
-      workspaceId: input.workspaceId,
-      agentId: input.agentId,
-      accountId: input.accountId,
-      conversationId: input.conversationId,
-      bootstrapGreetingId: input.bootstrapGreetingId,
-      query,
-      stream: input.stream,
-      userExpectedLocale: input.userExpectedLocale,
-      visitorTimeZone: input.visitorTimeZone,
-      inputMetadata: input.inputMetadata,
-      metadataFilter: input.metadataFilter,
-      pageContext: input.pageContext,
-      clientContextCapabilities: input.clientContextCapabilities,
-      verifiedCustomerId: input.verifiedCustomerId,
-      verifiedIdentity: input.verifiedIdentity,
-      requestContext: input.requestContext,
-      entryReferrer: input.entryReferrer,
-      privacyNoticeVersion: input.privacyNoticeVersion,
-      visitorKey: input.visitorKey,
-      previewRoutineIds: input.previewRoutineIds,
-      routineInvocation: input.routineInvocation,
-      sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
-      channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
-      chatSessionId,
-      sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
-    });
-
-    return response;
+    try {
+      return await this.chatService.answer({
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+        accountId: input.accountId,
+        conversationId: input.conversationId,
+        bootstrapGreetingId: input.bootstrapGreetingId,
+        query,
+        stream: input.stream,
+        userExpectedLocale: input.userExpectedLocale,
+        visitorTimeZone: input.visitorTimeZone,
+        inputMetadata: images?.inputMetadata ?? input.inputMetadata,
+        onUserMessageStored: images?.onUserMessageStored,
+        metadataFilter: input.metadataFilter,
+        pageContext: input.pageContext,
+        clientContextCapabilities: input.clientContextCapabilities,
+        verifiedCustomerId: input.verifiedCustomerId,
+        verifiedIdentity: input.verifiedIdentity,
+        requestContext: input.requestContext,
+        entryReferrer: input.entryReferrer,
+        privacyNoticeVersion: input.privacyNoticeVersion,
+        visitorKey: input.visitorKey,
+        previewRoutineIds: input.previewRoutineIds,
+        routineInvocation: input.routineInvocation,
+        sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
+        channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
+        chatSessionId,
+        sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
+      });
+    } finally {
+      await images?.finish();
+    }
   }
 
-  streamAnswer(input: AssistantChatRequest): AsyncIterable<AssistantChatStreamEvent> {
+  async *streamAnswer(input: AssistantChatRequest): AsyncIterable<AssistantChatStreamEvent> {
     const chatSessionId = input.chatSessionId ?? input.anonymousSessionId;
-    const query = queryFor(input);
+    const images = await claimVisitorImageTurn(this.visitorImages, input);
+    const query = images?.query ?? queryFor(input);
     if (!query) {
       throw badRequest("message is required for streaming assistant chat");
     }
 
-    return this.chatService.streamAnswer({
-      workspaceId: input.workspaceId,
-      agentId: input.agentId,
-      accountId: input.accountId,
-      conversationId: input.conversationId,
-      bootstrapGreetingId: input.bootstrapGreetingId,
-      query,
-      stream: input.stream,
-      userExpectedLocale: input.userExpectedLocale,
-      visitorTimeZone: input.visitorTimeZone,
-      inputMetadata: input.inputMetadata,
-      metadataFilter: input.metadataFilter,
-      pageContext: input.pageContext,
-      clientContextCapabilities: input.clientContextCapabilities,
-      verifiedCustomerId: input.verifiedCustomerId,
-      verifiedIdentity: input.verifiedIdentity,
-      requestContext: input.requestContext,
-      entryReferrer: input.entryReferrer,
-      privacyNoticeVersion: input.privacyNoticeVersion,
-      visitorKey: input.visitorKey,
-      previewRoutineIds: input.previewRoutineIds,
-      routineInvocation: input.routineInvocation,
-      sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
-      channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
-      chatSessionId,
-      sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
-      supersession: input.supersession,
-      deliveredReply: input.deliveredReply,
-      ...(input.reportResponseLanguage ? { reportResponseLanguage: true } : {}),
-      signal: input.signal,
-    });
+    try {
+      yield* this.chatService.streamAnswer({
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+        accountId: input.accountId,
+        conversationId: input.conversationId,
+        bootstrapGreetingId: input.bootstrapGreetingId,
+        query,
+        stream: input.stream,
+        userExpectedLocale: input.userExpectedLocale,
+        visitorTimeZone: input.visitorTimeZone,
+        inputMetadata: images?.inputMetadata ?? input.inputMetadata,
+        onUserMessageStored: images?.onUserMessageStored,
+        metadataFilter: input.metadataFilter,
+        pageContext: input.pageContext,
+        clientContextCapabilities: input.clientContextCapabilities,
+        verifiedCustomerId: input.verifiedCustomerId,
+        verifiedIdentity: input.verifiedIdentity,
+        requestContext: input.requestContext,
+        entryReferrer: input.entryReferrer,
+        privacyNoticeVersion: input.privacyNoticeVersion,
+        visitorKey: input.visitorKey,
+        previewRoutineIds: input.previewRoutineIds,
+        routineInvocation: input.routineInvocation,
+        sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
+        channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
+        chatSessionId,
+        sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
+        supersession: input.supersession,
+        deliveredReply: input.deliveredReply,
+        ...(input.reportResponseLanguage ? { reportResponseLanguage: true } : {}),
+        signal: input.signal,
+      });
+    } finally {
+      await images?.finish();
+    }
   }
 }

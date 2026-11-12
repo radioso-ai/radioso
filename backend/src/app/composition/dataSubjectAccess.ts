@@ -12,6 +12,7 @@ import { A2aTaskExporter } from "../../modules/a2a/public.js";
 import { SlackUserIdentityFinder } from "../../modules/connectors/plugins/index.js";
 import { EmailMessageExporter, EmailSenderIdentityFinder } from "../../modules/emailChannel/public.js";
 import { DataSubjectAccessService, type DataSubjectReadUnitOfWork } from "../../modules/privacy/public.js";
+import { VisitorImageExporter } from "../../modules/visitorImages/composition.js";
 import { VisitorRecordExporter, WebVisitorIdentityFinder } from "../../modules/visitors/composition.js";
 import type { DataSubjectDataExporter, DataSubjectIdentityFinder } from "../../shared/domain/dataSubjectAccess.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
@@ -42,6 +43,7 @@ export const defaultDataSubjectDataExporters: readonly DataSubjectDataExporterBi
   (trx) => new EmailMessageExporter(trx),
   (trx) => new AnswerFeedbackExporter(trx),
   (trx) => new A2aTaskExporter(trx),
+  (trx) => new VisitorImageExporter(trx),
 ];
 
 /**

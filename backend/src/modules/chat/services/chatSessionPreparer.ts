@@ -62,12 +62,12 @@ import type {
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { sensitiveSlotsAwaited } from "../../routines/public.js";
-import { userMessageTurnMetadata } from "./userMessageTurnMetadata.js";
+import { storeTurnUserMessage } from "./turnUserMessage.js";
 import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/public.js";
 import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
 import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
 import type { ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
-import type { AssistantPageContext } from "../types/assistantApi.js";
+import type { AssistantPageContext, UserMessageStoredListener } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
 import { admitsPageEvidence, capturedPageContext, type PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
@@ -227,6 +227,8 @@ export interface PrepareChatSessionInput {
   bootstrapGreetingId?: string;
   query: string;
   inputMetadata?: UserMessageInputMetadata;
+  /** Told the moment the customer message is stored, before the rest of the turn; never for an existing one. */
+  onUserMessageStored?: UserMessageStoredListener;
   metadataFilter?: Record<string, unknown>;
   documentScope?: string[];
   pageContext?: AssistantPageContext | null;
@@ -352,15 +354,6 @@ interface WorkbenchReplayBaselineCapability {
 export const historicalWorkbenchReplayBaseline: WorkbenchReplayBaselineCapability = {
   [historicalWorkbenchReplayBaselineBrand]: true,
 };
-
-/**
- * The recorded form of a tool call: Activity and the Inbox render it as a tool-call block
- * from this, while the message content stays the rendered text a person would have typed.
- */
-const routineInvocationInputMetadata = (invocation: RoutineInvocation): UserMessageInputMetadata => ({
-  method: "routine_invocation",
-  routine: { toolName: invocation.toolName, input: { ...invocation.input } },
-});
 
 export class ChatSessionPreparer {
   constructor(
@@ -542,15 +535,8 @@ export class ChatSessionPreparer {
     const awaitedSensitiveSlotKeys = existingUserMessage
       ? []
       : await timed("routineState", () => this.sensitiveSlotsAwaitedFor(conversation, revisionResolved.routines));
-    const userMessageInputMetadata = input.routineInvocation
-      ? routineInvocationInputMetadata(input.routineInvocation)
-      : input.inputMetadata;
-    const userMessage = existingUserMessage?.message ?? await timed("userMessage", () => this.messageRepository.create({
-      conversationId: persistedConversation.id,
-      workspaceId: input.workspaceId,
-      role: "user",
-      content: input.query,
-      ...userMessageTurnMetadata({ inputMetadata: userMessageInputMetadata, sensitiveSlotKeys: awaitedSensitiveSlotKeys, referenceTimeZone }),
+    const userMessage = existingUserMessage?.message ?? await timed("userMessage", () => storeTurnUserMessage(this.messageRepository, {
+      ...input, conversationId: persistedConversation.id, sensitiveSlotKeys: awaitedSensitiveSlotKeys, referenceTimeZone,
     }));
     // A message that answers a sensitive field is never restated as a facet.
     if (!existingUserMessage && awaitedSensitiveSlotKeys.length === 0) {

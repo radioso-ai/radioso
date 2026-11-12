@@ -29,6 +29,8 @@ interface PublicChatSessionPresentationInput {
     expiresAt: string;
   };
   assistantAvatarUrl: string | null;
+  /** Whether the chat offers to attach photos: the agent takes them, and its chat model reads images. */
+  acceptsImages: boolean;
   intakeActions?: unknown;
 }
 
@@ -39,6 +41,7 @@ export const presentPublicChatSession = ({
   session,
   resume,
   assistantAvatarUrl,
+  acceptsImages,
   intakeActions,
 }: PublicChatSessionPresentationInput) => {
   const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
@@ -57,6 +60,7 @@ export const presentPublicChatSession = ({
     resumeToken: resume.token,
     assistantBootstrapActive: isAgentBootstrapActive(agent),
     assistantAvatarUrl,
+    acceptsImages,
     theme: agent.theme,
     copy: websiteEmbed.copy,
     branding: agent.branding,

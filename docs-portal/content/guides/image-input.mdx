@@ -1,0 +1,114 @@
+---
+title: "Let visitors send photos"
+description: "How visitors and API callers attach photos to a message, how the agent reads them, the limits, and how to match a photo against your catalogue with a routine."
+---
+
+# Let visitors send photos
+
+Some requests are easier to show than to write. A client looking for a property sends a photo of the kind of place they have in mind, a customer sends the product they want to replace, someone sends the letter they are holding. Turn on photos for an agent and the visitor attaches up to three photos to a message. The agent's chat model reads each photo once, and what it reads becomes part of what the visitor said, so routing, routine slots, retrieval and skills all work from it with no extra setup.
+
+## Turn photos on
+
+Photos are an agent setting, `visitorImagesEnabled`, off by default. Ask Ray to turn it on for the agent and apply the card it drafts, or set it over the API:
+
+```bash
+curl -sS -X PUT https://api.radioso.ai/api/v1/agents/$AGENT_ID \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"visitorImagesEnabled":true}'
+```
+
+Photos take effect only when the agent's chat model reads images. Every model in Radioso's catalogue does; an `openai-compatible` endpoint is treated as one that does not, because Radioso cannot know what model it serves. The public chat session says whether the agent takes photos right now in `acceptsImages`, so a client shows an attach control only when it is `true`.
+
+## What the agent reads
+
+A message carries up to three photos, with or without text. Each photo is read as soon as it is uploaded, while the visitor is still typing, so sending is no slower than a plain message.
+
+The reading is a short factual description written for search and matching: what the thing is, its style and era, the setting, materials and colours, notable features and condition, and any text visible in the photo, quoted. It is written in the visitor's language, or the agent's default language when the visitor's is unknown. It never names or describes a person, and it says when it is unsure.
+
+The agent's turn runs on the visitor's text followed by one block per photo:
+
+```text
+Something like this, near the coast
+<attached_photo index="1">A two-storey stone farmhouse with a terracotta tile roof and green wooden shutters, set among olive trees. Possibly 19th century.</attached_photo>
+```
+
+When the model cannot read a photo, its block is `<attached_photo index="1" status="unreadable"/>`: the turn text still says a photo came with the message and that it could not be read, and the message goes through. Text visible in a photo reaches the agent only as the reading quotes it, and the reading prompt asks the model to quote such text as content rather than follow it. A reading keeps its text as written, with `<` and `>` escaped so it stays inside its block.
+
+The stored message keeps both forms. Its `content` is the turn text above, which summaries, exports and Ray's transcripts read. Its `inputMetadata.imageInput` holds what the visitor typed (`typedText`) and each photo's `id` with its `reading`, so a thread shows the visitor's own words and the photos, with the readings kept apart as the agent's. A teammate opens a photo from the conversation with `GET /api/v1/conversations/{conversationId}/images/{imageId}` in a dashboard session; each view is recorded as a `conversation.image_viewed` audit event.
+
+## Limits
+
+- **Formats.** JPEG, PNG or WebP, read from the file's bytes rather than its name.
+- **Size.** At most 10 MiB per upload, and three photos per message. Each photo is sent once.
+- **What is stored.** A JPEG at most 1,600 pixels on its long side and at most 512 KB, turned upright, with its EXIF and GPS data dropped. A client that shrinks photos before uploading, to about the same size, saves the visitor most of the upload.
+- **How long.** A photo sent with a message stays with its conversation and is deleted with it, by hand or by the workspace's retention window. A photo attached and never sent is deleted 24 hours after its upload. See [Data retention](/operators/data-retention).
+- **Rate.** Uploads have their own budgets: 20 per ten minutes for one visitor session and network source, 40 for the source, 600 for the workspace; 120 per ten minutes for one API credential.
+- **Plan.** Each photo the agent reads counts as one answer against the workspace's plan, on its own rather than inside a conversation's block of replies. A photo the model could not read costs nothing. Once the plan is used up, an upload is refused with `429 usage_limit_exceeded`, the same refusal a message gets.
+
+## Match a photo against your catalogue
+
+The reading is text, so the tools you already use take it from there. For the property-matching case, author a **brief** routine with text slots the photo can fill — property type, style, era, notable features — next to the slots only the visitor can answer, such as region, dates, budget and contact details. The routine fills the first group from the reading and asks for the rest.
+
+Then run one of two lookups:
+
+- **A `retrieve` step** over a corpus with one document per property. Answers come with citations to the properties they matched.
+- **An `external_mcp` skill** whose exposed parameters bind to the slots, for a live property database.
+
+Two things to keep in mind on the second path: a routine skill's result reads best as text rather than a nested object, and a directive-bound MCP skill needs the tool to return a text answer. See [Author a routine](/guides/authoring-routines).
+
+## Send photos over the API
+
+Upload each photo for the agent, then send the returned ids with the message. With a personal or service-account credential:
+
+```bash
+curl -sS -X POST "https://api.radioso.ai/api/v1/assistant/images?agentId=$AGENT_ID" \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -F "image=@farmhouse.jpg" -F "locale=it"
+# {"id":"6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12","readingStatus":"read"}
+
+curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"agentId":"'$AGENT_ID'","message":"Something like this, near the coast","imageIds":["6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12"]}'
+```
+
+The upload answers once the agent has read the photo: `readingStatus` is `read`, or `unread` when the model could not describe it. `locale` sets the language of the reading. A message may carry `imageIds` alone. The photo belongs to the credential that uploaded it, so only that credential can send it, to the same agent.
+
+With the [TypeScript SDK](/sdk/basic-usage#send-photos):
+
+```ts
+const photo = await client.chat.uploadImage({
+  agentId,
+  image: await fs.readFile('farmhouse.jpg'),
+  mimeType: 'image/jpeg',
+  locale: 'it',
+})
+
+const response = await client.chat.create({
+  agentId,
+  message: 'Something like this, near the coast',
+  imageIds: [photo.id],
+})
+```
+
+A client holding a REST credential bound to one agent uses `POST /api/v1/agents/{agentId}/images` and sends `imageIds` to `POST /api/v1/agents/{agentId}/chat` the same way.
+
+A page of your own on the public chat uploads to `POST /api/v1/public/chat/{token}/images` with the visitor's public session in `x-radioso-public-session`, sends `imageIds` with the message, and reads a photo back with `GET /api/v1/public/chat/{token}/images/{imageId}`, which serves only the session that uploaded it. See [Public chat and embed](/api/public-chat-and-embed#send-photos).
+
+## Common failure modes
+
+- **`404 visitor_images_unavailable` on upload** — the agent has photos off, or its chat model cannot read images. `acceptsImages` on the public session is `false` in both cases.
+- **`415 unsupported_image_type`** — the file is not a JPEG, PNG or WebP image, whatever its name says.
+- **`413 image_too_large` or `image_too_many_pixels`** — over 10 MiB, or too many pixels to decode. Send a smaller photo.
+- **`503 visitor_image_busy` on upload** — the server is decoding as many photos as it takes at once and none finished within a few seconds. Try the upload again.
+- **`429 usage_limit_exceeded` on upload** — the workspace's plan has no answers left for the reading. The public chat routes leave out the plan `details`; the API routes carry them.
+- **`400` on `POST /api/v1/assistant/images`** — `agentId` is missing from the query or is not an agent id.
+- **`409 visitor_image_unavailable` on send** — the id is unknown, was uploaded by another session or credential or for another agent, or a message already carried it: upload the photo again. It is also the answer when the agent stopped taking photos after the upload, because the operator turned them off or its chat model changed to one that cannot read images; then the message goes without them.
+- **`readingStatus: "unread"`** — the model did not answer in time or could not describe the photo. The message still carries the photo, and its block in the turn text reads `status="unreadable"`.
+
+## Read next
+
+- [Author a routine](/guides/authoring-routines) — slots, `retrieve` steps and skills for the matching recipe.
+- [Public chat and embed](/api/public-chat-and-embed) — the public session and message API.
+- [Deleting conversation data](/operators/deleting-conversation-data) — what goes when a conversation is deleted.

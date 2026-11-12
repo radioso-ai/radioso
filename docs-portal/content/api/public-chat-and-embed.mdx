@@ -89,11 +89,30 @@ An Exact words greeting is delivered verbatim with no model call; its chips use 
 }
 ```
 
-The public chat request also supports `startConversation: true` for bootstrap greeting requests, `userExpectedLocale`, and `inputMetadata`.
+The public chat request also supports `startConversation: true` for bootstrap greeting requests, `userExpectedLocale`, `inputMetadata`, and `imageIds` (see [Send photos](#send-photos)).
 
 `pageContext.browserTimeZone` carries the visitor's IANA time zone, so "today" and "tomorrow" in a question mean the visitor's own day. The website embed and the hosted chat page send the browser's zone with every message. A message without one, or with a zone the server does not know, reads today in the workspace time zone (see [Settings](/api/settings#time-zone)); a value longer than 64 characters is dropped rather than failing the message.
 
 Bootstrap greetings are not saved as conversations by themselves. A `startConversation: true` response can omit `conversationId` and include `bootstrapGreetingId`. If the visitor replies, send that `bootstrapGreetingId` with the first normal message and no `conversationId`; Radioso will save the displayed greeting before the user's message. Use the `conversationId` returned by that first normal message for history and follow-up continuity.
+
+### Send photos
+
+When the session's `acceptsImages` is `true`, the visitor can attach up to three photos to a message. Upload each one first, as multipart with the photo in the field `image`, and the visitor's public session in `x-radioso-public-session`:
+
+```bash
+curl -sS -X POST "https://api.radioso.ai/api/v1/public/chat/$TOKEN/images" \
+  -H "x-radioso-public-session: $PUBLIC_SESSION_TOKEN" \
+  -F "image=@farmhouse.jpg" -F "locale=it"
+# 201 {"id":"6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12","readingStatus":"read"}
+```
+
+The response comes once the agent's chat model has read the photo, so upload as soon as the visitor attaches it. Then send the ids with the message, in the order the visitor attached them; `message` may be left out:
+
+```json
+{ "message": "Something like this, near the coast", "imageIds": ["6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12"], "stream": false }
+```
+
+`GET /api/v1/public/chat/{token}/images/{imageId}` returns a photo as a JPEG to the public session that uploaded it, sent or not, with `Cache-Control: private, no-store`; fetch it with the session header and show it from a blob URL. In history, a message with photos carries `inputMetadata.imageInput`: show its `typedText` and the photos in the visitor's bubble rather than `content`, which also holds the agent's readings. Limits and error codes are in [Let visitors send photos](/guides/image-input).
 
 ### Sending a newer message while a turn is running
 
@@ -208,6 +227,8 @@ GET  /api/v1/public/chat/{token}/tail/{conversationId}
 GET  /api/v1/public/chat/{token}/events/{conversationId}
 GET  /api/v1/public/chat/{token}/embed-config
 GET  /api/v1/public/chat/{token}/assistant-logo
+POST /api/v1/public/chat/{token}/images
+GET  /api/v1/public/chat/{token}/images/{imageId}
 POST /api/v1/public/chat/{token}/voice/sessions
 POST /api/v1/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation
 ```
@@ -221,6 +242,8 @@ Once the vendor's client has opened the session, `POST /api/v1/public/chat/{toke
 - `403` on a website embed session usually means the origin is not admitted by the website embed origin setting.
 - `404` usually means the public token is unknown or not active.
 - `409` with `chat_turn_superseded` means a newer message replaced this turn before its reply started.
+- `409` with `visitor_image_unavailable` means a photo id is unknown, belongs to another session, or a message already carried it, so upload the photo again; or the agent stopped taking photos after the upload, so send the message without them.
+- `404` with `visitor_images_unavailable` on a photo upload means the agent does not take photos; `acceptsImages` on the session says so before the visitor tries.
 - `503` on a public chat message means Radioso accepted the public session but could not produce a response body.
 - `429` on public chat means the optional server-side public chat rate limit has been reached.
 - If history appears empty, the browser or cookie jar is probably not preserving the HttpOnly anonymous session cookie.

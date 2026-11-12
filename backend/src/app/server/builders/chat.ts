@@ -38,8 +38,7 @@ import { LlmResponseLanguageDetector } from "../../../shared/services/responseLa
 import { LlmHandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
 import { PostgresAssistantTurnPersistence } from "../../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { AccountAccessService } from "../../../modules/account/public.js";
-import { AgentService } from "../../../modules/agents/public.js";
-import { AgentRevisionRuntimeResolver } from "../../../modules/agents/public.js";
+import { AgentRevisionRuntimeResolver, AgentService } from "../../../modules/agents/public.js";
 import { VisitorRepository, VisitorResolver } from "../../../modules/visitors/composition.js";
 import { AuditService } from "../../../modules/audit/composition.js";
 import { ApprovalDecisionService } from "../../../modules/approvals/public.js";
@@ -207,6 +206,7 @@ export const buildChatServices = (input: {
   routineTriggerEmbeddingService: RoutineTriggerEmbeddingService;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
   teammateLabels: TeammateLabelReaderPort;
+  assistantChat?: ConstructorParameters<typeof AssistantChatService>[2];
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   // Retrieval-sense clarification is answer-first: once a candidate set survives
@@ -964,7 +964,7 @@ export const buildChatServices = (input: {
   return {
     abuseControlService,
     answerPresentation,
-    assistantChatService: new AssistantChatService(chatService, chatBootstrapService),
+    assistantChatService: new AssistantChatService(chatService, chatBootstrapService, input.assistantChat),
     assistantHistoryService: new AssistantHistoryService(chatHistoryService),
     publicChatActionAdvertiser,
     chatBootstrapService,

@@ -2,14 +2,15 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 
-import { Router, type RequestHandler, type Response } from "express";
+import { Router, type Response } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import type { VoiceRecordingPlaybackPort, VoiceRecordingStream } from "../../../modules/voiceChannel/public.js";
 
-import { AppError, badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import { acceptWorkspaceIdFromQuery } from "../middleware/acceptWorkspaceIdFromQuery.js";
+import { refuseHeadForAuditedMedia, requireDashboardFetch } from "../shared/dashboardMediaGuards.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { conversationParamsSchema } from "./conversationRouteSchemas.js";
@@ -46,26 +47,6 @@ const sendRecording = async (
   }
 };
 
-/** HEAD would audit a play and send the audio nowhere. */
-const refuseHead: RequestHandler = (req, res, next) => {
-  if (req.method !== "HEAD") {
-    next();
-    return;
-  }
-  res.setHeader("Allow", "GET");
-  next(new AppError(405, "method_not_allowed", "Use GET to play a recording."));
-};
-
-/**
- * Only the dashboard's own pages may start a play: a browser names where a request came from in
- * `Sec-Fetch-Site`, so a link on another site cannot record an audited play under a teammate's name.
- * A request without it is no browser's.
- */
-const requireSameOriginFetch: RequestHandler = (req, _res, next) => {
-  const site = req.header("sec-fetch-site");
-  next(site === undefined || site === "same-origin" ? undefined : forbidden("A recording plays only from the dashboard."));
-};
-
 /**
  * `GET /api/v1/conversations/:conversationId/recording`: a voice conversation's recording, streamed
  * from the vendor for a teammate who may read the workspace's conversations, in a dashboard session
@@ -83,8 +64,8 @@ export const createConversationRecordingRoutes = (dependencies: ConversationReco
 
   router.get(
     "/:conversationId/recording",
-    refuseHead,
-    requireSameOriginFetch,
+    refuseHeadForAuditedMedia("play a recording"),
+    requireDashboardFetch("A recording plays only from the dashboard."),
     acceptWorkspaceIdFromQuery,
     workspaceSession,
     historyRead,

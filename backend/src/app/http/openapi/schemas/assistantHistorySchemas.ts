@@ -280,13 +280,13 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const AssistantChatRequestSchema = registry.register(
     "AssistantChatRequest",
     assistantChatSchema.openapi({
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`. `imageIds` needs `agentId`.",
     }),
   );
   const PublicChatRequestSchema = registry.register(
     "PublicChatRequest",
     anonymousChatSchema.openapi({
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`.",
     }),
   );
 

@@ -62,6 +62,10 @@ import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRu
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
+import { VisitorImageService } from "../../src/modules/visitorImages/composition.js";
+import type { VisitorImageReader } from "../../src/modules/visitorImages/domain.js";
+import { createVisitorImageAvailability, visitorImageAudit, visitorImageObjectStore } from "../../src/app/composition/visitorImages.js";
+import { InMemoryVisitorImageStore } from "./inMemoryVisitorImages.js";
 import {
   type VoiceRecordingStore,
   type VoiceRecordingsLeftAtVendorReader,
@@ -1006,6 +1010,8 @@ export const createTestDependencies = (overrides: {
   voiceVendorFetch?: typeof globalThis.fetch;
   /** The organization's list of recordings left at the vendor; the in-memory app keeps none by default. */
   voiceRecordingsLeftAtVendor?: VoiceRecordingsLeftAtVendorReader;
+  /** Reads an uploaded photo; omitted means every photo reads as one fixed description. */
+  visitorImageReader?: VisitorImageReader;
   /** Writes chat's line for a turn a person owns before a teammate has replied; omitted means no line. */
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   /** Keeps the heard part of a reply cut off mid-stream; omitted means the in-memory store over the test repositories. */
@@ -2351,7 +2357,22 @@ export const createTestDependencies = (overrides: {
     agentService,
     new AgentRevisionRuntimeResolver(publishedAgentRevisions),
   );
-  const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
+  const visitorImageAvailability = createVisitorImageAvailability({
+    agents: agentRepository,
+    resolver: { resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input) },
+    logger,
+  });
+  const visitorImages = new VisitorImageService({
+    store: new InMemoryVisitorImageStore(),
+    objects: visitorImageObjectStore(documentStorage),
+    reader: overrides.visitorImageReader ?? { read: async () => ({ kind: "read", description: "A photo the test uploaded." }) },
+    audit: visitorImageAudit(auditService),
+    availability: visitorImageAvailability,
+    usage: usageLimitPolicy,
+    metrics: metricsRegistry,
+    logger,
+  });
+  const assistantChatService = new AssistantChatService(chatService, chatBootstrapService, { visitorImages });
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: new ProbeConversationReader(conversationRepository),
     agentReader: {
@@ -3242,6 +3263,8 @@ export const createTestDependencies = (overrides: {
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
     voiceRecordingsLeftAtVendor: overrides.voiceRecordingsLeftAtVendor ?? { listForAccount: async () => ({ total: 0, recordings: [], nextCursor: null }) },
+    visitorImages,
+    visitorImageAvailability,
     voiceRuntimeConnections,
     assistantHistoryService,
     conversationErasure: overrides.conversationErasure ?? {
@@ -3391,6 +3414,7 @@ export const createTestApp = (overrides: {
   voiceVendorFetch?: typeof globalThis.fetch;
   /** The organization's list of recordings left at the vendor; the in-memory app keeps none by default. */
   voiceRecordingsLeftAtVendor?: VoiceRecordingsLeftAtVendorReader;
+  visitorImageReader?: VisitorImageReader;
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];

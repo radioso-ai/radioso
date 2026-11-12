@@ -3,6 +3,7 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import { operatorReplySpeechSchema, replyInterruptionSchema } from "../../../../modules/chat/contracts/index.js";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
+import { registerUserMessageInputMetadataSchema } from "./userMessageInputMetadataSchemas.js";
 
 /**
  * The conversation message as the operator and public history read it. Registered in
@@ -25,24 +26,7 @@ export const registerChatConversationMessageSchemas = (
     ChatConversationTurnFailureSchema,
   } = shared;
 
-  // How a recorded user message was produced. `routine_invocation` is a calling
-  // agent's tool call: `routine` carries its structured form for tool-call rendering
-  // while `content` holds the same call as text.
-  const UserMessageInputMetadataSchema = registry.register(
-    "UserMessageInputMetadata",
-    z.object({
-      method: z.enum(["typed", "suggestion_click", "intent_click", "routine_invocation"]),
-      suggestionSourceMessageId: z.string().uuid().optional(),
-      intent: z.object({
-        skillName: z.string(),
-        intentName: z.string().optional(),
-      }).optional(),
-      routine: z.object({
-        toolName: z.string(),
-        input: z.record(z.string(), z.unknown()),
-      }).optional(),
-    }),
-  );
+  const UserMessageInputMetadataSchema = registerUserMessageInputMetadataSchema(registry);
 
   const ReplyInterruptionSchema = registry.register(
     "ReplyInterruption",

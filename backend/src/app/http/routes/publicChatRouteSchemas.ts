@@ -4,6 +4,7 @@ import { isLocaleTag } from "../../../shared/domain/locale.js";
 import { PRIVACY_NOTICE_VERSION_MAX_LENGTH } from "../../../modules/agents/public.js";
 
 import { chatMessageSchema } from "../schemas/textInputLimits.js";
+import { visitorImageIdsSchema } from "../schemas/visitorImageSchemas.js";
 import { browserTimeZoneSchema } from "../schemas/timeZoneSchemas.js";
 
 const localeHintSchema = z.string().trim().max(35);
@@ -46,6 +47,7 @@ const clientContextCapabilitiesSchema = z.object({
 
 export const anonymousChatSchema = z.object({
   message: chatMessageSchema.optional(),
+  imageIds: visitorImageIdsSchema.optional(),
   stream: z.boolean().default(false),
   conversationId: z.string().uuid().optional(),
   bootstrapGreetingId: z.string().uuid().optional(),
@@ -83,11 +85,18 @@ export const anonymousChatSchema = z.object({
     }
   }).optional(),
 }).superRefine((value, ctx) => {
-  if (!value.message && !value.startConversation) {
+  if (!value.message && !value.startConversation && !value.imageIds) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "message is required unless startConversation is true",
+      message: "message is required unless startConversation is true or imageIds is present",
       path: ["message"],
+    });
+  }
+  if (value.startConversation && value.imageIds) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "imageIds may only be sent with a persisted user turn",
+      path: ["imageIds"],
     });
   }
   if (value.startConversation && value.conversationId) {

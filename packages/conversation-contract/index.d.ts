@@ -626,6 +626,7 @@ export interface ConversationCitation {
 }
 
 export type { DirectiveAdherenceEntry, PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
+export type { ItemListBlock, ReplyAction, ReplyBlock, ReplyBlockLayout, ReplyFact, ReplyImage, ReplyItem } from "./replyBlocks.js";
 
 export interface TurnStreamDelta {
   type: "delta";

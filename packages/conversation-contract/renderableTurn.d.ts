@@ -2,8 +2,6 @@
 
 import type { ReplyBlock } from "./replyBlocks.js";
 
-export type * from "./replyBlocks.js";
-
 export interface RenderableTurn {
   answer: string;
   /** Sources the turn grounded on; carries `ConversationCitation[]` when present. */

@@ -26,6 +26,8 @@ interface GroundedAnswerSystemPromptInput {
   noSupportHandsOff?: boolean;
   /** Labels/descriptions for retrieval-sense alternatives to offer after the grounded answer. */
   retrievalSenseOfferAlternatives?: Array<{ label: string; description?: string }>;
+  /** The answer schema offers the `present` head, so the prompt says how to pick pictures. */
+  presentHeadOffered?: boolean;
 }
 
 /**
@@ -93,7 +95,11 @@ export const composeGroundedAnswerSystemPrompt = (
   // Turn-specific blocks follow. Answer steering stays ahead of the follow-up rules,
   // which carry their own suggestion-scoped steering.
   const steeringBlock = renderSteeringBlock(input.steering ?? [], { includeRuleIds: true });
-  const withSteering = steeringBlock ? joinBlocks(standing, steeringBlock) : standing;
+  const withSteeringRules = steeringBlock ? joinBlocks(standing, steeringBlock) : standing;
+  // Offered only on a turn whose evidence carries pictures, so it stays out of the reusable prefix.
+  const withSteering = input.presentHeadOffered
+    ? joinBlocks(withSteeringRules, renderPromptTemplate("chat/answer-present-head.md", {}))
+    : withSteeringRules;
   const alternatives = formatOfferAlternatives(input.retrievalSenseOfferAlternatives);
   const withTurnBlocks = alternatives
     ? joinBlocks(withSteering, renderPromptTemplate("chat/retrieval-sense-offer.md", {}))

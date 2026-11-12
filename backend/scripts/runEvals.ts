@@ -24,6 +24,8 @@
  *     the corpus ingested into its workspace and the seeded directives and routines on its draft,
  *     and is published when the run includes review or voice cases. A run that would publish over
  *     a named agent's live revision is refused unless --allow-named-agent-republish is passed.
+ *     The reply block cases run in a workspace of their own beside the target, in its account,
+ *     seeded with their pages alone (`ensureReplyBlockTarget`).
  *   - A non-production NODE_ENV when the run includes review cases: publishing needs the skills
  *     the seeded routines dispatch, which the runner adds as webhook skills on a loopback
  *     destination for the length of the publication only.
@@ -62,8 +64,9 @@ import {
   type ConversationQualityCase,
 } from "../src/modules/eval/suite/index.js";
 import { conversationQualityCases } from "../tests/fixtures/conversation-quality/cases.js";
-import { conversationQualityCorpus } from "../tests/fixtures/conversation-quality/corpus.js";
+import { conversationQualityCorpus, type ConversationQualityDocument } from "../tests/fixtures/conversation-quality/corpus.js";
 import { conversationQualityDirectives } from "../tests/fixtures/conversation-quality/directives.js";
+import { replyBlockDocuments } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
 import { conversationQualityRoutines } from "../tests/fixtures/conversation-quality/routines.js";
 import { VOICE_EVAL_FALLBACK_LINE } from "../tests/fixtures/voice-eval/agent.js";
 import { voiceEvalCases } from "../tests/fixtures/voice-eval/cases.js";
@@ -72,13 +75,16 @@ import { createReviewTurnRunnerPort, createVoiceTurnRunnerPort, createWorkbenchR
 import {
   assertNamedAgentMayBePublished,
   closeEvalDependencies,
+  ensureReplyBlockTarget,
   needsPublishedAgent,
+  partitionCasesByCorpus,
   needsVoiceSettings,
   readRunBaseline,
   registerDisposableAgent,
   runThenClose,
   scopeCasesForLiveRun,
   seededRoutineSkillNames,
+  seedReplyBlockImages,
   seedVoiceSettings,
 } from "./evalRunnerSupport.js";
 
@@ -200,23 +206,22 @@ const remapIds = (
 type Deps = ReturnType<typeof buildDependencies>;
 
 /**
- * Seeds the fixture corpus, directives, and routines onto the target agent and returns
- * the fixture-id → live-id maps. Seeding is best-effort idempotent: a conflict (already
- * seeded from a prior run) is logged and skipped rather than aborting.
+ * Ingests fixture documents into a workspace and returns the fixture-id → live-id map. An
+ * unchanged page that is already there comes back under its existing id.
  */
-const seedFixtures = async (
+const ingestDocuments = async (
   deps: Deps,
-  flags: Flags,
-): Promise<{ documentIds: Map<string, string>; routineIds: Map<string, string> }> => {
+  workspaceId: string,
+  documents: readonly ConversationQualityDocument[],
+): Promise<Map<string, string>> => {
   const documentIds = new Map<string, string>();
-  const routineIds = new Map<string, string>();
-
-  for (const document of conversationQualityCorpus) {
+  for (const document of documents) {
     try {
       const result = await deps.documentIngestionService.ingest({
-        workspaceId: flags.workspaceId,
+        workspaceId,
         title: document.title,
         content: document.content,
+        ...(document.metadata ? { metadata: document.metadata } : {}),
         externalDocumentId: document.id,
       });
       documentIds.set(document.id, result.documentId);
@@ -224,10 +229,18 @@ const seedFixtures = async (
       console.warn(`  seed: document "${document.title}" skipped — ${(error as Error).message}`);
     }
   }
+  return documentIds;
+};
 
+/**
+ * Gives an agent the seed directives, skipping one it already holds. Every agent a run answers
+ * with carries them, so each grounded answer commits its adherence plan ahead of the rest of
+ * its head, as a production agent's does.
+ */
+const seedDirectives = async (deps: Deps, workspaceId: string, agentId: string): Promise<void> => {
   for (const directive of conversationQualityDirectives) {
     try {
-      await deps.authoredDirectiveService.create(flags.workspaceId, flags.agentId, {
+      await deps.authoredDirectiveService.create(workspaceId, agentId, {
         name: directive.name,
         condition: directive.condition,
         action: directive.action,
@@ -245,6 +258,20 @@ const seedFixtures = async (
       console.warn(`  seed: directive "${directive.name}" skipped — ${(error as Error).message}`);
     }
   }
+};
+
+/**
+ * Seeds the fixture corpus, directives, and routines onto the target agent and returns
+ * the fixture-id → live-id maps. Seeding is best-effort idempotent: a conflict (already
+ * seeded from a prior run) is logged and skipped rather than aborting.
+ */
+const seedFixtures = async (
+  deps: Deps,
+  flags: Flags,
+): Promise<{ documentIds: Map<string, string>; routineIds: Map<string, string> }> => {
+  const documentIds = await ingestDocuments(deps, flags.workspaceId, conversationQualityCorpus);
+  const routineIds = new Map<string, string>();
+  await seedDirectives(deps, flags.workspaceId, flags.agentId);
 
   for (const routine of conversationQualityRoutines) {
     try {
@@ -426,12 +453,22 @@ interface SeededSuiteRun {
   runsVoiceCases: boolean;
 }
 
+type SuiteJudge = ReturnType<typeof createSuiteJudge>["judge"];
+
+/** One part of a run's results; a run's parts are scored and gated together. */
+type SuiteResult = Awaited<ReturnType<typeof runConversationQualitySuiteSampled>>;
+
 /**
  * Seeds the fixtures onto the target agent (its voice block is already in place), publishes it
- * when a case needs the published revision, runs the sampled suite, and records or gates on the
- * baseline.
+ * when a case needs the published revision, and runs the cases that ground against the shared
+ * corpus.
  */
-const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Promise<void> => {
+const runSharedCases = async (
+  deps: Deps,
+  flags: Flags,
+  run: SeededSuiteRun,
+  judge: SuiteJudge | undefined,
+): Promise<SuiteResult> => {
   console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
   const { documentIds, routineIds } = await seedFixtures(deps, flags);
   await waitForDocumentsReady(deps, flags.workspaceId, documentIds);
@@ -446,11 +483,6 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
   const baselineAgentConfig = projectInternalAgentConfig(agent);
 
   const cases = remapIds(run.cases, documentIds, routineIds);
-  const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(run.env, flags.judgeModel) : null;
-  if (suiteJudge) {
-    console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);
-  }
-
   const replayPort = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
     workspaceId: flags.workspaceId,
     agentId: flags.agentId,
@@ -485,15 +517,75 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
       evalCase.voiceTurn && voicePort ? voicePort.run(evalCase) : replayPort.run(evalCase),
   };
 
-  if (flags.samples > 1) {
-    console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
-  }
-  const { reports, outcomes } = await runConversationQualitySuiteSampled(cases, port, {
+  return runConversationQualitySuiteSampled(cases, port, {
     workspaceId: flags.workspaceId,
     samples: flags.samples,
     passThreshold: flags.passThreshold,
-    ...(suiteJudge ? { judge: suiteJudge.judge } : {}),
+    ...(judge ? { judge } : {}),
   });
+};
+
+/**
+ * Runs the reply block cases in their own workspace beside the target (`ensureReplyBlockTarget`),
+ * seeded with their pages and those pages' stored images alone, on that workspace's agent, which
+ * carries the seed directives as the target's agent does.
+ */
+const runReplyBlockCases = async (
+  deps: Deps,
+  flags: Flags,
+  cases: ConversationQualityCase[],
+  judge: SuiteJudge | undefined,
+): Promise<SuiteResult> => {
+  const target = await ensureReplyBlockTarget(
+    { workspaces: deps.workspaceRepository, workspaceService: deps.workspaceService, agentService: deps.agentService },
+    flags.workspaceId,
+  );
+  console.log(`Seeding the reply block pages onto agent ${target.agentId} in workspace ${target.workspaceId}…`);
+  const documentIds = await ingestDocuments(deps, target.workspaceId, replyBlockDocuments);
+  await seedDirectives(deps, target.workspaceId, target.agentId);
+  await waitForDocumentsReady(deps, target.workspaceId, documentIds);
+  const seededImages = await seedReplyBlockImages(deps.connectorDb.kysely, target.workspaceId, documentIds);
+  console.log(`Seeded ${seededImages} reply block image row(s).`);
+
+  const agent = await deps.agentRepository.findByIdAndWorkspaceId(target.agentId, target.workspaceId);
+  if (!agent) {
+    throw new Error(`Agent ${target.agentId} not found in workspace ${target.workspaceId}.`);
+  }
+  const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
+    workspaceId: target.workspaceId,
+    agentId: target.agentId,
+    baselineAgentConfig: projectInternalAgentConfig(agent),
+  });
+  return runConversationQualitySuiteSampled(remapIds(cases, documentIds, new Map()), port, {
+    workspaceId: target.workspaceId,
+    samples: flags.samples,
+    passThreshold: flags.passThreshold,
+    ...(judge ? { judge } : {}),
+  });
+};
+
+/**
+ * Runs the selected cases, each part on the corpus it grounds against
+ * (`partitionCasesByCorpus`), and records or gates on the baseline over all of them.
+ */
+const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Promise<void> => {
+  const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(run.env, flags.judgeModel) : null;
+  if (suiteJudge) {
+    console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);
+  }
+  if (flags.samples > 1) {
+    console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
+  }
+  const { shared, replyBlocks } = partitionCasesByCorpus(run.cases);
+  const parts: SuiteResult[] = [];
+  if (shared.length > 0) {
+    parts.push(await runSharedCases(deps, flags, { ...run, cases: shared }, suiteJudge?.judge));
+  }
+  if (replyBlocks.length > 0) {
+    parts.push(await runReplyBlockCases(deps, flags, replyBlocks, suiteJudge?.judge));
+  }
+  const reports = parts.flatMap((part) => part.reports);
+  const outcomes = parts.flatMap((part) => part.outcomes);
 
   const summary = summarizeRun(outcomes);
   const diff = diffAgainstBaseline(outcomes, run.baseline, { passThreshold: flags.passThreshold });

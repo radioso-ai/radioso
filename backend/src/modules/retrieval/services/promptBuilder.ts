@@ -4,7 +4,7 @@ import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
-import { resolveContextSourceUrl } from "./contextSourceUrl.js";
+import { resolveContextSourceUrl } from "../domain/contextSourceUrl.js";
 import { renderMetadataPromptText } from "./searchTextRenderer.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
 

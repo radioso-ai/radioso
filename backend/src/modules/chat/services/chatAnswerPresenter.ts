@@ -25,6 +25,7 @@ import {
   diagnoseImplicitCitationSupport,
   type ImplicitCitationDiagnostics,
 } from "./implicitCitationDiagnostics.js";
+import type { PresentedReplyBlocks } from "./replyBlocks/replyBlockTurn.js";
 
 export interface ChatGroundingDiagnostics extends ImplicitCitationDiagnostics {
   parseStatus: GroundingSummary["parseStatus"];
@@ -64,6 +65,8 @@ export interface ChatPresentedAnswer {
    * chat→engine adapter forwards the recognized keys onto the trace.
    */
   metadata?: Record<string, unknown>;
+  /** The reply blocks the answer presents, such as picture cards; absent when it presents none. */
+  replyBlocks?: PresentedReplyBlocks;
   /**
    * Set when a coverage verdict sink yielded this turn before any answer text was
    * composed (#1260): `answer` is empty and must not be shown — the host presents

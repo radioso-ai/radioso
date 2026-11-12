@@ -2639,3 +2639,83 @@ describe("chat history service visitor profile (spec 1277, FR-040/041)", () => {
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 });
+
+describe("chat history service reply blocks", () => {
+  const storedBlock = {
+    type: "item_list",
+    id: "b1",
+    layout: "carousel",
+    selection: "none",
+    caption: "Two hiking guides",
+    items: [{
+      key: "image-1",
+      title: "Field Guide",
+      image: { imageId: "image-1", width: 1280, height: 960, alt: "" },
+      actions: [{ type: "open", url: "https://shop.example/books/field-guide" }],
+    }],
+  };
+
+  const seedReply = async (metadata: Record<string, unknown>) => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditRepository = new InMemoryAuditEventRepository();
+    const service = new ChatHistoryService(
+      conversationRepository,
+      messageRepository,
+      auditRepository,
+      new InMemoryHistoryItemsRepository(conversationRepository, auditRepository),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { forImage: (imageId) => ({ src: `https://app.example/i/${imageId}/640`, srcSet: `https://app.example/i/${imageId}/320 320w` }) },
+    );
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const question = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "user", content: "Hiking guides?" });
+    const reply = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "We carry two hiking guides.",
+      metadata,
+    });
+    return { service, messageRepository, conversation, question, reply };
+  };
+
+  it("replays the stored block on every read, with its image addresses built now", async () => {
+    const { service, messageRepository, conversation, question, reply } = await seedReply({ blocks: [storedBlock] });
+
+    const reads = [
+      (await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 })).messages,
+      (await service.tailConversation("workspace-1", conversation.id, { cursor: messageRepository.cursorFor(question), limit: 10 })).messages,
+      [(await service.getConversationTurn("workspace-1", reply.id)).message],
+    ];
+
+    for (const messages of reads) {
+      const replayed = messages.find((message) => message.id === reply.id);
+      expect(replayed?.blocks).toEqual([{
+        ...storedBlock,
+        items: [{
+          key: "image-1",
+          title: "Field Guide",
+          image: { src: "https://app.example/i/image-1/640", srcSet: "https://app.example/i/image-1/320 320w", width: 1280, height: 960, alt: "" },
+          actions: [{ type: "open", url: "https://shop.example/books/field-guide" }],
+        }],
+      }]);
+      for (const message of messages.filter((candidate) => candidate.id !== reply.id)) {
+        expect(message).not.toHaveProperty("blocks");
+      }
+    }
+  });
+
+  it("leaves out blocks the message metadata does not hold in the stored shape", async () => {
+    const { service, conversation, reply } = await seedReply({ blocks: [{ ...storedBlock, items: [] }, "garbage"] });
+
+    const { messages } = await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 });
+
+    expect(messages.find((message) => message.id === reply.id)).not.toHaveProperty("blocks");
+  });
+});

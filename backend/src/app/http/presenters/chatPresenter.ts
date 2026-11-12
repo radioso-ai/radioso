@@ -13,6 +13,7 @@ import {
   type ChatTurnHandoff,
   type ChatAnswerCoverageAssessment,
   type ChatAnswerCoverageInteractionTrace,
+  type ReplyBlock,
 } from "../../../modules/chat/contracts/index.js";
 import type { ActivitySummary, ActivityTrace } from "../../../modules/retrieval/public.js";
 import type { TurnTraceEnvelope } from "../../../modules/chat/contracts/index.js";
@@ -41,6 +42,7 @@ type ChatPayload = {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
+  blocks?: ReplyBlock[];
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
   ownership?: ChatOwnershipAck;
@@ -193,6 +195,12 @@ export const sendChatSse = (
       return;
     }
 
+    // Each reply block arrives in its own event before `done`, which carries them all again.
+    for (const block of event.blocks ?? []) {
+      res.write("event: block\n");
+      res.write(`data: ${JSON.stringify({ conversationId: event.conversationId, assistantMessageId: event.assistantMessageId, block })}\n\n`);
+    }
+
     const donePayload = presentChatPayload({
       conversationId: event.conversationId,
       agentId: event.agentId,
@@ -204,6 +212,7 @@ export const sendChatSse = (
       citations: event.citations,
       answerSegments: event.answerSegments,
       suggestions: event.suggestions,
+      ...(event.blocks ? { blocks: event.blocks } : {}),
       activitySummary: event.activitySummary,
       activityTrace: event.activityTrace,
       turnTrace: event.turnTrace,

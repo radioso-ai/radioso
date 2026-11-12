@@ -582,6 +582,9 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     // visitor's browser to render the launcher before any session exists.
     "getPublicChatEmbedConfig",
     "getPublicChatAssistantLogo",
+    // A reply block's image, loaded by the visitor's browser or a messaging provider from the
+    // address on the block; the operator sees the same block in the conversation.
+    "getPublicReplyImage",
   ], endUserSurface),
   createPublicVoiceSession: visitorVoiceSessionStart,
   reportPublicVoiceVendorConversation: visitorVoiceVendorConversationReport,

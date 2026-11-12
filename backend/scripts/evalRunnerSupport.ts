@@ -4,12 +4,13 @@
  * live run gates and on what, the committed baseline file, the voice block a voice case needs, and
  * closing what the composition opened.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { closeInOrder, dependencyCloseSteps, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
 import type { AppDependencies } from "../src/app/server/types.js";
 import { agentVoiceSettingsInputSchema, type AgentVoiceSettings } from "../src/modules/agents/public.js";
+import { DEFAULT_WORKSPACE_NAME } from "../src/modules/workspace/public.js";
 import {
   isDeterministicOnlyAssertion,
   parseBaselineFile,
@@ -18,6 +19,11 @@ import {
 } from "../src/modules/eval/suite/index.js";
 import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
+import { replyBlockCases, replyBlockImages } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
+import { DOCUMENT_IMAGE_RENDITION_WIDTHS } from "../src/modules/documents/contracts/documentImages.js";
+import { workspaceStoragePrefix } from "../src/modules/documents/contracts/storage.js";
+import { toJsonb } from "../src/shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../src/shared/infra/kysely/types.js";
 import { VOICE_EVAL_LOCALE, voiceEvalVoiceLines } from "../tests/fixtures/voice-eval/agent.js";
 
 /** The account and agent calls `registerDisposableAgent` makes, narrowed so a test composition can serve them. */
@@ -271,4 +277,111 @@ export const runThenClose = async <T>(
       reportCloseFailure(error);
     }
   }
+};
+
+/**
+ * Splits a run's cases by the corpus they ground against. The reply block cases run in a
+ * workspace of their own, seeded with their pages alone; every other case runs in the run's
+ * target, which never holds those pages. The pages carry `Source:` addresses, which the
+ * invented-link checks assume no document has, and hiking books, which a mountain-course
+ * question could otherwise retrieve.
+ */
+export const partitionCasesByCorpus = (
+  cases: readonly ConversationQualityCase[],
+): { shared: ConversationQualityCase[]; replyBlocks: ConversationQualityCase[] } => {
+  const replyBlockIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
+  return {
+    shared: cases.filter((evalCase) => !replyBlockIds.has(evalCase.id)),
+    replyBlocks: cases.filter((evalCase) => replyBlockIds.has(evalCase.id)),
+  };
+};
+
+/** The name of the workspace the reply block cases run in, so a repeat run finds it. */
+export const REPLY_BLOCK_EVAL_WORKSPACE_NAME = "Conversation-quality reply blocks";
+
+/** The workspace reads and writes `ensureReplyBlockTarget` makes, narrowed so a test can hand it fakes. */
+interface ReplyBlockTargetPorts {
+  workspaces: { findById(workspaceId: string): Promise<{ accountId: string } | null> };
+  workspaceService: {
+    listForAccount(accountId: string): Promise<Array<{ id: string; name: string }>>;
+    create(accountId: string, name: string): Promise<{ id: string }>;
+  };
+  agentService: { resolve(workspaceId: string): Promise<{ id: string }> };
+}
+
+/**
+ * The workspace and agent the reply block cases run on: a workspace in the run target's own
+ * account, created on the first run and found by name after. It goes through the account rather
+ * than registering one, since a single-organization install closes registration after its first
+ * account. A sign-in lands on an account's newest workspace when none is named
+ * `DEFAULT_WORKSPACE_NAME`, so in such an account it refuses to create one rather than become
+ * where its people sign in.
+ */
+export const ensureReplyBlockTarget = async (
+  ports: ReplyBlockTargetPorts,
+  targetWorkspaceId: string,
+): Promise<{ workspaceId: string; agentId: string }> => {
+  const target = await ports.workspaces.findById(targetWorkspaceId);
+  if (!target) {
+    throw new Error(`Workspace ${targetWorkspaceId} not found; the reply block cases run in a workspace beside it.`);
+  }
+  const workspaces = await ports.workspaceService.listForAccount(target.accountId);
+  const existing = workspaces.find((workspace) => workspace.name === REPLY_BLOCK_EVAL_WORKSPACE_NAME);
+  if (!existing && !workspaces.some((workspace) => workspace.name === DEFAULT_WORKSPACE_NAME)) {
+    throw new Error(
+      `The account of workspace ${targetWorkspaceId} has no "${DEFAULT_WORKSPACE_NAME}" workspace, so a new "${REPLY_BLOCK_EVAL_WORKSPACE_NAME}" workspace would become where it signs in; point the run at a disposable account.`,
+    );
+  }
+  const workspaceId = existing?.id
+    ?? (await ports.workspaceService.create(target.accountId, REPLY_BLOCK_EVAL_WORKSPACE_NAME)).id;
+  const agent = await ports.agentService.resolve(workspaceId);
+  return { workspaceId, agentId: agent.id };
+};
+
+/**
+ * Seeds the reply block fixtures' stored images once their documents are processed, written as
+ * image capture would leave them: stored, a cover as its document's primary image, a photo from
+ * within a page anchored to the page's first chunk. The renditions name objects no eval reads, since a turn only offers the
+ * images and never serves them. Returns how many rows it wrote.
+ */
+export const seedReplyBlockImages = async (
+  db: Db,
+  workspaceId: string,
+  documentIds: ReadonlyMap<string, string>,
+): Promise<number> => {
+  let seeded = 0;
+  for (const [fixtureDocumentId, images] of Object.entries(replyBlockImages)) {
+    const documentId = documentIds.get(fixtureDocumentId);
+    if (!documentId) {
+      continue;
+    }
+    const firstChunk = await db.selectFrom("chunks").select("id")
+      .where("document_id", "=", documentId)
+      .orderBy("chunk_index")
+      .executeTakeFirst();
+    for (const [position, image] of images.entries()) {
+      const chunkId = image.role === "inline" ? firstChunk?.id ?? null : null;
+      const objectPath = `${workspaceStoragePrefix(workspaceId)}document-image-eval-${position}`;
+      const result = await db.insertInto("document_images")
+        .values({
+          workspace_id: workspaceId,
+          document_id: documentId,
+          chunk_id: chunkId,
+          role: image.role,
+          status: "stored",
+          position,
+          source_url: image.sourceUrl,
+          alt: image.alt,
+          caption: image.caption ?? null,
+          width: image.width,
+          height: image.height,
+          sha256: createHash("sha256").update(image.sourceUrl).digest("hex"),
+          renditions: toJsonb(DOCUMENT_IMAGE_RENDITION_WIDTHS.map((width) => ({ width, bucket: "eval", objectPath: `${objectPath}-w${width}`, generation: null, sizeBytes: 1 }))),
+        })
+        .onConflict((conflict) => conflict.columns(["document_id", "source_url"]).doUpdateSet({ chunk_id: chunkId }))
+        .executeTakeFirst();
+      seeded += Number(result.numInsertedOrUpdatedRows ?? 0n);
+    }
+  }
+  return seeded;
 };

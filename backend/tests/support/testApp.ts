@@ -59,6 +59,8 @@ import { PeriodicTaskRunner } from "../../src/app/composition/periodicTaskRunner
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import { scopeTag } from "@radioso/conversation-defaults";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
+import { createReplyBlocksComposition } from "../../src/app/composition/replyBlocks.js";
+import { InMemoryDocumentImages } from "./inMemoryDocumentImages.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
@@ -1024,6 +1026,8 @@ export const createTestDependencies = (overrides: {
   voiceTurnTiming?: Parameters<typeof createVoiceChannelComposition>[0]["timing"];
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
+  /** The documents' stored images answers present as reply blocks; omitted means a workspace with none. */
+  documentImages?: InMemoryDocumentImages;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -2146,6 +2150,8 @@ export const createTestDependencies = (overrides: {
     teammateLabels,
     messages: messageRepository,
   }).reads;
+  const documentImages = overrides.documentImages ?? new InMemoryDocumentImages();
+  const replyBlocks = createReplyBlocksComposition({ env, evidenceImages: documentImages, metrics: metricsRegistry, logger });
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
     messageRepository,
@@ -2158,6 +2164,7 @@ export const createTestDependencies = (overrides: {
     visitorRepository,
     teammateLabels,
     conversationActivityReads,
+    replyBlocks.imageUrls,
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();
@@ -2296,6 +2303,7 @@ export const createTestDependencies = (overrides: {
     skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
     metrics: metricsRegistry,
     logger,
+    replyBlocks: replyBlocks.turnFactory,
   });
   const chatService = new ChatService({
     conversationRepository,
@@ -3163,6 +3171,7 @@ export const createTestDependencies = (overrides: {
     } as any,
     documentDeletionService,
     documentStorage,
+    replyImageObjectLookup: documentImages,
     chatService,
     approvalDecisionService,
     closeApprovalResumeEffectJournal: async () => undefined,
@@ -3428,6 +3437,7 @@ export const createTestApp = (overrides: {
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
+  documentImages?: InMemoryDocumentImages;
 } = {}) => {
   const {
     dependencies,

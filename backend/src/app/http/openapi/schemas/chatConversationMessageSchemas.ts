@@ -67,6 +67,9 @@ export const registerChatConversationMessageSchemas = (
     citations: z.array(schemas.CitationSchema).optional(),
     answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
     suggestions: z.array(ChatSuggestionSchema).optional(),
+    blocks: z.array(schemas.ReplyBlockSchema).optional().openapi({
+      description: "On an assistant reply: the reply blocks it showed, read back from the message as they were sent. An item's picture stops loading once the document it came from is deleted.",
+    }),
     answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
     operatorDisplayName: z.string().optional(),
     interruption: ReplyInterruptionSchema.optional(),

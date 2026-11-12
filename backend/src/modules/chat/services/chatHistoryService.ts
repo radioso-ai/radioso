@@ -3,6 +3,7 @@ import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
+import type { ReplyImageUrls } from "../contracts/replyBlocks.js";
 import {
   formatActivityCursor,
   type ConversationActivityEntry,
@@ -42,7 +43,7 @@ import {
 import { skillOutcomeStatusSchema } from "../../skills/public.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
-import { messageMarkerFields, messageMetadataSuggestions, normalizeChatSuggestion, type MessageMarkerFields } from "./historyMessageFields.js";
+import { messageMetadataSuggestions, normalizeChatSuggestion, storedMessageFields, type StoredMessageFields } from "./historyMessageFields.js";
 import {
   LEGACY_TURN_TRACE_ENVELOPE_VERSION,
   buildTurnTraceEnvelope,
@@ -246,7 +247,7 @@ interface ChatConversationTurnFailure {
   errorMessage?: string | null;
 }
 
-export interface ChatConversationTurn extends MessageMarkerFields {
+export interface ChatConversationTurn extends StoredMessageFields {
   id: string;
   role: MessageRecord["role"];
   source: NonNullable<MessageRecord["source"]>;
@@ -824,6 +825,7 @@ export class ChatHistoryService {
     private readonly visitorRepository: VisitorProfileReaderPort = new NoopVisitorProfileReader(),
     private readonly teammateLabels: TeammateLabelReaderPort = new NoopTeammateLabelReader(),
     private readonly conversationActivity: ConversationActivityTimelineReader = new NoopConversationActivityReader(),
+    private readonly replyImageUrls: ReplyImageUrls | null = null,
   ) {}
 
   async listConversations(
@@ -1186,7 +1188,7 @@ export class ChatHistoryService {
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
-        ...messageMarkerFields(message),
+        ...storedMessageFields(message, this.replyImageUrls),
       })),
       ...operatorOwnershipField(ownershipRecord),
       ...(activity ? { activity: activity.present(operatorLabels) } : {}),
@@ -1264,7 +1266,7 @@ export class ChatHistoryService {
         turnFailure,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
-        ...messageMarkerFields(message),
+        ...storedMessageFields(message, this.replyImageUrls),
       },
       ...operatorOwnershipField(ownershipRecord),
     };
@@ -1363,7 +1365,7 @@ export class ChatHistoryService {
       ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
       operatorDisplayName: operatorDisplayNameFrom(message),
       ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
-      ...messageMarkerFields(message),
+      ...storedMessageFields(message, this.replyImageUrls),
     };
   }
 

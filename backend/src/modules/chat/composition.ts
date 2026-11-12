@@ -85,6 +85,7 @@ export {
   CONTACT_INTENT_NAME,
 } from "./services/routines/contactRoutine.js";
 export { buildChatTurnRuntime } from "./services/chatTurnRuntime.js";
+export { ReplyBlockTurnFactory } from "./services/replyBlocks/replyBlockTurn.js";
 export type {
   TurnOutcome,
   TurnOutcomeRenderer,

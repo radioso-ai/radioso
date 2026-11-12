@@ -179,6 +179,31 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   disposable integration database), `tests/unit/message-source.test.ts`,
   `tests/unit/chat-history-service.test.ts`,
   `tests/unit/message-repository-tail-cursor.test.ts`.
+- `contracts/replyBlocks.ts` and `services/replyBlocks/`: reply blocks, the
+  structured parts of a reply a client renders beside its text (the types are
+  `ReplyBlock` in `@radioso/conversation-contract`). A client declares the kinds it
+  renders in `clientContextCapabilities["reply.blocks"]`; the preparer keeps that
+  on the session as `replyBlocks`. On a grounded answer whose evidence carries a
+  stored image, `ReplyBlockTurnFactory.forTurn` gives the turn a ledger of the
+  images under per-turn handles (`turnImageLedger.ts`), the Result images section
+  of the prompt, and the `present` field (`presentHead.ts`), which the composer
+  merges ahead of `answer` with `mergeAnswerSchemaExtensions`, so the model picks
+  the pictures before it writes a short lead around them. Without the
+  capability, or without a stored image, nothing is read and the prompt and schema
+  are what they would be without reply blocks (`tests/fixtures/reply-blocks/`
+  holds the golden). `replyBlockBuilder.ts` builds the block from the handles the
+  model picked and nothing else it wrote: an unknown handle is dropped, titles and
+  links come from the content, and the layout follows from the images' roles. The
+  block is stored on the assistant message (`metadata.blocks`) with image ids;
+  `ReplyImageUrls`, which composition builds on the public backend address, turns
+  them into `src` and `srcSet` whenever the block is presented: the reply, the
+  `block` SSE events before `done`, and history (`historyMessageFields.ts`).
+  A routine step that answers from evidence crosses the engine as a
+  `RenderableTurn`: `routineGroundedAnswerRenderer.ts` sends the presented blocks
+  as `blocks` and the stored form as `metadata.storedReplyBlocks`, and
+  `presentRoutineRenderableAnswer` restores both: the stored form reads back
+  through `storedReplyBlockSchema` and pairs with `blocks` by position, and a
+  mismatch drops both forms with a warning that carries ids only.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides
@@ -994,6 +1019,7 @@ Focused starting points:
 - `cd backend && pnpm test -- tests/unit/chat-history-service.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/chat-turn-lifecycle.test.ts tests/unit/assistant-history-service.test.ts`
 - `cd backend && pnpm test -- tests/unit/chat-presenter.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/chat/replyBlocks tests/unit/chat/reply-blocks-composer.test.ts tests/unit/chat/reply-blocks-capability-gating.test.ts tests/contract/public-chat-reply-blocks.contract.test.ts tests/contract/reply-image.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/conversation-turn-registry.test.ts tests/integration/chat-interruption.integration.test.ts tests/contract/chat-interruption.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/chat-session-preparer-visitor-resolution.test.ts`
 - `cd backend && pnpm run test:integration` for chat route behavior.

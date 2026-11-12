@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import { normalizeVisitorImage, sniffVisitorImageType } from "../../../src/modules/visitorImages/services/imageNormalizer.js";
-import { NormalizationSlots } from "../../../src/modules/visitorImages/services/normalizationSlots.js";
+import { NormalizationSlots } from "../../../src/shared/infra/images/normalizationSlots.js";
 import { VISITOR_IMAGE_LIMITS } from "../../../src/modules/visitorImages/domain.js";
 
 /** A solid image of the given size and format, made in the test so no fixture file is needed. */

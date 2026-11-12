@@ -11,11 +11,7 @@ import {
   wireVoiceRuntimeConnections,
 } from "../composition/voiceChannel.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
-import {
-  createEmailChannelComposition,
-  createEmailHeldReplyChannelRegistration,
-  type EmailChannelOptions,
-} from "../composition/emailChannel/index.js";
+import { createEmailChannelComposition, createEmailHeldReplyChannelRegistration } from "../composition/emailChannel/index.js";
 import {
   ConnectorManagementService,
   createConnectorChatPort,
@@ -31,12 +27,10 @@ import {
   createDefaultFacetExtractionDrainDispatcher,
   createLiveAgentConfigReader,
   createRealtimePublisherComposition,
-  type ApplicationModule,
 } from "../composition/index.js";
 import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/config.js";
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
-import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills } from "../../modules/agents/public.js";
 import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
 import {
@@ -59,7 +53,7 @@ import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloud
 import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
 import { OperatorMcpAuthorizationRepository } from "../../db/repositories/operatorMcpAuthorizationRepository.js";
-import type { AppDependencies } from "./types.js";
+import type { AppDependencies, BuildDependenciesOptions } from "./types.js";
 import {
   buildInfrastructure,
   buildLogger,
@@ -144,6 +138,8 @@ import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolut
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
 import { createBackgroundJobComposition } from "../composition/backgroundJobs.js";
+import { backgroundJobHandlers } from "../composition/backgroundJobHandlers.js";
+import { lateBoundReviewedProposalPorts } from "../composition/lateBoundReviewedProposals.js";
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
@@ -163,21 +159,12 @@ import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/pu
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { buildNotificationDeliveryReader, buildNotificationRecipientPolicy, buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
-import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import { NotificationRecipientStateRepository } from "../../db/repositories/notificationRecipientStateRepository.js";
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
 import { createPeriodicTasks } from "../composition/periodicTaskRunner.js";
 import { wireVisitorImages } from "../composition/visitorImages.js";
 import { createAbuseControlComposition } from "../composition/abuseControl.js";
-
-interface BuildDependenciesOptions {
-  modules?: ApplicationModule[];
-  realtimePublisherComposition?: RealtimePublisherComposition;
-  operatorMcpPreregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
-  /** Test and harness overrides of the email channel's fixed timings, limits and local spool. */
-  emailChannel?: EmailChannelOptions;
-}
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
@@ -1103,34 +1090,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       skillInputKeys: routineDefinitionService.skillInputKeys.bind(routineDefinitionService),
     },
     scopedReferences: scopedRoutineReferences,
-    reviewedProposalExecution: {
-      executeMcpReviewedProposal: async (input) => {
-        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
-        return operatorCopilotService.executeMcpReviewedProposal(input);
-      },
-    },
-    reviewedProposalOutcome: {
-      getMcpReviewedProposal: async (input) => {
-        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
-        return operatorCopilotService.getMcpReviewedProposal(input);
-      },
-      isDashboardReviewedProposal: async (input) => {
-        if (!operatorCopilotService) throw new Error("Operator Copilot proposal service is not initialized");
-        return operatorCopilotService.isDashboardReviewedProposal(input);
-      },
-    },
-    cancelReviewedProposal: {
-      cancelMcpReviewedProposal: async (input) => {
-        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
-        return operatorCopilotService.cancelMcpReviewedProposal(input);
-      },
-    },
-    proposalDetail: {
-      getProposalDetail: async (input) => {
-        if (!operatorCopilotService) throw new Error("Operator Copilot proposal service is not initialized");
-        return operatorCopilotService.getProposalDetail(input);
-      },
-    },
+    // The copilot service is built after this catalog, so the ports reach it at call time.
+    ...lateBoundReviewedProposalPorts(() => operatorCopilotService),
     retrievalAuthoring,
     agentSettings: agentService,
     ingestionSettings: settings.ingestionSettingsService,
@@ -1257,22 +1218,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     starterPrompts: chat.agentStarterPromptReader,
     conversationLinks,
   });
-  const backgroundJobRuntime = backgroundJobs.createRuntime([
-    ...chat.backgroundJobHandlers,
-    ...slackInboundJobs.backgroundJobHandlers,
-    // The recordings a deletion handed off, deleted at the voice vendor with the key held beside them.
-    voiceRecordings.erasureJobHandler,
-    // The photos an erasure or the unbound sweep handed off.
-    visitorImages.objectDeletionJobHandler,
-    // A deleted workspace's stored files: handed off by its deletion, or queued by an operator.
-    workspaceStoragePurgeHandler({
+  const backgroundJobRuntime = backgroundJobs.createRuntime(backgroundJobHandlers({
+    chat: chat.backgroundJobHandlers,
+    slackInbound: slackInboundJobs.backgroundJobHandlers,
+    voiceRecordingErasure: voiceRecordings.erasureJobHandler,
+    visitorImageObjectDeletion: visitorImages.objectDeletionJobHandler,
+    workspaceStoragePurge: workspaceStoragePurgeHandler({
       storage: documents.documentStorage,
       owners: repositories.documentStorageOwnerRepository,
       queue: backgroundJobs.queue,
       audit: infrastructure.auditService,
       logger,
     }),
-  ]);
+  }));
   refreshEmbedConfigsOnVoiceReadinessChange({ credentials: workspaceProviderCredentialsService, publications: agentRevisionService, embedConfigs: agentService });
   const { voiceSessionStarts, voiceRuntimeConnections } = wireVoiceRuntimeConnections({
     database: infrastructure.database,
@@ -1380,6 +1338,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     websiteCrawlJobConsumer: documents.websiteCrawlJobConsumer,
     documentDeletionService: documents.documentDeletionService,
     documentStorage: documents.documentStorage,
+    replyImageObjectLookup: chat.replyImageObjectLookup,
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
     closeApprovalResumeEffectJournal: chat.closeApprovalResumeEffectJournal,

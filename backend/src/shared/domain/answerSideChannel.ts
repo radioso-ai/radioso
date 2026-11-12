@@ -42,3 +42,29 @@ export interface AnswerSideChannel {
 export interface AnswerSideChannelFactory {
   forSteeringRules(rules: readonly SteeringRule[]): AnswerSideChannel;
 }
+
+const mergeFields = (first: AnswerSchemaFields | undefined, second: AnswerSchemaFields | undefined): AnswerSchemaFields | undefined =>
+  first && second
+    ? { properties: { ...first.properties, ...second.properties }, required: [...first.required, ...second.required] }
+    : first ?? second;
+
+/**
+ * Merges two schema extensions into one, the first's fields ahead of the second's in each
+ * position. An answer schema takes a single extension; this lets two independent concerns (such
+ * as directive adherence and the `present` head) ride the same answer. With only one extension,
+ * that extension is returned as is, so a turn that adds nothing sends the schema it always did.
+ */
+export const mergeAnswerSchemaExtensions = (
+  first: AnswerSchemaExtension | null | undefined,
+  second: AnswerSchemaExtension | null | undefined,
+): AnswerSchemaExtension | null => {
+  if (!first || !second) {
+    return first ?? second ?? null;
+  }
+  const beforeAnswer = mergeFields(first.beforeAnswer, second.beforeAnswer);
+  return {
+    ...(beforeAnswer ? { beforeAnswer } : {}),
+    properties: { ...first.properties, ...second.properties },
+    required: [...first.required, ...second.required],
+  };
+};

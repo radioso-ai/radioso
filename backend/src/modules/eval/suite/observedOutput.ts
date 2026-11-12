@@ -1,4 +1,4 @@
-import type { ChatAnswerCoverageAssessment } from "../../chat/contracts/index.js";
+import type { ChatAnswerCoverageAssessment, ReplyBlock } from "../../chat/contracts/index.js";
 import type { EvalRunObservedOutput } from "../domain/types.js";
 
 /**
@@ -32,6 +32,8 @@ export interface VoiceTurnObservation {
 
 /** The output the suite scores: a live turn's observed output, or a review/voice turn's with its observation. */
 export interface ConversationQualityObservedOutput extends EvalRunObservedOutput {
+  /** The reply blocks the turn presented, as a client receives them. */
+  replyBlocks?: ReplyBlock[];
   reviewTurn?: ReviewTurnObservation;
   voiceTurn?: VoiceTurnObservation;
 }

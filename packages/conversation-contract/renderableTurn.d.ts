@@ -1,10 +1,16 @@
-// The turn a renderer hands back to the engine, and the directive grades it carries.
+// The turn a renderer hands back to the engine, the directive grades and the reply blocks it carries.
+
+import type { ReplyBlock } from "./replyBlocks.js";
+
+export type { ItemListBlock, ReplyAction, ReplyBlock, ReplyBlockLayout, ReplyFact, ReplyImage, ReplyItem } from "./replyBlocks.js";
 
 export interface RenderableTurn {
   answer: string;
   /** Sources the turn grounded on; carries `ConversationCitation[]` when present. */
   citations?: unknown[];
   suggestions?: unknown[];
+  /** Structured parts of the reply a channel renders beside its text, such as picture cards. */
+  blocks?: ReplyBlock[];
   metadata?: Record<string, unknown> & {
     directiveAdherence?: DirectiveAdherenceEntry[];
     /**

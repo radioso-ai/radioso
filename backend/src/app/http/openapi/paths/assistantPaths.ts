@@ -7,7 +7,8 @@ import { agentSurfacePositions } from "../../../../modules/agents/public.js";
 const assistantChatSseSchema = (name: string) => z.string().openapi(name, {
   description: [
     "A server-sent event stream. Status payloads use the named ChatStatusEvent schema.",
-    "Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions.",
+    "Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, one block event per reply block, done, then optional suggestions.",
+    "A block event carries `conversationId`, `assistantMessageId` and one `block` (the ReplyBlock schema); `done.blocks` repeats them all. Blocks are sent only to a client that declared `clientContextCapabilities[\"reply.blocks\"]`.",
     "A cancelled event is terminal and no event follows it.",
   ].join(" "),
   example: [

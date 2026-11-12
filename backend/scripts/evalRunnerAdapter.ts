@@ -10,7 +10,6 @@ import type {
   WorkbenchReplayResult,
   WorkbenchReplayRunner,
 } from "../src/modules/chat/services/workbenchReplayRunner.js";
-import type { EvalRunObservedOutput } from "../src/modules/eval/domain/types.js";
 import {
   conversationQualityCaseTurnText,
   type ConversationQualityCase,
@@ -28,11 +27,12 @@ import type { VoiceTurnEvent, VoiceTurnInput, VoiceTurnPort } from "../src/modul
  */
 export const observedOutputFromReplayResult = (
   result: WorkbenchReplayResult,
-): EvalRunObservedOutput => ({
+): ConversationQualityObservedOutput => ({
   retrievedChunks: result.resolvedConfig.retrievedChunks.map((chunk) => ({ ...chunk })),
   answer: result.answer,
   citations: result.citations,
   answerSegments: result.answerSegments,
+  ...(result.blocks ? { replyBlocks: result.blocks } : {}),
   groundingSummary: result.groundingSummary,
   groundingVerdict: result.groundingSummary?.verdict,
   turnTrace: result.turnTrace,

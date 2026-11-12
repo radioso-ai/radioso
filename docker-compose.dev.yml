@@ -20,7 +20,9 @@ x-backend-dev-volumes: &backend-dev-volumes
   - ./packages/conversation-contract/index.d.ts:/app/packages/conversation-contract/index.d.ts:ro
   - ./packages/conversation-contract/modelGateway.d.ts:/app/packages/conversation-contract/modelGateway.d.ts:ro
   - ./packages/conversation-contract/renderableTurn.d.ts:/app/packages/conversation-contract/renderableTurn.d.ts:ro
+  - ./packages/conversation-contract/replyBlocks.d.ts:/app/packages/conversation-contract/replyBlocks.d.ts:ro
   - ./packages/conversation-contract/routineTrace.d.ts:/app/packages/conversation-contract/routineTrace.d.ts:ro
+  - ./packages/conversation-contract/skillOutcome.d.ts:/app/packages/conversation-contract/skillOutcome.d.ts:ro
   - ./packages/conversation-defaults/src:/app/packages/conversation-defaults/src
   - ./packages/conversation-engine/src:/app/packages/conversation-engine/src
   - ./packages/conversation-tools/src:/app/packages/conversation-tools/src

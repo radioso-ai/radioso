@@ -5236,6 +5236,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/reply-images/{imageId}/{width}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a reply block's image
+         * @description Unauthenticated: the image id is an unguessable capability, so a page embedding the chat loads it cross-origin and a messaging provider can fetch it. Clients take the address from a reply block's `image.src` or `image.srcSet` rather than building it. Responses are WebP, `Cache-Control: private`, and `Cross-Origin-Resource-Policy: cross-origin`. Once the document the image came from is deleted, the image answers 404.
+         */
+        get: operations["getPublicReplyImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events": {
         parameters: {
             query?: never;
@@ -7396,6 +7416,12 @@ export interface components {
                     mode: "metadata" | "content" | null;
                     supportedOperations: ("metadata" | "lookup" | "summarize")[];
                 };
+                "reply.blocks"?: {
+                    item_list?: {
+                        /** @description The layouts the client draws an item list in: `carousel`, `grid`, `list`. A layout left out reaches the client as `list`. */
+                        layouts: string[];
+                    };
+                };
             };
         };
         /** @description `locale` is the caller's language tag; without it the agent's default language applies, then `en`. */
@@ -8658,6 +8684,39 @@ export interface components {
                 activityTrace: components["schemas"]["ActivityTrace"];
             };
         };
+        /** @description A structured part of an assistant reply that a client renders beside its text. `item_list` is a list of items, such as picture cards, laid out as `carousel`, `grid` or `list`; a client renders a layout it does not know as `list`. A server sends only the block kinds a client declared under `clientContextCapabilities["reply.blocks"]`, and only the layouts it declared, sending `list` in place of any other. Each item is built from the content the answer used: its `image.src` and `image.srcSet` are addresses this server serves, and an item's picture stops loading once the document it came from is deleted. */
+        ReplyBlock: {
+            /** @enum {string} */
+            type: "item_list";
+            id: string;
+            /** @enum {string} */
+            layout: "carousel" | "grid" | "list";
+            /** @enum {string} */
+            selection: "none" | "single";
+            caption: string;
+            items: {
+                key: string;
+                title: string;
+                description?: string;
+                image?: {
+                    /** Format: uri */
+                    src: string;
+                    alt: string;
+                    width: number;
+                    height: number;
+                    srcSet?: string;
+                };
+                actions: ({
+                    /** @enum {string} */
+                    type: "open";
+                    /** Format: uri */
+                    url: string;
+                } | {
+                    /** @enum {string} */
+                    type: "select";
+                })[];
+            }[];
+        };
         /**
          * @description Whether a person or a calling agent is on the other side of the conversation.
          * @enum {string}
@@ -9004,6 +9063,7 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
+            blocks?: components["schemas"]["ReplyBlock"][];
             ownership?: {
                 /** @enum {string} */
                 state: "ai_owned" | "human_owned";
@@ -9024,6 +9084,7 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
+            blocks?: components["schemas"]["ReplyBlock"][];
             ownership?: {
                 /** @enum {string} */
                 state: "ai_owned" | "human_owned";
@@ -9071,6 +9132,14 @@ export interface components {
             metadataFilter?: {
                 [key: string]: unknown;
             };
+            clientContextCapabilities?: {
+                "reply.blocks"?: {
+                    item_list?: {
+                        /** @description The layouts the client draws an item list in: `carousel`, `grid`, `list`. A layout left out reaches the client as `list`. */
+                        layouts: string[];
+                    };
+                };
+            };
             previewRoutineIds?: string[];
         };
         /** @description `message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`. */
@@ -9101,6 +9170,12 @@ export interface components {
                     /** @enum {string|null} */
                     mode: "metadata" | "content" | null;
                     supportedOperations: ("metadata" | "lookup" | "summarize")[];
+                };
+                "reply.blocks"?: {
+                    item_list?: {
+                        /** @description The layouts the client draws an item list in: `carousel`, `grid`, `list`. A layout left out reaches the client as `list`. */
+                        layouts: string[];
+                    };
                 };
             };
             signedIdentity?: string;
@@ -9483,6 +9558,8 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
+            /** @description On an assistant reply: the reply blocks it showed, read back from the message as they were sent. An item's picture stops loading once the document it came from is deleted. */
+            blocks?: components["schemas"]["ReplyBlock"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             operatorDisplayName?: string;
             interruption?: components["schemas"]["ReplyInterruption"];
@@ -9507,6 +9584,8 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
+            /** @description On an assistant reply: the reply blocks it showed, read back from the message as they were sent. An item's picture stops loading once the document it came from is deleted. */
+            blocks?: components["schemas"]["ReplyBlock"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             operatorDisplayName?: string;
             interruption?: components["schemas"]["ReplyInterruption"];
@@ -12118,7 +12197,7 @@ export interface components {
             locale?: string;
         };
         /**
-         * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
+         * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, one block event per reply block, done, then optional suggestions. A block event carries `conversationId`, `assistantMessageId` and one `block` (the ReplyBlock schema); `done.blocks` repeats them all. Blocks are sent only to a client that declared `clientContextCapabilities["reply.blocks"]`. A cancelled event is terminal and no event follows it.
          * @example event: status
          *     data: {"stage":"interpreting"}
          *
@@ -12131,7 +12210,7 @@ export interface components {
             error: "Connector not found";
         };
         /**
-         * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
+         * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, one block event per reply block, done, then optional suggestions. A block event carries `conversationId`, `assistantMessageId` and one `block` (the ReplyBlock schema); `done.blocks` repeats them all. Blocks are sent only to a client that declared `clientContextCapabilities["reply.blocks"]`. A cancelled event is terminal and no event follows it.
          * @example event: status
          *     data: {"stage":"interpreting"}
          *
@@ -33477,6 +33556,40 @@ export interface operations {
                 };
             };
             /** @description Launch token unknown, or the agent has no logo */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPublicReplyImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The image's id, from the `image.src` of a reply block item. */
+                imageId: string;
+                /** @description The rendition width in pixels, spelled exactly: 320 or 640. */
+                width: "320" | "640";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image, re-encoded as WebP at the requested width */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/webp": string;
+                };
+            };
+            /** @description Unknown image, an image whose document was deleted, or a width other than 320 or 640 */
             404: {
                 headers: {
                     [name: string]: unknown;

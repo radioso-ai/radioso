@@ -633,7 +633,8 @@ export interface ChatStreamHandlers {
   onConversation?: (payload: ChatStreamConversation) => void
   onChunk?: (payload: ChatStreamChunk) => void
   onCancelled?: (payload: ChatStreamCancelled) => void
-  onBlock?: (payload: ChatStreamBlock) => void
+  /** Called per `block` event, with every block the reply has sent so far, one per id. */
+  onBlock?: (payload: ChatStreamBlock & { blocks: ReplyBlock[] }) => void
   onDone?: (payload: ChatStreamCompletion) => void
   onSuggestions?: (payload: ChatStreamSuggestions) => void
   onSkill?: (payload: ChatStreamSkill) => void

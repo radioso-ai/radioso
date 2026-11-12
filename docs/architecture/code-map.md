@@ -2652,9 +2652,9 @@ Agent settings and channels entry points:
 
 Reply blocks in the chat (#1763) entry points:
 
-- `frontend/lib/reply-blocks.ts` — the `reply.blocks` declaration, layout fallback,
-  picture frame, and item links; `frontend/lib/api-chat-stream.ts` parses the
-  `block` event
+- `frontend/lib/reply-blocks.ts` — the `reply.blocks` declaration, the block kinds
+  the chat draws, layout fallback, picture frame, and item links;
+  `frontend/lib/api-chat-stream.ts` parses the `block` event, one block per id
 - `frontend/components/chat/item-list-block.tsx` — carousel, grid and list, rendered
   by `frontend/components/dashboard/chat-message-thread.tsx`
 - `cd frontend && pnpm exec vitest run tests/unit/reply-blocks.test.ts tests/unit/anonymous-chat-reply-blocks.test.tsx tests/unit/api-chat-stream.test.ts`

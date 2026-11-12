@@ -100,7 +100,7 @@ describe('streamChatEvents', () => {
 
   it('hands each reply block over as it arrives and keeps them for the completion', async () => {
     const block = carousel('block-1')
-    const blocks: ChatStreamBlock[] = []
+    const blocks: Array<ChatStreamBlock & { blocks: ReplyBlock[] }> = []
     let donePayload: ChatStreamCompletion | undefined
 
     const result = await streamChatEvents(sse([
@@ -114,7 +114,7 @@ describe('streamChatEvents', () => {
       },
     })
 
-    expect(blocks).toEqual([{ conversationId: 'conversation-1', assistantMessageId: 'assistant-1', block }])
+    expect(blocks).toEqual([{ conversationId: 'conversation-1', assistantMessageId: 'assistant-1', block, blocks: [block] }])
     expect(donePayload?.blocks).toEqual([block])
     expect(result.blocks).toEqual([block])
   })
@@ -129,6 +129,47 @@ describe('streamChatEvents', () => {
     ]), {})
 
     expect(result.blocks).toEqual([final])
+  })
+
+  it('keeps one block per id when the stream sends a block again, in the place it first took', async () => {
+    const first = carousel('block-1')
+    const second = carousel('block-2')
+    const revised = { ...first, caption: 'Hiking guides back in stock' }
+    const shown: ReplyBlock[][] = []
+
+    const result = await streamChatEvents(sse([
+      ['block', { block: first }],
+      ['block', { block: second }],
+      ['block', { block: revised }],
+      ['done', { conversationId: 'conversation-1', answer: 'Here they are.' }],
+    ]), {
+      onBlock: ({ blocks }) => shown.push(blocks),
+    })
+
+    expect(shown).toEqual([[first], [first, second], [revised, second]])
+    expect(result.blocks).toEqual([revised, second])
+  })
+
+  it('takes the blocks from the done event when no block event came before it', async () => {
+    const block = carousel('block-1')
+    let streamedBlocks = 0
+    let donePayload: ChatStreamCompletion | undefined
+
+    const result = await streamChatEvents(sse([
+      ['chunk', { text: 'Here is a guide.' }],
+      ['done', { conversationId: 'conversation-1', answer: 'Here is a guide.', blocks: [block] }],
+    ]), {
+      onBlock: () => {
+        streamedBlocks += 1
+      },
+      onDone: (payload) => {
+        donePayload = payload
+      },
+    })
+
+    expect(streamedBlocks).toBe(0)
+    expect(donePayload?.blocks).toEqual([block])
+    expect(result.blocks).toEqual([block])
   })
 
   it('leaves blocks out of an answer that has none', async () => {

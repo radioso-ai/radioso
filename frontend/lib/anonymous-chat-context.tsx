@@ -770,13 +770,9 @@ export function AnonymousChatProvider({
                   )
                   setIsLoading(false)
                 },
-                onBlock: ({ block }) => {
+                onBlock: ({ blocks }) => {
                   setMessages((prev) =>
-                    prev.map((message) =>
-                      message.id === assistantMessageId
-                        ? { ...message, blocks: [...(message.blocks ?? []).filter((shown) => shown.id !== block.id), block] }
-                        : message,
-                    ),
+                    prev.map((message) => (message.id === assistantMessageId ? { ...message, blocks } : message)),
                   )
                 },
                 onDone: (completion) => {

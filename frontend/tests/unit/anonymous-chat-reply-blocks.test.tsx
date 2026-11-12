@@ -66,6 +66,36 @@ const gallery: ReplyBlock = {
   }],
 }
 
+const historyDetail = (): ChatConversationDetail => ({
+  conversationId: 'conversation-1',
+  workspaceId: 'workspace-1',
+  agentId: null,
+  sourceChannel: 'website_embed',
+  callerKind: 'human',
+  sourceOrigin: 'https://stay.example',
+  channelContext: null,
+  title: null,
+  createdAt: '2026-06-01T10:00:00.000Z',
+  updatedAt: '2026-06-01T10:00:00.000Z',
+  messageCount: 1,
+  userMessageCount: 0,
+  assistantMessageCount: 1,
+  messagesTotal: 1,
+  messageWindowOffset: 0,
+  messageWindowLimit: 10,
+  hasOlderMessages: false,
+  nextCursor: null,
+  tailCursor: 'assistant-1-cursor',
+  messages: [{
+    id: 'assistant-1',
+    role: 'assistant',
+    source: 'ai_agent',
+    content: 'Here are the rooms.',
+    createdAt: '2026-06-01T10:00:00.000Z',
+    blocks: [gallery],
+  }],
+})
+
 const pageRead: ClientContextCapabilities['page.read'] = {
   available: true,
   mode: 'metadata',
@@ -151,7 +181,7 @@ describe('anonymous chat reply blocks', () => {
     publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
       const completion = { conversationId: 'conversation-1', assistantMessageId: 'assistant-1', answer: 'Here are the rooms.', blocks: [gallery] }
       handlers?.onConversation?.({ conversationId: 'conversation-1' })
-      handlers?.onBlock?.({ conversationId: 'conversation-1', assistantMessageId: 'assistant-1', block: gallery })
+      handlers?.onBlock?.({ conversationId: 'conversation-1', assistantMessageId: 'assistant-1', block: gallery, blocks: [gallery] })
       handlers?.onDone?.(completion)
       return completion
     })
@@ -175,7 +205,7 @@ describe('anonymous chat reply blocks', () => {
         answer: 'A teammate is joining.',
         ownership: { state: 'human_owned' as const, suppressed: true },
       }
-      handlers?.onBlock?.({ block: gallery })
+      handlers?.onBlock?.({ block: gallery, blocks: [gallery] })
       handlers?.onDone?.(completion)
       return completion
     })
@@ -189,36 +219,58 @@ describe('anonymous chat reply blocks', () => {
     expect(latestAssistant(latestMessages)?.blocks).toBeUndefined()
   })
 
+  it('shows the blocks the stream has handed over before the reply completes', async () => {
+    const revised = { ...gallery, caption: 'Rooms with a garden view' }
+    const map: ReplyBlock = { ...gallery, id: 'block-2', layout: 'carousel', caption: 'How to find us' }
+    publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
+      handlers?.onConversation?.({ conversationId: 'conversation-1' })
+      handlers?.onChunk?.({ text: 'Here are the rooms.' })
+      handlers?.onBlock?.({ block: revised, blocks: [revised, map] })
+      return new Promise(() => {})
+    })
+
+    let latestMessages: ChatMessage[] = []
+    mounted = renderProvider({ sendMessage: 'What do the rooms look like?', onMessages: (messages) => { latestMessages = messages } })
+
+    await waitFor(() => {
+      expect(latestAssistant(latestMessages)?.blocks).toEqual([revised, map])
+    })
+    expect(latestAssistant(latestMessages)?.status).not.toBe('complete')
+  })
+
+  it('shows the blocks the done event carries when the stream sent none before it', async () => {
+    publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
+      const completion = { conversationId: 'conversation-1', assistantMessageId: 'assistant-1', answer: 'Here are the rooms.', blocks: [gallery] }
+      handlers?.onConversation?.({ conversationId: 'conversation-1' })
+      handlers?.onChunk?.({ text: 'Here are the rooms.' })
+      handlers?.onDone?.(completion)
+      return completion
+    })
+
+    let latestMessages: ChatMessage[] = []
+    mounted = renderProvider({ sendMessage: 'What do the rooms look like?', onMessages: (messages) => { latestMessages = messages } })
+
+    await waitFor(() => {
+      expect(latestAssistant(latestMessages)).toMatchObject({ status: 'complete', blocks: [gallery] })
+    })
+  })
+
+  it('shows the blocks of a reply it recovers from history when the stream ends without an answer', async () => {
+    publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
+      handlers?.onConversation?.({ conversationId: 'conversation-1' })
+      return { conversationId: 'conversation-1', answer: '' }
+    })
+    publicChatApiMock.getConversationDetail.mockResolvedValue(historyDetail())
+
+    let latestMessages: ChatMessage[] = []
+    mounted = renderProvider({ sendMessage: 'What do the rooms look like?', onMessages: (messages) => { latestMessages = messages } })
+
+    await waitFor(() => {
+      expect(latestAssistant(latestMessages)).toMatchObject({ status: 'complete', content: 'Here are the rooms.', blocks: [gallery] })
+    })
+  })
+
   it('keeps the blocks of a reply read back from history', async () => {
-    const detail: ChatConversationDetail = {
-      conversationId: 'conversation-1',
-      workspaceId: 'workspace-1',
-      agentId: null,
-      sourceChannel: 'website_embed',
-      callerKind: 'human',
-      sourceOrigin: 'https://stay.example',
-      channelContext: null,
-      title: null,
-      createdAt: '2026-06-01T10:00:00.000Z',
-      updatedAt: '2026-06-01T10:00:00.000Z',
-      messageCount: 1,
-      userMessageCount: 0,
-      assistantMessageCount: 1,
-      messagesTotal: 1,
-      messageWindowOffset: 0,
-      messageWindowLimit: 10,
-      hasOlderMessages: false,
-      nextCursor: null,
-      tailCursor: 'assistant-1-cursor',
-      messages: [{
-        id: 'assistant-1',
-        role: 'assistant',
-        source: 'ai_agent',
-        content: 'Here are the rooms.',
-        createdAt: '2026-06-01T10:00:00.000Z',
-        blocks: [gallery],
-      }],
-    }
     publicChatApiMock.listConversations.mockResolvedValue({
       ...conversationList,
       conversations: [{
@@ -242,7 +294,7 @@ describe('anonymous chat reply blocks', () => {
         preview: 'Here are the rooms.',
       }],
     })
-    publicChatApiMock.getConversationDetail.mockResolvedValue(detail)
+    publicChatApiMock.getConversationDetail.mockResolvedValue(historyDetail())
 
     let latestMessages: ChatMessage[] = []
     mounted = renderProvider({ onMessages: (messages) => { latestMessages = messages } })

@@ -39,6 +39,12 @@ export const parseSseEvent = (rawEvent: string) => {
   }
 }
 
+/** The reply's blocks with one more: a block sent again under the same id takes its first place. */
+const withReplyBlock = (blocks: ReplyBlock[], block: ReplyBlock): ReplyBlock[] =>
+  blocks.some(({ id }) => id === block.id)
+    ? blocks.map((shown) => (shown.id === block.id ? block : shown))
+    : [...blocks, block]
+
 export const streamChatEvents = async (
   response: Response,
   handlers: ChatStreamHandlers,
@@ -55,7 +61,7 @@ export const streamChatEvents = async (
   let citations: Citation[] | undefined
   let answerSegments: AnswerSegment[] | undefined
   let suggestions: ChatSuggestion[] | undefined
-  // Each `block` event carries one reply block; `done.blocks` repeats them all and wins.
+  // Each `block` event carries one reply block, kept once per id; `done.blocks` repeats them all and wins.
   let blocks: ReplyBlock[] | undefined
   let assistantMessageId: string | undefined
   let agentId: string | undefined
@@ -120,8 +126,8 @@ export const streamChatEvents = async (
       const blockPayload = payload as ChatStreamBlock
       conversationId = blockPayload.conversationId ?? conversationId
       assistantMessageId = blockPayload.assistantMessageId ?? assistantMessageId
-      blocks = [...(blocks ?? []), blockPayload.block]
-      handlers.onBlock?.({ conversationId, assistantMessageId, block: blockPayload.block })
+      blocks = withReplyBlock(blocks ?? [], blockPayload.block)
+      handlers.onBlock?.({ conversationId, assistantMessageId, block: blockPayload.block, blocks })
       return
     }
 

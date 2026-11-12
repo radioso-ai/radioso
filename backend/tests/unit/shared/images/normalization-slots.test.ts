@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { NormalizationSlots } from "../../../src/modules/visitorImages/services/normalizationSlots.js";
+import { NormalizationSlots } from "../../../../src/shared/infra/images/normalizationSlots.js";
 
 const deferred = () => {
   let resolve!: () => void;
@@ -41,6 +41,19 @@ describe("NormalizationSlots", () => {
     gate.resolve();
     await holding;
     expect(await slots.run(async () => "free again")).toBe("free again");
+  });
+
+  it("waits only as long as a caller allows, when that is shorter than the pool's own wait", async () => {
+    const slots = new NormalizationSlots(1, 5_000);
+    const gate = deferred();
+    const holding = slots.run(() => gate.promise);
+    const startedAt = Date.now();
+
+    expect(await slots.run(async () => "ran", { waitMs: 5 })).toBe("busy");
+
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    gate.resolve();
+    await holding;
   });
 
   it("frees the slot when the work fails", async () => {

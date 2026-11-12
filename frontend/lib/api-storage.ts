@@ -222,29 +222,40 @@ const createMemoryStore = (): VisitorSessionStore => {
   }
 }
 
-const memoryStoresByWindow = new WeakMap<Window, VisitorSessionStore>()
+const STORAGE_PROBE_KEY = 'radioso.storageProbe'
+
+const openVisitorSessionStore = (): VisitorSessionStore => {
+  try {
+    const storage = window.sessionStorage
+    if (storage) {
+      storage.setItem(STORAGE_PROBE_KEY, '1')
+      storage.removeItem(STORAGE_PROBE_KEY)
+      return storage
+    }
+  } catch {
+    // Blocked or refusing writes: the memory store below takes over.
+  }
+  return createMemoryStore()
+}
+
+let openedVisitorSessionStore: { owner: Window; store: VisitorSessionStore } | null = null
 
 /**
  * Where a visitor's public chat session lives. A browser that blocks storage in a third-party
  * frame — the website embed on a customer's site — throws SecurityError on any read of
  * `sessionStorage`; the session then lives in memory, which keeps it for the life of the frame
- * but not across page loads.
+ * but not across page loads. The choice is made once per window, so a session never splits
+ * between the two.
  */
 const visitorSessionStore = (): VisitorSessionStore | null => {
   if (typeof window === 'undefined') {
     return null
   }
 
-  try {
-    return window.sessionStorage
-  } catch {
-    let memoryStore = memoryStoresByWindow.get(window)
-    if (!memoryStore) {
-      memoryStore = createMemoryStore()
-      memoryStoresByWindow.set(window, memoryStore)
-    }
-    return memoryStore
+  if (openedVisitorSessionStore?.owner !== window) {
+    openedVisitorSessionStore = { owner: window, store: openVisitorSessionStore() }
   }
+  return openedVisitorSessionStore.store
 }
 
 const readAnonymousSessionId = (token: string) => {

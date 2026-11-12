@@ -72,6 +72,20 @@ const openChat = async (page: Page) => {
   });
   await page.route("**/api/embed/config/**", (route) => fulfillJson(route, {}));
   await page.route("**/api/embed/session/**", (route) => fulfillJson(route, bootstrapSessionPayload()));
+  const sentMessages: Array<{ headers: Record<string, string>; body: unknown }> = [];
+  await page.route(`**/api/public/chat/${TOKEN}`, async (route) => {
+    sentMessages.push({ headers: route.request().headers(), body: route.request().postDataJSON() });
+    const done = { conversationId: "conversation-1", assistantMessageId: "assistant-message-1", answer: "We open at nine." };
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: [
+        `event: conversation\ndata: ${JSON.stringify({ conversationId: done.conversationId })}\n\n`,
+        `event: chunk\ndata: ${JSON.stringify({ text: done.answer })}\n\n`,
+        `event: done\ndata: ${JSON.stringify(done)}\n\n`,
+      ].join(""),
+    });
+  });
 
   // The host page stands in for a customer's site, which is not served with the app's own
   // script policy that would refuse the app host's launcher.
@@ -95,15 +109,23 @@ const openChat = async (page: Page) => {
   if (!chatFrame) throw new Error("The chat frame is not on the page");
   const unhandledErrors = () => chatFrame.evaluate(() =>
     (window as unknown as { __unhandledErrors: string[] }).__unhandledErrors);
-  return { operatorSessionRequests, unhandledErrors };
+  return { frame, operatorSessionRequests, sentMessages, unhandledErrors };
 };
 
-test("a visitor whose browser blocks third-party storage opens the chat with no error in the frame", async ({ page }) => {
+test("a visitor whose browser blocks third-party storage chats with no error in the frame", async ({ page }) => {
   await recordFrameErrors(page);
   await blockFrameStorage(page);
 
-  const { unhandledErrors } = await openChat(page);
+  const { frame, sentMessages, unhandledErrors } = await openChat(page);
+  await frame.getByRole("textbox").fill("When do you open?");
+  await frame.getByRole("button", { name: "Send message" }).click();
 
+  await expect(frame.getByText("We open at nine.")).toBeVisible();
+  expect(sentMessages).toHaveLength(1);
+  expect(sentMessages[0].body).toMatchObject({ message: "When do you open?" });
+  // The session the launcher handed over, kept in memory, still identifies the visitor.
+  expect(sentMessages[0].headers["x-radioso-public-session"]).toBe("public-session-token");
+  expect(sentMessages[0].headers["x-radioso-anonymous-session"]).toBe("11111111-1111-4111-8111-111111111111");
   expect(await unhandledErrors()).toEqual([]);
 });
 

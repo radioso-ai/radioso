@@ -141,9 +141,20 @@ describe('embed session storage helpers', () => {
     expect(readStoredPublicSessionToken('public-token')).toBeNull()
   })
 
-  it('does not carry one blocked frame\'s visitor session into another', () => {
+  it.each<{ browser: string; createWindow: () => unknown }>([
+    { browser: 'has no sessionStorage', createWindow: () => ({ sessionStorage: null }) },
+    { browser: 'refuses writes to sessionStorage', createWindow: () => ({
+      sessionStorage: {
+        ...createSessionStorage(),
+        setItem() {
+          throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+        },
+      },
+    }) },
+  ])('keeps the visitor session in memory when the browser $browser', ({ createWindow }) => {
     // @ts-expect-error test-only window stub
-    global.window = createStorageBlockedWindow()
+    global.window = createWindow()
+
     storeEmbedBootstrapSession('embed-token', {
       workspaceName: 'Support concierge',
       publicChatToken: 'public-token',
@@ -154,9 +165,7 @@ describe('embed session storage helpers', () => {
       resumeExpiresAt: new Date(Date.now() + 120_000).toISOString(),
     })
 
-    // @ts-expect-error test-only window stub
-    global.window = createStorageBlockedWindow()
-
-    expect(readStoredEmbedBootstrapSession('embed-token')).toBeNull()
+    expect(readStoredPublicSessionToken('public-token')).toBe('grant-token')
+    expect(readStoredAnonymousSessionId('public-token')).toBe('7e4c4c1a-5b6d-4a59-9b2c-fdd9f1debe11')
   })
 })

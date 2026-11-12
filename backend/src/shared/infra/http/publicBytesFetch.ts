@@ -27,7 +27,7 @@ interface PublicBytesTransport {
  * Why no bytes came back. `blocked` is a URL or a redirect target the policy refuses, or a name
  * that resolves to a private address; `unreachable` is any other network failure.
  */
-type PublicBytesFetchFailure =
+export type PublicBytesFetchFailure =
   | "blocked"
   | "timeout"
   | "too_large"
@@ -36,7 +36,7 @@ type PublicBytesFetchFailure =
   | "too_many_redirects"
   | "unreachable";
 
-type PublicBytesFetchResult =
+export type PublicBytesFetchResult =
   | { readonly kind: "fetched"; readonly bytes: Buffer; readonly contentType: string | null; readonly url: string }
   | { readonly kind: "failed"; readonly reason: PublicBytesFetchFailure; readonly status?: number };
 

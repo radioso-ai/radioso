@@ -4,7 +4,12 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { assertPublicHttpUrl } from "../../src/shared/domain/publicNetwork.js";
-import { fetchPublicBytes, type PublicBytesLimits } from "../../src/shared/infra/http/publicBytesFetch.js";
+import {
+  fetchPublicBytes,
+  type PublicBytesFetchFailure,
+  type PublicBytesFetchResult,
+  type PublicBytesLimits,
+} from "../../src/shared/infra/http/publicBytesFetch.js";
 import { createPublicUrlFetch } from "../../src/shared/infra/http/publicUrlFetch.js";
 
 const PHOTO = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8]);
@@ -13,14 +18,14 @@ const LIMITS: PublicBytesLimits = { timeoutMs: 2_000, maxBytes: 64 * 1024, conte
 type Handler = (request: IncomingMessage, response: ServerResponse) => void;
 
 /** A loopback server whose routes are set per test, recording each path it was asked for. */
-const startServer = async (routes: () => Record<string, Handler>) => {
+const startServer = async (routes: () => ReadonlyMap<string, Handler>) => {
   const requested: string[] = [];
-  const headers: Record<string, IncomingMessage["headers"]> = {};
+  const headers = new Map<string, IncomingMessage["headers"]>();
   const server: Server = createServer((request, response) => {
     const path = request.url ?? "/";
     requested.push(path);
-    headers[path] = request.headers;
-    const handler = routes()[path];
+    headers.set(path, request.headers);
+    const handler = routes().get(path);
     if (handler) handler(request, response);
     else response.writeHead(404).end();
   });
@@ -47,8 +52,11 @@ const redirectTo = (location: string): Handler => (_request, response) => {
   response.writeHead(302, { location }).end();
 };
 
+const failedWith = (reason: PublicBytesFetchFailure, status?: number): PublicBytesFetchResult =>
+  status === undefined ? { kind: "failed", reason } : { kind: "failed", reason, status };
+
 describe("fetchPublicBytes", () => {
-  let routes: Record<string, Handler> = {};
+  let routes: ReadonlyMap<string, Handler> = new Map();
   let server: Awaited<ReturnType<typeof startServer>>;
   /** Stands in for a host on a private address: whatever reaches it was not re-checked. */
   let canary: Awaited<ReturnType<typeof startServer>>;
@@ -62,7 +70,7 @@ describe("fetchPublicBytes", () => {
 
   beforeAll(async () => {
     server = await startServer(() => routes);
-    canary = await startServer(() => ({ "/photo": (_request, response) => response.writeHead(200, { "content-type": "image/jpeg" }).end(PHOTO) }));
+    canary = await startServer(() => new Map([["/photo", (_request, response) => response.writeHead(200, { "content-type": "image/jpeg" }).end(PHOTO)]]));
   });
 
   afterAll(async () => {
@@ -74,31 +82,31 @@ describe("fetchPublicBytes", () => {
     server.requested.length = 0;
     canary.requested.length = 0;
     streamed = { finished: false, closedEarly: false };
-    routes = {
-      "/photo": (_request, response) => {
+    routes = new Map<string, Handler>([
+      ["/photo", (_request, response) => {
         response.writeHead(200, { "content-type": "image/jpeg", "content-length": String(PHOTO.length) }).end(PHOTO);
-      },
-      "/page": (_request, response) => {
+      }],
+      ["/page", (_request, response) => {
         response.writeHead(200, { "content-type": "text/html" }).end("<html></html>");
-      },
-      "/gone": (_request, response) => {
+      }],
+      ["/gone", (_request, response) => {
         response.writeHead(410).end();
-      },
-      "/slow-headers": (_request, response) => {
+      }],
+      ["/slow-headers", (_request, response) => {
         const timer = setTimeout(() => response.writeHead(200, { "content-type": "image/jpeg" }).end(PHOTO), 5_000);
         response.on("close", () => clearTimeout(timer));
-      },
-      "/slow-body": (_request, response) => {
+      }],
+      ["/slow-body", (_request, response) => {
         response.writeHead(200, { "content-type": "image/jpeg" });
         response.write(PHOTO.subarray(0, 4));
         const timer = setTimeout(() => response.end(PHOTO.subarray(4)), 5_000);
         response.on("close", () => clearTimeout(timer));
-      },
-      "/declared-large": (_request, response) => {
+      }],
+      ["/declared-large", (_request, response) => {
         response.writeHead(200, { "content-type": "image/jpeg", "content-length": String(LIMITS.maxBytes + 1) });
         response.end(Buffer.alloc(LIMITS.maxBytes + 1));
-      },
-      "/streamed-large": (_request, response) => {
+      }],
+      ["/streamed-large", (_request, response) => {
         // No length declared: only the bytes actually read can stop it.
         response.writeHead(200, { "content-type": "image/jpeg" });
         let sent = 0;
@@ -117,23 +125,23 @@ describe("fetchPublicBytes", () => {
           response.end();
         };
         pump();
-      },
-      "/to-photo": redirectTo("/photo"),
-      "/to-metadata": redirectTo("http://169.254.169.254/latest/meta-data/"),
-      "/to-private-host": redirectTo(`http://localhost:${new URL(canary.origin).port}/photo`),
-      "/to-file": redirectTo("file:///etc/passwd"),
-      "/loop": redirectTo("/loop"),
-      "/to-nowhere": (_request, response) => {
+      }],
+      ["/to-photo", redirectTo("/photo")],
+      ["/to-metadata", redirectTo("http://169.254.169.254/latest/meta-data/")],
+      ["/to-private-host", redirectTo(`http://localhost:${new URL(canary.origin).port}/photo`)],
+      ["/to-file", redirectTo("file:///etc/passwd")],
+      ["/loop", redirectTo("/loop")],
+      ["/to-nowhere", (_request, response) => {
         response.writeHead(302).end();
-      },
-    };
+      }],
+    ]);
   });
 
   it("returns the body, its content type and the URL it came from, asking for images", async () => {
     const result = await fetchPublicBytes(`${server.origin}/photo`, LIMITS, transport());
 
     expect(result).toEqual({ kind: "fetched", bytes: PHOTO, contentType: "image/jpeg", url: `${server.origin}/photo` });
-    expect(server.headers["/photo"]?.accept).toBe("image/*");
+    expect(server.headers.get("/photo")?.accept).toBe("image/*");
   });
 
   it("gives up when the headers do not arrive in time", async () => {
@@ -152,7 +160,7 @@ describe("fetchPublicBytes", () => {
   });
 
   it("refuses a body that declares more than the cap, without reading it", async () => {
-    expect(await fetchPublicBytes(`${server.origin}/declared-large`, LIMITS, transport())).toEqual({ kind: "failed", reason: "too_large" });
+    expect(await fetchPublicBytes(`${server.origin}/declared-large`, LIMITS, transport())).toEqual(failedWith("too_large"));
   });
 
   it("cuts off a body that outgrows the cap while streaming", async () => {
@@ -171,11 +179,11 @@ describe("fetchPublicBytes", () => {
     const result = await fetchPublicBytes(`${server.origin}/page`, { timeoutMs: 2_000, maxBytes: 1_024 }, transport());
 
     expect(result).toMatchObject({ kind: "fetched", contentType: "text/html" });
-    expect(server.headers["/page"]?.accept).toBe("*/*");
+    expect(server.headers.get("/page")?.accept).toBe("*/*");
   });
 
   it("reports a status that is not a success", async () => {
-    expect(await fetchPublicBytes(`${server.origin}/gone`, LIMITS, transport())).toEqual({ kind: "failed", reason: "http_status", status: 410 });
+    expect(await fetchPublicBytes(`${server.origin}/gone`, LIMITS, transport())).toEqual(failedWith("http_status", 410));
     expect(await fetchPublicBytes(`${server.origin}/to-nowhere`, LIMITS, transport())).toEqual({ kind: "failed", reason: "http_status", status: 302 });
   });
 

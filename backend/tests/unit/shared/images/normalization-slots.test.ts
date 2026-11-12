@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { NormalizationSlots } from "../../../src/modules/visitorImages/services/normalizationSlots.js";
+import { NormalizationSlots } from "../../../../src/shared/infra/images/normalizationSlots.js";
 
 const deferred = () => {
   let resolve!: () => void;

@@ -59,13 +59,14 @@ photos (WhatsApp).
 - `services/visitorImageService.ts`: upload (normalize, reserve an answer,
   insert the row, store the object, read, record the reading), claim, bind,
   release, and the two reads (owner, conversation with an audited view).
-- `services/imageNormalizer.ts`: magic-byte sniffing (JPEG, PNG, WebP only),
-  `sharp` decode under a pixel limit, auto-rotate, re-encode to JPEG at most
-  1,600 px on the long side with no metadata, quality stepped down to at most
-  512 KB. `sharp` runs one libuv thread per image with its cache off, and
-  `services/normalizationSlots.ts` lets two photos decode at once per process;
-  a third waits up to five seconds, then is refused as `busy`
-  (`503 visitor_image_busy`).
+- `services/imageNormalizer.ts`: the visitor policy over the shared image
+  codec in `shared/infra/images/`. It accepts JPEG, PNG and WebP only (by
+  magic bytes), decodes with `sharp` under a pixel limit, auto-rotates, and
+  re-encodes to a JPEG at most 1,600 px on the long side with no metadata,
+  stepping quality down until it is at most 512 KB. `sharp` runs one libuv
+  thread per image with its cache off. The module's own `NormalizationSlots`
+  pool lets two photos decode at once per process; a third waits up to five
+  seconds, then is refused as `busy` (`503 visitor_image_busy`).
 - `services/modelVisitorImageReader.ts`: one structured call per photo on the
   agent's chat model through the inference pipeline (`visitor_image.read`), with
   a timeout and fail-open to `unread`. Prompt:

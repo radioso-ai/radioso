@@ -15,9 +15,9 @@ import { TypingIndicator } from '@/components/ui/typing-indicator'
 import {
   VisitorImageAttachButton,
   VisitorImageChips,
-  useVisitorImageDrop,
-  type ComposerImages,
+  useVisitorImageComposer,
 } from '@/components/chat/visitor-image-composer'
+import type { ComposerImages } from '@/lib/visitor-image-types'
 import {
   formatWebsiteEmbedDisclaimer,
   getWebsiteEmbedTheme,
@@ -252,7 +252,7 @@ export function PublicChatBubbleComposerForm({
   canSend = Boolean(value.trim()),
 }: PublicChatBubbleComposerFormProps) {
   const sendDisabled = readOnly || isLoading || !canSend
-  const { dragging, dropProps, onPaste } = useVisitorImageDrop(images)
+  const { formRef, dragging, dropProps, onPaste, removeChip } = useVisitorImageComposer(images)
   const containerPadding = hero ? 'px-3 py-3' : 'px-2 py-1.5'
   const textareaSize = hero
     ? 'min-h-[44px] max-h-48 px-3 py-2.5 text-base'
@@ -264,6 +264,7 @@ export function PublicChatBubbleComposerForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         if (readOnly) {
           event.preventDefault()
@@ -282,9 +283,9 @@ export function PublicChatBubbleComposerForm({
         }}
         {...dropProps}
       >
-        {images ? <VisitorImageChips images={images} theme={theme} copy={copy} /> : null}
+        {images ? <VisitorImageChips images={images} theme={theme} copy={copy} onRemove={removeChip} /> : null}
         <div className="flex items-end gap-1">
-          {images ? <VisitorImageAttachButton theme={theme} copy={copy} images={images} className={buttonSize} /> : null}
+          {images?.canAttach ? <VisitorImageAttachButton theme={theme} copy={copy} images={images} className={buttonSize} /> : null}
           <Textarea
             ref={inputRef}
             value={value}

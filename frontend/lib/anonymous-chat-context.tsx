@@ -41,7 +41,6 @@ import {
   type ChatUserInputMetadata,
   type ClientContextCapabilities,
   type PublicChatIntakeAction,
-  type ErrorResponse,
   type WebsiteEmbedPageContext,
   type WebsiteEmbedCopyPacks,
 } from '@/lib/api'
@@ -49,13 +48,17 @@ import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { choosePrivacyNotice, type ShownPrivacyNotice } from '@/lib/privacy-notice'
 import { rememberVisitorImage, visitorImageCacheKey } from '@/lib/visitor-image-blob-cache'
 import { withVisitorImageInput } from '@/lib/visitor-image-input'
+import { getErrorResponse, isRateLimitError, isUsageLimitExceededError, unsentImageSendOf, type UnsentImageSend } from '@/lib/public-chat-errors'
 
 export type { ChatMessage } from '@/lib/public-chat-messages'
 
 interface SendMessageOptions {
   imageIds?: string[]
-  /** The server refused the send for its photos (photos turned off, or already sent): nothing ran, and the thread is as it was. */
-  onImagesRefused?: () => void
+  /**
+   * A send with photos that did not reach the point where the server takes them: nothing ran, the
+   * thread is as it was, and the caller gives the photos and the words back to the visitor.
+   */
+  onNotSent?: (reason: UnsentImageSend) => void
 }
 
 interface AnonymousChatContextValue {
@@ -97,43 +100,6 @@ interface AnonymousChatContextValue {
 }
 
 const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(null)
-
-const getErrorResponse = (error: unknown): ErrorResponse['error'] | null => {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'error' in error &&
-    error.error &&
-    typeof error.error === 'object' &&
-    'code' in error.error &&
-    typeof error.error.code === 'string' &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error as ErrorResponse['error']
-  }
-
-  return null
-}
-
-const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds: number } | null => {
-  const structuredError = getErrorResponse(error)
-  if (structuredError?.code !== 'rate_limit_exceeded') {
-    return null
-  }
-
-  return {
-    message: structuredError.message,
-    retryAfterSeconds: Number(structuredError.retryAfterSeconds ?? 60),
-  }
-}
-
-// The account's conversation quota is exhausted. This is the only error code the
-// public route still answers with on this path when the agent cannot reply, so it
-// gets its own visitor-facing copy instead of the generic failure message. Quota
-// can be restored at any time, so the composer stays enabled either way.
-const isUsageLimitExceededError = (error: unknown): boolean =>
-  getErrorResponse(error)?.code === 'usage_limit_exceeded'
 
 const getLatestAssistantMessage = (
   detail: ChatConversationDetail,
@@ -713,7 +679,10 @@ export function AnonymousChatProvider({
     async (content: string, inputMetadata?: ChatUserInputMetadata, options?: SendMessageOptions) => {
       const query = content.trim()
       const imageIds = options?.imageIds ?? []
-      if ((!query && imageIds.length === 0) || isLoading || isHydrating || unavailable || sendInFlightRef.current) return
+      if ((!query && imageIds.length === 0) || isLoading || isHydrating || unavailable || sendInFlightRef.current) {
+        if (imageIds.length > 0) options?.onNotSent?.('not_started')
+        return
+      }
       sendInFlightRef.current = true
 
       try {
@@ -775,6 +744,8 @@ export function AnonymousChatProvider({
           },
         ])
 
+        // Once the reply has started, the server has the message and its photos.
+        let streamed = false
         try {
           let didComplete = false
           let didCancel = false
@@ -805,10 +776,12 @@ export function AnonymousChatProvider({
               },
               {
                 onConversation: ({ conversationId: newId }) => {
+                  streamed = true
                   setConversationId(newId)
                   setBootstrapGreetingId(undefined)
                 },
                 onChunk: ({ text }) => {
+                  streamed = true
                   setMessages((prev) =>
                     prev.map((message) =>
                       message.id === assistantMessageId
@@ -973,6 +946,21 @@ export function AnonymousChatProvider({
         } catch (error) {
           const structuredError = getErrorResponse(error)
           const rateLimit = isRateLimitError(error)
+          const unsent = imageIds.length > 0 && !streamed ? unsentImageSendOf(error) : null
+          if (unsent === 'images_refused' || unsent === 'not_sent') {
+            onAnalyticsEvent?.({
+              event: 'chat.failed',
+              subjectType: resolvedConversationId ? 'conversation' : undefined,
+              subjectId: resolvedConversationId,
+              properties: { inputMethod, errorCode: structuredError?.code ?? 'unknown_error', rateLimited: false },
+            })
+            setMessages((prev) => withoutTurn(prev, [assistantMessageId, userMessage.id], previousMessages))
+            setIsLoading(false)
+            // The server said the photos cannot go (turned off, or already sent), so the chat stops offering them.
+            if (unsent === 'images_refused') setAcceptsImages(false)
+            options?.onNotSent?.(unsent)
+            return
+          }
           if (rateLimit) {
             onAnalyticsEvent?.({
               event: 'chat.failed',
@@ -989,19 +977,7 @@ export function AnonymousChatProvider({
             setRetryAfterSeconds(rateLimit.retryAfterSeconds)
             setMessages((prev) => withoutTurn(prev, [assistantMessageId, userMessage.id], previousMessages))
             setIsLoading(false)
-            return
-          }
-
-          if (imageIds.length > 0 && structuredError?.code === 'visitor_image_unavailable') {
-            onAnalyticsEvent?.({
-              event: 'chat.failed',
-              subjectType: resolvedConversationId ? 'conversation' : undefined,
-              subjectId: resolvedConversationId,
-              properties: { inputMethod, errorCode: structuredError.code, rateLimited: false },
-            })
-            setMessages((prev) => withoutTurn(prev, [assistantMessageId, userMessage.id], previousMessages))
-            setIsLoading(false)
-            options?.onImagesRefused?.()
+            if (imageIds.length > 0) options?.onNotSent?.('rate_limited')
             return
           }
 

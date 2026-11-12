@@ -3,7 +3,8 @@
 import { Wrench } from 'lucide-react'
 
 import { linkifyText } from '@/components/dashboard/chat-citations'
-import { VisitorImageThumbnails, type VisitorImageThreadConfig } from '@/components/chat/visitor-image-thumbnails'
+import { VisitorImageThumbnails } from '@/components/chat/visitor-image-thumbnails'
+import type { VisitorImageThreadConfig } from '@/lib/visitor-image-types'
 import type { ChatUserInputMetadata } from '@/lib/api-types'
 import { visitorMessageBody } from '@/lib/visitor-image-input'
 

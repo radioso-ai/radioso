@@ -121,13 +121,13 @@ describe('the three-photo limit', () => {
   })
 })
 
-describe('a send the server refused for its photos', () => {
+describe('a send that did not take its photos', () => {
   it('shows why, once the photos are gone, until the visitor attaches or removes something', () => {
     const refused = run([
       { type: 'add', items: [item('a')] },
       { type: 'uploaded', key: 'a', imageId: 'image-a' },
       { type: 'clear' },
-      { type: 'sendRefused', failure: 'unavailable' },
+      { type: 'notice', failure: 'unavailable' },
     ])
     expect(refused.attachments).toEqual([])
     expect(refused.sendFailure).toBe('unavailable')
@@ -139,6 +139,56 @@ describe('a send the server refused for its photos', () => {
 
   it('is not there before anything was refused', () => {
     expect(emptyAttachments.sendFailure).toBeNull()
+  })
+
+  it('puts the photos back where they were, ahead of any the visitor attached since, with the reason', () => {
+    const ready = run([
+      { type: 'add', items: [item('a'), item('b')] },
+      { type: 'uploaded', key: 'a', imageId: 'image-a' },
+      { type: 'uploaded', key: 'b', imageId: 'image-b' },
+    ]).attachments
+    const afterSend = run([{ type: 'clear' }, { type: 'add', items: [item('c')] }])
+
+    const restored = reduceAttachments(afterSend, { type: 'restore', attachments: ready, sendFailure: 'not_sent' })
+
+    expect(restored.attachments.map((attachment) => attachment.key)).toEqual(['a', 'b', 'c'])
+    expect(readyImageIds(restored)).toEqual(['image-a', 'image-b'])
+    expect(restored.sendFailure).toBe('not_sent')
+  })
+
+  it('takes back only as many photos as the message has room for', () => {
+    const ready = run([
+      { type: 'add', items: [item('a'), item('b'), item('c')] },
+      { type: 'uploaded', key: 'a', imageId: 'image-a' },
+      { type: 'uploaded', key: 'b', imageId: 'image-b' },
+      { type: 'uploaded', key: 'c', imageId: 'image-c' },
+    ]).attachments
+    const afterSend = run([{ type: 'clear' }, { type: 'add', items: [item('d'), item('e')] }])
+
+    const restored = reduceAttachments(afterSend, { type: 'restore', attachments: ready, sendFailure: null })
+
+    expect(restored.attachments.map((attachment) => attachment.key)).toEqual(['a', 'd', 'e'])
+    expect(restored.sendFailure).toBeNull()
+  })
+})
+
+describe('a preview made once the browser has shrunk the photo', () => {
+  it('shows on the chip of the photo it belongs to, and nowhere else', () => {
+    const state = run([
+      { type: 'add', items: [item('a', { previewUrl: null }), item('b', { previewUrl: null })] },
+      { type: 'previewed', key: 'b', previewUrl: 'blob:shrunk-b' },
+    ])
+
+    expect(state.attachments.map((attachment) => attachment.previewUrl)).toEqual([null, 'blob:shrunk-b'])
+  })
+
+  it('is ignored when its photo was removed meanwhile', () => {
+    const removed = run([
+      { type: 'add', items: [item('a', { previewUrl: null })] },
+      { type: 'remove', key: 'a' },
+    ])
+
+    expect(reduceAttachments(removed, { type: 'previewed', key: 'a', previewUrl: 'blob:late' })).toBe(removed)
   })
 })
 

@@ -213,34 +213,104 @@ describe('anonymous chat with photos', () => {
     await waitFor(() => expect(chat.acceptsImages).toBe(false))
   })
 
-  describe('when the server refuses a send for its photos', () => {
+  describe('when a send with photos fails before the server takes them', () => {
     const refusal = { status: 409, error: { code: 'visitor_image_unavailable', message: 'Not available.' } }
 
-    it('takes the turn back out of the thread, tells the caller, and leaves the chat ready for another message', async () => {
+    const sendWithPhotos = async (options: { onNotSent: (reason: string) => void }) => {
+      await act(async () => {
+        await chat.sendMessage('Something like this', { method: 'typed' }, { imageIds: [IMAGE_ID], ...options })
+      })
+    }
+
+    it('takes the turn out of the thread when the server refuses the photos, stops offering photos, and tells the caller', async () => {
+      api.listConversations.mockResolvedValue({ ...emptyConversationList, acceptsImages: true })
       api.streamMessage.mockRejectedValue(refusal)
       await ready()
-      const onImagesRefused = vi.fn()
+      expect(chat.acceptsImages).toBe(true)
+      const onNotSent = vi.fn()
 
-      await act(async () => {
-        await chat.sendMessage('Something like this', { method: 'typed' }, { imageIds: [IMAGE_ID], onImagesRefused })
-      })
+      await sendWithPhotos({ onNotSent })
 
-      expect(onImagesRefused).toHaveBeenCalledTimes(1)
+      expect(onNotSent).toHaveBeenCalledExactlyOnceWith('images_refused')
       expect(chat.messages).toEqual([])
       expect(chat.isLoading).toBe(false)
       expect(chat.rateLimitError).toBeNull()
+      expect(chat.acceptsImages).toBe(false)
     })
 
-    it('treats the same answer to a message with no photos as the failure it is', async () => {
-      api.streamMessage.mockRejectedValue(refusal)
+    it('takes the turn out of the thread and tells the caller when the request never got an answer', async () => {
+      api.streamMessage.mockRejectedValue(new TypeError('Failed to fetch'))
       await ready()
-      const onImagesRefused = vi.fn()
+      const onNotSent = vi.fn()
+
+      await sendWithPhotos({ onNotSent })
+
+      expect(onNotSent).toHaveBeenCalledExactlyOnceWith('not_sent')
+      expect(chat.messages).toEqual([])
+      expect(chat.isLoading).toBe(false)
+    })
+
+    it('tells the caller when the request was held back by a rate limit, and shows the wait', async () => {
+      api.streamMessage.mockRejectedValue({ status: 429, error: { code: 'rate_limit_exceeded', message: 'Slow down.', retryAfterSeconds: 30 } })
+      await ready()
+      const onNotSent = vi.fn()
+
+      await sendWithPhotos({ onNotSent })
+
+      expect(onNotSent).toHaveBeenCalledExactlyOnceWith('rate_limited')
+      expect(chat.messages).toEqual([])
+      expect(chat.retryAfterSeconds).toBe(30)
+    })
+
+    it('tells the caller when it never started because another send was still going, and runs only the first', async () => {
+      api.streamMessage.mockImplementation(() => new Promise(() => {}))
+      await ready()
+      const onNotSent = vi.fn()
 
       await act(async () => {
-        await chat.sendMessage('Hello', { method: 'typed' }, { onImagesRefused })
+        void chat.sendMessage('First', { method: 'typed' })
+        await chat.sendMessage('Second', { method: 'typed' }, { imageIds: [IMAGE_ID], onNotSent })
       })
 
-      expect(onImagesRefused).not.toHaveBeenCalled()
+      expect(onNotSent).toHaveBeenCalledExactlyOnceWith('not_started')
+      expect(api.streamMessage).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not give the photos back once the reply has started, since the server has them', async () => {
+      api.streamMessage.mockImplementation(async (_token, _data, handlers) => {
+        handlers?.onConversation?.({ conversationId: 'conversation-1' })
+        throw new TypeError('network error while streaming')
+      })
+      await ready()
+      const onNotSent = vi.fn()
+
+      await sendWithPhotos({ onNotSent })
+
+      expect(onNotSent).not.toHaveBeenCalled()
+      expect(chat.messages.find((message) => message.role === 'user')).toBeTruthy()
+    })
+
+    it('does not give the photos back when the plan has no answers left, which refuses a turn that stored them', async () => {
+      api.streamMessage.mockRejectedValue({ status: 429, error: { code: 'usage_limit_exceeded', message: 'No answers left.' } })
+      await ready()
+      const onNotSent = vi.fn()
+
+      await sendWithPhotos({ onNotSent })
+
+      expect(onNotSent).not.toHaveBeenCalled()
+      expect(chat.messages.find((message) => message.role === 'assistant')?.failure).toBe('unavailable')
+    })
+
+    it('treats the same failures of a message with no photos as the failures they are', async () => {
+      api.streamMessage.mockRejectedValue(refusal)
+      await ready()
+      const onNotSent = vi.fn()
+
+      await act(async () => {
+        await chat.sendMessage('Hello', { method: 'typed' }, { onNotSent })
+      })
+
+      expect(onNotSent).not.toHaveBeenCalled()
       expect(chat.messages.find((message) => message.role === 'assistant')?.status).toBe('error')
     })
   })

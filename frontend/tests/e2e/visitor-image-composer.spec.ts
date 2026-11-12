@@ -78,8 +78,10 @@ interface MockOptions {
   uploadDelayMs?: number;
   /** What each upload answers, in turn; the last answer repeats. Defaults to the photo being read. */
   uploadAnswers?: Array<{ status: number; body: unknown }>;
-  /** The status the message send answers with; 200 streams the agent's reply. */
-  sendStatus?: number;
+  /** What each message send answers with before one is taken; once these run out, a send streams the agent's reply. */
+  sendRefusals?: Array<{ status: number; code: string }>;
+  /** The chat's theme, for the contrast of what it shows. */
+  theme?: typeof theme;
 }
 
 const mockPublicChat = async (page: Page, options: MockOptions): Promise<Observed> => {
@@ -108,7 +110,7 @@ const mockPublicChat = async (page: Page, options: MockOptions): Promise<Observe
         assistantBootstrapActive: false,
         assistantAvatarUrl: null,
         acceptsImages: options.acceptsImages,
-        theme,
+        theme: options.theme ?? theme,
         intakeActions: [],
       });
     }
@@ -175,7 +177,7 @@ const mockPublicChat = async (page: Page, options: MockOptions): Promise<Observe
         citationDisplayEnabled: true,
         // A chat that reloads reads this, not the session response, to know whether to offer photos.
         acceptsImages: options.acceptsImages,
-        theme,
+        theme: options.theme ?? theme,
         intakeActions: [],
         assistantBootstrapActive: false,
         conversations: sent
@@ -192,9 +194,10 @@ const mockPublicChat = async (page: Page, options: MockOptions): Promise<Observe
   await page.route(`**/api/public/chat/${publicToken}`, async (route) => {
     sent = true;
     observed.sentBodies.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
-    if (options.sendStatus && options.sendStatus !== 200) {
+    const refusal = options.sendRefusals?.[observed.sentBodies.length - 1];
+    if (refusal) {
       sent = false;
-      await route.fulfill({ status: options.sendStatus, json: { error: { code: "visitor_image_unavailable", message: "An image is not available." } } });
+      await route.fulfill({ status: refusal.status, json: { error: { code: refusal.code, message: "Refused." } } });
       return;
     }
     const done = { conversationId, assistantMessageId: "55555555-5555-4555-8555-555555555552", answer: "I found three farmhouses on the coast." };
@@ -282,13 +285,13 @@ test("a visitor can remove a photo before sending, and is told when a file type 
   await page.getByTestId("visitor-image-input").setInputFiles({ name: "notes.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a") });
   await expect(page.getByTestId("visitor-image-notice")).toHaveText("Use a JPEG, PNG or WebP photo.");
   await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
-  await page.getByRole("button", { name: "Remove photo" }).click();
+  await page.getByRole("button", { name: /^Remove photo \d+ of \d+$/ }).click();
   await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
   await expect(page.getByTestId("visitor-image-notice")).toHaveCount(0);
 
   await page.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: photo });
   await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "ready");
-  await page.getByRole("button", { name: "Remove photo" }).click();
+  await page.getByRole("button", { name: /^Remove photo \d+ of \d+$/ }).click();
   await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
 });
@@ -370,7 +373,7 @@ test("a photo the server stays too busy to take, or the plan cannot take, shows 
   await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "error", { timeout: 10_000 });
   await expect(page.getByTestId("visitor-image-notice")).toHaveText("Busy right now. Try that photo again.");
   expect(observed.uploads).toHaveLength(2);
-  await page.getByRole("button", { name: "Remove photo" }).click();
+  await page.getByRole("button", { name: /^Remove photo \d+ of \d+$/ }).click();
 
   // The plan has no answers left: photos cannot be sent now, and nothing is tried again.
   await page.unroute(`**/backend/api/v1/public/chat/${publicToken}**`);
@@ -387,7 +390,7 @@ test("a photo the server stays too busy to take, or the plan cannot take, shows 
 
 test("a send refused for its photos clears them, says why, and keeps what the visitor typed", async ({ page }) => {
   const photo = await makePhoto(page, 400, 300);
-  const observed = await mockPublicChat(page, { acceptsImages: true, photo, sendStatus: 409 });
+  const observed = await mockPublicChat(page, { acceptsImages: true, photo, sendRefusals: [{ status: 409, code: "visitor_image_unavailable" }] });
 
   await page.goto(`/chat/${publicToken}`);
   const field = page.getByPlaceholder("Ask a question...");
@@ -403,6 +406,8 @@ test("a send refused for its photos clears them, says why, and keeps what the vi
   await expect(page.getByTestId("visitor-image-notice")).toHaveText("Photos can't be sent right now.");
   await expect(field).toHaveValue(typedText);
   await expect(page.locator('[data-message-role="user"]')).toHaveCount(0);
+  // The chat stops offering photos, but the reason stays on screen.
+  await expect(page.getByRole("button", { name: "Attach photo" })).toHaveCount(0);
 
   // The words go on their own.
   await page.unroute(`**/api/public/chat/${publicToken}`);
@@ -418,4 +423,208 @@ test("a send refused for its photos clears them, says why, and keeps what the vi
   await expect(page.getByText("Tell me more.")).toBeVisible();
   expect(observed.sentBodies[1]).toMatchObject({ message: typedText });
   expect(observed.sentBodies[1]).not.toHaveProperty("imageIds");
+});
+
+const sendBar = (page: Page) => page.getByRole("button", { name: "Send message" });
+
+test("photos and words come back to the composer when a send fails before the server takes the photos, and go out on the next try", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  const observed = await mockPublicChat(page, {
+    acceptsImages: true,
+    photo,
+    sendRefusals: [{ status: 503, code: "upstream_unavailable" }, { status: 429, code: "rate_limit_exceeded" }],
+  });
+
+  await page.goto(`/chat/${publicToken}`);
+  const field = page.getByPlaceholder("Ask a question...");
+  await expect(field).toBeVisible();
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: photo });
+  await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "ready");
+  await field.fill(typedText);
+
+  // The server could not be reached: the thread shows nothing was sent, and both come back, uploaded as before.
+  await sendBar(page).click();
+  await expect.poll(() => observed.sentBodies.length).toBe(1);
+  await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "ready");
+  await expect(field).toHaveValue(typedText);
+  await expect(page.getByTestId("visitor-image-notice")).toHaveText("Sorry, something went wrong. Please try again.");
+  await expect(page.locator('[data-message-role="user"]')).toHaveCount(0);
+
+  // Held back by a rate limit: they come back again.
+  await sendBar(page).click();
+  await expect.poll(() => observed.sentBodies.length).toBe(2);
+  await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "ready");
+  await expect(field).toHaveValue(typedText);
+
+  // Then it goes, with the very photo that was uploaded once.
+  await sendBar(page).click();
+  await expect(page.getByText("I found three farmhouses on the coast.")).toBeVisible();
+  expect(observed.sentBodies.map((body) => body.imageIds)).toEqual([[imageId], [imageId], [imageId]]);
+  expect(observed.uploads).toHaveLength(1);
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
+});
+
+test("photos the chat stops offering mid-composition are dropped with the reason, and the message goes on its own", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  const observed = await mockPublicChat(page, {
+    acceptsImages: true,
+    photo,
+    uploadAnswers: [{ status: 201, body: { id: imageId, readingStatus: "read" } }, { status: 404, body: { error: { code: "visitor_images_unavailable", message: "No photos." } } }],
+  });
+
+  await page.goto(`/chat/${publicToken}`);
+  const field = page.getByPlaceholder("Ask a question...");
+  await expect(field).toBeVisible();
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "first.jpg", mimeType: "image/jpeg", buffer: photo });
+  await expect(page.locator("[data-attachment-status]")).toHaveAttribute("data-attachment-status", "ready");
+
+  // The operator turned photos off: the second upload is refused, the first photo goes with it, and the notice outlives the button.
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "second.jpg", mimeType: "image/jpeg", buffer: photo });
+  await expect(page.getByRole("button", { name: "Attach photo" })).toHaveCount(0);
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
+  await expect(page.getByTestId("visitor-image-notice")).toHaveText("Photos can't be sent right now.");
+  // A photo that was ready does not count toward a send that is no longer allowed to carry it.
+  await expect(sendBar(page)).toBeDisabled();
+
+  await field.fill(typedText);
+  await sendBar(page).click();
+  await expect(page.getByText("I found three farmhouses on the coast.")).toBeVisible();
+  expect(observed.sentBodies[0]).toMatchObject({ message: typedText });
+  expect(observed.sentBodies[0]).not.toHaveProperty("imageIds");
+});
+
+test("a file dropped anywhere on the chat is not opened by the browser while photos are on, and is left alone when they are off", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  const dropOnPage = () =>
+    page.evaluate(() => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array([1, 2, 3])], "photo.jpg", { type: "image/jpeg" }));
+      const over = new DragEvent("dragover", { dataTransfer: transfer, bubbles: true, cancelable: true });
+      document.body.dispatchEvent(over);
+      const drop = new DragEvent("drop", { dataTransfer: transfer, bubbles: true, cancelable: true });
+      document.body.dispatchEvent(drop);
+      return { overCancelled: over.defaultPrevented, dropCancelled: drop.defaultPrevented };
+    });
+
+  await mockPublicChat(page, { acceptsImages: true, photo });
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
+  expect(await dropOnPage()).toEqual({ overCancelled: true, dropCancelled: true });
+  // Nothing was attached: the drop was outside the composer.
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
+
+  const offPage = await page.context().newPage();
+  await mockPublicChat(offPage, { acceptsImages: false, photo });
+  await offPage.goto(`/chat/${publicToken}`);
+  await expect(offPage.getByPlaceholder("Ask a question...")).toBeVisible();
+  const off = await offPage.evaluate(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array([1])], "photo.jpg", { type: "image/jpeg" }));
+    const drop = new DragEvent("drop", { dataTransfer: transfer, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(drop);
+    return drop.defaultPrevented;
+  });
+  expect(off).toBe(false);
+});
+
+test("a photo is removed from the keyboard with focus moving on, each Remove names its photo, and the target is big enough to hit", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  await mockPublicChat(page, { acceptsImages: true, photo });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  await page.getByTestId("visitor-image-input").setInputFiles([
+    { name: "one.jpg", mimeType: "image/jpeg", buffer: photo },
+    { name: "two.jpg", mimeType: "image/jpeg", buffer: photo },
+  ]);
+  await expect(page.locator("[data-attachment-status=ready]")).toHaveCount(2);
+
+  const first = page.getByRole("button", { name: "Remove photo 1 of 2" });
+  const second = page.getByRole("button", { name: "Remove photo 2 of 2" });
+  await expect(first).toBeVisible();
+  await expect(second).toBeVisible();
+  const box = await first.boundingBox();
+  expect(box!.width).toBeGreaterThanOrEqual(24);
+  expect(box!.height).toBeGreaterThanOrEqual(24);
+
+  // Removing the first moves focus to the next photo's Remove, which is now the only one.
+  await first.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Remove photo 1 of 1" })).toBeFocused();
+
+  // Removing the last moves focus to the attach control, and with the chips gone it is still there to use.
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeFocused();
+});
+
+test("a mouse removal leaves focus in the message field where the visitor was typing", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  await mockPublicChat(page, { acceptsImages: true, photo });
+
+  await page.goto(`/chat/${publicToken}`);
+  const field = page.getByPlaceholder("Ask a question...");
+  await expect(field).toBeVisible();
+  await page.getByTestId("visitor-image-input").setInputFiles(
+    ["a", "b", "c"].map((name) => ({ name: `${name}.jpg`, mimeType: "image/jpeg", buffer: photo })),
+  );
+  await expect(page.locator("[data-attachment-status=ready]")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeDisabled();
+
+  // A click on Remove keeps the visitor's place in the message field.
+  await field.focus();
+  await page.getByRole("button", { name: "Remove photo 3 of 3" }).click();
+  await expect(page.locator("[data-attachment-status]")).toHaveCount(2);
+  await expect(field).toBeFocused();
+});
+
+test("three large photos picked at once are shrunk one after another, previewed as shrunk, and all uploaded", async ({ page }) => {
+  const photo = await makePhoto(page, 3200, 2400);
+  const observed = await mockPublicChat(page, { acceptsImages: true, photo });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  await page.getByTestId("visitor-image-input").setInputFiles(
+    ["a", "b", "c"].map((name) => ({ name: `${name}.jpg`, mimeType: "image/jpeg", buffer: photo })),
+  );
+
+  await expect(page.locator("[data-attachment-status=ready]")).toHaveCount(3, { timeout: 30_000 });
+  expect(observed.uploads).toHaveLength(3);
+  for (const upload of observed.uploads) {
+    expect(Math.max(jpegSize(upload.jpeg).width, jpegSize(upload.jpeg).height)).toBeLessThanOrEqual(1600);
+  }
+  // The chips show the photo as it was shrunk, not the original that is twice as wide.
+  const widths = await page.locator("[data-attachment-status] img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).naturalWidth));
+  expect(widths).toHaveLength(3);
+  expect(Math.max(...widths)).toBeLessThanOrEqual(1600);
+  expect(Math.min(...widths)).toBeGreaterThan(0);
+});
+
+test("the notice and a failed chip read at 4.5:1 or better on a dark chat theme", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  const dark = { brand: "#6366f1", brandText: "#ffffff", surface: "#0b1220", text: "#e2e8f0" };
+  await mockPublicChat(page, { acceptsImages: true, photo, theme: dark });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "animation.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a") });
+  const notice = page.getByTestId("visitor-image-notice");
+  await expect(notice).toHaveText("Use a JPEG, PNG or WebP photo.");
+
+  const contrast = await notice.evaluate((element) => {
+    const channels = (color: string) => (color.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+    const luminance = ([r, g, b]: number[]) => {
+      const [lr, lg, lb] = [r, g, b].map((value) => {
+        const c = value / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+    };
+    let background = element as HTMLElement | null;
+    while (background && /rgba\(.*, 0\)|transparent/.test(getComputedStyle(background).backgroundColor)) background = background.parentElement;
+    const [light, dim] = [luminance(channels(getComputedStyle(element).color)), luminance(channels(getComputedStyle(background ?? document.body).backgroundColor))].sort((a, b) => b - a);
+    return (light + 0.05) / (dim + 0.05);
+  });
+  expect(contrast).toBeGreaterThanOrEqual(4.5);
 });

@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react'
 
-import type { ComposerImages } from '@/components/chat/visitor-image-composer'
-import type { VisitorImageThreadConfig } from '@/components/chat/visitor-image-thumbnails'
 import type { WebsiteEmbedCopy } from '@/lib/embed-widget'
+import type { UnsentImageSend } from '@/lib/public-chat-errors'
+import { useFileDropGuard } from '@/lib/use-file-drop-guard'
 import { useVisitorImageAttachments } from '@/lib/use-visitor-image-attachments'
-import { canSendMessage } from '@/lib/visitor-image-attachments'
+import { canSendMessage, emptyAttachments } from '@/lib/visitor-image-attachments'
+import type { ComposerImages, VisitorImageThreadConfig } from '@/lib/visitor-image-types'
 
 interface PublicChatPhotosInput {
   /** Whether the agent takes photos in this chat. */
@@ -15,7 +16,7 @@ interface PublicChatPhotosInput {
   sendMessage: (
     content: string,
     inputMetadata: { method: 'typed' },
-    options: { imageIds: string[]; onImagesRefused: () => void },
+    options: { imageIds: string[]; onNotSent: (reason: UnsentImageSend) => void },
   ) => Promise<void>
   publicChatToken: string
   copy: Pick<WebsiteEmbedCopy, 'publicChatImageAlt' | 'publicChatImageUnavailableLabel'>
@@ -25,16 +26,28 @@ interface PublicChatPhotosInput {
 
 /**
  * The photos of the visitor's public chat: what the composer shows, whether the message can go,
- * how the thread reads a photo, and the send. A send the server refuses for its photos leaves the
- * composer empty of them with the reason shown, and what the visitor typed back in the field.
+ * how the thread reads a photo, and the send.
+ *
+ * Photos leave the composer when the message is sent but come back with the words if the server
+ * did not take them, since each one already cost a read; only a send the server took, or refused
+ * the photos of, lets them go. Photos the chat stops offering are dropped with a notice, and
+ * neither count toward a send nor go with one.
  */
 export function usePublicChatPhotos({ acceptsImages, uploadImage, sendMessage, publicChatToken, copy, input, setInput }: PublicChatPhotosInput) {
   const { attachments, state } = useVisitorImageAttachments(uploadImage)
-  // The controls appear only where the agent takes photos; a message with a photo needs no text.
+  useFileDropGuard(acceptsImages)
+  useEffect(() => {
+    if (!acceptsImages && state.attachments.length > 0) {
+      attachments.clear()
+      attachments.notice('unavailable')
+    }
+  }, [acceptsImages, attachments, state.attachments.length])
+  // What the composer shows: the controls while the agent takes photos, and a notice that outlives them.
   const composerImages = useMemo<ComposerImages | undefined>(
-    () => (acceptsImages
+    () => (acceptsImages || state.sendFailure
       ? {
-          attachments: state.attachments,
+          attachments: acceptsImages ? state.attachments : [],
+          canAttach: acceptsImages,
           limitReached: state.limitReached,
           sendFailure: state.sendFailure,
           onFiles: (files) => attachments.addFiles(files),
@@ -52,17 +65,25 @@ export function usePublicChatPhotos({ acceptsImages, uploadImage, sendMessage, p
     [copy.publicChatImageAlt, copy.publicChatImageUnavailableLabel, publicChatToken],
   )
   const send = useCallback(async (text: string) => {
-    const imageIds = attachments.takeForSend()
+    const imageIds = acceptsImages ? attachments.takeForSend() : []
     setInput('')
+    let notSent = false
     await sendMessage(text, { method: 'typed' }, {
       imageIds,
-      onImagesRefused: () => {
+      onNotSent: (reason) => {
+        notSent = true
         setInput((current) => current || text)
-        attachments.refuseSend('unavailable')
+        if (reason === 'images_refused') {
+          attachments.finishSend()
+          attachments.notice('unavailable')
+        } else {
+          attachments.restoreSend(reason === 'not_sent' ? 'not_sent' : null)
+        }
       },
     })
-  }, [attachments, sendMessage, setInput])
+    if (!notSent) attachments.finishSend()
+  }, [acceptsImages, attachments, sendMessage, setInput])
   const clear = useCallback(() => attachments.clear(), [attachments])
 
-  return { composerImages, visitorImages, canSend: canSendMessage(input, state), send, clear }
+  return { composerImages, visitorImages, canSend: canSendMessage(input, acceptsImages ? state : emptyAttachments), send, clear }
 }

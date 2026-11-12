@@ -3,8 +3,28 @@ import type { WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import type { WebsiteEmbedThemeSettings } from '@/lib/api'
 
 const MIN_LEGIBLE_CONTRAST = 3
-const ensureLegibleForeground = (background: string, foreground: string) =>
-  contrastRatio(background, foreground) >= MIN_LEGIBLE_CONTRAST ? foreground : pickForeground(background)
+/** WCAG's bar for body text, which a short notice is. */
+const MIN_TEXT_CONTRAST = 4.5
+
+/**
+ * The foreground when it reads on the background at `minContrast`; else the light or dark that
+ * reads better, and pure white or black when neither of those reaches `minContrast` (a mid-tone
+ * background), which one of the two always does at 4.5:1.
+ */
+export const ensureLegibleForeground = (background: string, foreground: string, minContrast = MIN_LEGIBLE_CONTRAST) => {
+  if (contrastRatio(background, foreground) >= minContrast) {
+    return foreground
+  }
+  const fallback = pickForeground(background)
+  return contrastRatio(background, fallback) >= minContrast ? fallback : pickForeground(background, { light: '#ffffff', dark: '#000000' })
+}
+
+const ERROR_ON_LIGHT = '#b91c1c'
+const ERROR_ON_DARK = '#fca5a5'
+
+/** The colour of an error line or mark on `background`: red where red reads at 4.5:1, else black or white. */
+export const errorForeground = (background: string): string =>
+  ensureLegibleForeground(background, relativeLuminance(background) < 0.5 ? ERROR_ON_DARK : ERROR_ON_LIGHT, MIN_TEXT_CONTRAST)
 
 export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
   if (!theme) {

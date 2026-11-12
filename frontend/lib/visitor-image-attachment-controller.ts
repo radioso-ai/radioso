@@ -3,14 +3,14 @@ import {
   emptyAttachments,
   exceedsUploadCap,
   preUploadFailure,
-  readyImageIds,
   reduceAttachments,
   splitByCapacity,
   visitorImageFailureOf,
+  type Attachment,
   type AttachmentAction,
   type AttachmentsState,
   type NewAttachment,
-  type VisitorImageFailure,
+  type SendFailure,
 } from '@/lib/visitor-image-attachments'
 import { downsizeVisitorImage, type ImageCodec } from '@/lib/visitor-image-downsize'
 
@@ -25,17 +25,24 @@ export interface VisitorImageAttachmentDeps {
   wait(ms: number, signal: AbortSignal): Promise<void>
 }
 
+type ReadyAttachment = Extract<Attachment, { status: 'ready' }>
+
 /**
- * The photos of the message being composed: it shrinks each one, uploads it, and keeps the
- * `AttachmentsState` the composer shows. A removed photo's upload is stopped and its answer
- * ignored; every preview it makes is released. It is a store (`getState`, `subscribe`) so a hook can
- * read it without holding the work in React state.
+ * The photos of the message being composed: it shrinks each one, one at a time, uploads it, and
+ * keeps the `AttachmentsState` the composer shows. A chip previews the photo as it was shrunk, not
+ * the original. A removed photo's upload is stopped and its answer ignored; every preview it makes
+ * is released. A send takes the uploaded photos out of the composer but holds them, previews and
+ * all, until the server has claimed them (`finishSend`) or has not (`restoreSend`). It is a store
+ * (`getState`, `subscribe`) so a hook can read it without holding the work in React state.
  */
 export class VisitorImageAttachments {
   private state: AttachmentsState = emptyAttachments
   private readonly listeners = new Set<() => void>()
   private readonly uploads = new Map<string, AbortController>()
   private readonly previewUrls = new Map<string, string>()
+  /** Photos wait here for their turn to be decoded: a phone cannot hold several full-size photos at once. */
+  private shrinking: Promise<unknown> = Promise.resolve()
+  private held: ReadyAttachment[] = []
 
   constructor(private deps: VisitorImageAttachmentDeps) {}
 
@@ -56,18 +63,13 @@ export class VisitorImageAttachments {
   addFiles(files: readonly File[]): void {
     const entries = files.map((file) => ({ key: this.deps.createKey(), file, failure: preUploadFailure(file) }))
     const { accepted } = splitByCapacity(this.state, entries)
-    const acceptedKeys = new Set(accepted.map((entry) => entry.key))
-    const items: NewAttachment[] = entries.map(({ key, file, failure }) => {
-      const previewUrl = acceptedKeys.has(key) && !failure ? this.deps.previews.create(file) : null
-      if (previewUrl) {
-        this.previewUrls.set(key, previewUrl)
-      }
-      return { key, fileName: file.name, previewUrl, ...(failure ? { failure } : {}) }
+    this.apply({
+      type: 'add',
+      items: entries.map<NewAttachment>(({ key, file, failure }) => ({ key, fileName: file.name, previewUrl: null, ...(failure ? { failure } : {}) })),
     })
-    this.apply({ type: 'add', items })
     for (const { key, file, failure } of accepted) {
       if (!failure) {
-        void this.upload(key, file)
+        this.enqueue(key, file)
       }
     }
   }
@@ -78,16 +80,43 @@ export class VisitorImageAttachments {
     this.apply({ type: 'remove', key })
   }
 
-  /** The ids of the uploaded photos, for the message about to be sent; the composer is left empty. */
+  /**
+   * The ids of the uploaded photos, for the message about to be sent. The composer is left empty,
+   * but the photos are held, with their previews, until `finishSend` or `restoreSend`.
+   */
   takeForSend(): string[] {
-    const ids = readyImageIds(this.state)
-    this.clear()
-    return ids
+    const ready = this.state.attachments.filter((attachment): attachment is ReadyAttachment => attachment.status === 'ready')
+    for (const attachment of this.state.attachments) {
+      if (attachment.status !== 'ready') {
+        this.stopUpload(attachment.key)
+        this.releasePreview(attachment.key)
+      }
+    }
+    this.held = ready
+    this.apply({ type: 'clear' })
+    return ready.map((attachment) => attachment.imageId)
   }
 
-  /** Records that the server refused a send for its photos, which `takeForSend` already took out of the composer. */
-  refuseSend(failure: VisitorImageFailure): void {
-    this.apply({ type: 'sendRefused', failure })
+  /** The server took the photos, or refused them for good: the held photos go, and their previews. */
+  finishSend(): void {
+    this.held.forEach((attachment) => this.releasePreview(attachment.key))
+    this.held = []
+  }
+
+  /** Says why a send did not take its photos, until the visitor attaches or removes something. */
+  notice(failure: SendFailure): void {
+    this.apply({ type: 'notice', failure })
+  }
+
+  /** The server did not take the photos: they come back as they were, uploaded and previewed, and `failure` says what happened. */
+  restoreSend(failure: SendFailure | null): void {
+    const held = this.held
+    this.held = []
+    const { overflow } = splitByCapacity(this.state, held)
+    overflow.forEach((attachment) => this.releasePreview(attachment.key))
+    if (held.length > 0 || failure) {
+      this.apply({ type: 'restore', attachments: held, sendFailure: failure })
+    }
   }
 
   /** Drops every photo, as a new chat does. */
@@ -96,7 +125,7 @@ export class VisitorImageAttachments {
     this.apply({ type: 'clear' })
   }
 
-  /** Stops every upload and releases every preview. */
+  /** Stops every upload and releases every preview, those of a send in progress too. */
   dispose(): void {
     for (const key of [...this.uploads.keys()]) {
       this.stopUpload(key)
@@ -104,16 +133,28 @@ export class VisitorImageAttachments {
     for (const key of [...this.previewUrls.keys()]) {
       this.releasePreview(key)
     }
+    this.held = []
   }
 
-  private async upload(key: string, original: File): Promise<void> {
+  private enqueue(key: string, original: File): void {
     const controller = new AbortController()
     this.uploads.set(key, controller)
+    const shrunk = this.shrinking.then(() => (controller.signal.aborted ? null : downsizeVisitorImage(original, this.deps.codec)))
+    this.shrinking = shrunk.catch(() => undefined)
+    void shrunk.then(
+      (file) => this.upload(key, file, controller),
+      () => this.uploads.delete(key),
+    )
+  }
+
+  private async upload(key: string, file: File | null, controller: AbortController): Promise<void> {
     try {
-      const file = await downsizeVisitorImage(original, this.deps.codec)
-      if (controller.signal.aborted) {
+      if (!file || controller.signal.aborted) {
         return
       }
+      const previewUrl = this.deps.previews.create(file)
+      this.previewUrls.set(key, previewUrl)
+      this.apply({ type: 'previewed', key, previewUrl })
       if (exceedsUploadCap(file)) {
         this.apply({ type: 'failed', key, failure: 'too_large' })
         return

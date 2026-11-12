@@ -73,7 +73,8 @@ export interface WebsiteEmbedCopy {
   publicChatUntitledSourceTemplate: string
   /** The photo attachment control and its messages. `{count}` in the limit message is the most photos a message carries. */
   publicChatAttachImageLabel: string
-  publicChatRemoveImageLabel: string
+  /** Names one photo's Remove button; `{number}` is its place and `{count}` how many photos are attached. */
+  publicChatRemoveImageTemplate: string
   publicChatImageUploadingLabel: string
   /** Alt text for a photo the visitor sent, in the thread. */
   publicChatImageAlt: string
@@ -167,7 +168,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatOpenSourceLinkTemplate: 'Open {title} in a new tab',
   publicChatUntitledSourceTemplate: 'Document {number}',
   publicChatAttachImageLabel: 'Attach photo',
-  publicChatRemoveImageLabel: 'Remove photo',
+  publicChatRemoveImageTemplate: 'Remove photo {number} of {count}',
   publicChatImageUploadingLabel: 'Uploading photo…',
   publicChatImageAlt: 'Photo you sent',
   publicChatImageUnavailableLabel: 'Photo unavailable',
@@ -245,7 +246,7 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatOpenSourceLinkTemplate',
   'publicChatUntitledSourceTemplate',
   'publicChatAttachImageLabel',
-  'publicChatRemoveImageLabel',
+  'publicChatRemoveImageTemplate',
   'publicChatImageUploadingLabel',
   'publicChatImageAlt',
   'publicChatImageUnavailableLabel',

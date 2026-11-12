@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { VisitorImageAttachments } from '@/lib/visitor-image-attachment-controller'
 import { VISITOR_IMAGE_BUSY_RETRY_MS, hasUploadInFlight, readyImageIds } from '@/lib/visitor-image-attachments'
-import type { ImageCodec } from '@/lib/visitor-image-downsize'
+import type { DecodedImage, ImageCodec } from '@/lib/visitor-image-downsize'
 
 const photo = (name: string, size = 1_000, type = 'image/jpeg') => new File([new Uint8Array(size)], name, { type })
 
@@ -19,6 +19,7 @@ interface Upload {
 const setup = (options: { codec?: ImageCodec } = {}) => {
   const waits: number[] = []
   const uploads: Upload[] = []
+  const previewed: Blob[] = []
   let keys = 0
   let urls = 0
   const revoked: string[] = []
@@ -28,24 +29,51 @@ const setup = (options: { codec?: ImageCodec } = {}) => {
   const attachments = new VisitorImageAttachments({
     upload,
     codec: options.codec ?? passThroughCodec,
-    previews: { create: () => `blob:preview-${urls += 1}`, revoke: (url) => { revoked.push(url) } },
+    previews: { create: (blob) => { previewed.push(blob); return `blob:preview-${urls += 1}` }, revoke: (url) => { revoked.push(url) } },
     createKey: () => `key-${keys += 1}`,
     wait: async (ms) => { waits.push(ms) },
   })
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
-  return { attachments, uploads, upload, revoked, settle, waits }
+  const uploaded = async (names: string[]) => {
+    attachments.addFiles(names.map((name) => photo(name)))
+    await settle()
+    uploads.forEach((entry, index) => entry.succeed(`image-${names[index]}`))
+    await settle()
+  }
+  return { attachments, uploads, upload, revoked, previewed, settle, waits, uploaded }
+}
+
+/** A codec whose decodes wait for the test, so it can see how many run at once. */
+const slowCodec = () => {
+  const started: Array<{ finish(): void }> = []
+  let running = 0
+  let mostAtOnce = 0
+  const codec: ImageCodec = {
+    decode: () => new Promise<DecodedImage>((resolve) => {
+      running += 1
+      mostAtOnce = Math.max(mostAtOnce, running)
+      started.push({
+        finish: () => {
+          running -= 1
+          resolve({ width: 800, height: 600, encodeJpeg: async () => new Blob([new Uint8Array(10)], { type: 'image/jpeg' }), close: () => undefined })
+        },
+      })
+    }),
+  }
+  return { codec, started, mostAtOnce: () => mostAtOnce }
 }
 
 describe('attaching photos', () => {
-  it('shows each photo as uploading with a preview, then ready with the id the server gave it', async () => {
+  it('shows each photo as uploading, previews it once it is shrunk, and marks it ready with the id the server gave it', async () => {
     const { attachments, uploads, settle } = setup()
 
     attachments.addFiles([photo('a.jpg'), photo('b.jpg')])
     expect(attachments.getState().attachments.map((attachment) => [attachment.fileName, attachment.status, attachment.previewUrl]))
-      .toEqual([['a.jpg', 'uploading', 'blob:preview-1'], ['b.jpg', 'uploading', 'blob:preview-2']])
+      .toEqual([['a.jpg', 'uploading', null], ['b.jpg', 'uploading', null]])
     expect(hasUploadInFlight(attachments.getState())).toBe(true)
 
     await settle()
+    expect(attachments.getState().attachments.map((attachment) => attachment.previewUrl)).toEqual(['blob:preview-1', 'blob:preview-2'])
     expect(uploads).toHaveLength(2)
     uploads[1].succeed('image-b')
     uploads[0].succeed('image-a')
@@ -55,12 +83,12 @@ describe('attaching photos', () => {
     expect(hasUploadInFlight(attachments.getState())).toBe(false)
   })
 
-  it('uploads the shrunk photo the downsizer produced, not the original', async () => {
+  it('uploads the shrunk photo the downsizer produced, and previews that one rather than the original', async () => {
     const shrunk = new Blob([new Uint8Array(200_000)], { type: 'image/jpeg' })
     const codec: ImageCodec = {
       decode: async () => ({ width: 4000, height: 3000, encodeJpeg: async () => shrunk, close: () => undefined }),
     }
-    const { attachments, uploads, settle } = setup({ codec })
+    const { attachments, uploads, previewed, settle } = setup({ codec })
 
     attachments.addFiles([photo('IMG_1.png', 4_000_000, 'image/png')])
     await settle()
@@ -68,15 +96,17 @@ describe('attaching photos', () => {
     expect(uploads[0].file.size).toBe(200_000)
     expect(uploads[0].file.type).toBe('image/jpeg')
     expect(uploads[0].file.name).toBe('IMG_1.jpg')
+    expect(previewed.map((blob) => blob.size)).toEqual([200_000])
   })
 
   it('refuses a type the server would refuse without uploading it or previewing it', async () => {
-    const { attachments, upload, settle } = setup()
+    const { attachments, upload, previewed, settle } = setup()
 
     attachments.addFiles([photo('animation.gif', 500, 'image/gif')])
     await settle()
 
     expect(upload).not.toHaveBeenCalled()
+    expect(previewed).toEqual([])
     expect(attachments.getState().attachments[0]).toMatchObject({ status: 'error', failure: 'unsupported_type', previewUrl: null })
   })
 
@@ -101,13 +131,14 @@ describe('attaching photos', () => {
     expect(upload).toHaveBeenCalledTimes(3)
   })
 
-  it('does not make a preview for a photo that did not fit', () => {
-    const { attachments } = setup()
+  it('makes no preview for a photo that did not fit', async () => {
+    const { attachments, previewed, settle } = setup()
     attachments.addFiles([photo('1.jpg'), photo('2.jpg'), photo('3.jpg')])
     attachments.addFiles([photo('4.jpg')])
+    await settle()
 
     expect(attachments.getState().attachments).toHaveLength(3)
-    expect(attachments.getState().attachments.map((attachment) => attachment.previewUrl)).toEqual(['blob:preview-1', 'blob:preview-2', 'blob:preview-3'])
+    expect(previewed).toHaveLength(3)
   })
 
   it('records why an upload failed', async () => {
@@ -121,6 +152,47 @@ describe('attaching photos', () => {
 
     expect(attachments.getState().attachments.map((attachment) => attachment.status === 'error' && attachment.failure))
       .toEqual(['too_large', 'failed'])
+  })
+})
+
+describe('shrinking several photos', () => {
+  it('decodes one photo at a time, so a phone does not hold them all at full size at once', async () => {
+    const { codec, started, mostAtOnce } = slowCodec()
+    const { attachments, uploads, settle } = setup({ codec })
+    const bigPhoto = (name: string) => photo(name, 4_000_000, 'image/png')
+
+    attachments.addFiles([bigPhoto('a.png'), bigPhoto('b.png'), bigPhoto('c.png')])
+    await settle()
+    expect(started).toHaveLength(1)
+
+    started[0].finish()
+    await settle()
+    // The first photo is on its way while the second is decoded.
+    expect(uploads).toHaveLength(1)
+    expect(started).toHaveLength(2)
+
+    started[1].finish()
+    await settle()
+    started[2].finish()
+    await settle()
+
+    expect(uploads).toHaveLength(3)
+    expect(mostAtOnce()).toBe(1)
+  })
+
+  it('never decodes a photo that was removed while it waited its turn', async () => {
+    const { codec, started } = slowCodec()
+    const { attachments, upload, settle } = setup({ codec })
+    attachments.addFiles([photo('a.png', 4_000_000, 'image/png'), photo('b.png', 4_000_000, 'image/png')])
+    await settle()
+
+    attachments.remove('key-2')
+    started[0].finish()
+    await settle()
+
+    expect(started).toHaveLength(1)
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(attachments.getState().attachments.map((attachment) => attachment.key)).toEqual(['key-1'])
   })
 })
 
@@ -215,43 +287,93 @@ describe('removing a photo', () => {
 })
 
 describe('sending', () => {
-  it('hands over the uploaded photos and clears the composer, keeping nothing that was still going', async () => {
+  it('hands over the uploaded photos and empties the composer, keeping their previews until the send is settled', async () => {
+    const { attachments, revoked, uploaded } = setup()
+    await uploaded(['a.jpg', 'b.jpg'])
+
+    expect(attachments.takeForSend()).toEqual(['image-a.jpg', 'image-b.jpg'])
+    expect(attachments.getState().attachments).toEqual([])
+    expect(revoked).toEqual([])
+
+    attachments.finishSend()
+    expect(revoked.sort()).toEqual(['blob:preview-1', 'blob:preview-2'])
+  })
+
+  it('lets go of a failed photo when the message goes, since it has nothing to send', async () => {
     const { attachments, uploads, revoked, settle } = setup()
     attachments.addFiles([photo('a.jpg'), photo('b.jpg')])
     await settle()
     uploads[0].succeed('image-a')
+    uploads[1].fail(new Error('boom'))
     await settle()
 
     expect(attachments.takeForSend()).toEqual(['image-a'])
-    expect(attachments.getState().attachments).toEqual([])
-    expect(revoked.sort()).toEqual(['blob:preview-1', 'blob:preview-2'])
-    expect(uploads[1].signal.aborted).toBe(true)
-  })
-})
 
-describe('a send the server refused for its photos', () => {
-  it('leaves the composer empty with the reason shown', async () => {
-    const { attachments, uploads, settle } = setup()
-    attachments.addFiles([photo('a.jpg')])
-    await settle()
-    uploads[0].succeed('image-a')
-    await settle()
+    expect(revoked).toEqual(['blob:preview-2'])
+  })
+
+  it('puts the photos back, still uploaded and still previewed, when the server did not take them', async () => {
+    const { attachments, revoked, uploaded } = setup()
+    await uploaded(['a.jpg', 'b.jpg'])
     attachments.takeForSend()
 
-    attachments.refuseSend('unavailable')
+    attachments.restoreSend('not_sent')
+
+    expect(readyImageIds(attachments.getState())).toEqual(['image-a.jpg', 'image-b.jpg'])
+    expect(attachments.getState().attachments.map((attachment) => attachment.previewUrl)).toEqual(['blob:preview-1', 'blob:preview-2'])
+    expect(attachments.getState().sendFailure).toBe('not_sent')
+    expect(revoked).toEqual([])
+    // Sent a second time, they are the same photos.
+    expect(attachments.takeForSend()).toEqual(['image-a.jpg', 'image-b.jpg'])
+  })
+
+  it('lets go of the photos a send took when the server refused them, and says why', async () => {
+    const { attachments, revoked, uploaded } = setup()
+    await uploaded(['a.jpg'])
+    attachments.takeForSend()
+
+    attachments.finishSend()
+    attachments.notice('unavailable')
 
     expect(attachments.getState().attachments).toEqual([])
     expect(attachments.getState().sendFailure).toBe('unavailable')
+    expect(revoked).toEqual(['blob:preview-1'])
+  })
+
+  it('lets go of the photos that do not fit back in, when the visitor attached others meanwhile', async () => {
+    const { attachments, revoked, settle, uploads } = setup()
+    attachments.addFiles([photo('a.jpg'), photo('b.jpg'), photo('c.jpg')])
+    await settle()
+    uploads.forEach((entry, index) => entry.succeed(`image-${index}`))
+    await settle()
+    attachments.takeForSend()
+    attachments.addFiles([photo('d.jpg')])
+    await settle()
+
+    attachments.restoreSend(null)
+
+    expect(attachments.getState().attachments.map((attachment) => attachment.fileName)).toEqual(['a.jpg', 'b.jpg', 'd.jpg'])
+    expect(revoked).toEqual(['blob:preview-3'])
+  })
+
+  it('has nothing to restore or finish when no photos were taken', () => {
+    const { attachments } = setup()
+
+    attachments.restoreSend('not_sent')
+    attachments.finishSend()
+
+    expect(attachments.getState().attachments).toEqual([])
   })
 })
 
 describe('starting a new chat', () => {
-  it('drops every photo and releases its preview', async () => {
-    const { attachments, revoked, settle } = setup()
-    attachments.addFiles([photo('a.jpg')])
-    await settle()
+  it('drops every photo, including those a send holds, and releases their previews', async () => {
+    const { attachments, revoked, uploaded } = setup()
+    await uploaded(['a.jpg'])
+    attachments.takeForSend()
 
     attachments.clear()
+    attachments.restoreSend(null)
 
     expect(attachments.getState().attachments).toEqual([])
     expect(revoked).toEqual(['blob:preview-1'])
@@ -259,14 +381,19 @@ describe('starting a new chat', () => {
 })
 
 describe('leaving the chat', () => {
-  it('stops every upload and releases every preview', async () => {
+  it('stops every upload and releases every preview, those of a send in progress too', async () => {
     const { attachments, uploads, revoked, settle } = setup()
-    attachments.addFiles([photo('a.jpg'), photo('b.jpg')])
+    attachments.addFiles([photo('a.jpg')])
+    await settle()
+    uploads[0].succeed('image-a')
+    await settle()
+    attachments.takeForSend()
+    attachments.addFiles([photo('b.jpg')])
     await settle()
 
     attachments.dispose()
 
-    expect(uploads.every((entry) => entry.signal.aborted)).toBe(true)
+    expect(uploads[1].signal.aborted).toBe(true)
     expect(revoked.sort()).toEqual(['blob:preview-1', 'blob:preview-2'])
   })
 })

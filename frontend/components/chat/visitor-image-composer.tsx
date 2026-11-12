@@ -1,33 +1,24 @@
 'use client'
 
-import { useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type MouseEvent } from 'react'
 import { ImagePlus, TriangleAlert, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import type { WebsiteEmbedCopy, WebsiteEmbedTheme } from '@/lib/embed-widget'
+import { errorForeground } from '@/lib/public-chat-theme'
 import {
   MAX_VISITOR_IMAGES_PER_MESSAGE,
   VISITOR_IMAGE_ACCEPT,
   type Attachment,
-  type VisitorImageFailure,
+  type SendFailure,
 } from '@/lib/visitor-image-attachments'
-
-/** What the composer needs to attach photos; absent where the agent takes none. */
-export interface ComposerImages {
-  attachments: readonly Attachment[]
-  /** A paste or drop carried more photos than the message has room for. */
-  limitReached: boolean
-  /** The server refused the last send for its photos, which are no longer here. */
-  sendFailure: VisitorImageFailure | null
-  onFiles: (files: File[]) => void
-  onRemove: (key: string) => void
-}
+import type { ComposerImages } from '@/lib/visitor-image-types'
 
 type ImageCopy = Pick<
   WebsiteEmbedCopy,
   | 'publicChatAttachImageLabel'
-  | 'publicChatRemoveImageLabel'
+  | 'publicChatRemoveImageTemplate'
   | 'publicChatImageUploadingLabel'
   | 'publicChatImageUnsupportedMessage'
   | 'publicChatImageTooLargeMessage'
@@ -35,9 +26,10 @@ type ImageCopy = Pick<
   | 'publicChatImageRefusedMessage'
   | 'publicChatImageBusyMessage'
   | 'publicChatImageLimitTemplate'
+  | 'publicChatMessageFailedMessage'
 >
 
-const failureMessage = (copy: ImageCopy, failure: VisitorImageFailure): string => {
+const failureMessage = (copy: ImageCopy, failure: SendFailure): string => {
   switch (failure) {
     case 'unsupported_type':
       return copy.publicChatImageUnsupportedMessage
@@ -47,10 +39,15 @@ const failureMessage = (copy: ImageCopy, failure: VisitorImageFailure): string =
       return copy.publicChatImageRefusedMessage
     case 'busy':
       return copy.publicChatImageBusyMessage
+    case 'not_sent':
+      return copy.publicChatMessageFailedMessage
     default:
       return copy.publicChatImageFailedMessage
   }
 }
+
+const removeLabel = (copy: ImageCopy, number: number, count: number): string =>
+  copy.publicChatRemoveImageTemplate.replaceAll('{number}', String(number)).replaceAll('{count}', String(count))
 
 const hasFiles = (transfer: DataTransfer | null): boolean => Boolean(transfer && Array.from(transfer.types).includes('Files'))
 
@@ -93,6 +90,7 @@ export function VisitorImageAttachButton({
         className={`${className} shrink-0 rounded-full hover:opacity-80`}
         disabled={full}
         title={copy.publicChatAttachImageLabel}
+        data-visitor-image-attach
         style={{ color: theme.inputForeground }}
         onClick={() => inputRef.current?.click()}
         // Keep focus in the message field, as Send does.
@@ -105,17 +103,33 @@ export function VisitorImageAttachButton({
   )
 }
 
-function Chip({ attachment, theme, copy, onRemove }: { attachment: Attachment; theme: WebsiteEmbedTheme; copy: ImageCopy; onRemove: () => void }) {
+function Chip({
+  attachment,
+  position,
+  count,
+  theme,
+  copy,
+  onRemove,
+}: {
+  attachment: Attachment
+  position: number
+  count: number
+  theme: WebsiteEmbedTheme
+  copy: ImageCopy
+  onRemove: (viaKeyboard: boolean) => void
+}) {
   const failed = attachment.status === 'error'
+  const errorColor = errorForeground(theme.mutedBackground)
   return (
     <li
       className="relative size-14 shrink-0 overflow-hidden rounded-lg border"
-      style={{ borderColor: failed ? 'currentColor' : theme.inputBorder, background: theme.mutedBackground, color: failed ? '#b91c1c' : theme.inputForeground }}
+      style={{ borderColor: failed ? errorColor : theme.inputBorder, background: theme.mutedBackground, color: failed ? errorColor : theme.inputForeground }}
       data-attachment-status={attachment.status}
+      data-chip-key={attachment.key}
       title={failed ? failureMessage(copy, attachment.failure) : attachment.fileName}
     >
       {attachment.previewUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- a blob URL of the photo just picked
+        // eslint-disable-next-line @next/next/no-img-element -- a blob URL of the photo as the browser shrank it
         <img src={attachment.previewUrl} alt="" className={`size-full object-cover ${failed ? 'opacity-40' : ''}`} />
       ) : null}
       {attachment.status === 'uploading' ? (
@@ -130,20 +144,31 @@ function Chip({ attachment, theme, copy, onRemove }: { attachment: Attachment; t
       ) : null}
       <button
         type="button"
-        onClick={onRemove}
-        className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+        // A mouse click leaves detail at 1 or more; a keyboard press leaves it at 0, and only that moves focus on.
+        onClick={(event: MouseEvent<HTMLButtonElement>) => onRemove(event.detail === 0)}
+        className="absolute right-0 top-0 flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
         // Keep focus in the message field, as Send does.
         onMouseDown={(event) => event.preventDefault()}
       >
         <X className="size-3" aria-hidden="true" />
-        <span className="sr-only">{copy.publicChatRemoveImageLabel}</span>
+        <span className="sr-only">{removeLabel(copy, position, count)}</span>
       </button>
     </li>
   )
 }
 
-/** The photos attached to the message so far, each with its state, and why one failed or did not fit. */
-export function VisitorImageChips({ images, theme, copy }: { images: ComposerImages; theme: WebsiteEmbedTheme; copy: ImageCopy }) {
+/** The photos attached to the message so far, each with its state, and why one failed, did not fit, or was not sent. */
+export function VisitorImageChips({
+  images,
+  theme,
+  copy,
+  onRemove,
+}: {
+  images: ComposerImages
+  theme: WebsiteEmbedTheme
+  copy: ImageCopy
+  onRemove: (key: string, viaKeyboard: boolean) => void
+}) {
   const reasons = [
     ...new Set(
       images.attachments.flatMap((attachment) => (attachment.status === 'error' ? [failureMessage(copy, attachment.failure)] : [])),
@@ -162,13 +187,21 @@ export function VisitorImageChips({ images, theme, copy }: { images: ComposerIma
     <div className="px-2 pb-1 pt-1.5">
       {images.attachments.length > 0 ? (
         <ul className="flex flex-wrap gap-2">
-          {images.attachments.map((attachment) => (
-            <Chip key={attachment.key} attachment={attachment} theme={theme} copy={copy} onRemove={() => images.onRemove(attachment.key)} />
+          {images.attachments.map((attachment, index) => (
+            <Chip
+              key={attachment.key}
+              attachment={attachment}
+              position={index + 1}
+              count={images.attachments.length}
+              theme={theme}
+              copy={copy}
+              onRemove={(viaKeyboard) => onRemove(attachment.key, viaKeyboard)}
+            />
           ))}
         </ul>
       ) : null}
       {reasons.length > 0 ? (
-        <p role="alert" data-testid="visitor-image-notice" className="mt-1.5 text-xs" style={{ color: '#b91c1c' }}>
+        <p role="alert" data-testid="visitor-image-notice" className="mt-1.5 text-xs" style={{ color: errorForeground(theme.inputBackground) }}>
           {reasons.join(' ')}
         </p>
       ) : null}
@@ -176,11 +209,42 @@ export function VisitorImageChips({ images, theme, copy }: { images: ComposerIma
   )
 }
 
-/** Paste and drop handlers for the composer, active only where the agent takes photos. */
-export function useVisitorImageDrop(images: ComposerImages | undefined) {
+/**
+ * The composer's behaviour around photos: paste and drop where the agent takes photos, and where
+ * focus goes when a photo is removed from the keyboard (the next photo's Remove, else the attach
+ * control, else the message field) so it is never left on something that is gone.
+ */
+export function useVisitorImageComposer(images: ComposerImages | undefined) {
   const [dragging, setDragging] = useState(false)
-  if (!images) {
-    return { dragging: false, dropProps: {}, onPaste: undefined }
+  const formRef = useRef<HTMLFormElement>(null)
+  const refocus = useRef<{ nextKey: string | undefined } | null>(null)
+  const attachments = images?.attachments
+  useEffect(() => {
+    const pending = refocus.current
+    refocus.current = null
+    const form = formRef.current
+    if (!pending || !form) {
+      return
+    }
+    const next = pending.nextKey ? form.querySelector<HTMLElement>(`[data-chip-key="${CSS.escape(pending.nextKey)}"] button`) : null
+    const attach = form.querySelector<HTMLElement>('[data-visitor-image-attach]:not(:disabled)')
+    const field = form.querySelector<HTMLElement>('textarea')
+    ;(next ?? attach ?? field)?.focus()
+  }, [attachments])
+
+  const removeChip = (key: string, viaKeyboard: boolean) => {
+    if (!images) {
+      return
+    }
+    if (viaKeyboard) {
+      const index = images.attachments.findIndex((attachment) => attachment.key === key)
+      refocus.current = { nextKey: images.attachments[index + 1]?.key }
+    }
+    images.onRemove(key)
+  }
+
+  if (!images?.canAttach) {
+    return { formRef, dragging: false, dropProps: {}, onPaste: undefined, removeChip }
   }
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const files = filesOf(event.clipboardData)
@@ -210,5 +274,5 @@ export function useVisitorImageDrop(images: ComposerImages | undefined) {
       }
     },
   }
-  return { dragging, dropProps, onPaste }
+  return { formRef, dragging, dropProps, onPaste, removeChip }
 }

@@ -20,6 +20,9 @@ export const VISITOR_IMAGE_BUSY_RETRY_MS = 1_500
  */
 export type VisitorImageFailure = 'unsupported_type' | 'too_large' | 'unavailable' | 'busy' | 'failed'
 
+/** What a send that did not take its photos says: a reason one photo failed, or that the message did not go. */
+export type SendFailure = VisitorImageFailure | 'not_sent'
+
 interface AttachmentBase {
   /** Identifies the chip in the composer; the server's image id only exists once the upload is done. */
   key: string
@@ -38,8 +41,8 @@ export interface AttachmentsState {
   attachments: readonly Attachment[]
   /** Set when a paste or drop carried more photos than the message has room for. */
   limitReached: boolean
-  /** Set when the server refused a send for its photos, which are then gone from the composer. */
-  sendFailure: VisitorImageFailure | null
+  /** Set when a send did not take its photos: they are gone from the composer, or back in it. */
+  sendFailure: SendFailure | null
 }
 
 export const emptyAttachments: AttachmentsState = { attachments: [], limitReached: false, sendFailure: null }
@@ -54,7 +57,11 @@ export type AttachmentAction =
   | { type: 'uploaded'; key: string; imageId: string }
   | { type: 'failed'; key: string; failure: VisitorImageFailure }
   | { type: 'remove'; key: string }
-  | { type: 'sendRefused'; failure: VisitorImageFailure }
+  /** A preview of the photo as the browser shrank it, which is what the chip shows. */
+  | { type: 'previewed'; key: string; previewUrl: string }
+  | { type: 'notice'; failure: SendFailure }
+  /** Photos a send took out of the composer and the server did not claim, back as they were. */
+  | { type: 'restore'; attachments: readonly Attachment[]; sendFailure: SendFailure | null }
   | { type: 'clear' }
 
 export const remainingSlots = (state: AttachmentsState): number =>
@@ -114,8 +121,16 @@ export const reduceAttachments = (state: AttachmentsState, action: AttachmentAct
         limitReached: false,
         sendFailure: null,
       }
-    case 'sendRefused':
+    case 'previewed':
+      return replaceAttachment(state, action.key, (current) => ({ ...current, previewUrl: action.previewUrl }))
+    case 'notice':
       return { ...state, sendFailure: action.failure }
+    case 'restore':
+      return {
+        attachments: [...action.attachments.slice(0, remainingSlots(state)), ...state.attachments],
+        limitReached: false,
+        sendFailure: action.sendFailure,
+      }
     case 'clear':
       return emptyAttachments
   }

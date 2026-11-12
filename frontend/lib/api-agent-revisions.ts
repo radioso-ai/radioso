@@ -250,14 +250,15 @@ export const agentRevisionsApi = {
   },
 
   /** A photo for Test Chat's next message, read by the agent's chat model before it answers; only this operator can send it. */
-  async uploadTestChatImage(agentId: string, file: Blob & { name?: string }, signal?: AbortSignal): Promise<{ id: string }> {
+  async uploadTestChatImage(agentId: string, file: Blob & { name?: string }, options: { locale?: string; signal?: AbortSignal } = {}): Promise<{ id: string }> {
     const form = new FormData()
     form.append('image', file, file.name ?? 'photo.jpg')
+    if (options.locale) form.append('locale', options.locale)
     const headers = new Headers({ 'X-Forwarded-Prefix': '/backend' })
     const workspaceId = getStoredActiveWorkspaceId()
     if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
     // No Content-Type: the browser writes the multipart boundary.
-    const response = await fetch(`${API_BASE}/assistant/images?agentId=${encodeURIComponent(agentId)}`, { method: 'POST', headers, credentials: 'include', body: form, signal })
+    const response = await fetch(`${API_BASE}/assistant/images?agentId=${encodeURIComponent(agentId)}`, { method: 'POST', headers, credentials: 'include', body: form, signal: options.signal })
     if (!response.ok) throw await buildError(response)
     return response.json() as Promise<{ id: string }>
   },

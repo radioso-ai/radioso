@@ -4,7 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { agentsApi } from '@/lib/api'
 import { agentRevisionsApi, type TestExecutionHistoryDetail } from '@/lib/api-agent-revisions'
-import { testChatPhotoAvailability, testChatPhotoSendOutcome, type TestChatPhotoAvailability } from '@/lib/test-chat-photos'
+import {
+  photoReadingLocale,
+  readWithRetries,
+  testChatPhotoAvailability,
+  testChatPhotoSendOutcome,
+  type TestChatPhotoAvailability,
+  type TestChatPhotoSendOutcome,
+} from '@/lib/test-chat-photos'
 import { useFileDropGuard } from '@/lib/use-file-drop-guard'
 import { useVisitorImageAttachments } from '@/lib/use-visitor-image-attachments'
 import { canSendMessage, emptyAttachments } from '@/lib/visitor-image-attachments'
@@ -25,6 +32,11 @@ function useTestChatPhotoAvailability(agentId: string): TestChatPhotoAvailabilit
   return availability
 }
 
+/** How long to wait before each further read of the stored readings, which a dropped connection can delay. */
+const STORED_READINGS_RETRY_MS = [750, 1_500, 3_000] as const
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
 /** One send's photos: the test it went to and the ids it carried, empty for a message without photos. */
 interface TestChatPhotoSend {
   executionId: string
@@ -38,13 +50,18 @@ interface TestChatPhotoSend {
  *
  * A send takes the uploaded photos out of the composer; `settle` lets them go once the test took
  * the message, drops them with a reason when it refused them, and gives them back when the message
- * never reached it. Once a test took photos, `onStored` receives the test as stored, which carries
- * the agent's reading of each one.
+ * never reached it, and answers which, for the words too. Once a test took photos, `onStored`
+ * receives the test as stored, which carries the agent's reading of each one; a failed read is
+ * tried again, and the photos stay pending rather than read as unreadable if it never succeeds.
+ * Photos are read in the operator's browser language, as a visitor's are in the visitor's.
  */
 export function useTestChatPhotos(agentId: string, onStored: (detail: TestExecutionHistoryDetail) => void) {
   const availability = useTestChatPhotoAvailability(agentId)
   const acceptsImages = availability === 'available'
-  const upload = useCallback((file: File, signal: AbortSignal) => agentRevisionsApi.uploadTestChatImage(agentId, file, signal), [agentId])
+  const upload = useCallback(
+    (file: File, signal: AbortSignal) => agentRevisionsApi.uploadTestChatImage(agentId, file, { locale: photoReadingLocale(navigator.language), signal }),
+    [agentId],
+  )
   const { attachments, state } = useVisitorImageAttachments(upload)
   useFileDropGuard(acceptsImages)
   const onStoredRef = useRef(onStored)
@@ -72,19 +89,22 @@ export function useTestChatPhotos(agentId: string, onStored: (detail: TestExecut
   /** The uploaded photos' ids for the message about to be sent, in the order they were attached. */
   const take = useCallback((): string[] => (acceptsImages ? attachments.takeForSend() : []), [acceptsImages, attachments])
 
-  const settle = useCallback((send: TestChatPhotoSend, result: { taken: true } | { taken: false; error: unknown }) => {
-    if (send.imageIds.length === 0) return
+  const settle = useCallback((send: TestChatPhotoSend, result: { taken: true } | { taken: false; error: unknown }): TestChatPhotoSendOutcome['kind'] => {
     const outcome = testChatPhotoSendOutcome(result)
+    if (send.imageIds.length === 0) return outcome.kind
     if (outcome.kind === 'returned') {
-      attachments.restoreSend(outcome.failure)
-      return
+      // The composer's error line says why; the photos come back as they were.
+      attachments.restoreSend(null)
+      return outcome.kind
     }
     attachments.finishSend()
     if (outcome.kind === 'refused') {
       attachments.notice('unavailable')
-      return
+      return outcome.kind
     }
-    void agentRevisionsApi.getTestExecution(agentId, send.executionId).then(({ execution }) => onStoredRef.current(execution), () => undefined)
+    void readWithRetries(() => agentRevisionsApi.getTestExecution(agentId, send.executionId), STORED_READINGS_RETRY_MS, wait)
+      .then((stored) => { if (stored) onStoredRef.current(stored.execution) })
+    return outcome.kind
   }, [agentId, attachments])
 
   return { availability, composerImages, canSend, take, settle }

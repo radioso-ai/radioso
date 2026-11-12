@@ -25,6 +25,8 @@ interface TestExecutionMessage {
   spoken?: true
   /** The photos a message carried and what was typed with them; `content` is the turn text with the readings. */
   imageInput?: VisitorImageInput
+  /** The message was just sent and the agent's readings of its photos are not back yet. */
+  readingsPending?: true
 }
 
 export interface TestExecutionState {
@@ -197,12 +199,16 @@ export const beginTestExecutionTurn = (state: TestExecutionState, message: strin
     messages: [...side.messages,
       {
         id: `${sideId}-${turnId}-user`, role: 'user' as const, content: message, state: 'completed' as const, turnId, attemptId,
-        ...(imageIds.length > 0 ? { imageInput: { typedText: message, images: imageIds.map((id) => ({ id, reading: null })) } } : {}),
+        ...(imageIds.length > 0 ? { imageInput: { typedText: message, images: imageIds.map((id) => ({ id, reading: null })) }, readingsPending: true as const } : {}),
       },
       { id: `${sideId}-${turnId}-assistant`, role: 'assistant' as const, content: '', state: 'streaming' as const, turnId, attemptId },
     ],
   }])),
 })
+
+/** The photos on a side whose readings are not back yet: their messages show them as pending, never as unread. */
+export const pendingReadingImageIds = (side: TestExecutionSideState | undefined): ReadonlySet<string> =>
+  new Set(side?.messages.flatMap((message) => (message.readingsPending && message.imageInput ? message.imageInput.images.map((image) => image.id) : [])) ?? [])
 
 /** The photos each message of the test carries as the test stored them, with the agent's readings. */
 export const withStoredImageInputs = (state: TestExecutionState, stored: TestExecutionHistoryDetail): TestExecutionState => {
@@ -215,7 +221,10 @@ export const withStoredImageInputs = (state: TestExecutionState, stored: TestExe
       ...side,
       messages: side.messages.map((message) => {
         const imageInput = message.role === 'user' ? storedInputs.get(`${sideId}:${message.turnId}`) : undefined
-        return imageInput ? { ...message, imageInput } : message
+        if (!imageInput) return message
+        const read: TestExecutionMessage = { ...message, imageInput }
+        delete read.readingsPending
+        return read
       }),
     }])),
   }

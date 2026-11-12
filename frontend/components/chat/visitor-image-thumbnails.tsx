@@ -21,11 +21,11 @@ export const operatorVisitorImages = (workspaceId: string, conversationId: strin
 })
 
 /** Test Chat's photos: loaded from the test, with the agent's readings under the operator's bubble. */
-export const testChatVisitorImages = (workspaceId: string, agentId: string, executionId: string): VisitorImageThreadConfig => ({
+export const testChatVisitorImages = (workspaceId: string, agentId: string, executionId: string, pendingIds: ReadonlySet<string>): VisitorImageThreadConfig => ({
   source: { kind: 'test_chat', workspaceId, agentId, executionId },
   altLabel: 'Photo sent in this test',
   unavailableLabel: 'Photo unavailable',
-  readings: { label: 'What the agent read', unreadLabel: 'The agent could not read this photo.' },
+  readings: { label: 'What the agent read', unreadLabel: 'The agent could not read this photo.', pendingLabel: 'Loading what the agent read…', pendingIds },
 })
 
 const THUMBNAIL_CLASS = 'size-24 shrink-0 overflow-hidden rounded-lg'
@@ -120,7 +120,7 @@ export function VisitorImageThumbnails({ images, config }: { images: readonly Vi
  * What the agent read in each photo, under the visitor's bubble where a teammate can open it. The
  * reading is the agent's, so it never sits inside the visitor's own words.
  */
-export function VisitorImageReadings({ images, label, unreadLabel }: { images: readonly VisitorImage[] } & NonNullable<VisitorImageThreadConfig['readings']>) {
+export function VisitorImageReadings({ images, label, unreadLabel, pendingLabel, pendingIds }: { images: readonly VisitorImage[] } & NonNullable<VisitorImageThreadConfig['readings']>) {
   if (images.length === 0) return null
   return (
     <Collapsible className="max-w-full self-end text-xs text-muted-foreground">
@@ -133,7 +133,7 @@ export function VisitorImageReadings({ images, label, unreadLabel }: { images: r
           {images.map((image, index) => (
             <li key={image.id} className="select-text whitespace-pre-wrap">
               <span className="font-medium text-foreground">{index + 1}. </span>
-              {image.reading ?? unreadLabel}
+              {pendingIds?.has(image.id) ? pendingLabel : image.reading ?? unreadLabel}
             </li>
           ))}
         </ol>

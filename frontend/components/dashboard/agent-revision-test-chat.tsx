@@ -25,6 +25,7 @@ import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestChatComposer } from "@/components/dashboard/test-chat-composer";
 import { parseEvents } from "@/lib/test-execution-events";
+import { evidenceLabel, executionStateLabel, failureLabel, outcomeLabel, revisionDisplayLabel } from "@/lib/agent-revision-test-chat-labels";
 import { useTestChatPhotos } from "@/lib/use-test-chat-photos";
 import { testChatVisitorImages } from "@/components/chat/visitor-image-thumbnails";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
@@ -79,7 +80,6 @@ import {
   type AgentRevisionDetail,
   type AgentRevisionState,
   type AgentRevisionSummary,
-  type ExecutionState,
   type RevisionEvalRun,
   type TestExecutionHistoryDetail,
 } from "@/lib/api-agent-revisions";
@@ -90,6 +90,7 @@ import {
   hydrateTestExecutionState,
   initializeTestExecutionState,
   reduceTestExecutionEvent,
+  pendingReadingImageIds,
   sideHasSentMessage,
   withStoredImageInputs,
   type TestExecutionState,
@@ -119,52 +120,8 @@ import type { ContextVariable, TurnTraceEnvelope } from "@/lib/api-types";
 
 type Mode = "single" | "compare";
 
-const revisionDisplayLabel = (revision: AgentRevisionSummary): string => {
-  if (revision.kind === "published" && revision.versionNumber !== null)
-    return `v${revision.versionNumber}`;
-  if (revision.kind === "candidate")
-    return `Draft · ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(revision.createdAt))}`;
-  return "Legacy revision";
-};
-
 const errorMessage = (cause: unknown, fallback: string): string =>
   cause instanceof Error ? cause.message : fallback;
-
-const executionStateLabel: Record<ExecutionState, string> = {
-  missing: "Not run",
-  running: "Running",
-  partial: "Partial",
-  failed: "Failed",
-  completed: "Completed",
-};
-
-const outcomeLabel: Record<
-  RevisionEvalRun["sides"][number]["cases"][number]["outcome"],
-  string
-> = {
-  pass: "Passed",
-  fail: "Failed",
-  partial: "Partial",
-  unavailable: "Unavailable",
-};
-
-const evidenceLabel: Record<
-  RevisionEvalRun["sides"][number]["evidenceState"],
-  string
-> = {
-  current: "Current",
-  configuration_changed: "Configuration changed since run",
-  environment_changed: "Environment changed since run",
-  comparability_unknown: "Comparability unknown (live dependencies)",
-};
-
-const failureLabel = (code: string) =>
-  ({
-    provider_unavailable: "The provider was unavailable.",
-    stream_transport_failed: "The response stream was interrupted.",
-    stream_ended_before_terminal_event: "The response ended before completion.",
-    retry_transport_failed: "The retry response stream was interrupted.",
-  })[code] ?? "This test side failed.";
 
 // A side's usage-limit rejection arrives mid-stream as this bare `code` (no `details`), so it
 // gets the same plan notice as every other usage-limit dead end; every other code keeps its
@@ -917,6 +874,8 @@ export function AgentRevisionTestChat({
     };
     const imageIds = photos.take();
     const photoSend = { executionId: active.executionId, imageIds };
+    // Once the test answers, the message and its photos are the test's, whatever the stream does next.
+    let reached = false;
     setMessage("");
     setExecutionState(beginTestExecutionTurn(active, text, turnId, attemptId, imageIds));
     setSendingState(true);
@@ -943,6 +902,7 @@ export function AgentRevisionTestChat({
         },
         abortController.signal,
       );
+      reached = true;
       photos.settle(photoSend, { taken: true });
       const sawTerminal = await parseEvents(response, (incoming) => {
         if (matchesAttempt())
@@ -960,17 +920,18 @@ export function AgentRevisionTestChat({
             : null,
         );
     } catch (cause) {
-      photos.settle(photoSend, { taken: false, error: cause });
+      // A send that never reached the test gives back its words and photos, and leaves no bubble.
+      const withdrawn = !reached && photos.settle(photoSend, { taken: false, error: cause }) !== "taken";
+      if (withdrawn && matchesAttempt()) {
+        setExecutionState((current) => (current?.executionId === active.executionId ? active : current));
+        setMessage((current) => current || text);
+      }
       if (
         matchesAttempt() &&
         !(cause instanceof DOMException && cause.name === "AbortError")
       ) {
         applyActionFailure(cause, "Test message failed.");
-        setExecutionState((current) =>
-          current
-            ? finalizeTestExecutionStream(current, "stream_transport_failed")
-            : null,
-        );
+        if (!withdrawn) setExecutionState((current) => current ? finalizeTestExecutionStream(current, "stream_transport_failed") : null);
       }
     } finally {
       if (matchesAttempt()) {
@@ -1773,7 +1734,7 @@ export function AgentRevisionTestChat({
                         >
                           {messages.length ? <ChatMessageThread
                             messages={messages}
-                            visitorImages={execution ? testChatVisitorImages(workspaceId, agentId, execution.executionId) : undefined}
+                            visitorImages={execution ? testChatVisitorImages(workspaceId, agentId, execution.executionId, pendingReadingImageIds(side)) : undefined}
                             onOpenDocument={async () => "unavailable"}
                             assistantAvatarLabel={assistantName}
                             assistantIdentity={assistantIdentity}

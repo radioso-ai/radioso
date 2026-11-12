@@ -22,7 +22,7 @@
   "ee/packages/backend-module/src/radiosoModuleTypes.ts": 1030,
   "ee/packages/backend-module/src/usageLimits/usageLimitService.ts": 1277,
   "frontend/components/chat/public-chat-shell.tsx": 1208,
-  "frontend/components/dashboard/agent-revision-test-chat.tsx": 2195,
+  "frontend/components/dashboard/agent-revision-test-chat.tsx": 2156,
   "frontend/components/dashboard/chat-message-thread.tsx": 1104,
   "frontend/components/dashboard/document-sources-view.tsx": 1177,
   "frontend/components/dashboard/documents-view.tsx": 1263,

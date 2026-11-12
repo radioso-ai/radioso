@@ -46,10 +46,14 @@ const makePhoto = async (page: Page): Promise<Buffer> => {
  * a message with photos answers on the test's stream, the test as stored carries the photo with the
  * agent's reading, and the photo reads back from the test.
  */
-const mockPhotoBackend = async (page: Page, agent: { visitorImagesEnabled: boolean; chatModelOverride?: { provider: "openai-compatible"; model: string } }) => {
+const mockPhotoBackend = async (
+  page: Page,
+  agent: { visitorImagesEnabled: boolean; chatModelOverride?: { provider: "openai-compatible"; model: string } },
+  options: { sendFails?: boolean } = {},
+) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { agentSettingsOverrides: agent });
-  const uploads: Array<{ url: string; multipart: boolean }> = [];
+  const uploads: Array<{ url: string; multipart: boolean; locale: string | null }> = [];
   const sends: Array<{ message?: string; imageIds?: string[] }> = [];
   const views: string[] = [];
   let sentTurn: { turnId: string; attemptId: string } | null = null;
@@ -72,12 +76,21 @@ const mockPhotoBackend = async (page: Page, agent: { visitorImagesEnabled: boole
   });
 
   await page.route(/\/backend\/api\/v1\/assistant\/images\?/, async (route) => {
-    uploads.push({ url: route.request().url(), multipart: (route.request().headers()["content-type"] ?? "").startsWith("multipart/form-data") });
+    const form = route.request().postDataBuffer()?.toString("latin1") ?? "";
+    uploads.push({
+      url: route.request().url(),
+      multipart: (route.request().headers()["content-type"] ?? "").startsWith("multipart/form-data"),
+      locale: /name="locale"\r\n\r\n([^\r]+)/.exec(form)?.[1] ?? null,
+    });
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: imageId, readingStatus: "read" }) });
   });
   await page.route(/\/backend\/api\/v1\/agents\/[^/]+\/test-executions\/[^/]+\/messages$/, async (route) => {
     const body = route.request().postDataJSON() as { message?: string; imageIds?: string[]; turnId: string; attemptId: string };
     sends.push({ message: body.message, imageIds: body.imageIds });
+    if (options.sendFails) {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "internal_error", message: "The test could not take the message." } }) });
+      return;
+    }
     sentTurn = { turnId: body.turnId, attemptId: body.attemptId };
     const identity = { executionId, generation: 1, sideId: "side-1-0", turnId: body.turnId, attemptId: body.attemptId };
     await route.fulfill({
@@ -117,7 +130,8 @@ test("an operator attaches a photo in Test Chat, and the transcript shows it wit
   await page.getByRole("button", { name: "Send", exact: true }).click();
 
   await expect(page.getByText("Here are three farmhouses like it.").first()).toBeVisible();
-  expect(backend.uploads).toEqual([{ url: expect.stringContaining(`/assistant/images?agentId=${defaultAgentId}`), multipart: true }]);
+  // Read in the operator's browser language, as a visitor's photo is read in the visitor's.
+  expect(backend.uploads).toEqual([{ url: expect.stringContaining(`/assistant/images?agentId=${defaultAgentId}`), multipart: true, locale: "en-US" }]);
   expect(backend.sends).toEqual([{ message: typedText, imageIds: [imageId] }]);
   // The operator's bubble holds the photo and what they typed, never the reading the turn ran on.
   const thumbnails = page.getByTestId("visitor-image-thumbnails");
@@ -130,6 +144,24 @@ test("an operator attaches a photo in Test Chat, and the transcript shows it wit
   await expect(page.getByText(reading)).toBeVisible();
   // The composer is empty again, ready for the next message.
   await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
+});
+
+test("a message that never reaches the test gives back what was typed and the photo, and leaves no bubble", async ({ page }) => {
+  const backend = await mockPhotoBackend(page, { visitorImagesEnabled: true }, { sendFails: true });
+  await page.goto(testChatUrl);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+
+  backend.photo.jpeg = await makePhoto(page);
+  await page.getByTestId("visitor-image-input").setInputFiles({ name: "farmhouse.jpg", mimeType: "image/jpeg", buffer: backend.photo.jpeg });
+  await expect(page.locator('[data-attachment-status="ready"]')).toHaveCount(1);
+  await page.getByPlaceholder("Ask a question...").fill(typedText);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  await expect(page.getByText("The test could not take the message.")).toBeVisible();
+  await expect(page.getByPlaceholder("Ask a question...")).toHaveValue(typedText);
+  await expect(page.locator('[data-attachment-status="ready"]')).toHaveCount(1);
+  await expect(page.getByTestId("visitor-image-thumbnails")).toHaveCount(0);
+  expect(backend.sends).toEqual([{ message: typedText, imageIds: [imageId] }]);
 });
 
 test("Test Chat offers no attach control while the agent takes no photos from visitors", async ({ page }) => {

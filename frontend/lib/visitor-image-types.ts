@@ -31,8 +31,11 @@ export interface VisitorImageThreadConfig {
   /** Alt text of a photo, and the label that stands in for one that cannot be shown. */
   altLabel: string
   unavailableLabel: string
-  /** Set on teammate threads, which keep the agent's reading of each photo behind a disclosure. */
-  readings?: { label: string; unreadLabel: string }
+  /**
+   * Set on teammate threads, which keep the agent's reading of each photo behind a disclosure. A
+   * photo in `pendingIds` was just sent and its reading is not back yet, so it shows `pendingLabel`.
+   */
+  readings?: { label: string; unreadLabel: string; pendingLabel?: string; pendingIds?: ReadonlySet<string> }
 }
 
 export type VisitorImage = VisitorImageInput['images'][number]

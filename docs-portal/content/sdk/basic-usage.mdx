@@ -1,7 +1,7 @@
 ---
 title: "Basic usage"
 description: "Documents, chat, settings, and error handling with the TypeScript SDK."
-last_updated: 2026-11-02
+last_updated: 2026-11-12
 ---
 
 # Basic usage
@@ -369,6 +369,24 @@ for await (const event of client.chat.stream({
   }
 }
 ```
+
+A reply can also carry reply blocks: structured parts, such as a set of picture cards, that your client renders beside the answer text. Declare the kinds your client renders in `clientContextCapabilities`, and each block arrives as a `block` event after the last `chunk` and before `done`; `done.blocks` repeats them:
+
+```ts
+for await (const event of client.chat.stream({
+  message: 'Which hiking books do you have?',
+  clientContextCapabilities: {
+    'reply.blocks': { item_list: { layouts: ['carousel', 'grid'] } },
+  },
+})) {
+  if (event.type === 'block') {
+    // event.block is a ReplyBlock; render it beside the answer text.
+    continue
+  }
+}
+```
+
+`client.chat.create()` takes the same field and returns the blocks on `blocks`, and history returns them on the assistant message. A turn that declares no `reply.blocks` gets the answer as text alone. [Reply blocks](/api/public-chat-and-embed#reply-blocks) describes the block, its layouts, and its images.
 
 List chat history:
 

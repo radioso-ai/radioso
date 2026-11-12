@@ -96,11 +96,17 @@ export const createVisitorImageAvailability = (deps: {
   },
 });
 
-/** Each teammate view of a conversation's photo: ids only, and only while the conversation exists. */
-export const visitorImageAudit = (audit: Pick<AuditPort, "recordForLiveConversation">): VisitorImageAudit => ({
+/**
+ * Each teammate view of a photo, ids only: a conversation's while the conversation exists, and one
+ * seen in Test Chat against the test it was seen in.
+ */
+export const visitorImageAudit = (audit: Pick<AuditPort, "recordForLiveConversation" | "record">): VisitorImageAudit => ({
   viewed: ({ workspaceId, conversationId, imageId, actorUserId }) => audit.recordForLiveConversation(
     { workspaceId, eventType: "conversation.image_viewed", eventStatus: "success", metadata: { conversationId, imageId, actorUserId } },
     { workspaceId, conversationId },
+  ),
+  viewedInTest: ({ workspaceId, testExecutionId, imageId, actorUserId }) => audit.record(
+    { workspaceId, eventType: "agent.test_execution.image_viewed", eventStatus: "success", metadata: { testExecutionId, imageId, actorUserId } },
   ),
 });
 
@@ -115,7 +121,7 @@ export const wireVisitorImages = (deps: {
     database: { kysely: Kysely<DB> };
     usageEventRecorder: UsageEventRecorder;
     usageLimitPolicy: Pick<UsageLimitPolicy, "reserveAnswer">;
-    auditService: Pick<AuditPort, "recordForLiveConversation">;
+    auditService: Pick<AuditPort, "recordForLiveConversation" | "record">;
     metricsRegistry: MetricsRegistry | null;
   };
   storage: DocumentStoragePort & DocumentStorageLocator;

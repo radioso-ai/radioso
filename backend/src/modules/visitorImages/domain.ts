@@ -109,6 +109,8 @@ export interface VisitorImageStore {
   findForOwner(input: { workspaceId: string; owner: VisitorImageOwner; id: string }): Promise<StoredVisitorImage | null>;
   /** The agent's photo a message or a test carries, whichever; null for one nothing carries. */
   findCarried(input: { workspaceId: string; agentId: string; id: string }): Promise<StoredVisitorImage | null>;
+  /** The agent's photo bound to this Test Chat test; null for any other. */
+  findInTest(input: { workspaceId: string; agentId: string; testExecutionId: string; id: string }): Promise<StoredVisitorImage | null>;
   findInConversation(input: { workspaceId: string; conversationId: string; id: string }): Promise<StoredVisitorImage | null>;
   /** Removes the row of an upload whose bytes could not be stored. */
   delete(input: { workspaceId: string; id: string }): Promise<void>;
@@ -152,9 +154,14 @@ export interface VisitorImageReader {
   }): Promise<VisitorImageReading>;
 }
 
-/** The record each operator view of a photo leaves: ids only. */
+/**
+ * The record each operator view of a photo leaves: ids only. A conversation's photo is recorded
+ * against its conversation; a photo seen in Test Chat, whose tests every teammate can open,
+ * against the test it was seen in.
+ */
 export interface VisitorImageAudit {
   viewed(input: { workspaceId: string; conversationId: string; imageId: string; actorUserId: string | null }): Promise<void>;
+  viewedInTest(input: { workspaceId: string; testExecutionId: string; imageId: string; actorUserId: string | null }): Promise<void>;
 }
 
 /**

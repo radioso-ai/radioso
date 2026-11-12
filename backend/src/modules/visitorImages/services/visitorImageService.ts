@@ -205,30 +205,37 @@ export class VisitorImageService implements VisitorImageTurnInput {
   }
 
   /**
-   * A photo for a Test Chat transcript. One the transcript names (sent in the test, in the
-   * comparison it continues, or copied in with the conversation it started from) is served when a
-   * message or a test of the agent carries it; before the turn that sends it is stored, only the
-   * caller who uploaded it sees it. A visitor's photo is audited as any teammate view is; a test's
-   * photo is the operator's own.
+   * A photo for a Test Chat transcript, found the cheapest way first: one bound to this test; one
+   * its transcript names (`transcriptNamesImage`, asked only then), carried by the comparison it
+   * continues or by the conversation it started from; or, before the turn that sends it is stored,
+   * the caller's own upload. Every view is audited, since every teammate can open a test: a
+   * visitor's photo against its conversation, any other against this test.
    */
   async readForTestChat(input: {
     workspaceId: string;
     agentId: string;
+    testExecutionId: string;
     imageId: string;
-    namedByTranscript: boolean;
     caller: VisitorImageOwner | null;
     actorUserId: string | null;
+    transcriptNamesImage: () => Promise<boolean>;
   }): Promise<Buffer | null> {
-    const { workspaceId, imageId } = input;
-    const image = input.namedByTranscript
-      ? await this.deps.store.findCarried({ workspaceId, agentId: input.agentId, id: imageId })
-      : input.caller ? await this.deps.store.findForOwner({ workspaceId, owner: input.caller, id: imageId }) : null;
-    if (!image || image.agentId !== input.agentId) return null;
+    const { workspaceId, agentId, testExecutionId, imageId, actorUserId } = input;
+    const image = await this.deps.store.findInTest({ workspaceId, agentId, testExecutionId, id: imageId })
+      ?? (await input.transcriptNamesImage() ? await this.deps.store.findCarried({ workspaceId, agentId, id: imageId }) : null)
+      ?? await this.unsentUploadOf(input);
+    if (!image) return null;
     const bytes = await this.deps.objects.get(image.object);
-    if (image.conversationId) {
-      await this.deps.audit.viewed({ workspaceId, conversationId: image.conversationId, imageId, actorUserId: input.actorUserId });
-    }
+    if (image.conversationId) await this.deps.audit.viewed({ workspaceId, conversationId: image.conversationId, imageId, actorUserId });
+    else await this.deps.audit.viewedInTest({ workspaceId, testExecutionId, imageId, actorUserId });
     return bytes;
+  }
+
+  /** The caller's own photo for the agent that nothing carries yet: the one their message shows before its turn is stored. */
+  private async unsentUploadOf(input: { workspaceId: string; agentId: string; imageId: string; caller: VisitorImageOwner | null }) {
+    if (!input.caller) return null;
+    const image = await this.deps.store.findForOwner({ workspaceId: input.workspaceId, owner: input.caller, id: input.imageId });
+    return image && image.agentId === input.agentId && !image.messageId && !image.testExecutionId ? image : null;
   }
 
   /** A conversation's photo for a teammate reading it; every view that sends bytes is audited. */

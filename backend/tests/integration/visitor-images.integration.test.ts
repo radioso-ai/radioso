@@ -8,6 +8,7 @@ import {
   PostgresVisitorImageStore,
   UnboundVisitorImageRetention,
   VisitorImageEraser,
+  bindVisitorImageClaimIn,
   VisitorImageExporter,
   visitorImageObjectDeletionHandler,
 } from "../../src/modules/visitorImages/composition.js";
@@ -161,6 +162,10 @@ describeIntegration("visitor images on Postgres", () => {
     expect(await deletionJobs()).toContain(`workspaces/${workspaceId}/visitor-images/${stale}`);
   });
 
+  const photoHolder = async (id: string) => (await database.query<{ test_execution_id: string | null }>(
+    "SELECT test_execution_id FROM visitor_images WHERE id = $1", [id],
+  ))[0]?.test_execution_id ?? null;
+
   /** A Test Chat test of the agent, which keeps its transcript apart from conversations. */
   const testExecution = async (): Promise<string> => {
     const id = randomUUID();
@@ -182,6 +187,8 @@ describeIntegration("visitor images on Postgres", () => {
     expect(await store.releaseClaim({ workspaceId, claimId })).toBe(0);
     expect(await store.findCarried({ workspaceId, agentId, id: image })).toMatchObject({ id: image, testExecutionId: executionId, conversationId: null, messageId: null });
     expect(await store.findCarried({ workspaceId, agentId: randomUUID(), id: image })).toBeNull();
+    expect(await store.findInTest({ workspaceId, agentId, testExecutionId: executionId, id: image })).toMatchObject({ id: image });
+    expect(await store.findInTest({ workspaceId, agentId, testExecutionId: await testExecution(), id: image })).toBeNull();
     await database.query("UPDATE visitor_images SET created_at = now() - interval '25 hours', claimed_at = now() - interval '25 hours' WHERE id = $1", [image]);
     const rule = new UnboundVisitorImageRetention(database.kysely, (trx) => new BackgroundJobRepository(trx));
     while (await rule.enforce({ now: new Date(), limit: 50 }) > 0) { /* drain */ }
@@ -192,6 +199,22 @@ describeIntegration("visitor images on Postgres", () => {
 
     expect(await row(image)).toBeNull();
     expect(await deletionJobs()).toContain(`workspaces/${workspaceId}/visitor-images/${image}`);
+  });
+
+  it("binds a claim inside the caller's transaction, and rolls it back when it binds fewer photos than were claimed", async () => {
+    const image = await upload();
+    const executionId = await testExecution();
+    const claimId = randomUUID();
+    const claimed = await store.claim({ workspaceId, agentId, owner: OWNER, imageIds: [image], claimId, claimedAt: new Date() });
+    const claim = { claimId, images: claimed!.map((row) => ({ id: row.id, reading: row.reading })) };
+
+    await expect(database.kysely.transaction().execute((trx) =>
+      bindVisitorImageClaimIn(trx)({ workspaceId, claim: { ...claim, images: [...claim.images, { id: randomUUID(), reading: null }] }, testExecutionId: executionId, boundAt: new Date() })))
+      .rejects.toThrow("visitor_image_bind_short");
+    expect(await photoHolder(image)).toBeNull();
+
+    await database.kysely.transaction().execute((trx) => bindVisitorImageClaimIn(trx)({ workspaceId, claim, testExecutionId: executionId, boundAt: new Date() }));
+    expect(await photoHolder(image)).toBe(executionId);
   });
 
   it("never binds a photo to both a message and a test", async () => {

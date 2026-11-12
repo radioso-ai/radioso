@@ -6,7 +6,7 @@ import {
   type UsageLimitReservation,
 } from "../../shared/domain/usageLimitPolicy.js";
 import type { AgentRevision } from "../agents/public.js";
-import type { VisitorImageOwner } from "../visitorImages/contracts/turnInput.js";
+import type { VisitorImageClaim, VisitorImageOwner } from "../visitorImages/contracts/turnInput.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 import { clipAtGraphemeBoundary } from "../../shared/text/clipAtGraphemeBoundary.js";
 import {
@@ -68,23 +68,26 @@ export interface TestExecutionImageInput {
 
 /**
  * One send's photos, claimed: the turn text every side runs on (the typed text, then a block per
- * photo with what the agent read in it), what the user entry keeps for display, `stored`, which
- * binds the photos to this test once its turn is stored, and `finish`, which lets them go when no
- * turn took them.
+ * photo with what the agent read in it), what the user entry keeps for display, the claim the store
+ * binds to this test in the transaction that stores the turn, and `release`, which lets the photos
+ * go when no turn took them.
  */
 export interface TestExecutionPhotoTurn {
   readonly message: string;
   readonly imageInput: TestExecutionImageInput;
-  stored(): Promise<void>;
-  finish(): Promise<void>;
+  readonly claim: VisitorImageClaim;
+  release(): Promise<void>;
 }
+
+/** A new turn's photos, as the store keeps them with the turn: shown from `imageInput`, bound by `claim`. */
+export type TestExecutionTurnPhotos = Pick<TestExecutionPhotoTurn, "imageInput" | "claim">;
 
 /**
  * Claims a send's photos for whoever uploaded them, through the chat door's own claim and
  * rendering. Chat implements it; composition wires it.
  */
 export interface TestExecutionPhotoTurnsPort {
-  claim(input: { workspaceId: string; agentId: string; executionId: string; message: string; imageIds: readonly string[]; owner: VisitorImageOwner }): Promise<TestExecutionPhotoTurn>;
+  claim(input: { workspaceId: string; agentId: string; message: string; imageIds: readonly string[]; owner: VisitorImageOwner }): Promise<TestExecutionPhotoTurn>;
 }
 
 export interface TestExecution {
@@ -314,6 +317,11 @@ export interface TestExecutionRepositoryPort {
   find(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecution | null>;
   /** Scoped by workspace alone: the read a caller with only an execution id, not yet an agent id, needs. Null for an id this workspace does not own. */
   findAgentId(input: { workspaceId: string; executionId: string }): Promise<string | null>;
+  /**
+   * Whether a user entry of the test's history names the photo, decided in the store without
+   * reading the transcript out; null for a test that is not this workspace's and agent's.
+   */
+  historyNamesImage(input: { workspaceId: string; agentId: string; executionId: string; imageId: string }): Promise<boolean | null>;
   findByIdempotencyKey(input: { workspaceId: string; agentId: string; idempotencyKey: string }): Promise<TestExecution | null>;
   /** Self-heals a side stuck "running" past its lease (an abandoned attempt) into "failed, retryable". */
   recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
@@ -331,8 +339,12 @@ export interface TestExecutionRepositoryPort {
    * `turn_in_progress`: another turn is still running. A settled turn, a failed one included,
    * never blocks the next message; its failed side stays retryable until a later turn starts.
    */
-  /** A turn with photos keeps `imageInput` on its user entries, and is listed by what the operator typed. */
-  claimTurn(input: { workspaceId: string; agentId: string; executionId: string; sideIds: readonly string[]; generation: number; turnId: string; attemptId: string; message: string; imageInput?: TestExecutionImageInput; inputFingerprint: string; now: Date; leaseMs: number; retry: boolean; spoken?: true }): Promise<"generation_conflict" | "turn_in_progress" | "turn_conflict" | "retry_invalid" | "attempt_conflict" | { claims: readonly TestExecutionClaim[] }>;
+  /**
+   * A new turn with photos keeps their `imageInput` on its user entries, is listed by what the
+   * operator typed, and binds their claim to the test in the same transaction, so a stored turn
+   * always names photos the test holds. A replay or a refusal binds nothing.
+   */
+  claimTurn(input: { workspaceId: string; agentId: string; executionId: string; sideIds: readonly string[]; generation: number; turnId: string; attemptId: string; message: string; photos?: TestExecutionTurnPhotos; inputFingerprint: string; now: Date; leaseMs: number; retry: boolean; spoken?: true }): Promise<"generation_conflict" | "turn_in_progress" | "turn_conflict" | "retry_invalid" | "attempt_conflict" | { claims: readonly TestExecutionClaim[] }>;
   complete(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; turnId: string; attemptId: string; fence: number; result: TestExecutionRunnerResult; now: Date; spoken?: true }): Promise<"stale" | TestExecution>;
   fail(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; turnId: string; attemptId: string; fence: number; code: string; now: Date }): Promise<"stale" | TestExecution>;
 }
@@ -358,7 +370,17 @@ interface TestExecutionServiceOptions {
   leaseMs?: number;
 }
 
-const fingerprint = (message: string): string => JSON.stringify(message);
+/**
+ * What a turn is recognised by when it is sent again: its text, or, for one with photos, what was
+ * typed and which photos it named. The readings stay out, so fresh photos that read the same are
+ * another turn, and a repeat matches before any photo is claimed.
+ */
+const fingerprint = (message: string, imageIds?: readonly string[]): string =>
+  imageIds?.length ? JSON.stringify({ message: message.trim(), imageIds }) : JSON.stringify(message);
+
+/** The fingerprint a stored user entry was sent with. */
+const storedFingerprint = (entry: TestExecutionHistoryEntry): string =>
+  entry.imageInput ? fingerprint(entry.imageInput.typedText, entry.imageInput.images.map((image) => image.id)) : fingerprint(entry.content);
 
 /** Typed so a caller (the dashboard, operator MCP) can tell "resend once it settles" from bad input. */
 const TEST_TURN_IN_PROGRESS_CODE = "test_turn_in_progress";
@@ -485,8 +507,10 @@ export class TestExecutionService {
    */
   private seededSummary(messages: readonly TestExecutionSeedMessage[]): TestExecutionSeededSummary {
     const userMessages = messages.filter((message) => message.role === "user");
-    const first = userMessages.find((message) => /\S/u.test(message.content));
-    return { turnCount: userMessages.length, firstMessage: first ? leadingCodePoints(first.content, SEEDED_FIRST_MESSAGE_CHARS) : null };
+    // A message with photos is labelled by what was typed, never the readings its text carries.
+    const labels = userMessages.map((message) => message.imageInput?.typedText ?? message.content);
+    const first = labels.find((label) => /\S/u.test(label));
+    return { turnCount: userMessages.length, firstMessage: first ? leadingCodePoints(first, SEEDED_FIRST_MESSAGE_CHARS) : null };
   }
 
   /**
@@ -609,22 +633,34 @@ export class TestExecutionService {
   }
 
   /**
-   * One typed turn on every side. A send's photos are claimed for their uploader first, and every
-   * side runs on the turn text with their readings; they are bound to this test once the turn is
-   * stored, and let go when it was not, so the operator can send them again.
+   * One typed turn on every side. A repeat of a turn the test already stored replays its answer, or
+   * is refused when it differs, and claims no photo. A new turn's photos are claimed for their
+   * uploader, every side runs on the turn text with their readings, and the store binds them to
+   * this test with the turn; when it stored no turn, they are let go so the operator can send them
+   * again.
    */
   async *streamMessage(input: TestExecutionMessageInput): AsyncGenerator<TestExecutionEvent> {
     if (!input.message.trim() && !input.photos?.ids.length) throw badRequest("Test message is required.");
     const execution = await this.requireExecution(input);
+    const sideIds = execution.sides.map((side) => side.id);
+    const inputFingerprint = fingerprint(input.message, input.photos?.ids);
+    const stored = execution.sides.flatMap((side) => side.history).find((entry) => entry.role === "user" && entry.turnId === input.turnId);
+    if (stored) {
+      const repeat = { ...input, message: stored.content };
+      yield* this.runClaims(execution, await this.claimTurn(execution, sideIds, repeat, false, { inputFingerprint }), repeat);
+      return;
+    }
     const photos = await this.claimPhotos(input);
     const turn = photos ? { ...input, message: photos.message } : input;
     let claimed: readonly TestExecutionClaim[];
     try {
-      claimed = await this.claimTurn(execution, execution.sides.map((side) => side.id), turn, false, photos?.imageInput);
-      await photos?.stored();
-    } finally {
-      await photos?.finish();
+      claimed = await this.claimTurn(execution, sideIds, turn, false, { inputFingerprint, ...(photos ? { photos: { imageInput: photos.imageInput, claim: photos.claim } } : {}) });
+    } catch (error) {
+      await photos?.release();
+      throw error;
     }
+    // A turn another request stored first comes back as a replay, which took none of these photos.
+    if (photos && claimed.some((side) => side.replay)) await photos.release();
     yield* this.runClaims(execution, claimed, turn);
   }
 
@@ -634,17 +670,20 @@ export class TestExecutionService {
     return this.options.photos.claim({
       workspaceId: input.workspaceId,
       agentId: input.agentId,
-      executionId: input.executionId,
       message: input.message,
       imageIds: input.photos.ids,
       owner: input.photos.owner,
     });
   }
 
-  /** Whether a message of this test carried the photo: sent in it, copied in by its seed, or kept from the comparison it continues. */
-  async carriesImage(input: { workspaceId: string; agentId: string; executionId: string; imageId: string }): Promise<boolean> {
-    const execution = await this.requireExecution(input);
-    return execution.sides.some((side) => side.history.some((entry) => entry.imageInput?.images.some((image) => image.id === input.imageId)));
+  /**
+   * Whether a message of this test names the photo: sent in it, copied in by its seed, or kept from
+   * the comparison it continues. Not-found for a test that is not this workspace's and agent's.
+   */
+  async namesImage(input: { workspaceId: string; agentId: string; executionId: string; imageId: string }): Promise<boolean> {
+    const names = await this.options.repository.historyNamesImage(input);
+    if (names === null) throw notFound("Test execution is unavailable.");
+    return names;
   }
 
   /**
@@ -680,7 +719,7 @@ export class TestExecutionService {
     if (!side) throw notFound("Test execution side is unavailable.");
     const latestUser = [...side.history].reverse().find((entry) => entry.role === "user" && entry.turnId === input.turnId);
     if (!latestUser) throw conflict("Retry must retain an existing failed turn input.");
-    const claims = await this.claimTurn(execution, [side.id], { ...input, message: latestUser.content }, true);
+    const claims = await this.claimTurn(execution, [side.id], { ...input, message: latestUser.content }, true, { inputFingerprint: storedFingerprint(latestUser) });
     yield* this.runClaims(execution, claims, { ...input, message: latestUser.content });
   }
 
@@ -690,9 +729,19 @@ export class TestExecutionService {
     return execution;
   }
 
-  private async claimTurn(execution: TestExecution, sideIds: readonly string[], input: TestExecutionMessageInput, retry: boolean, imageInput?: TestExecutionImageInput): Promise<readonly TestExecutionClaim[]> {
-    const { photos: _photos, ...turn } = input;
-    const claimed = await this.options.repository.claimTurn({ ...turn, ...(imageInput ? { imageInput } : {}), sideIds, retry, inputFingerprint: fingerprint(input.message), now: this.now(), leaseMs: this.leaseMs });
+  private async claimTurn(
+    execution: TestExecution,
+    sideIds: readonly string[],
+    input: TestExecutionMessageInput,
+    retry: boolean,
+    options: { inputFingerprint?: string; photos?: TestExecutionTurnPhotos } = {},
+  ): Promise<readonly TestExecutionClaim[]> {
+    const { photos: _uploaded, ...turn } = input;
+    const claimed = await this.options.repository.claimTurn({
+      ...turn,
+      ...(options.photos ? { photos: options.photos } : {}),
+      sideIds, retry, inputFingerprint: options.inputFingerprint ?? fingerprint(input.message), now: this.now(), leaseMs: this.leaseMs,
+    });
     if (claimed === "generation_conflict") throw conflict("Test execution generation is stale.");
     if (claimed === "turn_in_progress") throw new AppError(409, TEST_TURN_IN_PROGRESS_CODE, "Another test turn is still running. Send the next message after it settles.");
     if (claimed === "turn_conflict") throw conflict("This test turn was already sent. Send the next message as a new turn.");

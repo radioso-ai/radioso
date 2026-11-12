@@ -12,7 +12,7 @@ import { refuseHeadForAuditedMedia, requireDashboardFetch } from "../shared/dash
 import { authenticatedVisitorImageOwner, sendVisitorImage } from "../shared/visitorImageUpload.js";
 
 type TestChatImageRouteDependencies = WorkspaceSessionDependencies & {
-  testExecutionService: Pick<TestExecutionService, "carriesImage">;
+  testExecutionService: Pick<TestExecutionService, "namesImage">;
   visitorImages: Pick<VisitorImageService, "readForTestChat">;
 };
 
@@ -27,10 +27,11 @@ const testChatImageParamsSchema = z.object({
  * Chat transcript, for a teammate who may manage the agent and read its conversations, in a
  * dashboard session (`apiPrincipalRoutePolicy` refuses machine credentials). A test keeps its
  * transcript apart from conversations, so the conversation image route never finds its photos.
- * It serves a photo the test's transcript names, or one the caller uploaded, which their own
- * message shows before its turn is stored. Test Chat shows it in an `<img>` element, which cannot
- * carry the workspace header, so the workspace may come as a `workspaceId` query selector. A view
- * of a visitor's photo, copied in with a conversation, is audited.
+ * It serves a photo bound to the test, one its transcript names (from the comparison it continues
+ * or the conversation it started from), or one the caller uploaded, which their own message shows
+ * before its turn is stored; each check reads only what it needs. Test Chat shows it in an `<img>`
+ * element, which cannot carry the workspace header, so the workspace may come as a `workspaceId`
+ * query selector. Every view is audited.
  */
 export const createTestChatImageRoutes = (dependencies: TestChatImageRouteDependencies): Router => {
   const router = Router();
@@ -52,14 +53,14 @@ export const createTestChatImageRoutes = (dependencies: TestChatImageRouteDepend
         }
         const { agentId, executionId, imageId } = params.data;
         const { workspaceId, userId, authPrincipal } = res.locals as { workspaceId: string; userId?: string; authPrincipal?: AuthenticatedPrincipal };
-        const namedByTranscript = await dependencies.testExecutionService.carriesImage({ workspaceId, agentId, executionId, imageId });
         const bytes = await dependencies.visitorImages.readForTestChat({
           workspaceId,
           agentId,
+          testExecutionId: executionId,
           imageId,
-          namedByTranscript,
           caller: authenticatedVisitorImageOwner(authPrincipal),
           actorUserId: userId ?? null,
+          transcriptNamesImage: () => dependencies.testExecutionService.namesImage({ workspaceId, agentId, executionId, imageId }),
         });
         if (!bytes) {
           next(notFound("Image not found"));

@@ -6,7 +6,6 @@ import type { VisitorImageClaim, VisitorImageTurnInput } from "../../../src/modu
 
 const IMAGE_A = "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12";
 const IMAGE_B = "7d4f0a3b-2e5c-4c9f-8a1b-3b5d7f9c1e23";
-const EXECUTION = "3a5c7e9b-1d3f-4a5c-8e9b-1d3f5a7c9e44";
 const OPERATOR = { kind: "user" as const, id: "5b7d9f1c-3e5a-4b7d-9f1c-3e5a7b9d1f55" };
 
 const claim: VisitorImageClaim = {
@@ -26,7 +25,6 @@ const imagesPort = () => ({
 const send = {
   workspaceId: "workspace-1",
   agentId: "agent-1",
-  executionId: EXECUTION,
   message: "  Something like this, near the coast ",
   imageIds: [IMAGE_A, IMAGE_B],
   owner: OPERATOR,
@@ -50,22 +48,20 @@ describe("Test Chat photo turns", () => {
     });
   });
 
-  it("binds the photos to the test once its turn is stored, and then never lets them go", async () => {
+  it("hands over the claim for the test's store to bind with the turn, binding nothing itself", async () => {
     const visitorImages = imagesPort();
+
     const turn = await createTestChatPhotoTurns(visitorImages).claim(send);
 
-    await turn.stored();
-    await turn.finish();
-
-    expect(visitorImages.bind).toHaveBeenCalledWith({ workspaceId: "workspace-1", claim, testExecutionId: EXECUTION });
-    expect(visitorImages.release).not.toHaveBeenCalled();
+    expect(turn.claim).toBe(claim);
+    expect(visitorImages.bind).not.toHaveBeenCalled();
   });
 
   it("lets the photos go when the test stored no turn, so the operator can send them again", async () => {
     const visitorImages = imagesPort();
     const turn = await createTestChatPhotoTurns(visitorImages).claim(send);
 
-    await turn.finish();
+    await turn.release();
 
     expect(visitorImages.bind).not.toHaveBeenCalled();
     expect(visitorImages.release).toHaveBeenCalledWith({ workspaceId: "workspace-1", claim });

@@ -179,10 +179,17 @@ describeDb("test execution repository", () => {
     const executionId = randomUUID(), sideId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
     await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
     const imageInput = { typedText: "Something like this", images: [{ id: randomUUID(), reading: "A stone farmhouse." }] };
+    const claim = { claimId: randomUUID(), images: imageInput.images };
     const message = "Something like this\n<attached_photo index=\"1\">A stone farmhouse.</attached_photo>";
+    const bound: unknown[] = [];
+    const photoRepository = new TestExecutionRepository(database.kysely, async (_trx, input) => { bound.push(input); });
 
-    const claimed = await repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId, message, imageInput, inputFingerprint: message, now: new Date(1_000), leaseMs: 30_000, retry: false });
+    const claimed = await photoRepository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId, message, photos: { imageInput, claim }, inputFingerprint: message, now: new Date(1_000), leaseMs: 30_000, retry: false });
     if (typeof claimed === "string") throw new Error(claimed);
+    expect(bound).toEqual([{ workspaceId, testExecutionId: executionId, claim }]);
+    const replay = await photoRepository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId, message, photos: { imageInput, claim }, inputFingerprint: message, now: new Date(2_000), leaseMs: 30_000, retry: false });
+    expect(replay).toBe("turn_conflict");
+    expect(bound).toHaveLength(1);
 
     expect(claimed.claims[0]?.attempt.message).toBe(message);
     await expect(repository.find({ workspaceId, agentId, executionId })).resolves.toMatchObject({ sides: [{ history: [{ role: "user", content: message, imageInput }] }] });

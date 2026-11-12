@@ -80,7 +80,9 @@ three, with or without `message`; only the credential or signed-in user that
 uploaded a photo can send it, once. Every side runs on the message followed by
 one `<attached_photo>` block per photo, and the user entry in the side's
 `history` keeps `content` as that turn text and `imageInput` as what was typed
-and each photo's id and reading. Read a photo back with
+and each photo's id and reading. A repeat of a completed photo turn, with the
+same `turnId`, `attemptId` and `imageIds`, replays its answer like any other;
+the same turn with other photos is refused with `409`. Read a photo back with
 `GET /api/v1/agents/{agentId}/test-executions/{executionId}/images/{imageId}` in
 a dashboard session. The agent takes photos in a test exactly when it takes them
 from visitors; see [Let visitors send photos](/guides/image-input#try-photos-in-test-chat).

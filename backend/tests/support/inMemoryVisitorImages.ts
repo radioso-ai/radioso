@@ -92,6 +92,11 @@ export class InMemoryVisitorImageStore implements VisitorImageStore {
     return row && row.workspaceId === input.workspaceId && row.agentId === input.agentId && carried(row) ? row : null;
   }
 
+  async findInTest(input: { workspaceId: string; agentId: string; testExecutionId: string; id: string }): Promise<StoredVisitorImage | null> {
+    const row = this.rows.get(input.id);
+    return row && row.workspaceId === input.workspaceId && row.agentId === input.agentId && row.testExecutionId === input.testExecutionId ? row : null;
+  }
+
   async findInConversation(input: { workspaceId: string; conversationId: string; id: string }): Promise<StoredVisitorImage | null> {
     const row = this.rows.get(input.id);
     return row && row.workspaceId === input.workspaceId && row.conversationId === input.conversationId ? row : null;

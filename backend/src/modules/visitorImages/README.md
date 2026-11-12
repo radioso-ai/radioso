@@ -51,14 +51,17 @@ rather than to a message. `modules/chat/services/testChatPhotoTurns.ts`
 implements the test-execution module's `TestExecutionPhotoTurnsPort` over the
 door's `claimVisitorImageTurn`: the same owner check (the credential or
 signed-in user that uploaded through `POST /api/v1/assistant/images`), the same
-turn text and `imageInput`, bound to the test once its turn is stored and let
-go when it was not. Whether a test takes photos is the agent's
+turn text and `imageInput`. The test's store binds the claim to the test in the
+transaction that stores the turn (`bindVisitorImageClaimIn`, wired in
+`app/composition/testExecution.ts`), so a stored turn always names photos the
+test holds; when no turn was stored the photos are let go. Whether a test takes photos is the agent's
 `VisitorImageAvailability`: the photo switch and the chat model belong to the
-agent, which every revision runs on. `readForTestChat` serves a photo a test's
-transcript names (sent in it, kept from the comparison it continues, or copied
-in with the conversation it started from), or one the caller uploaded before
-its turn is stored; a visitor's photo copied in with a conversation is audited
-like any teammate view. Its route is
+agent, which every revision runs on. `readForTestChat` serves a photo bound to the test,
+then one its transcript names (from the comparison it continues or the
+conversation it started from), then the caller's own upload before its turn is
+stored, each read narrowly. Every view is audited, since every teammate can open
+a test: a visitor's photo as `conversation.image_viewed`, any other as
+`agent.test_execution.image_viewed`. Its route is
 `app/http/routes/testChatImageRoutes.ts`.
 
 ## Public Surfaces

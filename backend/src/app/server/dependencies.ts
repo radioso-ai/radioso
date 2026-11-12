@@ -582,7 +582,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     validateManyForServing: routineDefinitionService.validateManyForServing.bind(routineDefinitionService),
   }, logger);
   const testExecutionService = buildTestExecutionService({
-    store: repositories.testExecutionRepository,
+    db: infrastructure.database.kysely,
     agentRevisions: agentRevisionService,
     contextCatalog: contextVariableRepository,
     agentRepository: repositories.agentRepository,

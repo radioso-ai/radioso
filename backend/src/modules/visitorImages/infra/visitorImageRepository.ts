@@ -1,5 +1,7 @@
 import type { Kysely, Selectable } from "kysely";
 
+import type { VisitorImageClaim, VisitorImageHolder } from "../contracts/turnInput.js";
+
 import { anyOf } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB } from "../../../shared/infra/kysely/types.js";
 import type {
@@ -161,6 +163,18 @@ export class PostgresVisitorImageStore implements VisitorImageStore {
     return row ? mapRow(row) : null;
   }
 
+  async findInTest(input: { workspaceId: string; agentId: string; testExecutionId: string; id: string }): Promise<StoredVisitorImage | null> {
+    const row = await this.db
+      .selectFrom("visitor_images")
+      .selectAll()
+      .where("workspace_id", "=", input.workspaceId)
+      .where("agent_id", "=", input.agentId)
+      .where("test_execution_id", "=", input.testExecutionId)
+      .where("id", "=", input.id)
+      .executeTakeFirst();
+    return row ? mapRow(row) : null;
+  }
+
   async findInConversation(input: { workspaceId: string; conversationId: string; id: string }): Promise<StoredVisitorImage | null> {
     const row = await this.db
       .selectFrom("visitor_images")
@@ -176,3 +190,15 @@ export class PostgresVisitorImageStore implements VisitorImageStore {
     await this.db.deleteFrom("visitor_images").where("workspace_id", "=", input.workspaceId).where("id", "=", input.id).execute();
   }
 }
+
+/**
+ * Binds a claim's photos to what holds them through the caller's transaction, so the photos and the
+ * record that names them are written together. Throws when it bound fewer than were claimed, which
+ * rolls the record back rather than let it name photos nothing holds.
+ */
+export const bindVisitorImageClaimIn = (db: Kysely<DB>) =>
+  async (input: { workspaceId: string; claim: VisitorImageClaim; boundAt: Date } & VisitorImageHolder): Promise<void> => {
+    const { claim, ...binding } = input;
+    const bound = await new PostgresVisitorImageStore(db).bindClaim({ ...binding, claimId: claim.claimId });
+    if (bound !== claim.images.length) throw new Error("visitor_image_bind_short");
+  };

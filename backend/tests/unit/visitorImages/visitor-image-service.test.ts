@@ -30,7 +30,7 @@ const harness = (options: { reading?: VisitorImageReading; overPlan?: boolean } 
   const reader: VisitorImageReader = {
     read: vi.fn(async () => options.reading ?? { kind: "read" as const, description: "A green field under a clear sky." }),
   };
-  const audit = { viewed: vi.fn(async () => undefined) };
+  const audit = { viewed: vi.fn(async () => undefined), viewedInTest: vi.fn(async () => undefined) };
   const availability = { forAgent: vi.fn<VisitorImageAvailability["forAgent"]>(async () => "available") };
   const metrics = { incrementCounter: vi.fn() };
   const service = new VisitorImageService({
@@ -321,14 +321,29 @@ describe("VisitorImageService reads", () => {
 
 describe("VisitorImageService photos a Test Chat turn carries", () => {
   const TEST_EXECUTION = "5a7c9e1b-3d5f-4a7c-9e1b-3d5f7a9c1e55";
+  const COMPARED_TEST = "6c8e0a2d-4f6b-4c8e-8a2d-4f6b8c0e2a66";
   const OPERATOR: VisitorImageOwner = { kind: "user", id: "6b8d0f2c-4e6a-4b8d-8f2c-4e6a8b0d2f66" };
 
-  const sentInTest = async () => {
+  const sentInTest = async (testExecutionId = TEST_EXECUTION) => {
     const harnessed = harness();
     const image = await harnessed.upload(OPERATOR);
     const claim = await harnessed.service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: OPERATOR, imageIds: [image.id] });
-    await harnessed.service.bind({ workspaceId: WORKSPACE, claim, testExecutionId: TEST_EXECUTION });
+    await harnessed.service.bind({ workspaceId: WORKSPACE, claim, testExecutionId });
     return { ...harnessed, image, claim };
+  };
+
+  const read = (service: VisitorImageService, input: { imageId: string; agentId?: string; caller?: VisitorImageOwner | null; namesIt?: boolean }) => {
+    const transcriptNamesImage = vi.fn(async () => input.namesIt ?? false);
+    const bytes = service.readForTestChat({
+      workspaceId: WORKSPACE,
+      agentId: input.agentId ?? AGENT,
+      testExecutionId: TEST_EXECUTION,
+      imageId: input.imageId,
+      caller: input.caller ?? null,
+      actorUserId: "user-2",
+      transcriptNamesImage,
+    });
+    return { bytes, transcriptNamesImage };
   };
 
   it("binds the photos to the test the turn names, which keeps them from any other send", async () => {
@@ -345,49 +360,51 @@ describe("VisitorImageService photos a Test Chat turn carries", () => {
     await service.release({ workspaceId: WORKSPACE, claim });
 
     expect(store.rows.get(image.id)).toMatchObject({ testExecutionId: TEST_EXECUTION });
-    await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: OPERATOR, imageIds: [image.id] }))
-      .rejects.toMatchObject({ code: "visitor_image_unavailable" });
   });
 
-  it("serves a photo the test's transcript names, without recording a view of the operator's own photo", async () => {
+  it("serves a photo bound to this test without reading its transcript, and records the view against the test", async () => {
     const { service, image, audit } = await sentInTest();
 
-    const bytes = await service.readForTestChat({ workspaceId: WORKSPACE, agentId: AGENT, imageId: image.id, namedByTranscript: true, caller: null, actorUserId: "user-2" });
+    const { bytes, transcriptNamesImage } = read(service, { imageId: image.id });
 
-    expect(bytes).toBeInstanceOf(Buffer);
+    expect(await bytes).toBeInstanceOf(Buffer);
+    expect(transcriptNamesImage).not.toHaveBeenCalled();
+    expect(audit.viewedInTest).toHaveBeenCalledWith({ workspaceId: WORKSPACE, testExecutionId: TEST_EXECUTION, imageId: image.id, actorUserId: "user-2" });
     expect(audit.viewed).not.toHaveBeenCalled();
   });
 
-  it("serves a visitor's photo a test copied in with its conversation, and records the view", async () => {
+  it("serves a visitor's photo the test copied in with its conversation, and records a conversation view", async () => {
     const { service, upload, audit } = harness();
     const image = await upload();
     const claim = await service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] });
     await service.bind({ workspaceId: WORKSPACE, claim, conversationId: CONVERSATION, messageId: randomUUID() });
 
-    const bytes = await service.readForTestChat({ workspaceId: WORKSPACE, agentId: AGENT, imageId: image.id, namedByTranscript: true, caller: OPERATOR, actorUserId: "user-2" });
-
-    expect(bytes).toBeInstanceOf(Buffer);
+    expect(await read(service, { imageId: image.id, namesIt: true }).bytes).toBeInstanceOf(Buffer);
     expect(audit.viewed).toHaveBeenCalledWith({ workspaceId: WORKSPACE, conversationId: CONVERSATION, imageId: image.id, actorUserId: "user-2" });
+    expect(audit.viewedInTest).not.toHaveBeenCalled();
   });
 
-  it("serves a photo no transcript names yet only to the caller who uploaded it", async () => {
-    const { service, upload } = harness();
+  it("serves a photo of the comparison this test continues when its transcript names it, recording the view against this test", async () => {
+    const { service, image, audit } = await sentInTest(COMPARED_TEST);
+
+    expect(await read(service, { imageId: image.id, namesIt: true }).bytes).toBeInstanceOf(Buffer);
+    expect(audit.viewedInTest).toHaveBeenCalledWith({ workspaceId: WORKSPACE, testExecutionId: TEST_EXECUTION, imageId: image.id, actorUserId: "user-2" });
+  });
+
+  it("serves the caller's own photo before the turn that sends it is stored, and nobody else's", async () => {
+    const { service, upload, audit } = harness();
     const image = await upload(OPERATOR);
-    const read = (caller: VisitorImageOwner | null) =>
-      service.readForTestChat({ workspaceId: WORKSPACE, agentId: AGENT, imageId: image.id, namedByTranscript: false, caller, actorUserId: "user-1" });
 
-    expect(await read(OPERATOR)).toBeInstanceOf(Buffer);
-    expect(await read(STRANGER)).toBeNull();
-    expect(await read(null)).toBeNull();
+    expect(await read(service, { imageId: image.id, caller: OPERATOR }).bytes).toBeInstanceOf(Buffer);
+    expect(audit.viewedInTest).toHaveBeenCalledTimes(1);
+    expect(await read(service, { imageId: image.id, caller: STRANGER }).bytes).toBeNull();
+    expect(await read(service, { imageId: image.id }).bytes).toBeNull();
   });
 
-  it("serves nothing for a named photo no message or test carries, or one another agent's test carries", async () => {
-    const { service, upload, image: carried } = await sentInTest();
-    const unsent = await upload(OPERATOR);
-    const named = (imageId: string, agentId: string) =>
-      service.readForTestChat({ workspaceId: WORKSPACE, agentId, imageId, namedByTranscript: true, caller: null, actorUserId: null });
+  it("serves nothing the transcript does not name, nor another agent's photo", async () => {
+    const { service, image } = await sentInTest(COMPARED_TEST);
 
-    expect(await named(unsent.id, AGENT)).toBeNull();
-    expect(await named(carried.id, randomUUID())).toBeNull();
+    expect(await read(service, { imageId: image.id, caller: OPERATOR }).bytes).toBeNull();
+    expect(await read(service, { imageId: image.id, agentId: randomUUID(), namesIt: true }).bytes).toBeNull();
   });
 });

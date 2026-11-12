@@ -11,6 +11,8 @@ import {
   type TestExecution,
   type TestExecutionHistoryEntry,
   type TestExecutionRepositoryPort,
+  type TestExecutionRunnerResult,
+  type TestExecutionTurnPhotos,
   type TrustedTestExecutionRunnerPort,
 } from "../../src/modules/test-execution/testExecution.js";
 import type { VisitorImageService } from "../../src/modules/visitorImages/public.js";
@@ -26,10 +28,11 @@ const photo = (): Promise<Buffer> =>
  * One single test in memory, as the test-execution store keeps it: a turn's user entry, with its
  * photos, is stored when the turn is claimed, and its answer when the side completes.
  */
-const memoryTest = (agentId: string, workspaceId: string) => {
+const memoryTest = (agentId: string, workspaceId: string, bind: (input: { workspaceId: string; testExecutionId: string; claim: TestExecutionTurnPhotos["claim"] }) => Promise<void>) => {
   const executionId = randomUUID();
   const sideId = randomUUID();
   const history: TestExecutionHistoryEntry[] = [];
+  const turns = new Map<string, { fingerprint: string; answer?: TestExecutionRunnerResult }>();
   const execution = (): TestExecution => ({
     id: executionId, workspaceId, agentId, mode: "single", generation: 1, state: "completed", testValues: [], skillEffects: "suppressed",
     sides: [{
@@ -41,10 +44,21 @@ const memoryTest = (agentId: string, workspaceId: string) => {
   const repository = {
     find: async (input: { executionId: string }) => (input.executionId === executionId ? execution() : null),
     claimTurn: async (input: Parameters<TestExecutionRepositoryPort["claimTurn"]>[0]) => {
-      history.push({ turnId: input.turnId, attemptId: input.attemptId, role: "user", content: input.message, createdAt: input.now, ...(input.imageInput ? { imageInput: input.imageInput } : {}) });
-      return { claims: [{ sideId, attempt: { executionId, sideId, turnId: input.turnId, attemptId: input.attemptId, message: input.message, inputFingerprint: input.inputFingerprint, fence: 1, leaseExpiresAt: new Date(Date.now() + 60_000), state: "running" as const } }] };
+      const attempt = { executionId, sideId, turnId: input.turnId, attemptId: input.attemptId, message: input.message, inputFingerprint: input.inputFingerprint, fence: 1, leaseExpiresAt: new Date(Date.now() + 60_000), state: "running" as const };
+      const known = turns.get(input.turnId);
+      if (known) return known.fingerprint === input.inputFingerprint && known.answer ? { claims: [{ sideId, attempt, replay: known.answer }] } : "turn_conflict";
+      if (input.photos) await bind({ workspaceId, testExecutionId: executionId, claim: input.photos.claim });
+      turns.set(input.turnId, { fingerprint: input.inputFingerprint });
+      history.push({ turnId: input.turnId, attemptId: input.attemptId, role: "user", content: input.message, createdAt: input.now, ...(input.photos ? { imageInput: input.photos.imageInput } : {}) });
+      return { claims: [{ sideId, attempt }] };
     },
-    complete: async () => execution(),
+    complete: async (input: { turnId: string; result: TestExecutionRunnerResult }) => {
+      turns.set(input.turnId, { ...turns.get(input.turnId)!, answer: input.result });
+      return execution();
+    },
+    historyNamesImage: async (input: { executionId: string; imageId: string }) => (input.executionId === executionId
+      ? history.some((entry) => entry.imageInput?.images.some((image) => image.id === input.imageId))
+      : null),
     fail: async () => execution(),
   } as unknown as TestExecutionRepositoryPort;
   return { executionId, history, repository };
@@ -68,7 +82,13 @@ const testChatWorkspace = async (options: { visitorImagesEnabled?: boolean } = {
   const testExecutionService = new TestExecutionService({
     revisions: { findRevision: vi.fn(), readDraftGeneration: vi.fn() },
     contextCatalog: { get: vi.fn() },
-    repository: { find: (input: never) => test!.repository.find(input), claimTurn: (input: never) => test!.repository.claimTurn(input), complete: (input: never) => test!.repository.complete(input), fail: (input: never) => test!.repository.fail(input) } as unknown as TestExecutionRepositoryPort,
+    repository: {
+      find: (input: never) => test!.repository.find(input),
+      claimTurn: (input: never) => test!.repository.claimTurn(input),
+      complete: (input: never) => test!.repository.complete(input),
+      fail: (input: never) => test!.repository.fail(input),
+      historyNamesImage: (input: never) => test!.repository.historyNamesImage(input),
+    } as unknown as TestExecutionRepositoryPort,
     runner,
     photos: { claim: (input) => createTestChatPhotoTurns(visitorImages!).claim(input) },
     usageLimitPolicy: new NoopUsageLimitPolicy(),
@@ -84,7 +104,7 @@ const testChatWorkspace = async (options: { visitorImagesEnabled?: boolean } = {
   if (options.visitorImagesEnabled !== false) {
     await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ visitorImagesEnabled: true }).expect(200);
   }
-  test = memoryTest(agentId, operator.workspaceId);
+  test = memoryTest(agentId, operator.workspaceId, (input) => visitorImages.bind(input));
   const executionId = test.executionId;
   const image = await photo();
   const upload = () => request(app).post(`/api/v1/assistant/images?agentId=${agentId}`).set(dashboard).attach("image", image, "photo.png");
@@ -160,6 +180,34 @@ describe("Test Chat photos", () => {
 
     expect(refused.status).toBe(404);
     expect(refused.body).toMatchObject({ error: { code: "visitor_images_unavailable" } });
+  });
+
+  it("replays a photo turn sent again with the same identity, rather than refusing its photos", async () => {
+    const { upload, send, runs } = await testChatWorkspace();
+    const uploaded = await upload().expect(201);
+    const identity = { turnId: randomUUID(), attemptId: randomUUID() };
+    await send({ message: "Something like this", imageIds: [uploaded.body.id], ...identity }).expect(200);
+
+    const again = await send({ message: "Something like this", imageIds: [uploaded.body.id], ...identity });
+
+    expect(again.status).toBe(200);
+    expect(again.text).toContain("Here are three like it.");
+    expect(runs).toHaveLength(1);
+  });
+
+  it("records each teammate view of a Test Chat photo against the test", async () => {
+    const { upload, send, view, operator, executionId, dependencies } = await testChatWorkspace();
+    const uploaded = await upload().expect(201);
+    await send({ message: "Something like this", imageIds: [uploaded.body.id] }).expect(200);
+
+    await view(uploaded.body.id as string).expect(200);
+
+    const events = (dependencies.auditService as unknown as { events: Array<{ eventType: string; workspaceId?: string | null; metadata?: Record<string, unknown> }> }).events
+      .filter((event) => event.eventType === "agent.test_execution.image_viewed");
+    expect(events).toEqual([expect.objectContaining({
+      workspaceId: operator.workspaceId,
+      metadata: { testExecutionId: executionId, imageId: uploaded.body.id, actorUserId: operator.userId },
+    })]);
   });
 
   it("shows no photo the test does not carry and the caller did not upload, and none to a machine credential", async () => {

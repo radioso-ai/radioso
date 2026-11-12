@@ -1,7 +1,7 @@
 /**
- * How many photos this process decodes at once, with a short wait for a free slot. Decoding runs
- * on libuv's thread pool, which dns, fs and zlib share, so a burst of uploads must not take all of
- * it; work that waits past `waitMs` is refused as `busy` instead of queueing without end.
+ * How many images decode at once, with a short wait for a free slot. Decoding runs on libuv's
+ * thread pool, which dns, fs and zlib share, so a burst of uploads must not take all of it; work
+ * that waits past `waitMs` is refused as `busy` instead of queueing without end.
  */
 export class NormalizationSlots {
   private active = 0;
@@ -9,11 +9,12 @@ export class NormalizationSlots {
 
   constructor(
     private readonly limit: number,
-    private readonly waitMs: number,
+    readonly waitMs: number,
   ) {}
 
-  async run<T>(work: () => Promise<T>): Promise<T | "busy"> {
-    if (!await this.acquire()) return "busy";
+  /** `waitMs` replaces the pool's wait for this call, as when a caller's own deadline has partly run out. */
+  async run<T>(work: () => Promise<T>, options: { readonly waitMs?: number } = {}): Promise<T | "busy"> {
+    if (!await this.acquire(options.waitMs ?? this.waitMs)) return "busy";
     try {
       return await work();
     } finally {
@@ -21,7 +22,7 @@ export class NormalizationSlots {
     }
   }
 
-  private acquire(): Promise<boolean> {
+  private acquire(waitMs: number): Promise<boolean> {
     if (this.active < this.limit) {
       this.active += 1;
       return Promise.resolve(true);
@@ -35,7 +36,7 @@ export class NormalizationSlots {
       const timer = setTimeout(() => {
         this.waiting.splice(this.waiting.indexOf(grant), 1);
         resolve(false);
-      }, this.waitMs);
+      }, waitMs);
       this.waiting.push(grant);
     });
   }

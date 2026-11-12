@@ -1132,11 +1132,12 @@ Related specs:
 ## Visitor Images
 
 Owns the photos a visitor or an API caller attaches to a chat message. The
-`visitorImages` module validates and re-encodes each upload (JPEG, PNG or WebP
-by magic bytes; `sharp` to a JPEG at most 1,600 px and 512 KB with no
-metadata), stores it under `workspaces/<ws>/visitor-images/<id>` through
-document storage, and reads it once at upload with the agent's chat model
-(`visitor_image.read`, fail-open to `unread`). The chat door
+`visitorImages` module validates and re-encodes each upload through the shared
+image codec (JPEG, PNG or WebP by magic bytes; `sharp` to a JPEG at most
+1,600 px and 512 KB with no metadata), stores it under
+`workspaces/<ws>/visitor-images/<id>` through document storage, and reads it
+once at upload with the agent's chat model (`visitor_image.read`, fail-open to
+`unread`). The chat door
 (`AssistantChatService`) claims a send's photos for their owner through the
 `VisitorImageTurnInput` port, runs the turn on the typed text followed by
 `<attached_photo>` blocks, stores `inputMetadata.imageInput`, and binds the claim
@@ -1168,7 +1169,7 @@ Public surfaces and key files:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/unit/agents/agent-visitor-images-flag.test.ts tests/contract/visitor-images.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/shared/images tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/unit/agents/agent-visitor-images-flag.test.ts tests/contract/visitor-images.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/visitor-images.integration.test.ts --no-file-parallelism`
 - `cd backend && pnpm exec vitest run tests/unit/connectors/connectorImageTurns.test.ts tests/unit/connectors/connectorChatPort.test.ts tests/unit/connectors/whatsapp tests/contract/connectors/connector-chat-port.contract.test.ts` (WhatsApp photos)
 - `cd typescript-sdk && pnpm exec vitest run tests/unit/chat-images.test.ts`
@@ -1178,6 +1179,46 @@ Related specs and docs:
 
 - `specs/visitor-image-input/spec.md`
 - [Let visitors send photos](../../docs-portal/content/guides/image-input.mdx)
+
+## Image Codec And Bounded Public Fetches
+
+Shared infrastructure for any image Radioso stores, whoever supplies it. The
+codec in `backend/src/shared/infra/images/` decides an image's type from its
+magic bytes, testing only the signatures of types the caller accepts. JPEG,
+PNG, WebP, GIF (first frame only) and AVIF are available; SVG never is. AVIF
+brands are read from the first 64 bytes of the `ftyp` box, whatever size the
+file declares. It then decodes with `sharp` under the caller's pixel cap, which
+the decoder must agree with, and re-encodes upright, with no metadata. A caller
+picks the output: `encodeJpegUnder` gives one JPEG within a byte budget (visitor
+images), and `encodeWebpRenditions` gives one WebP per requested width, at most
+16,383 px tall. A failure past the header checks is `encode_failed`.
+
+At most two images decode at once in the process, whichever caller asks, so
+libuv's four-thread pool keeps two threads for dns, fs and zlib; `sharp` runs
+one thread per image with its cache off. A caller may bring its own
+`NormalizationSlots` pool as its share of those two: its images wait there
+first, then for a process slot, within that pool's wait. Each caller owns its
+policy (types, limits, pool, sizes); the codec owns none.
+
+`fetchPublicBytes` (`backend/src/shared/infra/http/publicBytesFetch.ts`) is the
+opt-in bounded form of `fetchPublicUrl` for third-party bytes. It sets one
+timeout for every hop and the body, and a byte cap on the declared length and
+on the stream. It can check a content-type prefix and send an `Accept` header.
+It follows redirects one at a time, re-checking each target before requesting
+it. Failures come back as typed reasons. Callers that need no bounds use
+`fetchPublicUrl` directly.
+
+Public surfaces and key files:
+
+- `backend/src/shared/infra/images/imageSniff.ts` (`sniffImageType`,
+  `ImageSourceType`), `guardedDecode.ts` (`decodeGuarded`, `DecodeGuard`),
+  `normalizationSlots.ts`, `encodeJpegUnder.ts`, `encodeWebpRenditions.ts`
+- `backend/src/shared/infra/http/publicBytesFetch.ts` (`fetchPublicBytes`)
+- Codec callers: `backend/src/modules/visitorImages/services/imageNormalizer.ts` (visitor images)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/shared/images tests/unit/visitorImages/image-normalizer.test.ts tests/unit/visitorImages/image-normalizer-byte-identity.test.ts tests/unit/public-bytes-fetch.test.ts tests/unit/public-url-fetch.test.ts`
 
 ## Conversation Erasure
 
@@ -1666,6 +1707,7 @@ Public surfaces and contracts:
 - `packages/conversation-contract/renderableTurn.d.ts` (`RenderableTurn`, `PendingRenderableTurn`, `DirectiveAdherenceEntry`) and `replyBlocks.d.ts` (`ReplyBlock`, the `item_list` kind and its item, image and action primitives a turn's `blocks` carry); both re-exported from `index.d.ts`
 - `packages/conversation-contract/routineConsent.d.ts` (a routine's consents before a sensitive slot, #1544: the compiled `RoutineConsent`, the `ConversationRoutineConsentPort` a host asks and reads them through, and the `RoutineConsentEvent`s a turn reports in `RoutineHostEffects.consentEvents`; re-exported from `index.d.ts`)
 - `packages/conversation-contract/routineReentry.d.ts` (whether a routine that already ended starts again: `ConversationRoutineReentryGate`; re-exported from `index.d.ts`)
+- `packages/conversation-contract/skillOutcome.d.ts` (what a skill reports when it runs: `SkillOutcome`, its status, control and error; re-exported from `index.d.ts`)
 - `packages/conversation-contract/index.js` (runtime values of the `declare const` code lists; change the two together)
 
 Useful searches:
@@ -2448,6 +2490,9 @@ Public surfaces and contracts:
   `BackgroundJobStore`, `BackgroundJobRuntime`)
 - `backend/src/app/composition/backgroundJobs.ts` (queue, runtime, retention
   sweep) and `createDefaultBackgroundJobWake` in `defaultComposition.ts`
+- `backend/src/app/composition/backgroundJobHandlers.ts` (every kind's handler,
+  the list `dependencies.ts` builds the runtime over; a new kind adds an input
+  field and a list entry here, and its argument in `dependencies.ts`)
 
 Primary internals:
 

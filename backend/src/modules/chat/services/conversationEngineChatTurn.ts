@@ -84,8 +84,11 @@ interface RunPreparedChatTurnWithConversationEngineInput {
   routineRunner?: ConversationRoutineRunner;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
-  /** One info line per fallback dispatch: identifiers and reason codes, never content. */
-  logger?: Pick<AppLogger, "info">;
+  /**
+   * One info line per fallback dispatch, and a warning when a routine reply's blocks cannot be
+   * restored: identifiers and reason codes, never content.
+   */
+  logger?: Pick<AppLogger, "info" | "warn">;
 }
 
 interface RunPreparedChatTurnWithConversationEngineResult {
@@ -137,6 +140,7 @@ const toRenderableTurn = (
   answer: presentation.answer,
   citations: presentation.citations,
   suggestions: presentation.suggestions,
+  ...(presentation.replyBlocks ? { blocks: presentation.replyBlocks.presented } : {}),
   metadata: {
     skillName: presentation.skillName,
     skillOutcome: presentation.skillOutcome,
@@ -305,6 +309,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
     rendered = presentRoutineRenderableAnswer(
       input.chatAnswerPresenter,
       result.response,
+      { logger: input.logger, conversation: input.session.conversation },
     );
   }
   if (!rendered) {
@@ -478,6 +483,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
           ? presentRoutineRenderableAnswer(
               input.chatAnswerPresenter,
               result.response,
+              { logger: input.logger, conversation: input.session.conversation },
             )
           : null);
         if (!presentation) {

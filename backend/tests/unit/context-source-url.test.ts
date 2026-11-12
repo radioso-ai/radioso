@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveContextSourceUrl } from "../../src/modules/retrieval/services/contextSourceUrl.js";
+import { resolveContextSourceUrl } from "../../src/modules/retrieval/domain/contextSourceUrl.js";
 
 describe("resolveContextSourceUrl", () => {
   it("returns a safe http(s) url from sourceUrl metadata", () => {

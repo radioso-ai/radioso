@@ -62,7 +62,10 @@ import type { SlackInstallationService } from "../../modules/slack/public.js";
 import type { CustomerEmailConnectionService, CustomerEmailOAuthService, EmailSkillDefinitionService } from "../../modules/customerEmail/public.js";
 import type { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 import type { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
-import type { ChunkRepositoryPort, DocumentRepositoryPort } from "../../modules/documents/contracts/index.js";
+import type {
+  ChunkRepositoryPort,
+  DocumentRepositoryPort,
+} from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -75,7 +78,8 @@ import type {
   ConnectorSourceDirectory,
 } from "../../modules/connectors/services/public.js";
 import type { EmailChannelWorker } from "../../modules/connectors/plugins/index.js";
-import type { EmailChannelOperatorServices, EmailReviewChecks } from "../composition/emailChannel/index.js";
+import type { EmailChannelOperatorServices, EmailChannelOptions, EmailReviewChecks } from "../composition/emailChannel/index.js";
+import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";
@@ -105,6 +109,7 @@ import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type {
   ApplicationAccountAdministratorDirectoryPort,
+  ApplicationModule,
   ApplicationModuleCoordinator,
   ApplicationNoticeMailPort,
   ApplicationPeriodicTaskHandle,
@@ -187,6 +192,7 @@ import type {
 import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
 import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import type { RequestSourceDigestPort } from "../http/middleware/requestSource.js";
+import type { ReplyImageObjectLookup } from "../http/routes/replyImageAddress.js";
 import type { AgentConverseSessionMappingPort } from "../../modules/settings/contracts/agentConverseSession.js";
 import type {
   OperatorMcpAuthorizationService,
@@ -197,6 +203,15 @@ import type { PersistedOperatorMcpClient } from "../../modules/operatorMcpAuthor
 import type { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import type { ConversationLinkResolver } from "../../shared/domain/conversationLinkResolver.js";
 import type { RevisionEvalRunService } from "../../modules/eval/services/revisionEvalRun.js";
+
+/** How `buildDependencies` is varied by the harnesses and entry points that assemble the app. */
+export interface BuildDependenciesOptions {
+  modules?: ApplicationModule[];
+  realtimePublisherComposition?: RealtimePublisherComposition;
+  operatorMcpPreregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
+  /** Test and harness overrides of the email channel's fixed timings, limits and local spool. */
+  emailChannel?: EmailChannelOptions;
+}
 
 export interface AppDependencies {
   env: Env;
@@ -311,6 +326,8 @@ export interface AppDependencies {
   websiteCrawlJobConsumer?: JobConsumerPort;
   documentDeletionService: DocumentDeletionService;
   documentStorage: DocumentStoragePort;
+  /** Finds the stored copy of a reply block's image for the public image route. */
+  replyImageObjectLookup: ReplyImageObjectLookup;
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
   closeApprovalResumeEffectJournal(): Promise<void>;

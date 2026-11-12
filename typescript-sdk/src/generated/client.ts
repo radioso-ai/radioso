@@ -35,6 +35,7 @@ export type AssistantChatRequest = components["schemas"]["AssistantChatRequest"]
 export type ChatRequest = AssistantChatRequest;
 export type AssistantChatResponse = components["schemas"]["AssistantChatResponse"];
 export type ChatResponse = components["schemas"]["ChatResponse"];
+export type ReplyBlock = components["schemas"]["ReplyBlock"];
 export type HistoryItemsResponse = components["schemas"]["HistoryItemsResponse"];
 export type ChatHistoryListResponse = components["schemas"]["ChatHistoryListResponse"];
 export type ChatConversationDetail = components["schemas"]["ChatConversationDetail"];

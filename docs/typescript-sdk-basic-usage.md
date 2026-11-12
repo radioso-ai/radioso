@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-10-26
+last_updated: 2026-11-12
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -454,6 +454,32 @@ guarded or durability-sensitive replies are validated or committed first and
 then delivered in bounded chunks. Do not infer provider timing from chunk size.
 Treat unknown event names as additive and ignore them unless your application
 needs their behavior.
+
+A reply can also carry reply blocks: structured parts, such as a set of picture
+cards, that your client renders beside the answer text. Declare the kinds your
+client renders in `clientContextCapabilities`, and each block arrives as a
+`block` event after the last `chunk` and before `done`; `done.blocks` repeats
+them:
+
+```ts
+for await (const event of client.chat.stream({
+  message: "Which hiking books do you have?",
+  clientContextCapabilities: {
+    "reply.blocks": { item_list: { layouts: ["carousel", "grid"] } },
+  },
+})) {
+  if (event.type === "block") {
+    // event.block is a ReplyBlock: an item_list with a caption and up to ten
+    // items, each with a title, an image, and an open link when it has one.
+    continue;
+  }
+}
+```
+
+`client.chat.create()` takes the same field and returns the blocks on `blocks`,
+and history returns them on the assistant message. A turn that declares no
+`reply.blocks` gets the answer as text alone. A layout your client leaves out of
+`layouts` reaches it as `list`.
 
 List chat history:
 

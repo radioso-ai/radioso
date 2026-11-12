@@ -1432,7 +1432,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
         }),
       },
     };
-    const turnInput = (prepared: PreparedSession, bound: TurnSkill, logger = { info: vi.fn() }) => {
+    const turnInput = (prepared: PreparedSession, bound: TurnSkill, logger = { info: vi.fn(), warn: vi.fn() }) => {
       const turnSkills = [defaultSkill, bound];
       return {
         engine: new DefaultConversationEngine(),
@@ -1451,7 +1451,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
 
     it("answers from the default skill, told the bound skill could not be consulted", async () => {
       const prepared = boundSession();
-      const logger = { info: vi.fn() };
+      const logger = { info: vi.fn(), warn: vi.fn() };
 
       const { presentation, result } = await runPreparedChatTurnWithConversationEngine(
         turnInput(prepared, boundSkill(suppressed), logger),
@@ -1509,7 +1509,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
 
     it("adds no note when the bound skill answers", async () => {
       const prepared = boundSession();
-      const logger = { info: vi.fn() };
+      const logger = { info: vi.fn(), warn: vi.fn() };
 
       const { presentation } = await runPreparedChatTurnWithConversationEngine(
         turnInput(prepared, boundSkill({ status: "completed", answer: "Order 123 is in transit." }), logger),

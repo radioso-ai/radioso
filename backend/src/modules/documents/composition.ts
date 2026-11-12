@@ -3,6 +3,7 @@ export {
   AmqpDocumentJobDispatcher,
 } from "./infra/amqpDocumentJobQueue.js";
 export { ChunkRepository } from "./infra/chunkRepository.js";
+export { DocumentImageRepository } from "./infra/documentImageRepository.js";
 export { CloudTasksDocumentJobDispatcher } from "./infra/cloudTasksDocumentJobDispatcher.js";
 export {
   type DocumentJobDispatcherPort,

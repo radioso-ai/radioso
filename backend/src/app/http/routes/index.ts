@@ -43,6 +43,8 @@ import { createEmailSkillActivityRoutes } from "./emailSkillActivityRoutes.js";
 import { createRetrievalRoutes } from "./retrievalRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
+import { REPLY_IMAGE_ROUTE_PATH } from "./replyImageAddress.js";
+import { createReplyImageRoutes } from "./replyImageRoutes.js";
 import { createSkillRoutes } from "./skillRoutes.js";
 import { createEvalRoutes } from "../../../modules/eval/composition.js";
 import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js";
@@ -139,6 +141,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
     }),
   },
   { path: "/api/v1/public/chat", createRouter: createPublicChatRoutes },
+  { path: REPLY_IMAGE_ROUTE_PATH, createRouter: createReplyImageRoutes },
 ];
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {

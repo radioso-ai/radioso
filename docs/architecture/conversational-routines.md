@@ -448,8 +448,13 @@ buttons on the web, text on email, WhatsApp, Slack and the operator surfaces tha
 show a reply's text alone (Test Chat, eval replay, Ray's probe), and no ask on voice
 or a calling agent's channel. The port picks the variant by the Exact Words rule, reads
 the standing decisions of all a routine's consents, every language of each, in one
-lookup (and none on a channel that never asks), and reads a typed reply against the
-wording the conversation last showed (its `consentPrompt` stamp) through the
+lookup (and none on a channel that never asks), and reads an answer against the
+wording the conversation last showed (its `consentPrompt` stamp): a click on that
+message's `agree` or `decline` chip (`suggestion_click` with `suggestionId` and
+`suggestionSourceMessageId` naming it, `shared/domain/chatInputMetadata.ts`) is a
+`button` decision taken from the chip id on a `buttons` channel only, and anything else,
+a click on an older prompt or any click on a channel that shows the choices as text
+included, goes to the reply reader. Both reads go through the
 `RoutineConsentStore` port, which `RoutineConsentRepository` satisfies for a durable
 conversation. A conversation no row is kept for brings its own store instead: the
 replay runner binds `chat/services/routines/sessionRoutineConsentStore.ts` on the turn

@@ -15,9 +15,9 @@ import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/
 import { createClientId } from '@/lib/client-id'
 import { deriveThemeOverridesFromModel } from '@/lib/public-chat-theme'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
+import { actionableSuggestionsOnly, clearMessageSuggestions } from '@/lib/public-chat-suggestion'
 import { publicChatUnavailableReasonOf, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import {
-  clearMessageSuggestions,
   isHumanAgentReply,
   restoreMessageSuggestions,
   stripPublicSuggestionCitations,
@@ -411,7 +411,7 @@ export function AnonymousChatProvider({
       })
 
       setConversationId(detail.conversationId)
-      setMessages(toChatMessages(detail, readStoredAnonymousSessionId(detailToken)))
+      setMessages(actionableSuggestionsOnly(toChatMessages(detail, readStoredAnonymousSessionId(detailToken))))
       setHasOlderMessages(detail.hasOlderMessages)
       setNextMessageCursor(detail.nextCursor)
       tailCursorRef.current = detail.tailCursor
@@ -1051,7 +1051,7 @@ export function AnonymousChatProvider({
         limit: MESSAGE_WINDOW_SIZE,
         cursor: nextMessageCursor,
       })
-      const olderMessages = toChatMessages(detail, readStoredAnonymousSessionId(activeToken))
+      const olderMessages = clearMessageSuggestions(toChatMessages(detail, readStoredAnonymousSessionId(activeToken)))
       setMessages((current) => {
         const seen = new Set(current.map((message) => message.id))
         const nextOlder = olderMessages.filter((message) => !seen.has(message.id))

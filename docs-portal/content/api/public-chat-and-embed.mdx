@@ -157,17 +157,20 @@ JSON error instead of an empty `204` response:
 
 A chat response can include `suggestions`. Each suggestion has `text`, a
 provider-defined `kind` string, and an optional `action`. `id` appears only on
-the authored exact-content chips described in [Bootstrap greeting
-response](#bootstrap-greeting-response); the follow-up and action chips below
-carry no `id`.
+authored chips: the exact-content chips described in [Bootstrap greeting
+response](#bootstrap-greeting-response), and the two buttons a routine shows
+with a consent. The follow-up and action chips below carry no `id`.
 
 Two kinds of chips can appear together:
 
 - **Follow-up question chips** have no `action` (or `action.kind` is
   `"ask_followup"`). They are pure text prompts: render `suggestion.text` and,
   when the visitor selects one, send it as a new user message with
-  `inputMetadata.method = "suggestion_click"` and
-  `suggestionSourceMessageId = <assistant message id>`.
+  `inputMetadata.method = "suggestion_click"`,
+  `suggestionSourceMessageId = <assistant message id>`, and, when the chip
+  has one, `suggestionId = <chip id>`. `suggestionId` goes only with
+  `suggestion_click`; any other method with it gets a `400`. An id longer
+  than 200 characters is dropped, and the click goes through without it.
 - **Action chips** carry `action.kind === "start_intent"` with an
   `intent.skillName` (and an optional `intent.intentName`). They route to a
   specific assistant skill instead of asking a follow-up question. When the
@@ -178,6 +181,15 @@ Two kinds of chips can appear together:
 
 At most one action chip is returned per assistant turn. Action chips are
 in addition to the up-to-two follow-up question chips.
+
+A routine that asks for consent before a sensitive field sends the operator's
+wording as the answer, with two chips whose ids are `agree` and `decline`.
+Send a click on one with its `suggestionId` and the `assistantMessageId` of
+that answer as `suggestionSourceMessageId`. The agent records the decision from
+the chip id, against the wording that message showed, whatever `message` says.
+A click that names an earlier consent message, or another chip id, is read as
+a typed answer from `message`, and so is any message on a conversation whose
+channel shows the consent as text (email, WhatsApp, Slack) rather than chips.
 
 Example response fragment:
 

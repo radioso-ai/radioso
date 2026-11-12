@@ -4,10 +4,16 @@ import { useId, useState, type ReactNode } from 'react'
 import { ExternalLink, ImageOff } from 'lucide-react'
 
 import type { ReplyBlock } from '@/lib/api-types'
-import { itemOpenUrl, pictureFrameOf, resolveReplyLayout, type ItemListLayout, type PictureFrame } from '@/lib/reply-blocks'
+import {
+  itemOpenUrl,
+  pictureFrameOf,
+  resolveReplyLayout,
+  type ItemListLayout,
+  type PictureFrame,
+  type ReplyItem,
+} from '@/lib/reply-blocks'
 import { cn } from '@/lib/utils'
 
-type ReplyItem = ReplyBlock['items'][number]
 type ReplyImage = NonNullable<ReplyItem['image']>
 
 // The width each layout shows a picture at, so the browser loads the smallest sharp rendition.
@@ -54,16 +60,24 @@ function ItemPicture({ image, layout, className }: { image?: ReplyImage; layout:
   )
 }
 
-/** The whole card as one link named by its title when the item has a page, a plain box otherwise. */
+/**
+ * The whole card as one link when the item has a page, a plain box otherwise. The link is named by
+ * the item's title, or by its picture's alt when the title is empty, and described by the
+ * description the card shows.
+ */
 function ItemLink({
+  item,
   href,
   titleId,
+  descriptionId,
   onOpen,
   className,
   children,
 }: {
+  item: ReplyItem
   href: string | null
   titleId: string
+  descriptionId?: string
   onOpen?: (href: string) => void
   className: string
   children: ReactNode
@@ -71,16 +85,16 @@ function ItemLink({
   if (!href) {
     return <div className={className}>{children}</div>
   }
+  const hasTitle = item.title.trim() !== ''
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      aria-labelledby={titleId}
-      onClick={(event) => {
-        event.stopPropagation()
-        onOpen?.(href)
-      }}
+      aria-labelledby={hasTitle ? titleId : undefined}
+      aria-label={hasTitle ? undefined : item.image?.alt || undefined}
+      aria-describedby={descriptionId}
+      onClick={() => onOpen?.(href)}
       className={cn(className, FOCUS_RING)}
     >
       {children}
@@ -101,6 +115,7 @@ function CarouselCard({ item, href, frame, onOpen }: ItemViewProps) {
   const titleId = useId()
   return (
     <ItemLink
+      item={item}
       href={href}
       titleId={titleId}
       onOpen={onOpen}
@@ -118,7 +133,7 @@ function CarouselCard({ item, href, frame, onOpen }: ItemViewProps) {
 function GridTile({ item, href, frame, onOpen }: ItemViewProps) {
   const titleId = useId()
   return (
-    <ItemLink href={href} titleId={titleId} onOpen={onOpen} className="block rounded-lg border border-transparent">
+    <ItemLink item={item} href={href} titleId={titleId} onOpen={onOpen} className="block rounded-lg border border-transparent">
       <figure className="flex flex-col gap-1">
         <ItemPicture image={item.image} layout="grid" className={cn('w-full rounded-lg border', FRAME_CLASSES[frame])} />
         <figcaption className="flex items-start gap-1 text-xs leading-snug text-muted-foreground">
@@ -132,17 +147,20 @@ function GridTile({ item, href, frame, onOpen }: ItemViewProps) {
 
 function ListRow({ item, href, onOpen }: ItemViewProps) {
   const titleId = useId()
+  const descriptionId = useId()
   return (
     <ItemLink
+      item={item}
       href={href}
       titleId={titleId}
+      descriptionId={item.description ? descriptionId : undefined}
       onOpen={onOpen}
       className="flex items-center gap-3 rounded-lg border bg-card p-2 text-card-foreground transition-colors hover:bg-muted/50"
     >
       <ItemPicture image={item.image} layout="list" className="size-14 shrink-0 rounded-md" />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span id={titleId} className="line-clamp-2 text-sm font-medium leading-snug">{item.title}</span>
-        {item.description ? <span className="line-clamp-2 text-xs text-muted-foreground">{item.description}</span> : null}
+        {item.description ? <span id={descriptionId} className="line-clamp-2 text-xs text-muted-foreground">{item.description}</span> : null}
       </span>
       {href ? <OpensPage /> : null}
     </ItemLink>
@@ -184,15 +202,16 @@ export function ItemListBlock({
     const url = itemOpenUrl(item)
     return { item, href: url ? transformHref?.(url) ?? url : null }
   })
-  // A carousel of cards without links has nothing to tab to, so the strip itself takes focus to scroll.
-  const scrollsWithoutLinks = layout === 'carousel' && items.every(({ href }) => !href)
+  // Tabbing reaches only the cards with links, so when any card has none, the strip itself takes
+  // focus and scrolls with the arrow keys to bring every card into view.
+  const stripTakesFocus = layout === 'carousel' && items.some(({ href }) => !href)
 
   return (
     <div
       role="list"
       aria-label={block.caption || undefined}
-      tabIndex={scrollsWithoutLinks ? 0 : undefined}
-      className={cn(LIST_CLASSES[layout], scrollsWithoutLinks && FOCUS_RING)}
+      tabIndex={stripTakesFocus ? 0 : undefined}
+      className={cn(LIST_CLASSES[layout], stripTakesFocus && FOCUS_RING)}
     >
       {items.map(({ item, href }) => (
         <div role="listitem" key={item.key} className={LIST_ITEM_CLASSES[layout]}>

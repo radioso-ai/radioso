@@ -71,6 +71,44 @@ const rooms: ReplyBlock = {
   })),
 };
 
+const stayQuestion = "Where can I stay near the trails?";
+const stayAnswer = "A hut sits on the ridge, and the valley lodge has rooms by the river.";
+const huts: ReplyBlock = {
+  type: "item_list",
+  id: "block-huts",
+  layout: "carousel",
+  selection: "none",
+  caption: "Huts on the ridge",
+  items: [
+    {
+      key: "7a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c81",
+      title: "",
+      image: picture("7a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c81", "A stone hut under the ridge", 640, 480),
+      actions: [{ type: "open", url: "https://shop.example/huts/stone" }],
+    },
+    {
+      key: "7a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c82",
+      title: "Saddle hut",
+      image: picture("7a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c82", "A wooden hut on the saddle", 640, 480),
+      actions: [],
+    },
+  ],
+};
+const lodgeRooms: ReplyBlock = {
+  type: "item_list",
+  id: "block-lodge",
+  layout: "list",
+  selection: "none",
+  caption: "Rooms at the valley lodge",
+  items: [{
+    key: "7a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c83",
+    title: "Twin room",
+    description: "Two beds and a window over the river",
+    image: picture("7a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c83", "A twin room with a river view", 640, 480),
+    actions: [{ type: "open", url: "https://shop.example/lodge/twin" }],
+  }],
+};
+
 /** The image route: every picture is a plain drawing, except one whose document was deleted. */
 const servePictures = async (page: Page) => {
   await page.route("**/public/reply-images/**", async (route) => {
@@ -91,13 +129,13 @@ const serveShopPages = (context: BrowserContext) =>
   context.route("https://shop.example/**", (route) =>
     route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Guide</title><h1>Guide</h1>" }));
 
-const conversationMessages = (question: string, answer: string, block: ReplyBlock) => [
+const conversationMessages = (question: string, answer: string, blocks: ReplyBlock[]) => [
   { id: "user-message-1", role: "user" as const, source: "customer" as const, content: question, createdAt: nowIso },
-  { id: "assistant-message-1", role: "assistant" as const, source: "ai_agent" as const, content: answer, createdAt: nowIso, blocks: [block] },
+  { id: "assistant-message-1", role: "assistant" as const, source: "ai_agent" as const, content: answer, createdAt: nowIso, blocks },
 ];
 
-/** The public chat as the backend serves it: one question, answered with a block, then read back. */
-const mockPublicChat = async (page: Page, reply: { question: string; answer: string; block: ReplyBlock }) => {
+/** The public chat as the backend serves it: one question, answered with blocks, then read back. */
+const mockPublicChat = async (page: Page, reply: { question: string; answer: string; blocks: ReplyBlock[] }) => {
   const sentBodies: Array<Record<string, unknown>> = [];
   let answered = false;
   const conversationList = () => ({
@@ -144,7 +182,7 @@ const mockPublicChat = async (page: Page, reply: { question: string; answer: str
           messageCount: 2, userMessageCount: 1, assistantMessageCount: 1, messagesTotal: 2,
           messageWindowOffset: 0, messageWindowLimit: 10, hasOlderMessages: false, nextCursor: null,
           tailCursor: "assistant-message-1-cursor",
-          messages: conversationMessages(reply.question, reply.answer, reply.block),
+          messages: conversationMessages(reply.question, reply.answer, reply.blocks),
         },
       });
       return;
@@ -162,14 +200,15 @@ const mockPublicChat = async (page: Page, reply: { question: string; answer: str
   await page.route(`**/api/public/chat/${publicToken}`, async (route) => {
     sentBodies.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
     answered = true;
-    const done = { conversationId, assistantMessageId: "assistant-message-1", answer: reply.answer, blocks: [reply.block] };
+    const done = { conversationId, assistantMessageId: "assistant-message-1", answer: reply.answer, blocks: reply.blocks };
     await route.fulfill({
       status: 200,
       contentType: "text/event-stream",
       body: [
         `event: conversation\ndata: ${JSON.stringify({ conversationId })}\n\n`,
         `event: chunk\ndata: ${JSON.stringify({ text: reply.answer })}\n\n`,
-        `event: block\ndata: ${JSON.stringify({ conversationId, assistantMessageId: done.assistantMessageId, block: reply.block })}\n\n`,
+        ...reply.blocks.map((block) =>
+          `event: block\ndata: ${JSON.stringify({ conversationId, assistantMessageId: done.assistantMessageId, block })}\n\n`),
         `event: done\ndata: ${JSON.stringify(done)}\n\n`,
       ].join(""),
     });
@@ -185,7 +224,7 @@ const ask = async (page: Page, question: string) => {
 test("a visitor sees the guides an answer presents as cards that open their pages, and finds them again after a reload", async ({ page, context }) => {
   await servePictures(page);
   await serveShopPages(context);
-  const { sentBodies } = await mockPublicChat(page, { question: guidesQuestion, answer: guidesAnswer, block: guides });
+  const { sentBodies } = await mockPublicChat(page, { question: guidesQuestion, answer: guidesAnswer, blocks: [guides] });
 
   await page.goto(`/chat/${publicToken}`);
   await ask(page, guidesQuestion);
@@ -218,7 +257,7 @@ test("a visitor sees the guides an answer presents as cards that open their page
 
 test("a gallery shows a page's pictures with their titles, and a picture that no longer loads leaves its tile without it", async ({ page }) => {
   await servePictures(page);
-  await mockPublicChat(page, { question: roomsQuestion, answer: roomsAnswer, block: rooms });
+  await mockPublicChat(page, { question: roomsQuestion, answer: roomsAnswer, blocks: [rooms] });
 
   await page.goto(`/chat/${publicToken}`);
   await ask(page, roomsQuestion);
@@ -232,7 +271,24 @@ test("a gallery shows a page's pictures with their titles, and a picture that no
   await expect(gallery.getByRole("link")).toHaveCount(0);
 });
 
-test("an operator sees the cards an answer showed in the conversation's history", async ({ page }) => {
+test("a card's link is named by its title, or by its picture without one, and a strip with an unlinked card scrolls from the keyboard", async ({ page }) => {
+  await servePictures(page);
+  await mockPublicChat(page, { question: stayQuestion, answer: stayAnswer, blocks: [huts, lodgeRooms] });
+
+  await page.goto(`/chat/${publicToken}`);
+  await ask(page, stayQuestion);
+
+  const strip = page.getByRole("list", { name: "Huts on the ridge" });
+  await expect(strip.getByRole("link")).toHaveAccessibleName("A stone hut under the ridge");
+  // Tabbing passes over the saddle hut, which has no page, so the strip takes focus to scroll to it.
+  await strip.focus();
+  await expect(strip).toBeFocused();
+
+  const rows = page.getByRole("list", { name: "Rooms at the valley lodge" });
+  await expect(rows.getByRole("link", { name: "Twin room" })).toHaveAccessibleDescription("Two beds and a window over the river");
+});
+
+test("an operator sees the cards an answer showed when opening the conversation in the Inbox", async ({ page }) => {
   const conversation = {
     id: conversationId, agentId: defaultAgentId, agentName: "Wren", agentInternalName: null,
     sourceChannel: "anonymous", sourceOrigin: null, entryPageUrl: null, channelContext: null,
@@ -249,7 +305,7 @@ test("an operator sees the cards an answer showed in the conversation's history"
         messageCount: 2, userMessageCount: 1, assistantMessageCount: 1, messagesTotal: 2,
         messageWindowOffset: 0, messageWindowLimit: 50, hasOlderMessages: false, nextCursor: null, title: null,
         requestContext: null,
-        messages: conversationMessages(guidesQuestion, guidesAnswer, guides),
+        messages: conversationMessages(guidesQuestion, guidesAnswer, [guides]),
       },
     },
   });
@@ -257,9 +313,10 @@ test("an operator sees the cards an answer showed in the conversation's history"
   await servePictures(page);
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: guidesQuestion }).click();
 
-  const cards = page.getByRole("list", { name: "Hiking guides in stock" });
+  const cards = page.getByLabel("Response", { exact: true }).getByRole("list", { name: "Hiking guides in stock" });
   await expect(cards.getByRole("link")).toHaveCount(3);
   await expect(cards.getByRole("img", { name: "Cover of Lakeside Trails for Every Season" })).toBeVisible();
 });

@@ -74,7 +74,7 @@ const urls: ReplyImageUrls = {
 
 const metricWrites: Array<{ name: string; labels?: Record<string, string> }> = [];
 
-const buildComposer = (raw: string) => {
+const buildComposer = (raw: string, evidenceImages: EvidenceItemImages[] = evidence) => {
   const inputs: ChatGatewayInput[] = [];
   const gateway: ChatGateway = {
     async answer(input) {
@@ -101,7 +101,7 @@ const buildComposer = (raw: string) => {
     null,
     { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules) },
     new ReplyBlockTurnFactory({
-      evidenceImages: { attach: async () => evidence },
+      evidenceImages: { attach: async () => evidenceImages },
       imageUrls: urls,
       metrics: { incrementCounter: (name, options) => metricWrites.push({ name, labels: options.labels }) },
     }),
@@ -247,6 +247,27 @@ describe("reply blocks on the grounded answer", () => {
 
     expect(streamed.deliveryMode).toBe("bounded_decline");
     expect(streamed.finalPresentation.replyBlocks).toBeUndefined();
+  });
+
+  it("keeps the reusable prompt prefix identical whether or not the present head is offered", async () => {
+    const offered = buildComposer(envelope());
+    const notOffered = buildComposer(envelope(), []);
+
+    await offered.composer.composeAnswer(session(), "Which hiking guides do you have?", "en", undefined);
+    await notOffered.composer.composeAnswer(session(), "Which hiking guides do you have?", "en", undefined);
+
+    const [withPresent] = offered.inputs;
+    const [withoutPresent] = notOffered.inputs;
+    const pictures = "A main picture is the Result's own picture";
+    expect(withPresent?.systemPrompt).toContain(pictures);
+    expect(withoutPresent?.systemPrompt).not.toContain(pictures);
+    expect(withPresent?.reusableInputBoundary?.stableSystemPrefix).toBeTruthy();
+    expect(withPresent?.reusableInputBoundary?.stableSystemPrefix).toBe(withoutPresent?.reusableInputBoundary?.stableSystemPrefix);
+    expect(withPresent?.reusableInputBoundary?.stableSystemPrefix).not.toContain(pictures);
+    expect(withPresent?.reusableInputBoundary?.dynamicSystemSuffix).toContain(pictures);
+    for (const input of [withPresent, withoutPresent]) {
+      expect(input?.systemPrompt).toBe(`${input?.reusableInputBoundary?.stableSystemPrefix}${input?.reusableInputBoundary?.dynamicSystemSuffix}`);
+    }
   });
 
   it("offers nothing on a turn whose evidence is empty", async () => {

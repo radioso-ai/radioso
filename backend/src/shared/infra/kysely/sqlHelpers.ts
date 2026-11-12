@@ -249,6 +249,21 @@ export const tableExists = async (db: Db, name: string): Promise<boolean> => {
 };
 
 /**
+ * Whether `text` contains one of `valueTexts`: a substring, ignoring case, with runs of whitespace
+ * in `text` collapsed to one space (the values come collapsed, from `matchableValueTexts`). False
+ * for no values. `strpos`, not `LIKE`, so a value's `%` or `_` is only itself.
+ */
+export const containsAnyValueText = (text: Expression<unknown>, valueTexts: readonly string[]): RawBuilder<boolean> =>
+  sql`exists (select 1 from unnest(${sql.val([...valueTexts])}::text[]) as value_text
+               where strpos(lower(regexp_replace(${text}, '\\s+', ' ', 'g')), lower(value_text)) > 0)`;
+
+/** Whether any string anywhere in the jsonb `document` contains one of `valueTexts`, by {@link containsAnyValueText}'s rule; keys are not read. */
+export const jsonbStringContainsAnyValueText = (document: Expression<unknown>, valueTexts: readonly string[]): RawBuilder<boolean> =>
+  sql`exists (select 1 from jsonb_path_query(${document}, 'strict $.**') as leaf
+               where jsonb_typeof(leaf) = 'string'
+                 and ${containsAnyValueText(sql`leaf #>> '{}'`, valueTexts)})`;
+
+/**
  * `<expression> = ANY(<values>::<pgArrayType>)` — array membership, the Kysely-typed
  * equivalent of the raw `col = ANY($1::uuid[])` pattern. `pgArrayType` is a trusted
  * constant such as `"uuid[]"` or `"text[]"`.

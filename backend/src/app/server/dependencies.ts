@@ -1423,7 +1423,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceRuntimeConnections,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,
-    conversationConsents: createConsentWithdrawal({ db: infrastructure.database.kysely, logger, metricsRegistry: infrastructure.metricsRegistry, auditLog: infrastructure.auditService }),
+    conversationConsents: createConsentWithdrawal({ db: infrastructure.database.kysely, logger, metricsRegistry: infrastructure.metricsRegistry, auditLog: infrastructure.auditService, invalidation: realtimePublisherComposition.publisher }),
     privacySettingsService,
     timeZoneSettingsService: settings.timeZoneSettingsService,
     dataSubjectAccess: createPostgresDataSubjectAccess({ db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService, logger }),

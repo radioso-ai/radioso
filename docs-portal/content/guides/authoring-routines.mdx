@@ -428,19 +428,35 @@ and **Wording** shows the exact text the visitor saw. Owners and admins see
 - The values of the fields the consent covered are erased from the
   conversation's routine state, a routine that already finished included.
 - Each message that carried one of them keeps `[redacted]` as its text and
-  reads **Withheld after consent was withdrawn** in the conversation. Radioso's
-  copies of that message are withheld with it: the body and raw copy of the
-  email it came in as, the turn's debug record, the coverage assessment's
-  restatement of the question, and any photo the visitor attached.
+  reads **Withheld after consent was withdrawn** in the conversation, for you
+  and for the visitor. Radioso's copies of that message are withheld with it:
+  the body and raw copy of the email it came in as, the turn's debug record, the
+  coverage assessment's restatement of the question, and any photo the visitor
+  attached. The conversation's summary and title are cleared and written again
+  from what the transcript now reads.
 - The record keeps its proof and gains the withdrawal time and the teammate who
   withdrew it. It shows as withdrawn in the panel and in the data subject's
   export.
 - A routine still running in the conversation carries on without those fields,
   as it would after a decline, and doesn't ask the consent again.
 
+A message carried a value in two ways. Radioso marks the turns of a routine
+that held one, and it also finds every message, the visitor's or the agent's,
+whose text contains a value the routine held, ignoring case and spacing. Say a
+visitor asked "Do you run classes for a sore knee?" before booking, and the
+agent answered "You told me about your sore knee" after the routine ended: both
+are withheld with the turns the routine marked. A value shorter than four
+characters, a number, or a yes or no would match text that never stated it, so
+only the routine's own marks find those. When the step that asks for a covered
+field takes the answer from something the visitor said before the consent,
+Radioso marks that earlier message right then, so the summary and every other
+copy read it as withheld from that turn on.
+
 A declined consent has nothing to withdraw, and a withdrawn one stays
 withdrawn. Withdrawal also works over the API: see
-[Chat and history](/api/chat-and-history#conversation-history).
+[Chat and history](/api/chat-and-history#conversation-history). Conversation
+lists in the dashboard refresh on their own; a visitor with the chat open sees
+the withheld text once they reload it.
 
 Some copies sit outside what a withdrawal reaches. Text already delivered to
 Slack or WhatsApp stays with those providers, and the WhatsApp channel's own log
@@ -449,9 +465,11 @@ removes it.
 A value a routine already passed to a skill stays with the service that skill
 called, and an email reply still being sent keeps its body until the send
 settles. If the agent was answering the visitor at the moment you withdrew, that
-turn saves no covered value either, but its two messages keep their text, marked
-as sensitive so every copy of the transcript reads them as withheld. Deleting the
-conversation removes everything Radioso keeps of it.
+turn saves no covered value either, and its two messages are withheld when its
+routine marked them or they state a value its routine held; a reply written
+outside any routine at that moment keeps its text. Fields are matched by key, so
+a field with the same key in another routine of the conversation is erased and
+withheld too. Deleting the conversation removes everything Radioso keeps of it.
 
 ### Changes after a routine ends
 

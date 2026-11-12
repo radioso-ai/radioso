@@ -21,3 +21,18 @@ export interface RoutineConsentRecord {
   decidedAt: Date;
   withdrawnAt: Date | null;
 }
+
+/**
+ * What a committed withdrawal reports (#1544), from the privacy module that runs it to the routine
+ * consent telemetry that logs and counts it: ids, keys and a count, never the wording or a value.
+ */
+export interface RoutineConsentWithdrawn {
+  workspaceId: string;
+  conversationId: string;
+  channel: string | null;
+  routineId: string;
+  consentKey: string;
+  wordingVersionId: string;
+  recordId: string;
+  withheldMessageCount: number;
+}

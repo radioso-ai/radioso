@@ -1,6 +1,9 @@
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+
 import type { AuditEventInput } from "../audit/contracts/index.js";
-import type { MessageCopyWithholder } from "../../shared/domain/messageWithholding.js";
-import type { RoutineConsentRecord } from "../../shared/domain/routineConsentRecord.js";
+import { withholdMessagesWithCopies, type MessageWithholdingScope } from "../../shared/domain/messageWithholding.js";
+import type { RoutineConsentRecord, RoutineConsentWithdrawn } from "../../shared/domain/routineConsentRecord.js";
+import { matchableValueTexts } from "../../shared/domain/sensitiveTranscript.js";
 import type { ConversationErasureActor } from "./conversationErasure.js";
 
 /**
@@ -10,7 +13,10 @@ import type { ConversationErasureActor } from "./conversationErasure.js";
  * module's copies of those messages are withheld with them, and the record keeps its proof with the
  * withdrawal and the member who made it.
  *
- * The record names the slots it covered, so a withdrawal never reads a routine definition.
+ * The record names the slots it covered, so a withdrawal never reads a routine definition. A message
+ * carried a value when a turn marked it with the slot, or when its text contains the value the state
+ * held: the visitor may have stated it before any routine asked, and a reply after the routine ended
+ * may repeat it.
  */
 
 /** Who withdrew a consent: the signed-in teammate, or a credential's owner. */
@@ -45,7 +51,7 @@ interface ConsentRecordReader {
 }
 
 /** One withdrawal transaction: the record, the values and messages it reaches, every module's copies, and its audit record. */
-export interface ConsentWithdrawalWriteScope {
+export interface ConsentWithdrawalWriteScope extends MessageWithholdingScope {
   records: {
     /** Locks the record until the transaction ends; null when the workspace has no such record in the conversation. */
     lock(input: { workspaceId: string; conversationId: string; recordId: string }): Promise<ConsentRecord | null>;
@@ -53,17 +59,12 @@ export interface ConsentWithdrawalWriteScope {
     markWithdrawn(input: { recordId: string; actor: ConsentWithdrawalActor }): Promise<Date>;
   };
   routineValues: {
-    /** Erases the slots' values from the conversation's state of the routine, a completed run's included. */
-    erase(input: { conversationId: string; routineId: string; slotKeys: readonly string[] }): Promise<void>;
-  };
-  messages: {
     /**
-     * Withholds the conversation's messages marked as carrying any of the slots: their text becomes
-     * the redaction marker and they record the withholding at `at`. Returns their ids.
+     * Erases the slots' values from the conversation's state of the routine, a completed run's
+     * included, and returns the values it erased by slot key.
      */
-    withhold(input: { workspaceId: string; conversationId: string; slotKeys: readonly string[]; at: Date }): Promise<string[]>;
+    erase(input: { conversationId: string; routineId: string; slotKeys: readonly string[] }): Promise<Record<string, unknown>>;
   };
-  messageCopies: readonly MessageCopyWithholder[];
   audit: { record(event: AuditEventInput): Promise<void> };
 }
 
@@ -71,20 +72,8 @@ export interface ConsentWithdrawalUnitOfWork {
   run<T>(work: (scope: ConsentWithdrawalWriteScope) => Promise<T>): Promise<T>;
 }
 
-/** What a committed withdrawal reports: ids, keys and a count, never the wording or a value. */
-export interface ConsentWithdrawn {
-  workspaceId: string;
-  conversationId: string;
-  channel: string | null;
-  routineId: string;
-  consentKey: string;
-  wordingVersionId: string;
-  recordId: string;
-  withheldMessageCount: number;
-}
-
 interface ConsentWithdrawalTelemetry {
-  withdrawn(event: ConsentWithdrawn): void;
+  withdrawn(event: RoutineConsentWithdrawn): void;
 }
 
 interface ConsentWithdrawalDependencies {
@@ -93,6 +82,8 @@ interface ConsentWithdrawalDependencies {
   /** Logs a committed audit event. */
   auditLog: { logRecorded?(event: AuditEventInput): void };
   telemetry: ConsentWithdrawalTelemetry;
+  /** Tells open operator views the conversation's messages changed, once a withdrawal commits. */
+  invalidation: Pick<WorkspaceInvalidationPublisher, "enqueue">;
 }
 
 /** The refusal a record earns as it stands, or null when it can be withdrawn. */
@@ -118,7 +109,7 @@ export class ConsentWithdrawalService implements ConversationConsents {
     recordId: string;
     actor: ConsentWithdrawalActor;
   }): Promise<ConsentWithdrawalOutcome> {
-    let committed: { event: AuditEventInput; withdrawn: ConsentWithdrawn } | null = null;
+    let committed: { event: AuditEventInput; withdrawn: RoutineConsentWithdrawn } | null = null;
     const outcome = await this.deps.unitOfWork.run(async (scope): Promise<ConsentWithdrawalOutcome> => {
       committed = null;
       const record = await scope.records.lock(input);
@@ -127,20 +118,14 @@ export class ConsentWithdrawalService implements ConversationConsents {
       if (refusal) return { kind: "not_withdrawable", reason: refusal, consent: record };
 
       const withdrawnAt = await scope.records.markWithdrawn({ recordId: record.id, actor: input.actor });
-      await scope.routineValues.erase({ conversationId: input.conversationId, routineId: record.routineId, slotKeys: record.slotKeys });
-      const messageIds = await scope.messages.withhold({
+      const erased = await scope.routineValues.erase({ conversationId: input.conversationId, routineId: record.routineId, slotKeys: record.slotKeys });
+      const { messageIds, rowsByOwner } = await withholdMessagesWithCopies(scope, {
         workspaceId: input.workspaceId,
         conversationId: input.conversationId,
         slotKeys: record.slotKeys,
+        valueTexts: matchableValueTexts(Object.values(erased)),
         at: withdrawnAt,
       });
-      const rowsByOwner: Record<string, number> = {};
-      if (messageIds.length > 0) {
-        for (const copies of scope.messageCopies) {
-          const rows = await copies.withhold({ workspaceId: input.workspaceId, conversationId: input.conversationId, messageIds });
-          rowsByOwner[copies.owner] = (rowsByOwner[copies.owner] ?? 0) + rows;
-        }
-      }
       const event: AuditEventInput = {
         accountId: input.actor.accountId,
         workspaceId: input.workspaceId,
@@ -172,8 +157,10 @@ export class ConsentWithdrawalService implements ConversationConsents {
       };
       return { kind: "withdrawn", consent: { ...record, withdrawnAt } };
     });
-    const reported = committed as { event: AuditEventInput; withdrawn: ConsentWithdrawn } | null;
+    const reported = committed as { event: AuditEventInput; withdrawn: RoutineConsentWithdrawn } | null;
     if (reported) {
+      // Messages changed as a turn changes them, so the views that list the conversation re-read it.
+      this.deps.invalidation.enqueue(input.workspaceId, ["conversation.turn_committed"]);
       this.deps.auditLog.logRecorded?.(reported.event);
       this.deps.telemetry.withdrawn(reported.withdrawn);
     }

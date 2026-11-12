@@ -1224,25 +1224,43 @@ Owns an operator's withdrawal of a visitor's routine consent on their request
 (#1544, Article 7(3)). `ConsentWithdrawalService` (`modules/privacy/`) runs it
 in one transaction over the `ConsentWithdrawalUnitOfWork` port: lock the
 record, erase its covered `slot_keys` from the conversation's `routine_states`
-row, withhold the messages whose `sensitiveSlotKeys` marker names one (text to
-`[redacted]`, a `withheld` metadata marker, text-copying metadata fields and
-facets dropped), run every module's `MessageCopyWithholder`
-(`backend/src/shared/domain/messageWithholding.ts`) for its copies of those
-messages, mark the record withdrawn with the actor, and write
-`routine_consent.withdrawn`. Withholders: the `chat.answer` / `chat.suspended`
-audit events of the turn, the coverage assessment's request text, the inbound
-email's body and raw MIME, and the photos the message carried. Privacy reads
-no routine: the record names the slots it covered. A turn racing the withdrawal
-is covered by `stripWithdrawnSlots` in the turn's own transaction; its new
-messages are marked, not overwritten. After commit the routine consent
-telemetry logs `routine_consent_withdrawn` and counts outcome `withdrawn`.
+row (locked whichever routine it holds) and read back the values erased, then
+`withholdMessagesWithCopies` (`backend/src/shared/domain/messageWithholding.ts`):
+withhold the messages whose `sensitiveSlotKeys` marker names one or whose text
+contains an erased value (`matchableValueTexts` / `containsValueText` in
+`shared/domain/sensitiveTranscript.ts`: strings of four characters or more,
+case and whitespace aside; numbers, booleans and shorter strings by marker
+only), with text to `[redacted]`, a `withheld` metadata marker, text-copying
+metadata fields and facets dropped, and run every module's
+`MessageCopyWithholder` for its copies of those messages and of the values;
+mark the record withdrawn with the actor, and write `routine_consent.withdrawn`.
+Withholders: the `chat.answer` / `chat.suspended` audit events of the turn, or
+any whose strings state a value; the coverage assessment's request text, by
+message or value; the inbound email's body and raw MIME, by message; the photos
+the message carried; and the conversation's summary and title (cleared, with a
+`conversation.summary_refresh` job queued). Privacy reads no routine: the
+record names the slots it covered. A turn racing the withdrawal strips the
+values from the state it saves (`stripWithdrawnSlots`) and, in the same
+transaction, withholds its own visitor message and reply through the same
+`withholdMessagesWithCopies` when they are marked with a withdrawn slot or state
+a value its routine state held (`PostgresAssistantTurnPersistence`, bound to
+`bindConsentMessageWithholding`). When a step fills a covered slot from the
+visitor's earlier messages (the run trace's `earlierMessageSlotKeys`), the turn
+marks the earlier visitor messages that state the value, or, for a value the
+rule does not search for, those it read from before the routine started
+(`sensitiveMessageMarks` in `chat/services/routines/sensitiveTurnMarker.ts`).
+After commit the service publishes `conversation.turn_committed` so dashboard
+lists re-read the conversation, and the routine consent telemetry logs
+`routine_consent_withdrawn` and counts outcome `withdrawn`. The visitor's open
+chat tail does not re-deliver a changed message; a reload shows the localized
+withheld label (`publicChatWithheldMessageLabel`).
 Ray and the operator MCP do not withdraw (`consentWithdrawalIsAPersons` in
 `tests/unit/operatorCopilot/catalogCoverage.ts`).
 
 Public surfaces and key files:
 
 - `backend/src/modules/privacy/consentWithdrawal.ts` (use case and ports)
-- `backend/src/shared/domain/messageWithholding.ts` (withheld marker, `MessageCopyWithholder` port), `backend/src/shared/domain/routineConsentRecord.ts` (the record shape)
+- `backend/src/shared/domain/messageWithholding.ts` (withheld marker, `MessageCopyWithholder` port, `withholdMessagesWithCopies`), `backend/src/shared/domain/sensitiveTranscript.ts` (the value-matching rule), `backend/src/shared/domain/routineConsentRecord.ts` (the record shape and the `RoutineConsentWithdrawn` report)
 - `backend/src/app/composition/consentWithdrawal.ts` (withholder list, unit of work, service)
 - `backend/src/db/repositories/consentWithdrawalRepository.ts` (record reads and lock, routine values, messages)
 - `backend/src/app/http/routes/historyRoutes.ts` (`GET /api/v1/history/chat/{conversationId}/consents`, `workspace.history.read`; `POST /api/v1/history/chat/{conversationId}/consents/{recordId}/withdraw`, `workspace.history.delete`), `backend/src/app/http/openapi/paths/historyConsentPaths.ts`

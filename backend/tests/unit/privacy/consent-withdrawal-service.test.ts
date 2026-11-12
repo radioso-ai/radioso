@@ -5,9 +5,10 @@ import {
   ConsentWithdrawalService,
   type ConsentRecord,
   type ConsentWithdrawalWriteScope,
-  type ConsentWithdrawn,
 } from "../../../src/modules/privacy/public.js";
 import type { MessageCopyWithholder, WithheldMessages } from "../../../src/shared/domain/messageWithholding.js";
+import type { RoutineConsentWithdrawn } from "../../../src/shared/domain/routineConsentRecord.js";
+import { containsValueText } from "../../../src/shared/domain/sensitiveTranscript.js";
 
 const WORKSPACE = "11111111-1111-4111-8111-111111111111";
 const CONVERSATION = "22222222-2222-4222-8222-222222222222";
@@ -36,6 +37,8 @@ interface FakeState {
   routineValues: Record<string, unknown>;
   /** Message id to the sensitive slot keys its metadata names. */
   markedMessages: Record<string, string[]>;
+  /** Message id to its text. */
+  texts: Record<string, string>;
   withheld: string[];
   audit: AuditEventInput[];
 }
@@ -44,11 +47,18 @@ interface FakeState {
  * One in-memory "database" with transaction semantics: the work runs against a copy, which replaces
  * the committed state only when the work resolves.
  */
-const createFake = (input: { records: ConsentRecord[]; markedMessages?: Record<string, string[]>; copyRows?: number }) => {
+const createFake = (input: {
+  records: ConsentRecord[];
+  markedMessages?: Record<string, string[]>;
+  texts?: Record<string, string>;
+  routineValues?: Record<string, unknown>;
+  copyRows?: number;
+}) => {
   let committed: FakeState = {
     records: input.records.map((record) => ({ ...record })),
-    routineValues: { name: "Ada", injury: "sore knee" },
+    routineValues: input.routineValues ?? { name: "Ada", injury: "sore knee" },
     markedMessages: input.markedMessages ?? {},
+    texts: input.texts ?? {},
     withheld: [],
     audit: [],
   };
@@ -83,15 +93,21 @@ const createFake = (input: { records: ConsentRecord[]; markedMessages?: Record<s
         routineValues: {
           async erase({ slotKeys }) {
             order.push("erase");
+            const erased = Object.fromEntries(slotKeys.filter((key) => key in draft.routineValues).map((key) => [key, draft.routineValues[key]]));
             for (const key of slotKeys) delete draft.routineValues[key];
+            return erased;
           },
         },
         messages: {
-          async withhold({ slotKeys }) {
+          async withhold({ slotKeys, valueTexts }) {
             order.push("withhold");
-            const ids = Object.entries(draft.markedMessages)
+            const marked = Object.entries(draft.markedMessages)
               .filter(([, keys]) => keys.some((key) => slotKeys.includes(key)))
               .map(([id]) => id);
+            const stated = Object.entries(draft.texts)
+              .filter(([, text]) => containsValueText(text, valueTexts))
+              .map(([id]) => id);
+            const ids = [...new Set([...marked, ...stated])];
             draft.withheld.push(...ids);
             return ids;
           },
@@ -110,14 +126,21 @@ const createFake = (input: { records: ConsentRecord[]; markedMessages?: Record<s
     },
   };
   const loggedAudit: AuditEventInput[] = [];
-  const withdrawals: ConsentWithdrawn[] = [];
+  const withdrawals: RoutineConsentWithdrawn[] = [];
+  const invalidations: Array<{ workspaceId: string; kinds: readonly string[] }> = [];
   const service = new ConsentWithdrawalService({
     unitOfWork,
     records: { listForConversation: async () => committed.records },
     auditLog: { logRecorded: (event) => void loggedAudit.push(event) },
     telemetry: { withdrawn: (event) => void withdrawals.push(event) },
+    invalidation: {
+      enqueue: (workspaceId, kinds) => {
+        invalidations.push({ workspaceId, kinds });
+        return { accepted: true, coalesced: false };
+      },
+    },
   });
-  return { service, state: () => committed, order, copyScopes, loggedAudit, withdrawals };
+  return { service, state: () => committed, order, copyScopes, loggedAudit, withdrawals, invalidations };
 };
 
 const withdraw = (fake: ReturnType<typeof createFake>, recordId = RECORD) =>
@@ -132,7 +155,7 @@ describe("ConsentWithdrawalService", () => {
     expect(outcome).toEqual({ kind: "withdrawn", consent: { ...granted, withdrawnAt: WITHDRAWN_AT } });
     expect(fake.state().routineValues).toEqual({ name: "Ada" });
     expect(fake.state().withheld).toEqual(["message-1", "message-2"]);
-    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: ["message-1", "message-2"] }]);
+    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: ["message-1", "message-2"], valueTexts: ["sore knee"] }]);
     expect(fake.order).toEqual(["lock", "mark", "erase", "withhold", "copies", "audit"]);
     expect(fake.state().audit).toEqual([{
       accountId: ACTOR.accountId,
@@ -161,15 +184,57 @@ describe("ConsentWithdrawalService", () => {
       recordId: RECORD,
       withheldMessageCount: 2,
     }]);
+    // Operator views listing the conversation re-read it once the withdrawal committed.
+    expect(fake.invalidations).toEqual([{ workspaceId: WORKSPACE, kinds: ["conversation.turn_committed"] }]);
   });
 
-  it("asks no module to withhold copies when no message carried a covered value", async () => {
-    const fake = createFake({ records: [granted] });
+  it("withholds every message that states an erased value, marked or not", async () => {
+    const fake = createFake({
+      records: [granted],
+      texts: {
+        // Said before any routine asked, and repeated by a reply after the routine ended.
+        "before-routine": "Do you treat a SORE   knee?",
+        "after-routine": "You told me about your sore knee.",
+        "unrelated": "When is the next class?",
+      },
+    });
+
+    await withdraw(fake);
+
+    expect(fake.state().withheld).toEqual(["before-routine", "after-routine"]);
+    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: ["before-routine", "after-routine"], valueTexts: ["sore knee"] }]);
+  });
+
+  it("searches no text for a value too short, a number or a yes or no, and finds those messages by their marker", async () => {
+    const fake = createFake({
+      records: [{ ...granted, slotKeys: ["injury", "pregnant", "weeks", "side"] }],
+      routineValues: { injury: "flu", pregnant: true, weeks: 12, side: ["left knee", "ok"] },
+      markedMessages: { "message-1": ["pregnant"] },
+      texts: { "short": "I have the flu", "number": "12 weeks along", "list": "My LEFT knee hurts" },
+    });
+
+    await withdraw(fake);
+
+    expect(fake.state().withheld).toEqual(["message-1", "list"]);
+    expect(fake.copyScopes[0]?.valueTexts).toEqual(["left knee"]);
+  });
+
+  it("asks no module to withhold copies when no message carried a covered value and none was held", async () => {
+    const fake = createFake({ records: [granted], routineValues: { name: "Ada" } });
 
     await withdraw(fake);
 
     expect(fake.copyScopes).toEqual([]);
     expect(fake.state().audit[0]?.metadata).toMatchObject({ withheldMessageCount: 0, rowsByOwner: {} });
+  });
+
+  it("still asks every module to withhold its copies stating a held value when no message did", async () => {
+    const fake = createFake({ records: [granted], copyRows: 1 });
+
+    await withdraw(fake);
+
+    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: [], valueTexts: ["sore knee"] }]);
+    expect(fake.state().audit[0]?.metadata).toMatchObject({ withheldMessageCount: 0, rowsByOwner: { "email-channel": 1 } });
   });
 
   it("refuses a declined consent and changes nothing", async () => {
@@ -184,6 +249,7 @@ describe("ConsentWithdrawalService", () => {
     expect(fake.state().audit).toEqual([]);
     expect(fake.loggedAudit).toEqual([]);
     expect(fake.withdrawals).toEqual([]);
+    expect(fake.invalidations).toEqual([]);
   });
 
   it("refuses a consent already withdrawn and changes nothing", async () => {

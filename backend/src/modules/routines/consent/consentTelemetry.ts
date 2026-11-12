@@ -1,21 +1,10 @@
+import type { RoutineConsentWithdrawn } from "../../../shared/domain/routineConsentRecord.js";
 import type { RoutineConsentCommitted, RoutineConsentWritten } from "../../../shared/domain/routineConsentTurn.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 const ROUTINE_CONSENT_OUTCOMES_TOTAL = "routine_consent_outcomes_total";
 const OUTCOMES_HELP = "Routine consents by outcome: asked, granted, declined, defaulted to declined, not asked, or withdrawn.";
-
-/** What a committed withdrawal reports (#1544): ids, keys and a count, never the wording or a value. */
-interface RoutineConsentWithdrawn {
-  workspaceId: string;
-  conversationId: string;
-  channel: string | null;
-  routineId: string;
-  consentKey: string;
-  wordingVersionId: string;
-  recordId: string;
-  withheldMessageCount: number;
-}
 
 /** The counter's outcome for one recorded event: asked, granted, declined, defaulted or skipped. */
 const outcomeOf = (written: RoutineConsentWritten): string => {

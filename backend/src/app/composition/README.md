@@ -47,8 +47,11 @@ composition calls them and assembles the result.
 - `consentWithdrawal.ts`: a routine consent withdrawal's unit of work and every
   module's `MessageCopyWithholder` (`shared/domain/messageWithholding.ts`) for
   its copies of a withheld message's text: the turn's content audit, the
-  coverage request, the inbound email, the photos. A module that keeps a copy of
-  a message's text registers its withholder here.
+  coverage request, the inbound email, the photos, the conversation's summary
+  and title. A module that keeps a copy of a message's text registers its
+  withholder here. `bindConsentMessageWithholding` binds the messages and every
+  withholder to a transaction; the chat builder hands it to the turn
+  persistence, which withholds what a turn wrote after a withdrawal it raced.
 - `workspaceDeletion.ts`: what deleting a workspace, or an organization with
   its workspaces, does beyond the cascade. Inside the deletion's transaction it
   hands what vendors hold (each call recording, with the workspace's vendor key

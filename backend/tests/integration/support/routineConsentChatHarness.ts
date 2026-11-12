@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { createConversationEngine } from "@radioso/conversation-engine";
 
+import { bindConsentMessageWithholding } from "../../../src/app/composition/consentWithdrawal.js";
 import { createWorkspaceConversationDataErasure } from "../../../src/app/composition/conversationErasure.js";
 import { composeRoutineTurnProvider } from "../../../src/app/composition/routineTurnProvider.js";
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
@@ -168,7 +169,8 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
         metrics,
       }),
       agentService: {
-        resolve: async () => ({ ...legacyAgentWithoutWorkspace(workspace.id, new Date()), id: agentId, assistantDefaultLocale: "en" }),
+        // No retrieval, so a turn no routine takes answers from the model alone.
+        resolve: async () => ({ ...legacyAgentWithoutWorkspace(workspace.id, new Date()), id: agentId, assistantDefaultLocale: "en", retrievalEnabled: false }),
       },
       agentRevisionRuntimeResolver: new AgentRevisionRuntimeResolver({
         findCurrentPublished: async () => revision,
@@ -187,6 +189,7 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
         undefined,
         undefined,
         createRoutineConsentTelemetry({ logger, metricsRegistry: metrics }),
+        bindConsentMessageWithholding,
       ),
     });
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createConsentWithdrawal } from "../../src/app/composition/consentWithdrawal.js";
+import { bindConsentMessageWithholding, createConsentWithdrawal } from "../../src/app/composition/consentWithdrawal.js";
 import { createWorkspaceConversationDataErasure } from "../../src/app/composition/conversationErasure.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { ConversationActivityRepository } from "../../src/db/repositories/conversationActivityRepository.js";
@@ -39,6 +39,12 @@ interface Seeded {
   otherSlotMessageId: string;
   plainMessageId: string;
   carryingImageId: string;
+  /** Unmarked: the visitor named the value before any routine asked, and the reply repeated it. */
+  beforeRoutineMessageId: string;
+  beforeRoutineReplyId: string;
+  /** Unmarked: a question after the routine ended, and the reply that repeated the value. */
+  afterRoutineQuestionId: string;
+  afterRoutineReplyId: string;
 }
 
 describeIntegration("consent withdrawal (Postgres, #1544)", () => {
@@ -53,11 +59,18 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
     error: (fields: Record<string, unknown>) => void logged.push(fields),
   };
   const auditLogged: string[] = [];
+  const invalidations: Array<{ workspaceId: string; kinds: readonly string[] }> = [];
   const withdrawal = createConsentWithdrawal({
     db: database.kysely,
     logger,
     metricsRegistry: metrics,
     auditLog: { logRecorded: (event) => void auditLogged.push(event.eventType) },
+    invalidation: {
+      enqueue: (workspaceId, kinds) => {
+        invalidations.push({ workspaceId, kinds });
+        return { accepted: true, coalesced: false };
+      },
+    },
   });
 
   beforeAll(async () => {
@@ -114,6 +127,9 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
     );
     const base = { workspaceId: workspace.id, conversationId };
 
+    // Retrieval answered these before any routine ran, so no turn marked them.
+    const beforeRoutineMessageId = await insertMessage(base, { role: "user", content: "Do you run classes for a SORE\n knee?", metadata: {} });
+    const beforeRoutineReplyId = await insertMessage(base, { role: "assistant", content: "Yes, we adapt classes for a sore knee.", metadata: {} });
     const plainMessageId = await insertMessage(base, { role: "user", content: "I want to book a class", metadata: {} });
     const carryingImageId = randomUUID();
     const carryingUserMessageId = await insertMessage(base, {
@@ -139,6 +155,13 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       role: "user",
       content: "My date of birth is 1 May 1990",
       metadata: { sensitiveSlotKeys: ["birth_date"] },
+    });
+    // After the routine ended: no transition saved, so the turn marked neither message.
+    const afterRoutineQuestionId = await insertMessage(base, { role: "user", content: "What did I tell you?", metadata: {} });
+    const afterRoutineReplyId = await insertMessage(base, {
+      role: "assistant",
+      content: "You told me about your sore knee.",
+      metadata: { answerSegments: [{ text: "You told me about your sore knee." }] },
     });
 
     const repository = new RoutineConsentRepository(database.kysely);
@@ -166,6 +189,14 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       [conversationId, CONSENT_ROUTINE_ID],
     );
 
+    // The summary and title the worker wrote from the transcript, before any routine asked.
+    await database.query(
+      `INSERT INTO conversation_summaries (session_id, summary, covered_message_count, covered_through, expires_at)
+       VALUES ($1, 'The visitor asked about classes for a sore knee.', 4, now(), now() + interval '1 day')`,
+      [conversationId],
+    );
+    await database.query("UPDATE conversations SET title = 'Classes for a sore knee' WHERE id = $1", [conversationId]);
+
     // The copies: a facet, the inbound mail, the turn's audit, its coverage assessment, the photo.
     for (const messageId of [carryingUserMessageId, plainMessageId]) {
       await database.query(
@@ -191,10 +222,18 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
          ($2, $3, $4, 'chat.answer', 'success', jsonb_build_object('conversationId', $5::text, 'userMessageId', $8::text, 'assistantMessageId', $8::text))`,
       [randomUUID(), randomUUID(), account.id, workspace.id, conversationId, carryingUserMessageId, carryingReplyId, plainMessageId],
     );
+    // The question after the routine ended states no value; the request its coverage framed does.
+    await database.query(
+      `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json) VALUES
+         ($1, $2, $3, 'chat.answer', 'success', jsonb_build_object('conversationId', $4::text, 'userMessageId', $5::text, 'assistantMessageId', $5::text, 'rewrittenQuery', 'classes for a sore knee'))`,
+      [randomUUID(), account.id, workspace.id, conversationId, afterRoutineQuestionId],
+    );
     await database.query(
       `INSERT INTO answer_coverage_assessments (id, workspace_id, conversation_id, request_message_id, originating_turn_id, contextualized_request, availability, schema_version)
-       VALUES ($1, $2, $3, $4, $4, 'user: I have a sore knee', 'not_recorded', 1)`,
-      [randomUUID(), workspace.id, conversationId, carryingUserMessageId],
+       VALUES ($1, $2, $3, $4, $4, 'user: I have a sore knee', 'not_recorded', 1),
+              ($5, $2, $3, $6, $6, 'user: Do you run classes for a sore knee? user: What did I tell you?', 'not_recorded', 1),
+              ($7, $2, $3, $8, $8, 'user: I want to book a class', 'not_recorded', 1)`,
+      [randomUUID(), workspace.id, conversationId, carryingUserMessageId, randomUUID(), afterRoutineQuestionId, randomUUID(), plainMessageId],
     );
     await database.query(
       `INSERT INTO visitor_images (id, workspace_id, agent_id, owner_kind, owner_id, conversation_id, message_id, storage_bucket, storage_object_path,
@@ -216,6 +255,10 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       otherSlotMessageId,
       plainMessageId,
       carryingImageId,
+      beforeRoutineMessageId,
+      beforeRoutineReplyId,
+      afterRoutineQuestionId,
+      afterRoutineReplyId,
     };
   };
 
@@ -266,6 +309,29 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       // A message that carried another slot, or none, keeps its text.
       expect((await message(seeded.otherSlotMessageId)).content).toBe("My date of birth is 1 May 1990");
       expect((await message(seeded.plainMessageId)).content).toBe("I want to book a class");
+      expect((await message(seeded.afterRoutineQuestionId)).content).toBe("What did I tell you?");
+    });
+
+    it("withholds the messages that state an erased value though no turn marked them, before the routine and after it", async () => {
+      const at = withdrawnAt!.toISOString();
+      for (const id of [seeded.beforeRoutineMessageId, seeded.beforeRoutineReplyId]) {
+        expect(await message(id)).toEqual({ content: "[redacted]", metadata_json: { withheld: { reason: "consent_withdrawn", at } } });
+      }
+      expect(await message(seeded.afterRoutineReplyId)).toEqual({ content: "[redacted]", metadata_json: { withheld: { reason: "consent_withdrawn", at } } });
+    });
+
+    it("clears the summary and title written from the transcript, and queues them to be written again from it", async () => {
+      expect(await database.query("SELECT summary FROM conversation_summaries WHERE session_id = $1", [seeded.conversationId])).toEqual([]);
+      expect(await database.query("SELECT title FROM conversations WHERE id = $1", [seeded.conversationId])).toEqual([{ title: null }]);
+      const refreshes = await database.query<{ payload: { conversationId: string } }>(
+        "SELECT payload FROM background_jobs WHERE kind = 'conversation.summary_refresh' AND idempotency_key = $1",
+        [seeded.conversationId],
+      );
+      expect(refreshes).toEqual([{ payload: { workspaceId: seeded.workspaceId, conversationId: seeded.conversationId } }]);
+    });
+
+    it("tells the operator views listing the conversation to re-read it", () => {
+      expect(invalidations).toContainEqual({ workspaceId: seeded.workspaceId, kinds: ["conversation.turn_committed"] });
     });
 
     it("drops the withheld message's facet and keeps the others", async () => {
@@ -292,12 +358,18 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
         "SELECT metadata_json->>'userMessageId' AS user_message_id FROM audit_events WHERE workspace_id = $1 AND event_type = 'chat.answer'",
         [seeded.workspaceId],
       );
+      // The after-routine turn's audit goes for the value its own text held.
       expect(turnAudits.map((audit) => audit.user_message_id)).toEqual([seeded.plainMessageId]);
-      const [assessment] = await database.query<{ contextualized_request: string }>(
-        "SELECT contextualized_request FROM answer_coverage_assessments WHERE request_message_id = $1",
-        [seeded.carryingUserMessageId],
+      const assessments = await database.query<{ request_message_id: string; contextualized_request: string }>(
+        "SELECT request_message_id, contextualized_request FROM answer_coverage_assessments WHERE conversation_id = $1",
+        [seeded.conversationId],
       );
-      expect(assessment?.contextualized_request).toBe("[redacted]");
+      // The after-routine request goes for the earlier turn's words its framing restated.
+      expect(Object.fromEntries(assessments.map((row) => [row.request_message_id, row.contextualized_request]))).toEqual({
+        [seeded.carryingUserMessageId]: "[redacted]",
+        [seeded.afterRoutineQuestionId]: "[redacted]",
+        [seeded.plainMessageId]: "user: I want to book a class",
+      });
       expect(await database.query("SELECT id FROM visitor_images WHERE id = $1", [seeded.carryingImageId])).toEqual([]);
       const deletionJobs = await database.query<{ payload: { objects: Array<{ objectPath: string }> } }>(
         "SELECT payload FROM background_jobs WHERE kind = 'visitor_images.object_deletion'",
@@ -330,14 +402,14 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
           routineId: CONSENT_ROUTINE_ID,
           consentKey: "health",
           recordId: seeded.recordId,
-          withheldMessageCount: 2,
-          rowsByOwner: { "audit": 1, "answer-coverage": 1, "email-channel": 1, "visitor-images": 1 },
+          withheldMessageCount: 5,
+          rowsByOwner: { "audit": 2, "answer-coverage": 2, "email-channel": 1, "visitor-images": 1, "conversation-summary": 2 },
         }),
       }]);
       expect(JSON.stringify(audits)).not.toContain("sore knee");
       expect(auditLogged).toContain("routine_consent.withdrawn");
       const withdrawnLog = logged.find((fields) => fields.event === "routine_consent_withdrawn" && fields.conversationId === seeded.conversationId);
-      expect(withdrawnLog).toMatchObject({ workspaceId: seeded.workspaceId, routineId: CONSENT_ROUTINE_ID, consentKey: "health", recordId: seeded.recordId, withheldMessageCount: 2 });
+      expect(withdrawnLog).toMatchObject({ workspaceId: seeded.workspaceId, routineId: CONSENT_ROUTINE_ID, consentKey: "health", recordId: seeded.recordId, withheldMessageCount: 5 });
       expect(JSON.stringify(withdrawnLog)).not.toContain("sore knee");
       expect(metrics.renderPrometheus()).toMatch(/routine_consent_outcomes_total\{outcome="withdrawn"\} [1-9]/);
     });
@@ -382,6 +454,105 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       });
       expect((await routineVariables(seeded.conversationId))?.variables).toEqual({ name: "Ada" });
     });
+
+    it("withholds what a turn that raced the withdrawal writes: a marked reply, and a visitor message stating the value its state held", async () => {
+      // The turn read the value before the withdrawal committed, and commits after it.
+      const visitorMessageId = await insertMessage(seeded, { role: "user", content: "Actually my sore knee is a bit better", metadata: {} });
+      await database.query(
+        `INSERT INTO answer_coverage_assessments (id, workspace_id, conversation_id, request_message_id, originating_turn_id, contextualized_request, availability, schema_version)
+         VALUES ($1, $2, $3, $4, $4, 'user: Actually my sore knee is a bit better', 'not_recorded', 1)`,
+        [randomUUID(), seeded.workspaceId, seeded.conversationId, visitorMessageId],
+      );
+      const persistence = new PostgresAssistantTurnPersistence(
+        database.kysely,
+        new ConversationActivityRepository(database.kysely),
+        60_000,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        bindConsentMessageWithholding,
+      );
+      const receipt = await persistence.completeAssistantTurn({
+        workspaceId: seeded.workspaceId,
+        conversationId: seeded.conversationId,
+        visitorMessageId,
+        answerCoverageRequestMessageId: visitorMessageId,
+        routineStateTransition: {
+          kind: "save",
+          state: {
+            sessionId: seeded.conversationId,
+            routineId: CONSENT_ROUTINE_ID,
+            path: ["ask_name", "ask_injury", "ask_time"],
+            variables: { name: "Ada", injury: "sore knee" },
+            status: "active",
+          },
+        },
+        sensitiveVisitorMessage: { id: visitorMessageId, sensitiveSlotKeys: ["injury"] },
+        assistantMessage: {
+          conversationId: seeded.conversationId,
+          workspaceId: seeded.workspaceId,
+          role: "assistant",
+          content: "Glad the knee is better. When would you like to come?",
+          metadata: { sensitiveSlotKeys: ["injury"], answerSegments: [{ text: "Glad the knee is better." }] },
+        },
+        auditEvent: {
+          workspaceId: seeded.workspaceId,
+          eventType: "chat.answer",
+          eventStatus: "success",
+          metadata: { conversationId: seeded.conversationId, userMessageId: visitorMessageId },
+        },
+      });
+
+      const at = withdrawnAt!.toISOString();
+      expect(await message(visitorMessageId)).toEqual({ content: "[redacted]", metadata_json: { sensitiveSlotKeys: ["injury"], withheld: { reason: "consent_withdrawn", at } } });
+      expect(await message(receipt.message.id)).toEqual({ content: "[redacted]", metadata_json: { sensitiveSlotKeys: ["injury"], withheld: { reason: "consent_withdrawn", at } } });
+      expect(receipt.message.content).toBe("[redacted]");
+      // Its copies go as the withdrawal's own do: the turn's content audit and its coverage text.
+      expect(await database.query(
+        "SELECT id FROM audit_events WHERE workspace_id = $1 AND event_type = 'chat.answer' AND metadata_json->>'userMessageId' = $2",
+        [seeded.workspaceId, visitorMessageId],
+      )).toEqual([]);
+      expect(await database.query(
+        "SELECT contextualized_request FROM answer_coverage_assessments WHERE request_message_id = $1",
+        [visitorMessageId],
+      )).toEqual([{ contextualized_request: "[redacted]" }]);
+      expect((await routineVariables(seeded.conversationId))?.variables).toEqual({ name: "Ada" });
+    });
+
+    it("leaves a turn after the withdrawal alone when it carries none of the withdrawn values", async () => {
+      const visitorMessageId = await insertMessage(seeded, { role: "user", content: "Tuesday works", metadata: {} });
+      const receipt = await new PostgresAssistantTurnPersistence(
+        database.kysely,
+        new ConversationActivityRepository(database.kysely),
+        60_000,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        bindConsentMessageWithholding,
+      ).completeAssistantTurn({
+        workspaceId: seeded.workspaceId,
+        conversationId: seeded.conversationId,
+        visitorMessageId,
+        routineStateTransition: {
+          kind: "save",
+          state: {
+            sessionId: seeded.conversationId,
+            routineId: CONSENT_ROUTINE_ID,
+            path: ["ask_name", "ask_injury", "ask_time", "done"],
+            variables: { name: "Ada", time: "Tuesday" },
+            status: "completed",
+          },
+        },
+        assistantMessage: { conversationId: seeded.conversationId, workspaceId: seeded.workspaceId, role: "assistant", content: "Booked for Tuesday." },
+        auditEvent: { workspaceId: seeded.workspaceId, eventType: "chat.answer", eventStatus: "success", metadata: {} },
+      });
+      expect((await message(visitorMessageId)).content).toBe("Tuesday works");
+      expect((await message(receipt.message.id)).content).toBe("Booked for Tuesday.");
+    });
   });
 
   it("refuses a declined consent and changes nothing", async () => {
@@ -417,18 +588,27 @@ describeIntegration("a routine still running after consent is withdrawn (Postgre
     "I have a sore knee": { injury: "sore knee" },
     "Tuesday at 10": { time: "Tuesday at 10" },
   };
+  // A question retrieval answers before the visitor asks to book; no routine starts for it.
+  const BEFORE_ROUTINE = "Do you run classes for a sore knee?";
+  // Confirms what the visitor said before the consent, which only the earlier-message rule can read.
+  const CONFIRMS_EARLIER = "Yes, the one I mentioned";
+  const AFTER_ROUTINE = "What did I tell you?";
   const model: ChatGateway = {
     async answer(input) {
       const prompt = input.systemPrompt ?? "";
       prompts.push(`${prompt}\n${input.query}`);
       if (prompt.includes("wants to start any registered routine")) {
-        return JSON.stringify({ matches: [{ routineId: CONSENT_ROUTINE_ID, confidence: 0.95, variables: {} }] });
+        return JSON.stringify({ matches: input.query === BEFORE_ROUTINE ? [] : [{ routineId: CONSENT_ROUTINE_ID, confidence: 0.95, variables: {} }] });
       }
       if (prompt.includes("A person was just shown the consent request")) {
         return JSON.stringify({ decision: input.query === "Yes, I agree" ? "granted" : "unclear" });
       }
       if (prompt.includes("claimsAuthority") || prompt.includes("Declared slots")) {
-        return JSON.stringify({ variables: slotValues[input.query] ?? {}, claimsAuthority: false, condition: null, offTopic: false });
+        const earlier = input.query === CONFIRMS_EARLIER && prompt.includes("said earlier in this conversation") ? { injury: "sore knee" } : {};
+        return JSON.stringify({ variables: { ...slotValues[input.query], ...earlier }, claimsAuthority: false, condition: null, offTopic: false });
+      }
+      if (input.query === AFTER_ROUTINE) {
+        return "You told me about your sore knee.";
       }
       return `[step reply to: ${input.query}]`;
     },
@@ -442,6 +622,7 @@ describeIntegration("a routine still running after consent is withdrawn (Postgre
     logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
     metricsRegistry: null,
     auditLog: {},
+    invalidation: { enqueue: () => ({ accepted: true, coalesced: false }) },
   });
 
   beforeAll(async () => {
@@ -491,5 +672,46 @@ describeIntegration("a routine still running after consent is withdrawn (Postgre
       { role: "assistant", content: "[redacted]", reason: "consent_withdrawn" },
     ]);
     expect(history.find((message) => message.content === "My name is Ada")?.withheld).toBeUndefined();
+  });
+
+  it("marks what the visitor said before the consent once the step takes the value from it, and withholds it with every reply that repeated it", async () => {
+    const conversation = await harness.startConversation({ definition: classBooking("continue") });
+    await conversation.send(BEFORE_ROUTINE);
+    await conversation.send("I want to book a class");
+    await conversation.send("My name is Ada");
+    await conversation.send("Yes, I agree");
+    await conversation.send(CONFIRMS_EARLIER);
+    expect(await conversation.routineState()).toMatchObject({ status: "completed", variables: { name: "Ada", injury: "sore knee" } });
+
+    // Marked when the step read the value from it, so summaries, facets and evals withhold it from then on.
+    const byContent = async () => new Map((await conversation.messages()).map((message) => [message.content, message]));
+    const before = (await byContent()).get(BEFORE_ROUTINE);
+    expect(before?.metadata_json).toMatchObject({ sensitiveSlotKeys: ["injury"] });
+    // Only the message that stated it: the booking request and the name stay unmarked. (The grant
+    // answered the consent, so its own turn marked it.)
+    for (const content of ["I want to book a class", "My name is Ada"]) {
+      expect((await byContent()).get(content)?.metadata_json?.sensitiveSlotKeys).toBeUndefined();
+    }
+
+    // After the routine ended, a reply repeats the value; no routine saved, so no turn marked it.
+    await conversation.send(AFTER_ROUTINE);
+    expect((await byContent()).get("You told me about your sore knee.")?.metadata_json?.sensitiveSlotKeys).toBeUndefined();
+
+    const [record] = await conversation.records();
+    const outcome = await withdrawal.withdraw({
+      workspaceId: conversation.workspaceId,
+      conversationId: conversation.conversationId,
+      recordId: record.id,
+      actor: { accountId: conversation.accountId, userId: null },
+    });
+    expect(outcome.kind).toBe("withdrawn");
+
+    const remaining = await conversation.messages();
+    expect(remaining.filter((message) => message.content.toLowerCase().includes("sore knee"))).toEqual([]);
+    const history = await conversation.reloaded();
+    expect(history.find((message) => message.id === before?.id)).toMatchObject({ content: "[redacted]", withheld: { reason: "consent_withdrawn" } });
+    for (const content of ["I want to book a class", "My name is Ada", AFTER_ROUTINE]) {
+      expect(history.find((message) => message.content === content)?.withheld).toBeUndefined();
+    }
   });
 });

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
-import { anyOf, castText, isForeignKeyViolation, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, isForeignKeyViolation, jsonbKeyText, jsonbSet, jsonbStringContainsAnyValueText, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { ConversationDataEraser, ConversationErasureScope } from "../../shared/domain/conversationDataErasure.js";
@@ -434,7 +434,8 @@ export class ConversationAuditEraser implements ConversationDataEraser {
 /**
  * Withholds the turn events that copy a withheld message's content: each content event naming the
  * message as the turn's visitor message or its reply goes, as a conversation's erasure removes them
- * all. The events that record ids and outcome codes stay.
+ * all, and so does each of the conversation's content events whose own text states a withheld
+ * value, as a query rewritten from an earlier turn. The events that record ids and outcome codes stay.
  */
 export class ConversationAuditWithholder implements MessageCopyWithholder {
   readonly owner = "audit";
@@ -452,6 +453,7 @@ export class ConversationAuditWithholder implements MessageCopyWithholder {
         .where((eb) => eb.or([
           anyOf(jsonbKeyText(eb.ref("metadata_json"), "userMessageId"), messages.messageIds, "text[]"),
           anyOf(jsonbKeyText(eb.ref("metadata_json"), "assistantMessageId"), messages.messageIds, "text[]"),
+          jsonbStringContainsAnyValueText(eb.ref("metadata_json"), messages.valueTexts),
         ]))
         .executeTakeFirst();
       removed += Number(result.numDeletedRows);

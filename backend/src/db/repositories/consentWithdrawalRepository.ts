@@ -5,17 +5,19 @@ import {
   WITHHELD_MESSAGE_TEXT,
   WITHHELD_METADATA_KEY,
   type MessageWithholding,
+  type MessageWithholdingTarget,
 } from "../../shared/domain/messageWithholding.js";
 import type { RoutineConsentRecord as ConsentRecord } from "../../shared/domain/routineConsentRecord.js";
 import { SENSITIVE_SLOT_KEYS_METADATA_KEY } from "../../shared/domain/sensitiveTranscript.js";
-import { toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { containsAnyValueText, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
  * The SQL side of withdrawing a routine consent (#1544): reading a conversation's consent records
  * with the wording each was decided on, and, inside the withdrawal's transaction, locking one,
  * erasing the values it covered from the routine state, withholding the messages that carried them,
- * and marking it withdrawn. Satisfies the privacy module's `ConsentRecordReader` structurally.
+ * and marking it withdrawn. Satisfies the privacy module's `ConsentRecordReader` structurally. A turn
+ * that races a withdrawal withholds its own messages through `withholdMessages` too.
  */
 
 const recordColumns = [
@@ -122,43 +124,57 @@ export class ConsentWithdrawalRepository {
   }
 
   /**
-   * Erases the slots' values from the conversation's state of the routine. The conversation keeps
-   * one state, a completed run's included, which this edits where it stands.
+   * Erases the slots' values from the conversation's state of the routine and returns the values it
+   * erased, by slot key. The conversation keeps one state, a completed run's included, which this
+   * edits where it stands. The state is locked whichever routine it holds: a turn that saved one
+   * commits first, and its values are the ones erased, or it waits and reads the withdrawal.
    */
-  async eraseRoutineValues(input: { conversationId: string; routineId: string; slotKeys: readonly string[] }): Promise<void> {
+  async eraseRoutineValues(input: { conversationId: string; routineId: string; slotKeys: readonly string[] }): Promise<Record<string, unknown>> {
+    const locked = await sql<{ routine_id: string; variables: Record<string, unknown> | null }>`
+      SELECT routine_id, variables FROM routine_states WHERE session_id = ${input.conversationId} FOR UPDATE
+    `.execute(this.db);
+    const state = locked.rows[0];
+    if (!state || state.routine_id !== input.routineId) {
+      return {};
+    }
     await sql`
       UPDATE routine_states
          SET variables = variables - ${sql.val([...input.slotKeys])}::text[]
        WHERE session_id = ${input.conversationId}
-         AND routine_id = ${input.routineId}
     `.execute(this.db);
+    const variables = state.variables ?? {};
+    return Object.fromEntries(input.slotKeys.filter((key) => Object.hasOwn(variables, key)).map((key) => [key, variables[key]]));
   }
 
   /**
-   * Withholds the conversation's messages whose sensitive marker names any of the slots: the text
-   * becomes the redaction marker, the metadata fields that repeat it go, and the message records
-   * the withholding. A message an earlier withdrawal withheld keeps its first record. Their facets
-   * go too, as a sensitive turn's do. Returns the messages' ids.
+   * Withholds the messages `target` reaches: those whose sensitive marker names one of its slots,
+   * and those whose text contains one of its values. The text becomes the redaction marker, the
+   * metadata fields that repeat it go, and the message records the withholding. A message an earlier
+   * withdrawal withheld keeps its first record. Their facets go too, as a sensitive turn's do.
+   * Returns the messages' ids.
    */
-  async withholdMessages(input: { workspaceId: string; conversationId: string; slotKeys: readonly string[]; at: Date }): Promise<string[]> {
-    const withholding: MessageWithholding = { reason: "consent_withdrawn", at: input.at.toISOString() };
+  async withholdMessages(target: MessageWithholdingTarget): Promise<string[]> {
+    const withholding: MessageWithholding = { reason: "consent_withdrawn", at: target.at.toISOString() };
+    const among = target.among ? sql`AND id = ANY(${sql.val([...target.among])}::uuid[])` : sql``;
     const rows = await sql<{ id: string }>`
       UPDATE messages
          SET content = ${WITHHELD_MESSAGE_TEXT},
-             metadata_json = (metadata_json - ${sql.val([...WITHHELD_MESSAGE_COPY_FIELDS])}::text[])
+             metadata_json = (coalesce(metadata_json, '{}'::jsonb) - ${sql.val([...WITHHELD_MESSAGE_COPY_FIELDS])}::text[])
                || CASE WHEN metadata_json ? ${WITHHELD_METADATA_KEY} THEN '{}'::jsonb
                        ELSE jsonb_build_object(${WITHHELD_METADATA_KEY}::text, ${toJsonb(withholding)}) END
-       WHERE workspace_id = ${input.workspaceId}
-         AND conversation_id = ${input.conversationId}
-         AND jsonb_typeof(metadata_json -> ${SENSITIVE_SLOT_KEYS_METADATA_KEY}::text) = 'array'
-         AND (metadata_json -> ${SENSITIVE_SLOT_KEYS_METADATA_KEY}::text) ?| ${sql.val([...input.slotKeys])}::text[]
+       WHERE workspace_id = ${target.workspaceId}
+         AND conversation_id = ${target.conversationId}
+         ${among}
+         AND ((jsonb_typeof(metadata_json -> ${SENSITIVE_SLOT_KEYS_METADATA_KEY}::text) = 'array'
+               AND (metadata_json -> ${SENSITIVE_SLOT_KEYS_METADATA_KEY}::text) ?| ${sql.val([...target.slotKeys])}::text[])
+              OR ${containsAnyValueText(sql.ref("content"), target.valueTexts)})
       RETURNING id
     `.execute(this.db);
     const ids = rows.rows.map((row) => row.id);
     if (ids.length > 0) {
       await this.db
         .deleteFrom("message_facets")
-        .where("workspace_id", "=", input.workspaceId)
+        .where("workspace_id", "=", target.workspaceId)
         .where("message_id", "in", ids)
         .execute();
     }

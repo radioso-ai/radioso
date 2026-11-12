@@ -563,7 +563,12 @@ imports from `services/`.
   which also hands it the conversation as a routine's consents read it
   (`services/routines/routineConsentTurn.ts`, #1544). The routine's
   `hostEffects.consentEvents` ride the result to `completeAssistantTurn` unread, and
-  `PostgresAssistantTurnPersistence` records them in the turn's transaction. A replayed
+  `PostgresAssistantTurnPersistence` records them in the turn's transaction. The same
+  transaction marks the visitor messages `sensitiveMessageMarks`
+  (`services/routines/sensitiveTurnMarker.ts`) names, the earlier ones a step read a covered
+  value from included, and, after a consent of the conversation was withdrawn while the turn
+  ran, withholds the turn's visitor message and reply through the composition-bound
+  withholding (`bindConsentMessageWithholding`). A replayed
   turn (Test Chat, eval) records them in its session's own store instead
   (`services/routines/sessionRoutineConsentStore.ts`, the assembly's
   `routineConsentStore`), which Test Chat's continuation carries to the next turn.

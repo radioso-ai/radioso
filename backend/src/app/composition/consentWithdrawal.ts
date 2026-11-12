@@ -1,15 +1,18 @@
 import type { Kysely } from "kysely";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 import { AnswerCoverageWithholder } from "../../db/repositories/answerCoverageRepository.js";
 import { AuditEventRepository, ConversationAuditWithholder } from "../../db/repositories/auditEventRepository.js";
 import { BackgroundJobRepository } from "../../db/repositories/backgroundJobRepository.js";
 import { ConsentWithdrawalRepository } from "../../db/repositories/consentWithdrawalRepository.js";
+import { ConversationSummaryWithholder } from "../../db/repositories/conversationSummaryRepository.js";
+import { conversationSummaryRefreshRequest } from "../../modules/chat/composition.js";
 import { EmailMessageWithholder } from "../../modules/emailChannel/public.js";
 import { ConsentWithdrawalService, type ConsentWithdrawalUnitOfWork } from "../../modules/privacy/public.js";
 import { createRoutineConsentTelemetry } from "../../modules/routines/public.js";
 import { VisitorImageWithholder } from "../../modules/visitorImages/composition.js";
 import type { AuditEventInput } from "../../modules/audit/contracts/index.js";
-import type { MessageCopyWithholder } from "../../shared/domain/messageWithholding.js";
+import type { MessageCopyWithholder, MessageWithholdingScope } from "../../shared/domain/messageWithholding.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
@@ -31,7 +34,22 @@ const defaultMessageCopyWithholders: readonly MessageCopyWithholderBinding[] = [
   (trx) => new EmailMessageWithholder(trx),
   // The photos a message carried: their objects go to the deletion job in the withdrawal's transaction.
   (trx) => new VisitorImageWithholder(trx, new BackgroundJobRepository(trx)),
+  // The summary and title written from the transcript: cleared, and queued to be written again.
+  (trx) => new ConversationSummaryWithholder(trx, new BackgroundJobRepository(trx), conversationSummaryRefreshRequest),
 ];
+
+/**
+ * A withholding's writes bound to `trx`: the message rows and every module's copies. The
+ * withdrawal's transaction runs it, and so does a turn's that committed after a withdrawal it raced,
+ * for the messages it wrote.
+ */
+export const bindConsentMessageWithholding = (trx: Db): MessageWithholdingScope => {
+  const repository = new ConsentWithdrawalRepository(trx);
+  return {
+    messages: { withhold: (target) => repository.withholdMessages(target) },
+    messageCopies: defaultMessageCopyWithholders.map((bind) => bind(trx)),
+  };
+};
 
 /**
  * Runs one consent withdrawal in one Postgres transaction: the record's lock, the routine state, the
@@ -42,30 +60,25 @@ const defaultMessageCopyWithholders: readonly MessageCopyWithholderBinding[] = [
 const createPostgresConsentWithdrawalUnitOfWork = (deps: {
   db: Kysely<DB>;
   logger: Pick<AppLogger, "warn">;
-  messageCopyWithholders?: readonly MessageCopyWithholderBinding[];
-}): ConsentWithdrawalUnitOfWork => {
-  const withholders = deps.messageCopyWithholders ?? defaultMessageCopyWithholders;
-  return {
-    run: (work) => runTransactionWithDeadlockRetry(deps.db, (trx) => {
-      const repository = new ConsentWithdrawalRepository(trx);
-      const audit = new AuditEventRepository(trx);
-      return work({
-        records: {
-          lock: (input) => repository.lockRecord(input),
-          markWithdrawn: (input) => repository.markWithdrawn(input),
+}): ConsentWithdrawalUnitOfWork => ({
+  run: (work) => runTransactionWithDeadlockRetry(deps.db, (trx) => {
+    const repository = new ConsentWithdrawalRepository(trx);
+    const audit = new AuditEventRepository(trx);
+    return work({
+      ...bindConsentMessageWithholding(trx),
+      records: {
+        lock: (input) => repository.lockRecord(input),
+        markWithdrawn: (input) => repository.markWithdrawn(input),
+      },
+      routineValues: { erase: (input) => repository.eraseRoutineValues(input) },
+      audit: {
+        record: async (event) => {
+          await audit.create({ ...event, metadata: { ...event.metadata, ...requestAuditMetadata(event.eventType) } });
         },
-        routineValues: { erase: (input) => repository.eraseRoutineValues(input) },
-        messages: { withhold: (input) => repository.withholdMessages(input) },
-        messageCopies: withholders.map((bind) => bind(trx)),
-        audit: {
-          record: async (event) => {
-            await audit.create({ ...event, metadata: { ...event.metadata, ...requestAuditMetadata(event.eventType) } });
-          },
-        },
-      });
-    }, { unit: "consent_withdrawal", logger: deps.logger }),
-  };
-};
+      },
+    });
+  }, { unit: "consent_withdrawal", logger: deps.logger }),
+});
 
 /** The consent withdrawal service over Postgres, reporting through the routine consent telemetry. */
 export const createConsentWithdrawal = (deps: {
@@ -73,9 +86,11 @@ export const createConsentWithdrawal = (deps: {
   logger: Pick<AppLogger, "info" | "warn" | "error">;
   metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null;
   auditLog: { logRecorded?(event: AuditEventInput): void };
+  invalidation: Pick<WorkspaceInvalidationPublisher, "enqueue">;
 }): ConsentWithdrawalService => new ConsentWithdrawalService({
   unitOfWork: createPostgresConsentWithdrawalUnitOfWork(deps),
   records: new ConsentWithdrawalRepository(deps.db),
   auditLog: deps.auditLog,
   telemetry: createRoutineConsentTelemetry({ logger: deps.logger, metricsRegistry: deps.metricsRegistry }),
+  invalidation: deps.invalidation,
 });

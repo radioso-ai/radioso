@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
 import { pgVectorCosineDistance, pgVectorText, serializePgVector, toPgVector } from "../../src/shared/infra/kysely/pgVectorSql.js";
-import { anyOf, castText, clockTimestamp, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, optionalTimestampMatch, setLocal, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, clockTimestamp, containsAnyValueText, jsonbStringContainsAnyValueText, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, optionalTimestampMatch, setLocal, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -106,6 +106,31 @@ describe("kysely sqlHelpers", () => {
 
     expect(compiled.sql).toContain('= any($1::uuid[])');
     expect(compiled.parameters).toEqual([ids]);
+  });
+
+  it("containsAnyValueText searches the text for each value, case and whitespace aside, by strpos", () => {
+    const compiled = db
+      .selectFrom("messages")
+      .select("id")
+      .where((eb) => containsAnyValueText(eb.ref("content"), ["sore knee", "50%_off"]))
+      .compile();
+
+    expect(compiled.sql).toContain("from unnest($1::text[]) as value_text");
+    expect(compiled.sql).toContain(`strpos(lower(regexp_replace("content", '\\s+', ' ', 'g')), lower(value_text)) > 0`);
+    expect(compiled.parameters).toEqual([["sore knee", "50%_off"]]);
+  });
+
+  it("jsonbStringContainsAnyValueText reads every string leaf of the document and no key", () => {
+    const compiled = db
+      .selectFrom("audit_events")
+      .select("id")
+      .where((eb) => jsonbStringContainsAnyValueText(eb.ref("metadata_json"), ["sore knee"]))
+      .compile();
+
+    expect(compiled.sql).toContain(`jsonb_path_query("metadata_json", 'strict $.**') as leaf`);
+    expect(compiled.sql).toContain("jsonb_typeof(leaf) = 'string'");
+    expect(compiled.sql).toContain("regexp_replace(leaf #>> '{}'");
+    expect(compiled.parameters).toEqual([["sore knee"]]);
   });
 
   it("optionalTimestampMatch skips the check (always true) when expected is undefined or null", () => {

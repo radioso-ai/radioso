@@ -8,6 +8,7 @@ import type {
   AnswerCoverageRepositoryPort,
 } from "../../modules/answerCoverage/public.js";
 import { WITHHELD_MESSAGE_TEXT, type MessageCopyWithholder, type WithheldMessages } from "../../shared/domain/messageWithholding.js";
+import { anyOf, containsAnyValueText } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import {
   answerCoverageColumns,
@@ -195,7 +196,8 @@ export class AnswerCoverageRepository implements AnswerCoverageRepositoryPort, A
 /**
  * Withholds the coverage assessments of a withheld message's turn: the request as the assessment
  * framed it, and the part it judged unresolved, both restate the visitor's words, so both take the
- * redaction marker. The verdict, its reason code and the ids stay.
+ * redaction marker. So does any assessment of the conversation whose request states a withheld
+ * value, as one framed with an earlier turn's words. The verdict, its reason code and the ids stay.
  */
 export class AnswerCoverageWithholder implements MessageCopyWithholder {
   readonly owner = "answer-coverage";
@@ -212,8 +214,10 @@ export class AnswerCoverageWithholder implements MessageCopyWithholder {
       .where("workspace_id", "=", messages.workspaceId)
       .where("conversation_id", "=", messages.conversationId)
       .where((eb) => eb.or([
-        eb("request_message_id", "in", [...messages.messageIds]),
-        eb("assistant_message_id", "in", [...messages.messageIds]),
+        anyOf(eb.ref("request_message_id"), messages.messageIds, "uuid[]"),
+        anyOf(eb.ref("assistant_message_id"), messages.messageIds, "uuid[]"),
+        containsAnyValueText(eb.ref("contextualized_request"), messages.valueTexts),
+        containsAnyValueText(eb.ref("unresolved_request"), messages.valueTexts),
       ]))
       .executeTakeFirst();
     return Number(result.numUpdatedRows);

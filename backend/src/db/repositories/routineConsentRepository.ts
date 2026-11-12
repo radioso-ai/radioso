@@ -256,6 +256,21 @@ export class RoutineConsentRepository {
     `.execute(this.db);
   }
 
+  /**
+   * The conversation's withdrawn consents: the routine, the slots each covered and when it was
+   * withdrawn, oldest first. A turn's transaction reads them to withhold what it wrote after one.
+   */
+  async withdrawnInConversation(input: { conversationId: string }): Promise<Array<{ routineId: string; slotKeys: string[]; withdrawnAt: Date }>> {
+    const rows = await this.db
+      .selectFrom("routine_consent_records")
+      .select(["routine_id", "slot_keys", "withdrawn_at"])
+      .where("conversation_id", "=", input.conversationId)
+      .where("withdrawn_at", "is not", null)
+      .orderBy("withdrawn_at")
+      .execute();
+    return rows.flatMap((row) => (row.withdrawn_at ? [{ routineId: row.routine_id, slotKeys: row.slot_keys, withdrawnAt: row.withdrawn_at }] : []));
+  }
+
   private async stampPrompt(input: {
     workspaceId: string;
     conversationId: string;

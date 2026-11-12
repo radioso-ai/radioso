@@ -262,6 +262,7 @@ Effects: `consentEvents?: RoutineConsentEvent[]` follows `awaitingDecision`'s ro
 Covered in §2.1. Codes are added to `routineValidationCodes` (`index.ts:47-85`), which feeds the OpenAPI enum (`agentSchemas.ts:609-614`):
 - `sensitive_slot_without_consent` (location `slot:<key>`)
 - `consent_slot_unknown`, `consent_slot_not_sensitive`
+- `consent_slot_not_collected`: a consent covers a slot no chat step collects, so it could never be asked (location `consent:<key>.slotKeys.<key>`). `sensitive_slot_without_consent` applies only to sensitive slots a chat step collects, by `collectedSlotsByStep`.
 - `consent_slot_covered_twice` (location `slot:<key>`)
 - `consent_key_duplicate`
 - `consent_missing_default_variant`

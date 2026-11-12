@@ -58,6 +58,11 @@ constructing ad hoc fetches.
   out), how it draws any other layout (as a list), the frame a block's
   pictures share, and which item links it follows. `anonymous-chat-context.tsx`
   adds the declaration to the host page's capabilities on every request.
+- `routine-consent-editor.ts`: a routine's consents in the Document view — the
+  sensitive fields each covers, the decline choice, and the wording per language,
+  edited through the exact-greeting variant transitions — plus where each is asked
+  and where a validation finding belongs. `routine-document-edits.ts` keeps them in
+  step when a field is renamed, removed, or set back to normal.
 - `privacy-notice.ts`: the agent's privacy notice on the visitor surfaces — which
   language's notice a visitor sees (the backend's rule: their language, else
   English, else the first), and the Privacy notice card's form, which saves only

@@ -88,10 +88,14 @@ export const routineValidationCodes = [
   "operator_notice_reply_to_slot_invalid",
   "consent_slot_unknown",
   "consent_slot_not_sensitive",
+  "consent_slot_not_collected",
   "consent_slot_covered_twice",
   "consent_key_duplicate",
   "consent_missing_default_variant",
   "consent_text_invalid",
+  "sensitive_slot_without_consent",
+  "consent_step_mixes_fields",
+  "consent_step_needs_default_exit",
 ] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;

@@ -18,7 +18,7 @@ import {
 } from "../../routines/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
-import { routineValidationRefusal } from "../routineValidationRefusal.js";
+import { diagnosticsIntroducedBy, routineValidationRefusal } from "../routineValidationRefusal.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { reviewedConfirmationSchema } from "../reviewedOperation.js";
 import { persistReviewedPreparation, reviewedPreparationConfirmation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
@@ -175,7 +175,7 @@ export interface RoutineStructuralPreparationDependencies extends ReviewedPrepar
 }
 
 /** Prepares a structurally explicit routine draft; applying it remains the reviewed-operation path. */
-const routineStructuralPreparationDescription = "Prepare a routine change for review; this does not change the routine. Set kind to \"edit\" to apply explicit graph commands to an existing routine, \"create\" to draft a new one, or \"delete\" to retire one. An ending's `operatorNotice.includeAiSummary` adds a background summary of details not collected in fields. Its `operatorNotice.skillName` names the notify skill that sends its notice to the team (operator_notice_destinations lists them and where each sends); leave it out to send to the default destination. Its `operatorNotice.replyToSlot` is the key of the email field whose collected address replies to the notice go to; leave it out for no reply-to, and set it only to the field the operator names. To change either, use replace_terminal with the ending exactly as routine_definition's authoringDetail shows it as `previous`.";
+const routineStructuralPreparationDescription = "Prepare a routine change for review; this does not change the routine. Set kind to \"edit\" to apply explicit graph commands to an existing routine, \"create\" to draft a new one, or \"delete\" to retire one. An ending's `operatorNotice.includeAiSummary` adds a background summary of details not collected in fields. Its `operatorNotice.skillName` names the notify skill that sends its notice to the team (operator_notice_destinations lists them and where each sends); leave it out to send to the default destination. Its `operatorNotice.replyToSlot` is the key of the email field whose collected address replies to the notice go to; leave it out for no reply-to, and set it only to the field the operator names. To change either, use replace_terminal with the ending exactly as routine_definition's authoringDetail shows it as `previous`. A new routine's `draft.consents` carry only consent wording the operator gave, verbatim; never write it. An existing routine's consents change through propose_routine_edit.";
 
 export const createRoutineStructuralPreparationTool = (
   deps: RoutineStructuralPreparationDependencies,
@@ -258,8 +258,16 @@ export const createRoutineStructuralPreparationTool = (
           removedSlotIds: references.removedSlotIds,
         });
       }
-      const validation = await deps.routines.validateForDraftMutation(context.workspaceId, input.agentId, draft);
-      if (!validation.ok) throw routineValidationRefusal(ROUTINE_NOT_SERVABLE_MESSAGE, input.routineId, validation.diagnostics);
+      // Only findings the edit adds block it, the rule propose_routine_edit keeps, so a routine
+      // already failing validation can still take the edit that fixes it. Both sides go through
+      // the owner's draft rule, which validates only a routine in service: a parked routine
+      // carries nothing, so taking it into service answers for every finding it has.
+      const [carried, validation] = await Promise.all([
+        deps.routines.validateForDraftMutation(context.workspaceId, input.agentId, canonicalRoutineAuthoringDraft(current)),
+        deps.routines.validateForDraftMutation(context.workspaceId, input.agentId, draft),
+      ]);
+      const introduced = diagnosticsIntroducedBy(carried.diagnostics, validation.diagnostics);
+      if (introduced.length > 0) throw routineValidationRefusal(ROUTINE_NOT_SERVABLE_MESSAGE, input.routineId, introduced);
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
       const targetRef = { agentId: input.agentId, routineId: input.routineId };
       const payload = { kind: "structural", draft, operations: input.operations };

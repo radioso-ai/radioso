@@ -37,11 +37,15 @@ Article 9(2)(a) lets a controller process special-category data (health, beliefs
 
 - Q: What happens to a covered value the visitor stated before or with the grant? → A: Option A. It is never kept on the turn the grant arrives, since consent is recorded before anything is captured. From the next turn on, the collecting step may take the value from anything the visitor said earlier in the conversation, the grant message and messages from before the consent included, so it confirms or completes the value rather than losing it. A plain "no, nothing else" after an earlier statement yields the earlier value, not the refusal text. Only covered slots whose consent was granted before the turn, and only on a conversation that asks.
 
+### PR review 2026-11-12
+
+- Q: Does a sensitive slot that only a skill fills need a consent? → A: No. A consent is for collecting from the visitor, so only a sensitive slot a chat step collects needs one, by the same collection rule the compiler places consents with. A skill-filled sensitive slot stays masked and publishes without a consent. A consent that covers a slot no chat step collects could never be asked, so validation rejects it (`consent_slot_not_collected`).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Author a consent (Priority: P1)
 
-An operator marks a routine slot as sensitive. Publishing fails until the routine has a consent that covers the slot. The operator writes the consent wording in the agent's default language and, optionally, in other languages, with a label for agreeing and a label for declining, and chooses what happens on decline: continue without the slot, or hand off to a person.
+An operator marks a routine slot the routine asks the visitor for as sensitive. Publishing fails until the routine has a consent that covers the slot. The operator writes the consent wording in the agent's default language and, optionally, in other languages, with a label for agreeing and a label for declining, and chooses what happens on decline: continue without the slot, or hand off to a person.
 
 **Why this priority**: Without an authored consent nothing can be asked, and without the publish check a sensitive slot can still go out unasked.
 
@@ -49,8 +53,8 @@ An operator marks a routine slot as sensitive. Publishing fails until the routin
 
 **Acceptance Scenarios**:
 
-1. **Given** a routine with a sensitive slot and no consent covering it, **When** the operator validates or publishes it, **Then** validation fails with a diagnostic naming the slot.
-2. **Given** a consent that names a slot the routine does not have, or a slot that is not sensitive, **When** the operator validates, **Then** validation fails naming that slot.
+1. **Given** a routine with a sensitive slot a chat step asks the visitor for and no consent covering it, **When** the operator validates or publishes it, **Then** validation fails with a diagnostic naming the slot.
+2. **Given** a consent that names a slot the routine does not have, a slot that is not sensitive, or a slot no chat step asks the visitor for, **When** the operator validates, **Then** validation fails naming that slot.
 3. **Given** a slot covered by two consents, **When** the operator validates, **Then** validation fails naming the slot.
 4. **Given** a consent without wording in the agent's default language, or with empty wording or labels, **When** the operator validates, **Then** validation fails naming the consent and the field.
 5. **Given** a valid consent, **When** the operator publishes, **Then** the routine publishes, and Ray and the operator MCP can read and edit the consent like any other routine field.
@@ -139,7 +143,7 @@ A visitor asks the operator to withdraw their consent. The operator opens the co
 ### Functional Requirements
 
 - **FR-001**: A routine definition MAY declare consents. Each consent has a stable key, the sensitive slots it covers, wording variants per language (body, agree label, decline label), and a decline choice: `continue` or `handoff`.
-- **FR-002**: Validation MUST fail when a sensitive slot is covered by no consent or by more than one, when a consent covers an unknown or non-sensitive slot, or when a consent lacks a default-language variant or has empty text. Every surface that validates or publishes a routine uses this rule.
+- **FR-002**: Validation MUST fail when a sensitive slot the routine asks the visitor for is covered by no consent, when a sensitive slot is covered by more than one, when a consent covers an unknown or non-sensitive slot or one no chat step asks the visitor for, or when a consent lacks a default-language variant or has empty text. Every surface that validates or publishes a routine uses this rule.
 - **FR-003**: Radioso MUST ask a consent immediately before the first step that collects one of its covered slots, unless a decision for that consent and wording version already exists in the conversation.
 - **FR-004**: The consent text MUST be the authored wording, sent verbatim. Application code and prompts MUST NOT add consent copy.
 - **FR-005**: Where the channel renders buttons, the two labels MUST be offered as buttons whose click is delivered as a structured decision bound to the wording version shown, not as text.

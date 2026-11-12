@@ -772,6 +772,21 @@ describe("RoutineDefinitionService", () => {
     expect(cleared.routine.consents ?? []).toEqual([]);
   });
 
+  it("names a sensitive field no consent covers on save, validate and serving validation, without refusing the save (#1544)", async () => {
+    const { service } = createService({ agentDefaultLocale: "en" });
+    const created = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      slots: [{ ...validDraft().slots[0], sensitivity: "sensitive" }],
+    });
+
+    expect(created.routine.slots[0]?.sensitivity).toBe("sensitive");
+    expect(created.validation.diagnostics).toEqual([expect.objectContaining({ code: "sensitive_slot_without_consent", location: "slot:topic" })]);
+    const validation = await service.validate(workspaceId, agentId, { id: created.routine.id });
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["sensitive_slot_without_consent"]);
+    const served = await service.validateManyForServing(workspaceId, [created.routine]);
+    expect(served.get(created.routine.id)?.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["sensitive_slot_without_consent"]);
+  });
+
   it("checks consent wording against English when the agent has no default language", async () => {
     const { service } = createService();
     const created = await service.createDraft(workspaceId, agentId, {

@@ -572,6 +572,19 @@ const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): 
       });
     }
   }
+  // Mirrors the backend's consent coverage rule (#1544): every sensitive field a chat step asks
+  // the visitor for (one that names it) needs a consent.
+  const coveredSlotKeys = new Set((routine.consents ?? []).flatMap((consent) => consent.slotKeys));
+  const askedOfVisitor = (key: string) => routine.steps.some((step) => step.kind === "chat" && step.instruction.includes(`{{slot.${key}}}`));
+  for (const slot of routine.slots) {
+    if (slot.sensitivity === "sensitive" && askedOfVisitor(slot.key) && !coveredSlotKeys.has(slot.key)) {
+      diagnostics.push({
+        code: "sensitive_slot_without_consent",
+        location: `slot:${slot.key}`,
+        message: `sensitive slot without consent: "${slot.key}" is marked sensitive, a step asks the visitor for it, and no consent covers it; add a consent that covers it before publishing.`,
+      });
+    }
+  }
   // Mirrors the backend validator's tool-name grammar (routineExposureToolNamePattern).
   if (routine.exposure?.enabled && !/^[a-z][a-z0-9_]{1,62}$/u.test(routine.exposure.toolName)) {
     diagnostics.push({

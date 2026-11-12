@@ -31,7 +31,6 @@ import {
 import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/config.js";
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
-import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills } from "../../modules/agents/public.js";
 import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
 import {

@@ -10,10 +10,12 @@ import { CHAT_TURN_ROUTE } from "../../../../shared/domain/chatTurnRoute.js";
 import { directiveAdherenceMetadataOf } from "../../../../shared/domain/directiveAdherence.js";
 import { readRetrievalResult, type RetrievalPipelineResult } from "../../../retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "../../contracts/answerTypes.js";
+import type { StoredReplyBlock } from "../../contracts/replyBlocks.js";
 import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
 } from "../chatAnswerPresenter.js";
+import type { PresentedReplyBlocks } from "../replyBlocks/replyBlockTurn.js";
 import type { SkillTurnStatus } from "../assistantTurnOutcomeTypes.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
 import {
@@ -77,10 +79,15 @@ const withRoutineGrounding = (input: {
   };
 };
 
+/**
+ * The turn carries its reply blocks as a client receives them; the stored form the message row
+ * keeps rides the metadata, so `presentRoutineRenderableAnswer` restores both.
+ */
 const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => ({
   answer: presentation.answer,
   citations: presentation.citations,
   suggestions: presentation.suggestions,
+  ...(presentation.replyBlocks ? { blocks: presentation.replyBlocks.presented } : {}),
   metadata: {
     skillName: presentation.skillName,
     skillOutcome: presentation.skillOutcome,
@@ -91,6 +98,7 @@ const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => 
     grounding: presentation.grounding,
     ...directiveAdherenceMetadataOf(presentation.metadata),
     effectiveRetrieval: presentation.effectiveRetrieval,
+    ...(presentation.replyBlocks ? { storedReplyBlocks: presentation.replyBlocks.stored } : {}),
   },
 });
 
@@ -130,6 +138,14 @@ const optionalEffectiveRetrieval = (value: unknown): PreparedSession["retrieval"
     ? value as unknown as PreparedSession["retrieval"]
     : undefined;
 
+const optionalReplyBlocks = (
+  blocks: RenderableTurn["blocks"],
+  stored: unknown,
+): PresentedReplyBlocks | undefined =>
+  Array.isArray(blocks) && Array.isArray(stored)
+    ? { stored: stored as StoredReplyBlock[], presented: blocks }
+    : undefined;
+
 const presentationFromRenderableTurn = (response: RenderableTurn): ChatPresentedAnswer | null => {
   if (!isRecord(response.metadata)) {
     return null;
@@ -140,6 +156,7 @@ const presentationFromRenderableTurn = (response: RenderableTurn): ChatPresented
   if (!skillName || !skillOutcome || !skillStatus) {
     return null;
   }
+  const replyBlocks = optionalReplyBlocks(response.blocks, response.metadata.storedReplyBlocks);
   return {
     answer: response.answer,
     ...(optionalChatCitations(response.citations) ? { citations: optionalChatCitations(response.citations) } : {}),
@@ -160,6 +177,7 @@ const presentationFromRenderableTurn = (response: RenderableTurn): ChatPresented
     ...(optionalEffectiveRetrieval(response.metadata.effectiveRetrieval)
       ? { effectiveRetrieval: optionalEffectiveRetrieval(response.metadata.effectiveRetrieval) }
       : {}),
+    ...(replyBlocks ? { replyBlocks } : {}),
   };
 };
 

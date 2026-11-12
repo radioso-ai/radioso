@@ -198,6 +198,10 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `ReplyImageUrls`, which composition builds on the public backend address, turns
   them into `src` and `srcSet` whenever the block is presented: the reply, the
   `block` SSE events before `done`, and history (`historyMessageFields.ts`).
+  A routine step that answers from evidence crosses the engine as a
+  `RenderableTurn`: `routineGroundedAnswerRenderer.ts` sends the presented blocks
+  as `blocks` and the stored form as `metadata.storedReplyBlocks`, and
+  `presentRoutineRenderableAnswer` restores both.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides

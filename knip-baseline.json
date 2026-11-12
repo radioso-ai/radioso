@@ -78,7 +78,6 @@
   "exports|backend/src/shared/agent-runtime/agenticCapability.ts|resolveAgenticCapabilityBudgetProfile",
   "exports|backend/src/shared/analytics/productAnalyticsSink.ts|NoopProductAnalyticsSink",
   "exports|backend/src/shared/domain/websiteEmbed.ts|DEFAULT_WEBSITE_EMBED_SCRIPT_PATH",
-  "exports|backend/src/shared/infra/http/publicUrlFetch.ts|createPublicUrlFetch",
   "exports|backend/src/shared/infra/http/publicUrlFetch.ts|resolvePublicAddresses",
   "exports|backend/src/shared/observability/configuredSinks.ts|findInvalidConfiguredSinks",
   "exports|backend/src/shared/observability/telemetry/telemetrySink.ts|NoopTelemetrySink",

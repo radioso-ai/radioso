@@ -6,7 +6,10 @@ import { sniffImageType } from "../../../shared/infra/images/imageSniff.js";
 import { NormalizationSlots } from "../../../shared/infra/images/normalizationSlots.js";
 import { VISITOR_IMAGE_LIMITS, type VisitorImageRejection, type VisitorImageSourceType } from "../domain.js";
 
-/** Two photos decode at once in this process; a third waits up to five seconds, then is refused as busy. */
+/**
+ * Visitor photos' share of the codec's process-wide pool: two decode at once, which is the whole of
+ * it; a third waits up to five seconds, then is refused as busy.
+ */
 const DECODING_SLOTS = new NormalizationSlots(2, 5_000);
 
 /** Only JPEG, PNG and WebP are read from a visitor. */
@@ -49,7 +52,8 @@ export const normalizeVisitorImage = async (
       maxBytes: VISITOR_IMAGE_LIMITS.maxStoredBytes,
     }),
   );
-  if (decoded.kind === "rejected") return decoded;
+  // Pixels that do not decode past a readable header are, to a visitor, a type Radioso does not read.
+  if (decoded.kind === "rejected") return { kind: "rejected", reason: decoded.reason === "encode_failed" ? "unsupported_type" : decoded.reason };
   if (decoded.value.kind === "too_large") return { kind: "rejected", reason: "too_large" };
   const { jpeg, width, height } = decoded.value;
   return { kind: "normalized", jpeg, width, height, sha256: createHash("sha256").update(jpeg).digest("hex") };

@@ -63,10 +63,13 @@ photos (WhatsApp).
   codec in `shared/infra/images/`. It accepts JPEG, PNG and WebP only (by
   magic bytes), decodes with `sharp` under a pixel limit, auto-rotates, and
   re-encodes to a JPEG at most 1,600 px on the long side with no metadata,
-  stepping quality down until it is at most 512 KB. `sharp` runs one libuv
-  thread per image with its cache off. The module's own `NormalizationSlots`
-  pool lets two photos decode at once per process; a third waits up to five
-  seconds, then is refused as `busy` (`503 visitor_image_busy`).
+  stepping quality down until it is at most 512 KB. Pixels that do not decode
+  past a readable header are `unsupported_type`. `sharp` runs one libuv thread
+  per image with its cache off. The module's `NormalizationSlots` pool, its
+  share of the codec's process-wide two, lets two photos decode at once; a
+  third waits up to five seconds, then is refused as `busy`
+  (`503 visitor_image_busy`). `tests/unit/visitorImages/image-normalizer-byte-identity.test.ts`
+  keeps the pre-extraction chain as an oracle for the output bytes.
 - `services/modelVisitorImageReader.ts`: one structured call per photo on the
   agent's chat model through the inference pipeline (`visitor_image.read`), with
   a timeout and fail-open to `unread`. Prompt:

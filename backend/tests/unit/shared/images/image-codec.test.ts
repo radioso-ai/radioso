@@ -75,6 +75,30 @@ describe("sniffImageType", () => {
     expect(sniffImageType(ftyp("avis", ["avis", "msf1"]), EVERY_TYPE)).toBe("image/avif");
   });
 
+  it("reads no further than a real ftyp box, whatever size the file declares", () => {
+    // 10 MB that declares an ftyp box of 4 GB and names no AVIF brand: only the first bytes are read.
+    const crafted = Buffer.alloc(10 * 1024 * 1024);
+    crafted.writeUInt32BE(0xffffffff, 0);
+    crafted.write("ftypmif1", 4, "latin1");
+    const startedAt = performance.now();
+
+    expect(sniffImageType(crafted, EVERY_TYPE)).toBeNull();
+    expect(sniffImageType(crafted, VISITOR_TYPES)).toBeNull();
+    expect(performance.now() - startedAt).toBeLessThan(25);
+  });
+
+  it("finds an AVIF brand near the start of the box, and none past it", () => {
+    const declaredHuge = ftyp("mif1", ["mif1", "miaf", "avif"]);
+    declaredHuge.writeUInt32BE(0xffffffff, 0);
+    const brandFarIn = Buffer.alloc(256);
+    brandFarIn.writeUInt32BE(256, 0);
+    brandFarIn.write("ftypmif1", 4, "latin1");
+    brandFarIn.write("avif", 200, "latin1");
+
+    expect(sniffImageType(declaredHuge, EVERY_TYPE)).toBe("image/avif");
+    expect(sniffImageType(brandFarIn, EVERY_TYPE)).toBeNull();
+  });
+
   it("refuses GIF and AVIF unless the caller accepts them", async () => {
     expect(sniffImageType(await solid(4, 4, "gif"), VISITOR_TYPES)).toBeNull();
     expect(sniffImageType(await solid(4, 4, "avif"), VISITOR_TYPES)).toBeNull();
@@ -135,6 +159,47 @@ describe("decodeGuarded", () => {
     expect(result).toEqual({ kind: "rejected", reason: "too_many_pixels" });
   });
 
+  it("reports a failure after the header checks as encode_failed, not as an unsupported type", async () => {
+    const refused = await decodeGuarded(await solid(40, 30, "png"), guard(EVERY_TYPE), () => Promise.reject(new Error("encoder refused")));
+
+    expect(refused).toEqual({ kind: "rejected", reason: "encode_failed" });
+  });
+
+  it("decodes through the process-wide pool when the caller brings no pool of its own", async () => {
+    const result = await decodeGuarded(await solid(40, 30, "png"), guard(EVERY_TYPE, { slots: undefined }), (open) =>
+      encodeWebpRenditions(open, { widthsPx: [320] }));
+
+    expect(result.kind).toBe("decoded");
+  });
+
+  it("never decodes more than two images at once in the process, whatever pools the callers bring", async () => {
+    const image = await solid(40, 30, "png");
+    const gates: Array<() => void> = [];
+    let active = 0;
+    let peak = 0;
+    const encode = async (): Promise<string> => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise<void>((resolve) => gates.push(resolve));
+      active -= 1;
+      return "encoded";
+    };
+    const visitors = new NormalizationSlots(2, 5_000);
+    const documents = new NormalizationSlots(2, 5_000);
+
+    const runs = [visitors, visitors, documents, documents].map((slots) => decodeGuarded(image, guard(EVERY_TYPE, { slots }), encode));
+
+    await expect.poll(() => active).toBe(2);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(active).toBe(2);
+    for (let released = 0; released < runs.length; released += 1) {
+      await expect.poll(() => gates.length).toBeGreaterThan(0);
+      gates.shift()?.();
+    }
+    expect((await Promise.all(runs)).map((run) => run.kind)).toEqual(["decoded", "decoded", "decoded", "decoded"]);
+    expect(peak).toBe(2);
+  });
+
   it("waits on the caller's own slot pool, so a full pool elsewhere does not refuse it", async () => {
     const full = new NormalizationSlots(1, 1);
     let free!: () => void;
@@ -167,6 +232,20 @@ describe("encodeWebpRenditions", () => {
     const result = await renditions(await solid(200, 100, "png"));
 
     expect(result).toMatchObject({ kind: "decoded", value: [{ width: 200, height: 100 }, { width: 200, height: 100 }] });
+  });
+
+  it("bounds a tall image's height to what WebP holds instead of failing the rendition", async () => {
+    const tall = await solid(1080, 20_000, "png");
+
+    const result = await renditions(tall, EVERY_TYPE, [320, 640, 1080]);
+
+    expect(result.kind).toBe("decoded");
+    if (result.kind !== "decoded") return;
+    expect(result.value.map(({ width, height }) => ({ width, height }))).toEqual([
+      { width: 320, height: 5926 },
+      { width: 640, height: 11852 },
+      { width: 885, height: 16383 },
+    ]);
   });
 
   it("turns the image upright and carries no EXIF, ICC or XMP over", async () => {

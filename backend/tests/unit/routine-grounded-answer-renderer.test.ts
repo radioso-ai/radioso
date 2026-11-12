@@ -22,6 +22,9 @@ import type { TurnRenderContext, TurnSkill } from "../../src/modules/chat/servic
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { ChatSuggestion } from "../../src/modules/chat/types/chatResponses.js";
 import { AssistantSuggestionExpansionService } from "../../src/modules/chat/services/assistantSuggestionExpansionService.js";
+import type { ReplyImageUrls } from "../../src/modules/chat/contracts/replyBlocks.js";
+import { ReplyBlockTurnFactory } from "../../src/modules/chat/services/replyBlocks/replyBlockTurn.js";
+import type { EvidenceItemImages } from "../../src/modules/retrieval/public.js";
 
 const retrievalResult = (): RetrievalPipelineResult =>
   ({
@@ -473,5 +476,122 @@ describe("presentRoutineRenderableAnswer", () => {
         systemPrompt: "retrieval system prompt",
       }),
     });
+  });
+
+  it("restores a grounded turn's reply blocks in both forms: as presented, and as the message row stores them", () => {
+    const card = { type: "item_list" as const, id: "b1", layout: "carousel" as const, selection: "none" as const, caption: "The course guide" };
+    const presented = [{ ...card, items: [{ key: "doc_1", title: "Course Guide", image: { src: "https://app.example/i/cover-1/640", alt: "", width: 1280, height: 960 }, actions: [] }] }];
+    const stored = [{ ...card, items: [{ key: "doc_1", title: "Course Guide", image: { imageId: "cover-1", alt: "", width: 1280, height: 960 }, actions: [] }] }];
+
+    const result = presentRoutineRenderableAnswer(chatAnswerPresenter(), {
+      answer: "Here is the guide that introduces Valmora.",
+      blocks: presented,
+      metadata: {
+        skillName: RETRIEVAL_TURN_SKILL,
+        skillOutcome: "grounded",
+        skillStatus: "completed",
+        storedReplyBlocks: stored,
+      },
+    });
+
+    expect(result.replyBlocks).toEqual({ presented, stored });
+  });
+});
+
+describe("a routine step that answers from evidence for a client that renders reply blocks", () => {
+  const evidence: EvidenceItemImages[] = [{
+    resultNumber: 1,
+    documentId: "doc_1",
+    documentTitle: "Course Guide",
+    sourceUrl: "https://example.com/guide",
+    images: [{ imageId: "cover-1", role: "primary", alt: "", caption: null, width: 1280, height: 960, sha256: "sha-1" }],
+  }];
+  const urls: ReplyImageUrls = {
+    forImage: (imageId) => ({ src: `https://app.example/i/${imageId}/640`, srcSet: `https://app.example/i/${imageId}/320 320w` }),
+  };
+  // The lead names no item: it leans on the cards the `present` head asks for.
+  const output = JSON.stringify({
+    coverage: "answered_sufficient_evidence",
+    requestFocus: "the course guide",
+    outcome: "answer",
+    present: { images: ["m1"], caption: "The course guide" },
+    answer: "Here is the guide that introduces Valmora[[1]].",
+    v: 2,
+    claims: [[1]],
+    suggestions: [],
+    grounding: "grounded",
+  });
+
+  const routineStep = () => {
+    const gateway: ChatGateway = {
+      async answer() {
+        return output;
+      },
+      async *streamAnswer() {
+        for (let offset = 0; offset < output.length; offset += 17) {
+          yield output.slice(offset, offset + 17);
+        }
+      },
+    };
+    const presenter = chatAnswerPresenter();
+    const composer = new RetrievalAnswerComposer(
+      new ChatAnswerSupport(),
+      gateway,
+      presenter,
+      { async composeNoContext() { throw new Error("the staged retrieval has context"); } },
+      null,
+      undefined,
+      new ReplyBlockTurnFactory({ evidenceImages: { attach: async () => evidence }, imageUrls: urls }),
+    );
+    const options = {
+      session: { ...session(), replyBlocks: { item_list: { layouts: ["carousel" as const] } } },
+      turnSkills: [createRetrievalTurnSkill(composer)],
+      chatAnswerPresenter: presenter,
+    };
+    const input = {
+      step,
+      steering: [{ action: "Answer the question, then say Hop.", source: "routine" as const, lifespan: "response" as const }],
+      turn: turnWithRetrieval(retrievalResult()),
+    };
+    return { presenter, options, input };
+  };
+
+  const expectedCard = expect.objectContaining({
+    type: "item_list",
+    caption: "The course guide",
+    items: [expect.objectContaining({
+      image: expect.objectContaining({ src: "https://app.example/i/cover-1/640" }),
+    })],
+  });
+
+  it("carries the cards its answer presents into the rendered turn and the presentation the response is built from", async () => {
+    const { presenter, options, input } = routineStep();
+
+    const turn = await createRoutineGroundedAnswerRenderer(options).render(input);
+    const presentation = presentRoutineRenderableAnswer(presenter, turn!);
+
+    expect(turn?.answer).toBe("Here is the guide that introduces Valmora.");
+    expect(turn?.blocks).toEqual([expectedCard]);
+    expect(presentation.replyBlocks?.presented).toEqual(turn?.blocks);
+    expect(presentation.replyBlocks?.stored).toEqual([expect.objectContaining({
+      caption: "The course guide",
+      items: [expect.objectContaining({ image: expect.objectContaining({ imageId: "cover-1" }) })],
+    })]);
+  });
+
+  it("carries the same cards when the step's answer streams", async () => {
+    const { presenter, options, input } = routineStep();
+
+    const stream = createRoutineGroundedAnswerRenderer(options).prepare!(input)!.stream!();
+    let next = await stream.next();
+    while (!next.done) {
+      next = await stream.next();
+    }
+    const turn = next.value;
+    const presentation = presentRoutineRenderableAnswer(presenter, turn);
+
+    expect(turn.blocks).toEqual([expectedCard]);
+    expect(presentation.replyBlocks?.presented).toEqual(turn.blocks);
+    expect(presentation.replyBlocks?.stored).toHaveLength(1);
   });
 });

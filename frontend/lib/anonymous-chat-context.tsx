@@ -11,7 +11,8 @@ import {
   type ReactNode,
 } from 'react'
 
-import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
+import { resolveAnonymousChatBootstrapLocale } from '@/lib/embed-locale'
+import type { WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import { createClientId } from '@/lib/client-id'
 import { deriveThemeOverridesFromModel } from '@/lib/public-chat-theme'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
@@ -106,37 +107,6 @@ const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(nul
 const INITIAL_MESSAGE_WINDOW_SIZE = 10
 const MESSAGE_WINDOW_SIZE = 50
 const PUBLIC_CHAT_EVENT_RECONNECT_DELAY_MS = 2_500
-const isValidLocaleHint = (value: string | null | undefined): value is string => {
-  if (!value) {
-    return false
-  }
-
-  const trimmed = value.trim()
-  return trimmed.length > 0 && trimmed.length <= 35 && normalizeWebsiteEmbedLocale(trimmed) !== null
-}
-
-const resolveAnonymousChatBootstrapLocale = ({
-  localeOverride,
-  pageContext,
-}: {
-  localeOverride?: string | null
-  pageContext?: WebsiteEmbedPageContext | null
-  browserLocales?: readonly string[]
-}) => {
-  if (isValidLocaleHint(localeOverride)) {
-    return localeOverride.trim()
-  }
-
-  if (isValidLocaleHint(pageContext?.pageLocale)) {
-    return pageContext.pageLocale.trim()
-  }
-
-  if (isValidLocaleHint(pageContext?.browserLocale)) {
-    return pageContext.browserLocale.trim()
-  }
-
-  return undefined
-}
 
 export function AnonymousChatProvider({
   token,

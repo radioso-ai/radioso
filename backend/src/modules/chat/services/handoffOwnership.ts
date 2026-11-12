@@ -61,12 +61,21 @@ export const suppressedHumanOwnedResponse = (
 /** What the engine reports when a routine ends by handing the conversation to a person. */
 export type RoutineHandoffEffect = NonNullable<ProcessTurnResult["handoff"]>;
 
-/** Why a routine requested a person: it reached an authored hand-off end, or its visitor got stuck (#1384). */
-type RoutineHandoffReason = "routine_handoff" | "routine_stuck";
+/**
+ * Why a routine requested a person: it reached an authored hand-off end, its visitor got stuck
+ * (#1384), or its visitor declined a consent whose decline choice hands off (#1544).
+ */
+type RoutineHandoffReason = "routine_handoff" | "routine_stuck" | "routine_consent_declined";
+
+const ROUTINE_HANDOFF_REASONS: Readonly<Record<RoutineHandoffEffect["terminalKind"], RoutineHandoffReason>> = {
+  handoff: "routine_handoff",
+  stuck: "routine_stuck",
+  consent_declined: "routine_consent_declined",
+};
 
 /** The ownership reason for a routine's hand-off, by the ending that raised it. */
 const routineHandoffReason = (handoff: RoutineHandoffEffect): RoutineHandoffReason =>
-  handoff.terminalKind === "stuck" ? "routine_stuck" : "routine_handoff";
+  ROUTINE_HANDOFF_REASONS[handoff.terminalKind];
 
 /** Builds the `handoff.notify` action a retrieval-miss handoff emits. */
 export const buildHandoffNotifyAction = (input: Parameters<typeof operatorNoticeActionPayload>[0] & {

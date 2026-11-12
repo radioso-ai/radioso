@@ -24,20 +24,27 @@ export const ROUTINE_ENDING_NOTICE_ACTIONS: Readonly<Record<"complete" | "handof
   complete: { type: COMPLETION_NOTIFY_ACTION_TYPE, reason: "routine_completed", notificationKind: "completion" },
 };
 
+/** The reason a runner-owned hand-off's notice carries: never authored, so it says why itself. */
+const RUNNER_HANDOFF_REASONS: Readonly<Record<"stuck" | "consent_declined", string>> = {
+  stuck: "routine_stuck",
+  consent_declined: "routine_consent_declined",
+};
+
 /**
  * The row an ending's notice queues as and is delivered through, for any terminal kind — unlike
  * {@link ROUTINE_ENDING_NOTICE_ACTIONS}, which only the two authored kinds index directly. A
- * visitor stuck past the re-ask limit (#1384) is never authored and so shares the hand-off row's
- * action type and notification kind — ownership moves the same way — but keeps its own reason,
- * so the notice stays distinguishable from an authored hand-off's. It must never get its own
- * registered action type: `handoff.notify` already has exactly one dispatch handler, and a
- * second row sharing that type would collide with it at registration.
+ * visitor stuck past the re-ask limit (#1384), or one who declined a consent that hands off
+ * (#1544), is never authored and so shares the hand-off row's action type and notification kind
+ * — ownership moves the same way — but keeps its own reason, so the notice stays distinguishable
+ * from an authored hand-off's. It must never get its own registered action type: `handoff.notify`
+ * already has exactly one dispatch handler, and a second row sharing that type would collide
+ * with it at registration.
  */
 export const routineEndingNoticeAction = (
   terminalKind: RoutineOperatorNoticeEffect["terminalKind"],
 ): RoutineEndingNoticeAction =>
-  terminalKind === "stuck"
-    ? { ...ROUTINE_ENDING_NOTICE_ACTIONS.handoff, reason: "routine_stuck" }
+  terminalKind === "stuck" || terminalKind === "consent_declined"
+    ? { ...ROUTINE_ENDING_NOTICE_ACTIONS.handoff, reason: RUNNER_HANDOFF_REASONS[terminalKind] }
     : ROUTINE_ENDING_NOTICE_ACTIONS[terminalKind];
 
 /**

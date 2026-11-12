@@ -25,13 +25,16 @@ export const slotFilledGuardPasses = (transition: RoutineTransition, variables: 
 /**
  * A slot-collection step has nothing left to ask when its required collected slots are
  * filled (every collected slot, if it collects only optional ones), or when one of its
- * `slot_filled` exits already passes. An optional slot never holds a step (#1371).
+ * `slot_filled` exits already passes. An optional slot never holds a step (#1371). A slot in
+ * `waived` counts as filled, though it holds nothing: the routine runs without it, because the
+ * visitor declined the consent that covers it (#1544).
  * The runner and the turn reporter share this rule and apply their own step-kind gate.
  */
 export const isSlotCollectionStepSatisfied = (
   routine: Routine,
   step: RoutineStep,
   variables: Record<string, unknown>,
+  waived: ReadonlySet<string> = new Set(),
 ): boolean => {
   const collectedSlots = collectedSlotsForStep(step);
   if (collectedSlots.length === 0) {
@@ -41,7 +44,7 @@ export const isSlotCollectionStepSatisfied = (
   const holdingSlots = requiredSlots.length > 0 ? requiredSlots : collectedSlots;
   const exits = routine.transitions.filter((transition) => transition.from === step.id);
   return (
-    holdingSlots.every((key) => hasVariable(variables, key)) ||
+    holdingSlots.every((key) => hasVariable(variables, key) || waived.has(key)) ||
     exits.some((exit) => slotFilledGuardPasses(exit, variables))
   );
 };

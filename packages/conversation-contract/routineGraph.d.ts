@@ -1,6 +1,7 @@
 // The authored graph a routine runs: its steps, the transitions and guards between them, the
 // slots it collects, and the kinds of ending a run can reach.
 import type { AnswerCoverageCriteria, RoutineSkillOutcomeStatus, ValueSensitivity } from "./index.js";
+import type { RoutineConsent } from "./routineConsent.js";
 
 export interface DecisionOption {
   id: string;
@@ -19,11 +20,12 @@ export type RoutineStepMode = "typed" | "untyped";
 /**
  * A Routine is an authored graph of steps connected by conditional transitions.
  * A `chat` step's `action` is projected into a steering rule (it steers the reply);
- * a `skill` step dispatches `skillName`; a `terminal` step ends the routine.
+ * a `skill` step dispatches `skillName`; a `terminal` step ends the routine. A `consent` step asks
+ * the routine's consent `consentKey` before the step its default exit leads to (#1544).
  */
 export interface RoutineStep {
   id: string;
-  kind: "chat" | "skill" | "action" | "terminal" | "await";
+  kind: "chat" | "skill" | "action" | "terminal" | "await" | "consent";
   /** Instruction projected into steering for a `chat`/`terminal` step. */
   action?: string;
   /** The skill a `skill` step dispatches. */
@@ -35,6 +37,8 @@ export interface RoutineStep {
    * model — so an emitted action can't be redirected by user/payload text.
    */
   actionType?: string;
+  /** The {@link RoutineConsent.key} a `consent` step asks. */
+  consentKey?: string;
   decision?: {
     captureKey: string;
     options: DecisionOption[];
@@ -71,15 +75,16 @@ export type RoutineAuthoredTerminalKind = "complete" | "handoff" | "action";
 
 /**
  * How a routine run ended. An authored kind means the run reached a `terminal` step of that
- * kind. `stuck` is the runner's own ending, never authored: the visitor stayed stuck on one
- * chat step past the re-ask limit, the routine has a hand-off end, and so the run ended on
- * that step and the conversation goes to a person (#1384). A `stuck` ending runs no terminal
- * step and no completion export.
+ * kind. `stuck` and `consent_declined` are the runner's own endings, never authored, and both
+ * hand the conversation to a person: `stuck` when the visitor stayed stuck on one chat step past
+ * the re-ask limit on a routine with a hand-off end (#1384), `consent_declined` when a consent
+ * whose decline choice is `handoff` was declined or could not be asked (#1544). Neither runs a
+ * terminal step or the completion export.
  */
-export type RoutineTerminalKind = RoutineAuthoredTerminalKind | "stuck";
+export type RoutineTerminalKind = RoutineAuthoredTerminalKind | "stuck" | "consent_declined";
 
 /** The endings that hand the conversation to a person. */
-export type RoutineHandoffTerminalKind = Extract<RoutineTerminalKind, "handoff" | "stuck">;
+export type RoutineHandoffTerminalKind = Extract<RoutineTerminalKind, "handoff" | "stuck" | "consent_declined">;
 
 export interface RoutineCompletionExport {
   enabled: boolean;
@@ -192,5 +197,7 @@ export interface Routine {
    * treats as `once_per_conversation`.
    */
   activation?: RoutineActivation;
+  /** The consents the routine asks before it collects the slots each covers (#1544). */
+  consents?: RoutineConsent[];
   metadata?: Record<string, unknown>;
 }

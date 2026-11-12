@@ -36,6 +36,23 @@ describe("routineEndingEffects", () => {
     });
   });
 
+  it("hands off when a visitor declines a consent whose decline choice is handoff (#1544), with no authored notice", () => {
+    const effects = routineEndingEffects("routine_1", {
+      kind: "consent_declined",
+      stepId: "consent:health:ask_health",
+      collected: { full_name: "Giulia" },
+    });
+
+    expect(effects).toEqual({
+      handoff: {
+        routineId: "routine_1",
+        stepId: "consent:health:ask_health",
+        terminalKind: "consent_declined",
+        collected: { full_name: "Giulia" },
+      },
+    });
+  });
+
   it("reports no hand-off and no operator notice for a stuck ending, since it lands on no authored terminal", () => {
     const effects = routineEndingEffects("routine_1", {
       kind: "stuck",

@@ -1,14 +1,21 @@
 // Changing a value a routine run held after the run ended, without running it again.
-import type { RoutineSlotSchema, RoutineState, TurnContext } from "./index.js";
+import type { RoutineConsent, RoutineSlotSchema, RoutineState, TurnContext } from "./index.js";
 
 /**
  * A detected post-completion slot correction (issue #746): the routine's declared slot
- * schema plus the slot the visitor wants to change and the proposed raw value. The host
- * resolves the routine (it owns the catalog) and runs model-driven, multilingual detection;
- * the engine then deterministically verifies via `verifySlotCorrection` before persisting.
+ * schema and consents, plus the slot the visitor wants to change and the proposed raw value.
+ * The host resolves the routine (it owns the catalog) and runs model-driven, multilingual
+ * detection; the engine then deterministically verifies via `verifySlotCorrection` before
+ * persisting.
  */
 export interface RoutineSlotCorrectionCandidate {
   slots: RoutineSlotSchema[];
+  /**
+   * The routine's consents, none when it has none (#1544). A slot one covers takes a value only
+   * while the routine runs, past its consent, so the engine never corrects it, whatever runner
+   * ran the routine.
+   */
+  consents: RoutineConsent[];
   slotKey: string;
   rawValue: string;
 }

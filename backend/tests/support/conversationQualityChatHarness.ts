@@ -12,6 +12,7 @@ import { AnswerCoverageHeadRecorder } from "../../src/modules/chat/services/answ
 import { ChatService, type ChatServiceOptions } from "../../src/modules/chat/services/chatService.js";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { ReplyBlockTurnFactory } from "../../src/modules/chat/services/replyBlocks/replyBlockTurn.js";
+import { createReplyImageUrls } from "../../src/app/http/routes/replyImageAddress.js";
 import { EvidenceImageAttacher } from "../../src/modules/retrieval/public.js";
 import type { InMemoryDocumentImages } from "./inMemoryDocumentImages.js";
 import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
@@ -256,7 +257,7 @@ export const conversationQualityChatHarness = (options: ConversationQualityChatH
         ? {
             replyBlocks: new ReplyBlockTurnFactory({
               evidenceImages: new EvidenceImageAttacher(options.documentImages),
-              imageUrls: { forImage: (imageId) => ({ src: `https://app.example/backend/api/v1/public/reply-images/${imageId}/640`, srcSet: "" }) },
+              imageUrls: createReplyImageUrls("https://app.example/backend"),
               metrics,
             }),
           }

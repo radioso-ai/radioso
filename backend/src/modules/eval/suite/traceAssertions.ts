@@ -568,7 +568,7 @@ export const evaluateTraceAssertion = (
       return verdict.passed ? pass(assertion, verdict.reason) : fail(assertion, verdict.reason);
     }
     case "answer_excludes_image_url": {
-      const named = answerNamesImage(output.answer);
+      const named = answerNamesImage(output.answer, output.replyBlocks);
       return named ? fail(assertion, named) : pass(assertion, "The answer names no picture.");
     }
     case "voice_bridge_emitted": {

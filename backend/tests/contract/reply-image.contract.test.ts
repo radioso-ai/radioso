@@ -48,7 +48,7 @@ describe("public reply image route", () => {
     expect(Buffer.from(response.body as Buffer).equals(webpBytes)).toBe(true);
   });
 
-  it("answers 404 for an unknown image, a deleted one, and any width other than 320 or 640", async () => {
+  it("answers 404 for an unknown image, a deleted one, and any width other than 320 or 640, spelled exactly", async () => {
     const { app, documentImages, imageId } = await servedImage();
 
     await request(app).get(`/api/v1/public/reply-images/${randomUUID()}/640`).expect(404);
@@ -56,6 +56,9 @@ describe("public reply image route", () => {
     await request(app).get(`/api/v1/public/reply-images/${imageId}/480`).expect(404);
     await request(app).get(`/api/v1/public/reply-images/${imageId}/640.webp`).expect(404);
     await request(app).get("/api/v1/public/reply-images/not-a-uuid/640").expect(404);
+    for (const alias of ["0640", "6.4e2", "640.0", "+640", "%20640"]) {
+      await request(app).get(`/api/v1/public/reply-images/${imageId}/${alias}`).expect(404);
+    }
 
     documentImages.delete(imageId);
     await request(app).get(`/api/v1/public/reply-images/${imageId}/640`).expect(404);

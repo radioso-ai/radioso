@@ -45,15 +45,24 @@ export const judgeReplyBlock = (
   return { passed: true, reason: `The reply carried a ${block.layout} block of ${block.items.length} item(s).` };
 };
 
-// Structural patterns: an address of an image file or of the reply image route, and a ledger handle.
+// Structural patterns: an address of an image file, and a ledger handle.
 const IMAGE_URL_PATTERN = /https?:\/\/\S+?\.(?:png|jpe?g|gif|webp|avif|svg)(?:[?#)\s"']|$)/iu;
-const REPLY_IMAGE_ROUTE_PATTERN = /\/public\/reply-images\//u;
 const IMAGE_HANDLE_PATTERN = /\[m\d{1,3}\]/u;
 
-/** Whether the answer text names a picture the way only the block may: by its address or its handle. */
-export const answerNamesImage = (answer: string | undefined): string | null => {
+/** Every address the reply's blocks serve their images at: each `src`, and each URL in each `srcSet`. */
+const servedImageAddresses = (blocks: readonly ReplyBlock[]): string[] =>
+  blocks.flatMap((block) => block.items.flatMap((item) => item.image
+    ? [item.image.src, ...(item.image.srcSet ?? "").split(",").map((entry) => entry.trim().split(/\s+/u)[0] ?? "")]
+    : []))
+    .filter((address) => address.length > 0);
+
+/**
+ * Whether the answer text names a picture the way only the block may: by an image file's address,
+ * by an address the reply's own blocks serve an image at, or by its handle.
+ */
+export const answerNamesImage = (answer: string | undefined, blocks: readonly ReplyBlock[] = []): string | null => {
   const text = answer ?? "";
-  if (IMAGE_URL_PATTERN.test(text) || REPLY_IMAGE_ROUTE_PATTERN.test(text)) {
+  if (IMAGE_URL_PATTERN.test(text) || servedImageAddresses(blocks).some((address) => text.includes(address))) {
     return "The answer contains an image address.";
   }
   return IMAGE_HANDLE_PATTERN.test(text) ? "The answer contains an image handle." : null;

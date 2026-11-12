@@ -64,7 +64,6 @@ import type { WebhookSkillDefinitionService } from "../../modules/webhookSkills/
 import type { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
 import type {
   ChunkRepositoryPort,
-  DocumentImageObjectLookup,
   DocumentRepositoryPort,
 } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
@@ -192,6 +191,7 @@ import type {
 import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
 import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import type { RequestSourceDigestPort } from "../http/middleware/requestSource.js";
+import type { ReplyImageObjectLookup } from "../http/routes/replyImageAddress.js";
 import type { AgentConverseSessionMappingPort } from "../../modules/settings/contracts/agentConverseSession.js";
 import type {
   OperatorMcpAuthorizationService,
@@ -326,7 +326,7 @@ export interface AppDependencies {
   documentDeletionService: DocumentDeletionService;
   documentStorage: DocumentStoragePort;
   /** Finds the stored copy of a reply block's image for the public image route. */
-  replyImageObjectLookup: DocumentImageObjectLookup;
+  replyImageObjectLookup: ReplyImageObjectLookup;
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
   closeApprovalResumeEffectJournal(): Promise<void>;

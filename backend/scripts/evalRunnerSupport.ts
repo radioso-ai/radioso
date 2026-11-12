@@ -7,6 +7,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+import { REPLY_IMAGE_WIDTHS } from "../src/app/http/routes/replyImageAddress.js";
 import { closeInOrder, dependencyCloseSteps, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
 import type { AppDependencies } from "../src/app/server/types.js";
 import { agentVoiceSettingsInputSchema, type AgentVoiceSettings } from "../src/modules/agents/public.js";
@@ -315,7 +316,7 @@ export const seedReplyBlockImages = async (
           width: image.width,
           height: image.height,
           sha256: createHash("sha256").update(image.sourceUrl).digest("hex"),
-          renditions: toJsonb([320, 640].map((width) => ({ width, bucket: "eval", objectPath: `${objectPath}-w${width}`, generation: null, sizeBytes: 1 }))),
+          renditions: toJsonb(REPLY_IMAGE_WIDTHS.map(Number).map((width) => ({ width, bucket: "eval", objectPath: `${objectPath}-w${width}`, generation: null, sizeBytes: 1 }))),
         })
         .onConflict((conflict) => conflict.columns(["document_id", "source_url"]).doUpdateSet({ chunk_id: chunkId }))
         .executeTakeFirst();

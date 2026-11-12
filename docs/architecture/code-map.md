@@ -100,7 +100,9 @@ Primary paths:
 - `backend/src/app/http/openapi/`
 - `backend/src/app/http/routes/replyImageRoutes.ts` — the unauthenticated
   `GET /api/v1/public/reply-images/{imageId}/{width}`, serving a reply block's
-  stored image by its capability id through `AppDependencies.replyImageObjectLookup`
+  stored image by its capability id through `AppDependencies.replyImageObjectLookup`;
+  `replyImageAddress.ts` beside it owns the path, the served widths, the URL
+  builder and the lookup port
 
 Useful searches:
 

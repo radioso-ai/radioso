@@ -1,8 +1,5 @@
 import type { StoredDocumentObject } from "./storage.js";
 
-/** The widths every stored document image is re-encoded at. */
-export const DOCUMENT_IMAGE_RENDITION_WIDTHS = [320, 640] as const;
-
 /**
  * Where an image sits in its document: `primary` is the one the document's metadata names (a
  * page's `og:image`, a featured image); `inline` appears in the text, anchored to a chunk.

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createReplyImageUrls } from "../../../src/app/http/routes/replyImageAddress.js";
 import {
   evaluateTraceAssertion,
   scoreObservedOutput,
@@ -52,12 +53,18 @@ describe("reply block assertions", () => {
   });
 
   it("fails answer_excludes_image_url on an image address or a handle in the answer", () => {
-    const answer = (text: string) => evaluateTraceAssertion({ type: "answer_excludes_image_url" }, observed({ answer: text })).status;
+    const { src, srcSet } = createReplyImageUrls("https://app.example/backend").forImage("abc");
+    const presented = block("carousel", [{ title: "Hut to Hut" }]);
+    const withImage = { ...presented, items: presented.items.map((item) => ({ ...item, image: { src, srcSet, width: 800, height: 1200, alt: "" } })) };
+    const answer = (text: string) =>
+      evaluateTraceAssertion({ type: "answer_excludes_image_url" }, observed({ answer: text, replyBlocks: [withImage] })).status;
+    const smallest = srcSet.split(",")[0]?.trim().split(" ")[0] ?? "";
 
     expect(answer("We carry two hiking guides.")).toBe("pass");
     expect(answer("See [Hut to Hut](https://shop.example/books/hut-to-hut).")).toBe("pass");
     expect(answer("Here is the cover: https://shop.example/covers/hut-to-hut.jpg")).toBe("fail");
-    expect(answer("Cover: https://app.example/backend/api/v1/public/reply-images/abc/640")).toBe("fail");
+    expect(answer(`Cover: ${src}`)).toBe("fail");
+    expect(answer(`Cover: ${smallest}`)).toBe("fail");
     expect(answer("Here it is [m2].")).toBe("fail");
   });
 });

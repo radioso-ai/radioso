@@ -53,6 +53,30 @@ const buildRoutineStepSelection = (value: unknown): RoutineStepSelectionView | u
   }
 }
 
+/** What a consent step did (#1544): the consent's key and codes only, never its wording or the reply. */
+interface RoutineStepConsentView {
+  key: string
+  decision?: 'granted' | 'declined'
+  defaulted?: true
+  reask?: true
+  reason?: string
+}
+
+const buildRoutineStepConsent = (value: unknown): RoutineStepConsentView | undefined => {
+  if (!isRecord(value)) return undefined
+  const key = asString(value.key)
+  if (!key) return undefined
+  const decision = value.decision === 'granted' || value.decision === 'declined' ? value.decision : undefined
+  const reason = asString(value.reason)
+  return {
+    key,
+    ...(decision ? { decision } : {}),
+    ...(value.defaulted === true ? { defaulted: true as const } : {}),
+    ...(value.reask === true ? { reask: true as const } : {}),
+    ...(reason ? { reason } : {}),
+  }
+}
+
 /** One step's outcome as the runner walked the routine graph this turn. */
 export interface RoutineTraceStepView {
   stepId: string
@@ -74,6 +98,8 @@ export interface RoutineTraceStepView {
   rejectedSlotKeys?: string[]
   /** On the routine's first turn, this step read the opening message before it was asked (#1370). */
   readOpeningMessage?: boolean
+  /** On a consent step, what became of the consent this turn (#1544). */
+  consent?: RoutineStepConsentView
 }
 
 // Keys only: the runner never puts a rejected value on the trace, and this ignores one if present.
@@ -114,6 +140,7 @@ export const buildRoutineRunTrace = (
       const selection = buildRoutineStepSelection(entry.selection)
       const rejectedSlotKeys = rejectedSlotKeysOf(entry.rejectedSlots)
       const replacedSlotKeys = asStringArray(entry.replacedSlotKeys)
+      const consent = buildRoutineStepConsent(entry.consent)
       return {
         stepId: asString(entry.stepId) ?? '',
         kind: asString(entry.kind) ?? 'chat',
@@ -128,6 +155,7 @@ export const buildRoutineRunTrace = (
         ...(selection ? { selection } : {}),
         ...(rejectedSlotKeys.length > 0 ? { rejectedSlotKeys } : {}),
         ...(entry.readOpeningMessage === true ? { readOpeningMessage: true } : {}),
+        ...(consent ? { consent } : {}),
       }
     })
   const replacedSlotKeys = asStringArray(payload.replacedSlotKeys)

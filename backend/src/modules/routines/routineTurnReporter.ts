@@ -67,6 +67,9 @@ const pendingInputFor = (
   state: RoutineState,
   currentStep: RoutineStep | undefined,
 ): RoutinePendingInput[] => {
+  // A run waiting on a consent (#1544) asks for its answer, never for a field: none can be
+  // given before the visitor agrees, and the one the consent covers is collected after it.
+  if (currentStep?.kind === "consent") return [];
   const currentStepSlots = new Set(currentStep ? collectedSlotsForStep(currentStep) : []);
   return (routine.slots ?? [])
     .filter((slot) => !hasVariable(state.variables, slot.key))
@@ -145,7 +148,10 @@ export const createRoutineTurnReporter = (
       const routine = routinesById.get(state.routineId);
       const currentStep = routine?.steps.find((step) => step.id === (state.path.at(-1) ?? routine.rootStepId));
       if (!routine || !currentStep) return [];
-      const collected = new Set(collectedSlotsForStep(currentStep));
+      // A reply to a consent may already state a value the consent covers (#1544).
+      const collected = new Set(currentStep.kind === "consent"
+        ? routine.consents?.find((consent) => consent.key === currentStep.consentKey)?.slotKeys ?? []
+        : collectedSlotsForStep(currentStep));
       return sensitiveSlotKeys(routine).filter((key) => collected.has(key));
     },
   };

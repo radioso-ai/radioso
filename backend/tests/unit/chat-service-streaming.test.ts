@@ -2543,6 +2543,66 @@ describe("chat service streaming", () => {
       })]);
   });
 
+  it("records the consent a walk on from an approval decision shows, with the turn that shows it (#1544)", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agent = await new InMemoryAgentRepository().create("workspace-1", { name: "Support" });
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1", agentId: agent.id, sourceChannel: "slack" });
+    const visitorMessage = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "user", content: "Please approve the refund." });
+    const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
+    const wording = { locale: "en", body: "May we keep your health details for the refund?", agreeLabel: "Yes", declineLabel: "No" };
+    const conversationEngine = createConversationEngine();
+    vi.spyOn(conversationEngine, "resumeAwaitingDecision").mockResolvedValue({
+      resumed: true,
+      response: { answer: wording.body },
+      nextState: { sessionId: conversation.id, routineId: "refund-flow", path: ["await-approval", "consent:health:ask_health"], variables: {}, status: "active" },
+      hostEffects: { consentEvents: [{ kind: "asked", routineId: "refund-flow", consentKey: "health", reask: false, wording }] },
+    });
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: vi.fn(async () => ({ activator: { activate: vi.fn(async () => null) }, runner: {} as never })),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined,
+      { resolve: vi.fn(async () => agent) },
+      undefined, undefined, undefined, undefined, undefined,
+      conversationEngine,
+      { routineStore: undefined, routineProvider, suspendedRoutineReader: { loadSuspended: vi.fn(async () => null) }, assistantTurnPersistence },
+    );
+    const now = new Date("2026-11-11T12:00:00.000Z");
+
+    await service.resumeAwaitingDecisionTurn({
+      record: {
+        id: "decision-1", handle: "refund-approval", conversationId: conversation.id, sessionId: conversation.id,
+        workspaceId: "workspace-1", agentId: agent.id, routineId: "refund-flow", stepId: "await-approval", reason: null,
+        options: [{ id: "approve", label: "Approve" }], deciderScope: {}, contentHash: "hash-1", status: "resolved",
+        decision: { optionId: "approve" }, decidedBy: "account-1", decidedByUserId: null, decidedAt: now, deadline: null,
+        createdAt: now, updatedAt: now,
+      },
+      optionId: "approve",
+      decidedBy: "account-1",
+      transaction: {} as never,
+    });
+
+    // The turn reads the conversation's channel, so a consent it reaches is shown the way Slack shows one.
+    expect(vi.mocked(routineProvider.forTurn).mock.calls[0][0].consent).toMatchObject({
+      conversationId: conversation.id,
+      sourceChannel: "slack",
+    });
+    expect(vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0].routineConsent).toEqual({
+      agentId: agent.id,
+      visitorId: null,
+      channel: "slack",
+      decisionMessageId: visitorMessage.id,
+      events: [{ kind: "asked", routineId: "refund-flow", consentKey: "health", reask: false, wording }],
+    });
+  });
+
   it.each([
     {
       ending: "hand-off",

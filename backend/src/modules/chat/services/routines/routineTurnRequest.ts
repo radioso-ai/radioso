@@ -1,5 +1,6 @@
 import type { ChatRoutineProvider } from "../../contracts/routineProvider.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
+import { routineConsentTurnFacts } from "./routineConsentTurn.js";
 
 type RoutineTurnRequest = Parameters<ChatRoutineProvider["forTurn"]>[0];
 
@@ -13,6 +14,7 @@ type RoutineTurnAttempt = Pick<
   | "groundedAnswerRenderer"
   | "throwIfCancelled"
   | "includeSlotValues"
+  | "consentStore"
 >;
 
 /**
@@ -40,4 +42,6 @@ export const routineTurnRequest = (
   throwIfCancelled: attempt.throwIfCancelled,
   turnPlan: session.turnPlan,
   includeSlotValues: attempt.includeSlotValues,
+  consent: routineConsentTurnFacts(session, attempt.responseLanguage),
+  consentStore: attempt.consentStore,
 });

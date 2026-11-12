@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
+import type { ConversationRoutineStore, Routine, RoutineState } from "@radioso/conversation-contract";
 
 import { DeferredRoutineStore } from "../../src/modules/chat/services/routines/deferredRoutineStore.js";
 
@@ -55,6 +55,23 @@ describe("DeferredRoutineStore", () => {
       kind: "save",
       state: { executionId: "execution-existing", startedMessageId: "original-message" },
     });
+  });
+
+  it("tells persistence whether the routine it saves asks consent, so only one that does pays for the withdrawal guard (#1544)", async () => {
+    const plain: Routine = { id: "contact.request", rootStepId: "ask_email", steps: [], transitions: [] };
+    const intake: Routine = { ...plain, id: "intake", consents: [{ key: "health", slotKeys: ["pregnant"], onDecline: "continue" }] };
+    const store = new DeferredRoutineStore(innerStore(), undefined, [plain, intake]);
+
+    await store.save(state());
+    expect(store.getTransition()).toMatchObject({ kind: "save", asksConsent: false });
+    await store.save(state({ routineId: "intake" }));
+    expect(store.getTransition()).toMatchObject({ kind: "save", asksConsent: true });
+    // A routine the turn does not know, or a store told no routines, cannot say: persistence guards it.
+    await store.save(state({ routineId: "unknown" }));
+    expect(store.getTransition()).not.toHaveProperty("asksConsent");
+    const unaware = new DeferredRoutineStore(innerStore());
+    await unaware.save(state());
+    expect(unaware.getTransition()).not.toHaveProperty("asksConsent");
   });
 
   it("reads through loadActive but defers save until commit", async () => {

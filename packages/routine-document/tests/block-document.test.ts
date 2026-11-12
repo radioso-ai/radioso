@@ -215,6 +215,27 @@ describe('routine block document', () => {
     expect(roundTrip(draft()).restored.terminals.every((terminal) => !('operatorNotice' in terminal))).toBe(true)
   })
 
+  it('carries consents through the document and back, and leaves an absent list absent', () => {
+    const consents = [{
+      key: 'account_review',
+      slotKeys: ['account_id'],
+      variants: [{ locale: 'en', body: 'We read your account to review it.', agreeLabel: 'Go ahead', declineLabel: 'Not now' }],
+      onDecline: 'handoff' as const,
+    }]
+    const consented = roundTrip(draft({ consents }))
+    expect(consented.projected.doc.consents).toEqual(consents)
+    expect(consented.restored.consents).toEqual(consents)
+
+    const unconsented = roundTrip(draft())
+    expect(unconsented.projected.doc).not.toHaveProperty('consents')
+    expect(unconsented.restored).not.toHaveProperty('consents')
+  })
+
+  it('opens a routine whose consent is half written', () => {
+    const projected = routineToBlockDoc(draft({ consents: [{ key: '', slotKeys: [], variants: [], onDecline: 'continue' }] }))
+    expect(projected).toMatchObject({ ok: true, doc: { consents: [{ key: '', slotKeys: [] }] } })
+  })
+
   it('holds a half-typed tool name mid-edit', () => {
     const projected = routineToBlockDoc(draft({ exposure: { enabled: true, toolName: 'Escalate Account', description: '' } }))
     expect(projected).toMatchObject({ ok: true, doc: { exposure: { toolName: 'Escalate Account' } } })

@@ -12,6 +12,7 @@ import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGre
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
 import { sameVisitorImagesSwitch } from "./agentRevisionVisitorImages.js";
 import { canonicalContentHash } from "../../shared/domain/canonicalContentHash.js";
+import { DEFAULT_AGENT_LOCALE_FALLBACK } from "../../shared/domain/locale.js";
 import { errorClassOf } from "../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
@@ -29,15 +30,7 @@ interface CandidatePublicationReview {
   readonly contentHash: string;
 }
 
-/**
- * Bootstrap never resolves `resolveChatLocale` to a hardcoded language (it returns `null`
- * when the agent has never set `assistantDefaultLocale`), but exact content's "one
- * mandatory default-locale variant" rule (spec 1150 FR-005/FR-007) needs an actual language
- * to require. An agent that has never set a default locale falls back to English here —
- * both at draft-save time (`AgentService.updateDraftGreeting`) and at candidate/publish
- * time (`AgentRevisionRepository`) — so the two checks never disagree with each other.
- */
-export const DEFAULT_AGENT_LOCALE_FALLBACK = "en";
+export { DEFAULT_AGENT_LOCALE_FALLBACK };
 
 /**
  * Publishing a candidate makes the draft's current content the one customers see, and an earlier
@@ -169,7 +162,8 @@ export const equalScopedAuthoringSnapshots = (
  * of pre-existing unit tests that call this without the option keep compiling; both real
  * callers (`AgentRevisionRepository#createCandidate`/`#publish`) always pass the agent's
  * live `assistantDefaultLocale`, because FR-005 requires re-checking against the *current*
- * default locale, not one frozen at authoring time.
+ * default locale, not one frozen at authoring time. The routine consent rules (#1544) run only
+ * when it is passed, against the same language.
  *
  * `publishedSnapshot` is the agent's currently published revision, when it has one: the
  * routines module's cross-snapshot exposure rules freeze a routine's tool name from the
@@ -179,12 +173,14 @@ export const assertCandidateSnapshotIsRunnable = (
   snapshot: AgentRevisionSnapshot,
   options: { agentDefaultLocale?: string; publishedSnapshot?: AgentRevisionSnapshot | null } = {},
 ): void => {
+  // Consents are checked against the agent's language as it is now, like the greeting below.
+  const consentValidationContext = options.agentDefaultLocale === undefined ? {} : { agentDefaultLocale: options.agentDefaultLocale };
   // A disabled routine cannot activate, so it cannot break a conversation: parking a
   // half-finished flow must not block the agent's release. Directive scope closure below
   // still spans every routine, because a tag naming a parked routine is still a real one.
   const diagnostics: Array<{ routineId: string | null; code: string; location: string; message: string }> = snapshot.routines.flatMap((routine) =>
     routine.enabled
-      ? validateRoutineDefinition(routine).diagnostics.map((diagnostic) => ({ routineId: routine.id, ...toSafeRoutineValidationDiagnostic(diagnostic) }))
+      ? validateRoutineDefinition(routine, consentValidationContext).diagnostics.map((diagnostic) => ({ routineId: routine.id, ...toSafeRoutineValidationDiagnostic(diagnostic) }))
       : []
   );
   diagnostics.push(...validateExposureAcrossSnapshot(snapshot.routines, options.publishedSnapshot?.routines ?? []));

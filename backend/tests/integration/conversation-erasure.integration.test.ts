@@ -9,6 +9,7 @@ import {
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
 import { PersonalCredentialLifecycleRepository } from "../../src/db/repositories/personalCredentialLifecycleRepository.js";
+import { RoutineConsentRepository } from "../../src/db/repositories/routineConsentRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { ConversationErasureService } from "../../src/modules/privacy/public.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -362,6 +363,42 @@ describeIntegration("conversation erasure (Postgres)", () => {
     );
     expect(outcomes).toEqual([{ conversation_id: null, reserved_email_count: 1 }]);
     expect(await count("ee_usage_limit_conversation_replies WHERE conversation_id = $1", [erased.conversationId])).toBe(1);
+  });
+
+  it("keeps the consent proof with its conversation and visitor ids, dropping only the link to the message (#1544)", async () => {
+    const tenant = await seedTenant();
+    const visitorId = await seedVisitor(tenant, null);
+    const erased = await seedConversation(tenant, { visitorId });
+    const consents = new RoutineConsentRepository(database.kysely);
+    const wordingVersionId = await consents.upsertWordingVersion({
+      workspaceId: tenant.workspaceId,
+      wording: { locale: "en", body: "We ask about your order history to help.", agreeLabel: "I agree", declineLabel: "No thanks" },
+    });
+    await consents.insertRecord({
+      workspaceId: tenant.workspaceId,
+      agentId: tenant.agentId,
+      conversationId: erased.conversationId,
+      visitorId,
+      routineId: "refund",
+      consentKey: "order_history",
+      slotKeys: ["order"],
+      wordingVersionId,
+      locale: "en",
+      decision: "granted",
+      method: "reply",
+      defaulted: false,
+      channel: "web",
+      decisionMessageId: erased.userMessageId,
+    });
+
+    await erasure.eraseConversation({ workspaceId: tenant.workspaceId, conversationId: erased.conversationId, actor: actor(tenant) });
+
+    const records = await database.query<{ conversation_id: string | null; visitor_id: string | null; decision_message_id: string | null; decision: string }>(
+      "SELECT conversation_id, visitor_id, decision_message_id, decision FROM routine_consent_records WHERE workspace_id = $1",
+      [tenant.workspaceId],
+    );
+    expect(records).toEqual([{ conversation_id: erased.conversationId, visitor_id: visitorId, decision_message_id: null, decision: "granted" }]);
+    expect(await count("routine_consent_wording_versions WHERE workspace_id = $1 AND id = $2", [tenant.workspaceId, wordingVersionId])).toBe(1);
   });
 
   it("records one content-free audit event and keeps the content-free events that name the conversation", async () => {

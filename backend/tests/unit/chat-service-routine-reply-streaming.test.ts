@@ -806,7 +806,7 @@ describe("ChatService streams a routine reply that reports no completed action",
           variables: {},
           status: "suspended",
         },
-        awaitingDecision: { stepId: "approve", options: [{ id: "approve", label: "Approve" }], captureKey: "decision" },
+        hostEffects: { awaitingDecision: { stepId: "approve", options: [{ id: "approve", label: "Approve" }], captureKey: "decision" } },
       },
     },
     {

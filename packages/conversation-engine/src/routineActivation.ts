@@ -139,10 +139,11 @@ const claimCompletedRoutineCorrection = async (
   }
   const candidate = await routineSlotCorrection.detect({ turn: baseTurn, completedState });
   // A correction changes a value the run holds in a slot open to one. Anything else, a request
-  // for something new included, goes on to reentry and activation (#1714).
+  // for something new included, goes on to reentry and activation (#1714). A slot one of the
+  // routine's consents covers is never open to one (#1544).
   if (
     candidate.kind !== "correction" ||
-    !correctableSlots(candidate.slots, completedState.variables).some((slot) => slot.key === candidate.slotKey)
+    !correctableSlots(candidate.slots, completedState.variables, candidate.consents).some((slot) => slot.key === candidate.slotKey)
   ) {
     return null;
   }

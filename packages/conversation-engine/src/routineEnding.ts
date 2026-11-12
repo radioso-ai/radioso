@@ -2,12 +2,18 @@ import type {
   ConversationRoutineResumeResult,
   ProcessTurnResult,
   Routine,
+  RoutineActionRequest,
   RoutineAuthoredTerminalKind,
   RoutineCompletionExport,
+  RoutineHandoffTerminalKind,
+  RoutineTerminalKind,
   RoutineOperatorNoticeEffect,
+  RoutineOperatorNoticeTemplate,
   RoutineState,
   RoutineStep,
 } from "@radioso/conversation-contract";
+
+import { declaredSlotVariables, hasVariable, sensitiveSlotKeys } from "./routineSlotValues.js";
 
 /**
  * The record a routine keeps once a turn ends it, built from the state that turn started on:
@@ -39,6 +45,10 @@ export const completedRoutineState = (
   };
 };
 
+/** The endings that hand the conversation to a person: an authored hand-off end, and the runner's own (#1384, #1544). */
+const handsOff = (kind: RoutineTerminalKind): kind is RoutineHandoffTerminalKind =>
+  kind === "handoff" || kind === "stuck" || kind === "consent_declined";
+
 /**
  * What a routine ending does beyond the reply, derived from the landed terminal. Every path
  * that runs a routine to its end (a live turn, a resume after an approval) reports these, so
@@ -48,7 +58,7 @@ export const routineEndingEffects = (
   routineId: string,
   terminal: ConversationRoutineResumeResult["terminal"],
 ): Pick<ProcessTurnResult, "handoff" | "operatorNotice"> => ({
-  ...(terminal?.kind === "handoff" || terminal?.kind === "stuck"
+  ...(terminal && handsOff(terminal.kind)
     ? {
         handoff: {
           routineId,
@@ -148,4 +158,80 @@ export const completedRunSentValues = (routine: Routine, state: RoutineState): b
     return true;
   }
   return landed.kind !== "terminal" || endingSends(routine, landed);
+};
+
+/**
+ * Whether the author routed some path of this routine to a hand-off end — people take its
+ * conversations over, so a visitor stuck on a step can go to one (#1384). A routine no exit
+ * leads to a hand-off step declares no such path.
+ */
+export const routesToHandoff = (routine: Routine): boolean =>
+  routine.transitions.some((transition) => {
+    const target = routine.steps.find((step) => step.id === transition.to);
+    return target !== undefined && terminalKindFor(target) === "handoff";
+  });
+
+/** The keys of an ending's collected values that were masked as sensitive, reported beside them. */
+export const maskedSlotKeys = (
+  routine: Routine,
+  collected: Record<string, unknown>,
+): Pick<NonNullable<ConversationRoutineResumeResult["terminal"]>, "sensitiveSlotKeys"> => {
+  const keys = sensitiveSlotKeys(routine).filter((key) => hasVariable(collected, key));
+  return keys.length > 0 ? { sensitiveSlotKeys: keys } : {};
+};
+
+export const terminalResult = (
+  routine: Routine,
+  kind: RoutineAuthoredTerminalKind,
+  step: RoutineStep,
+  collected: Record<string, unknown>,
+): NonNullable<ConversationRoutineResumeResult["terminal"]> => {
+  const operatorNotice = operatorNoticeTemplateFor(step);
+  return { kind, stepId: step.id, collected, ...maskedSlotKeys(routine, collected), ...(operatorNotice ? { operatorNotice } : {}) };
+};
+
+/**
+ * The operator notice template a terminal step carries. The host's compiler puts it there
+ * exactly when the ending notifies operators; the runner only reads it back, keeping the
+ * fields that are strings so a malformed metadata value can never reach a notice.
+ */
+const operatorNoticeTemplateFor = (step: RoutineStep): RoutineOperatorNoticeTemplate | null => {
+  const notice = step.kind === "terminal" ? step.metadata?.operatorNotice : undefined;
+  if (typeof notice !== "object" || notice === null || Array.isArray(notice)) {
+    return null;
+  }
+  const { subject, intro, skillName, replyToSlot, includeAiSummary } = notice as Record<string, unknown>;
+  return {
+    ...(typeof subject === "string" ? { subject } : {}),
+    ...(typeof intro === "string" ? { intro } : {}),
+    ...(typeof skillName === "string" ? { skillName } : {}),
+    ...(typeof replyToSlot === "string" ? { replyToSlot } : {}),
+    ...(includeAiSummary === true ? { includeAiSummary: true } : {}),
+  };
+};
+
+export const completionExportActionFor = (
+  routine: Routine,
+  step: RoutineStep,
+  terminalKind: RoutineAuthoredTerminalKind | null,
+  variables: Record<string, unknown>,
+): RoutineActionRequest | null => {
+  const completionExport = firingCompletionExport(routine, terminalKind);
+  if (!completionExport) {
+    return null;
+  }
+
+  return {
+    type: "webhook.send",
+    payload: {
+      destinationRef: completionExport.destinationRef,
+      source: {
+        routineId: routine.id,
+        stepId: step.id,
+        terminalKind,
+        status: "completed",
+      },
+      data: declaredSlotVariables(routine, variables),
+    },
+  };
 };

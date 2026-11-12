@@ -28,8 +28,8 @@ import { clockTimestamp, clockTimestampMinusSeconds, jsonbConcat, toJsonb } from
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { GroundingDiagnosticSnapshot } from "../../shared/domain/groundingDiagnostic.js";
+import { parseStoredInputMetadata, type UserMessageInputMetadata } from "../../shared/domain/chatInputMetadata.js";
 import { carriesSensitiveValue, SENSITIVE_SLOT_KEYS_METADATA_KEY } from "../../shared/domain/sensitiveTranscript.js";
-import { mapUserMessageInputMetadata, type UserMessageInputMetadata } from "./messageInputMetadata.js";
 
 export type MessageRole = "user" | "assistant" | "system";
 
@@ -55,7 +55,7 @@ export interface MessageRecord {
   createdAt: Date;
 }
 
-export type { UserMessageInputMetadata } from "./messageInputMetadata.js";
+export type { UserMessageInputMetadata } from "../../shared/domain/chatInputMetadata.js";
 
 export interface ConversationMessageSummary {
   messageCount: number;
@@ -344,7 +344,7 @@ export const mapMessageRow = (row: MessageRow): MessageRecord => ({
   metadata: row.metadata_json && typeof row.metadata_json === "object" && !Array.isArray(row.metadata_json)
     ? row.metadata_json as Record<string, unknown>
     : undefined,
-  inputMetadata: row.role === "user" ? mapUserMessageInputMetadata(row.metadata_json) : undefined,
+  inputMetadata: row.role === "user" ? parseStoredInputMetadata(row.metadata_json) : undefined,
   interruption: row.role === "assistant" ? mapInterruption(row.metadata_json) : undefined,
   speech: row.role === "assistant" && isHumanAuthoredMessageSource(row.source) ? mapSpeech(row.metadata_json) : undefined,
   skillName: row.skill_name ?? undefined,

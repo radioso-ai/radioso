@@ -39,7 +39,7 @@ export const routineReplyDelivery = (turn: {
 }): RoutineReplyDelivery => {
   const { effects, ending } = turn;
   const durable = effects.terminalKind !== undefined
-    || effects.awaitingDecision !== undefined
+    || effects.hostEffects?.awaitingDecision !== undefined
     || effects.handoff !== undefined
     || (effects.actions?.length ?? 0) > 0
     || (effects.skillsWithExternalEffects?.length ?? 0) > 0

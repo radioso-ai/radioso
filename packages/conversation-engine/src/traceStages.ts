@@ -12,7 +12,7 @@ import type {
   ConversationSkillInputResolution,
   AwaitingSkillInput,
   RoutineActionRequest,
-  RoutineAwaitingDecision,
+  RoutineHostEffects,
   RoutineTurnYield,
   SelectionDecision,
   TurnOutcome,
@@ -165,7 +165,7 @@ export const createProcessTurnResult = (input: {
   operatorNotice?: ProcessTurnResult["operatorNotice"];
   routineExecution?: ProcessTurnResult["routineExecution"];
   routineClarificationRoutineIds?: ProcessTurnResult["routineClarificationRoutineIds"];
-  awaitingDecision?: RoutineAwaitingDecision;
+  hostEffects?: RoutineHostEffects;
   skillsWithExternalEffects?: string[];
   awaitingSkillInput?: AwaitingSkillInput[];
 }): ProcessTurnResult => ({
@@ -182,7 +182,7 @@ export const createProcessTurnResult = (input: {
   ...(input.routineClarificationRoutineIds && input.routineClarificationRoutineIds.length > 0
     ? { routineClarificationRoutineIds: input.routineClarificationRoutineIds }
     : {}),
-  ...(input.awaitingDecision ? { awaitingDecision: input.awaitingDecision } : {}),
+  ...(input.hostEffects ? { hostEffects: input.hostEffects } : {}),
   ...(input.skillsWithExternalEffects && input.skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects: input.skillsWithExternalEffects } : {}),
   ...(input.awaitingSkillInput && input.awaitingSkillInput.length > 0
     ? { awaitingSkillInput: input.awaitingSkillInput }

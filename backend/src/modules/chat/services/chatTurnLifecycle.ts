@@ -76,7 +76,8 @@ import {
 } from "./chatTraceLeaves.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { describeRoutineTurn } from "./routines/routineTurnDescription.js";
-import { sensitiveSlotKeysForTurn } from "./sensitiveTurnSlots.js";
+import { sensitiveSlotKeysForTurn, withSensitiveTurnMarker } from "./routines/sensitiveTurnMarker.js";
+import { traceIncludesRetrievalSkillDispatch } from "./retrievalDispatchTrace.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
@@ -136,30 +137,6 @@ const attachRetrievalActivityTrace = (
     subTrace: capabilitySubTrace(RETRIEVAL_TRACE_LEAF, activityTrace),
   });
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const isRetrievalSkillName = (value: unknown): boolean =>
-  typeof value === "string" && value.startsWith("retrieval.");
-
-const traceIncludesRetrievalSkillDispatch = (trace?: ConversationTrace): boolean =>
-  trace?.stages.some((stage) => {
-    if (isRetrievalSkillName(stage.outputs?.skillName)) {
-      return true;
-    }
-
-    if (stage.subTrace?.namespace !== "routine" || !isRecord(stage.subTrace.payload)) {
-      return false;
-    }
-
-    const steps = stage.subTrace.payload.steps;
-    return Array.isArray(steps) && steps.some((step) =>
-      isRecord(step)
-      && step.event === "skill_dispatched"
-      && isRetrievalSkillName(step.skillName),
-    );
-  }) ?? false;
 
 const getChatTurnRoute = (session: PreparedSession, engineTrace?: ConversationTrace): ChatRoute => {
   if (traceIncludesRetrievalSkillDispatch(engineTrace)) {
@@ -588,20 +565,6 @@ const notRecordedAnswerCoverage = (requestMessageId: string): ChatAnswerCoverage
   originatingTurnId: requestMessageId,
   originatingRequestId: requestMessageId,
 });
-
-const withSensitiveTurnMarker = (
-  presentation: TurnTracePresentation,
-  sensitiveSlotKeys: readonly string[],
-): TurnTracePresentation =>
-  sensitiveSlotKeys.length === 0
-    ? presentation
-    : {
-        ...presentation,
-        assistantMessage: {
-          ...presentation.assistantMessage,
-          metadata: { ...presentation.assistantMessage.metadata, ...sensitiveTurnMetadata(sensitiveSlotKeys) },
-        },
-      };
 
 interface CompleteAssistantTurnInput {
   workspaceId: string;

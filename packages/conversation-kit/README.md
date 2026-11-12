@@ -275,6 +275,9 @@ routine with a hand-off end, a step still unanswered a turn later ends the routi
 `stuck`: the runner passes the renderer `stuckHandoff: true` with no steering, the
 reply tells the visitor a person continues the conversation, and the turn's
 `handoff` carries `terminalKind: "stuck"`.
+The kit wires no consent port, so a routine that carries `consents` never asks one: a
+`consent` step takes its decline path, and the slots it covers stay empty. Supply a
+`routineRunner` built with a `consent` port to ask them.
 When you supply `routineRunner`, it owns its routine list instead.
 
 The kit also accepts engine capability ports for steering, turn interpretation,

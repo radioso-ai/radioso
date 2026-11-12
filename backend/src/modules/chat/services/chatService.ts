@@ -49,7 +49,7 @@ import type { ChatResponse } from "../types/chatResponses.js";
 import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
 import { chatReviewResult, withReplyLanguageTag } from "./reviewDraft.js";
 import type { AssistantClientContextCapabilities, AssistantPageContext, UserMessageStoredListener } from "../types/assistantApi.js";
-import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { CALLER_KIND_MATCH_KEY, visitorMatchContext } from "./visitorMatchContext.js";
 import {

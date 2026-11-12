@@ -28,6 +28,20 @@ const DEFAULT_TEXT: Record<RoutineEndingOperatorNotification["kind"], {
   },
 };
 
+/**
+ * A hand-off whose reason says more than that a person is needed: the headline says why. A runner
+ * ending carries no authored text, so this is the only place the operator reads it. It names no
+ * value: a visitor who declined consent gave none for the slots it covers (#1544).
+ */
+const HEADLINE_BY_REASON: Readonly<Record<string, string>> = {
+  routine_consent_declined: "A visitor declined consent, and the conversation needs a human operator.",
+};
+
+const headlineFor = (notification: RoutineEndingOperatorNotification): string =>
+  Object.hasOwn(HEADLINE_BY_REASON, notification.reason)
+    ? HEADLINE_BY_REASON[notification.reason]
+    : DEFAULT_TEXT[notification.kind].headline;
+
 /** What a reference to a value the routine did not collect renders as: the notice still goes out. */
 const MISSING_VALUE = "—";
 
@@ -126,7 +140,7 @@ export const formatRoutineEndingNotification = (
   const sensitiveKeys = new Set(notification.sensitiveSlotKeys ?? []);
   const subject = renderTemplate(notification.notice?.subject, notification.collected, { singleLine: true, sensitiveKeys });
   const intro = renderTemplate(notification.notice?.intro, notification.collected, { singleLine: false, sensitiveKeys });
-  const headline = [defaults.headline, ...(intro ? [intro] : [])];
+  const headline = [headlineFor(notification), ...(intro ? [intro] : [])];
   const collected = collectedBlock(notification.collected, sensitiveKeys);
   const aiSummary = notification.aiSummary?.trim();
   const sections: string[][] = [headline, ...(collected ? [collected] : []), ...(aiSummary ? [["AI summary:", `  ${aiSummary}`]] : []), footerLines(notification)];

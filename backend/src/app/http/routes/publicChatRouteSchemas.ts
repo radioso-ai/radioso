@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { chatInputMetadataSchema } from "../../../shared/domain/chatInputMetadata.js";
 import { isLocaleTag } from "../../../shared/domain/locale.js";
 import { PRIVACY_NOTICE_VERSION_MAX_LENGTH } from "../../../modules/agents/public.js";
 import { pageReadCapabilitySchema, replyBlocksCapabilitySchema } from "../../../modules/chat/contracts/index.js";
@@ -59,29 +60,7 @@ export const anonymousChatSchema = z.object({
    * Recorded on the conversation the message starts when the agent's notices carry it now.
    */
   privacyNoticeVersion: z.string().trim().min(1).max(PRIVACY_NOTICE_VERSION_MAX_LENGTH).optional(),
-  inputMetadata: z.object({
-    method: z.enum(["typed", "suggestion_click", "intent_click"]),
-    suggestionSourceMessageId: z.string().uuid().optional(),
-    intent: z.object({
-      skillName: z.string().trim().min(1).max(120),
-      intentName: z.string().trim().min(1).max(120).optional(),
-    }).optional(),
-  }).superRefine((value, ctx) => {
-    if (value.method === "suggestion_click" && !value.suggestionSourceMessageId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "suggestionSourceMessageId is required for suggestion_click",
-        path: ["suggestionSourceMessageId"],
-      });
-    }
-    if (value.method === "intent_click" && !value.intent) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "intent is required for intent_click",
-        path: ["intent"],
-      });
-    }
-  }).optional(),
+  inputMetadata: chatInputMetadataSchema.optional(),
 }).superRefine((value, ctx) => {
   if (!value.message && !value.startConversation && !value.imageIds) {
     ctx.addIssue({

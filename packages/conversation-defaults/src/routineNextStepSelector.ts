@@ -21,11 +21,13 @@ import { checkSlotValue, collectedSlotsForStep } from "@radioso/conversation-eng
 
 import {
   DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
+  DEFAULT_ROUTINE_NEXT_STEP_EARLIER_SLOTS_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_SLOT_FALLBACK_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
 } from "./generated/defaultPrompts.js";
+import { extractJsonObject } from "./extractJsonObject.js";
 import { localIsoDate, turnTimeZone, type LocalDate } from "./localDate.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
@@ -78,6 +80,7 @@ interface SlotRuleTemplates {
   slots: string;
   filledSlots: string;
   dateRule: string;
+  earlierSlots: string;
 }
 
 // A date slot without today's date left the model unsure how to write "11 novembre": it
@@ -118,6 +121,8 @@ const slotSchemaBlock = (
   variables: Record<string, unknown>,
   today: LocalDate,
   templates: SlotRuleTemplates,
+  /** Slots that may take their value from the user's earlier messages (#1544). */
+  earlierMessageSlotKeys: readonly string[],
 ): string => {
   if (!routine.slots || routine.slots.length === 0) {
     return "";
@@ -131,6 +136,11 @@ const slotSchemaBlock = (
       })}`
       : "",
     date_rule: routine.slots.some((slot) => slot.type === "date") ? `\n${dateRule(today, templates.dateRule)}` : "",
+    earlier_slots: earlierMessageSlotKeys.length > 0
+      ? `\n${renderPromptTemplate("chat/routine-next-step-earlier-slots.md", templates.earlierSlots, {
+        slot_keys: earlierMessageSlotKeys.join(", "),
+      })}`
+      : "",
   });
 };
 
@@ -196,42 +206,6 @@ const unreadableDecision = (reason: RoutineUnreadableReason): ParsedDecision => 
   claimsAuthority: false,
   variables: {},
 });
-
-// Extracts the first balanced { ... } object from the model output. Structural
-// parsing only; no product vocabulary.
-const extractJsonObject = (raw: string): string | null => {
-  const start = raw.indexOf("{");
-  if (start < 0) {
-    return null;
-  }
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let index = start; index < raw.length; index += 1) {
-    const char = raw[index];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-    } else if (char === "{") {
-      depth += 1;
-    } else if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return raw.slice(start, index + 1);
-      }
-    }
-  }
-  return null;
-};
 
 // Cancellation, not a parsing failure: the turn itself is going away, so the retry below
 // must let this propagate rather than keep retrying or falling back to a stale decision.
@@ -432,6 +406,8 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       filledSlotsPromptTemplate?: string;
       /** How a date slot's value is read and recorded (`{{today}}`, `{{time_zone}}`). */
       dateRulePromptTemplate?: string;
+      /** The slots that may take their value from the user's earlier messages (`{{slot_keys}}`). */
+      earlierSlotsPromptTemplate?: string;
       clock?: () => Date;
       onCompletion?: RoutineSelectorCompletionObserver;
     } = {},
@@ -442,6 +418,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       slots: options.slotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
       filledSlots: options.filledSlotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
       dateRule: options.dateRulePromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
+      earlierSlots: options.earlierSlotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_EARLIER_SLOTS_PROMPT,
     };
     this.clock = options.clock ?? (() => new Date());
     this.onCompletion = options.onCompletion ?? ignoreCompletion;
@@ -455,6 +432,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     turn: TurnContext;
     skillResult?: RoutineSkillResult;
     messageStatesSlotValues?: boolean;
+    earlierMessageSlotKeys?: readonly string[];
   }): Promise<RoutineNextStepDecision> {
     // No outgoing edges → nowhere to advance; stay on the current step.
     if (input.transitions.length === 0) {
@@ -469,6 +447,8 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       input.state.variables,
       localIsoDate(this.clock(), turnTimeZone(input.turn)),
       this.slotRuleTemplates,
+      // A structured call states no values, so no earlier message is read for one either.
+      input.messageStatesSlotValues === false ? [] : input.earlierMessageSlotKeys ?? [],
     );
     const systemPrompt = renderPromptTemplate("chat/routine-next-step.md", this.promptTemplate, {
       currentStep: currentStepBlock(input.currentStep, input.skillResult),

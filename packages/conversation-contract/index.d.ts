@@ -638,7 +638,7 @@ export interface ConversationCitation {
   metadata?: Record<string, unknown>;
 }
 
-export type { DirectiveAdherenceEntry, PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
+export type { DirectiveAdherenceEntry, ItemListBlock, ReplyAction, ReplyBlock, ReplyBlockLayout, ReplyFact, ReplyImage, ReplyItem, PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
 
 export interface TurnStreamDelta {
   type: "delta";

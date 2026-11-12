@@ -13,10 +13,12 @@ import {
   type GroundedAnswerEnvelope,
   type PlannedEnvelopeSuggestion,
 } from "./groundedAnswerEnvelope.js";
-import type {
-  AnswerSideChannel,
-  AnswerSideChannelFactory,
+import {
+  mergeAnswerSchemaExtensions,
+  type AnswerSideChannel,
+  type AnswerSideChannelFactory,
 } from "../../../shared/domain/answerSideChannel.js";
+import type { PresentedReplyBlocks, ReplyBlockTurn, ReplyBlockTurnFactory } from "./replyBlocks/replyBlockTurn.js";
 import { AnswerLinkGuard } from "./answerLinkGuard.js";
 import { StreamedAnswerText } from "./streamedAnswerText.js";
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
@@ -91,6 +93,7 @@ export class RetrievalAnswerComposer {
     private readonly fallbackReplyComposer: FallbackReplyComposer,
     metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
     private readonly answerSideChannel?: AnswerSideChannelFactory,
+    private readonly replyBlocks?: Pick<ReplyBlockTurnFactory, "forTurn">,
   ) {
     this.answerMetrics = new RetrievalAnswerMetrics(metrics);
   }
@@ -189,7 +192,7 @@ export class RetrievalAnswerComposer {
    * on a verdict this call's envelope schema happens to also ask for but that
    * nothing reads.
    */
-  private composeGroundedAnswerPrompt(session: PreparedSession, knownAssessment?: AnswerCoverageAssessment) {
+  private composeGroundedAnswerPrompt(session: PreparedSession, knownAssessment?: AnswerCoverageAssessment, presentHeadOffered?: boolean) {
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
       history: session.history,
       latestQuery: session.effectiveQuery ?? session.userMessage.content,
@@ -209,6 +212,7 @@ export class RetrievalAnswerComposer {
       pendingRoutineStep: session.routineYield?.pendingStep,
       noSupportHandsOff: session.agent.handoffOnRetrievalMiss === true,
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
+      presentHeadOffered,
     });
     if (session.directiveSteering) {
       // Whether the follow-up question generator's block went into the prompt at all.
@@ -223,18 +227,25 @@ export class RetrievalAnswerComposer {
     return this.composeGroundedAnswerPrompt(session).systemPrompt;
   }
 
+  /** The answer's prompt parts; a turn offering reply blocks adds its Result images after the Results. */
   private promptWithConversationContext(
     prompt: string,
     session: PreparedSession,
     knownAssessment?: AnswerCoverageAssessment,
+    replyTurn?: ReplyBlockTurn | null,
   ) {
-    const groundedPrompt = this.composeGroundedAnswerPrompt(session, knownAssessment);
+    const groundedPrompt = this.composeGroundedAnswerPrompt(session, knownAssessment, Boolean(replyTurn));
+    const evidence = replyTurn ? `${prompt}\n\n${replyTurn.promptSection}` : prompt;
     return {
       systemPrompt: groundedPrompt.systemPrompt,
       reusableInputBoundary: groundedPrompt.reusableInputBoundary,
       prompt: groundedPrompt.conversationContextPrompt
-        ? `${prompt}\n\n${groundedPrompt.conversationContextPrompt}`
-        : prompt,
+        ? `${evidence}\n\n${groundedPrompt.conversationContextPrompt}`
+        : evidence,
+      responseFormat: buildGroundedAnswerResponseFormat(mergeAnswerSchemaExtensions(
+        this.sideChannel(session, knownAssessment)?.schemaExtension(),
+        replyTurn?.schemaExtension,
+      )),
     };
   }
 
@@ -278,8 +289,9 @@ export class RetrievalAnswerComposer {
     linkGuard: AnswerLinkGuard,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
+    replyTurn?: ReplyBlockTurn | null,
   ): Promise<GroundedAnswerEnvelope> {
-    const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
+    const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment, replyTurn);
     const raw = await this.chatGateway.answer(linkGuard.sendsAnswer({
       query,
       history: session.history,
@@ -288,9 +300,7 @@ export class RetrievalAnswerComposer {
       prompt: groundedPrompt.prompt,
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
-      generation: {
-        responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session, knownAssessment)?.schemaExtension() ?? null),
-      },
+      generation: { responseFormat: groundedPrompt.responseFormat },
       ...(signal ? { signal } : {}),
     }));
     const envelope = parseGroundedAnswerEnvelope(raw);
@@ -359,9 +369,7 @@ export class RetrievalAnswerComposer {
       prompt: groundedPrompt.prompt,
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
-      generation: {
-        responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session, knownAssessment)?.schemaExtension() ?? null),
-      },
+      generation: { responseFormat: groundedPrompt.responseFormat },
       ...(signal ? { signal } : {}),
     }));
     for await (const text of candidateStream) {
@@ -438,6 +446,7 @@ export class RetrievalAnswerComposer {
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
+    let replyBlocks: PresentedReplyBlocks | undefined;
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
     let declineReason: TurnDeclineReason | undefined;
 
@@ -490,6 +499,7 @@ export class RetrievalAnswerComposer {
         declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, false);
       }
     } else {
+      const replyTurn = await this.replyBlocks?.forTurn(session);
       const envelope = await this.generateGroundedAnswerEnvelope(
         session,
         query,
@@ -498,6 +508,8 @@ export class RetrievalAnswerComposer {
         "grounded",
         linkGuard,
         signal,
+        undefined,
+        replyTurn,
       );
       const envelopeAssessment = this.assessmentFromEnvelope(envelope);
       const headVerdict = await coverageVerdict?.report({ assessment: envelopeAssessment });
@@ -549,6 +561,7 @@ export class RetrievalAnswerComposer {
         answer = envelope.answer;
         plannedSuggestions = envelope.suggestions;
         metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
+        replyBlocks = replyTurn?.build(envelope);
         grounding = summary;
         this.answerMetrics.groundingOutcome(summary, envelope, false);
       }
@@ -568,6 +581,7 @@ export class RetrievalAnswerComposer {
       ...(metadataPatch
         ? { metadata: { ...presentation.metadata, ...metadataPatch } }
         : {}),
+      ...(replyBlocks ? { replyBlocks } : {}),
     };
   }
 
@@ -624,6 +638,7 @@ export class RetrievalAnswerComposer {
     let rawAnswer = "";
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
+    let replyBlocks: PresentedReplyBlocks | undefined;
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
     let declineReason: TurnDeclineReason | undefined;
     let hasStreamedAnswer = false;
@@ -705,9 +720,12 @@ export class RetrievalAnswerComposer {
       const requiresIndexedSourceGate = !pageCaptureBypassesGate && citationHoldEnabled;
       let citationGateEngaged = false;
       const gateController = new AbortController();
+      const replyTurn = await this.replyBlocks?.forTurn(session);
       const prompt = this.promptWithConversationContext(
         this.support.buildPromptWithContext(session.retrieval.prompt, session),
         session,
+        undefined,
+        replyTurn,
       );
       const headReader = new GroundedAnswerHeadReader();
       const composeStartedAt = performance.now();
@@ -730,9 +748,7 @@ export class RetrievalAnswerComposer {
         prompt: prompt.prompt,
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded"),
-        generation: {
-          responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session)?.schemaExtension() ?? null),
-        },
+        generation: { responseFormat: prompt.responseFormat },
         signal: combineAbortSignals(signal, gateController.signal),
       }));
       let gateBound = false;
@@ -918,6 +934,7 @@ export class RetrievalAnswerComposer {
         // Resolved only for the answer that ships: a replaced draft's plan and grades
         // describe text the visitor never sees.
         metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
+        replyBlocks = replyTurn?.build(finalized);
         grounding = summary;
         this.answerMetrics.groundingOutcome(summary, finalized, true);
       }
@@ -940,6 +957,7 @@ export class RetrievalAnswerComposer {
         ...(metadataPatch
           ? { metadata: { ...presentation.metadata, ...metadataPatch } }
           : {}),
+        ...(replyBlocks ? { replyBlocks } : {}),
       },
       suggestions: { mode: "assistant", planned: plannedSuggestions },
       hasStreamedAnswer,

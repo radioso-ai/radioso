@@ -1,7 +1,7 @@
 ---
 title: "Chat and history"
 description: "Ask one agent questions with a channel credential, then inspect saved history with workspace access."
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 ---
 
 # Chat and history
@@ -69,6 +69,13 @@ copy in the client; they are not assistant messages. A successful answer then
 uses `chunk` and `done`. A superseded pre-answer turn ends with `cancelled`, which
 is terminal.
 
+A client that declared it renders reply blocks, such as picture cards, also
+receives one `block` event per block between the last `chunk` and `done`, and the
+same blocks on `done.blocks` and on a non-streaming reply's `blocks`.
+`POST /api/v1/assistant/chat` and the public chat routes take that declaration in
+`clientContextCapabilities["reply.blocks"]`; [Reply blocks](/api/public-chat-and-embed#reply-blocks)
+describes the blocks and how to render them.
+
 Chunks indicate incremental delivery, not necessarily live model tokens. Replies
 that require validation or a durable write can be committed first and replayed
 in bounded chunks. Clients should ignore unknown event names so additive stream
@@ -107,6 +114,8 @@ target message IDs, plus a routine execution ID only after a routine starts.
 A turn without a reply still shows up here. If the visitor sent another message before the assistant answered, or the answer attempt failed outright, the interrupted user message carries a `turnFailure` object: `eventStatus` of `cancelled` for the first case (with the pipeline `stage` it was interrupted at) or `failure` for the second (with `errorMessage`). `turnFailure` is dashboard-only — it never appears on the public or embed conversation reads.
 
 A reply a voice caller spoke over carries `interruption`: `heardCharacterCount`, how much of the reply the caller heard, `spokenCharacterCount`, how long the spoken reply was, and `partial`. Both counts are in the characters the voice channel spoke, so they do not index into `content`. With `partial: false` the reply had finished and `content` keeps all of it. With `partial: true` the caller cut the reply off while it was still being said: `content` holds only the sentences they heard whole, `heardCharacterCount` follows the voice runtime's record of what it played, `spokenCharacterCount` counts what reached the runtime (the two are equal when the runtime sent no such record), and the turn's debug reads `cancelled`. Unlike `turnFailure`, the field reaches dashboard and public conversation reads alike, on detail, turn, and tail, and only on a reply that was cut short.
+
+An assistant reply that carried reply blocks keeps them as `blocks`, as the client received them, on dashboard and public reads alike. A card's image is served from the document it came from, so once that document is deleted the card stays and its picture answers `404`.
 
 Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created after a cursor. The cursor is the newest message the client has already seen. Conversation detail responses include `tailCursor`; use it for follow-up tail calls after loading the transcript. If `cursor` is omitted, Radioso returns the newest bounded page and a cursor for the newest returned message. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
 

@@ -80,7 +80,9 @@ export {
   MetadataRuleFieldReferenceService,
   type MetadataRuleFieldReferencePort,
 } from "./services/metadataRuleFieldReferenceService.js";
-export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
+export { resolveContextSourceUrl } from "./domain/contextSourceUrl.js";
+export { EvidenceImageAttacher } from "./services/evidenceImageAttacher.js";
+export type { EvidenceContext, EvidenceImage, EvidenceItemImages } from "./domain/evidenceImages.js";
 export { SharedAnswerInstructionBuilder } from "./services/sharedAnswerInstructionBuilder.js";
 export type { RetrievalDefaultsProvider } from "./domain/retrievalDefaultsProvider.js";
 export type { SkillSettingsResolver } from "./services/retrievalContextStage.js";

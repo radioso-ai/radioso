@@ -72,10 +72,10 @@ import { attachRetrievalActivityTrace, getChatTurnRoute } from "./turnRouteTrace
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { describeRoutineTurn } from "./routines/routineTurnDescription.js";
 import { sensitiveSlotKeysForTurn, withSensitiveTurnMarker } from "./routines/sensitiveTurnMarker.js";
+import { notRecordedAnswerCoverage } from "./answerCoverage/notRecordedAnswerCoverage.js";
 import { routineConsentTurnEvents } from "./routines/routineConsentTurn.js";
 import type { RoutineConsentTurnEvents } from "../../../shared/domain/routineConsentTurn.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
-import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
 import { conversationSummaryRefreshRequest } from "./summary/conversationSummaryRefreshJob.js";
 import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../shared/background-jobs/index.js";
@@ -448,6 +448,7 @@ export const buildTurnTraceForPresentation = (
       modelId: input.session.agent.chatModelOverride?.model,
       citations: input.presentation.citations ?? [],
       answerSegments: input.presentation.answerSegments,
+      ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.stored } : {}),
       ...(hasContextVariablesSnapshot
         ? { contextVariables: contextVariablesSnapshot }
         : {}),
@@ -511,13 +512,6 @@ const deliveredReplyPartOf = (
   const content = part ? cutReplyContent(part.text) : "";
   return part && content ? { ...part, content } : null;
 };
-
-/** No assessment ran for this request; the ids still anchor the verdict slot to the turn. */
-const notRecordedAnswerCoverage = (requestMessageId: string): ChatAnswerCoverageAssessment => ({
-  availability: "not_recorded",
-  originatingTurnId: requestMessageId,
-  originatingRequestId: requestMessageId,
-});
 
 interface CompleteAssistantTurnInput {
   workspaceId: string;
@@ -942,6 +936,7 @@ export class ChatTurnLifecycle {
         citations: input.presentation.citations,
         answerSegments: input.presentation.answerSegments,
         suggestions: input.presentation.suggestions,
+        ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.presented } : {}),
         activitySummary: presentation.resolvedActivitySummary,
         activityTrace: presentation.activityTrace,
         turnTrace: presentation.turnTrace,

@@ -2,6 +2,7 @@ import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import type { ChatBootstrapResponse, ChatResponse } from "./chatResponses.js";
 import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { PageReadCapability } from "../services/pageRead/pageReadDecision.js";
+import type { ReplyBlocksCapability } from "../contracts/replyBlocks.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { ConversationTurnSupersession, DeliveredReplyReader } from "../contracts/interruption.js";
 import type { VisitorImageOwner } from "../../visitorImages/public.js";
@@ -49,6 +50,7 @@ export type UserMessageStoredListener = (message: { conversationId: string; mess
 
 export interface AssistantClientContextCapabilities {
   "page.read"?: PageReadCapability;
+  "reply.blocks"?: ReplyBlocksCapability;
 }
 
 export interface AssistantChatRequest {

@@ -2359,6 +2359,41 @@ CREATE TABLE public.directive_states (
 
 
 --
+-- Name: document_images; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.document_images (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    document_id uuid NOT NULL,
+    chunk_id uuid,
+    role text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    "position" integer NOT NULL,
+    text_offset integer,
+    source_url text NOT NULL,
+    source_etag text,
+    alt text DEFAULT ''::text NOT NULL,
+    caption text,
+    width integer,
+    height integer,
+    sha256 text,
+    renditions jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT document_images_height_check CHECK ((height > 0)),
+    CONSTRAINT document_images_position_check CHECK (("position" >= 0)),
+    CONSTRAINT document_images_renditions_check CHECK ((jsonb_typeof(renditions) = 'array'::text)),
+    CONSTRAINT document_images_role_check CHECK ((role = ANY (ARRAY['primary'::text, 'inline'::text]))),
+    CONSTRAINT document_images_source_url_check CHECK (((length(source_url) >= 1) AND (length(source_url) <= 2048))),
+    CONSTRAINT document_images_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'stored'::text]))),
+    CONSTRAINT document_images_stored_complete CHECK (((status <> 'stored'::text) OR ((width IS NOT NULL) AND (height IS NOT NULL) AND (sha256 IS NOT NULL) AND (renditions <> '[]'::jsonb)))),
+    CONSTRAINT document_images_text_offset_check CHECK ((text_offset >= 0)),
+    CONSTRAINT document_images_width_check CHECK ((width > 0))
+);
+
+
+--
 -- Name: document_processing_jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5786,6 +5821,22 @@ ALTER TABLE ONLY public.directive_states
 
 
 --
+-- Name: document_images document_images_document_source_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.document_images
+    ADD CONSTRAINT document_images_document_source_key UNIQUE (document_id, source_url);
+
+
+--
+-- Name: document_images document_images_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.document_images
+    ADD CONSTRAINT document_images_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: document_processing_jobs document_processing_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7843,6 +7894,20 @@ CREATE INDEX copilot_replay_evidence_operator_created_idx ON public.copilot_repl
 --
 
 CREATE INDEX copilot_replay_evidence_operator_mcp_invocation_idx ON public.copilot_replay_evidence USING btree (operator_mcp_invocation_id) WHERE (operator_mcp_invocation_id IS NOT NULL);
+
+
+--
+-- Name: document_images_stored_inline_chunk_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX document_images_stored_inline_chunk_idx ON public.document_images USING btree (chunk_id) WHERE ((status = 'stored'::text) AND (role = 'inline'::text));
+
+
+--
+-- Name: document_images_stored_primary_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX document_images_stored_primary_idx ON public.document_images USING btree (document_id, "position") WHERE ((status = 'stored'::text) AND (role = 'primary'::text));
 
 
 --
@@ -11638,6 +11703,14 @@ ALTER TABLE ONLY public.copilot_replay_evidence
 
 ALTER TABLE ONLY public.directive_states
     ADD CONSTRAINT directive_states_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: document_images document_images_document_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.document_images
+    ADD CONSTRAINT document_images_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
 
 
 --

@@ -8,6 +8,7 @@ import type {
 
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionRecord } from "../../../db/repositories/pendingDecisionRepository.js";
@@ -78,6 +79,7 @@ interface ApprovalResumeTurnOptions {
     accountId?: string;
     query: string;
   }, session: PreparedSession): Promise<string | undefined>;
+  logger?: Pick<AppLogger, "warn">;
 }
 
 interface ResumeCoordination {
@@ -230,7 +232,10 @@ export class ApprovalResumeTurn {
     }
 
     const routineStateTransition = approvalResumeTransition(result, routineTurnPorts.routines);
-    const presentation = presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, result.response);
+    const presentation = presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, result.response, {
+      logger: this.options.logger,
+      conversation: session.conversation,
+    });
     const routineEnding = routineEndingEffectsForTurn({
       session,
       workspaceId: input.record.workspaceId,

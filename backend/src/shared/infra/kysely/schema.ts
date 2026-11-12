@@ -804,6 +804,27 @@ export interface DirectiveStates {
   updated_at: Generated<Timestamp>;
 }
 
+export interface DocumentImages {
+  alt: Generated<string>;
+  caption: string | null;
+  chunk_id: string | null;
+  created_at: Generated<Timestamp>;
+  document_id: string;
+  height: number | null;
+  id: Generated<string>;
+  position: number;
+  renditions: Generated<Json>;
+  role: string;
+  sha256: string | null;
+  source_etag: string | null;
+  source_url: string;
+  status: Generated<string>;
+  text_offset: number | null;
+  updated_at: Generated<Timestamp>;
+  width: number | null;
+  workspace_id: string;
+}
+
 export interface DocumentProcessingJobs {
   attempt_count: Generated<number>;
   available_at: Generated<Timestamp>;
@@ -2314,6 +2335,7 @@ export interface DB {
   copilot_proposals: CopilotProposals;
   copilot_replay_evidence: CopilotReplayEvidence;
   directive_states: DirectiveStates;
+  document_images: DocumentImages;
   document_processing_jobs: DocumentProcessingJobs;
   document_sources: DocumentSources;
   document_type_catalogs: DocumentTypeCatalogs;

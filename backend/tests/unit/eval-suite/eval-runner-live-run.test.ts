@@ -8,12 +8,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentVoiceSettings } from "../../../src/modules/agents/public.js";
 import { parseConversationQualityCases, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { conversationQualityCases } from "../../fixtures/conversation-quality/cases.js";
+import { conversationQualityCorpus } from "../../fixtures/conversation-quality/corpus.js";
+import { replyBlockDocuments } from "../../fixtures/conversation-quality/replyBlockCases.js";
 import { VOICE_EVAL_BRIDGE_LINES, VOICE_EVAL_FALLBACK_LINE } from "../../fixtures/voice-eval/agent.js";
 import { voiceEvalCases } from "../../fixtures/voice-eval/cases.js";
 import {
   assertNamedAgentMayBePublished,
   closeEvalDependencies,
+  ensureReplyBlockTarget,
   loadBaseline,
+  partitionCasesByCorpus,
+  REPLY_BLOCK_EVAL_WORKSPACE_NAME,
   readRunBaseline,
   runThenClose,
   scopeCasesForLiveRun,
@@ -451,5 +456,73 @@ describe("live runner shutdown", () => {
       (error) => { reported.push(error); },
     )).resolves.toBe("done");
     expect(reported).toEqual([new Error("closing failed")]);
+  });
+});
+
+describe("live runner reply block corpus", () => {
+  it("keeps the reply block pages out of the corpus every other case grounds against", () => {
+    const sharedIds = new Set(conversationQualityCorpus.map((document) => document.id));
+
+    expect(replyBlockDocuments.filter((document) => sharedIds.has(document.id))).toEqual([]);
+    // The invented-link checks rely on the shared corpus giving no `Source:` address.
+    expect(conversationQualityCorpus.filter((document) => document.metadata?.sourceUrl)).toEqual([]);
+  });
+
+  it("runs the reply block cases apart, and every committed case in exactly one part", () => {
+    const { shared, replyBlocks } = partitionCasesByCorpus(conversationQualityCases);
+
+    expect(replyBlocks.map((evalCase) => evalCase.id).sort()).toEqual([
+      "reply-blocks-guest-house-photos",
+      "reply-blocks-hiking-books",
+      "reply-blocks-returns-policy-no-pictures",
+      "reply-blocks-unanswered-no-pictures",
+    ]);
+    expect(shared).toHaveLength(conversationQualityCases.length - replyBlocks.length);
+    expect(shared.some((evalCase) => evalCase.id.startsWith("reply-blocks-"))).toBe(false);
+  });
+
+  const targetPorts = (workspaces: Array<{ id: string; name: string }>) => {
+    const created: Array<{ accountId: string; name: string }> = [];
+    return {
+      created,
+      ports: {
+        workspaces: { findById: vi.fn(async (id: string) => (id === "target-ws" ? { accountId: "account-1" } : null)) },
+        workspaceService: {
+          listForAccount: vi.fn(async () => workspaces),
+          create: vi.fn(async (accountId: string, name: string) => {
+            created.push({ accountId, name });
+            return { id: "created-ws" };
+          }),
+        },
+        agentService: { resolve: vi.fn(async (workspaceId: string) => ({ id: `agent-of-${workspaceId}` })) },
+      },
+    };
+  };
+
+  it("creates the reply block workspace in the target's account on a first run", async () => {
+    const { ports, created } = targetPorts([{ id: "target-ws", name: "Default" }]);
+
+    await expect(ensureReplyBlockTarget(ports, "target-ws")).resolves.toEqual({ workspaceId: "created-ws", agentId: "agent-of-created-ws" });
+    expect(created).toEqual([{ accountId: "account-1", name: REPLY_BLOCK_EVAL_WORKSPACE_NAME }]);
+  });
+
+  it("finds the reply block workspace by name on a later run, without creating another", async () => {
+    const { ports, created } = targetPorts([{ id: "target-ws", name: "Default" }, { id: "reply-ws", name: REPLY_BLOCK_EVAL_WORKSPACE_NAME }]);
+
+    await expect(ensureReplyBlockTarget(ports, "target-ws")).resolves.toEqual({ workspaceId: "reply-ws", agentId: "agent-of-reply-ws" });
+    expect(created).toEqual([]);
+  });
+
+  it("refuses to create the reply block workspace in an account without a Default workspace, where it would become the login workspace", async () => {
+    const { ports, created } = targetPorts([{ id: "target-ws", name: "Storefront" }]);
+
+    await expect(ensureReplyBlockTarget(ports, "target-ws")).rejects.toThrow("no \"Default\" workspace");
+    expect(created).toEqual([]);
+  });
+
+  it("refuses a target workspace it cannot find", async () => {
+    const { ports } = targetPorts([]);
+
+    await expect(ensureReplyBlockTarget(ports, "missing-ws")).rejects.toThrow("Workspace missing-ws not found");
   });
 });

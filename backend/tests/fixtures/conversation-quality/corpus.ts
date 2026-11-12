@@ -10,6 +10,8 @@ export interface ConversationQualityDocument {
   id: string;
   title: string;
   content: string;
+  /** Document metadata ingested with it, such as the page's `sourceUrl`. */
+  metadata?: Record<string, string>;
 }
 
 export const REFUND_POLICY_DOC_ID = "22222222-2222-4222-8222-222222222201";

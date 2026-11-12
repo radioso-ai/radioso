@@ -11,6 +11,7 @@ import { registerAgentToolCatalogSchemas } from "./schemas/agentToolCatalogSchem
 import { registerConverseMessagesSchemas } from "./schemas/converseMessagesSchemas.js";
 import { registerDocumentRetrievalSchemas } from "./schemas/documentRetrievalSchemas.js";
 import { registerAssistantHistorySchemas } from "./schemas/assistantHistorySchemas.js";
+import { registerReplyBlockSchemas } from "./schemas/replyBlockSchemas.js";
 import { registerHistoryContactSchemas } from "./schemas/historyContactSchemas.js";
 import { registerConnectorSchemas } from "./schemas/connectorSchemas.js";
 import { registerQualitySchemas } from "./schemas/qualitySchemas.js";
@@ -109,6 +110,7 @@ export interface OpenApiSchemaCatalog {
   SkillAuthoringDescriptorSchema: z.ZodTypeAny;
   RoutineValidationResultSchema: z.ZodTypeAny;
   AnswerSegmentSchema: z.ZodTypeAny;
+  ReplyBlockSchema: z.ZodTypeAny;
   AnswerFeedbackEntrySchema: z.ZodTypeAny;
   AnswerFeedbackRequestSchema: z.ZodTypeAny;
   AnswerFeedbackResponseSchema: z.ZodTypeAny;
@@ -454,6 +456,7 @@ export const createOpenApiRegistry = () => {
   registerSettingsSchemas(registry, schemas);
   registerAgentSchemas(registry, schemas);
   registerDocumentRetrievalSchemas(registry, schemas);
+  registerReplyBlockSchemas(registry, schemas);
   registerAssistantHistorySchemas(registry, schemas);
   registerHistoryContactSchemas(registry, schemas);
   registerAgentToolCatalogSchemas(registry, schemas);

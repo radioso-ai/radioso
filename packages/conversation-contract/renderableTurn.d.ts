@@ -2,6 +2,8 @@
 
 import type { ReplyBlock } from "./replyBlocks.js";
 
+export type { ItemListBlock, ReplyAction, ReplyBlock, ReplyBlockLayout, ReplyFact, ReplyImage, ReplyItem } from "./replyBlocks.js";
+
 export interface RenderableTurn {
   answer: string;
   /** Sources the turn grounded on; carries `ConversationCitation[]` when present. */

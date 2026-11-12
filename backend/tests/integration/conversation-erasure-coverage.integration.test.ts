@@ -75,6 +75,11 @@ const coverage: Record<string, ErasureCoverage> = {
     owner: "visitor-images",
     reason: "The message a photo was sent with. The link is SET NULL so a message deleted on its own leaves the photo for the unbound sweep, which deletes its object; a conversation's erasure deletes the row in the visitor images eraser and hands its object to the deletion job, and the row also cascades with conversation_id.",
   },
+  "conversation_tool_images.message_id": {
+    kind: "eraser",
+    owner: "tool-images",
+    reason: "The message whose card showed a picture from a skill's result. The link is SET NULL so a message deleted on its own leaves the copy for the unbound sweep, which deletes its objects; a conversation's erasure deletes the row in the tool images eraser and hands its objects to the deletion job, and the row also cascades with conversation_id.",
+  },
   "voice_sessions.started_public_session_id": {
     kind: "eraser",
     owner: "voice-channel",

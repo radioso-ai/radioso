@@ -6,12 +6,13 @@ import { McpError } from "@modelcontextprotocol/sdk/types.js";
 
 import type {
   ConversationToolDefinition,
+  SkillOutcome,
   ToolCallInput,
-  ToolCallResult,
   ToolService,
 } from "@radioso/conversation-contract";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import { McpCredentialsRejectedError, McpServerUnavailableError } from "../domain.js";
+import { keepMcpImages, type McpToolImageSink } from "./mcpToolImages.js";
 
 const idempotencyKeyFrom = (input: ToolCallInput): string | undefined => {
   const value = input.context?.idempotencyKey;
@@ -55,6 +56,8 @@ interface SdkMcpToolServiceOptions {
   /** Connection-bound fetch used for every MCP HTTP/SSE request. */
   fetchImpl?: typeof fetch;
   clientInfo?: { name: string; version: string };
+  /** Keeps the pictures a call returns as bytes; without it, they are ignored. */
+  images?: McpToolImageSink;
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -228,7 +231,7 @@ export class SdkMcpToolService implements ToolService {
     }));
   }
 
-  async callTool(input: ToolCallInput): Promise<ToolCallResult> {
+  async callTool(input: ToolCallInput): Promise<SkillOutcome> {
     let result: McpCallToolResult;
     try {
       const client = await this.getClient();
@@ -286,10 +289,14 @@ export class SdkMcpToolService implements ToolService {
       };
     }
 
+    // Pictures come back as bytes, which no one could fetch again: they are kept now, and the
+    // outcome carries only their ids.
+    const media = await keepMcpImages(result.content, this.options.images);
     return {
       status: "completed",
       ...(answer ? { answer } : {}),
       ...(outputs ? { outputs } : {}),
+      ...(media.length > 0 ? { media } : {}),
       metadata: { transport: "mcp" },
     };
   }

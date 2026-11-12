@@ -328,9 +328,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     notificationRecipientPolicy,
     workspaceModelAvailability,
   );
-  // Shared by routine publishing (write-time trigger embedding) and the chat
-  // activation prefilter (lazy self-heal of unembedded/stale rows) so both
-  // paths dedup concurrent embedding work through one instance.
+  // Shared by routine publishing (write-time trigger embedding) and the chat activation prefilter
+  // (lazy self-heal of unembedded/stale rows) so both paths dedup concurrent embedding work through one instance.
   const routineTriggerEmbeddingGateway = llmRegistry.createEmbeddingGateway(
     infrastructure.usageEventRecorder,
   );
@@ -372,6 +371,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationRepository: repositories.conversationRepository,
     clusteringEmbeddings: embeddingPorts,
     database: infrastructure.database,
+    documentStorage: documents.documentStorage,
     env,
     historyItemsRepository: repositories.historyItemsRepository,
     llmRegistry,

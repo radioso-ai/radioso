@@ -727,6 +727,25 @@ export interface ConversationSummaries {
   updated_at: Generated<Timestamp>;
 }
 
+export interface ConversationToolImages {
+  claimed_at: Timestamp | null;
+  conversation_id: string | null;
+  created_at: Generated<Timestamp>;
+  failure_reason: string | null;
+  height: number | null;
+  id: string;
+  message_id: string | null;
+  renditions: Generated<Json>;
+  sha256: string | null;
+  source_kind: string;
+  source_object: Json | null;
+  source_url: string | null;
+  status: Generated<string>;
+  stored_at: Timestamp | null;
+  width: number | null;
+  workspace_id: string;
+}
+
 export interface CopilotConversations {
   created_at: Generated<Timestamp>;
   id: string;
@@ -2329,6 +2348,7 @@ export interface DB {
   conversation_delivery_failures: ConversationDeliveryFailures;
   conversation_ownership: ConversationOwnership;
   conversation_summaries: ConversationSummaries;
+  conversation_tool_images: ConversationToolImages;
   conversations: Conversations;
   copilot_conversations: CopilotConversations;
   copilot_messages: CopilotMessages;

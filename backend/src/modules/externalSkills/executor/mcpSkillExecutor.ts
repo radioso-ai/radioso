@@ -9,6 +9,9 @@ import type {
 import { mergeToolInput, type SkillBinding } from "../skillDefinitions/resolver.js";
 import { setTraceAttributes, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { ToolImageIntake, ToolImageIntakeDropReason } from "../../toolImages/contracts/index.js";
+import type { McpToolImageSink } from "../toolService/mcpToolImages.js";
 
 /** Skill-executor descriptor adapter shared by all external (MCP) skills. */
 export const EXTERNAL_SKILLS_ADAPTER = "external-skills";
@@ -47,9 +50,15 @@ export interface ConnectionLookup {
   findById(workspaceId: string, connectionId: string): Promise<McpConnectionRecord | null>;
 }
 
+/** What one call's tool service is given beside its connection. */
+export interface ToolServiceCallOptions {
+  /** Keeps the pictures the call returns as bytes, for the conversation that made it. */
+  images?: McpToolImageSink;
+}
+
 /** Builds a ToolService (MCP client) for a given connection, including auth. */
 export interface ToolServiceFactory {
-  create(connection: McpConnectionRecord): ToolService;
+  create(connection: McpConnectionRecord, call?: ToolServiceCallOptions): ToolService;
 }
 
 /**
@@ -67,7 +76,15 @@ export interface McpSkillExecutorDeps {
   toolSkillExecutorFactory: ToolSkillExecutorFactory;
   /** Optional: emits one redacted warn log per settled failed dispatch. */
   logger?: Pick<AppLogger, "warn">;
+  /** Optional: keeps the pictures a tool returns as bytes; without it, they are dropped. */
+  imageIntake?: ToolImageIntake;
+  metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
 }
+
+const contextString = (context: Record<string, unknown> | undefined, key: string): string | undefined => {
+  const value = context?.[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+};
 
 const settledFailure = (code: string, message: string): SkillDispatchResult => ({
   disposition: "settled",
@@ -135,7 +152,7 @@ export class McpSkillExecutor implements SkillExecutorPort {
       // Building the ToolService resolves the connection's credentials/auth; a
       // failure here (missing secret, invalid auth state) must degrade to a
       // settled failure, not a rejected dispatch.
-      service = this.deps.toolServices.create(connection);
+      service = this.deps.toolServices.create(connection, { images: this.imageSinkFor(invocation.context) });
     } catch {
       return settledFailure("tool_service_unavailable", "External skill connection could not be initialized");
     }
@@ -164,5 +181,25 @@ export class McpSkillExecutor implements SkillExecutorPort {
     } finally {
       await closable(service).close?.().catch(() => undefined);
     }
+  }
+
+  /**
+   * Binds the intake to the conversation the call serves. A conversation that is not stored, such
+   * as a replay or Test Chat, has nothing to keep pictures for, so they are dropped and counted.
+   */
+  private imageSinkFor(context: Record<string, unknown> | undefined): McpToolImageSink {
+    const dropped = (reason: ToolImageIntakeDropReason): void => {
+      this.deps.metrics?.incrementCounter("tool_image_intake_dropped_total", {
+        help: "Pictures a tool returned as bytes that were not kept, by reason",
+        labels: { reason },
+      });
+    };
+    const intake = this.deps.imageIntake;
+    const workspaceId = contextString(context, "workspaceId");
+    const conversationId = contextString(context, "conversationId");
+    if (!intake || !workspaceId || !conversationId || context?.conversationDurability === "ephemeral") {
+      return { keep: async () => ({ kept: false, reason: "no_conversation" }), dropped };
+    }
+    return { keep: (bytes) => intake.accept({ workspaceId, conversationId, bytes }), dropped };
   }
 }

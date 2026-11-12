@@ -2216,6 +2216,44 @@ CREATE TABLE public.conversation_summaries (
 
 
 --
+-- Name: conversation_tool_images; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_tool_images (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid,
+    message_id uuid,
+    source_kind text NOT NULL,
+    source_url text,
+    source_object jsonb,
+    status text DEFAULT 'pending'::text NOT NULL,
+    claimed_at timestamp with time zone,
+    failure_reason text,
+    width integer,
+    height integer,
+    sha256 text,
+    renditions jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    stored_at timestamp with time zone,
+    CONSTRAINT conversation_tool_images_claim_complete CHECK (((status = 'capturing'::text) = (claimed_at IS NOT NULL))),
+    CONSTRAINT conversation_tool_images_failure_reason_check CHECK (((failure_reason IS NULL) OR (failure_reason ~ '^[a-z_]{1,40}$'::text))),
+    CONSTRAINT conversation_tool_images_height_check CHECK ((height > 0)),
+    CONSTRAINT conversation_tool_images_inline_source CHECK (((source_kind <> 'inline'::text) OR ((source_url IS NULL) AND (conversation_id IS NOT NULL)))),
+    CONSTRAINT conversation_tool_images_message_in_conversation CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
+    CONSTRAINT conversation_tool_images_renditions_check CHECK ((jsonb_typeof(renditions) = 'array'::text)),
+    CONSTRAINT conversation_tool_images_sha256_check CHECK (((sha256 IS NULL) OR (sha256 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT conversation_tool_images_source_kind_check CHECK ((source_kind = ANY (ARRAY['url'::text, 'inline'::text]))),
+    CONSTRAINT conversation_tool_images_source_object_check CHECK (((source_object IS NULL) OR (jsonb_typeof(source_object) = 'object'::text))),
+    CONSTRAINT conversation_tool_images_source_url_check CHECK (((source_url IS NULL) OR ((length(source_url) >= 1) AND (length(source_url) <= 2048)))),
+    CONSTRAINT conversation_tool_images_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'capturing'::text, 'stored'::text, 'failed'::text]))),
+    CONSTRAINT conversation_tool_images_stored_complete CHECK (((status <> 'stored'::text) OR ((width IS NOT NULL) AND (height IS NOT NULL) AND (sha256 IS NOT NULL) AND (renditions <> '[]'::jsonb) AND (stored_at IS NOT NULL)))),
+    CONSTRAINT conversation_tool_images_url_source CHECK (((source_kind <> 'url'::text) OR ((status = ANY (ARRAY['stored'::text, 'failed'::text])) AND (source_url IS NULL)) OR ((status = ANY (ARRAY['pending'::text, 'capturing'::text])) AND (source_url IS NOT NULL)))),
+    CONSTRAINT conversation_tool_images_width_check CHECK ((width > 0))
+);
+
+
+--
 -- Name: conversations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5773,6 +5811,14 @@ ALTER TABLE ONLY public.conversation_summaries
 
 
 --
+-- Name: conversation_tool_images conversation_tool_images_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_tool_images
+    ADD CONSTRAINT conversation_tool_images_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: conversations conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7796,6 +7842,34 @@ CREATE INDEX conversation_delivery_failures_workspace_open_idx ON public.convers
 --
 
 CREATE INDEX conversation_ownership_workspace_idx ON public.conversation_ownership USING btree (workspace_id);
+
+
+--
+-- Name: conversation_tool_images_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_tool_images_conversation_idx ON public.conversation_tool_images USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
+
+
+--
+-- Name: conversation_tool_images_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_tool_images_message_idx ON public.conversation_tool_images USING btree (message_id) WHERE (message_id IS NOT NULL);
+
+
+--
+-- Name: conversation_tool_images_unbound_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_tool_images_unbound_idx ON public.conversation_tool_images USING btree (created_at) WHERE (message_id IS NULL);
+
+
+--
+-- Name: conversation_tool_images_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_tool_images_workspace_idx ON public.conversation_tool_images USING btree (workspace_id);
 
 
 --
@@ -11527,6 +11601,30 @@ ALTER TABLE ONLY public.conversation_ownership
 
 ALTER TABLE ONLY public.conversation_summaries
     ADD CONSTRAINT conversation_summaries_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_tool_images conversation_tool_images_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_tool_images
+    ADD CONSTRAINT conversation_tool_images_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_tool_images conversation_tool_images_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_tool_images
+    ADD CONSTRAINT conversation_tool_images_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: conversation_tool_images conversation_tool_images_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_tool_images
+    ADD CONSTRAINT conversation_tool_images_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

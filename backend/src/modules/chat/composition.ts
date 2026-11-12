@@ -85,6 +85,7 @@ export {
 } from "./services/routines/contactRoutine.js";
 export { buildChatTurnRuntime } from "./services/chatTurnRuntime.js";
 export { ReplyBlockTurnFactory } from "./services/replyBlocks/replyBlockTurn.js";
+export { SkillResultReplyBlocks } from "./services/replyBlocks/skillResultReplyBlocks.js";
 export type {
   TurnOutcome,
   TurnOutcomeRenderer,

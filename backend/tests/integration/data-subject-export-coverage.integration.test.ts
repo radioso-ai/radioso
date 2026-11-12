@@ -38,6 +38,7 @@ const coverage: Record<string, ExportCoverage> = {
   routine_consent_records: { kind: "exported", section: "consent_records" },
   visitor_images: { kind: "exported", section: "visitor_images" },
 
+  conversation_tool_images: excluded("A copy of a third party's picture a card from a skill's result showed. The card's title and link are exported with the message that carried it."),
   email_mailboxes: excluded("The workspace's own mailbox and its address, not anyone who wrote to it."),
   email_thread_links: excluded("How the email finder finds a sender's threads. Its latest subject, Cc and display name copy what email_messages carries for each mail."),
   slack_conversation_links: excluded("How the Slack finder finds a member's threads: a routing key naming the Slack workspace, channel and thread, which the conversation's channel context carries too."),

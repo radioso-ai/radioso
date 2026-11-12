@@ -223,7 +223,7 @@ import {
   type DocumentStorageUploadInput,
 } from "../../src/modules/documents/contracts/storage.js";
 import { createWorkspacePublicRouteKey } from "../../src/modules/workspace/domain/publicRouteKey.js";
-import type { CutReplyStore, CutReplyStoreInput } from "../../src/modules/chat/services/chatTurnLifecycle.js";
+import type { CutReplyStore, CutReplyStoreInput } from "../../src/modules/chat/services/cutReplyMessage.js";
 import { conflict, notFound } from "../../src/shared/domain/errors.js";
 import {
   DEFAULT_DOCUMENT_TYPE_CATALOG_REVISION,

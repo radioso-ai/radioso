@@ -8,6 +8,7 @@ import { RoutineStateRetention } from "../../db/repositories/routineStateReposit
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
 import { A2aMessageReceiptRetention, A2aTaskRetention } from "../../modules/a2a/public.js";
 import { EmailRawMimeRetention } from "../../modules/emailChannel/public.js";
+import { UnboundToolImageRetention } from "../../modules/toolImages/composition.js";
 import { UnboundVisitorImageRetention } from "../../modules/visitorImages/composition.js";
 import {
   ConversationRetentionSweep,
@@ -42,6 +43,8 @@ const defaultConversationDataRetentionRules = (
   (db) => new A2aMessageReceiptRetention(db),
   // Photos no message carries, 24 hours after upload; their objects go to the deletion job.
   (db) => new UnboundVisitorImageRetention(db, (trx) => new BackgroundJobRepository(trx)),
+  // Pictures a skill's cards showed that no message carries, a day after they were written.
+  (db) => new UnboundToolImageRetention(db, (trx) => new BackgroundJobRepository(trx)),
   (db) => new AuditEventRetention(db, audit),
 ];
 

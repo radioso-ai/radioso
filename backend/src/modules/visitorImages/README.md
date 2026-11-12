@@ -122,5 +122,5 @@ and error classes; never bytes, base64 or readings.
 
 ## Tests
 
-- `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/contract/visitor-images.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/shared/images tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/contract/visitor-images.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/visitor-images.integration.test.ts tests/integration/conversation-erasure-coverage.integration.test.ts tests/integration/data-subject-export-coverage.integration.test.ts --no-file-parallelism`

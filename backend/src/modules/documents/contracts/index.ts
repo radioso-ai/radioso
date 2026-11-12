@@ -51,6 +51,7 @@ export type {
 } from "./storage.js";
 export { isCanonicalWorkspaceId } from "./storage.js";
 export {
+  DOCUMENT_IMAGE_RENDITION_WIDTHS,
   type DocumentImageEvidenceReader,
   type DocumentImageObjectLookup,
   type DocumentImageRole,

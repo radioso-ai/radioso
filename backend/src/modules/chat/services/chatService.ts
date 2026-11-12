@@ -96,10 +96,7 @@ import {
   type ChatConversationTurnInterpreter,
   type TurnInterpretationContextSettings,
 } from "./conversationTurnInterpreter.js";
-import type {
-  ChatAnswerPresenter,
-  ChatPresentedAnswer,
-} from "./chatAnswerPresenter.js";
+import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import {
   ChatTurnLifecycle,
   type AssistantTurnPersistencePort,
@@ -580,6 +577,7 @@ export class ChatService {
       suspendedRoutineReader,
       workspaceTimeZones,
       detectResponseLanguage: (input, session) => this.detectResponseLanguage(input, session),
+      logger,
     });
   }
 

@@ -206,11 +206,6 @@ const remapIds = (
 type Deps = ReturnType<typeof buildDependencies>;
 
 /**
- * Seeds the fixture corpus, directives, and routines onto the target agent and returns
- * the fixture-id → live-id maps. Seeding is best-effort idempotent: a conflict (already
- * seeded from a prior run) is logged and skipped rather than aborting.
- */
-/**
  * Ingests fixture documents into a workspace and returns the fixture-id → live-id map. An
  * unchanged page that is already there comes back under its existing id.
  */
@@ -237,16 +232,15 @@ const ingestDocuments = async (
   return documentIds;
 };
 
-const seedFixtures = async (
-  deps: Deps,
-  flags: Flags,
-): Promise<{ documentIds: Map<string, string>; routineIds: Map<string, string> }> => {
-  const documentIds = await ingestDocuments(deps, flags.workspaceId, conversationQualityCorpus);
-  const routineIds = new Map<string, string>();
-
+/**
+ * Gives an agent the seed directives, skipping one it already holds. Every agent a run answers
+ * with carries them, so each grounded answer commits its adherence plan ahead of the rest of
+ * its head, as a production agent's does.
+ */
+const seedDirectives = async (deps: Deps, workspaceId: string, agentId: string): Promise<void> => {
   for (const directive of conversationQualityDirectives) {
     try {
-      await deps.authoredDirectiveService.create(flags.workspaceId, flags.agentId, {
+      await deps.authoredDirectiveService.create(workspaceId, agentId, {
         name: directive.name,
         condition: directive.condition,
         action: directive.action,
@@ -264,6 +258,20 @@ const seedFixtures = async (
       console.warn(`  seed: directive "${directive.name}" skipped — ${(error as Error).message}`);
     }
   }
+};
+
+/**
+ * Seeds the fixture corpus, directives, and routines onto the target agent and returns
+ * the fixture-id → live-id maps. Seeding is best-effort idempotent: a conflict (already
+ * seeded from a prior run) is logged and skipped rather than aborting.
+ */
+const seedFixtures = async (
+  deps: Deps,
+  flags: Flags,
+): Promise<{ documentIds: Map<string, string>; routineIds: Map<string, string> }> => {
+  const documentIds = await ingestDocuments(deps, flags.workspaceId, conversationQualityCorpus);
+  const routineIds = new Map<string, string>();
+  await seedDirectives(deps, flags.workspaceId, flags.agentId);
 
   for (const routine of conversationQualityRoutines) {
     try {
@@ -519,7 +527,8 @@ const runSharedCases = async (
 
 /**
  * Runs the reply block cases in their own workspace beside the target (`ensureReplyBlockTarget`),
- * seeded with their pages and those pages' stored images alone, on that workspace's agent.
+ * seeded with their pages and those pages' stored images alone, on that workspace's agent, which
+ * carries the seed directives as the target's agent does.
  */
 const runReplyBlockCases = async (
   deps: Deps,
@@ -533,6 +542,7 @@ const runReplyBlockCases = async (
   );
   console.log(`Seeding the reply block pages onto agent ${target.agentId} in workspace ${target.workspaceId}…`);
   const documentIds = await ingestDocuments(deps, target.workspaceId, replyBlockDocuments);
+  await seedDirectives(deps, target.workspaceId, target.agentId);
   await waitForDocumentsReady(deps, target.workspaceId, documentIds);
   const seededImages = await seedReplyBlockImages(deps.connectorDb.kysely, target.workspaceId, documentIds);
   console.log(`Seeded ${seededImages} reply block image row(s).`);

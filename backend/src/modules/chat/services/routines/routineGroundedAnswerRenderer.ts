@@ -10,7 +10,8 @@ import { CHAT_TURN_ROUTE } from "../../../../shared/domain/chatTurnRoute.js";
 import { directiveAdherenceMetadataOf } from "../../../../shared/domain/directiveAdherence.js";
 import { readRetrievalResult, type RetrievalPipelineResult } from "../../../retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "../../contracts/answerTypes.js";
-import type { StoredReplyBlock } from "../../contracts/replyBlocks.js";
+import type { AppLogger } from "../../../../shared/observability/logger.js";
+import { storedReplyBlockSchema } from "../../contracts/replyBlocks.js";
 import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
@@ -138,15 +139,45 @@ const optionalEffectiveRetrieval = (value: unknown): PreparedSession["retrieval"
     ? value as unknown as PreparedSession["retrieval"]
     : undefined;
 
-const optionalReplyBlocks = (
+/** Where a restore reports reply blocks it drops, and the turn it names: ids only, never a block's text. */
+interface RoutineRenderableAnswerRestore {
+  logger?: Pick<AppLogger, "warn">;
+  conversation: { id: string; workspaceId: string };
+}
+
+const storedReplyBlocksSchema = storedReplyBlockSchema.array();
+
+/**
+ * The turn's reply blocks in both forms. The stored form rides untyped metadata, so it is read
+ * through its schema, and each stored block pairs with the presented one at its position, so the
+ * two must be as many. Blocks that fail either check are dropped in both forms: the message row
+ * never keeps a block the visitor was not shown, nor the other way round.
+ */
+const restoredReplyBlocks = (
   blocks: RenderableTurn["blocks"],
   stored: unknown,
-): PresentedReplyBlocks | undefined =>
-  Array.isArray(blocks) && Array.isArray(stored)
-    ? { stored: stored as StoredReplyBlock[], presented: blocks }
-    : undefined;
+  restore: RoutineRenderableAnswerRestore | undefined,
+): PresentedReplyBlocks | undefined => {
+  const presented = blocks ?? [];
+  const parsed = storedReplyBlocksSchema.safeParse(stored ?? []);
+  if (parsed.success && parsed.data.length === presented.length) {
+    return presented.length > 0 ? { stored: parsed.data, presented } : undefined;
+  }
+  restore?.logger?.warn(
+    {
+      workspaceId: restore.conversation.workspaceId,
+      conversationId: restore.conversation.id,
+      blockIds: presented.map((block) => block.id),
+    },
+    "A routine reply's stored blocks did not match its presented blocks; the reply goes without them",
+  );
+  return undefined;
+};
 
-const presentationFromRenderableTurn = (response: RenderableTurn): ChatPresentedAnswer | null => {
+const presentationFromRenderableTurn = (
+  response: RenderableTurn,
+  restore: RoutineRenderableAnswerRestore | undefined,
+): ChatPresentedAnswer | null => {
   if (!isRecord(response.metadata)) {
     return null;
   }
@@ -156,7 +187,7 @@ const presentationFromRenderableTurn = (response: RenderableTurn): ChatPresented
   if (!skillName || !skillOutcome || !skillStatus) {
     return null;
   }
-  const replyBlocks = optionalReplyBlocks(response.blocks, response.metadata.storedReplyBlocks);
+  const replyBlocks = restoredReplyBlocks(response.blocks, response.metadata.storedReplyBlocks, restore);
   return {
     answer: response.answer,
     ...(optionalChatCitations(response.citations) ? { citations: optionalChatCitations(response.citations) } : {}),
@@ -184,8 +215,9 @@ const presentationFromRenderableTurn = (response: RenderableTurn): ChatPresented
 export const presentRoutineRenderableAnswer = (
   presenter: ChatAnswerPresenter,
   response: RenderableTurn,
+  restore?: RoutineRenderableAnswerRestore,
 ): ChatPresentedAnswer =>
-  presentationFromRenderableTurn(response) ?? presenter.presentRoutineAnswer(response.answer, response.citations);
+  presentationFromRenderableTurn(response, restore) ?? presenter.presentRoutineAnswer(response.answer, response.citations);
 
 export const createRoutineGroundedAnswerRenderer = (
   options: RoutineGroundedAnswerRendererOptions,

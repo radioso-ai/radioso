@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import type { ReplyImageUrls } from "../../../modules/chat/contracts/index.js";
+import {
+  DOCUMENT_IMAGE_RENDITION_WIDTHS,
+  type DocumentImageObjectLookup,
+} from "../../../modules/documents/contracts/index.js";
 
 /**
  * The one owner of a reply image's address: where the route is mounted, the widths it serves, and
@@ -14,11 +18,16 @@ export const REPLY_IMAGE_ROUTE_PATH = "/api/v1/public/reply-images";
 /** The route's address in OpenAPI form. */
 export const REPLY_IMAGE_OPENAPI_PATH = `${REPLY_IMAGE_ROUTE_PATH}/{imageId}/{width}`;
 
+type SpelledWidths<T extends readonly number[]> = { readonly [K in keyof T]: `${T[K]}` };
+
 /**
- * The widths the route serves, spelled exactly as the address spells them, smallest first. Any
- * other spelling of the same number (`0640`, `6.4e2`) is a different address and is not served.
+ * The widths the route serves: the rendition widths, spelled exactly as the address spells them,
+ * smallest first. Any other spelling of the same number (`0640`, `6.4e2`) is a different address
+ * and is not served.
  */
-export const REPLY_IMAGE_WIDTHS = ["320", "640"] as const;
+export const REPLY_IMAGE_WIDTHS = DOCUMENT_IMAGE_RENDITION_WIDTHS.map(String) as readonly string[] as SpelledWidths<
+  typeof DOCUMENT_IMAGE_RENDITION_WIDTHS
+>;
 
 /** The route's path parameters. */
 export const replyImageParamsSchema = z.object({
@@ -44,18 +53,9 @@ export const createReplyImageUrls = (publicBaseUrl: string): ReplyImageUrls => {
   };
 };
 
-/** The stored object a reply image's rendition is read from. */
-export interface ReplyImageObject {
-  bucket: string;
-  objectPath: string;
-  generation?: string | null;
-}
-
 /**
- * Finds the stored object behind a reply image's address. The route serves by this port alone, so
- * it never learns whether an image came from a document or from anywhere else.
+ * Finds the stored object behind a reply image's address. The route serves by this port alone,
+ * under its own name, so its handler never learns whether an image came from a document. The
+ * shape is the documents lookup's, so there is one.
  */
-export interface ReplyImageObjectLookup {
-  /** The rendition of `imageId` at `width` pixels, or null when there is none to serve. */
-  findServable(input: { imageId: string; width: number }): Promise<ReplyImageObject | null>;
-}
+export type ReplyImageObjectLookup = DocumentImageObjectLookup;

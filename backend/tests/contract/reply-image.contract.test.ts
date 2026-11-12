@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import { DOCUMENT_IMAGE_RENDITION_WIDTHS } from "../../src/modules/documents/contracts/index.js";
 import { InMemoryDocumentImages } from "../support/inMemoryDocumentImages.js";
 import { createTestApp } from "../support/testApp.js";
 
@@ -46,6 +47,39 @@ describe("public reply image route", () => {
     expect(response.headers["cache-control"]).toBe("private, max-age=300");
     expect(response.headers["cross-origin-resource-policy"]).toBe("cross-origin");
     expect(Buffer.from(response.body as Buffer).equals(webpBytes)).toBe(true);
+  });
+
+  it("serves every width a document image is re-encoded at", async () => {
+    const documentImages = new InMemoryDocumentImages();
+    const { app, dependencies } = createTestApp({ documentImages });
+    const workspaceId = randomUUID();
+    const imageId = randomUUID();
+    const renditions = await Promise.all(DOCUMENT_IMAGE_RENDITION_WIDTHS.map(async (width) => {
+      const stored = await dependencies.documentStorage.upload({
+        workspaceId,
+        documentId: `document-image-${imageId}-w${width}`,
+        filename: "image.webp",
+        mimeType: "image/webp",
+        buffer: webpBytes,
+      });
+      return { width, ...stored, generation: stored.generation ?? null };
+    }));
+    documentImages.add(workspaceId, {
+      id: imageId,
+      documentId: randomUUID(),
+      chunkId: null,
+      role: "primary",
+      position: 0,
+      alt: "",
+      caption: null,
+      width: 1280,
+      height: 960,
+      sha256: "sha",
+    }, renditions);
+
+    for (const width of DOCUMENT_IMAGE_RENDITION_WIDTHS) {
+      await request(app).get(`/api/v1/public/reply-images/${imageId}/${width}`).expect(200);
+    }
   });
 
   it("answers 404 for an unknown image, a deleted one, and any width other than 320 or 640, spelled exactly", async () => {

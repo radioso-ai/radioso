@@ -475,6 +475,7 @@ describe("live runner reply block corpus", () => {
       "reply-blocks-guest-house-photos",
       "reply-blocks-hiking-books",
       "reply-blocks-returns-policy-no-pictures",
+      "reply-blocks-unanswered-no-pictures",
     ]);
     expect(shared).toHaveLength(conversationQualityCases.length - replyBlocks.length);
     expect(shared.some((evalCase) => evalCase.id.startsWith("reply-blocks-"))).toBe(false);
@@ -509,6 +510,13 @@ describe("live runner reply block corpus", () => {
     const { ports, created } = targetPorts([{ id: "target-ws", name: "Default" }, { id: "reply-ws", name: REPLY_BLOCK_EVAL_WORKSPACE_NAME }]);
 
     await expect(ensureReplyBlockTarget(ports, "target-ws")).resolves.toEqual({ workspaceId: "reply-ws", agentId: "agent-of-reply-ws" });
+    expect(created).toEqual([]);
+  });
+
+  it("refuses to create the reply block workspace in an account without a Default workspace, where it would become the login workspace", async () => {
+    const { ports, created } = targetPorts([{ id: "target-ws", name: "Storefront" }]);
+
+    await expect(ensureReplyBlockTarget(ports, "target-ws")).rejects.toThrow("no \"Default\" workspace");
     expect(created).toEqual([]);
   });
 

@@ -158,6 +158,32 @@ describe("reply block cases on the deterministic harness", () => {
     expect(await run(["m1"])).toEqual(["fail", "pass"]);
   });
 
+  it("passes the unanswered case on a decline, even one that named the cover, and fails it on an answer with the cover", async () => {
+    const declineCase = conversationQualityCases.find((evalCase) => evalCase.id === "reply-blocks-unanswered-no-pictures")!;
+    const hutToHut = HIKING_BOOK_DOC_IDS[1];
+    const run = async (envelope: string) => {
+      const harness = conversationQualityChatHarness({
+        reply: envelope,
+        retrievedDocumentIds: [hutToHut],
+        documentImages: imagesFor([hutToHut]),
+      });
+      const output = await harness.port.run(declineCase);
+      return (await scoreObservedOutput(declineCase.assertions, output, scoreContext(declineCase.query))).verdicts.map((verdict) => verdict.status);
+    };
+    const decline = canonicalAnswerEnvelope({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the book's author",
+      outcome: "no_support",
+      answer: "I don't have the author of that book.",
+      claims: [],
+      grounding: "degraded",
+      present: { images: ["m1"], caption: "Hut to Hut" },
+    });
+
+    expect(await run(decline)).toEqual(["pass", "pass", "pass", "pass"]);
+    expect(await run(reply({ images: ["m1"], caption: "Hut to Hut" }, [[1]]))).toEqual(["pass", "fail", "fail", "pass"]);
+  });
+
   it("offers no pictures and carries no block when the case declares no reply blocks", async () => {
     const retrieved = [...HIKING_BOOK_DOC_IDS.slice(0, 2)];
     const harness = conversationQualityChatHarness({

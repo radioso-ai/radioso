@@ -499,8 +499,8 @@ export class ChatTurnAssembly {
         : undefined,
       suppressNewClarification: input.clarification?.resolution?.suppressNewClarification,
       progress: input.progress,
-      presentRoutineReply: (response) =>
-        presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, response),
+      presentRoutineReply: (response) => presentRoutineRenderableAnswer(
+        this.options.chatAnswerPresenter, response, { logger: this.options.logger, conversation: session.conversation }),
     });
     // The tool call's outcome is known once the engine ran, whether or not a
     // routine claimed the turn; the lifecycle reports it from the session.

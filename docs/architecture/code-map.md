@@ -101,8 +101,9 @@ Primary paths:
 - `backend/src/app/http/routes/replyImageRoutes.ts` — the unauthenticated
   `GET /api/v1/public/reply-images/{imageId}/{width}`, serving a reply block's
   stored image by its capability id through `AppDependencies.replyImageObjectLookup`;
-  `replyImageAddress.ts` beside it owns the path, the served widths, the URL
-  builder and the lookup port
+  `replyImageAddress.ts` beside it owns the path, the served widths (spelled from
+  the documents contract's `DOCUMENT_IMAGE_RENDITION_WIDTHS`), the URL builder and
+  the lookup port, which has the documents lookup's shape under the route's name
 
 Useful searches:
 

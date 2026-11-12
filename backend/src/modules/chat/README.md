@@ -201,7 +201,9 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   A routine step that answers from evidence crosses the engine as a
   `RenderableTurn`: `routineGroundedAnswerRenderer.ts` sends the presented blocks
   as `blocks` and the stored form as `metadata.storedReplyBlocks`, and
-  `presentRoutineRenderableAnswer` restores both.
+  `presentRoutineRenderableAnswer` restores both: the stored form reads back
+  through `storedReplyBlockSchema` and pairs with `blocks` by position, and a
+  mismatch drops both forms with a warning that carries ids only.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides

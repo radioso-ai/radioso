@@ -9,11 +9,9 @@ import type {
   PendingRenderableTurn,
   Routine,
   RoutineActionRequest,
-  RoutineAuthoredTerminalKind,
   RoutineContextRenderer,
   RoutineGuard,
   RoutineNextStepDecision,
-  RoutineOperatorNoticeTemplate,
   RoutinePendingStep,
   RoutineRunTrace,
   RoutineSelectionTrace,
@@ -28,9 +26,13 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { redactSensitiveValues } from "@radioso/conversation-contract";
-
-import { firingCompletionExport, terminalKindFor } from "./routineEnding.js";
+import {
+  completionExportActionFor,
+  maskedSlotKeys,
+  routesToHandoff,
+  terminalKindFor,
+  terminalResult,
+} from "./routineEnding.js";
 import { filledCollectedSlot, reaskFor, rejectedCollectedKeys } from "./routineReask.js";
 import {
   foldStepEntry,
@@ -45,7 +47,13 @@ import {
   requiredCollectedSlots,
   slotFilledGuardPasses,
 } from "./slotCollectionStep.js";
-import { checkSlotValue } from "./slotValue.js";
+import {
+  checkDeclaredSlotValues,
+  declaredSlotVariables,
+  hasVariable,
+  outboundVariables,
+  sensitiveSlotKeys,
+} from "./routineSlotValues.js";
 import { STEP_REFERENCE, stepForReply } from "./stepReferences.js";
 
 type RoutineFieldGuard = Extract<RoutineGuard, { kind: "field" }>;
@@ -234,9 +242,6 @@ const stagedContextForSkillResult = (
 const hasTypedSlotSchema = (routine: Routine): boolean =>
   Array.isArray(routine.slots) && routine.slots.length > 0;
 
-const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
-  Object.prototype.hasOwnProperty.call(variables, key);
-
 /**
  * Consecutive no-progress re-asks of one step before the reply is told to ask differently
  * (#1376).
@@ -248,43 +253,6 @@ const DEFAULT_REASK_LIMIT = 3;
  * stops asking and hands the stuck visitor to a person (#1384).
  */
 const ASK_DIFFERENTLY_TURNS_BEFORE_HANDOFF = 1;
-
-/**
- * Keeps the values that fit their declared slot type, in that type's canonical form (#1374).
- * On a routine with no slot schema there is nothing to check a key against, so every key
- * passes through as it always has. On a routine that declares one, a key the schema does
- * not list is dropped and reported as "undeclared" (#1388) — the turn planner, ranked
- * activation, and a selector return free-form field names, and only a declared slot's
- * value may reach routine state, an action payload, or an unbound tool-step input. A blank
- * value is "not given" and dropped silently; one that does not fit its declared type is
- * dropped and reported by key and reason — never by value.
- */
-const checkDeclaredSlotValues = (
-  routine: Routine,
-  values: Record<string, unknown>,
-): { values: Record<string, unknown>; rejected: RoutineTraceRejectedSlot[] } => {
-  const slotTypes = new Map((routine.slots ?? []).map((slot) => [slot.key, slot.type]));
-  const kept: Record<string, unknown> = {};
-  const rejected: RoutineTraceRejectedSlot[] = [];
-  for (const [key, value] of Object.entries(values)) {
-    const type = slotTypes.get(key);
-    if (!type) {
-      if (slotTypes.size > 0) {
-        rejected.push({ key, reason: "undeclared" });
-      } else {
-        kept[key] = value;
-      }
-      continue;
-    }
-    const checked = checkSlotValue(type, value);
-    if (checked.ok) {
-      kept[key] = checked.value;
-    } else if (checked.reason !== "empty") {
-      rejected.push({ key, reason: checked.reason });
-    }
-  }
-  return { values: kept, rejected };
-};
 
 /**
  * The step a yielding routine stays parked on. The host puts it into the answer's system
@@ -305,35 +273,6 @@ const pendingStepFor = (
     .filter((slot) => !hasVariable(variables, slot.key))
     .map((slot) => slot.key),
 });
-
-/** The routine's slot keys its author marked sensitive, in declared order. */
-export const sensitiveSlotKeys = (routine: Routine): string[] =>
-  (routine.slots ?? []).filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key);
-
-/**
- * The variables as a copy that leaves the conversation carries them: a sensitive slot's value
- * reads as the redaction marker. The run's own state keeps the value, since the routine needs it
- * to run; every payload, ending, and trace the runner hands out goes through here.
- */
-const outboundVariables = (
-  routine: Routine,
-  variables: Record<string, unknown>,
-): Record<string, unknown> => redactSensitiveValues(variables, sensitiveSlotKeys(routine));
-
-/** The declared slots' values as they leave the conversation, sensitive ones masked. */
-const declaredSlotVariables = (
-  routine: Routine,
-  variables: Record<string, unknown>,
-): Record<string, unknown> =>
-  outboundVariables(
-    routine,
-    Object.fromEntries(
-      (routine.slots ?? [])
-        .map((slot) => slot.key)
-        .filter((key) => hasVariable(variables, key))
-        .map((key) => [key, variables[key]]),
-    ),
-  );
 
 /**
  * Runner-local gate on top of the shared `isSlotCollectionStepSatisfied` rule: only a
@@ -361,82 +300,6 @@ const isCompilerSlotGate = (transition: RoutineTransition): boolean =>
 
 const isAuthoredLlmExit = (transition: RoutineTransition): boolean =>
   isLlmTransition(transition) && !isCompilerSlotGate(transition);
-
-/**
- * Whether the author routed some path of this routine to a hand-off end — people take its
- * conversations over, so a visitor stuck on a step can go to one (#1384). A routine no exit
- * leads to a hand-off step declares no such path.
- */
-const routesToHandoff = (routine: Routine): boolean =>
-  routine.transitions.some((transition) => {
-    const target = routine.steps.find((step) => step.id === transition.to);
-    return target !== undefined && terminalKindFor(target) === "handoff";
-  });
-
-/** The keys of an ending's collected values that were masked as sensitive, reported beside them. */
-const maskedSlotKeys = (
-  routine: Routine,
-  collected: Record<string, unknown>,
-): Pick<NonNullable<ConversationRoutineResumeResult["terminal"]>, "sensitiveSlotKeys"> => {
-  const keys = sensitiveSlotKeys(routine).filter((key) => hasVariable(collected, key));
-  return keys.length > 0 ? { sensitiveSlotKeys: keys } : {};
-};
-
-const terminalResult = (
-  routine: Routine,
-  kind: RoutineAuthoredTerminalKind,
-  step: RoutineStep,
-  collected: Record<string, unknown>,
-): NonNullable<ConversationRoutineResumeResult["terminal"]> => {
-  const operatorNotice = operatorNoticeTemplateFor(step);
-  return { kind, stepId: step.id, collected, ...maskedSlotKeys(routine, collected), ...(operatorNotice ? { operatorNotice } : {}) };
-};
-
-/**
- * The operator notice template a terminal step carries. The host's compiler puts it there
- * exactly when the ending notifies operators; the runner only reads it back, keeping the
- * fields that are strings so a malformed metadata value can never reach a notice.
- */
-const operatorNoticeTemplateFor = (step: RoutineStep): RoutineOperatorNoticeTemplate | null => {
-  const notice = step.kind === "terminal" ? step.metadata?.operatorNotice : undefined;
-  if (typeof notice !== "object" || notice === null || Array.isArray(notice)) {
-    return null;
-  }
-  const { subject, intro, skillName, replyToSlot, includeAiSummary } = notice as Record<string, unknown>;
-  return {
-    ...(typeof subject === "string" ? { subject } : {}),
-    ...(typeof intro === "string" ? { intro } : {}),
-    ...(typeof skillName === "string" ? { skillName } : {}),
-    ...(typeof replyToSlot === "string" ? { replyToSlot } : {}),
-    ...(includeAiSummary === true ? { includeAiSummary: true } : {}),
-  };
-};
-
-const completionExportActionFor = (
-  routine: Routine,
-  step: RoutineStep,
-  terminalKind: RoutineAuthoredTerminalKind | null,
-  variables: Record<string, unknown>,
-): RoutineActionRequest | null => {
-  const completionExport = firingCompletionExport(routine, terminalKind);
-  if (!completionExport) {
-    return null;
-  }
-
-  return {
-    type: "webhook.send",
-    payload: {
-      destinationRef: completionExport.destinationRef,
-      source: {
-        routineId: routine.id,
-        stepId: step.id,
-        terminalKind,
-        status: "completed",
-      },
-      data: declaredSlotVariables(routine, variables),
-    },
-  };
-};
 
 /**
  * Walks a registered Routine graph for the current turn: it asks the injected
@@ -1311,11 +1174,13 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         kind: "claimed",
         effects: {
           nextState,
-          awaitingDecision: {
-            stepId: step.id,
-            options: step.decision.options,
-            captureKey: step.decision.captureKey,
-            ...(reason ? { reason } : {}),
+          hostEffects: {
+            awaitingDecision: {
+              stepId: step.id,
+              options: step.decision.options,
+              captureKey: step.decision.captureKey,
+              ...(reason ? { reason } : {}),
+            },
           },
           ...(actions.length > 0 ? { actions } : {}),
           ...(skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects } : {}),

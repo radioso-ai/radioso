@@ -58,6 +58,7 @@ import type {
 import { RoutineChatModelGateway, type RoutineChatGateway } from "./routines/routineChatModelGateway.js";
 import { pageReadAwareRoutineRunner, type CommittedPageRead } from "./routines/pageReadAwareRoutineRunner.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
+import { routineTurnRequest } from "./routines/routineTurnRequest.js";
 import {
   createRoutineGroundedAnswerRenderer,
   presentRoutineRenderableAnswer,
@@ -435,17 +436,10 @@ export class ChatTurnAssembly {
       usageContext: this.answerSupport.buildChatUsageContext(session, input.accountId, "routine_turn"),
       signal: input.coordination?.signal,
     });
-    const routineTurnPorts = await this.options.routineProvider.forTurn({
+    const routineTurnPorts = await this.options.routineProvider.forTurn(routineTurnRequest(session, {
       modelGateway,
-      agentId: session.agent.id,
-      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
-      workspaceId: session.conversation.workspaceId,
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),
-      previewRoutineIds: session.previewRoutineIds,
-      routineInvocation: session.routineInvocation,
-      skillEffects: session.skillEffects,
-      conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,
@@ -458,9 +452,8 @@ export class ChatTurnAssembly {
       throwIfCancelled: input.coordination
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
-      turnPlan: session.turnPlan,
       includeSlotValues: this.options.includeSlotValues,
-    });
+    }));
     if (!routineTurnPorts) {
       return null;
     }
@@ -526,7 +519,7 @@ export class ChatTurnAssembly {
       const routineStateTransition = deferredStore.getTransition();
       const { pendingDecisionTransition, actions } = routineAwaitingDecisionEffects({
         session,
-        awaitingDecision: outcome.result.awaitingDecision,
+        awaitingDecision: outcome.result.hostEffects?.awaitingDecision,
         routineStateTransition,
         actions: outcome.result.actions,
       });
@@ -539,7 +532,7 @@ export class ChatTurnAssembly {
         routineStateTransition,
         routineReporter: routineTurnPorts.reporter,
         pendingDecisionTransition,
-        suspended: Boolean(outcome.result.awaitingDecision),
+        suspended: Boolean(outcome.result.hostEffects?.awaitingDecision),
         clarificationTransition: deferredClarificationStore?.getTransition(),
         commitRoutineState: () => deferredStore.commit(),
         commitClarificationState: deferredClarificationStore
@@ -657,17 +650,10 @@ export class ChatTurnAssembly {
       usageContext: this.answerSupport.buildChatUsageContext(session, input.accountId, "routine_coverage_turn"),
       signal: input.coordination?.signal,
     });
-    const routineTurnPorts = await this.options.routineProvider.forTurn({
+    const routineTurnPorts = await this.options.routineProvider.forTurn(routineTurnRequest(session, {
       modelGateway,
-      agentId: session.agent.id,
-      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
-      workspaceId: session.conversation.workspaceId,
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, null),
-      previewRoutineIds: session.previewRoutineIds,
-      routineInvocation: session.routineInvocation,
-      skillEffects: session.skillEffects,
-      conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,
@@ -679,9 +665,8 @@ export class ChatTurnAssembly {
       throwIfCancelled: input.coordination
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
-      turnPlan: session.turnPlan,
       includeSlotValues: this.options.includeSlotValues,
-    });
+    }));
     if (!routineTurnPorts?.coverageActivator) {
       return {
         coverageReactionRecorder: deferredReactionRecorder,
@@ -705,7 +690,7 @@ export class ChatTurnAssembly {
         const routineStateTransition = deferredStore.getTransition();
         const { pendingDecisionTransition, actions } = routineAwaitingDecisionEffects({
           session: getSession(),
-          awaitingDecision: result.awaitingDecision,
+          awaitingDecision: result.hostEffects?.awaitingDecision,
           routineStateTransition,
           actions: result.actions,
         });
@@ -717,7 +702,7 @@ export class ChatTurnAssembly {
           routineStateTransition,
           routineReporter: routineTurnPorts.reporter,
           pendingDecisionTransition,
-          suspended: Boolean(result.awaitingDecision),
+          suspended: Boolean(result.hostEffects?.awaitingDecision),
           commitRoutineState: () => deferredStore.commit(),
           clarificationTransition: deferredClarificationStore?.getTransition(),
           commitClarificationState: deferredClarificationStore

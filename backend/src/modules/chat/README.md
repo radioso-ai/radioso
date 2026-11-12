@@ -554,9 +554,12 @@ imports from `services/`.
   `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
   the turn's transaction when the handoff changed ownership.
 - Routine turns: `ChatTurnAssembly.claimRoutineTurn` runs the routine path up to the
-  reply — whether a routine claims the turn, and its `effects` (actions, decision
-  gate, hand-off, operator notice, how the routine ended) — and its `reply` renders or
+  reply — whether a routine claims the turn, and its `effects` (actions, hand-off,
+  operator notice, how the routine ended, and in `hostEffects` what the routine asks chat
+  to record with the turn, such as a decision gate) — and its `reply` renders or
   streams the reply, then settles the turn into a `ChatTurnAssemblyRoutineResult`.
+  Both routine attempts a message turn makes (before retrieval, and as a coverage
+  reaction) ask the provider for the turn through `services/routines/routineTurnRequest.ts`.
   `attemptRoutineTurn` is that claim rendered whole, the path the non-stream turn and
   eval replay take. A claim from an engine without `claimRoutine` comes from a whole
   `attemptRoutine` and reports the same effects. The stream turn — live chat's SSE turn

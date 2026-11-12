@@ -263,7 +263,7 @@ describe("resumeAwaitingDecision", () => {
     });
 
     expect(result.yielded).toBeFalsy();
-    expect(result.awaitingDecision?.stepId).toBe("gate");
+    expect(result.hostEffects?.awaitingDecision?.stepId).toBe("gate");
     expect(result.nextState).toMatchObject({ status: "suspended", path: ["ask_reason", "gate"] });
     expect(result.completedState).toBeUndefined();
   });
@@ -331,7 +331,7 @@ describe("DefaultRoutineRunner await suspension", () => {
       },
     });
 
-    expect(result.awaitingDecision).toEqual({
+    expect(result.hostEffects?.awaitingDecision).toEqual({
       stepId: "gate",
       options: [
         { id: "approve", label: "Approve" },

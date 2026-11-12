@@ -360,7 +360,7 @@ describe("DefaultConversationEngine.claimRoutine", () => {
         routineExecution: settled.routineExecution,
         terminalKind: routineStage?.outputs?.terminalKind,
         actions: settled.actions,
-        awaitingDecision: settled.awaitingDecision,
+        hostEffects: settled.hostEffects,
         handoff: settled.handoff,
         operatorNotice: settled.operatorNotice,
         skillsWithExternalEffects: settled.skillsWithExternalEffects,

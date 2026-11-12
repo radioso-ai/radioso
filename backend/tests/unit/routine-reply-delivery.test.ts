@@ -75,10 +75,12 @@ describe("routineReplyDelivery", () => {
       name: "an approval gate",
       effects: {
         routineExecution,
-        awaitingDecision: {
-          stepId: "approve",
-          options: [{ id: "approve", label: "Approve" }],
-          captureKey: "decision",
+        hostEffects: {
+          awaitingDecision: {
+            stepId: "approve",
+            options: [{ id: "approve", label: "Approve" }],
+            captureKey: "decision",
+          },
         },
       },
     },

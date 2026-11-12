@@ -114,7 +114,7 @@ const mergePostEvidenceRoutineResult = (
     operatorNotice: routineResult.operatorNotice,
     routineExecution: routineResult.routineExecution,
     routineClarificationRoutineIds: routineResult.routineClarificationRoutineIds,
-    awaitingDecision: routineResult.awaitingDecision,
+    hostEffects: routineResult.hostEffects,
     skillsWithExternalEffects: routineResult.skillsWithExternalEffects,
     awaitingSkillInput: routineResult.awaitingSkillInput,
   });
@@ -662,7 +662,8 @@ export const createConversationEngine = (): ConversationEngine => new DefaultCon
 
 export { answerCoverageHeadParseOutcome } from "./coverageVerdictSink.js";
 
-export { DefaultRoutineRunner, sensitiveSlotKeys } from "./routineRunner.js";
+export { DefaultRoutineRunner } from "./routineRunner.js";
+export { sensitiveSlotKeys } from "./routineSlotValues.js";
 export {
   collectedSlotsForStep,
   isSlotCollectionStepSatisfied,

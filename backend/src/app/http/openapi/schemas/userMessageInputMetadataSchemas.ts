@@ -27,6 +27,7 @@ export const registerUserMessageInputMetadataSchema = (registry: OpenAPIRegistry
     z.object({
       method: z.enum(["typed", "suggestion_click", "intent_click", "routine_invocation"]),
       suggestionSourceMessageId: z.string().uuid().optional(),
+      suggestionId: z.string().optional().openapi({ description: "The id of the chip clicked, such as a routine consent's `agree` or `decline`." }),
       intent: z.object({
         skillName: z.string(),
         intentName: z.string().optional(),

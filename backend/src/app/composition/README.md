@@ -72,6 +72,12 @@ composition calls them and assembles the result.
   descriptor takes a workspace-scoped invocation context and every permission
   resolves through workspace membership, so a staff principal that holds no
   membership needs its own catalog rather than a filter over this one.
+- Operator copilot proposals from an optional module:
+  `registerCopilotProposalAdapter` in `applicationModule.ts`.
+  `copilotContributions.ts` resolves it, with the tool registrations, right after
+  the infrastructure is built, and assembles the proposal target-type set the
+  copilot repository, service, catalog, and routes read. A contribution that names
+  a first-party or already-contributed target type stops the boot there.
 - Handing a service to another module's port: adapt the service into an object
   of closures, as `websiteCrawlerIngestionPort.ts` does. Ports are structural
   interfaces, so a service instance satisfies one directly, and its methods then

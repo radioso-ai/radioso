@@ -59,7 +59,7 @@ import type { ChatActionSuggestionProvider } from "../../modules/chat/contracts/
 import type { WebhookDestinationRuntimePort } from "../../modules/webhooks/public.js";
 import type { Env } from "../config/env.js";
 import type { OauthProviderDefinition } from "../../modules/integrationOauth/public.js";
-import type { CopilotToolContribution } from "../../modules/operatorCopilot/public.js";
+import type { CopilotProposalAdapterContribution, CopilotToolContribution } from "../../modules/operatorCopilot/public.js";
 import type { EmailKind } from "../../modules/mail/emailService.js";
 
 type ApplicationChatActionSuggestionProviderRegistration =
@@ -280,15 +280,19 @@ type ApplicationAccountCreatedHook = (context: {
  * through the per-call {@link CopilotToolInvocationContext}, so it needs no application services
  * beyond persistence, logging, and the audit sink its own effects write to.
  */
-interface ApplicationCopilotRegistrationContext {
+export interface ApplicationCopilotRegistrationContext {
   database: Database;
   logger: AppLogger;
   auditService: AuditService;
 }
 
-type ApplicationCopilotToolRegistration =
+export type ApplicationCopilotToolRegistration =
   | CopilotToolContribution
   | ((context: ApplicationCopilotRegistrationContext) => CopilotToolContribution);
+
+export type ApplicationCopilotProposalAdapterRegistration =
+  | CopilotProposalAdapterContribution
+  | ((context: ApplicationCopilotRegistrationContext) => CopilotProposalAdapterContribution);
 
 /**
  * Branded transactional email content, structurally mirroring EE's `NoticeEmailContent`
@@ -414,6 +418,7 @@ interface ApplicationExtensionRegistry {
   chatActionSuggestionProviders: ApplicationChatActionSuggestionProviderRegistration[];
   oauthProviders: OauthProviderDefinition[];
   copilotToolRegistrations: ApplicationCopilotToolRegistration[];
+  copilotProposalAdapterRegistrations: ApplicationCopilotProposalAdapterRegistration[];
   periodicTaskRegistrations: ApplicationPeriodicTaskRegistration[];
 }
 
@@ -456,11 +461,16 @@ export interface ApplicationModuleRegistrationContext {
   registerChatActionSuggestionProvider(provider: ApplicationChatActionSuggestionProviderRegistration): void;
   registerOauthProvider(provider: OauthProviderDefinition): void;
   /**
-   * Contributes catalog tools. Reads, probes, and acts only: a proposal needs an adapter for its
-   * target type, and the target-type set is closed by an OpenAPI enum, repository narrowing, and
-   * the dashboard's card presentation, so an extension-owned target type is its own change.
+   * Contributes catalog tools: reads, probes, and acts. A proposal goes through
+   * {@link registerCopilotProposalAdapter}, which brings the target type it needs.
    */
   registerCopilotTools(registration: ApplicationCopilotToolRegistration): void;
+  /**
+   * Contributes a proposal target type the module owns: the adapter that drafts, reads, and
+   * applies it, and the propose tool Ray offers for it. Boot fails when the target type is
+   * first-party or already contributed, so no contribution can shadow another adapter.
+   */
+  registerCopilotProposalAdapter(registration: ApplicationCopilotProposalAdapterRegistration): void;
   /** Schedules a recurring background task in the worker runtime only — the self-host poll
    *  loop's interval and the Cloud Scheduler-driven worker task route, never the API (see
    *  {@link ApplicationPeriodicTaskRegistration}). */
@@ -494,6 +504,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   chatActionSuggestionProviders: [],
   oauthProviders: [],
   copilotToolRegistrations: [],
+  copilotProposalAdapterRegistrations: [],
   periodicTaskRegistrations: [],
 });
 
@@ -616,6 +627,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerCopilotTools(registration) {
     registry.copilotToolRegistrations.push(registration);
+  },
+  registerCopilotProposalAdapter(registration) {
+    registry.copilotProposalAdapterRegistrations.push(registration);
   },
   registerPeriodicTask(registration) {
     registry.periodicTaskRegistrations.push(registration);

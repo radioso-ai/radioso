@@ -10,6 +10,14 @@ import {
 import { copilotNeverList } from "../../../src/modules/operatorCopilot/neverList.js";
 import type { CopilotProposalAdapter } from "../../../src/modules/operatorCopilot/contracts.js";
 import { InMemoryCopilotRepository as MemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
+import { noContributedCopilotProposals, resolveCopilotProposalContributions, type ResolvedCopilotProposalContributions } from "../../../src/modules/operatorCopilot/proposalContribution.js";
+import {
+  ALERT_THRESHOLD_PRESENTATION,
+  ALERT_THRESHOLD_TARGET_TYPE,
+  ALERT_THRESHOLD_TOOL,
+  createAlertThresholdContribution,
+  createAlertThresholdState,
+} from "../../support/contributedProposalModule.js";
 
 const now = new Date("2026-08-11T00:00:00.000Z");
 const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "workspace" };
@@ -28,7 +36,7 @@ describe("OperatorCopilotService", () => {
       })(),
       result: Promise.resolve({ terminatedReason: "step_budget_exhausted" as const, finalMessage: "Partial result", stepsTaken: 6, toolResultTokensUsed: 1, wallTimeMs: 1 }),
     }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit, release })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
@@ -76,7 +84,7 @@ describe("OperatorCopilotService", () => {
       events: (async function* () {})(),
       result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 0, toolResultTokensUsed: 0, wallTimeMs: 1 }),
     }));
-    const serviceFor = (repository: MemoryCopilotRepository) => new OperatorCopilotService({
+    const serviceFor = (repository: MemoryCopilotRepository) => new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
@@ -107,7 +115,7 @@ describe("OperatorCopilotService", () => {
       events: (async function* () {})(),
       result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 0, wallTimeMs: 1 }),
     }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
@@ -143,7 +151,7 @@ describe("OperatorCopilotService", () => {
       events: (async function* () {})(),
       result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 0, wallTimeMs: 1 }),
     }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
@@ -174,7 +182,7 @@ describe("OperatorCopilotService", () => {
       })(),
       result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
     }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
@@ -229,7 +237,7 @@ describe("OperatorCopilotService", () => {
       })(),
       result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
     }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
@@ -267,7 +275,7 @@ describe("OperatorCopilotService", () => {
       })(),
       result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
     }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
@@ -313,7 +321,7 @@ describe("OperatorCopilotService", () => {
       })(),
       result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Drafted a removal for review.", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
     }));
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
@@ -332,6 +340,38 @@ describe("OperatorCopilotService", () => {
       event: "proposal",
       data: { proposalId: "proposal-1", targetType: "directive", targetLabel: "Avoid competitors", summary: "Permanently remove the directive.", removal: true },
     });
+  });
+
+  it("streams a contributed proposal's card, dashboard link included, only when its target type is assembled", async () => {
+    const output = { proposalId: "proposal-1", targetType: ALERT_THRESHOLD_TARGET_TYPE, targetLabel: "Alert at 500 answers", summary: "Alert the workspace at 500 answers.", presentation: ALERT_THRESHOLD_PRESENTATION };
+    const streamedProposals = async (contributedProposals: ResolvedCopilotProposalContributions) => {
+      const runStreaming = vi.fn(() => ({
+        events: (async function* () {
+          yield { kind: "tool_call_completed" as const, stepIndex: 0, toolName: ALERT_THRESHOLD_TOOL, callId: "call", output, resultTokens: 1, latencyMs: 1, at: 1 };
+        })(),
+        result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Drafted a threshold for review.", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
+      }));
+      const service = new OperatorCopilotService({
+        contributedProposals,
+        repository: new MemoryCopilotRepository(),
+        capabilityRunner: { runStreaming },
+        usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
+        auditService: { record: vi.fn(async () => {}) },
+        prompt: "system",
+        workspaceRouteKeyResolver,
+        currentAuthorization,
+        // The streamed card reads the tool's output, whatever the tool asks for.
+        tools: [tool(ALERT_THRESHOLD_TOOL, "workspace.agents.read", vi.fn(async () => ({})))],
+        now: () => now,
+      });
+      const events = [];
+      for await (const event of service.runTurn({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Alert me at 500 answers", pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
+      return events.filter((event) => event.event === "proposal");
+    };
+
+    const assembled = resolveCopilotProposalContributions([createAlertThresholdContribution(createAlertThresholdState())]);
+    await expect(streamedProposals(assembled)).resolves.toEqual([{ event: "proposal", data: output }]);
+    await expect(streamedProposals(noContributedCopilotProposals)).resolves.toEqual([]);
   });
 });
 
@@ -356,7 +396,7 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
     canRetryAfterInterruptedApply?: CopilotProposalAdapter["canRetryAfterInterruptedApply"],
     auditService: { record: (input: unknown) => Promise<void> } = { record: vi.fn(async () => {}) },
   ) =>
-    new OperatorCopilotService({
+    new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },

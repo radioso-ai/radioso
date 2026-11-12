@@ -11,6 +11,7 @@ import { AuthoredDirectiveService, DirectiveAuthorService, type AuthoredDirectiv
 import type { CopilotProposalApplyContext } from "../../../src/modules/operatorCopilot/contracts.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
+import { firstPartyCopilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -19,7 +20,7 @@ describeIntegration("reviewed directive changes, prepared and executed over the 
   const accountRepository = new AccountRepository(database.kysely);
   const workspaceRepository = new WorkspaceRepository(database.kysely);
   const agentRepository = new AgentRepository(database.kysely);
-  const proposals = new CopilotRepository(database.kysely);
+  const proposals = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   const coherenceChecker = { check: async () => ({ coherent: true as const, conflicts: [], rationale: "Coherent." }) };
   const authoredDirectiveService = new AuthoredDirectiveService({ repository: agentRepository, coherenceChecker, registeredCapabilityNames: new Set() });
   const directiveAuthorService = new DirectiveAuthorService({
@@ -31,7 +32,7 @@ describeIntegration("reviewed directive changes, prepared and executed over the 
   const adapter = createDirectiveCopilotProposalAdapter({
     authoredDirectiveService, directiveAuthorService,
     agentService: { get: async (workspaceId: string, agentId: string) => (await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId))! } as never,
-    reviewedReceipt: createReviewedReceiptSettlement(database.kysely),
+    reviewedReceipt: createReviewedReceiptSettlement(database.kysely, firstPartyCopilotProposalTargetTypes),
   });
 
   const accountIds: string[] = [];

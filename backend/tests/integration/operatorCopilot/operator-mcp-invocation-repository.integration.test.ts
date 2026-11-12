@@ -6,13 +6,14 @@ import { OperatorMcpInvocationRepository } from "../../../src/db/repositories/op
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
+import { firstPartyCopilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("OperatorMcpInvocationRepository", () => {
   const database = new Database(integrationDatabaseUrl);
   const repository = new OperatorMcpInvocationRepository(database.kysely);
-  const copilotRepository = new CopilotRepository(database.kysely);
+  const copilotRepository = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const userId = randomUUID();

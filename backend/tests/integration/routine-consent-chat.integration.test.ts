@@ -6,6 +6,8 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { createWorkspaceConversationDataErasure } from "../../src/app/composition/conversationErasure.js";
 import { composeRoutineTurnProvider } from "../../src/app/composition/routineTurnProvider.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
+import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
+import { HistoryItemsRepository } from "../../src/db/repositories/historyItemsRepository.js";
 import { ConversationActivityRepository } from "../../src/db/repositories/conversationActivityRepository.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import { MessageRepository } from "../../src/db/repositories/messageRepository.js";
@@ -15,11 +17,13 @@ import { WorkspaceRepository } from "../../src/db/repositories/workspaceReposito
 import { AgentRevisionRuntimeResolver, type AgentRevision } from "../../src/modules/agents/public.js";
 import type { RoutineRegistration } from "../../src/modules/chat/composition.js";
 import { PostgresAssistantTurnPersistence } from "../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
+import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { MissingFallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { legacyAgentWithoutWorkspace } from "../../src/modules/chat/services/legacyWorkspaceAgent.js";
 import { compileRoutineDefinition, createRoutineConsentTelemetry, type RoutineDefinition } from "../../src/modules/routines/public.js";
+import type { UserMessageInputMetadata } from "../../src/shared/domain/chatInputMetadata.js";
 import { routineConsentWordingVersionId } from "../../src/shared/domain/routineConsentWording.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
@@ -228,8 +232,15 @@ describeIntegration("routine consent through a chat turn (Postgres, #1544)", () 
       ),
     });
 
-    const send = async (query: string) =>
-      chat.answer({ workspaceId: workspace.id, agentId, conversationId, query, stream: false });
+    const send = async (query: string, inputMetadata?: UserMessageInputMetadata) =>
+      chat.answer({ workspaceId: workspace.id, agentId, conversationId, query, stream: false, ...(inputMetadata ? { inputMetadata } : {}) });
+    // What the chat shows after a page reload: the conversation as its history reads it.
+    const reloaded = async () => (await new ChatHistoryService(
+      new ConversationRepository(database.kysely),
+      new MessageRepository(database.kysely),
+      new AuditEventRepository(database.kysely),
+      new HistoryItemsRepository(database.kysely),
+    ).getConversation(workspace.id, conversationId)).messages;
     const records = () => database.query<{
       decision: string;
       method: string;
@@ -254,7 +265,7 @@ describeIntegration("routine consent through a chat turn (Postgres, #1544)", () 
       "SELECT id, role, content, metadata_json FROM messages WHERE conversation_id = $1 ORDER BY created_at, id",
       [conversationId],
     );
-    return { send, records, routineState, messages, conversationId, agentId, visitorId: visitor.id, workspaceId: workspace.id };
+    return { send, reloaded, records, routineState, messages, conversationId, agentId, visitorId: visitor.id, workspaceId: workspace.id };
   };
 
   const versionId = routineConsentWordingVersionId(wording);
@@ -299,6 +310,40 @@ describeIntegration("routine consent through a chat turn (Postgres, #1544)", () 
       expect.objectContaining({ event: "routine_consent_shown", conversationId: conversation.conversationId, consentKey: "health", reask: false }),
       expect.objectContaining({ event: "routine_consent_decided", conversationId: conversation.conversationId, decision: "granted", method: "reply" }),
     ]));
+  });
+
+  it("records a click on the agree button as a button decision on the wording that prompt showed, whatever the label says", async () => {
+    const conversation = await startConversation();
+    await conversation.send("I want to book a class");
+    await conversation.send("My name is Ada");
+    const shownReply = (await conversation.messages()).at(-1)!;
+
+    // After a reload the chat still offers the two choices with the wording.
+    const restored = (await conversation.reloaded()).find((message) => message.id === shownReply.id);
+    expect(restored?.suggestions).toEqual([
+      expect.objectContaining({ id: "agree", text: "I agree" }),
+      expect.objectContaining({ id: "decline", text: "No thanks" }),
+    ]);
+
+    // The scripted model would read this text as a decline; the chip id decides.
+    await conversation.send("No", { method: "suggestion_click", suggestionSourceMessageId: shownReply.id, suggestionId: "agree" });
+
+    expect((await conversation.records()).map(({ decision, method, wording_version_id }) => ({ decision, method, wording_version_id })))
+      .toEqual([{ decision: "granted", method: "button", wording_version_id: versionId }]);
+    await conversation.send("I have a sore knee");
+    expect((await conversation.routineState())?.variables).toMatchObject({ name: "Ada", injury: "sore knee" });
+  });
+
+  it("reads a click on a prompt the conversation no longer shows last as a typed reply", async () => {
+    const conversation = await startConversation({ sourceChannel: "email" });
+    await conversation.send("I want to book a class");
+    await conversation.send("My name is Ada");
+    const firstPrompt = (await conversation.messages()).at(-1)!;
+    await conversation.send("What do you do with it?");
+
+    await conversation.send("No", { method: "suggestion_click", suggestionSourceMessageId: firstPrompt.id, suggestionId: "agree" });
+
+    expect((await conversation.records()).map(({ decision, method }) => ({ decision, method }))).toEqual([{ decision: "declined", method: "reply" }]);
   });
 
   it("runs on without the field when a visitor declines a consent that continues", async () => {

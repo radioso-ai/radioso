@@ -195,7 +195,7 @@ Effects: `consentEvents?: RoutineConsentEvent[]` follows `awaitingDecision`'s ro
 - **PR0** consolidates the three copies of the input-metadata schema (`publicChatRouteSchemas.ts:62-84`, `assistantChatSchemas.ts:9-31`, `agentTurnProbe.ts:32-41`) and the stored parser (`messageRepository.ts:57-78, 217-254`) into `shared/domain/chatInputMetadata.ts`.
 - **PR2** adds optional `suggestionId` (a chip id). `public-chat-shell.tsx:833-849` sends `suggestion.id` through an extracted helper `frontend/lib/public-chat-suggestion.ts`; that shell is the one both the link and the embed render.
 - **Server check** (`port.read`):
-  - Accept the click only when `method === "suggestion_click"`, `suggestionId` is `agree` or `decline`, and `suggestionSourceMessageId` is the latest `consentPrompt` message for this (conversation, routine, consent) (`store.latestPrompt`).
+  - Accept the click only when the conversation's presentation is `buttons`, `method === "suggestion_click"`, `suggestionId` is `agree` or `decline`, and `suggestionSourceMessageId` is the latest `consentPrompt` message for this (conversation, routine, consent) (`store.latestPrompt`). A channel that shows the choices as text never showed a chip, so a click there is a typed reply.
   - The decision comes from the chip id; the visible label text is ignored. Method `button`, wording = that message's version, verified by recomputing the hash from the conversation's pinned definition.
   - Any mismatch (a stale prompt, a foreign message, an unknown chip) is read as a typed reply.
 - **No nonce:** the source message id is the handle. It is an unguessable, server-issued id scoped to the conversation, and only the visitor's own session can send against it.
@@ -400,7 +400,7 @@ Substrate changes that would shrink this:
 - **Agent default language changed after publish:** wording may become unavailable, and the decline path runs. The publish gate rechecks the language; consider a Needs-Attention signal.
 - **Classifier errors:** the safe default is `unclear`; SC-003 is guarded only by the live suite and the nightly evals.
 - **Latest-prompt lookup** reads message metadata within one conversation. The conversation index is enough; confirm with EXPLAIN.
-- **Chips after a page reload:** verify that history replay restores routine-reply suggestions (`chatHistoryService.ts:710-720`).
+- **Chips after a page reload:** verify that history replay restores routine-reply suggestions (`chatHistoryService.ts:710-720`). Verified in PR2b: history reads them from the turn's `chat.answer` audit event (`routine-consent-chat.integration.test.ts`).
 - **`RoutineTurnReporter.statusFor`** (`routineTurnReporter.ts:42`) must read a gate step as open with no pending input.
 - **Test Chat and Ray's probe render no chips** (found in PR2): both hand the operator a reply's text alone, so `consentPresentationFor` gives `workbench_replay` and `operator_copilot_probe` the `text` presentation. §10 item 4 and the spec's clarification ("Test Chat ... ask with buttons") assumed chips there. Test Chat keeps its decisions in its own continuation and records none.
 - **Withdrawal racing an in-flight turn:** closed by the strip inside the turn's transaction (§5). The new messages of such a turn are marked but not overwritten; that is a residual gap to document.

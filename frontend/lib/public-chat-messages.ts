@@ -100,16 +100,6 @@ export const toChatMessages = (
 export const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
   message.role === 'assistant' && isHumanAuthoredSource(message.source)
 
-export const clearMessageSuggestions = (messages: ChatMessage[]): ChatMessage[] =>
-  messages.map((message) =>
-    message.suggestions && message.suggestions.length > 0
-      ? {
-          ...message,
-          suggestions: undefined,
-        }
-      : message,
-  )
-
 export const restoreMessageSuggestions = (
   messages: ChatMessage[],
   previousMessages: ChatMessage[],

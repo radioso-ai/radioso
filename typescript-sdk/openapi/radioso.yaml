@@ -11268,6 +11268,10 @@ components:
             suggestionSourceMessageId:
               type: string
               format: uuid
+            suggestionId:
+              type: string
+              minLength: 1
+              maxLength: 200
             intent:
               type: object
               properties:
@@ -11420,6 +11424,10 @@ components:
             suggestionSourceMessageId:
               type: string
               format: uuid
+            suggestionId:
+              type: string
+              minLength: 1
+              maxLength: 200
             intent:
               type: object
               properties:
@@ -12279,6 +12287,9 @@ components:
         suggestionSourceMessageId:
           type: string
           format: uuid
+        suggestionId:
+          type: string
+          description: The id of the chip clicked, such as a routine consent's `agree` or `decline`.
         intent:
           type: object
           properties:

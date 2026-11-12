@@ -234,6 +234,67 @@ describe("a visitor's reply to the consent shown (#1544)", () => {
   });
 });
 
+describe("a click on a consent's button (#1544)", () => {
+  const PROMPT_ID = "6f1c2d3e-4a5b-4c6d-8e7f-90a1b2c3d4e5";
+  const lastShownItalian = () => store({
+    latestPrompt: vi.fn(async () => ({ messageId: PROMPT_ID, wordingVersionId: routineConsentWordingVersionId(italian), locale: "it" })),
+  });
+  const clicked = (suggestionId: string, suggestionSourceMessageId = PROMPT_ID) =>
+    facts({ userMessage: { id: "message_2", inputMetadata: { method: "suggestion_click", suggestionSourceMessageId, suggestionId } } });
+
+  it("records the chip's decision against the wording that prompt showed, without reading the message", async () => {
+    const usedReplies = replies("unclear");
+
+    const agreed = await port({ facts: clicked("agree"), store: lastShownItalian(), replies: usedReplies }).read({ routine, consent, turn: turn("Acconsento") });
+    const declined = await port({ facts: clicked("decline"), store: lastShownItalian(), replies: usedReplies }).read({ routine, consent, turn: turn("No grazie") });
+
+    expect(agreed).toEqual({ decision: "granted", method: "button", wording: italian });
+    expect(declined).toEqual({ decision: "declined", method: "button", wording: italian });
+    expect(usedReplies.reader.read).not.toHaveBeenCalled();
+  });
+
+  it("takes the decision from the chip id, never from the label text the message carries", async () => {
+    const read = await port({ facts: clicked("agree"), store: lastShownItalian(), replies: replies("declined") })
+      .read({ routine, consent, turn: turn("No grazie") });
+
+    expect(read).toEqual({ decision: "granted", method: "button", wording: italian });
+  });
+
+  it("reads a click on an older prompt, another message, or an unknown chip as a typed reply", async () => {
+    for (const metadata of [
+      clicked("agree", "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"),
+      clicked("maybe"),
+      clicked("constructor"),
+      facts({ userMessage: { id: "message_2", inputMetadata: { method: "typed" } } }),
+      facts({ userMessage: { id: "message_2", inputMetadata: { method: "intent_click", suggestionSourceMessageId: PROMPT_ID, suggestionId: "agree" } } }),
+    ]) {
+      const usedReplies = replies("unclear");
+      const read = await port({ facts: metadata, store: lastShownItalian(), replies: usedReplies }).read({ routine, consent, turn: turn("Acconsento") });
+      expect(read).toEqual({ decision: "unclear", method: "reply", wording: italian });
+      expect(usedReplies.reader.read).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("reads a click as a typed reply on a channel that shows the choices as text, where no button was ever shown", async () => {
+    for (const sourceChannel of ["email", "whatsapp", "slack", "workbench_replay", "operator_copilot_probe"]) {
+      const usedReplies = replies("unclear");
+      const textChannel = facts({
+        sourceChannel,
+        userMessage: { id: "message_2", inputMetadata: { method: "suggestion_click", suggestionSourceMessageId: PROMPT_ID, suggestionId: "agree" } },
+      });
+
+      const read = await port({ facts: textChannel, store: lastShownItalian(), replies: usedReplies }).read({ routine, consent, turn: turn("Acconsento") });
+
+      expect(read, sourceChannel).toEqual({ decision: "unclear", method: "reply", wording: italian });
+      expect(usedReplies.reader.read).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("cannot bind a click to wording when the conversation shows no prompt it can verify", async () => {
+    expect(await port({ facts: clicked("agree"), replies: replies("granted") }).read({ routine, consent, turn: turn("I agree") })).toBeNull();
+  });
+});
+
 describe("the language a consent is shown in mid-routine (#1544)", () => {
   // A turn an active routine holds runs no turn plan; its language comes from the detector alone.
   const midRoutine = (sourceChannel: string): PreparedSession => ({

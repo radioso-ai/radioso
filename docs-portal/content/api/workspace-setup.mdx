@@ -1,7 +1,7 @@
 ---
 title: "Workspace setup state"
 description: "Read outcome-based workspace setup progress and save the operator choices that belong to the workspace."
-last_updated: 2026-10-13
+last_updated: 2026-11-11
 ---
 
 # Workspace setup state
@@ -17,6 +17,8 @@ curl -sS -b cookies.txt \
 ```
 
 The response includes `shouldShowFirstRun`, which the dashboard uses for the first-run experience. It is workspace state, so dismissing setup follows the operator to another browser or device.
+
+[Ray](/operators/copilot#start-from-an-empty-conversation) reads this same state. Its empty conversation suggests the next steps that are still open, each linking to the screen that completes it, and its `workspace_setup_state` tool reports the checklist when an operator asks what is left.
 
 ## Save operator choices
 

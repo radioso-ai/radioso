@@ -4,8 +4,8 @@ import { sql } from "kysely";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { nowMinusSeconds } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { CopilotConversation, CopilotMcpProposalRecoveryPort, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalDraft, CopilotProposalEvidence, CopilotRepositoryPort, CopilotRetentionPort } from "../../modules/operatorCopilot/public.js";
-import { copilotProposalTargetTypes, summarizeProposalEvidence } from "../../modules/operatorCopilot/public.js";
+import type { CopilotConversation, CopilotMcpProposalRecoveryPort, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalDraft, CopilotProposalEvidence, CopilotProposalTargetTypeSet, CopilotRepositoryPort, CopilotRetentionPort } from "../../modules/operatorCopilot/public.js";
+import { presentProposalCard } from "../../modules/operatorCopilot/public.js";
 
 interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
 interface CopilotMessageRow { id: string; conversation_id: string; role: string; content: string; outcome: string | null; activity: unknown; created_at: Date; }
@@ -19,41 +19,37 @@ const narrowOutcome = (outcome: string | null): CopilotMessage["outcome"] | unde
   outcome === "completed" || outcome === "budget_exhausted" || outcome === "failed" ? outcome : undefined;
 const mapConversation = (row: CopilotConversationRow): CopilotConversation => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, title: row.title, status: narrowStatus(row.status), createdAt: row.created_at, updatedAt: row.updated_at });
 const mapMessage = (row: CopilotMessageRow): CopilotMessage => ({ id: row.id, conversationId: row.conversation_id, role: row.role === "copilot" ? "copilot" : "operator", content: row.content, ...(narrowOutcome(row.outcome) ? { outcome: narrowOutcome(row.outcome) } : {}), ...(Array.isArray(row.activity) ? { activity: row.activity as CopilotMessage["activity"] } : {}), createdAt: row.created_at });
-const narrowTargetType = (targetType: string): CopilotProposal["targetType"] => {
-  if ((copilotProposalTargetTypes as ReadonlyArray<string>).includes(targetType)) return targetType as CopilotProposal["targetType"];
+/**
+ * A stored type outside the deployment's assembled set has no adapter to read or apply it with.
+ * Reading or claiming one proposal by id refuses it; a conversation's card list skips it instead
+ * (see `listMessages`).
+ */
+const narrowTargetType = (targetType: string, targetTypes: CopilotProposalTargetTypeSet): CopilotProposal["targetType"] => {
+  if (targetTypes.has(targetType)) return targetType;
   throw new Error(`Unknown copilot proposal target type: ${targetType}`);
 };
 const narrowProposalStatus = (status: string): CopilotProposal["status"] => status === "applied" || status === "dismissed" || status === "failed" || status === "stale" ? status : "pending";
-const mapProposal = (row: CopilotProposalRow): CopilotProposal => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, origin: row.conversation_id ? { type: "conversation", conversationId: row.conversation_id } : { type: "operator_mcp_invocation", invocationId: row.operator_mcp_invocation_id! }, conversationId: row.conversation_id, operatorMcpInvocationId: row.operator_mcp_invocation_id, executionInvocationId: row.execution_invocation_id, messageId: row.message_id, targetType: narrowTargetType(row.target_type), targetRef: row.target_ref, payload: row.payload, versionToken: row.version_token, evidence: narrowEvidence(row.evidence), reviewDigest: row.review_digest, reviewSnapshot: row.review_snapshot, expiresAt: row.expires_at, confirmationRequirement: row.confirmation_requirement === "conversation" || row.confirmation_requirement === "signed_in_approval" ? row.confirmation_requirement : null, changeEffect: row.change_effect as CopilotProposal["changeEffect"], approvedAt: row.approved_at, approvedByUserId: row.approved_by_user_id, approvalDigest: row.approval_digest, status: narrowProposalStatus(row.status), reason: row.failure_reason, appliedRef: row.applied_ref, createdAt: row.created_at, updatedAt: row.updated_at });
+const mapProposal = (row: CopilotProposalRow, targetTypes: CopilotProposalTargetTypeSet): CopilotProposal => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, origin: row.conversation_id ? { type: "conversation", conversationId: row.conversation_id } : { type: "operator_mcp_invocation", invocationId: row.operator_mcp_invocation_id! }, conversationId: row.conversation_id, operatorMcpInvocationId: row.operator_mcp_invocation_id, executionInvocationId: row.execution_invocation_id, messageId: row.message_id, targetType: narrowTargetType(row.target_type, targetTypes), targetRef: row.target_ref, payload: row.payload, versionToken: row.version_token, evidence: narrowEvidence(row.evidence), reviewDigest: row.review_digest, reviewSnapshot: row.review_snapshot, expiresAt: row.expires_at, confirmationRequirement: row.confirmation_requirement === "conversation" || row.confirmation_requirement === "signed_in_approval" ? row.confirmation_requirement : null, changeEffect: row.change_effect as CopilotProposal["changeEffect"], approvedAt: row.approved_at, approvedByUserId: row.approved_by_user_id, approvalDigest: row.approval_digest, status: narrowProposalStatus(row.status), reason: row.failure_reason, appliedRef: row.applied_ref, createdAt: row.created_at, updatedAt: row.updated_at });
 /** Stored as JSONB, so a row written before evidence existed reads as unmeasured, not as empty. */
 const narrowEvidence = (value: unknown): CopilotProposalEvidence | null => {
   const record = asRecord(value);
   return Array.isArray(record.cases) ? { cases: record.cases as CopilotProposalEvidence["cases"] } : null;
 };
-export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalCard => {
-  const targetRef = asRecord(proposal.targetRef);
-  const payload = asRecord(proposal.payload);
-  // agent_setting is the only target type with no drafted name of its own - it targets an existing
-  // setting key instead. Every other target type (present or future) proposes a named thing, so
-  // this reads as "not agent_setting" rather than an OR-chain a new target type could miss.
-  const targetLabel = proposal.targetType !== "agent_setting" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
-  // A payload states its own irreversibility, so a reloaded card warns about deletion without the
-  // reader having to recognise each target type's word for it - the pairing that silently dropped
-  // the warning when document removal arrived. The directive clause reads rows written before the
-  // flag existed; every proposal drafted since carries `removesTarget`.
-  const removal = payload.removesTarget === true || (proposal.targetType === "directive" && payload.op === "remove");
-  // Read from the payload for the same reason as removal: the draft decided reach against the
-  // settings it was made from, and a reader re-deriving it from field names would have to know
-  // which of them mean reach.
-  const reach = payload.changesReach === true;
-  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.summary, textValue(payload.rationale, targetLabel)), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}), ...(reach ? { reach: true as const } : {}) };
-  return proposal.evidence ? { ...card, evidence: summarizeProposalEvidence(proposal.evidence) } : card;
-};
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const textValue = (value: unknown, fallback: string): string => typeof value === "string" ? value : fallback;
+
+/** Where `listMessages` reports a card it skipped. Join keys only: never a payload or a target ref. */
+interface CopilotRepositoryWarningLog {
+  warn(fields: { proposalId: string; targetType: string }, message: string): void;
+}
 
 export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentionPort, CopilotMcpProposalRecoveryPort {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    /** The deployment's assembled set, so a contributed target type reads back like a first-party one. */
+    private readonly targetTypes: CopilotProposalTargetTypeSet,
+    /** Absent for a repository opened inside another unit of work, which never lists a conversation. */
+    private readonly log?: CopilotRepositoryWarningLog,
+  ) {}
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> { const row = await this.db.insertInto("copilot_conversations").values({ id: randomUUID(), workspace_id: input.workspaceId, operator_user_id: input.operatorUserId, title: input.title }).returning(conversationColumns).executeTakeFirstOrThrow(); return mapConversation(row); }
   async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> { const row = await this.db.selectFrom("copilot_conversations").select(conversationColumns).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return row ? mapConversation(row) : null; }
   async listConversations(input: { workspaceId: string; operatorUserId: string }): Promise<ReadonlyArray<CopilotConversation>> { return (await this.db.selectFrom("copilot_conversations").select(conversationColumns).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).orderBy("updated_at", "desc").execute()).map(mapConversation); }
@@ -135,7 +131,25 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
   }
   async deleteConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> { const result = await this.db.deleteFrom("copilot_conversations").where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return Number(result.numDeletedRows) > 0; }
   async createMessage(input: Omit<CopilotMessage, "id" | "createdAt">): Promise<CopilotMessage> { const row = await this.db.insertInto("copilot_messages").values({ id: randomUUID(), conversation_id: input.conversationId, role: input.role, content: input.content, outcome: input.outcome ?? null, activity: input.activity ? JSON.stringify(input.activity) : null }).returning(messageColumns).executeTakeFirstOrThrow(); return mapMessage(row); }
-  async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> { const [messages, proposals] = await Promise.all([this.db.selectFrom("copilot_messages").select(messageColumns).where("conversation_id", "=", input.conversationId).orderBy("created_at", "asc").execute(), this.db.selectFrom("copilot_proposals").select(proposalColumns).where("conversation_id", "=", input.conversationId).where("message_id", "is not", null).orderBy("created_at", "asc").execute()]); const cardsByMessage = new Map<string, CopilotProposalCard[]>(); for (const proposal of proposals.map(mapProposal)) { if (proposal.messageId) cardsByMessage.set(proposal.messageId, [...(cardsByMessage.get(proposal.messageId) ?? []), presentProposalCard(proposal)]); } return messages.map((row) => { const message = mapMessage(row); const cards = cardsByMessage.get(message.id); return cards ? { ...message, proposals: cards } : message; }); }
+  /**
+   * A card whose target type the deployment no longer knows is left out rather than failing the
+   * whole conversation. That happens once a contributing module is removed or renamed, after a
+   * rollback, or while the previous revision still serves during a rollout; the conversation, the
+   * transcript a new turn reads, and every other card stay readable.
+   */
+  async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> {
+    const [messages, proposals] = await Promise.all([this.db.selectFrom("copilot_messages").select(messageColumns).where("conversation_id", "=", input.conversationId).orderBy("created_at", "asc").execute(), this.db.selectFrom("copilot_proposals").select(proposalColumns).where("conversation_id", "=", input.conversationId).where("message_id", "is not", null).orderBy("created_at", "asc").execute()]);
+    const cardsByMessage = new Map<string, CopilotProposalCard[]>();
+    for (const row of proposals) {
+      if (!this.targetTypes.has(row.target_type)) {
+        this.log?.warn({ proposalId: row.id, targetType: row.target_type }, "copilot_proposal_card_skipped_unknown_target_type");
+        continue;
+      }
+      const proposal = mapProposal(row, this.targetTypes);
+      if (proposal.messageId) cardsByMessage.set(proposal.messageId, [...(cardsByMessage.get(proposal.messageId) ?? []), presentProposalCard(proposal)]);
+    }
+    return messages.map((row) => { const message = mapMessage(row); const cards = cardsByMessage.get(message.id); return cards ? { ...message, proposals: cards } : message; });
+  }
   async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation) return null; if (conversation.status === "running") return "running"; const row = await this.db.updateTable("copilot_conversations").set({ status: "running", updated_at: new Date() }).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).where("status", "=", "idle").returning(conversationColumns).executeTakeFirst(); return row ? mapConversation(row) : "running"; }
   async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { await this.db.updateTable("copilot_conversations").set({ status: "idle", updated_at: new Date() }).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).execute(); }
   async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> {
@@ -187,7 +201,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       `.execute(this.db);
       const row = result.rows[0];
       if (!row) throw new Error("Operator MCP proposal authorization is no longer current");
-      return mapProposal(row);
+      return mapProposal(row, this.targetTypes);
     }
     const row = await this.db.insertInto("copilot_proposals").values({
       id,
@@ -206,7 +220,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       confirmation_requirement: input.confirmationRequirement ?? null,
       change_effect: input.changeEffect ? JSON.stringify(input.changeEffect) : null,
     }).returning(proposalColumns).executeTakeFirstOrThrow();
-    return mapProposal(row);
+    return mapProposal(row, this.targetTypes);
   }
   async recoverOperatorMcpProposal(input: Parameters<CopilotMcpProposalRecoveryPort["recoverOperatorMcpProposal"]>[0]): ReturnType<CopilotMcpProposalRecoveryPort["recoverOperatorMcpProposal"]> {
     return this.db.transaction().execute(async (trx) => {
@@ -239,7 +253,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         LIMIT 2
       `.execute(trx);
       if (proposals.rows.length === 1) {
-        return { status: "recovered" as const, proposal: mapProposal(proposals.rows[0]) };
+        return { status: "recovered" as const, proposal: mapProposal(proposals.rows[0], this.targetTypes) };
       }
       if (proposals.rows.length > 1) return { status: "conflict" as const };
       if (invocation.status !== "admitted" && invocation.status !== "running") {
@@ -259,7 +273,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       return { status: "retry_prepare" as const };
     });
   }
-  async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const row = await this.db.selectFrom("copilot_proposals").select(proposalColumns).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return row ? mapProposal(row) : null; }
+  async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const row = await this.db.selectFrom("copilot_proposals").select(proposalColumns).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return row ? mapProposal(row, this.targetTypes) : null; }
   async findMcpReviewedProposal(input: { id: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string }): Promise<CopilotProposal | null> {
     const result = await sql<CopilotProposalRow>`
       SELECT ${sql.join(proposalColumns.map((column) => sql.ref(`proposal.${column}`)))}
@@ -273,7 +287,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         AND proposal.review_digest IS NOT NULL
       LIMIT 1
     `.execute(this.db);
-    return result.rows[0] ? mapProposal(result.rows[0]) : null;
+    return result.rows[0] ? mapProposal(result.rows[0], this.targetTypes) : null;
   }
   async findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null> {
     const row = await this.db
@@ -335,7 +349,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         .where("id", "=", row.conversation_id)
         .execute();
     }
-    return mapProposal(row);
+    return mapProposal(row, this.targetTypes);
   }
 
   async cancelPendingProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
@@ -347,7 +361,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       // can reconcile it; a proposal with no bound receipt has nothing in flight to cancel.
       .where("execution_invocation_id", "is", null)
       .returning(proposalColumns).executeTakeFirst();
-    return row ? mapProposal(row) : null;
+    return row ? mapProposal(row, this.targetTypes) : null;
   }
 
   /**
@@ -441,7 +455,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
           .where("id", "=", row.conversation_id)
           .execute();
       }
-      return { proposal: mapProposal(row), claimedAt, previousAttemptStartedAt: previous?.apply_started_at ?? null };
+      return { proposal: mapProposal(row, this.targetTypes), claimedAt, previousAttemptStartedAt: previous?.apply_started_at ?? null };
     });
   }
 
@@ -565,7 +579,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       return {
         status: "claimed" as const,
         claim: {
-          proposal: mapProposal(claimed), claimedAt, previousAttemptStartedAt,
+          proposal: mapProposal(claimed, this.targetTypes), claimedAt, previousAttemptStartedAt,
           receiptAttempt: { executionInvocationId: input.executionInvocationId, attemptInvocationId, previousAttemptInvocationId: execution.attempt_invocation_id },
         },
       };

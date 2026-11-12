@@ -18,6 +18,8 @@ import { startCrawlerWorkerTaskRuntime } from "../../src/runtime/startCrawlerWor
 import type { ConnectorPlugin } from "@radioso/connector-api";
 import { EmailChannelWorker } from "../../src/modules/connectors/plugins/email/emailChannelWorker.js";
 import { SLACK_INBOUND_EVENT_JOB } from "../../src/modules/connectors/plugins/slack/slackInboundEventJob.js";
+import { copilotProposalTargetTypes } from "../../src/modules/operatorCopilot/public.js";
+import { ALERT_THRESHOLD_TARGET_TYPE, ALERT_THRESHOLD_TOOL, createAlertThresholdModule, createAlertThresholdState } from "../support/contributedProposalModule.js";
 
 const createEnv = (): Env => ({
   NODE_ENV: "test",
@@ -674,6 +676,44 @@ describe("runtime startup", () => {
     });
 
     await dependencies.connectorDb.close();
+  });
+
+  describe("contributed Ray proposal target types", () => {
+    it("assembles a module's target type into the set every proposal reader uses, and offers its propose tool", async () => {
+      const dependencies = buildDependencies(createEnv(), { modules: [createAlertThresholdModule(createAlertThresholdState())] });
+      try {
+        expect(dependencies.copilotProposalTargetTypes.targetTypes).toContain(ALERT_THRESHOLD_TARGET_TYPE);
+        expect(dependencies.copilotProposalTargetTypes.permissionsFor(ALERT_THRESHOLD_TARGET_TYPE).manage).toEqual(["workspace.settings.manage"]);
+        expect(dependencies.copilotToolCatalog.map((descriptor) => descriptor.name)).toContain(ALERT_THRESHOLD_TOOL);
+      } finally {
+        await dependencies.connectorDb.close();
+      }
+    });
+
+    it("keeps the first-party set when no module contributes one", async () => {
+      const dependencies = buildDependencies(createEnv());
+      try {
+        expect(dependencies.copilotProposalTargetTypes.targetTypes).toEqual([...copilotProposalTargetTypes]);
+      } finally {
+        await dependencies.connectorDb.close();
+      }
+    });
+
+    it("refuses to boot when a module contributes an adapter for a first-party target type", () => {
+      expect(() => buildDependencies(createEnv(), {
+        modules: [createAlertThresholdModule(createAlertThresholdState(), { moduleId: "shadowing-module", adapter: { targetType: "routine" } })],
+      })).toThrow(/"shadowing-module".*first-party target type "routine"/u);
+    });
+
+    it("refuses to boot when two modules contribute the same target type", () => {
+      const state = createAlertThresholdState();
+      expect(() => buildDependencies(createEnv(), {
+        modules: [
+          createAlertThresholdModule(state, { moduleId: "first-alerts" }),
+          createAlertThresholdModule(state, { moduleId: "second-alerts" }),
+        ],
+      })).toThrow(/"second-alerts".*"alert_threshold".*"first-alerts"/u);
+    });
   });
 
   // The chat turn lifecycle keeps a no-transaction fallback for tests and non-DB hosts. It requests

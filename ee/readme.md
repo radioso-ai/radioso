@@ -20,9 +20,40 @@ Enterprise operator surfaces reach the operator copilot through
 operation and application-primitive identities they cite, because the OSS public
 contract and owning-port registry describe OSS surfaces only. The copilot
 contract is mirrored structurally in
-`ee/packages/backend-module/src/radiosoModuleTypes.ts`, the same arrangement the
-other registration ports use, so Enterprise code contributes tools without
-importing OSS types. `usageLimits/copilotTools.ts` is the worked example.
+`ee/packages/backend-module/src/copilotContributionTypes.ts` and re-exported from
+`radiosoModuleTypes.ts`, the same arrangement the other registration ports use,
+so Enterprise code contributes tools without importing OSS types. `usageLimits/copilotTools.ts` is the worked example.
+
+A feature that wants Ray to propose a change for an operator to review registers
+it with `registerCopilotProposalAdapter`. The contribution names a target type the
+feature owns, such as `alert_threshold`, the workspace permissions to read and to
+apply its proposals, an adapter, and the name, description, input schema, and
+capability declaration of the propose tool Ray offers for it. Ray builds that tool:
+the adapter's `draft` turns the tool's input into a change, a target label, a
+summary, and a `presentation` (the link label and a dashboard path inside the
+workspace, such as `/settings?settingsTab=usage`, with no `.` or `..` segment),
+and Ray stores, audits, and shows the proposal like a first-party one. Applying it
+calls the adapter's `applyIfVersionMatches` once per apply claim, after Ray checks
+the operator still holds the manage permissions. OSS refuses to boot when a
+contributed target type is first-party or another module already contributed it.
+The proposal shows in the dashboard's Ray panel; contributed propose tools stay off
+Operator MCP.
+
+`canRetryAfterInterruptedApply` is required, and it decides what happens when an
+apply was interrupted before its outcome was recorded. Return true only when the
+version token tells a first attempt that took effect from one that never ran:
+`applyIfVersionMatches` writes only if the target still matches `versionToken`,
+compared and set in the same write, and a completed apply changes what
+`readVersionToken` returns. The retry then reads `stale` and nothing is applied
+twice. Return false for a create, whose target has no version until it exists: Ray
+resolves the proposal as interrupted instead of creating the target a second time.
+
+Stored proposals outlive the module that drafted them. When a deployment stops
+registering a contributed target type, because the module was removed or renamed,
+a release was rolled back, or the previous revision is still serving mid-rollout,
+Ray's conversations leave those cards out, with a warning naming the proposal and
+its type, and nothing can read, apply, or dismiss them until the type is registered
+again.
 
 Feature manifests describe ownership metadata such as feature id, edition,
 backend module id, API namespace, frontend route stubs, and docs. The frontend

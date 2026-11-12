@@ -8,7 +8,7 @@ vi.mock('@/lib/api-client', () => ({
   }),
 }))
 
-import { reportVoiceVendorConversation, startPublicVoiceSession } from '@/lib/api-public-voice'
+import { publicVoiceSessionCalls, reportVoiceVendorConversation, startPublicVoiceSession } from '@/lib/api-public-voice'
 
 const respond = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -72,6 +72,19 @@ describe('public voice session start', () => {
     }))
 
     expect(await startPublicVoiceSession('launch-token', {})).toEqual({ kind: 'refused' })
+  })
+
+  it("opens the embed's call with the privacy notice the panel shows, in the visitor's language", async () => {
+    const fetchMock = vi.fn(async () => respond(200, session))
+    vi.stubGlobal('fetch', fetchMock)
+    const calls = publicVoiceSessionCalls('launch-token', { locale: 'it', privacyNotice: { text: 'Usiamo i tuoi messaggi per risponderti.', version: 'v3' } })
+
+    const start = await calls.startSession()
+
+    expect(start).toMatchObject({ kind: 'started', session: { sessionKey: session.sessionKey, privacyNotice: { text: 'Usiamo i tuoi messaggi per risponderti.', version: 'v3' } } })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ locale: 'it' })
+    expect(calls.reportVendorConversation).toEqual(expect.any(Function))
   })
 })
 

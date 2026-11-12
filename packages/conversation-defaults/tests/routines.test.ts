@@ -841,7 +841,8 @@ describe("routine defaults", () => {
 
     it("tells the model which slots already hold a value, by key", async () => {
       const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
-      await new RoutineNextStepSelector(gw).select({
+      // A fixed day other than the held value, so the prompt's own date cannot match it.
+      await new RoutineNextStepSelector(gw, { clock: () => new Date("2026-09-30T12:00:00Z") }).select({
         routine: booking,
         state: { ...state, variables: { arrival: "2026-11-11" } },
         currentStep,
@@ -852,6 +853,21 @@ describe("routine defaults", () => {
       const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
       expect(systemPrompt).toContain("Slots that already have a value from earlier turns: arrival.");
       expect(systemPrompt).not.toContain("2026-11-11");
+    });
+
+    it("lets only the slots the runner names take their value from the user's earlier messages (#1544)", async () => {
+      const prompts = async (input: { earlierMessageSlotKeys?: readonly string[]; messageStatesSlotValues?: boolean }) => {
+        const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
+        await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn, ...input });
+        return vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      };
+
+      const earlier = await prompts({ earlierMessageSlotKeys: ["arrival"] });
+      expect(earlier).toContain("anything the user said earlier in this conversation, not only the latest message: arrival.");
+      expect(earlier).toContain("return the value the user stated earlier");
+      expect(await prompts({})).not.toContain("said earlier in this conversation");
+      expect(await prompts({ earlierMessageSlotKeys: [] })).not.toContain("said earlier in this conversation");
+      expect(await prompts({ earlierMessageSlotKeys: ["arrival"], messageStatesSlotValues: false })).not.toContain("said earlier in this conversation");
     });
 
     it("coerces numbers and booleans to their declared type and drops blank values", async () => {

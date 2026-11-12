@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-11-09
+last_updated: 2026-11-11
 ---
 
 # Conversational Routines
@@ -374,6 +374,61 @@ The limit is three for every routine the backend runs; the engine's
 a retry loop the author draws, while the re-ask limit bounds one step asked over
 and over.
 
+### Consent before a covered slot
+
+A routine can carry `consents` (#1544). Each one names the slots it covers and what
+happens on decline: `continue` runs the routine without those slots, `handoff` hands
+the conversation to a person. A `consent` step sits before a step that collects a
+covered slot, and its default exit leads on to that step. The runner treats it as a
+transit step, like a tool step, and asks the host through the `consent` option of
+`DefaultRoutineRunner` (`ConversationRoutineConsentPort`). The wording, the channel,
+and the records stay with the host.
+
+At the start of every turn the runner reads what the conversation already decided.
+A covered slot whose consent was not granted by then takes no value that turn, from
+any source: the activator's extraction, the selector, the input of a routine called
+as a tool, on a routine with or without a slot schema. Its value is dropped and the
+trace records it as rejected with reason `consent`. The message still stated it, so
+the chat host marks that turn's messages sensitive with the slot's key, as it would
+had the value been captured. The turn that grants a consent never fills its slots;
+the collecting step asks for them on the next turn. From then on, the runner passes the
+selector each covered slot granted before the turn that still has no value
+(`earlierMessageSlotKeys`, from `RoutineConsentGate.grantedBefore`), and the selector
+lets those slots take a value from anything the visitor said earlier
+(`routine-next-step-earlier-slots.md`): the grant message, or what they said before the
+consent. So "no, nothing else" after "I'm coeliac" keeps the earlier value instead of
+storing the reply's words. A conversation that never asks passes none.
+
+When the walk reaches a `consent` step:
+
+- A decision the conversation already holds applies, with no ask (`consent_reused`
+  in the trace). A withdrawn grant reads as declined.
+- With no decision, the host's `prompt` returns the reply that shows the wording, and
+  the run waits on the consent step (`consent_asked`).
+- The visitor's next message goes to the host's `read`. `granted` moves on to the
+  collecting step; `declined` takes the decline path (`consent_decided`). An
+  `unclear` reply shows the consent once more, after an answer taken only from the
+  wording; a second `unclear` reply counts as declined, flagged `defaulted`.
+- On a channel that asks no consent, with wording the host cannot show, or with no
+  consent port, the consent is not asked and nothing is recorded. The decline path runs
+  (`consent_skipped`, with reason `channel`, `wording_unavailable`, or `no_port`).
+
+On a `continue` decline, the covered slots count as filled for the collecting step,
+which then leaves by its rule or default exit without asking. Guards read the slots
+as absent, because they are. A slot the routine runs without, after a decline or a
+withdrawn grant, is never named as missing on a re-ask or as pending on a yielded
+turn. On a `handoff` decline, the run ends `consent_declined`
+on the consent step, the way a `stuck` run ends: no terminal step runs, no completion
+export fires, and the reply says a person continues
+(`routine-step-stuck-handoff.md`). The hand-off requests the
+`routine_consent_declined` ownership reason, and the operator notice's headline says
+the visitor declined consent. It carries no covered value, since none was collected.
+
+Each turn reports what it did in `hostEffects.consentEvents`: `asked`, `decided`
+(with the method, `button` or `reply`, and whether it was `defaulted`), or
+`skipped`. Each event carries keys and the host's own wording value, never the
+visitor's reply or a slot value.
+
 ## Text routine formats
 
 Routine definitions travel as JSON over the routines API. Some routine document
@@ -735,8 +790,8 @@ the change.
 `RoutineSlotCorrector` (`packages/conversation-defaults/src/routineSlotCorrector.ts`)
 decides whether to offer a correction, and offers one only when it would be true:
 
-- It considers only the slots `correctableSlots` returns: declared, `mutable`, and holding
-  a value in the run. A run that ended holding none, such as a booking that ended on its
+- It considers only the slots `correctableSlots` returns: declared, `mutable`, covered by
+  none of the routine's consents, and holding a value in the run. A run that ended holding none, such as a booking that ended on its
   opening turn, gets no model call, and the message goes on to reentry and activation.
 - It offers nothing once the run's values have left the conversation, read from the run's
   `path` against the routine it ran (`completedRunSentValues` in
@@ -756,7 +811,8 @@ decides whether to offer a correction, and offers one only when it would be true
   activation like any message.
 
 The engine claims a correction only to a slot `correctableSlots` returns for the run, the
-same rule the corrector offers by, then checks the value fits the slot's type
+same rule the corrector offers by, with the consents read from the routine the runner runs
+rather than from the detector, then checks the value fits the slot's type
 (`verifySlotCorrection`) before it saves the run with the new value. A value that fails its
 type gets a reply asking for a valid one and changes nothing. The confirmation
 (`routine-slot-correction-confirm.md`) says the value was noted and never that anything was

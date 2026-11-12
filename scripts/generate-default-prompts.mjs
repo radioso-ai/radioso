@@ -88,6 +88,10 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT",
   },
   {
+    source: "routine-next-step-earlier-slots.md",
+    exportName: "DEFAULT_ROUTINE_NEXT_STEP_EARLIER_SLOTS_PROMPT",
+  },
+  {
     source: "routine-next-step-date-rule.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT",
   },
@@ -114,6 +118,14 @@ const manifest = [
   {
     source: "routine-reentry-gate.md",
     exportName: "DEFAULT_ROUTINE_REENTRY_GATE_PROMPT",
+  },
+  {
+    source: "routine-consent-reply.md",
+    exportName: "DEFAULT_ROUTINE_CONSENT_REPLY_PROMPT",
+  },
+  {
+    source: "routine-consent-unclear-answer.md",
+    exportName: "DEFAULT_ROUTINE_CONSENT_UNCLEAR_ANSWER_PROMPT",
   },
   {
     source: "steering.md",

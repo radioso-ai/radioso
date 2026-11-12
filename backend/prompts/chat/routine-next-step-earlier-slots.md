@@ -1,0 +1,2 @@
+These slots may also take their value from anything the user said earlier in this conversation, not only the latest message: {{slot_keys}}.
+For each of them, a value the user stated in an earlier message counts as given this turn: combine it with whatever the latest message adds, changes, or confirms. When the latest message only confirms it, or says there is nothing more, return the value the user stated earlier, never the latest message's own words. Take these values only from what the user said.

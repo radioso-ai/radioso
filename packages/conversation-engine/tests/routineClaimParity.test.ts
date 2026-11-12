@@ -241,6 +241,7 @@ const harness = (scenario: ParityScenario) => {
               return {
                 kind: "correction",
                 slots: [{ id: "slot_email", key: "email", type: "email", required: true, mutable: true }],
+                consents: [],
                 slotKey: "email",
                 rawValue: "new@example.com",
               };

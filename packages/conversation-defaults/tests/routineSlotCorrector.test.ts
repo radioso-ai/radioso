@@ -56,7 +56,16 @@ describe("RoutineSlotCorrector", () => {
 
     const result = await corrector.detect({ turn: turn("actually use new@example.com"), completedState });
 
-    expect(result).toEqual({ kind: "correction", slots: routine.slots, slotKey: "email", rawValue: "new@example.com" });
+    expect(result).toEqual({ kind: "correction", slots: routine.slots, consents: [], slotKey: "email", rawValue: "new@example.com" });
+  });
+
+  it("hands the engine the routine's consents with a correction, so it can refuse a covered slot itself (#1544)", async () => {
+    const consents: Routine["consents"] = [{ key: "travel", slotKeys: ["arrival"], onDecline: "continue" }];
+    const corrector = new RoutineSlotCorrector([{ ...routine, consents }], gateway(decision("correction", "email", "new@example.com")), { clock });
+
+    const result = await corrector.detect({ turn: turn("actually use new@example.com"), completedState });
+
+    expect(result).toMatchObject({ kind: "correction", slotKey: "email", consents });
   });
 
   it("shows the model only the editable values the run holds, with what each holds and today's date", async () => {
@@ -143,6 +152,17 @@ describe("RoutineSlotCorrector", () => {
     const result = await corrector.detect({ turn: turn("change my name to Alex"), completedState });
 
     expect(result).toEqual({ kind: "none", reason: "no_mutable_slot" });
+    expect(gw.complete).not.toHaveBeenCalled();
+  });
+
+  it("never offers a correction to a slot a consent covers, even one marked editable (#1544)", async () => {
+    const gw = gateway(decision("correction", "email", "new@example.com"));
+    const covered: Routine = { ...routine, consents: [{ key: "contact", slotKeys: ["email"], onDecline: "continue" }] };
+    const corrector = new RoutineSlotCorrector([covered], gw, { clock });
+
+    const result = await corrector.detect({ turn: turn("actually use new@example.com"), completedState });
+
+    expect(result).toEqual({ kind: "none", reason: "not_held" });
     expect(gw.complete).not.toHaveBeenCalled();
   });
 

@@ -26,7 +26,8 @@ constructing ad hoc fetches.
   the shared getters.
 - `api-types.ts`: shared frontend API types.
 - `auth-context.tsx`, `workspace-context.tsx`: React providers for major client
-  state; `anonymous-chat-context.tsx` is the public embed's chat session.
+  state; `anonymous-chat-context.tsx` is the public embed's chat session, and
+  `chat-message-mapping.ts` turns a stored conversation into its messages.
 - `dashboard-routes.ts`: dashboard route helpers.
 - `teammate-label.ts`: how operator surfaces name a teammate — display name,
   else email. Visitor-facing surfaces never fall back to an email.

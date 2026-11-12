@@ -29,26 +29,28 @@ import {
   readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
   type AgentBrandingSettings,
-  type AnswerFeedbackEntry,
-  type AnswerFeedbackState,
-  type AnswerSegment,
-  type Citation,
-  type ChatSuggestion,
   type ChatConversationDetail,
   type ChatStreamCompletion,
   type ChatUserInputMetadata,
   type ClientContextCapabilities,
   type PublicChatIntakeAction,
   type ErrorResponse,
-  type ActivitySummary,
-  type ActivityTrace,
-  type SkillStreamPayload,
   type WebsiteEmbedPageContext,
   type WebsiteEmbedCopyPacks,
   type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { choosePrivacyNotice, type ShownPrivacyNotice } from '@/lib/privacy-notice'
+import {
+  getLatestAssistantMessage,
+  stripPublicSuggestionCitations,
+  toChatMessages,
+  toChatMessagesFromTurns,
+  toPublicAnswerSegments,
+  type ChatMessage,
+} from '@/lib/chat-message-mapping'
+
+export type { ChatMessage } from '@/lib/chat-message-mapping'
 
 export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
   if (!theme) {
@@ -89,32 +91,6 @@ export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings 
     userBubbleBackground: brand,
     userBubbleForeground: brandText,
   }
-}
-
-export interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  createdAt: string
-  inputMetadata?: ChatUserInputMetadata
-  citations?: Citation[]
-  answerSegments?: AnswerSegment[]
-  suggestions?: ChatSuggestion[]
-  answerFeedback?: AnswerFeedbackState
-  answerFeedbackEntries?: AnswerFeedbackEntry[]
-  activitySummary?: ActivitySummary
-  activityTrace?: ActivityTrace
-  persistedAssistantMessageId?: string
-  status: 'complete' | 'streaming' | 'error'
-  /** Narrows why an `error` status happened, so the view can show cause-specific
-   *  copy instead of the generic failure message. Absent for every other failure
-   *  (provider outage, timeout, etc.), which keeps the generic copy. */
-  failure?: 'unavailable'
-  skill?: SkillStreamPayload
-  /** Message provenance, so the visitor can tell a human operator reply from the AI. */
-  source?: ChatConversationDetail['messages'][number]['source']
-  /** Display name of the human operator who sent this reply (takeover). */
-  operatorDisplayName?: string
 }
 
 interface AnonymousChatContextValue {
@@ -189,64 +165,6 @@ const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds:
 const isUsageLimitExceededError = (error: unknown): boolean =>
   getErrorResponse(error)?.code === 'usage_limit_exceeded'
 
-const resolveOwnFeedback = (
-  entries: AnswerFeedbackEntry[] | undefined,
-  chatSessionId: string | null | undefined,
-): AnswerFeedbackState | undefined => {
-  const entry = entries?.find((feedback) =>
-    feedback.actorType === 'anonymous_user' &&
-    feedback.anonymousSessionId === chatSessionId,
-  )
-  return entry ? { value: entry.value, comment: entry.comment } : undefined
-}
-
-const stripPublicSuggestionCitation = (suggestion: ChatSuggestion): ChatSuggestion => {
-  const publicSuggestion = { ...suggestion }
-  delete publicSuggestion.citation
-  return publicSuggestion
-}
-
-const stripPublicSuggestionCitations = (suggestions?: ChatSuggestion[]) =>
-  suggestions?.map(stripPublicSuggestionCitation)
-
-const toPublicAnswerSegments = (answerSegments?: AnswerSegment[]) =>
-  answerSegments?.map((segment) => ({
-    text: segment.text,
-    ...(segment.citationIndices ? { citationIndices: segment.citationIndices } : {}),
-  }))
-
-const toChatMessagesFromTurns = (
-  messages: ChatConversationDetail['messages'],
-  chatSessionId?: string | null,
-): ChatMessage[] =>
-  messages
-    .filter((message): message is typeof message & { role: 'user' | 'assistant' } => message.role !== 'system')
-    .map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      createdAt: message.createdAt,
-      inputMetadata: message.inputMetadata,
-      citations: message.citations,
-      answerSegments: toPublicAnswerSegments(message.answerSegments),
-      suggestions: stripPublicSuggestionCitations(message.suggestions),
-      answerFeedback: message.role === 'assistant'
-        ? resolveOwnFeedback(message.answerFeedbackEntries, chatSessionId)
-        : undefined,
-      answerFeedbackEntries: message.role === 'assistant' ? message.answerFeedbackEntries : undefined,
-      activitySummary: message.debug?.activitySummary,
-      activityTrace: message.debug?.activityTrace,
-      persistedAssistantMessageId: message.role === 'assistant' ? message.id : undefined,
-      status: 'complete' as const,
-      source: message.source,
-      operatorDisplayName: message.operatorDisplayName,
-    }))
-
-const toChatMessages = (
-  detail: ChatConversationDetail,
-  chatSessionId?: string | null,
-): ChatMessage[] => toChatMessagesFromTurns(detail.messages, chatSessionId)
-
 const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
   message.role === 'assistant' && isHumanAuthoredSource(message.source)
 
@@ -278,14 +196,6 @@ const restoreMessageSuggestions = (
         }
       : message,
   )
-}
-
-const getLatestAssistantMessage = (
-  detail: ChatConversationDetail,
-  chatSessionId?: string | null,
-): ChatMessage | null => {
-  const assistantMessages = toChatMessages(detail, chatSessionId).filter((message) => message.role === 'assistant')
-  return assistantMessages.at(-1) ?? null
 }
 
 const INITIAL_MESSAGE_WINDOW_SIZE = 10

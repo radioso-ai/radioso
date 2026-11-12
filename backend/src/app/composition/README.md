@@ -30,8 +30,9 @@ composition calls them and assembles the result.
   drains, and the dead-letter retention sweep. Modules enqueue through the
   `BackgroundJobQueue` port and return handlers; `backgroundJobHandlers.ts`
   lists every kind's handler, and `dependencies.ts` passes that list to
-  `createRuntime`. A new job kind adds its handler there. See
-  `backend/src/shared/background-jobs/README.md`.
+  `createRuntime`. A new job kind adds an input field to `backgroundJobHandlers`
+  and an entry to its list, and `dependencies.ts` passes the module's handler
+  as that argument. See `backend/src/shared/background-jobs/README.md`.
 - `conversationErasure.ts` and `conversationRetention.ts`: every module's eraser
   for conversation-derived rows no foreign key reaches, and every module's fixed
   retention window (`ConversationDataRetentionRule`), run on its own schedule

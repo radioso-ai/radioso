@@ -42,9 +42,11 @@ describe("public chat presenter", () => {
       session: { publicSessionId: "session-1", token: "session-token", expiresAt: "2026-01-01T00:00:00.000Z" },
       resume: { token: "resume-token", expiresAt: "2026-01-01T00:00:00.000Z" },
       assistantAvatarUrl: null,
+      acceptsImages: true,
     });
 
     expect(result.theme).toEqual(sharedTheme);
+    expect(result.acceptsImages).toBe(true);
   });
 
   it("strips citation anchors from in-progress public stream chunks", async () => {

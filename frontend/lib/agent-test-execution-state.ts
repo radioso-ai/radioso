@@ -21,6 +21,8 @@ interface TestExecutionMessage {
   attemptId: string
   persistedAssistantMessageId?: string
   turnTrace?: TurnTraceEnvelope
+  /** Said on a call from Test Chat rather than typed. */
+  spoken?: true
 }
 
 export interface TestExecutionState {
@@ -73,6 +75,7 @@ export const initializeTestExecutionState = (execution: TestExecution): TestExec
       attemptId: entry.attemptId,
       persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
       turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
+      ...(entry.spoken ? { spoken: true as const } : {}),
     })),
   }])),
 })
@@ -129,6 +132,7 @@ const hydrateSideMessages = (side: PersistedSide, latestByTurn: Map<string, Pers
       attemptId: entry.attemptId,
       persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
       turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
+      ...(entry.spoken ? { spoken: true as const } : {}),
     }
     const endsUnansweredTurn = lastIndexByTurn.get(entry.turnId) === index && !answeredTurnIds.has(entry.turnId)
     const placeholder = endsUnansweredTurn

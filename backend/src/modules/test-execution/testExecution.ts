@@ -50,6 +50,8 @@ export interface TestExecutionHistoryEntry {
   turnTrace?: unknown;
   attemptId: string;
   createdAt: Date;
+  /** The operator spoke this turn on a call, and heard its answer; absent on a typed turn. */
+  spoken?: true;
 }
 
 export interface TestExecution {
@@ -233,6 +235,8 @@ export interface TrustedTestExecutionRunnerPort {
     executionMode: "safe_test";
     skillEffects: SkillEffectPolicy;
     accountId: string | null;
+    /** The operator's IANA zone, when their client sent one; the turn resolves it like a visitor's. */
+    userTimeZone?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<string, TestExecutionRunnerResult>;
 }
@@ -292,8 +296,8 @@ export interface TestExecutionRepositoryPort {
    * `turn_in_progress`: another turn is still running. A settled turn, a failed one included,
    * never blocks the next message; its failed side stays retryable until a later turn starts.
    */
-  claimTurn(input: { workspaceId: string; agentId: string; executionId: string; sideIds: readonly string[]; generation: number; turnId: string; attemptId: string; message: string; inputFingerprint: string; now: Date; leaseMs: number; retry: boolean }): Promise<"generation_conflict" | "turn_in_progress" | "turn_conflict" | "retry_invalid" | "attempt_conflict" | { claims: readonly TestExecutionClaim[] }>;
-  complete(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; turnId: string; attemptId: string; fence: number; result: TestExecutionRunnerResult; now: Date }): Promise<"stale" | TestExecution>;
+  claimTurn(input: { workspaceId: string; agentId: string; executionId: string; sideIds: readonly string[]; generation: number; turnId: string; attemptId: string; message: string; inputFingerprint: string; now: Date; leaseMs: number; retry: boolean; spoken?: true }): Promise<"generation_conflict" | "turn_in_progress" | "turn_conflict" | "retry_invalid" | "attempt_conflict" | { claims: readonly TestExecutionClaim[] }>;
+  complete(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; turnId: string; attemptId: string; fence: number; result: TestExecutionRunnerResult; now: Date; spoken?: true }): Promise<"stale" | TestExecution>;
   fail(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; turnId: string; attemptId: string; fence: number; code: string; now: Date }): Promise<"stale" | TestExecution>;
 }
 
@@ -328,6 +332,14 @@ const runnerFailureLogFields = (error: unknown): { errorType: string; errorCode?
     errorType: error instanceof Error ? error.name : typeof error,
     ...(typeof code === "string" ? { errorCode: code.slice(0, 80) } : {}),
   };
+};
+
+const TEST_EXECUTION_NOT_SINGLE_CODE = "test_execution_not_single";
+
+/** A spoken turn has one answer to say, so only a single test takes one. */
+const requireSingle = (execution: TestExecution): TestExecution => {
+  if (execution.mode !== "single") throw new AppError(409, TEST_EXECUTION_NOT_SINGLE_CODE, "Only a single test takes spoken turns.");
+  return execution;
 };
 
 export class TestExecutionService {
@@ -564,6 +576,27 @@ export class TestExecutionService {
     yield* this.runClaims(execution, claimed, input);
   }
 
+  /**
+   * One turn the operator spoke on a call into this test. A call has no client that names a turn's
+   * identity or retries it, so the turn and attempt ids are minted here, at the test's own
+   * generation, and both of the turn's history entries are marked spoken. It runs and is charged
+   * like a typed turn. Only a single test takes one: a comparison would answer twice.
+   */
+  async *streamSpokenMessage(input: Pick<TestExecutionMessageInput, "workspaceId" | "agentId" | "accountId" | "executionId" | "message" | "signal">): AsyncGenerator<TestExecutionEvent> {
+    if (!input.message.trim()) throw badRequest("Test message is required.");
+    const execution = requireSingle(await this.requireExecution(input));
+    const turn: TestExecutionMessageInput = { ...input, generation: execution.generation, turnId: this.options.createId(), attemptId: this.options.createId(), spoken: true };
+    const claimed = await this.claimTurn(execution, execution.sides.map((side) => side.id), turn, false);
+    yield* this.runClaims(execution, claimed, turn);
+  }
+
+  /** What a spoken session on this test opens with: its greeting while no message has been sent, else nothing. */
+  async spokenSessionOpening(input: { workspaceId: string; agentId: string; executionId: string }): Promise<{ greeting: string | null }> {
+    const history = requireSingle(await this.requireExecution(input)).sides[0]?.history ?? [];
+    if (history.some((entry) => entry.role === "user")) return { greeting: null };
+    return { greeting: history.find((entry) => entry.role === "assistant")?.content ?? null };
+  }
+
   async retry(input: TestExecutionRetryInput): Promise<TestExecutionEvent[]> {
     const events: TestExecutionEvent[] = [];
     for await (const event of this.streamRetry(input)) events.push(event);
@@ -635,7 +668,7 @@ export class TestExecutionService {
         surface: "test_execution",
         usage: "test_run",
       });
-      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, signal: identity.signal });
+      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, userTimeZone: identity.userTimeZone, signal: identity.signal });
       let streamed = "";
       let step = await turn.next();
       while (!step.done) {
@@ -646,7 +679,7 @@ export class TestExecutionService {
         step = await turn.next();
       }
       const result = step.value;
-      const stored = await this.options.repository.complete({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId, sideId: side.id, turnId: identity.turnId, attemptId: identity.attemptId, fence: claim.attempt.fence, result, now: this.now() });
+      const stored = await this.options.repository.complete({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId, sideId: side.id, turnId: identity.turnId, attemptId: identity.attemptId, fence: claim.attempt.fence, result, now: this.now(), ...(identity.spoken ? { spoken: true as const } : {}) });
       await reservation.commit();
       if (stored === "stale") {
         emit(this.failedEvent(identity, side.id, "stale_attempt", false));
@@ -712,5 +745,11 @@ export class TestExecutionService {
   }
 }
 
-interface TestExecutionMessageInput { workspaceId: string; agentId: string; accountId: string | null; executionId: string; message: string; generation: number; turnId: string; attemptId: string; signal?: AbortSignal; }
+interface TestExecutionMessageInput {
+  workspaceId: string; agentId: string; accountId: string | null; executionId: string; message: string; generation: number; turnId: string; attemptId: string; signal?: AbortSignal;
+  /** The operator's IANA zone as their browser reports it; the turn reads "today" in it. */
+  userTimeZone?: string;
+  /** The operator spoke this turn on a call; both of its history entries are marked spoken. */
+  spoken?: true;
+}
 interface TestExecutionRetryInput extends Omit<TestExecutionMessageInput, "message"> { sideId: string; }

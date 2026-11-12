@@ -114,6 +114,8 @@ const declarations: readonly PolicyDeclaration[] = [
     ["DELETE", "/api/v1/ee/usage-limits/org-creation/users/:userId", "workspace.usage.manage"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   allow("POST", "/api/v1/assistant/chat", "workspace.chat.use"),
+  // A photo for a later chat message, owned by the credential that uploads it.
+  allow("POST", "/api/v1/assistant/images", "workspace.chat.use"),
   allow("POST", "/api/v1/retrieval/search", "workspace.retrieval.query"),
   allow("POST", "/api/v1/retrieval/answer", "workspace.retrieval.query"),
 
@@ -258,6 +260,8 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("GET", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
   sessionOnly("POST", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
   sessionOnly("DELETE", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
+  // Test Chat's Talk hands the page the vendor's signed URL, which opens sessions on the workspace's vendor account.
+  sessionOnly("POST", "/api/v1/agents/:agentId/test-executions/:executionId/voice-sessions", "workspace.agents.manage"),
 
   // Credential-management and operator surfaces intentionally have an explicit
   // session-only policy rather than relying on default denial. This makes new
@@ -331,6 +335,8 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("GET", "/api/v1/conversations/recently-closed", "workspace.conversation.takeover"),
   // A call's recording is a teammate's to hear in the Inbox, with each play audited against them.
   sessionOnly("GET", "/api/v1/conversations/:conversationId/recording", "workspace.history.read"),
+  // A photo a visitor sent is a teammate's to see in the Inbox, with each view audited against them.
+  sessionOnly("GET", "/api/v1/conversations/:conversationId/images/:imageId", "workspace.history.read"),
   ...[
     ["GET", "/api/v1/conversations/operators"],
     ["POST", "/api/v1/conversations/:conversationId/takeover"],
@@ -358,6 +364,7 @@ const declarations: readonly PolicyDeclaration[] = [
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   ...[
     ["GET", "/api/v1/copilot/availability", "workspace.agents.read"],
+    ["GET", "/api/v1/copilot/empty-state", "workspace.agents.read"],
     ["GET", "/api/v1/copilot/conversations", "workspace.agents.read"],
     ["GET", "/api/v1/copilot/conversations/:conversationId", "workspace.agents.read"],
     ["DELETE", "/api/v1/copilot/conversations/:conversationId", "workspace.agents.read"],

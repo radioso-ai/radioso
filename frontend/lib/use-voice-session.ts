@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { reportVoiceVendorConversation, startPublicVoiceSession } from './api-public-voice'
-import { canAskForMicrophone, readMicrophoneSignals, runVoiceCall, type VoiceCall } from './voice-call'
-import { loadVoiceRuntimes, prepareVoiceRuntimes, type VoiceCallPrivacyNotice } from './voice-runtime'
+import { canAskForMicrophone, readMicrophoneSignals, runVoiceCall, type VoiceCall, type VoiceCallDependencies } from './voice-call'
+import { loadVoiceRuntimes, prepareVoiceRuntimes } from './voice-runtime'
 import {
   appendVoiceTranscriptLine,
   initialVoiceSessionState,
@@ -16,22 +15,25 @@ import {
 } from './voice-session'
 
 /**
- * One visitor's voice calls from the website embed: the call's visible state, the lines said on
- * it, and Talk and Stop. A call ends when the panel unmounts; the caller ends it on panel close.
- * `precedingMessageIds` reads the chat's message ids, newest first, which each transcript line follows; `offered`
- * says the panel shows Talk, which is when a platform that needs the vendor client early gets it.
+ * Where a surface starts its calls: the session start it is allowed to make (the website embed's
+ * public session, or Test Chat's dashboard session on a private test), and, where a call is a
+ * conversation, how the page reports the vendor's id for its recording.
+ */
+export type VoiceSessionCalls = Pick<VoiceCallDependencies, 'startSession' | 'reportVendorConversation'>
+
+/**
+ * One person's voice calls from a chat surface: the call's visible state, the lines said on it,
+ * and Talk and Stop. A call ends when the surface unmounts; the caller ends it on panel close.
+ * `calls` is the surface's own session start, read when Talk is pressed; `precedingMessageIds` reads
+ * the chat's message ids, newest first, which each transcript line follows; `offered` says the
+ * surface shows Talk, which is when a platform that needs the vendor client early gets it.
  */
 export function useVoiceSession({
-  token,
-  locale,
-  privacyNotice,
+  calls,
   precedingMessageIds,
   offered,
 }: {
-  token: string
-  locale?: string
-  /** The agent's privacy notice the panel shows; a call starts with it, and its conversation records it. */
-  privacyNotice?: VoiceCallPrivacyNotice | null
+  calls: VoiceSessionCalls
   precedingMessageIds: () => readonly string[]
   offered: boolean
 }) {
@@ -53,6 +55,11 @@ export function useVoiceSession({
   // connects has let go of the microphone and its session before the next one asks for either.
   const lastSettledRef = useRef<Promise<void>>(Promise.resolve())
   const lineCountRef = useRef(0)
+  // The surface's newest start, read when Talk is pressed, so a surface need not keep it stable.
+  const callsRef = useRef(calls)
+  useEffect(() => {
+    callsRef.current = calls
+  }, [calls])
 
   const stop = useCallback(() => {
     callRef.current?.stop()
@@ -71,20 +78,19 @@ export function useVoiceSession({
 
   const talk = useCallback(() => {
     if (callRef.current) return
+    const calls = callsRef.current
     apply({ type: 'talk_pressed' })
     setRecordingNotice(null)
     const call = runVoiceCall(
       {
         startSession: async () => {
-          const start = await startPublicVoiceSession(token, { locale })
+          const start = await calls.startSession()
           if (start.kind === 'started' && callRef.current === call) setRecordingNotice(start.session.recordingNotice ?? null)
-          return start.kind === 'started' && privacyNotice
-            ? { ...start, session: { ...start.session, privacyNotice: { text: privacyNotice.text, version: privacyNotice.version } } }
-            : start
+          return start
         },
         loadRuntimes: loadVoiceRuntimes,
         after: lastSettledRef.current,
-        reportVendorConversation: (report) => reportVoiceVendorConversation(token, report),
+        ...(calls.reportVendorConversation ? { reportVendorConversation: calls.reportVendorConversation } : {}),
       },
       {
         onEvent: (event) => {
@@ -106,7 +112,7 @@ export function useVoiceSession({
     )
     callRef.current = call
     lastSettledRef.current = call.settled
-  }, [apply, locale, precedingMessageIds, privacyNotice, token])
+  }, [apply, precedingMessageIds])
 
   useEffect(() => {
     if (offered) prepareVoiceRuntimes()

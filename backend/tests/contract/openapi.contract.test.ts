@@ -21,6 +21,21 @@ interface RoutineValidationResultOpenApiSchema {
 }
 
 describe("openapi contract", () => {
+  it("documents the errors a send with photos and a photo upload can answer", () => {
+    const paths = createOpenApiDocument().paths ?? {};
+    const responsesOf = (path: string, method: "get" | "post") =>
+      (paths[path]?.[method]?.responses ?? {}) as Record<string, { description?: string }>;
+
+    for (const chat of ["/api/v1/assistant/chat", "/api/v1/public/chat/{token}", "/api/v1/agents/{agentId}/chat"]) {
+      const responses = responsesOf(chat, "post");
+      expect(responses["409"]?.description, chat).toContain("visitor_image_unavailable");
+      expect(responses["409"]?.description, chat).toContain("chat_turn_superseded");
+      expect(responses["400"]?.description, chat).toContain("imageIds");
+    }
+    expect(responsesOf("/api/v1/assistant/images", "post")["400"]?.description).toContain("agentId");
+    expect(responsesOf("/api/v1/public/chat/{token}/images/{imageId}", "get")["400"]?.description).toContain("imageId");
+  });
+
   it("publishes the bounded agent channel credential label contract", () => {
     const schemas = createOpenApiDocument().components?.schemas ?? {};
     const issueRequest = schemas.AgentChannelCredentialIssueRequest as {

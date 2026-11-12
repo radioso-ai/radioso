@@ -120,6 +120,10 @@ class StubConversationRepository implements ConversationRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async hasAnyForWorkspace(): Promise<boolean> {
+    throw new Error("not implemented");
+  }
+
   async listPageByAnonymousSession(): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     throw new Error("not implemented");
   }

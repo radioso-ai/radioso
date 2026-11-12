@@ -14,6 +14,7 @@ import { createCancelReviewedProposalTool } from "../../../src/modules/operatorC
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
 import { canonicalReviewedOperationDigest } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
 import { badRequest } from "../../../src/shared/domain/errors.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const workspaceId = "workspace-1";
@@ -301,7 +302,7 @@ describe("prepare_ingestion_settings through the operator MCP catalog", () => {
 
 /** Builds the real execute/outcome/cancel tools over a real `OperatorCopilotService`, wired to one target's real proposal adapter and a fake repository standing in for Postgres. */
 const executionCatalog = (input: { repository: FakeReviewedRepository; adapters: readonly unknown[]; now: () => Date }) => {
-  const service = new OperatorCopilotService({
+  const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     repository: input.repository, proposalAdapters: input.adapters as never,
     auditService: { record: vi.fn(async () => undefined) }, currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
     now: input.now,

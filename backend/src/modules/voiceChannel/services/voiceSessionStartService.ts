@@ -14,10 +14,11 @@ import {
   type VoiceSessionAvailabilityPort,
   type VoiceSessionLanguageSource,
   type VoiceSessionStarter,
+  type VoiceSessionStartFor,
   type VoiceSessionStartPort,
   type VoiceSessionStartRegistry,
   type VoiceSessionStartResult,
-  type VoiceSessionVisitor,
+  type VoiceSessionSurface,
   type VoiceVendorCredentialReader,
   type VoiceVendorCredentialReading,
   type VoiceVendorSession,
@@ -34,6 +35,7 @@ import {
   type SessionLanguageOutcome,
   type SessionLanguagePreparation,
 } from "./sessionLanguage.js";
+import { testChatSessionKey } from "../testChatSessionDomain.js";
 import { readSessionMaintenance } from "./sessionPreparation.js";
 import { chooseRecordingNotice, resolveVoiceLanguage } from "./voiceLines.js";
 
@@ -97,6 +99,15 @@ const FAILED_OUTCOME_OF_READING: Record<Exclude<VoiceVendorCredentialReading["ki
   unreadable: "credential_unreadable",
 };
 
+/** Where a start comes from, for its count. */
+const surfaceOf = (start: VoiceSessionStartFor): VoiceSessionSurface => (start.test ? "test_chat" : "website_embed");
+
+/** Whom the registry records a started session for: the visitor, or the test, without its greeting. */
+const startedFor = (start: VoiceSessionStartFor) =>
+  start.test
+    ? { test: { testExecutionId: start.test.testExecutionId, accountId: start.test.accountId } }
+    : { visitor: start.visitor };
+
 /**
  * The runtime an agent takes sessions on, or why it takes none, first reason first: an agent nobody
  * published, then voice off, then no vendor agent bound. Start and availability share it.
@@ -157,20 +168,25 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     }
   }
 
-  async start(input: { workspaceId: string; agentId: string; visitor: VoiceSessionVisitor; locale?: string }): Promise<VoiceSessionStartResult> {
+  /**
+   * A Test Chat start passes the same gate as a website one: its turns run the test's revision, but
+   * the call is placed on the same vendor agent, with the same key, as the agent's published calls.
+   */
+  async start(input: { workspaceId: string; agentId: string; locale?: string } & VoiceSessionStartFor): Promise<VoiceSessionStartResult> {
     const { workspaceId, agentId } = input;
+    const surface = surfaceOf(input);
     const [profile, published] = await Promise.all([
       this.dependencies.agents.findVoiceProfile({ workspaceId, agentId }),
       this.dependencies.publication.isPublished({ workspaceId, agentId }),
     ]);
-    if (!profile) return this.unavailable("agent_not_found");
+    if (!profile) return this.unavailable(surface, "agent_not_found");
     const binding = sessionRuntimeOf({ published, voice: profile.voice });
-    if (binding.kind === "unavailable") return this.unavailable(binding.outcome);
+    if (binding.kind === "unavailable") return this.unavailable(surface, binding.outcome);
     const { runtime } = binding;
     const { vendor } = runtime;
     const failed = (outcome: VoiceSessionFailedOutcome, fields: Record<string, unknown> = {}): VoiceSessionStartResult => {
-      this.dependencies.logger.warn({ workspaceId, agentId, vendor, outcome, ...fields }, "Voice session start failed");
-      this.record(vendor, outcome);
+      this.dependencies.logger.warn({ workspaceId, agentId, vendor, surface, outcome, ...fields }, "Voice session start failed");
+      this.record(vendor, surface, outcome);
       return { kind: "failed" };
     };
 
@@ -182,12 +198,13 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     }
     if (reading.kind !== "present") return failed(FAILED_OUTCOME_OF_READING[reading.kind]);
 
-    const sessionKey = this.dependencies.newSessionKey();
+    // A Test Chat session's key has the form Radioso reserves, so its turns never run as a conversation.
+    const sessionKey = input.test ? testChatSessionKey(this.dependencies.newSessionKey()) : this.dependencies.newSessionKey();
     const clock = this.dependencies.now ?? Date.now;
     try {
       await this.dependencies.starts.register({
         session: { workspaceId, agentId, vendor, sessionKey },
-        visitor: input.visitor,
+        ...startedFor(input),
         expiresAt: new Date(clock() + VOICE_BEHAVIOR.sessionStartTtlMs),
         vendorAgent: { agentId: runtime.agentId, region: runtime.region },
       });
@@ -200,8 +217,11 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     // A start the vendor refuses stops the language read, which nothing will wait for.
     const preparation = new AbortController();
     const maintenance = readSessionMaintenance(this.dependencies.connections, { workspaceId, agentId, runtime });
+    // A test opens with its own greeting, already read, rather than the published one.
+    const testGreeting = input.test?.greeting ?? null;
+    const greetings: VoiceGreetingSource = input.test ? { greetingFor: async () => testGreeting } : this.dependencies.greetings;
     const preparingFirstMessage = maintenance.then((known) => prepareSessionFirstMessage(
-      { greetings: this.dependencies.greetings, waitMs: this.preparationWaitMs, now: clock },
+      { greetings, waitMs: this.preparationWaitMs, now: clock },
       { maintenance: known, workspaceId, agentId, locale: input.locale ?? null },
     ));
     const preparingLanguage = maintenance.then((known) => prepareSessionLanguage(
@@ -219,11 +239,11 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
       preparation.abort();
       return failed("vendor_failed", vendorErrorFields(error));
     }
-    this.record(vendor, "started");
+    this.record(vendor, surface, "started");
     const recordingNotice = chooseRecordingNotice(profile.voice, { session: input.locale, agentDefault: profile.defaultLocale });
     const [firstMessagePreparation, languagePreparation] = await Promise.all([preparingFirstMessage, preparingLanguage]);
-    this.observeGreeting({ workspaceId, agentId, vendor }, firstMessagePreparation, recordingNotice !== null);
-    this.observeLanguage({ workspaceId, agentId, vendor }, languagePreparation);
+    this.observeGreeting({ workspaceId, agentId, vendor }, surface, firstMessagePreparation, recordingNotice !== null);
+    this.observeLanguage({ workspaceId, agentId, vendor }, surface, languagePreparation);
     const firstMessage = firstMessageOf(firstMessagePreparation, recordingNotice);
     const vendorLanguage = languageToSet(languagePreparation);
     return {
@@ -245,7 +265,11 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
    * one, closed values otherwise, ids only. A vendor agent that does not allow the language is a
    * warn, since Connect fixes it.
    */
-  private observeLanguage(session: { workspaceId: string; agentId: string; vendor: VoiceVendor }, preparation: SessionLanguagePreparation): void {
+  private observeLanguage(
+    session: { workspaceId: string; agentId: string; vendor: VoiceVendor },
+    surface: VoiceSessionSurface,
+    preparation: SessionLanguagePreparation,
+  ): void {
     if (preparation.outcome === "skipped") return;
     const { logger } = this.dependencies;
     switch (preparation.outcome) {
@@ -277,13 +301,13 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
         break;
       }
     }
-    this.recordLanguage(session.vendor, preparation.outcome);
+    this.recordLanguage(session.vendor, surface, preparation.outcome);
   }
 
-  private recordLanguage(vendor: VoiceVendor, outcome: SessionLanguageOutcome): void {
+  private recordLanguage(vendor: VoiceVendor, surface: VoiceSessionSurface, outcome: SessionLanguageOutcome): void {
     this.dependencies.metrics?.incrementCounter("voice_session_language_total", {
       help: "Started voice sessions on a vendor agent Radioso maintains, by how the language the call starts in came out",
-      labels: { vendor, outcome },
+      labels: { vendor, surface, outcome },
     });
   }
 
@@ -294,6 +318,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
    */
   private observeGreeting(
     session: { workspaceId: string; agentId: string; vendor: VoiceVendor },
+    surface: VoiceSessionSurface,
     preparation: SessionFirstMessagePreparation,
     recordingNotice: boolean,
   ): void {
@@ -304,7 +329,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
         { ...session, outcome: "failed", step: "connection", errorClass: preparation.errorClass },
         "Voice session greeting could not be read; the call starts without it",
       );
-      this.recordGreeting(session.vendor, "failed");
+      this.recordGreeting(session.vendor, surface, "failed");
       return;
     }
     const { greeting, durationMs } = preparation;
@@ -321,26 +346,26 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
     } else {
       logger.info({ ...session, outcome: greeting.outcome, recordingNotice, durationMs }, "Voice session greeting prepared");
     }
-    this.recordGreeting(session.vendor, greeting.outcome);
+    this.recordGreeting(session.vendor, surface, greeting.outcome);
   }
 
-  private recordGreeting(vendor: VoiceVendor, outcome: SessionGreetingOutcome): void {
+  private recordGreeting(vendor: VoiceVendor, surface: VoiceSessionSurface, outcome: SessionGreetingOutcome): void {
     this.dependencies.metrics?.incrementCounter("voice_session_greeting_total", {
       help: "Started voice sessions on a vendor agent Radioso maintains, by how the greeting the call opens with came out",
-      labels: { vendor, outcome },
+      labels: { vendor, surface, outcome },
     });
   }
 
-  private unavailable(outcome: VoiceSessionUnavailableOutcome): VoiceSessionStartResult {
-    this.record("none", outcome);
+  private unavailable(surface: VoiceSessionSurface, outcome: VoiceSessionUnavailableOutcome): VoiceSessionStartResult {
+    this.record("none", surface, outcome);
     return { kind: "unavailable" };
   }
 
-  /** Labels are closed enums: the bound vendor, or `none` before one is known. */
-  private record(vendor: VoiceVendor | "none", outcome: VoiceSessionStartOutcome): void {
+  /** Labels are closed enums: the bound vendor, or `none` before one is known; the surface; the outcome. */
+  private record(vendor: VoiceVendor | "none", surface: VoiceSessionSurface, outcome: VoiceSessionStartOutcome): void {
     this.dependencies.metrics?.incrementCounter("voice_session_start_total", {
-      help: "Voice session starts, by the agent's bound vendor and how the start ended",
-      labels: { vendor, outcome },
+      help: "Voice session starts, by the agent's bound vendor, where the start came from and how it ended",
+      labels: { vendor, surface, outcome },
     });
   }
 }

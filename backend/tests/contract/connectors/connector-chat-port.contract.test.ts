@@ -4,7 +4,10 @@ import type { ConversationChannelContext } from "@radioso/conversation-contract"
 import type {
   ConnectorChatOutcome,
   ConnectorChatPort,
+  ConnectorImageAllowance,
+  ConnectorInboundImage,
   ConnectorIngestInput,
+  ConnectorStoredImage,
   ConnectorIngestResult,
   ConnectorReplyDraft,
   ConnectorRespondInput,
@@ -60,12 +63,31 @@ describe("ConnectorChatPort contract", () => {
         query: string;
         sourceChannel?: string | null;
         channelContext?: ConversationChannelContext | null;
+        images?: readonly ConnectorInboundImage[];
+        onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
       }>();
       expectTypeOf<Awaited<ReturnType<ConnectorChatPort["answer"]>>>().toEqualTypeOf<{
         conversationId: string;
         answer: string;
         outcome: ConnectorChatOutcome;
       }>();
+    });
+
+    it("keeps the shape a connector asks about photos in", async () => {
+      expectTypeOf<Parameters<ConnectorChatPort["imageAllowance"]>[0]>().toEqualTypeOf<{
+        workspaceId: string;
+        agentId?: string;
+        conversationId?: string;
+      }>();
+      expectTypeOf<Awaited<ReturnType<ConnectorChatPort["imageAllowance"]>>>().toEqualTypeOf<ConnectorImageAllowance | null>();
+      expectTypeOf<ConnectorInboundImage>().toEqualTypeOf<
+        | { key: string; bytes: Uint8Array; receipt?: undefined }
+        | { key: string; receipt: string; bytes?: undefined }
+      >();
+      expectTypeOf<ConnectorStoredImage>().toEqualTypeOf<{ key: string; receipt: string }>();
+      const { port } = portFor();
+
+      await expect(port.imageAllowance({ workspaceId: "workspace-1" })).resolves.toBeNull();
     });
 
     it("answers a Slack message exactly as before", async () => {

@@ -3,7 +3,6 @@ import type {
   ConversationChannelContext,
   ConversationRequestContext,
   ConversationTrace,
-  MessageSource,
   RoutineState,
   RoutineTurnYield,
   StagedContext,
@@ -20,13 +19,13 @@ import { primaryLanguageTag } from "../../../shared/domain/acceptLanguage.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { toConversationTrace, toPreparedStagedContext } from "./conversationContractMappers.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
-import type { MessageRecord, MessageRepositoryPort, MessageRole } from "../../../db/repositories/messageRepository.js";
+import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { ChatRoutineInvocationReport } from "../contracts/routineTurnState.js";
 import { repliesAreSpoken } from "../contracts/operatorReplySpeech.js";
 import type { DescribedRoutineTurn } from "./routines/routineTurnDescription.js";
-import { isAudiencePulseCustomerSource, isAudiencePulseEndUserChannel } from "../audiencePulseHistorySource.js";
+import { enqueueFacetExtraction } from "./facetExtractionEligibility.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
@@ -60,12 +59,12 @@ import type {
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { sensitiveSlotsAwaited } from "../../routines/public.js";
-import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
+import { storeTurnUserMessage } from "./turnUserMessage.js";
 import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/public.js";
 import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
 import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
 import type { ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
-import type { AssistantPageContext } from "../types/assistantApi.js";
+import type { AssistantPageContext, UserMessageStoredListener } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
 import { admitsPageEvidence, capturedPageContext, type PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
@@ -92,23 +91,6 @@ interface ChatAnswerAuditMetadata {
 const defaultTurnFraming = (): TurnRouting["framing"] => ({
   isIdentityQuestion: false,
 });
-
-/**
- * The same eligibility rule Audience Pulse reads history with
- * ({@link isAudiencePulseCustomerSource}, {@link isAudiencePulseEndUserChannel}),
- * restated as a write-time predicate so a facet extraction job is enqueued for the
- * same population the census will later read. `role` is checked here too even though
- * this module only ever writes `"user"` messages: the rule is reused, not restated,
- * so it stays correct if that ever changes.
- */
-export const isEligibleForFacetExtraction = (input: {
-  role: MessageRole;
-  source: MessageSource | null | undefined;
-  sourceChannel: string | null;
-}): boolean =>
-  input.role === "user"
-  && isAudiencePulseCustomerSource(input.source ?? null)
-  && isAudiencePulseEndUserChannel(input.sourceChannel);
 
 export interface PreparedSession {
   /**
@@ -242,6 +224,8 @@ export interface PrepareChatSessionInput {
   bootstrapGreetingId?: string;
   query: string;
   inputMetadata?: UserMessageInputMetadata;
+  /** Told the moment the customer message is stored, before the rest of the turn; never for an existing one. */
+  onUserMessageStored?: UserMessageStoredListener;
   metadataFilter?: Record<string, unknown>;
   documentScope?: string[];
   pageContext?: AssistantPageContext | null;
@@ -367,15 +351,6 @@ interface WorkbenchReplayBaselineCapability {
 export const historicalWorkbenchReplayBaseline: WorkbenchReplayBaselineCapability = {
   [historicalWorkbenchReplayBaselineBrand]: true,
 };
-
-/**
- * The recorded form of a tool call: Activity and the Inbox render it as a tool-call block
- * from this, while the message content stays the rendered text a person would have typed.
- */
-const routineInvocationInputMetadata = (invocation: RoutineInvocation): UserMessageInputMetadata => ({
-  method: "routine_invocation",
-  routine: { toolName: invocation.toolName, input: { ...invocation.input } },
-});
 
 export class ChatSessionPreparer {
   constructor(
@@ -557,21 +532,12 @@ export class ChatSessionPreparer {
     const awaitedSensitiveSlotKeys = existingUserMessage
       ? []
       : await timed("routineState", () => this.sensitiveSlotsAwaitedFor(conversation, revisionResolved.routines));
-    const userMessageInputMetadata = input.routineInvocation
-      ? routineInvocationInputMetadata(input.routineInvocation)
-      : input.inputMetadata;
-    const userMessage = existingUserMessage?.message ?? await timed("userMessage", () => this.messageRepository.create({
-      conversationId: persistedConversation.id,
-      workspaceId: input.workspaceId,
-      role: "user",
-      content: input.query,
-      ...(awaitedSensitiveSlotKeys.length > 0
-        ? { metadata: { ...userMessageInputMetadata, ...sensitiveTurnMetadata(awaitedSensitiveSlotKeys) } }
-        : { inputMetadata: userMessageInputMetadata }),
+    const userMessage = existingUserMessage?.message ?? await timed("userMessage", () => storeTurnUserMessage(this.messageRepository, {
+      ...input, conversationId: persistedConversation.id, sensitiveSlotKeys: awaitedSensitiveSlotKeys, referenceTimeZone,
     }));
     // A message that answers a sensitive field is never restated as a facet.
     if (!existingUserMessage && awaitedSensitiveSlotKeys.length === 0) {
-      this.enqueueFacetExtraction(userMessage, persistedConversation);
+      enqueueFacetExtraction(this.facetExtractionJobs, this.logger, userMessage, persistedConversation);
     }
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
@@ -753,35 +719,6 @@ export class ChatSessionPreparer {
     }
     const active = await this.routineStates.loadActive({ sessionId: conversation.id });
     return active ? sensitiveSlotsAwaited(routines, active) : [];
-  }
-
-  /**
-   * Fire-and-forget: a queue outage must never fail the turn that triggered it, so the
-   * enqueue promise is never awaited by the caller and its rejection is caught here.
-   */
-  private enqueueFacetExtraction(userMessage: MessageRecord, conversation: ConversationRecord): void {
-    if (!this.facetExtractionJobs) {
-      return;
-    }
-    if (!isEligibleForFacetExtraction({
-      role: userMessage.role,
-      source: userMessage.source,
-      sourceChannel: conversation.sourceChannel,
-    })) {
-      return;
-    }
-    void this.facetExtractionJobs
-      .enqueue({ messageId: userMessage.id, workspaceId: userMessage.workspaceId })
-      .catch((error: unknown) => {
-        this.logger?.warn(
-          {
-            err: error,
-            workspaceId: userMessage.workspaceId,
-            messageId: userMessage.id,
-          },
-          "Facet extraction enqueue failed",
-        );
-      });
   }
 
   private async promoteBootstrapGreeting(

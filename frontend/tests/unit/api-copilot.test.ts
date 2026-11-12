@@ -81,6 +81,17 @@ describe('copilotApi', () => {
     )
   })
 
+  it('reads the empty state in the operator\'s language with the dashboard session', async () => {
+    requestMock.mockResolvedValue({ phase: 'open', greeting: null, suggestions: [] })
+
+    const { copilotApi } = await import('@/lib/api-copilot')
+    await copilotApi.getEmptyState('pt-BR')
+    await copilotApi.getEmptyState(null)
+
+    expect(requestMock).toHaveBeenNthCalledWith(1, '/copilot/empty-state?locale=pt-BR', { method: 'GET', signal: undefined }, { withSession: true })
+    expect(requestMock).toHaveBeenNthCalledWith(2, '/copilot/empty-state', { method: 'GET', signal: undefined }, { withSession: true })
+  })
+
   it('sends the CSRF header when approving a reviewed proposal', async () => {
     requestMock.mockResolvedValueOnce({ status: 'approved' })
 

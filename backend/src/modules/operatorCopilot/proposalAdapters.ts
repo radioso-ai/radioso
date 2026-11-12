@@ -59,7 +59,7 @@ import { reviewedApplyError, reviewedCommitHook } from "./reviewedAtomicApply.js
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableService } from "../context-variables/public.js";
 import { isOwnerRefusal, isStale, staleReason, versionDate, versionToken } from "./proposalVersioning.js";
-import { routineValidationRefusal } from "./routineValidationRefusal.js";
+import { diagnosticsIntroducedBy, routineValidationRefusal } from "./routineValidationRefusal.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import {
   recipientEmailChangeMetadata,
@@ -1103,10 +1103,8 @@ export const createRoutineCopilotProposalAdapter = (deps: {
       }
       const before = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { id: routine.id });
       const after = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: patched });
-      // Only diagnostics this edit *introduces* block it. A routine that was already failing
-      // validation must stay editable, or the one change that would fix it cannot be proposed.
-      const carried = new Set(before.diagnostics.map(diagnosticIdentity));
-      const introduced = after.diagnostics.filter((diagnostic) => !carried.has(diagnosticIdentity(diagnostic)));
+      // Only diagnostics this edit *introduces* block it.
+      const introduced = diagnosticsIntroducedBy(before.diagnostics, after.diagnostics);
       // Never the raw diagnostic sentence: RoutineValidationDiagnostic.message can embed authored
       // content (e.g. a slot name typed by the operator). The same canonical revision_invalid shape
       // prepare_routine_structure uses keeps this a caller-correctable refusal instead of a bare
@@ -1130,14 +1128,6 @@ export const createRoutineCopilotProposalAdapter = (deps: {
     },
   };
 };
-
-/**
- * Identifies a diagnostic across an edit. Locations address stable ids, except routine-level ones,
- * which carry the routine's name — so renaming a routine would otherwise look like it introduced
- * every routine-level diagnostic the routine already had, and block the rename.
- */
-const diagnosticIdentity = (diagnostic: RoutineValidationDiagnostic): string =>
-  `${diagnostic.code}@${diagnostic.location.startsWith("routine:") ? "routine:" : diagnostic.location}`;
 
 const findDirectiveById = async (
   service: Pick<AuthoredDirectiveService, "list">,

@@ -403,6 +403,17 @@ describe("model-facing descriptions", () => {
     expect(descriptor.description).toContain("only when the operator asks");
   });
 
+  it("tells the model a routine edit takes consents whole, and only in the operator's own wording (#1544)", () => {
+    // Consent wording is legal text a visitor agrees to, so Ray never drafts it: it proposes only
+    // what the operator wrote, verbatim, and asks for the wording when it has none.
+    const descriptor = realCatalog().find((candidate) => candidate.name === "propose_routine_edit")!;
+
+    expect(descriptor.description).toContain("`consents`");
+    expect(descriptor.description).toContain("verbatim");
+    expect(descriptor.description).toMatch(/never write/);
+    expect(descriptor.description).toMatch(/ask for/i);
+  });
+
   it("keeps proposing distinguishable from applying, for the tools that say so", () => {
     // Collapsing the two descriptions dropped "it does not change configuration" from four propose
     // tools, and the live suite caught it immediately: `propose_routine_lifecycle` was left saying

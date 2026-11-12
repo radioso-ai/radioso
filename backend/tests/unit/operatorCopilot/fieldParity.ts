@@ -74,11 +74,11 @@ const routineStructuralPreparationNesting = permanent(
 const routineStructuralPreparationExposureViaOwnTool = permanent(
   "Reachable nested under `draft.exposure` when creating a routine; for an existing routine, exposure is one concern with its own reviewed card, propose_routine_exposure, rather than an `operations[]` entry here.",
 );
-const routineConsentsAwaitRayDescriptor = deferred(
-  "A routine's consents (#1544) carry the operator's own wording, shown to visitors verbatim. Ray proposes consents only once its descriptor takes that wording from the operator unchanged and an eval case holds it to that; until then propose_routine drafts none, and propose_routine_edit has no field for them.",
+const routineIntentNeverDraftsConsents = permanent(
+  "A routine's consents (#1544) carry the operator's own wording, shown to visitors verbatim, and Ray never writes consent wording. propose_routine has a model draft the whole routine from free-text `intent`, so it drafts none; a new routine's consents arrive through propose_routine_edit's `changes.consents`, in the operator's words.",
 );
-const routineStructuralPreparationConsentsUnreachable = deferred(
-  "Reachable only when creating a routine, nested under `draft.consents`; no `operations[]` entry edits an existing routine's consents, for the same reason propose_routine_edit has no field for them.",
+const routineStructuralPreparationConsentsViaEdit = permanent(
+  "Reachable nested under `draft.consents` when creating a routine; for an existing routine, consents are one concern edited whole through propose_routine_edit's `changes.consents` rather than an `operations[]` entry here.",
 );
 const routineStructuralPreparationCompletionExportUnreachable = deferred(
   "Reachable only when creating a routine, nested under `draft.completionExport`; no `operations[]` entry updates an existing routine's completion-export destination, so editing one waits on the same Wave 5 webhook-destination review as propose_routine_edit's gap.",
@@ -217,13 +217,12 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
   },
   propose_routine: {
     ...fields(["name", "enabled", "activation", "slots", "steps", "transitions", "terminals", "completionExport", "exposure"], routineIntentDrafted),
-    ...fields(["consents"], routineConsentsAwaitRayDescriptor),
+    ...fields(["consents"], routineIntentNeverDraftsConsents),
   },
   propose_routine_edit: {
-    ...fields(["name", "enabled", "activation", "slots", "steps", "terminals", "exposure"], routineEditFieldPatchNesting),
+    ...fields(["name", "enabled", "activation", "slots", "steps", "terminals", "exposure", "consents"], routineEditFieldPatchNesting),
     ...fields(["transitions"], routineCannotReworkBranching),
     ...fields(["completionExport"], routineEditCompletionExportUnreachable),
-    ...fields(["consents"], routineConsentsAwaitRayDescriptor),
   },
   propose_routine_exposure: {
     ...fields(["exposure"], routineExposureCarriedFlat),
@@ -233,7 +232,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["name", "enabled", "activation", "slots", "steps", "terminals", "transitions"], routineStructuralPreparationNesting),
     ...fields(["exposure"], routineStructuralPreparationExposureViaOwnTool),
     ...fields(["completionExport"], routineStructuralPreparationCompletionExportUnreachable),
-    ...fields(["consents"], routineStructuralPreparationConsentsUnreachable),
+    ...fields(["consents"], routineStructuralPreparationConsentsViaEdit),
   },
   propose_skill_config: {
     ...fields(["replaceConfig"], skillConfigAlwaysMergesNeverReplaces),
@@ -307,4 +306,8 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
 //   11 -> 14 the routine create and update bodies gained `consents` (#1544), which propose_routine,
 //            propose_routine_edit, and prepare_routine_structure (for an existing routine) do not
 //            carry until Ray's consent descriptor exists.
-export const maxDeferredFieldParityExclusions = 14;
+//   14 -> 11 propose_routine_edit carries `consents` in its `changes` patch, under a descriptor that
+//            takes consent wording only verbatim from the operator. propose_routine never drafts
+//            consents and prepare_routine_structure leaves them to propose_routine_edit, both by
+//            design, so the three deferrals are retired.
+export const maxDeferredFieldParityExclusions = 11;

@@ -10,6 +10,7 @@ import {
   formToRoutineDraft,
   renderedDiagnosticTargets,
   routineContentUpdatePayload,
+  routineDraftError,
   routineLevelDiagnostics,
   routineToForm,
   type DiagnosticTarget,
@@ -453,6 +454,24 @@ describe('routine form transforms', () => {
     expect(formToRoutineDraft(createEmptyRoutineForm())).not.toHaveProperty('exposure')
   })
 
+  it('carries consents through the form model, so the editor can show and save them (#1544)', () => {
+    const consents = [{ key: 'contact', slotKeys: ['email'], onDecline: 'handoff' as const, variants: [{ locale: 'en', body: 'We ask for your email.', agreeLabel: 'Yes', declineLabel: 'No' }] }]
+    const form = routineToForm({ ...routine, consents })
+
+    expect(form.consents).toEqual(consents)
+    expect(formToRoutineDraft(form).consents).toEqual(consents)
+    expect(formToRoutineDraft(routineToForm({ ...routine, consents: [] })).consents).toEqual([])
+    expect(formToRoutineDraft(routineToForm(routine))).not.toHaveProperty('consents')
+  })
+
+  it('holds back the save of a consent left covering no field, naming what to fix (#1544)', () => {
+    const consent = { key: 'contact', slotKeys: ['email'], onDecline: 'continue' as const, variants: [{ locale: 'en', body: 'Body', agreeLabel: 'Yes', declineLabel: 'No' }] }
+    const draft = formToRoutineDraft(routineToForm(routine))
+
+    expect(routineDraftError({ ...draft, consents: [consent] })).toBeNull()
+    expect(routineDraftError({ ...draft, consents: [{ ...consent, slotKeys: [] }] })).toBe('Each consent needs a field it covers.')
+  })
+
   it('carries each ending\'s operator notice through the form model, so a dashboard save never drops it', () => {
     const operatorNotice = { subject: 'Intake: {{slot.email}}', intro: null }
     const form = routineToForm({ ...routine, terminals: [{ ...routine.terminals[0], operatorNotice }] })
@@ -712,6 +731,18 @@ describe('routine diagnostic anchoring', () => {
     ]
 
     expect(routineLevelDiagnostics(diagnostics, targets)).toEqual([diagnosticAt('routine:Collect intake')])
+  })
+
+  it('anchors a consent finding to the consent the document shows, and keeps one for a consent it lacks at routine level (#1544)', () => {
+    const consent = { key: 'contact', slotKeys: ['email'], onDecline: 'continue' as const, variants: [{ locale: 'en', body: 'Body', agreeLabel: 'Yes', declineLabel: 'No' }] }
+    const targets = renderedDraftTargets({ ...formToRoutineDraft(anchoredForm()), consents: [consent] })
+
+    expect(diagnosticTargetFor(diagnosticAt('consent:contact.variants[0].body'))).toEqual({ scope: 'consent', id: 'contact' })
+    expect(diagnosticTargetFor(diagnosticAt('consent:contact'))).toEqual({ scope: 'consent', id: 'contact' })
+    expect(routineLevelDiagnostics([
+      diagnosticAt('consent:contact.steps.ask_email'),
+      diagnosticAt('consent:gone.variants'),
+    ], targets)).toEqual([diagnosticAt('consent:gone.variants')])
   })
 
   it('falls back to the routine level for a diagnostic no artifact renders', () => {

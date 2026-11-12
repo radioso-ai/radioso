@@ -1,7 +1,7 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, BellRing, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, BellRing, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
@@ -81,15 +81,17 @@ export function RoutineDocumentHeader({ doc, editable = false, onEdit, editor }:
   return editor ? <div className="rounded-md border border-border bg-muted/30 p-3">{editor}</div> : <button type="button" aria-label="Starts when" onClick={onEdit} disabled={!editable} className="group block text-left disabled:cursor-default"><span className="block text-xs font-semibold text-foreground">Starts when</span><span className="mt-1 block text-sm text-muted-foreground">{trigger}</span>{toolName ? <span className="mt-1 block text-xs text-muted-foreground">Also a tool for calling agents: <code className="font-mono">{toolName}</code></span> : null}<EditHint editable={editable} /></button>
 }
 
-export function RoutineInformationSection({ slots, editable = false, editingSlotId, onEditSlot, renderEditor, notesFor }: {
+export function RoutineInformationSection({ slots, editable = false, editingSlotId, onEditSlot, renderEditor, notesFor, promptFor }: {
   slots: RoutineBlockSlot[]
   editable?: boolean
   editingSlotId?: string | null
   onEditSlot?: (slot: RoutineBlockSlot) => void
   renderEditor?: (slot: RoutineBlockSlot) => ReactNode
   notesFor?: (slot: RoutineBlockSlot) => string[] | undefined
+  // Something the field still needs, shown under it whether or not it is open for editing.
+  promptFor?: (slot: RoutineBlockSlot) => ReactNode
 }) {
-  return <section aria-labelledby="routine-document-information" className="space-y-3"><h2 id="routine-document-information" className="text-xl font-semibold tracking-tight text-foreground">Collected information</h2>{slots.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No information is collected.</p> : <ul className="mt-2 space-y-0.5">{slots.map((slot) => <li key={slot.stableSlotId} className={editingSlotId === slot.stableSlotId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'text-sm'}>{editingSlotId === slot.stableSlotId ? renderEditor?.(slot) : <button type="button" aria-label={slot.key} onClick={() => onEditSlot?.(slot)} disabled={!editable} className="group flex w-full items-baseline gap-2 text-left disabled:cursor-default"><span className="shrink-0 font-medium text-foreground">{slot.key}</span><span className="shrink-0 text-xs text-muted-foreground">{slot.type}{slot.required ? ', required' : ', optional'}{slot.sensitivity === 'sensitive' ? ', sensitive' : ''}{slot.mutable ? ', editable after completion' : ''}</span>{slot.description ? <span className="min-w-0 truncate text-xs text-muted-foreground">{slot.description}</span> : null}<EditHint editable={editable} /></button>}{editingSlotId === slot.stableSlotId ? null : <DiagnosticNotes notes={notesFor?.(slot)} />}</li>)}</ul>}</section>
+  return <section aria-labelledby="routine-document-information" className="space-y-3"><h2 id="routine-document-information" className="text-xl font-semibold tracking-tight text-foreground">Collected information</h2>{slots.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No information is collected.</p> : <ul className="mt-2 space-y-0.5">{slots.map((slot) => <li key={slot.stableSlotId} className={editingSlotId === slot.stableSlotId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'text-sm'}>{editingSlotId === slot.stableSlotId ? renderEditor?.(slot) : <button type="button" aria-label={slot.key} onClick={() => onEditSlot?.(slot)} disabled={!editable} className="group flex w-full items-baseline gap-2 text-left disabled:cursor-default"><span className="shrink-0 font-medium text-foreground">{slot.key}</span><span className="shrink-0 text-xs text-muted-foreground">{slot.type}{slot.required ? ', required' : ', optional'}{slot.sensitivity === 'sensitive' ? ', sensitive' : ''}{slot.mutable ? ', editable after completion' : ''}</span>{slot.description ? <span className="min-w-0 truncate text-xs text-muted-foreground">{slot.description}</span> : null}<EditHint editable={editable} /></button>}{editingSlotId === slot.stableSlotId ? null : <DiagnosticNotes notes={notesFor?.(slot)} />}{promptFor?.(slot)}</li>)}</ul>}</section>
 }
 
 // A hand-off always tells the team, so only a finish that does says so.
@@ -167,13 +169,15 @@ function RoutineBranchRow({ branch, slotNames, index, editable = false, editing 
   </button></li>
 }
 
-export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditApproval, onEditBranch, onAddBranch, onEditStep, onMoveStepUp, onMoveStepDown, onRemoveStep, canMoveStepUp = false, canMoveStepDown = false, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor, insertStepAfter }: {
+export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, asksConsentFirst = false, editable = false, editing, onEditInstruction, onEditApproval, onEditBranch, onAddBranch, onEditStep, onMoveStepUp, onMoveStepDown, onRemoveStep, canMoveStepUp = false, canMoveStepDown = false, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor, insertStepAfter }: {
   step: RoutineBlockStep
   stepIndex: number
   slotNames: Map<string, string>
   index?: RoutineDocumentIndex
   nextStepId?: string | null
   notes?: string[]
+  // The step collects a field a consent covers, so the visitor is asked that consent first (#1544).
+  asksConsentFirst?: boolean
   editable?: boolean
   editing?: string | null
   onEditInstruction?: () => void
@@ -296,6 +300,7 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
           {editing === 'step' ? null : instruction}
         </div>
         {editing === 'step' ? <div className="mt-2 rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : null}
+        {asksConsentFirst ? <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground"><ShieldCheck className="h-3 w-3" />Asks consent first</p> : null}
         {details}
       </div>
     </div>

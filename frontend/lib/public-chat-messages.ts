@@ -11,6 +11,7 @@ import type {
   Citation,
   SkillStreamPayload,
 } from '@/lib/api'
+import type { WebsiteEmbedCopy } from '@/lib/embed-widget'
 
 /** A message in the visitor's thread, as the public chat keeps it: from history, or as it streams in. */
 export interface ChatMessage {
@@ -37,6 +38,8 @@ export interface ChatMessage {
   source?: ChatConversationDetail['messages'][number]['source']
   /** Display name of the human operator who sent this reply (takeover). */
   operatorDisplayName?: string
+  /** Withheld after the visitor's consent to what it carried was withdrawn: its text is the redaction marker. */
+  withheld?: boolean
 }
 
 const resolveOwnFeedback = (
@@ -90,7 +93,33 @@ export const toChatMessagesFromTurns = (
       status: 'complete' as const,
       source: message.source,
       operatorDisplayName: message.operatorDisplayName,
+      ...(message.withheld ? { withheld: true } : {}),
     }))
+
+/**
+ * The thread as the visitor reads it. A withheld message shows the localized label in place of
+ * its redaction marker. A turn that failed before producing any text shows the localized failure
+ * copy: the cause-specific one when the agent is out of conversation quota, the generic one
+ * otherwise. Resolved from the copy, not in the chat context, so these strings take the same path
+ * as every other visitor-facing string: built-in locale pack, then the agent's copy pack, then
+ * operator overrides.
+ */
+export const visitorThreadMessages = (
+  messages: ChatMessage[],
+  copy: Pick<WebsiteEmbedCopy, 'publicChatAgentUnavailableMessage' | 'publicChatMessageFailedMessage' | 'publicChatWithheldMessageLabel'>,
+): ChatMessage[] =>
+  messages.map((message) => {
+    if (message.withheld) {
+      return { ...message, content: copy.publicChatWithheldMessageLabel }
+    }
+    if (message.status === 'error' && !message.content) {
+      return {
+        ...message,
+        content: message.failure === 'unavailable' ? copy.publicChatAgentUnavailableMessage : copy.publicChatMessageFailedMessage,
+      }
+    }
+    return message
+  })
 
 export const toChatMessages = (
   detail: ChatConversationDetail,

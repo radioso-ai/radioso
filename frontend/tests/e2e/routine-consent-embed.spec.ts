@@ -53,8 +53,10 @@ const CONSENT_CHIPS = [
  * The conversation as history returns it after the turns sent so far. Every agent message keeps the
  * chips it was offered with, the decided consent's included, as the backend stores them.
  */
-const storedMessages = (sentBodies: Array<Record<string, unknown>>) => {
+const storedMessages = (sentBodies: Array<Record<string, unknown>>, withdrawn: boolean) => {
   const createdAt = new Date().toISOString();
+  // Withdrawn after the visitor named an injury: that answer and the reply to it read as withheld.
+  const withheld = { reason: "consent_withdrawn", at: createdAt };
   return [
     { id: "visitor-1", role: "user", content: FIRST_MESSAGE, createdAt },
     { id: PROMPT_ID, role: "assistant", content: WORDING, createdAt, suggestions: CONSENT_CHIPS },
@@ -64,6 +66,12 @@ const storedMessages = (sentBodies: Array<Record<string, unknown>>) => {
           { id: NEXT_STEP_ID, role: "assistant", content: NEXT_STEP, createdAt },
         ]
       : []),
+    ...(withdrawn
+      ? [
+          { id: "visitor-3", role: "user", content: "[redacted]", createdAt, withheld },
+          { id: "reply-3", role: "assistant", content: "[redacted]", createdAt, withheld },
+        ]
+      : []),
   ];
 };
 
@@ -71,7 +79,7 @@ const storedMessages = (sentBodies: Array<Record<string, unknown>>) => {
  * The agent's turns: the first message reaches the consent, the next one goes on to the covered
  * step. A reload finds the conversation and reads it back from history.
  */
-const mockChat = async (page: Page, sentBodies: Array<Record<string, unknown>>) => {
+const mockChat = async (page: Page, sentBodies: Array<Record<string, unknown>>, withdrawn: () => boolean = () => false) => {
   await page.route("**/backend/api/v1/**", (route) => route.fulfill({ status: 204, body: "" }));
   // Before the first turn there is no conversation to find, so the list gets the empty answer above.
   await page.route((url) => url.pathname === `/backend/api/v1/public/chat/${TOKEN}`, (route) =>
@@ -81,7 +89,7 @@ const mockChat = async (page: Page, sentBodies: Array<Record<string, unknown>>) 
   await page.route((url) => url.pathname === `/backend/api/v1/public/chat/${TOKEN}/history/${CONVERSATION_ID}`, (route) =>
     fulfillJson(route, {
       conversationId: CONVERSATION_ID,
-      messages: storedMessages(sentBodies),
+      messages: storedMessages(sentBodies, withdrawn()),
       hasOlderMessages: false,
       nextCursor: null,
       tailCursor: null,
@@ -172,4 +180,23 @@ test("a reload keeps the buttons on a consent still waiting for an answer, and b
   await expect(frame.getByRole("button", { name: "I agree", exact: true })).toHaveCount(0);
   await expect(frame.getByRole("button", { name: "No thanks", exact: true })).toHaveCount(0);
   expect(sentBodies).toHaveLength(2);
+});
+
+test("after the operator withdraws the consent, a reload shows the visitor's withheld messages by their label, never the redaction marker", async ({ page }) => {
+  const sentBodies: Array<Record<string, unknown>> = [];
+  let withdrawn = false;
+  await mockChat(page, sentBodies, () => withdrawn);
+  let frame = await openEmbed(page);
+  await frame.getByRole("textbox").fill(FIRST_MESSAGE);
+  await frame.getByRole("button", { name: "Send message" }).click();
+  await frame.getByRole("button", { name: "I agree", exact: true }).click();
+  await expect(frame.getByText(NEXT_STEP)).toBeVisible();
+
+  withdrawn = true;
+  await page.reload();
+  frame = await openChatFrame(page);
+
+  await expect(frame.getByText("Withheld after consent was withdrawn")).toHaveCount(2);
+  await expect(frame.getByText("[redacted]")).toHaveCount(0);
+  await expect(frame.getByText(NEXT_STEP)).toBeVisible();
 });

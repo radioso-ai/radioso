@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-12T21:27:46.534Z",
+  "generatedAt": "2026-11-12T21:36:41.967Z",
   "passThreshold": 1,
   "cases": {
     "directive-refund-empathy": {
@@ -323,18 +323,18 @@
       "samples": 5
     },
     "reply-blocks-guest-house-photos": {
+      "status": "fail",
+      "passRate": 0.6666666666666666,
+      "samples": 3
+    },
+    "reply-blocks-hiking-books": {
       "status": "pass",
       "passRate": 1,
       "samples": 3
     },
-    "reply-blocks-hiking-books": {
-      "status": "fail",
-      "passRate": 0,
-      "samples": 3
-    },
     "reply-blocks-returns-policy-no-pictures": {
       "status": "fail",
-      "passRate": 0.6666666666666666,
+      "passRate": 0.3333333333333333,
       "samples": 3
     },
     "reply-blocks-unanswered-no-pictures": {

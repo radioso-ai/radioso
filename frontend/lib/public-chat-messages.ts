@@ -1,9 +1,10 @@
+import { isHumanAuthoredSource } from '@/lib/reply-attribution'
 import type {
+  ActivitySummary,
+  ActivityTrace,
   AnswerFeedbackEntry,
   AnswerFeedbackState,
   AnswerSegment,
-  ActivitySummary,
-  ActivityTrace,
   ChatConversationDetail,
   ChatSuggestion,
   ChatUserInputMetadata,
@@ -12,8 +13,7 @@ import type {
   SkillStreamPayload,
 } from '@/lib/api'
 
-// The public chat's messages, and how a stored conversation becomes them: a visitor sees its own
-// feedback, and never the citations a suggestion carries or a segment's internal fields.
+/** A message in the visitor's thread, as the public chat keeps it: from history, or as it streams in. */
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -108,3 +108,44 @@ export const getLatestAssistantMessage = (
   const assistantMessages = toChatMessages(detail, chatSessionId).filter((message) => message.role === 'assistant')
   return assistantMessages.at(-1) ?? null
 }
+
+export const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
+  message.role === 'assistant' && isHumanAuthoredSource(message.source)
+
+export const clearMessageSuggestions = (messages: ChatMessage[]): ChatMessage[] =>
+  messages.map((message) =>
+    message.suggestions && message.suggestions.length > 0
+      ? {
+          ...message,
+          suggestions: undefined,
+        }
+      : message,
+  )
+
+export const restoreMessageSuggestions = (
+  messages: ChatMessage[],
+  previousMessages: ChatMessage[],
+): ChatMessage[] => {
+  const suggestionsByMessageId = new Map(
+    previousMessages
+      .filter((message) => message.suggestions && message.suggestions.length > 0)
+      .map((message) => [message.id, message.suggestions]),
+  )
+
+  return messages.map((message) =>
+    suggestionsByMessageId.has(message.id)
+      ? {
+          ...message,
+          suggestions: suggestionsByMessageId.get(message.id),
+        }
+      : message,
+  )
+}
+
+/** The thread as it was before a turn that did not run: both of its messages gone and the suggestions back. */
+export const withoutTurn = (
+  messages: ChatMessage[],
+  turnMessageIds: readonly string[],
+  messagesBefore: ChatMessage[],
+): ChatMessage[] =>
+  restoreMessageSuggestions(messages.filter((message) => !turnMessageIds.includes(message.id)), messagesBefore)

@@ -166,6 +166,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       contactRequestsEnabled: z.boolean(),
       webhookExportsEnabled: z.boolean(),
       handoffOnRetrievalMiss: z.boolean(),
+      visitorImagesEnabled: z.boolean().openapi({
+        description: "Whether visitors and API callers may attach photos to a message. The agent's chat model reads each photo at upload, so this takes effect only when that model reads images.",
+      }),
       contactRequestDelivery: AgentContactRequestDeliverySchema,
       theme: z.object({
         brand: z.string(),
@@ -212,6 +215,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const AgentDetailSchema = registry.register(
     "AgentDetail",
     ConversationAgentSchema.extend({
+      chatModelReadsImages: z.boolean().openapi({
+        description: "Computed, read-only: whether the model the agent answers with reads images. It is decided from the agent's `chatModelOverride`, the workspace's chat model and the plan, as a turn is, and without touching keys. Photos reach visitors only when this is true and `visitorImagesEnabled` is on; it is true or false whatever `visitorImagesEnabled` says, and a model Radioso cannot vet (an `openai-compatible` endpoint, or one outside the catalogue) reads as false. A request cannot set it.",
+      }),
       voiceCallReadiness: VoiceCallReadinessSchema.optional().openapi({
         description: "Present for dashboard sessions: whether the agent's voice is ready for the website embed's calls switch.",
       }),
@@ -237,6 +243,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       contactRequestsEnabled: z.boolean().optional(),
       webhookExportsEnabled: z.boolean().optional(),
       handoffOnRetrievalMiss: z.boolean().optional(),
+      visitorImagesEnabled: z.boolean().optional(),
       contactRequestDelivery: AgentContactRequestDeliveryRequestSchema.optional(),
       theme: z.object({
         brand: z.string().optional(),
@@ -722,6 +729,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       resumeToken: z.string(),
       assistantBootstrapActive: z.boolean(),
       assistantAvatarUrl: z.string().nullable().optional(),
+      acceptsImages: z.boolean().openapi({
+        description: "Whether the visitor may attach photos to a message: the agent has `visitorImagesEnabled` on and its chat model reads images. Upload with `POST /api/v1/public/chat/{token}/images`.",
+      }),
       theme: z.object({
         brand: z.string(),
         brandText: z.string(),

@@ -166,6 +166,7 @@ describe("default erasers", () => {
       "whatsapp",
       "audience-pulse",
       "voice-channel",
+      "visitor-images",
     ]);
     expect(defaultVerifiedCustomerDataErasers.map((bind) => bind(db).owner)).toEqual(["context-variables"]);
     expect(defaultVisitorKeyDataErasers.map((bind) => bind(db).owner)).toEqual(["voice-channel"]);

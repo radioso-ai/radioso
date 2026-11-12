@@ -353,6 +353,7 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
         "email_messages",
         "routine_actions",
         "routine_values",
+        "visitor_images",
         "visitors",
       ]);
       const conversationIds = sections.conversations.map((conversation) => conversation.id);

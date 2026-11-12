@@ -3,6 +3,7 @@ import { z } from "zod";
 import { replyBlocksCapabilitySchema } from "../../../modules/chat/contracts/index.js";
 import { metadataFilterSchema } from "./metadataFilterSchema.js";
 import { chatMessageSchema } from "./textInputLimits.js";
+import { visitorImageIdsSchema } from "./visitorImageSchemas.js";
 import { userTimeZoneSchema } from "./timeZoneSchemas.js";
 
 const localeHintSchema = z.string().trim().max(35);
@@ -49,6 +50,8 @@ export const assistantChatSchema = z.object({
   conversationId: z.string().uuid().optional(),
   bootstrapGreetingId: z.string().uuid().optional(),
   message: chatMessageSchema.optional(),
+  /** Photos uploaded with `POST /api/v1/assistant/images` for this message; needs `agentId`. */
+  imageIds: visitorImageIdsSchema.optional(),
   startConversation: z.boolean().optional().default(false),
   stream: z.boolean().default(false),
   includeDebug: z.boolean().optional().default(false),
@@ -65,11 +68,18 @@ export const assistantChatSchema = z.object({
   // activate a draft. Ephemeral — never persisted to the routine catalog.
   previewRoutineIds: z.array(z.string().uuid()).max(20).optional(),
 }).superRefine((value, ctx) => {
-  if (!value.message && !value.startConversation) {
+  if (!value.message && !value.startConversation && !value.imageIds) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "message is required unless startConversation is true",
+      message: "message is required unless startConversation is true or imageIds is present",
       path: ["message"],
+    });
+  }
+  if (value.imageIds && (value.startConversation || !value.agentId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "imageIds needs agentId and a persisted user turn",
+      path: ["imageIds"],
     });
   }
   if (value.startConversation && value.conversationId) {

@@ -13,14 +13,22 @@ import {
 
 import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import { createClientId } from '@/lib/client-id'
-import { contrastRatio, mixHex, mixHexRgba, pickForeground, relativeLuminance } from '@/lib/color'
+import { deriveThemeOverridesFromModel } from '@/lib/public-chat-theme'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
 import { publicChatUnavailableReasonOf, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
-import { isHumanAuthoredSource } from '@/lib/reply-attribution'
+import {
+  clearMessageSuggestions,
+  getLatestAssistantMessage,
+  isHumanAgentReply,
+  restoreMessageSuggestions,
+  stripPublicSuggestionCitations,
+  toChatMessages,
+  toPublicAnswerSegments,
+  toChatMessagesFromTurns,
+  withoutTurn,
+  type ChatMessage,
+} from '@/lib/public-chat-messages'
 
-const MIN_LEGIBLE_CONTRAST = 3
-const ensureLegibleForeground = (background: string, foreground: string) =>
-  contrastRatio(background, foreground) >= MIN_LEGIBLE_CONTRAST ? foreground : pickForeground(background)
 import {
   clearStoredAnonymousSession,
   publicChatApi,
@@ -34,64 +42,25 @@ import {
   type ChatUserInputMetadata,
   type ClientContextCapabilities,
   type PublicChatIntakeAction,
-  type ErrorResponse,
   type WebsiteEmbedPageContext,
   type WebsiteEmbedCopyPacks,
-  type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { choosePrivacyNotice, type ShownPrivacyNotice } from '@/lib/privacy-notice'
 import { withReplyBlocksCapability } from '@/lib/reply-blocks'
-import {
-  getLatestAssistantMessage,
-  stripPublicSuggestionCitations,
-  toChatMessages,
-  toChatMessagesFromTurns,
-  toPublicAnswerSegments,
-  type ChatMessage,
-} from '@/lib/chat-message-mapping'
+import { rememberVisitorImage, visitorImageCacheKey } from '@/lib/visitor-image-blob-cache'
+import { withVisitorImageInput } from '@/lib/visitor-image-input'
+import { getErrorResponse, isRateLimitError, isUsageLimitExceededError, unsentImageSendOf, type UnsentImageSend } from '@/lib/public-chat-errors'
 
-export type { ChatMessage } from '@/lib/chat-message-mapping'
+export type { ChatMessage } from '@/lib/public-chat-messages'
 
-export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
-  if (!theme) {
-    return null
-  }
-  const surface = theme.surface
-  const brand = theme.brand
-  const text = ensureLegibleForeground(surface, theme.text)
-  const brandText = ensureLegibleForeground(brand, theme.brandText)
-
-  const isSurfaceDark = relativeLuminance(surface) < 0.5
-  const shadowSurface = isSurfaceDark
-    ? '0 24px 60px rgba(0, 0, 0, 0.55)'
-    : '0 24px 60px rgba(15, 23, 42, 0.28)'
-  const shadowBrand = relativeLuminance(brand) < 0.5
-    ? '0 18px 40px rgba(0, 0, 0, 0.45)'
-    : '0 18px 40px rgba(15, 23, 42, 0.24)'
-
-  return {
-    launcherBackground: brand,
-    launcherForeground: brandText,
-    launcherBorder: mixHexRgba(brand, brandText, 0.16, 0.5),
-    launcherShadow: shadowBrand,
-    panelBackground: surface,
-    panelForeground: text,
-    panelBorder: mixHexRgba(surface, text, 0.18, 0.55),
-    panelShadow: shadowSurface,
-    accent: brand,
-    accentForeground: brandText,
-    mutedBackground: mixHex(surface, text, 0.06),
-    mutedForeground: mixHex(text, surface, 0.45),
-    inputBackground: surface,
-    inputForeground: text,
-    inputBorder: mixHex(surface, text, 0.2),
-    inputPlaceholder: mixHex(text, surface, 0.5),
-    assistantBubbleBackground: mixHex(surface, text, 0.04),
-    assistantBubbleForeground: text,
-    userBubbleBackground: brand,
-    userBubbleForeground: brandText,
-  }
+interface SendMessageOptions {
+  imageIds?: string[]
+  /**
+   * A send with photos that did not reach the point where the server takes them: nothing ran, the
+   * thread is as it was, and the caller gives the photos and the words back to the visitor.
+   */
+  onNotSent?: (reason: UnsentImageSend) => void
 }
 
 interface AnonymousChatContextValue {
@@ -115,7 +84,12 @@ interface AnonymousChatContextValue {
   rateLimitError: string | null
   retryAfterSeconds: number | null
   loadOlderMessages: () => Promise<void>
-  sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => Promise<void>
+  /** `imageIds` are photos already uploaded with `uploadImage`; the message may carry them with no text. */
+  sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata, options?: SendMessageOptions) => Promise<void>
+  /** Whether the agent takes photos in this chat: the session says, and an upload the agent refuses turns it off. */
+  acceptsImages: boolean
+  /** Uploads one photo for the visitor's session; resolves once the agent has read it. */
+  uploadImage: (file: File, signal: AbortSignal) => Promise<{ id: string }>
   startNewChat: () => Promise<void>
   trackAnalyticsEvent: (event: WebsiteEmbedAnalyticsInput) => void
   /** The visitor's language, as the greeting is asked for it; a voice call asks for the same. */
@@ -128,76 +102,6 @@ interface AnonymousChatContextValue {
 }
 
 const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(null)
-
-const getErrorResponse = (error: unknown): ErrorResponse['error'] | null => {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'error' in error &&
-    error.error &&
-    typeof error.error === 'object' &&
-    'code' in error.error &&
-    typeof error.error.code === 'string' &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error as ErrorResponse['error']
-  }
-
-  return null
-}
-
-const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds: number } | null => {
-  const structuredError = getErrorResponse(error)
-  if (structuredError?.code !== 'rate_limit_exceeded') {
-    return null
-  }
-
-  return {
-    message: structuredError.message,
-    retryAfterSeconds: Number(structuredError.retryAfterSeconds ?? 60),
-  }
-}
-
-// The account's conversation quota is exhausted. This is the only error code the
-// public route still answers with on this path when the agent cannot reply, so it
-// gets its own visitor-facing copy instead of the generic failure message. Quota
-// can be restored at any time, so the composer stays enabled either way.
-const isUsageLimitExceededError = (error: unknown): boolean =>
-  getErrorResponse(error)?.code === 'usage_limit_exceeded'
-
-const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
-  message.role === 'assistant' && isHumanAuthoredSource(message.source)
-
-const clearMessageSuggestions = (messages: ChatMessage[]): ChatMessage[] =>
-  messages.map((message) =>
-    message.suggestions && message.suggestions.length > 0
-      ? {
-          ...message,
-          suggestions: undefined,
-        }
-      : message,
-  )
-
-const restoreMessageSuggestions = (
-  messages: ChatMessage[],
-  previousMessages: ChatMessage[],
-): ChatMessage[] => {
-  const suggestionsByMessageId = new Map(
-    previousMessages
-      .filter((message) => message.suggestions && message.suggestions.length > 0)
-      .map((message) => [message.id, message.suggestions]),
-  )
-
-  return messages.map((message) =>
-    suggestionsByMessageId.has(message.id)
-      ? {
-          ...message,
-          suggestions: suggestionsByMessageId.get(message.id),
-        }
-      : message,
-  )
-}
 
 const INITIAL_MESSAGE_WINDOW_SIZE = 10
 const MESSAGE_WINDOW_SIZE = 50
@@ -270,6 +174,7 @@ export function AnonymousChatProvider({
   // shown at that moment without re-creating the send callback on every branding change.
   const shownPrivacyNoticeRef = useRef<ShownPrivacyNotice | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
+  const [acceptsImages, setAcceptsImages] = useState(false)
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [bootstrapGreetingId, setBootstrapGreetingId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
@@ -312,6 +217,7 @@ export function AnonymousChatProvider({
       setAssistantCopyPacks(session.copy ?? {})
       setBranding(session.branding ?? null)
       setIntakeActions(session.intakeActions ?? [])
+      setAcceptsImages(session.acceptsImages === true)
       return session
     },
     [clientContextCapabilities, pageContext, sessionChannel],
@@ -459,6 +365,7 @@ export function AnonymousChatProvider({
     setAssistantCopyPacks({})
     setBranding(null)
     setIntakeActions([])
+    setAcceptsImages(false)
     setConversationId(undefined)
     setBootstrapGreetingId(undefined)
     setHasOlderMessages(false)
@@ -477,6 +384,7 @@ export function AnonymousChatProvider({
       setAssistantCopyPacks(response.copy ?? {})
       setBranding(response.branding ?? null)
       setIntakeActions(response.intakeActions ?? [])
+      setAcceptsImages(response.acceptsImages === true)
 
       if (response.conversations.length === 0) {
         if (response.assistantBootstrapActive) {
@@ -766,9 +674,13 @@ export function AnonymousChatProvider({
   )
 
   const sendMessage = useCallback(
-    async (content: string, inputMetadata?: ChatUserInputMetadata) => {
+    async (content: string, inputMetadata?: ChatUserInputMetadata, options?: SendMessageOptions) => {
       const query = content.trim()
-      if (!query || isLoading || isHydrating || unavailable || sendInFlightRef.current) return
+      const imageIds = options?.imageIds ?? []
+      if ((!query && imageIds.length === 0) || isLoading || isHydrating || unavailable || sendInFlightRef.current) {
+        if (imageIds.length > 0) options?.onNotSent?.('not_started')
+        return
+      }
       sendInFlightRef.current = true
 
       try {
@@ -799,7 +711,7 @@ export function AnonymousChatProvider({
           role: 'user',
           content: query,
           createdAt: new Date().toISOString(),
-          inputMetadata,
+          inputMetadata: withVisitorImageInput(inputMetadata, query, imageIds),
           status: 'complete',
         }
 
@@ -830,6 +742,8 @@ export function AnonymousChatProvider({
           },
         ])
 
+        // Once the reply has started, the server has the message and its photos.
+        let streamed = false
         try {
           let didComplete = false
           let didCancel = false
@@ -841,7 +755,7 @@ export function AnonymousChatProvider({
             return publicChatApi.streamMessage(
               activeToken,
               {
-                message: query,
+                message: query || undefined,
                 stream: true,
                 conversationId: resolvedConversationId,
                 bootstrapGreetingId: resolvedConversationId ? undefined : resolvedBootstrapGreetingId,
@@ -849,6 +763,7 @@ export function AnonymousChatProvider({
                   ? { privacyNoticeVersion: shownPrivacyNoticeRef.current.version }
                   : {}),
                 inputMetadata,
+                ...(imageIds.length > 0 ? { imageIds } : {}),
                 userExpectedLocale: resolveAnonymousChatBootstrapLocale({
                   localeOverride,
                   pageContext,
@@ -859,10 +774,12 @@ export function AnonymousChatProvider({
               },
               {
                 onConversation: ({ conversationId: newId }) => {
+                  streamed = true
                   setConversationId(newId)
                   setBootstrapGreetingId(undefined)
                 },
                 onChunk: ({ text }) => {
+                  streamed = true
                   setMessages((prev) =>
                     prev.map((message) =>
                       message.id === assistantMessageId
@@ -1038,6 +955,21 @@ export function AnonymousChatProvider({
         } catch (error) {
           const structuredError = getErrorResponse(error)
           const rateLimit = isRateLimitError(error)
+          const unsent = imageIds.length > 0 && !streamed ? unsentImageSendOf(error) : null
+          if (unsent === 'images_refused' || unsent === 'not_sent') {
+            onAnalyticsEvent?.({
+              event: 'chat.failed',
+              subjectType: resolvedConversationId ? 'conversation' : undefined,
+              subjectId: resolvedConversationId,
+              properties: { inputMethod, errorCode: structuredError?.code ?? 'unknown_error', rateLimited: false },
+            })
+            setMessages((prev) => withoutTurn(prev, [assistantMessageId, userMessage.id], previousMessages))
+            setIsLoading(false)
+            // The server said the photos cannot go (turned off, or already sent), so the chat stops offering them.
+            if (unsent === 'images_refused') setAcceptsImages(false)
+            options?.onNotSent?.(unsent)
+            return
+          }
           if (rateLimit) {
             onAnalyticsEvent?.({
               event: 'chat.failed',
@@ -1052,13 +984,9 @@ export function AnonymousChatProvider({
             })
             setRateLimitError(rateLimit.message)
             setRetryAfterSeconds(rateLimit.retryAfterSeconds)
-            setMessages((prev) =>
-              restoreMessageSuggestions(
-                prev.filter((message) => message.id !== assistantMessageId && message.id !== userMessage.id),
-                previousMessages,
-              ),
-            )
+            setMessages((prev) => withoutTurn(prev, [assistantMessageId, userMessage.id], previousMessages))
             setIsLoading(false)
+            if (imageIds.length > 0) options?.onNotSent?.('rate_limited')
             return
           }
 
@@ -1162,6 +1090,24 @@ export function AnonymousChatProvider({
     () => resolveAnonymousChatBootstrapLocale({ localeOverride, pageContext }),
     [localeOverride, pageContext],
   )
+  const uploadImage = useCallback(
+    async (file: File, signal: AbortSignal) => {
+      try {
+        return await withPublicSessionRetry(async (activeToken) => {
+          const uploaded = await publicChatApi.uploadImage(activeToken, file, { locale: visitorLocale, signal })
+          // The thumbnail in the thread shows the photo the visitor just attached without fetching it back.
+          rememberVisitorImage(visitorImageCacheKey(activeToken, uploaded.id), file)
+          return uploaded
+        })
+      } catch (error) {
+        if (getErrorResponse(error)?.code === 'visitor_images_unavailable') {
+          setAcceptsImages(false)
+        }
+        throw error
+      }
+    },
+    [visitorLocale, withPublicSessionRetry],
+  )
   const privacyNotice = useMemo(
     () => choosePrivacyNotice(branding?.privacyNotice, visitorLocale),
     [branding, visitorLocale],
@@ -1192,6 +1138,8 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       loadOlderMessages,
       sendMessage,
+      acceptsImages,
+      uploadImage,
       startNewChat,
       trackAnalyticsEvent,
       visitorLocale,
@@ -1218,6 +1166,8 @@ export function AnonymousChatProvider({
       retryAfterSeconds,
       loadOlderMessages,
       sendMessage,
+      acceptsImages,
+      uploadImage,
       startNewChat,
       trackAnalyticsEvent,
       visitorLocale,

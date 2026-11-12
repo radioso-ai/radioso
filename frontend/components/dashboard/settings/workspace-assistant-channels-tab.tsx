@@ -105,8 +105,8 @@ const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, 
 })
 
 const liveAssistantBehaviorSettings = (settings: AssistantBehaviorSettings) => {
-  const { customInstruction, ...liveSettings } = settings
-  void customInstruction
+  const { customInstruction, chatModelReadsImages, ...liveSettings } = settings
+  void [customInstruction, chatModelReadsImages]
   return liveSettings
 }
 
@@ -748,10 +748,8 @@ export function WorkspaceAssistantChannelsTab({
             customInstruction: current.customInstruction,
           } : updated)
           setAssistantSettingsError(null)
-          setAssistantBehaviorSettings((current) => current ? {
-            ...updated,
-            ...current,
-          } : updated)
+          // The server computes whether the chat model reads images from the model just saved.
+          setAssistantBehaviorSettings((current) => current ? { ...updated, ...current, chatModelReadsImages: updated.chatModelReadsImages } : updated)
           setSaveState('saved')
         } catch (error) {
           if (liveBehaviorSaveRef.current !== saveId) return

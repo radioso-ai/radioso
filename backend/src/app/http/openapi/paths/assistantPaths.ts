@@ -125,7 +125,7 @@ export const registerAssistantAuthenticatedChatPaths = (
         description: "Bootstrap request completed without creating a greeting",
       },
       400: {
-        description: "Request validation failed",
+        description: "Request validation failed, including `imageIds` without `agentId`, with `startConversation`, more than three or one named twice; or `imageIds` from a caller that cannot own images (only an API credential or a signed-in user can).",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -149,7 +149,7 @@ export const registerAssistantAuthenticatedChatPaths = (
         },
       },
       409: {
-        description: "Turn superseded by a newer message in the same conversation",
+        description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -384,7 +384,7 @@ export const registerAssistantPublicChatPaths = (
         },
       },
       400: {
-        description: "Request validation failed",
+        description: "Request validation failed, including `imageIds` with `startConversation`, more than three, or one named twice.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -400,7 +400,7 @@ export const registerAssistantPublicChatPaths = (
         },
       },
       409: {
-        description: "Turn superseded by a newer message in the same conversation",
+        description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

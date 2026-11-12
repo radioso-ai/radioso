@@ -2,12 +2,14 @@ import type { Kysely } from "kysely";
 
 import { AuditEventRepository, ConversationAuditEraser } from "../../db/repositories/auditEventRepository.js";
 import { AudiencePulseSnapshotEraser } from "../../db/repositories/audiencePulseSnapshotRepository.js";
+import { BackgroundJobRepository } from "../../db/repositories/backgroundJobRepository.js";
 import { ContextVariableValueEraser } from "../../db/repositories/contextVariableRepository.js";
 import { ConversationErasureRepository } from "../../db/repositories/conversationErasureRepository.js";
 import { EmailSkillActivityEraser } from "../../db/repositories/emailSkillActivityRepository.js";
 import { WhatsAppMessageLogEraser } from "../../modules/connectors/plugins/index.js";
 import { EmailInboundEraser } from "../../modules/emailChannel/public.js";
 import { EvalConversationEraser } from "../../modules/eval/composition.js";
+import { VisitorImageEraser } from "../../modules/visitorImages/composition.js";
 import { VoiceSessionEraser } from "../../modules/voiceChannel/public.js";
 import type { ConversationErasureUnitOfWork } from "../../modules/privacy/public.js";
 import type {
@@ -42,6 +44,8 @@ export const defaultConversationDataErasers: readonly ConversationDataEraserBind
   (trx) => new WhatsAppMessageLogEraser(trx),
   (trx) => new AudiencePulseSnapshotEraser(trx),
   (trx) => new VoiceSessionEraser(trx),
+  // A conversation's photos: their objects go to the deletion job in the erasure's transaction.
+  (trx) => new VisitorImageEraser(trx, new BackgroundJobRepository(trx)),
 ];
 
 /** Every module's eraser for the rows it keys by an erased visitor's verified customer id. */

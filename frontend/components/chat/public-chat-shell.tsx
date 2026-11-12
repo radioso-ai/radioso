@@ -41,6 +41,7 @@ import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-co
 import { publicChatUnavailableMessage, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
 import { useCanAskForMicrophone, useVoiceSession } from '@/lib/use-voice-session'
+import { usePublicChatPhotos } from '@/lib/use-public-chat-photos'
 import { publicVoiceSessionCalls } from '@/lib/api-public-voice'
 import { interleaveVoiceTranscript } from '@/lib/voice-session'
 import {
@@ -214,6 +215,50 @@ function RateLimitBanner({
   )
 }
 
+/** Full screen and collapse, for the panel an embed opens; each shows only when the host gave it a handler. */
+function PublicChatWindowButtons({
+  copy,
+  theme,
+  onRequestCollapse,
+  onOpenFullScreen,
+}: {
+  copy: ReturnType<typeof getWebsiteEmbedCopy>
+  theme: ReturnType<typeof getWebsiteEmbedTheme>
+  onRequestCollapse?: () => void
+  onOpenFullScreen?: () => void
+}) {
+  return (
+    <>
+      {onOpenFullScreen ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          onClick={onOpenFullScreen}
+          className="h-8 w-8 hover:opacity-90"
+          style={{ color: theme.mutedForeground }}
+        >
+          <Maximize2 className="h-4 w-4" />
+          <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
+        </Button>
+      ) : null}
+      {onRequestCollapse ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          onClick={onRequestCollapse}
+          className="h-8 w-8 hover:opacity-90"
+          style={{ color: theme.mutedForeground }}
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+        </Button>
+      ) : null}
+    </>
+  )
+}
+
 function PublicChatOptionsMenu({
   copy,
   theme,
@@ -336,32 +381,7 @@ export function PublicChatThreadLoadingView({
               onClear={noop}
               onOpenNewTab={() => onOpenNewTab?.()}
             />
-            {onOpenFullScreen ? (
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={onOpenFullScreen}
-                className="h-8 w-8 hover:opacity-90"
-                style={{ color: theme.mutedForeground }}
-              >
-                <Maximize2 className="h-4 w-4" />
-                <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
-              </Button>
-            ) : null}
-            {onRequestCollapse ? (
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={onRequestCollapse}
-                className="h-8 w-8 hover:opacity-90"
-                style={{ color: theme.mutedForeground }}
-              >
-                <X className="h-4 w-4" />
-                <span className="sr-only">{copy.publicChatCollapseLabel}</span>
-              </Button>
-            ) : null}
+            <PublicChatWindowButtons copy={copy} theme={theme} onRequestCollapse={onRequestCollapse} onOpenFullScreen={onOpenFullScreen} />
           </>
         }
       />
@@ -571,6 +591,8 @@ function PublicChatContent({
     retryAfterSeconds,
     loadOlderMessages,
     sendMessage,
+    acceptsImages,
+    uploadImage,
     startNewChat,
     trackAnalyticsEvent,
     visitorLocale,
@@ -587,6 +609,7 @@ function PublicChatContent({
     () => getWebsiteEmbedCopy(localeOverride, resolvedCopyOverrides),
     [localeOverride, resolvedCopyOverrides],
   )
+  const photos = usePublicChatPhotos({ acceptsImages, uploadImage, sendMessage, publicChatToken, copy, input, setInput })
   const resolvedWorkspaceName = workspaceName ?? initialWorkspaceName ?? copy.embeddedChatTitle
   const resolvedAvatarUrl = assistantAvatarUrl ?? avatarUrl
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides
@@ -735,11 +758,9 @@ function PublicChatContent({
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
 
-    if (!input.trim() || isLoading) return
+    if (!photos.canSend || isLoading) return
 
-    const nextInput = input.trim()
-    setInput('')
-    await sendMessage(nextInput, { method: 'typed' })
+    await photos.send(input.trim())
   }
 
   const handleKeyDown = (event: ReactKeyboardEvent) => {
@@ -822,6 +843,7 @@ function PublicChatContent({
 
   const handleStartNewChat = async () => {
     setInput('')
+    photos.clear()
     resetVoiceCall()
     if (onStartNewChat) {
       await onStartNewChat()
@@ -908,46 +930,7 @@ function PublicChatContent({
             onClear={() => void handleStartNewChat()}
             onOpenNewTab={() => onOpenNewTab?.()}
           />
-          {onRequestCollapse ? (
-            <>
-              {onOpenFullScreen ? (
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={onOpenFullScreen}
-                  className="h-8 w-8 hover:opacity-90"
-                  style={{ color: theme.mutedForeground }}
-                >
-                  <Maximize2 className="h-4 w-4" />
-                  <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={onRequestCollapse}
-                className="h-8 w-8 hover:opacity-90"
-                style={{ color: theme.mutedForeground }}
-              >
-                <X className="h-4 w-4" />
-                <span className="sr-only">{copy.publicChatCollapseLabel}</span>
-              </Button>
-            </>
-          ) : onOpenFullScreen ? (
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              onClick={onOpenFullScreen}
-              className="h-8 w-8 hover:opacity-90"
-              style={{ color: theme.mutedForeground }}
-            >
-              <Maximize2 className="h-4 w-4" />
-              <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
-            </Button>
-          ) : null}
+          <PublicChatWindowButtons copy={copy} theme={theme} onRequestCollapse={onRequestCollapse} onOpenFullScreen={onOpenFullScreen} />
         </div>
       ) : null}
 
@@ -975,46 +958,7 @@ function PublicChatContent({
                 onClear={() => void handleStartNewChat()}
                 onOpenNewTab={() => onOpenNewTab?.()}
               />
-              {onRequestCollapse ? (
-                <>
-                  {onOpenFullScreen ? (
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      onClick={onOpenFullScreen}
-                      className="h-8 w-8 hover:opacity-90"
-                      style={{ color: theme.mutedForeground }}
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                      <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    onClick={onRequestCollapse}
-                    className="h-8 w-8 hover:opacity-90"
-                    style={{ color: theme.mutedForeground }}
-                  >
-                    <X className="h-4 w-4" />
-                    <span className="sr-only">{copy.publicChatCollapseLabel}</span>
-                  </Button>
-                </>
-              ) : onOpenFullScreen ? (
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={onOpenFullScreen}
-                  className="h-8 w-8 hover:opacity-90"
-                  style={{ color: theme.mutedForeground }}
-                >
-                  <Maximize2 className="h-4 w-4" />
-                  <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
-                </Button>
-              ) : null}
+              <PublicChatWindowButtons copy={copy} theme={theme} onRequestCollapse={onRequestCollapse} onOpenFullScreen={onOpenFullScreen} />
             </>
           }
         />
@@ -1045,6 +989,8 @@ function PublicChatContent({
             isLoading={isLoading}
             compact={false}
             hero
+            images={photos.composerImages}
+            canSend={photos.canSend}
           />
         </PublicChatCenteredIntro>
       ) : (
@@ -1115,6 +1061,7 @@ function PublicChatContent({
                   onEmbedAnalyticsEvent={surface === 'embed' ? trackAnalyticsEvent : undefined}
                   skillCatalog={skillCatalog}
                   audience="visitor"
+                  visitorImages={photos.visitorImages}
                 />
                 <div ref={messagesEndRef} />
               </div>
@@ -1159,6 +1106,8 @@ function PublicChatContent({
                   inputRef={inputRef}
                   isLoading={isLoading}
                   compact={isCompactKeyboardLayout}
+                  images={photos.composerImages}
+                  canSend={photos.canSend}
                   accessory={voiceOffered ? (
                     <VoiceTalkButton theme={theme} copy={copy} onPress={voice.talk} disabled={isLoading || isHydrating || isUnavailable} />
                   ) : null}

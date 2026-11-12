@@ -24,6 +24,7 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { ActivityTraceDetail } from './activity-trace-detail'
 import { ActivityTraceGraph } from './activity-trace-graph'
 import { TurnFlowOverlay } from './turn-flow-overlay'
+import { operatorVisitorImages } from '@/components/chat/visitor-image-thumbnails'
 import { ChatMessageThread } from './chat-message-thread'
 import { ContinueInTestChatAction } from './workbench/continue-in-test-chat-action'
 import { DeleteConversationAction } from './delete-conversation-action'
@@ -581,6 +582,7 @@ export function ConversationDrawer({
                     hasOlderMessages={conversationDetail.hasOlderMessages}
                     skillCatalog={skillCatalog}
                     routineMarkers={namedRoutineMarkers}
+                    visitorImages={operatorVisitorImages(conversationDetail.workspaceId, conversationDetail.conversationId)}
                   />
                 </div>
 

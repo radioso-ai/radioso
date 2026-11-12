@@ -180,6 +180,7 @@ export const streamChat = async function* (
       },
       body: {
         ...request,
+        includeDebug: request.includeDebug ?? false,
         startConversation: false,
         stream: true,
       } satisfies AssistantChatRequest,

@@ -1,6 +1,7 @@
 import { Storage } from "@google-cloud/storage";
 import {
   WORKSPACE_STORAGE_ROOT,
+  documentStorageObjectPath,
   workspaceStoragePrefix,
   type DocumentStorageAdapter,
   type DocumentStorageDeleteInput,
@@ -51,7 +52,7 @@ export class GcsDocumentStorage implements DocumentStorageAdapter {
     // Path leaf is the caller-generated random documentId; the original
     // filename is untrusted client input, so it's kept on the document row's
     // `sourceFilename` rather than the storage path.
-    const objectPath = `${workspaceStoragePrefix(input.workspaceId)}documents/${input.documentId}`;
+    const { objectPath } = this.locate(input);
     const file = bucket.file(objectPath);
 
     await file.save(input.buffer, {
@@ -69,6 +70,10 @@ export class GcsDocumentStorage implements DocumentStorageAdapter {
       generation: metadata.generation != null ? String(metadata.generation) : null,
       sizeBytes: Number(metadata.size ?? input.buffer.length),
     };
+  }
+
+  locate(input: Pick<DocumentStorageUploadInput, "workspaceId" | "documentId" | "folder">): DocumentStorageReadInput {
+    return { bucket: this.bucketName, objectPath: documentStorageObjectPath(input), generation: null };
   }
 
   async read(input: DocumentStorageReadInput): Promise<Buffer> {

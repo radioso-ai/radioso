@@ -26,6 +26,28 @@ export const consentsOf = (doc: Pick<RoutineBlockDoc, 'consents'>): RoutineConse
 const sensitiveFieldKeys = (doc: Pick<RoutineBlockDoc, 'information'>): string[] =>
   doc.information.filter((slot) => slot.sensitivity === 'sensitive').map((slot) => slot.key)
 
+/**
+ * The fields each step asks the visitor for, by the rule the compiler places consents with: only a
+ * chat step collects, and the first step that names a field is the one that collects it.
+ */
+const fieldsAskedByStep = (doc: Pick<RoutineBlockDoc, 'steps'>): ReadonlyMap<string, string[]> =>
+  collectedSlotsByStep(doc.steps.map((step, ordinal) => ({
+    stableStepId: step.stableStepId,
+    kind: step.kind,
+    instruction: blockSegmentsToInstruction(step.instruction),
+    ordinal,
+  })))
+
+/**
+ * The fields a consent may cover: sensitive ones a step asks the visitor for. A consent is asked
+ * before the visitor gives a value, so a sensitive field only a skill fills needs none, and stays
+ * masked without one.
+ */
+const consentableFieldKeys = (doc: Pick<RoutineBlockDoc, 'information' | 'steps'>): string[] => {
+  const asked = new Set([...fieldsAskedByStep(doc).values()].flat())
+  return sensitiveFieldKeys(doc).filter((slotKey) => asked.has(slotKey))
+}
+
 const mapConsent = (doc: RoutineBlockDoc, key: string, edit: (consent: RoutineConsentDraft) => RoutineConsentDraft): RoutineBlockDoc => ({
   ...doc,
   consents: consentsOf(doc).map((consent) => (consent.key === key ? edit(consent) : consent)),
@@ -46,12 +68,13 @@ const nextConsentKey = (doc: RoutineBlockDoc, base: string): string => {
 }
 
 /**
- * A consent over one sensitive field, named after it, with blank wording in the agent's default
- * language (the one language every consent needs) and the routine continuing without the field
- * when a visitor declines. A field that is not sensitive needs no consent, so nothing changes.
+ * A consent over one sensitive field a step asks the visitor for, named after it, with blank
+ * wording in the agent's default language (the one language every consent needs) and the routine
+ * continuing without the field when a visitor declines. Any other field needs no consent, so
+ * nothing changes.
  */
 export const addConsent = (doc: RoutineBlockDoc, slotKey: string, agentDefaultLocale: string): RoutineBlockDoc => {
-  if (!sensitiveFieldKeys(doc).includes(slotKey)) return doc
+  if (!consentableFieldKeys(doc).includes(slotKey)) return doc
   const consent: RoutineConsentDraft = {
     key: nextConsentKey(doc, slotKey),
     slotKeys: [slotKey],
@@ -66,9 +89,12 @@ export const removeConsent = (doc: RoutineBlockDoc, key: string): RoutineBlockDo
   consents: consentsOf(doc).filter((consent) => consent.key !== key),
 })
 
-/** Only a sensitive field can be covered; uncovering may leave a consent covering nothing yet. */
+/**
+ * Only a sensitive field a step asks the visitor for can be covered; uncovering may leave a consent
+ * covering nothing yet.
+ */
 export const setConsentCoversField = (doc: RoutineBlockDoc, key: string, slotKey: string, covers: boolean): RoutineBlockDoc => {
-  if (covers && !sensitiveFieldKeys(doc).includes(slotKey)) return doc
+  if (covers && !consentableFieldKeys(doc).includes(slotKey)) return doc
   return mapConsent(doc, key, (consent) => ({
     ...consent,
     slotKeys: covers
@@ -125,16 +151,23 @@ export const setConsentDeclineLabel = (doc: RoutineBlockDoc, key: string, locale
 export const consentsCoveringField = (doc: Pick<RoutineBlockDoc, 'consents'>, slotKey: string): string[] =>
   consentsOf(doc).filter((consent) => consent.slotKeys.includes(slotKey)).map((consent) => consent.key)
 
-/** The sensitive fields a consent may cover, and which other consent already covers each. */
-export const consentFieldChoices = (doc: RoutineBlockDoc, key: string): Array<{ key: string; covered: boolean; coveredBy: string | null }> =>
-  sensitiveFieldKeys(doc).map((slotKey) => {
-    const covering = consentsCoveringField(doc, slotKey)
-    return { key: slotKey, covered: covering.includes(key), coveredBy: covering.find((candidate) => candidate !== key) ?? null }
-  })
+type ConsentFieldChoice = { key: string; covered: boolean; coveredBy: string | null; askedOfVisitor: boolean }
 
-/** Sensitive fields no consent covers yet. Publishing refuses each of them. */
+/**
+ * The routine's sensitive fields as a consent's choices: whether it covers each, which other
+ * consent already does, and whether a step asks the visitor for it (only those can be covered).
+ */
+export const consentFieldChoices = (doc: RoutineBlockDoc, key: string): ConsentFieldChoice[] => {
+  const consentable = new Set(consentableFieldKeys(doc))
+  return sensitiveFieldKeys(doc).map((slotKey) => {
+    const covering = consentsCoveringField(doc, slotKey)
+    return { key: slotKey, covered: covering.includes(key), coveredBy: covering.find((candidate) => candidate !== key) ?? null, askedOfVisitor: consentable.has(slotKey) }
+  })
+}
+
+/** Sensitive fields a step asks the visitor for that no consent covers yet. Publishing refuses each. */
 export const uncoveredSensitiveFields = (doc: RoutineBlockDoc): string[] =>
-  sensitiveFieldKeys(doc).filter((slotKey) => consentsCoveringField(doc, slotKey).length === 0)
+  consentableFieldKeys(doc).filter((slotKey) => consentsCoveringField(doc, slotKey).length === 0)
 
 /**
  * The consents asked before each step, by the rule the compiler places them with: a consent goes
@@ -145,13 +178,7 @@ export const consentKeysAskedBeforeStep = (doc: RoutineBlockDoc): Map<string, st
   const consents = consentsOf(doc)
   const asked = new Map<string, string[]>()
   if (consents.length === 0) return asked
-  const collected = collectedSlotsByStep(doc.steps.map((step, ordinal) => ({
-    stableStepId: step.stableStepId,
-    kind: step.kind,
-    instruction: blockSegmentsToInstruction(step.instruction),
-    ordinal,
-  })))
-  for (const [stepId, slotKeys] of collected) {
+  for (const [stepId, slotKeys] of fieldsAskedByStep(doc)) {
     const keys = consents.filter((consent) => consent.slotKeys.some((slotKey) => slotKeys.includes(slotKey))).map((consent) => consent.key)
     if (keys.length > 0) asked.set(stepId, keys)
   }
@@ -210,6 +237,7 @@ const consentDiagnosticCopy: Partial<Record<RoutineValidationDiagnostic['code'],
   consent_key_duplicate: 'Another consent uses this key.',
   consent_slot_unknown: 'Covers a field this routine does not collect.',
   consent_slot_not_sensitive: 'Covers a field that is not sensitive.',
+  consent_slot_not_collected: 'Covers a field no step asks the visitor for.',
 }
 
 /**

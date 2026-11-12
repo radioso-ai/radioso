@@ -141,21 +141,26 @@ function ConsentCard({ doc, consent, diagnostics, agentDefaultLocale, stepLabel,
     <Issues lines={issues.consent.map((diagnostic) => consentDiagnosticText(diagnostic))} />
     <div className="space-y-1">
       <Label className="text-xs">Asked before collecting</Label>
-      <div className="flex flex-wrap gap-2">{choices.map((choice) =>
-        <button
+      <div className="flex flex-wrap gap-2">{choices.map((choice) => {
+        // A field can be uncovered at any time; it can be covered only when it is free and asked.
+        const unavailable = choice.covered ? null
+          : choice.coveredBy ? `Covered by ${choice.coveredBy}`
+          : !choice.askedOfVisitor ? 'No step asks the visitor for it, so it needs no consent'
+          : null
+        return <button
           key={choice.key}
           type="button"
           role="checkbox"
           aria-checked={choice.covered}
           aria-label={`Covers ${choice.key}`}
-          disabled={choice.coveredBy !== null && !choice.covered}
-          title={choice.coveredBy && !choice.covered ? `Covered by ${choice.coveredBy}` : undefined}
+          disabled={unavailable !== null}
+          title={unavailable ?? undefined}
           onClick={() => apply((current) => setConsentCoversField(current, consent.key, choice.key, !choice.covered))}
           className={choice.covered
             ? 'rounded-full border border-primary bg-muted/40 px-3 py-1 text-sm'
             : 'rounded-full border border-border px-3 py-1 text-sm text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50'}
-        >{choice.key}</button>,
-      )}</div>
+        >{choice.key}</button>
+      })}</div>
       {consent.slotKeys.length === 0 ? <p className="text-xs text-destructive">Pick a field this consent covers.</p> : null}
       <Issues lines={issues.fields.map((diagnostic) => consentDiagnosticText(diagnostic))} />
     </div>
@@ -193,8 +198,8 @@ export function RoutineConsentSection({ doc, apply, diagnostics, agentDefaultLoc
 }) {
   const consents = consentsOf(doc)
   const uncovered = uncoveredSensitiveFields(doc)
-  const hasSensitiveField = doc.information.some((slot) => slot.sensitivity === 'sensitive')
-  if (consents.length === 0 && !hasSensitiveField) return null
+  // Without a consent, a field still to cover is the only reason to show the section.
+  if (consents.length === 0 && uncovered.length === 0) return null
   return <section aria-labelledby="routine-document-consents" className="space-y-3">
     <div className="flex items-center justify-between gap-2">
       <h2 id="routine-document-consents" className="text-xl font-semibold tracking-tight text-foreground">Consents</h2>

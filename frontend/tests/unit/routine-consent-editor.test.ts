@@ -4,6 +4,7 @@ import type { RoutineValidationDiagnostic } from '@/lib/api'
 import {
   addConsent,
   addConsentLanguage,
+  consentDiagnosticText,
   consentFieldChoices,
   consentIssues,
   consentKeysAskedBeforeStep,
@@ -40,6 +41,21 @@ const booking = () => {
       { fromStep: 'ask_allergies', toRef: 'booked', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 2 },
     ],
     terminals: [{ stableStepId: 'booked', kind: 'complete', instruction: 'Confirm the booking.', ordinal: 0 }],
+  })
+  if (!result.ok) throw new Error(result.diagnostics.map((item) => item.message).join(', '))
+  return result.doc
+}
+
+// The booking routine with a diagnosis code a skill looks up: sensitive, so notices mask it, and
+// asked of the guest by no chat step.
+const bookingLookingUpDiagnosis = () => {
+  const result = routineToBlockDoc({
+    ...draftFromBlockDoc(booking()),
+    slots: [
+      ...draftFromBlockDoc(booking()).slots,
+      { stableSlotId: 'diagnosis_code', key: 'diagnosis_code', type: 'text', required: false, description: null, ordinal: 3, sensitivity: 'sensitive' },
+    ],
+    terminals: [{ stableStepId: 'booked', kind: 'complete', instruction: 'Confirm the booking, noting {{slot.diagnosis_code}}.', ordinal: 0 }],
   })
   if (!result.ok) throw new Error(result.diagnostics.map((item) => item.message).join(', '))
   return result.doc
@@ -83,10 +99,22 @@ describe('authoring a consent', () => {
     const doc = addConsent(addConsent(booking(), 'dietary', 'en'), 'allergies', 'en')
 
     expect(consentFieldChoices(doc, 'dietary')).toEqual([
-      { key: 'dietary', covered: true, coveredBy: null },
-      { key: 'allergies', covered: false, coveredBy: 'allergies' },
+      { key: 'dietary', covered: true, coveredBy: null, askedOfVisitor: true },
+      { key: 'allergies', covered: false, coveredBy: 'allergies', askedOfVisitor: true },
     ])
     expect(consentsCoveringField(doc, 'allergies')).toEqual(['allergies'])
+  })
+
+  it('never covers a sensitive field no step asks the visitor for, and offers it only as unavailable', () => {
+    const doc = addConsent(bookingLookingUpDiagnosis(), 'dietary', 'en')
+
+    expect(addConsent(bookingLookingUpDiagnosis(), 'diagnosis_code', 'en')).toEqual(bookingLookingUpDiagnosis())
+    expect(setConsentCoversField(doc, 'dietary', 'diagnosis_code', true)).toEqual(doc)
+    expect(consentFieldChoices(doc, 'dietary')).toEqual([
+      { key: 'dietary', covered: true, coveredBy: null, askedOfVisitor: true },
+      { key: 'allergies', covered: false, coveredBy: null, askedOfVisitor: true },
+      { key: 'diagnosis_code', covered: false, coveredBy: null, askedOfVisitor: false },
+    ])
   })
 
   it('sets what happens when a visitor declines', () => {
@@ -133,6 +161,10 @@ describe('where a consent is asked', () => {
     expect(uncoveredSensitiveFields(addConsent(booking(), 'dietary', 'en'))).toEqual(['allergies'])
   })
 
+  it('needs no consent for a sensitive field no step asks the visitor for', () => {
+    expect(uncoveredSensitiveFields(bookingLookingUpDiagnosis())).toEqual(['dietary', 'allergies'])
+  })
+
   it('names the steps that ask a consent first, by the step that collects each covered field', () => {
     const doc = setConsentCoversField(addConsent(booking(), 'dietary', 'en'), 'dietary', 'allergies', true)
 
@@ -150,6 +182,7 @@ describe('consent diagnostics', () => {
     const issues = consentIssues([
       diagnostic('consent_missing_default_variant', 'consent:dietary.variants'),
       diagnostic('consent_slot_not_sensitive', 'consent:dietary.slotKeys.guest_name'),
+      diagnostic('consent_slot_not_collected', 'consent:dietary.slotKeys.diagnosis_code'),
       diagnostic('consent_step_mixes_fields', 'consent:dietary.steps.ask_diet'),
       diagnostic('consent_text_invalid', 'consent:dietary.variants[1].agreeLabel'),
       diagnostic('consent_text_invalid', 'consent:other.variants[0].body'),
@@ -157,7 +190,8 @@ describe('consent diagnostics', () => {
     ], 'dietary')
 
     expect(issues.consent.map((item) => item.code)).toEqual(['consent_missing_default_variant'])
-    expect(issues.fields.map((item) => item.code)).toEqual(['consent_slot_not_sensitive'])
+    expect(issues.fields.map((item) => item.code)).toEqual(['consent_slot_not_sensitive', 'consent_slot_not_collected'])
+    expect(consentDiagnosticText(issues.fields[1])).toBe('Covers a field no step asks the visitor for.')
     expect(issues.steps.map((item) => item.code)).toEqual(['consent_step_mixes_fields'])
     expect(issues.variantFields).toEqual([{ index: 1, field: 'agreeLabel', diagnostic: diagnostic('consent_text_invalid', 'consent:dietary.variants[1].agreeLabel') }])
   })

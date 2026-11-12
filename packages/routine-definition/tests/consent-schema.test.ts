@@ -124,6 +124,7 @@ describe("routine consent schema", () => {
     expect(routineValidationCodes).toEqual(expect.arrayContaining([
       "consent_slot_unknown",
       "consent_slot_not_sensitive",
+      "consent_slot_not_collected",
       "consent_slot_covered_twice",
       "consent_key_duplicate",
       "consent_missing_default_variant",

@@ -132,11 +132,17 @@ const declineChoiceDiagnostics = (
 };
 
 /**
- * The authoring rules for a routine's consents (#1544): every sensitive slot is covered by one
- * consent, every covered slot is one the routine declares and marks sensitive, keys are unique,
- * each consent has usable wording in the agent's default language, and a consent that continues on
- * decline can skip the step it guards. The validator runs them only when it knows that language,
- * which the compile path never passes, so a published revision always compiles and keeps serving.
+ * The authoring rules for a routine's consents (#1544): every sensitive slot a chat step asks the
+ * visitor for is covered by one consent, every covered slot is one the routine declares, marks
+ * sensitive and asks the visitor for, keys are unique, each consent has usable wording in the
+ * agent's default language, and a consent that continues on decline can skip the step it guards.
+ * The validator runs them only when it knows that language, which the compile path never passes,
+ * so a published revision always compiles and keeps serving.
+ *
+ * A consent is asked before the visitor gives a value, so it is for slots a chat step collects. A
+ * sensitive slot only a skill fills is masked like any other and needs none; a consent covering
+ * one could never be asked, and until a grant the runner drops what a skill writes to a covered
+ * slot, so it would hold back every value.
  */
 export const consentDiagnostics = (
   definition: Pick<RoutineDefinition, "slots" | "steps" | "transitions" | "consents">,
@@ -144,6 +150,9 @@ export const consentDiagnostics = (
 ): ConsentDiagnostic[] => {
   const consents = definition.consents ?? [];
   const slotByKey = new Map(definition.slots.map((slot) => [slot.key, slot]));
+  // The one collection rule the compiler places consent gates by.
+  const slotsCollectedByStep = collectedSlotsByStep(definition.steps);
+  const askedOfVisitor = new Set([...slotsCollectedByStep.values()].flat());
   const diagnostics: ConsentDiagnostic[] = [];
 
   const seenKeys = new Set<string>();
@@ -179,15 +188,21 @@ export const consentDiagnostics = (
           location: `consent:${consent.key}.slotKeys.${slotKey}`,
           message: `consent slot not sensitive: consent "${consent.key}" covers "${slotKey}", which is not marked sensitive.`,
         });
+      } else if (!askedOfVisitor.has(slotKey)) {
+        diagnostics.push({
+          code: "consent_slot_not_collected",
+          location: `consent:${consent.key}.slotKeys.${slotKey}`,
+          message: `consent slot not collected: consent "${consent.key}" covers "${slotKey}", which no chat step asks the visitor for, so the consent is never asked.`,
+        });
       }
     }
   }
   for (const slot of definition.slots) {
-    if (slot.sensitivity === "sensitive" && !coveringCount.has(slot.key)) {
+    if (slot.sensitivity === "sensitive" && askedOfVisitor.has(slot.key) && !coveringCount.has(slot.key)) {
       diagnostics.push({
         code: "sensitive_slot_without_consent",
         location: `slot:${slot.key}`,
-        message: `sensitive slot without consent: "${slot.key}" is marked sensitive and no consent covers it; add a consent that covers it before publishing.`,
+        message: `sensitive slot without consent: "${slot.key}" is marked sensitive, a step asks the visitor for it, and no consent covers it; add a consent that covers it before publishing.`,
       });
     }
   }
@@ -201,8 +216,6 @@ export const consentDiagnostics = (
     }
   }
 
-  // The one collection rule the compiler places consent gates by.
-  const slotsCollectedByStep = collectedSlotsByStep(definition.steps);
   for (const consent of consents) {
     diagnostics.push(...wordingDiagnostics(consent, agentDefaultLocale));
     diagnostics.push(...declineChoiceDiagnostics(consent, definition, slotsCollectedByStep));
@@ -245,6 +258,13 @@ export const safeConsentValidationMessages: Record<ConsentDiagnostic["code"], (l
       ? `Consent "${consent.key}" covers "${slotKey}", which is not marked sensitive. Mark the field sensitive or remove it from the consent.`
       : "A consent covers a field that is not marked sensitive.";
   },
+  consent_slot_not_collected: (location) => {
+    const consent = consentLocationOf(location);
+    const slotKey = consent?.field?.replace(/^slotKeys\./u, "");
+    return consent && slotKey
+      ? `Consent "${consent.key}" covers "${slotKey}", which no step asks the visitor for, so it is never asked. Remove the field from the consent, or ask for it in a step.`
+      : "A consent covers a field no step asks the visitor for, so it is never asked.";
+  },
   consent_slot_covered_twice: (location) => {
     const slotKey = slotLocationOf(location);
     return slotKey
@@ -265,7 +285,7 @@ export const safeConsentValidationMessages: Record<ConsentDiagnostic["code"], (l
     const slotKey = slotLocationOf(location);
     return slotKey
       ? `Field "${slotKey}" is sensitive, so visitors must agree to a consent before it is collected. Add a consent that covers it.`
-      : "A sensitive field needs a consent that covers it.";
+      : "A sensitive field a step asks the visitor for needs a consent that covers it.";
   },
   consent_step_mixes_fields: (location) => {
     const step = consentStepOf(location);

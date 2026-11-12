@@ -50,6 +50,27 @@ const intake = (consents?: Consent[]): RoutineDefinition => ({
   updatedAt: new Date("2026-11-01T00:00:00.000Z"),
 });
 
+/**
+ * The intake routine with a diagnosis code a skill looks up after the visitor's answers: marked
+ * sensitive so notices mask it, and asked of the visitor by no chat step.
+ */
+const intakeLookingUpDiagnosis = (consents?: Consent[]): RoutineDefinition => {
+  const base = intake(consents);
+  return {
+    ...base,
+    slots: [...base.slots, { stableSlotId: "slot_diagnosis_code", key: "diagnosis_code", type: "text", required: false, description: null, ordinal: 3, sensitivity: "sensitive" }],
+    steps: [...base.steps, { stableStepId: "look_up_diagnosis", kind: "tool", instruction: "Look up {{slot.diagnosis_code}} for the booking.", toolRef: "lookup_diagnosis", ordinal: 3, metadata: {} }],
+    transitions: [
+      base.transitions[0],
+      base.transitions[1],
+      { fromStep: "ask_injury", toRef: "look_up_diagnosis", guardKind: "default", guardText: null, ordinal: 2 },
+      { fromStep: "look_up_diagnosis", toRef: "done", guardKind: "default", guardText: null, ordinal: 3 },
+    ],
+  };
+};
+
+const injuryConsent = (): Consent => consent({ key: "injury_details", slotKeys: ["injury"], onDecline: "handoff" });
+
 const consentFindings = (definition: RoutineDefinition, agentDefaultLocale = "en"): Array<Pick<RoutineValidationDiagnostic, "code" | "location">> =>
   validateRoutineDefinition(definition, { agentDefaultLocale }).diagnostics
     .filter((diagnostic) => diagnostic.code.startsWith("consent_"))
@@ -76,6 +97,19 @@ describe("consent shape validation (#1544)", () => {
     expect(consentFindings(intake([consent({ slotKeys: ["pregnant", "allergy", "name"] })]))).toEqual([
       { code: "consent_slot_unknown", location: "consent:health.slotKeys.allergy" },
       { code: "consent_slot_not_sensitive", location: "consent:health.slotKeys.name" },
+    ]);
+  });
+
+  it("refuses a consent over a sensitive field no step asks the visitor for, since it could never be asked", () => {
+    const definition = intakeLookingUpDiagnosis([consent({ slotKeys: ["pregnant", "diagnosis_code"] }), injuryConsent()]);
+
+    expect(consentFindings(definition)).toEqual([
+      { code: "consent_slot_not_collected", location: "consent:health.slotKeys.diagnosis_code" },
+    ]);
+    expect(validateRoutineDefinition(definition, { agentDefaultLocale: "en" }).diagnostics
+      .filter((diagnostic) => diagnostic.code === "consent_slot_not_collected")
+      .map((diagnostic) => toSafeRoutineValidationDiagnostic(diagnostic).message)).toEqual([
+      'Consent "health" covers "diagnosis_code", which no step asks the visitor for, so it is never asked. Remove the field from the consent, or ask for it in a step.',
     ]);
   });
 
@@ -195,6 +229,14 @@ describe("consent coverage rules for publishing (#1544)", () => {
       { code: "sensitive_slot_without_consent", location: "slot:injury" },
     ]);
     expect(publishFindings(intake([consent()]))).toEqual([
+      { code: "sensitive_slot_without_consent", location: "slot:injury" },
+    ]);
+  });
+
+  it("asks no consent for a sensitive field no step asks the visitor for, which stays masked without one", () => {
+    expect(publishFindings(intakeLookingUpDiagnosis([consent(), injuryConsent()]))).toEqual([]);
+    expect(publishFindings(intakeLookingUpDiagnosis())).toEqual([
+      { code: "sensitive_slot_without_consent", location: "slot:pregnant" },
       { code: "sensitive_slot_without_consent", location: "slot:injury" },
     ]);
   });

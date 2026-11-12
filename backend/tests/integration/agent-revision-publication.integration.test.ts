@@ -218,6 +218,45 @@ describeDb("agent revision publication concurrency", () => {
     await expect(repository.createCandidate(workspaceId, consentAgentId, { id: randomUUID(), expectedDraftGeneration: italianDefault })).rejects.toMatchObject(refusal("consent_missing_default_variant", "consent:pregnancy.variants", '"pregnancy"'));
   });
 
+  it("publishes a sensitive field no step asks the visitor for without a consent, and refuses a consent that could never be asked (#1544)", async () => {
+    const lookupAgentId = randomUUID();
+    const english = { locale: "en", body: "We keep your diagnosis code with this booking.", agreeLabel: "I agree", declineLabel: "No thanks" };
+    // A diagnosis code the booking carries through to its ending: sensitive, so notices mask it,
+    // and asked of the visitor by no chat step.
+    const routine = (consents?: unknown[]) => ({
+      id: randomUUID(), agentId: lookupAgentId, lineageId: randomUUID(), version: 1, name: "Book a session", enabled: true,
+      activation: { triggerDescription: "A visitor wants to book a session.", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
+      slots: [
+        { stableSlotId: "slot_name", key: "name", type: "text", required: true, description: null, ordinal: 0 },
+        { stableSlotId: "slot_diagnosis_code", key: "diagnosis_code", type: "text", required: false, description: null, ordinal: 1, sensitivity: "sensitive" },
+      ],
+      steps: [{ stableStepId: "ask_name", kind: "chat", instruction: "Ask for {{slot.name}}.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: "ask_name", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm the booking under {{slot.diagnosis_code}}.", ordinal: 0 }],
+      ...(consents ? { consents } : {}),
+      createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
+    });
+    const emptySnapshot = JSON.stringify({ customInstruction: null, directives: [], routines: [], contextVariableEnablements: [], agentSkills: [] });
+    await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [lookupAgentId, workspaceId, "lookup"]);
+    await database.query("INSERT INTO agent_drafts (agent_id,workspace_id,generation,snapshot) VALUES ($1,$2,1,$3::jsonb)", [lookupAgentId, workspaceId, emptySnapshot]);
+    const draftWith = async (routines: unknown[]) => {
+      const draft = await repository.mutateDraft(workspaceId, lookupAgentId, (snapshot) => ({ ...snapshot, routines: routines as never }));
+      if (!draft) throw new Error("draft unavailable");
+      return draft.generation;
+    };
+
+    const covered = await draftWith([routine([{ key: "diagnosis", slotKeys: ["diagnosis_code"], onDecline: "handoff", variants: [english] }])]);
+    await expect(repository.createCandidate(workspaceId, lookupAgentId, { id: randomUUID(), expectedDraftGeneration: covered })).rejects.toMatchObject({
+      statusCode: 422, code: "revision_invalid",
+      details: { diagnostics: [expect.objectContaining({ code: "consent_slot_not_collected", location: "consent:diagnosis.slotKeys.diagnosis_code", message: expect.stringContaining('"diagnosis_code"') })] },
+    });
+
+    const uncovered = await draftWith([routine()]);
+    const candidate = await repository.createCandidate(workspaceId, lookupAgentId, { id: randomUUID(), expectedDraftGeneration: uncovered });
+    if (candidate === "conflict") throw new Error("uncovered candidate conflicted");
+    await expect(repository.publish({ workspaceId, agentId: lookupAgentId, actorAccountId: null, revisionId: candidate.id, expectedDraftGeneration: uncovered, expectedPublishedRevisionId: null, idempotencyKey: "looked-up" })).resolves.toMatchObject({ idempotentReplay: false });
+  });
+
   it("recovers the original adapter publication receipt after a later revision supersedes it", async () => {
     const recoveryAgentId = randomUUID();
     const snapshot = JSON.stringify({ customInstruction: "first", directives: [], routines: [], contextVariableEnablements: [] });

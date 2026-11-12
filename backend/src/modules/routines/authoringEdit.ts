@@ -91,7 +91,7 @@ export const routineFieldPatchSchema = z.object({
   // The routine's consents (#1544), replaced whole like `exposure`: an edit that keeps one consent
   // and changes another carries both, and an empty list removes them all. The wording in each is
   // the operator's own, shown to visitors verbatim; validation, not this schema, holds it to the
-  // agent's language and to covering every sensitive field.
+  // agent's language and to covering every sensitive field a step asks the visitor for.
   consents: z.array(routineConsentSchema).optional(),
 }).strict().refine((patch) => Object.keys(patch).length > 0, {
   message: "a routine edit must change at least one field",

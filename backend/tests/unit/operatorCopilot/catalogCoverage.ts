@@ -247,6 +247,7 @@ const voiceRuntimeConnectionWrite = permanent("Permanent exclusion: Connect and 
 const voiceRuntimeConnectionStatus = permanent("Permanent exclusion: the Voice card's dashboard read of whether the runtime is one Radioso maintains; agent_configuration already shows Ray the agent's voice.runtime binding, and only the dashboard acts on the difference.");
 const visitorImageUpload = permanent("Permanent exclusion: a visitor's page, or an API caller, uploads an image for its own next message, owned by its public session or credential. The operator turns images on with the agent's visitorImagesEnabled setting, which agent_configuration reads and propose_agent_setting and prepare_agent_settings change; the upload itself is end-user traffic.");
 const visitorImageMedia = permanent("Permanent exclusion: the response is the image a visitor sent, binary media a teammate sees in the Inbox with each view audited against them, or the visitor sees in their own thread, not a Ray operation. Ray's conversation_transcript carries each image's reading as the text of the turn it was sent in.");
+const testChatImageMedia = permanent("Permanent exclusion: the response is a photo in a Test Chat transcript, binary media the operator sees in Test Chat, not a Ray operation. Ray reads each photo's reading in test_chat_transcript, as the text of the turn it was sent in; send_test_chat_message sends text, since Ray uploads no photo.");
 const testChatVoiceSessionStart = permanent("Permanent exclusion: Test Chat's Talk opens a call in the operator's browser, with their microphone, on the workspace's vendor account, and hands that page the vendor's signed URL, a bearer credential. Ray speaks no audio and holds no microphone. Ray already tests the draft through send_test_chat_message, and test_chat_transcript reads the call's turns, which the test records like typed ones.");
 const voiceRecordingAudio = permanent("Permanent exclusion: the response is the call's audio, binary media a teammate listens to in the Inbox with each play audited against them, not a Ray operation. Ray's conversation_transcript says whether a voice conversation has a recording (recordingAvailable), and the transcript carries what was said.");
 const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
@@ -587,6 +588,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   uploadAgentChannelImage: visitorImageUpload,
   getPublicChatImage: visitorImageMedia,
   getConversationImage: visitorImageMedia,
+  getAgentTestExecutionImage: testChatImageMedia,
   getAgentVoiceConnection: voiceRuntimeConnectionStatus,
   connectAgentVoice: voiceRuntimeConnectionWrite,
   disconnectAgentVoice: voiceRuntimeConnectionWrite,

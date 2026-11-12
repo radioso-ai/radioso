@@ -18,11 +18,13 @@ export interface ComposerImages {
  * Where a thread reads a visitor's photos from. The visitor's own chat reads them with the public
  * session header, which `<img src>` cannot send, so it fetches and shows a blob. A teammate reads
  * them with the dashboard session, which `<img src>` carries, so a photo loads once it is on screen
- * and each view is audited.
+ * and each view is audited: a conversation's from the conversation, and Test Chat's from the test,
+ * which keeps its transcript apart from conversations.
  */
 export type VisitorImageSource =
   | { kind: 'public'; publicChatToken: string }
   | { kind: 'operator'; workspaceId: string; conversationId: string }
+  | { kind: 'test_chat'; workspaceId: string; agentId: string; executionId: string }
 
 export interface VisitorImageThreadConfig {
   source: VisitorImageSource

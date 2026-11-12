@@ -318,3 +318,76 @@ describe("VisitorImageService reads", () => {
     expect(audit.viewed).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("VisitorImageService photos a Test Chat turn carries", () => {
+  const TEST_EXECUTION = "5a7c9e1b-3d5f-4a7c-9e1b-3d5f7a9c1e55";
+  const OPERATOR: VisitorImageOwner = { kind: "user", id: "6b8d0f2c-4e6a-4b8d-8f2c-4e6a8b0d2f66" };
+
+  const sentInTest = async () => {
+    const harnessed = harness();
+    const image = await harnessed.upload(OPERATOR);
+    const claim = await harnessed.service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: OPERATOR, imageIds: [image.id] });
+    await harnessed.service.bind({ workspaceId: WORKSPACE, claim, testExecutionId: TEST_EXECUTION });
+    return { ...harnessed, image, claim };
+  };
+
+  it("binds the photos to the test the turn names, which keeps them from any other send", async () => {
+    const { service, store, image } = await sentInTest();
+
+    expect(store.rows.get(image.id)).toMatchObject({ testExecutionId: TEST_EXECUTION, conversationId: null, messageId: null });
+    await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: OPERATOR, imageIds: [image.id] }))
+      .rejects.toMatchObject({ code: "visitor_image_unavailable" });
+  });
+
+  it("never lets go of photos a test already carries", async () => {
+    const { service, store, image, claim } = await sentInTest();
+
+    await service.release({ workspaceId: WORKSPACE, claim });
+
+    expect(store.rows.get(image.id)).toMatchObject({ testExecutionId: TEST_EXECUTION });
+    await expect(service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: OPERATOR, imageIds: [image.id] }))
+      .rejects.toMatchObject({ code: "visitor_image_unavailable" });
+  });
+
+  it("serves a photo the test's transcript names, without recording a view of the operator's own photo", async () => {
+    const { service, image, audit } = await sentInTest();
+
+    const bytes = await service.readForTestChat({ workspaceId: WORKSPACE, agentId: AGENT, imageId: image.id, namedByTranscript: true, caller: null, actorUserId: "user-2" });
+
+    expect(bytes).toBeInstanceOf(Buffer);
+    expect(audit.viewed).not.toHaveBeenCalled();
+  });
+
+  it("serves a visitor's photo a test copied in with its conversation, and records the view", async () => {
+    const { service, upload, audit } = harness();
+    const image = await upload();
+    const claim = await service.claim({ workspaceId: WORKSPACE, agentId: AGENT, owner: VISITOR, imageIds: [image.id] });
+    await service.bind({ workspaceId: WORKSPACE, claim, conversationId: CONVERSATION, messageId: randomUUID() });
+
+    const bytes = await service.readForTestChat({ workspaceId: WORKSPACE, agentId: AGENT, imageId: image.id, namedByTranscript: true, caller: OPERATOR, actorUserId: "user-2" });
+
+    expect(bytes).toBeInstanceOf(Buffer);
+    expect(audit.viewed).toHaveBeenCalledWith({ workspaceId: WORKSPACE, conversationId: CONVERSATION, imageId: image.id, actorUserId: "user-2" });
+  });
+
+  it("serves a photo no transcript names yet only to the caller who uploaded it", async () => {
+    const { service, upload } = harness();
+    const image = await upload(OPERATOR);
+    const read = (caller: VisitorImageOwner | null) =>
+      service.readForTestChat({ workspaceId: WORKSPACE, agentId: AGENT, imageId: image.id, namedByTranscript: false, caller, actorUserId: "user-1" });
+
+    expect(await read(OPERATOR)).toBeInstanceOf(Buffer);
+    expect(await read(STRANGER)).toBeNull();
+    expect(await read(null)).toBeNull();
+  });
+
+  it("serves nothing for a named photo no message or test carries, or one another agent's test carries", async () => {
+    const { service, upload, image: carried } = await sentInTest();
+    const unsent = await upload(OPERATOR);
+    const named = (imageId: string, agentId: string) =>
+      service.readForTestChat({ workspaceId: WORKSPACE, agentId, imageId, namedByTranscript: true, caller: null, actorUserId: null });
+
+    expect(await named(unsent.id, AGENT)).toBeNull();
+    expect(await named(carried.id, randomUUID())).toBeNull();
+  });
+});

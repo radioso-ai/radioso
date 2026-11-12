@@ -11,6 +11,14 @@ export interface VisitorImageOwner {
   readonly id: string;
 }
 
+/**
+ * What carries a send's photos once its turn stored them: the user message a conversation stored,
+ * or a Test Chat test, which keeps its transcript in its own store rather than in conversations.
+ */
+export type VisitorImageHolder =
+  | { readonly conversationId: string; readonly messageId: string }
+  | { readonly testExecutionId: string };
+
 /** The photos one send claimed, in the order the caller named them. */
 export interface VisitorImageClaim {
   readonly claimId: string;
@@ -34,11 +42,11 @@ export interface VisitorImageTurnInput {
     owner: VisitorImageOwner;
     imageIds: readonly string[];
   }): Promise<VisitorImageClaim>;
-  /** Binds the claimed photos to the user message that carries them. A failure is the turn's failure. */
-  bind(input: { workspaceId: string; claim: VisitorImageClaim; conversationId: string; messageId: string }): Promise<void>;
+  /** Binds the claimed photos to what carries them, the turn's stored message or test. A failure is the turn's failure. */
+  bind(input: { workspaceId: string; claim: VisitorImageClaim } & VisitorImageHolder): Promise<void>;
   /**
-   * Lets go of claimed photos no message took, so the caller can send them again; a bound photo
-   * stays bound. Never throws: a photo it cannot let go of is deleted with the unsent ones.
+   * Lets go of claimed photos nothing took, so the caller can send them again; a bound photo stays
+   * bound. Never throws: a photo it cannot let go of is deleted with the unsent ones.
    */
   release(input: { workspaceId: string; claim: VisitorImageClaim }): Promise<void>;
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Loader2, Send } from 'lucide-react'
 
+import { VisitorImageAttachButton, VisitorImageChips, useVisitorImageComposer, type VisitorImageComposerTheme } from '@/components/chat/visitor-image-composer'
 import { VoiceCallBar, VoiceCallNotice, VoiceTalkButton, type VoiceCallTheme } from '@/components/chat/voice-call-controls'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -13,6 +14,7 @@ import { startTestChatVoiceSession } from '@/lib/api-test-chat-voice'
 import { DEFAULT_WEBSITE_EMBED_COPY } from '@/lib/embed-widget'
 import { useCanAskForMicrophone, useVoiceSession } from '@/lib/use-voice-session'
 import { onVoiceCallReadinessChange, voiceCallReadinessHint } from '@/lib/voice-call-readiness'
+import type { ComposerImages } from '@/lib/visitor-image-types'
 
 /** The call controls in the dashboard's own colours, which follow its light and dark themes. */
 const DASHBOARD_CALL_THEME: VoiceCallTheme = {
@@ -22,6 +24,15 @@ const DASHBOARD_CALL_THEME: VoiceCallTheme = {
   inputBorder: 'var(--input)',
   inputForeground: 'var(--foreground)',
   mutedForeground: 'var(--muted-foreground)',
+}
+
+/** The photo controls in the dashboard's own colours; an error is the theme's destructive colour. */
+const DASHBOARD_IMAGE_THEME: VisitorImageComposerTheme = {
+  inputBackground: 'var(--background)',
+  inputBorder: 'var(--input)',
+  inputForeground: 'var(--foreground)',
+  mutedBackground: 'var(--muted)',
+  errorForeground: 'var(--destructive)',
 }
 
 /** How often, and how many times, the transcript is read again while a spoken turn still runs. */
@@ -72,10 +83,11 @@ interface TestChatTalk {
 }
 
 /**
- * Test Chat's composer: the message box and Send, and Talk beside them when the agent's voice is set
- * up. A call runs through the same voice session and call controls as the website embed's Talk, with
- * Test Chat's own start, so its turns run on the test's revision. While it runs, the call bar stands
- * in for the composer, and the transcript is read again after each line said on the call.
+ * Test Chat's composer: the message box and Send, the attach control and its photos when the agent
+ * takes photos, and Talk beside them when the agent's voice is set up. A call runs through the same
+ * voice session and call controls as the website embed's Talk, with Test Chat's own start, so its
+ * turns run on the test's revision. While it runs, the call bar stands in for the composer, and the
+ * transcript is read again after each line said on the call.
  */
 export function TestChatComposer({
   agentId,
@@ -83,8 +95,11 @@ export function TestChatComposer({
   onMessageChange,
   onSubmit,
   canSend,
+  sendReady = message.trim() !== '',
   sendLabel,
   isStarting,
+  images,
+  photosUnreadable = false,
   talk,
 }: {
   agentId: string
@@ -92,13 +107,20 @@ export function TestChatComposer({
   onMessageChange: (value: string) => void
   onSubmit: (event: FormEvent) => void
   canSend: boolean
+  /** The message can go: text, or uploaded photos with none still uploading. Text alone by default. */
+  sendReady?: boolean
   sendLabel: string
   isStarting: boolean
+  /** The photos of the next message; absent while the agent takes no photos. */
+  images?: ComposerImages
+  /** The agent has photos on, but its chat model cannot read them. */
+  photosUnreadable?: boolean
   /** Absent where a test takes no spoken turn: a comparison would answer twice. */
   talk?: TestChatTalk
 }) {
   const hintId = useId()
   const readiness = useTalkReadiness(agentId)
+  const { formRef, dragging, dropProps, onPaste, removeChip } = useVisitorImageComposer(images)
   const talkWanted = talk !== undefined && readiness.kind !== 'hidden'
   const talkShown = useCanAskForMicrophone(talkWanted)
   const talkRef = useRef(talk)
@@ -167,41 +189,49 @@ export function TestChatComposer({
       {talkShown && callActive ? (
         <VoiceCallBar theme={DASHBOARD_CALL_THEME} copy={DEFAULT_WEBSITE_EMBED_COPY} state={voice.state} onStop={stopCall} recordingNotice={voice.recordingNotice} />
       ) : (
-        <form onSubmit={onSubmit}>
-          <div className="flex items-end gap-1 rounded-2xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
-            <Textarea
-              value={message}
-              onChange={(event) => onMessageChange(event.target.value)}
-              onKeyDown={submitOnEnter}
-              placeholder="Ask a question..."
-              className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
-              disabled={!canSend}
-            />
-            {talkShown ? (
-              <VoiceTalkButton
-                theme={DASHBOARD_CALL_THEME}
-                copy={DEFAULT_WEBSITE_EMBED_COPY}
-                onPress={pressTalk}
-                disabled={readiness.kind !== 'ready' || !canSend}
-                describedBy={readiness.kind === 'not_ready' ? hintId : undefined}
+        <form ref={formRef} onSubmit={onSubmit} {...dropProps}>
+          <div className={`rounded-2xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 ${dragging ? 'ring-2 ring-ring' : ''}`}>
+            {images ? <VisitorImageChips images={images} theme={DASHBOARD_IMAGE_THEME} copy={DEFAULT_WEBSITE_EMBED_COPY} onRemove={removeChip} /> : null}
+            <div className="flex items-end gap-1">
+              {images?.canAttach ? <VisitorImageAttachButton theme={DASHBOARD_IMAGE_THEME} copy={DEFAULT_WEBSITE_EMBED_COPY} images={images} className="h-9 w-9" /> : null}
+              <Textarea
+                value={message}
+                onChange={(event) => onMessageChange(event.target.value)}
+                onKeyDown={submitOnEnter}
+                onPaste={onPaste}
+                placeholder="Ask a question..."
+                className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
+                disabled={!canSend}
               />
-            ) : null}
-            <Button
-              type="submit"
-              size="icon"
-              className="shrink-0 rounded-full"
-              aria-label={sendLabel}
-              title={sendLabel}
-              disabled={!canSend || !message.trim()}
-            >
-              {isStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              <span className="sr-only">{sendLabel}</span>
-            </Button>
+              {talkShown ? (
+                <VoiceTalkButton
+                  theme={DASHBOARD_CALL_THEME}
+                  copy={DEFAULT_WEBSITE_EMBED_COPY}
+                  onPress={pressTalk}
+                  disabled={readiness.kind !== 'ready' || !canSend}
+                  describedBy={readiness.kind === 'not_ready' ? hintId : undefined}
+                />
+              ) : null}
+              <Button
+                type="submit"
+                size="icon"
+                className="shrink-0 rounded-full"
+                aria-label={sendLabel}
+                title={sendLabel}
+                disabled={!canSend || !sendReady}
+              >
+                {isStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                <span className="sr-only">{sendLabel}</span>
+              </Button>
+            </div>
           </div>
         </form>
       )}
       {talkShown && readiness.kind === 'not_ready' ? (
         <p id={hintId} className="mt-1.5 px-2 text-xs text-muted-foreground">{readiness.hint}</p>
+      ) : null}
+      {photosUnreadable ? (
+        <p className="mt-1.5 px-2 text-xs text-muted-foreground">Photos are on, but this agent’s chat model can’t read them.</p>
       ) : null}
     </div>
   )

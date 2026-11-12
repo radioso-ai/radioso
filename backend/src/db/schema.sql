@@ -4168,10 +4168,12 @@ CREATE TABLE public.visitor_images (
     bound_at timestamp with time zone,
     read_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    test_execution_id uuid,
     CONSTRAINT visitor_images_byte_size_check CHECK ((byte_size > 0)),
     CONSTRAINT visitor_images_claim_complete CHECK (((claim_id IS NULL) = (claimed_at IS NULL))),
     CONSTRAINT visitor_images_height_check CHECK ((height > 0)),
     CONSTRAINT visitor_images_message_in_conversation CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
+    CONSTRAINT visitor_images_one_holder CHECK (((test_execution_id IS NULL) OR (conversation_id IS NULL))),
     CONSTRAINT visitor_images_owner_id_check CHECK (((length(owner_id) >= 1) AND (length(owner_id) <= 200))),
     CONSTRAINT visitor_images_owner_kind_check CHECK ((owner_kind = ANY (ARRAY['public_session'::text, 'api_credential'::text, 'user'::text, 'connector_conversation'::text]))),
     CONSTRAINT visitor_images_read_has_reading CHECK (((reading_status = 'read'::text) = (reading IS NOT NULL))),
@@ -9356,10 +9358,17 @@ CREATE INDEX visitor_images_message_idx ON public.visitor_images USING btree (me
 
 
 --
+-- Name: visitor_images_test_execution_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX visitor_images_test_execution_idx ON public.visitor_images USING btree (test_execution_id) WHERE (test_execution_id IS NOT NULL);
+
+
+--
 -- Name: visitor_images_unbound_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX visitor_images_unbound_idx ON public.visitor_images USING btree (created_at) WHERE (message_id IS NULL);
+CREATE INDEX visitor_images_unbound_idx ON public.visitor_images USING btree (created_at) WHERE ((message_id IS NULL) AND (test_execution_id IS NULL));
 
 
 --
@@ -12853,6 +12862,14 @@ ALTER TABLE ONLY public.visitor_images
 
 ALTER TABLE ONLY public.visitor_images
     ADD CONSTRAINT visitor_images_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: visitor_images visitor_images_test_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.visitor_images
+    ADD CONSTRAINT visitor_images_test_execution_id_fkey FOREIGN KEY (test_execution_id) REFERENCES public.agent_test_executions(id) ON DELETE SET NULL;
 
 
 --

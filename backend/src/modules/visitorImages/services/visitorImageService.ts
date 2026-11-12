@@ -180,16 +180,11 @@ export class VisitorImageService implements VisitorImageTurnInput {
   }
 
   async bind(input: Parameters<VisitorImageTurnInput["bind"]>[0]): Promise<void> {
-    const bound = await this.deps.store.bindClaim({
-      workspaceId: input.workspaceId,
-      claimId: input.claim.claimId,
-      conversationId: input.conversationId,
-      messageId: input.messageId,
-      boundAt: this.clock(),
-    });
-    if (bound < input.claim.images.length) {
+    const { workspaceId, claim, ...holder } = input;
+    const bound = await this.deps.store.bindClaim({ workspaceId, claimId: claim.claimId, boundAt: this.clock(), ...holder });
+    if (bound < claim.images.length) {
       // Only a deletion between the claim and the message (the workspace's) leaves fewer to bind.
-      this.deps.logger.warn({ workspaceId: input.workspaceId, conversationId: input.conversationId, claimId: input.claim.claimId, bound }, "visitor_image_bind_short");
+      this.deps.logger.warn({ workspaceId, ...holder, claimId: claim.claimId, bound }, "visitor_image_bind_short");
     }
   }
 
@@ -207,6 +202,33 @@ export class VisitorImageService implements VisitorImageTurnInput {
   async readForOwner(input: { workspaceId: string; owner: VisitorImageOwner; imageId: string }): Promise<Buffer | null> {
     const image = await this.deps.store.findForOwner({ workspaceId: input.workspaceId, owner: input.owner, id: input.imageId });
     return image ? this.deps.objects.get(image.object) : null;
+  }
+
+  /**
+   * A photo for a Test Chat transcript. One the transcript names (sent in the test, in the
+   * comparison it continues, or copied in with the conversation it started from) is served when a
+   * message or a test of the agent carries it; before the turn that sends it is stored, only the
+   * caller who uploaded it sees it. A visitor's photo is audited as any teammate view is; a test's
+   * photo is the operator's own.
+   */
+  async readForTestChat(input: {
+    workspaceId: string;
+    agentId: string;
+    imageId: string;
+    namedByTranscript: boolean;
+    caller: VisitorImageOwner | null;
+    actorUserId: string | null;
+  }): Promise<Buffer | null> {
+    const { workspaceId, imageId } = input;
+    const image = input.namedByTranscript
+      ? await this.deps.store.findCarried({ workspaceId, agentId: input.agentId, id: imageId })
+      : input.caller ? await this.deps.store.findForOwner({ workspaceId, owner: input.caller, id: imageId }) : null;
+    if (!image || image.agentId !== input.agentId) return null;
+    const bytes = await this.deps.objects.get(image.object);
+    if (image.conversationId) {
+      await this.deps.audit.viewed({ workspaceId, conversationId: image.conversationId, imageId, actorUserId: input.actorUserId });
+    }
+    return bytes;
   }
 
   /** A conversation's photo for a teammate reading it; every view that sends bytes is audited. */

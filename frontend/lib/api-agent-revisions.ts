@@ -82,6 +82,8 @@ export interface TestExecution {
       createdAt: string
       /** The operator spoke this turn on a call from Test Chat. */
       spoken?: true
+      /** The photos a user message carried, and what was typed with them. */
+      imageInput?: components['schemas']['TestExecutionImageInput']
     }>
   }>
 }
@@ -119,6 +121,8 @@ export type TestExecutionHistoryDetail = Omit<TestExecutionHistoryItem, 'sides'>
       createdAt: string
       /** The operator spoke this turn on a call from Test Chat. */
       spoken?: true
+      /** The photos a user message carried, and what was typed with them. */
+      imageInput?: components['schemas']['TestExecutionImageInput']
     }>
   }>
   attempts: Array<{
@@ -245,7 +249,20 @@ export const agentRevisionsApi = {
     return response
   },
 
-  async sendTestMessage(agentId: string, executionId: string, input: { message: string; executionGeneration: number; turnId: string; attemptId: string }, signal?: AbortSignal): Promise<Response> {
+  /** A photo for Test Chat's next message, read by the agent's chat model before it answers; only this operator can send it. */
+  async uploadTestChatImage(agentId: string, file: Blob & { name?: string }, signal?: AbortSignal): Promise<{ id: string }> {
+    const form = new FormData()
+    form.append('image', file, file.name ?? 'photo.jpg')
+    const headers = new Headers({ 'X-Forwarded-Prefix': '/backend' })
+    const workspaceId = getStoredActiveWorkspaceId()
+    if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
+    // No Content-Type: the browser writes the multipart boundary.
+    const response = await fetch(`${API_BASE}/assistant/images?agentId=${encodeURIComponent(agentId)}`, { method: 'POST', headers, credentials: 'include', body: form, signal })
+    if (!response.ok) throw await buildError(response)
+    return response.json() as Promise<{ id: string }>
+  },
+
+  async sendTestMessage(agentId: string, executionId: string, input: { message?: string; imageIds?: string[]; executionGeneration: number; turnId: string; attemptId: string }, signal?: AbortSignal): Promise<Response> {
     const headers = new Headers({ 'Content-Type': 'application/json', 'X-Forwarded-Prefix': '/backend' })
     const workspaceId = getStoredActiveWorkspaceId()
     if (workspaceId) headers.set('X-Workspace-Id', workspaceId)

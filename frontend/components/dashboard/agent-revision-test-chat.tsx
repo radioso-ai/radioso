@@ -24,6 +24,9 @@ import { buildAssistantIdentity, PrivacyNoticeLine } from "@/components/chat/ass
 import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestChatComposer } from "@/components/dashboard/test-chat-composer";
+import { parseEvents } from "@/lib/test-execution-events";
+import { useTestChatPhotos } from "@/lib/use-test-chat-photos";
+import { testChatVisitorImages } from "@/components/chat/visitor-image-thumbnails";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
 import { TurnFlowOverlay } from "@/components/dashboard/turn-flow-overlay";
 import {
@@ -78,7 +81,6 @@ import {
   type AgentRevisionSummary,
   type ExecutionState,
   type RevisionEvalRun,
-  type TestExecutionEvent,
   type TestExecutionHistoryDetail,
 } from "@/lib/api-agent-revisions";
 import {
@@ -89,6 +91,7 @@ import {
   initializeTestExecutionState,
   reduceTestExecutionEvent,
   sideHasSentMessage,
+  withStoredImageInputs,
   type TestExecutionState,
 } from "@/lib/agent-test-execution-state";
 import { evalsApi, type EvalCaseListItem } from "@/lib/api-eval";
@@ -169,47 +172,6 @@ const failureLabel = (code: string) =>
 const sideFailureContent = (code: string, usageHref: string): ReactNode => {
   const notice = getUsageLimitNoticeForCode(code);
   return notice ? <UsageLimitNotice notice={notice} href={usageHref} /> : failureLabel(code);
-};
-
-export const parseEvents = async (
-  response: Response,
-  onEvent: (event: TestExecutionEvent) => void,
-): Promise<boolean> => {
-  const reader = response.body?.getReader();
-  if (!reader) return false;
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let sawExecutionTerminal = false;
-  const parseFrame = (frame: string) => {
-    const data = frame
-      .split("\n")
-      .find((line) => line.startsWith("data:"))
-      ?.slice(5)
-      .trim();
-    if (!data) return;
-    try {
-      const event = JSON.parse(data) as TestExecutionEvent;
-      if (
-        event.type === "execution_completed" ||
-        event.type === "execution_partial"
-      )
-        sawExecutionTerminal = true;
-      onEvent(event);
-    } catch {
-      /* malformed event is ignored; server completion remains authoritative */
-    }
-  };
-  for (;;) {
-    const result = await reader.read();
-    if (result.done) {
-      if (buffer.trim()) parseFrame(buffer);
-      return sawExecutionTerminal;
-    }
-    buffer += decoder.decode(result.value, { stream: true });
-    const frames = buffer.split("\n\n");
-    buffer = frames.pop() ?? "";
-    for (const frame of frames) parseFrame(frame);
-  }
 };
 
 export function AgentRevisionTestChat({
@@ -413,6 +375,9 @@ export function AgentRevisionTestChat({
     writeAgentRevisionTestChatSession(sessionKey, { execution: resolved });
     setExecution(resolved);
   }, [sessionKey]);
+  // A photo turn's readings come from the test as stored; the bubble shows the photos until then.
+  const showStoredReadings = useCallback((stored: TestExecutionHistoryDetail) => setExecutionState((current) => current && withStoredImageInputs(current, stored)), [setExecutionState]);
+  const photos = useTestChatPhotos(agentId, showStoredReadings);
   const setEvalRunState = useCallback((next: SetStateAction<RevisionEvalRun | null>) => {
     const current = readAgentRevisionTestChatSession(sessionKey)?.evalRun ?? evalRunRef.current;
     const resolved = typeof next === "function" ? next(current) : next;
@@ -926,7 +891,7 @@ export function AgentRevisionTestChat({
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!message.trim() || isSending || isStarting) return;
+    if (!photos.canSend(message) || isSending || isStarting) return;
     setLinkOpenFailure(null);
     setUsageLimitNotice(null);
     const text = message.trim();
@@ -950,8 +915,10 @@ export function AgentRevisionTestChat({
         readAgentRevisionTestChatSession(sessionKey)?.executionEpoch === executionEpoch
       );
     };
+    const imageIds = photos.take();
+    const photoSend = { executionId: active.executionId, imageIds };
     setMessage("");
-    setExecutionState(beginTestExecutionTurn(active, text, turnId, attemptId));
+    setExecutionState(beginTestExecutionTurn(active, text, turnId, attemptId, imageIds));
     setSendingState(true);
     const abortController = new AbortController();
     messageAbort.current = abortController;
@@ -968,13 +935,15 @@ export function AgentRevisionTestChat({
         agentId,
         active.executionId,
         {
-          message: text,
+          ...(text ? { message: text } : {}),
+          ...(imageIds.length > 0 ? { imageIds } : {}),
           executionGeneration: active.generation,
           turnId,
           attemptId,
         },
         abortController.signal,
       );
+      photos.settle(photoSend, { taken: true });
       const sawTerminal = await parseEvents(response, (incoming) => {
         if (matchesAttempt())
           setExecutionState((current) =>
@@ -991,6 +960,7 @@ export function AgentRevisionTestChat({
             : null,
         );
     } catch (cause) {
+      photos.settle(photoSend, { taken: false, error: cause });
       if (
         matchesAttempt() &&
         !(cause instanceof DOMException && cause.name === "AbortError")
@@ -1779,6 +1749,7 @@ export function AgentRevisionTestChat({
                         content: item.content,
                         persistedAssistantMessageId: item.persistedAssistantMessageId,
                         ...(item.spoken ? { spokenLabel: DEFAULT_WEBSITE_EMBED_COPY.publicChatSpokenLabel } : {}),
+                        ...(item.imageInput ? { inputMetadata: { method: "typed" as const, imageInput: item.imageInput } } : {}),
                         status:
                           item.state === "streaming"
                             ? "streaming"
@@ -1802,6 +1773,7 @@ export function AgentRevisionTestChat({
                         >
                           {messages.length ? <ChatMessageThread
                             messages={messages}
+                            visitorImages={execution ? testChatVisitorImages(workspaceId, agentId, execution.executionId) : undefined}
                             onOpenDocument={async () => "unavailable"}
                             assistantAvatarLabel={assistantName}
                             assistantIdentity={assistantIdentity}
@@ -1891,6 +1863,9 @@ export function AgentRevisionTestChat({
               onMessageChange={setMessage}
               onSubmit={submit}
               canSend={canSend}
+              sendReady={photos.canSend(message)}
+              images={photos.composerImages}
+              photosUnreadable={photos.availability === "model_cannot_read"}
               sendLabel={sendLabel}
               isStarting={isStarting}
               talk={mode === "single" ? {

@@ -29,6 +29,14 @@ type ImageCopy = Pick<
   | 'publicChatMessageFailedMessage'
 >
 
+/**
+ * The colours the photo controls draw with: the embed's own theme, or the dashboard's CSS variables,
+ * which name an error colour of their own since no contrast can be computed from a variable.
+ */
+export type VisitorImageComposerTheme = Pick<WebsiteEmbedTheme, 'inputForeground' | 'inputBorder' | 'inputBackground' | 'mutedBackground'> & {
+  errorForeground?: string
+}
+
 const failureMessage = (copy: ImageCopy, failure: SendFailure): string => {
   switch (failure) {
     case 'unsupported_type':
@@ -61,7 +69,7 @@ export function VisitorImageAttachButton({
   images,
   className,
 }: {
-  theme: WebsiteEmbedTheme
+  theme: VisitorImageComposerTheme
   copy: ImageCopy
   images: ComposerImages
   className: string
@@ -114,12 +122,12 @@ function Chip({
   attachment: Attachment
   position: number
   count: number
-  theme: WebsiteEmbedTheme
+  theme: VisitorImageComposerTheme
   copy: ImageCopy
   onRemove: (viaKeyboard: boolean) => void
 }) {
   const failed = attachment.status === 'error'
-  const errorColor = errorForeground(theme.mutedBackground)
+  const errorColor = theme.errorForeground ?? errorForeground(theme.mutedBackground)
   return (
     <li
       className="relative size-14 shrink-0 overflow-hidden rounded-lg border"
@@ -165,7 +173,7 @@ export function VisitorImageChips({
   onRemove,
 }: {
   images: ComposerImages
-  theme: WebsiteEmbedTheme
+  theme: VisitorImageComposerTheme
   copy: ImageCopy
   onRemove: (key: string, viaKeyboard: boolean) => void
 }) {
@@ -201,7 +209,7 @@ export function VisitorImageChips({
         </ul>
       ) : null}
       {reasons.length > 0 ? (
-        <p role="alert" data-testid="visitor-image-notice" className="mt-1.5 text-xs" style={{ color: errorForeground(theme.inputBackground) }}>
+        <p role="alert" data-testid="visitor-image-notice" className="mt-1.5 text-xs" style={{ color: theme.errorForeground ?? errorForeground(theme.inputBackground) }}>
           {reasons.join(' ')}
         </p>
       ) : null}

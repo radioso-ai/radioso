@@ -20,11 +20,25 @@ export const operatorVisitorImages = (workspaceId: string, conversationId: strin
   readings: { label: 'What the agent read', unreadLabel: 'The agent could not read this photo.' },
 })
 
+/** Test Chat's photos: loaded from the test, with the agent's readings under the operator's bubble. */
+export const testChatVisitorImages = (workspaceId: string, agentId: string, executionId: string): VisitorImageThreadConfig => ({
+  source: { kind: 'test_chat', workspaceId, agentId, executionId },
+  altLabel: 'Photo sent in this test',
+  unavailableLabel: 'Photo unavailable',
+  readings: { label: 'What the agent read', unreadLabel: 'The agent could not read this photo.' },
+})
+
 const THUMBNAIL_CLASS = 'size-24 shrink-0 overflow-hidden rounded-lg'
 const PLACEHOLDER_STYLE = { background: 'color-mix(in srgb, currentColor 14%, transparent)' } as const
 
-const operatorImageUrl = (source: Extract<VisitorImageSource, { kind: 'operator' }>, imageId: string): string =>
-  `${API_BASE}/conversations/${encodeURIComponent(source.conversationId)}/images/${encodeURIComponent(imageId)}?workspaceId=${encodeURIComponent(source.workspaceId)}`
+type TeammateImageSource = Exclude<VisitorImageSource, { kind: 'public' }>
+
+const operatorImageUrl = (source: TeammateImageSource, imageId: string): string => {
+  const path = source.kind === 'operator'
+    ? `conversations/${encodeURIComponent(source.conversationId)}`
+    : `agents/${encodeURIComponent(source.agentId)}/test-executions/${encodeURIComponent(source.executionId)}`
+  return `${API_BASE}/${path}/images/${encodeURIComponent(imageId)}?workspaceId=${encodeURIComponent(source.workspaceId)}`
+}
 
 type LoadedImage = { status: 'loading' } | { status: 'ready'; url: string } | { status: 'error' }
 
@@ -75,7 +89,7 @@ function PublicThumbnail({ publicChatToken, image, config }: { publicChatToken: 
  * A teammate's view of a photo is recorded each time its bytes are sent, so the photo is asked for
  * only once it is on screen, never because it sits somewhere down a long thread.
  */
-function OperatorThumbnail({ source, image, config }: { source: Extract<VisitorImageSource, { kind: 'operator' }>; image: VisitorImage; config: VisitorImageThreadConfig }) {
+function OperatorThumbnail({ source, image, config }: { source: TeammateImageSource; image: VisitorImage; config: VisitorImageThreadConfig }) {
   const [failed, setFailed] = useState(false)
   const [frame, seen] = useOnceIntersecting<HTMLDivElement>()
   return (

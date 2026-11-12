@@ -18590,6 +18590,35 @@ components:
             - generation
             - turnId
             - attemptId
+    TestExecutionImageInput:
+      type: object
+      properties:
+        typedText:
+          type: string
+          description: What was typed with the photos, without their readings. Empty for photos sent alone.
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: The image id; read the photo from the test's image route.
+              reading:
+                type:
+                  - string
+                  - "null"
+                description: What the agent's chat model read in the photo; null when it could not read it.
+            required:
+              - id
+              - reading
+          minItems: 1
+          maxItems: 3
+      required:
+        - typedText
+        - images
+      description: "The photos a user message carries. `content` is the turn text the agent ran on: the typed text followed by one `<attached_photo>` block per photo. Show `typedText` and the photos; the readings are the agent's."
     TestExecutionSide:
       type: object
       properties:
@@ -18668,6 +18697,8 @@ components:
                 enum:
                   - true
                 description: The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
+              imageInput:
+                $ref: "#/components/schemas/TestExecutionImageInput"
             required:
               - turnId
               - role
@@ -18762,10 +18793,6 @@ components:
     TestExecutionMessageRequest:
       type: object
       properties:
-        message:
-          type: string
-          minLength: 1
-          maxLength: 20000
         executionGeneration:
           type: integer
           exclusiveMinimum: 0
@@ -18779,8 +18806,20 @@ components:
           type: string
           maxLength: 64
           description: The operator's IANA time zone, such as America/Los_Angeles, which Test Chat sends from the browser with every message and retry. The turn reads today, tomorrow and this weekend in it; without it, or with an unknown zone, the workspace's time zone applies, then UTC.
+        message:
+          type: string
+          minLength: 1
+          maxLength: 20000
+          description: What the operator typed. Required unless `imageIds` is present.
+        imageIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 3
+          description: Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo.
       required:
-        - message
         - executionGeneration
         - turnId
         - attemptId
@@ -19032,6 +19071,8 @@ components:
                           enum:
                             - true
                           description: The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
+                        imageInput:
+                          $ref: "#/components/schemas/TestExecutionImageInput"
                       required:
                         - turnId
                         - role
@@ -37329,7 +37370,7 @@ paths:
       tags:
         - Assistant
       summary: Upload an image for a chat message
-      description: "The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts."
+      description: "The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`, or in a message to one of that agent's tests (`POST /api/v1/agents/{agentId}/test-executions/{executionId}/messages`), which is how Test Chat sends photos. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts."
       operationId: uploadAssistantChatImage
       security:
         - bearerAuth: []
@@ -37528,6 +37569,68 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: The conversation carries no such image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/test-executions/{executionId}/images/{imageId}:
+    get:
+      tags:
+        - Agents
+      summary: View an image in a Test Chat transcript
+      description: "A test keeps its transcript apart from conversations, so its images are read here. The image ids are in a user entry's `imageInput` in the test's history. It serves an image the test's history names: one sent in the test, in the comparison it continues, or with the conversation it started from. Before the message that sends it is stored, it serves an image only to the caller who uploaded it. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<img>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`. A response that carries a visitor's image, copied in with a conversation, records a `conversation.image_viewed` audit event with the teammate's user id."
+      operationId: getAgentTestExecutionImage
+      security: *a3
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: executionId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: imageId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: workspaceId
+          in: query
+      responses:
+        "200":
+          description: The stored image
+          content:
+            image/jpeg: *a36
+        "400":
+          description: Invalid agent, test or image id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent management and history read permissions required, the caller is not a dashboard session, or another site started the request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The test is gone, or it carries no such image
           content:
             application/json:
               schema:

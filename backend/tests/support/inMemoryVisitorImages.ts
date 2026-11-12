@@ -25,6 +25,7 @@ export class InMemoryVisitorImageStore implements VisitorImageStore {
       owner: image.owner,
       conversationId: null,
       messageId: null,
+      testExecutionId: null,
       object: image.object,
       byteSize: image.byteSize,
       width: image.width,
@@ -59,10 +60,13 @@ export class InMemoryVisitorImageStore implements VisitorImageStore {
   }
 
   async bindClaim(input: Parameters<VisitorImageStore["bindClaim"]>[0]): Promise<number> {
+    const holder = "testExecutionId" in input
+      ? { testExecutionId: input.testExecutionId }
+      : { conversationId: input.conversationId, messageId: input.messageId };
     let bound = 0;
     for (const row of this.rows.values()) {
-      if (row.workspaceId !== input.workspaceId || row.claimId !== input.claimId || row.messageId !== null) continue;
-      this.rows.set(row.id, { ...row, conversationId: input.conversationId, messageId: input.messageId });
+      if (row.workspaceId !== input.workspaceId || row.claimId !== input.claimId || carried(row)) continue;
+      this.rows.set(row.id, { ...row, ...holder });
       bound += 1;
     }
     return bound;
@@ -71,7 +75,7 @@ export class InMemoryVisitorImageStore implements VisitorImageStore {
   async releaseClaim(input: Parameters<VisitorImageStore["releaseClaim"]>[0]): Promise<number> {
     let released = 0;
     for (const row of this.rows.values()) {
-      if (row.workspaceId !== input.workspaceId || row.claimId !== input.claimId || row.messageId !== null) continue;
+      if (row.workspaceId !== input.workspaceId || row.claimId !== input.claimId || carried(row)) continue;
       this.rows.set(row.id, { ...row, claimId: null });
       released += 1;
     }
@@ -81,6 +85,11 @@ export class InMemoryVisitorImageStore implements VisitorImageStore {
   async findForOwner(input: { workspaceId: string; owner: VisitorImageOwner; id: string }): Promise<StoredVisitorImage | null> {
     const row = this.rows.get(input.id);
     return row && row.workspaceId === input.workspaceId && sameOwner(row.owner, input.owner) ? row : null;
+  }
+
+  async findCarried(input: { workspaceId: string; agentId: string; id: string }): Promise<StoredVisitorImage | null> {
+    const row = this.rows.get(input.id);
+    return row && row.workspaceId === input.workspaceId && row.agentId === input.agentId && carried(row) ? row : null;
   }
 
   async findInConversation(input: { workspaceId: string; conversationId: string; id: string }): Promise<StoredVisitorImage | null> {
@@ -93,6 +102,9 @@ export class InMemoryVisitorImageStore implements VisitorImageStore {
     if (row?.workspaceId === input.workspaceId) this.rows.delete(input.id);
   }
 }
+
+/** Whether a message or a test carries the photo. */
+const carried = (row: StoredVisitorImage): boolean => row.messageId !== null || row.testExecutionId !== null;
 
 const sameOwner = (left: VisitorImageOwner, right: VisitorImageOwner): boolean => left.kind === right.kind && left.id === right.id;
 

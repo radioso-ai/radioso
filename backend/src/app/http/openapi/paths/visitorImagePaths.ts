@@ -99,7 +99,7 @@ export const registerVisitorImagePaths = (
     tags: ["Assistant"],
     summary: "Upload an image for a chat message",
     description: [
-      "The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`.",
+      "The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`, or in a message to one of that agent's tests (`POST /api/v1/agents/{agentId}/test-executions/{executionId}/messages`), which is how Test Chat sends photos.",
       uploadLimits,
       "Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts.",
     ].join(" "),
@@ -158,6 +158,33 @@ export const registerVisitorImagePaths = (
       401: errorResponse("Authentication required", schemas),
       403: errorResponse("Workspace history read permission required, the caller is not a dashboard session, or another site started the request", schemas),
       404: errorResponse("The conversation carries no such image", schemas),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/test-executions/{executionId}/images/{imageId}",
+    tags: ["Agents"],
+    summary: "View an image in a Test Chat transcript",
+    description: [
+      "A test keeps its transcript apart from conversations, so its images are read here. The image ids are in a user entry's `imageInput` in the test's history.",
+      "It serves an image the test's history names: one sent in the test, in the comparison it continues, or with the conversation it started from. Before the message that sends it is stored, it serves an image only to the caller who uploaded it.",
+      "Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<img>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`.",
+      imageServing,
+      "A response that carries a visitor's image, copied in with a conversation, records a `conversation.image_viewed` audit event with the teammate's user id.",
+    ].join(" "),
+    operationId: "getAgentTestExecutionImage",
+    security: security.workspaceAdminSecurity,
+    request: {
+      params: z.object({ agentId: z.string().uuid(), executionId: z.string().uuid(), imageId: z.string().uuid() }),
+      query: z.object({ workspaceId: z.string().uuid().optional() }),
+    },
+    responses: {
+      200: { description: "The stored image", content: jpeg },
+      400: errorResponse("Invalid agent, test or image id", schemas),
+      401: errorResponse("Authentication required", schemas),
+      403: errorResponse("Agent management and history read permissions required, the caller is not a dashboard session, or another site started the request", schemas),
+      404: errorResponse("The test is gone, or it carries no such image", schemas),
     },
   });
 };

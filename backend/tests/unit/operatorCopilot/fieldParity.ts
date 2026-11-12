@@ -138,6 +138,9 @@ const testChatMintsItsOwnIdentities = permanent(
 const testChatSkillEffectsAlwaysSuppressed = permanent(
   "send_test_chat_message always runs with skill effects suppressed: letting a skill act outward would make a probe an act. It also refuses to continue a session that was started with effects allowed, which continues only in the dashboard.",
 );
+const testChatSendsText = permanent(
+  "send_test_chat_message sends text. `imageIds` names photos the caller uploaded with POST /api/v1/assistant/images, and Ray uploads none; the operator attaches photos in Test Chat, and test_chat_transcript gives Ray each photo's reading as the text of the turn it was sent in.",
+);
 
 const retrievalSettingsOnlyPatchesTheDefaultSkill = permanent(
   "prepare_retrieval_settings only ever patches the agent's one default retrieval skill through a typed retrieval-specific `patch`. The generic target/config/replaceConfig/invocationMode/enabled surface belongs to the general skill editor (propose_skill_config), not this narrower tool.",
@@ -271,6 +274,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["seedConversationId"], testChatSeedUnreachable),
     ...fields(["idempotencyKey", "executionGeneration", "turnId", "attemptId"], testChatMintsItsOwnIdentities),
     ...fields(["skillEffects"], testChatSkillEffectsAlwaysSuppressed),
+    ...fields(["imageIds"], testChatSendsText),
   },
 };
 

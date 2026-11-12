@@ -83,6 +83,20 @@ through composition (`createTestChatVoiceTurns` in
 `app/composition/voiceChannel.ts`) and the session-start route; this module
 knows nothing of sessions, vendors or speech.
 
+A typed message can carry photos (`photos` on `streamMessage`: the uploaded
+ids and their uploader). They are claimed through `TestExecutionPhotoTurnsPort`,
+which chat implements over the chat door's own claim and composition wires:
+every side runs on the turn text with the readings, the user entry keeps
+`content` as that text and `imageInput` as what was typed and each photo's id
+and reading, the photos are bound to this test once the turn is stored, and they
+are let go when the claim was refused (`test_turn_in_progress` and the like), so
+the operator can send them again. A turn with photos is listed by what was
+typed, never the readings. A retry reruns the stored turn text and claims
+nothing. A seed copies a visitor's `imageInput` with its message, except on a
+withheld message. `carriesImage` says whether a message of the test carried a
+photo, for the Test Chat image route. This module knows nothing about how photos
+are stored or read.
+
 Operator Copilot reads and drives Test Chat through `summaries`, `transcript`,
 `turn`, `start`, and `send`, from
 `operatorCopilot/services/testChatService.ts`, which adds its spend guard,
@@ -102,5 +116,5 @@ revision does not make a private test conversation resumable by a visitor.
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/test-execution-service.test.ts tests/unit/test-execution-spoken-turns.test.ts tests/unit/trusted-test-execution-runner-adapter.test.ts tests/unit/conversation-test-execution-seed-source.test.ts tests/unit/test-execution-request-schema.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/test-execution-service.test.ts tests/unit/test-execution-spoken-turns.test.ts tests/unit/test-execution-photo-turns.test.ts tests/unit/trusted-test-execution-runner-adapter.test.ts tests/unit/conversation-test-execution-seed-source.test.ts tests/unit/test-execution-request-schema.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/test-execution-repository.integration.test.ts tests/integration/test-execution-routes.integration.test.ts tests/integration/conversation-test-execution-seed-source.integration.test.ts --no-file-parallelism`

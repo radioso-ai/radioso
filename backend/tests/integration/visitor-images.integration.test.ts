@@ -161,6 +161,48 @@ describeIntegration("visitor images on Postgres", () => {
     expect(await deletionJobs()).toContain(`workspaces/${workspaceId}/visitor-images/${stale}`);
   });
 
+  /** A Test Chat test of the agent, which keeps its transcript apart from conversations. */
+  const testExecution = async (): Promise<string> => {
+    const id = randomUUID();
+    await database.query(
+      "INSERT INTO agent_test_executions (id, workspace_id, agent_id, mode, state, test_values, idempotency_key) VALUES ($1, $2, $3, 'single', 'completed', '[]'::jsonb, $4)",
+      [id, workspaceId, agentId, id],
+    );
+    return id;
+  };
+
+  it("keeps a photo a Test Chat test carries past the unbound sweep, then sweeps it once the test is deleted", async () => {
+    const operator: VisitorImageOwner = { kind: "user", id: randomUUID() };
+    const image = await upload(operator);
+    const executionId = await testExecution();
+    const claimId = randomUUID();
+    await store.claim({ workspaceId, agentId, owner: operator, imageIds: [image], claimId, claimedAt: new Date() });
+
+    expect(await store.bindClaim({ workspaceId, claimId, testExecutionId: executionId, boundAt: new Date() })).toBe(1);
+    expect(await store.releaseClaim({ workspaceId, claimId })).toBe(0);
+    expect(await store.findCarried({ workspaceId, agentId, id: image })).toMatchObject({ id: image, testExecutionId: executionId, conversationId: null, messageId: null });
+    expect(await store.findCarried({ workspaceId, agentId: randomUUID(), id: image })).toBeNull();
+    await database.query("UPDATE visitor_images SET created_at = now() - interval '25 hours', claimed_at = now() - interval '25 hours' WHERE id = $1", [image]);
+    const rule = new UnboundVisitorImageRetention(database.kysely, (trx) => new BackgroundJobRepository(trx));
+    while (await rule.enforce({ now: new Date(), limit: 50 }) > 0) { /* drain */ }
+    expect(await row(image)).not.toBeNull();
+
+    await database.query("DELETE FROM agent_test_executions WHERE id = $1", [executionId]);
+    while (await rule.enforce({ now: new Date(), limit: 50 }) > 0) { /* drain */ }
+
+    expect(await row(image)).toBeNull();
+    expect(await deletionJobs()).toContain(`workspaces/${workspaceId}/visitor-images/${image}`);
+  });
+
+  it("never binds a photo to both a message and a test", async () => {
+    const image = await upload();
+    const executionId = await testExecution();
+    const message = await carry([image]);
+
+    await expect(database.query("UPDATE visitor_images SET conversation_id = $2, message_id = $3, test_execution_id = $4 WHERE id = $1", [image, conversationId, message.id, executionId]))
+      .rejects.toThrow(/visitor_images_one_holder/);
+  });
+
   it("erases a conversation's photos with it, handing their objects to the deletion job in the erasure's transaction", async () => {
     const image = await upload();
     const claimId = randomUUID();

@@ -1035,8 +1035,10 @@ Public surfaces and key files:
 - `backend/src/app/http/routes/testExecutionRoutes.ts`
 - `backend/src/app/http/openapi/paths/testExecutionPaths.ts`
 - `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts` (drives `WorkbenchReplayRunner.stream`)
-- `frontend/lib/agent-test-execution-state.ts` (stream event reducer; `frontend/tests/unit/agent-test-execution-state.test.ts`)
-- `backend/tests/unit/test-execution-service.test.ts`
+- `backend/src/app/composition/testExecution.ts` (`buildTestExecutionService`: the store, the trusted runner, the seed source and Test Chat's photo turns)
+- `frontend/lib/agent-test-execution-state.ts` (stream event reducer; `frontend/tests/unit/agent-test-execution-state.test.ts`); `frontend/lib/test-execution-events.ts` (the turn stream's parser)
+- Test Chat photos: `photos` on `TestExecutionService.streamMessage` through `TestExecutionPhotoTurnsPort` (`backend/src/modules/chat/services/testChatPhotoTurns.ts`, over the chat door's claim), bound to the test (`visitor_images.test_execution_id`); `backend/src/app/http/routes/testChatImageRoutes.ts` (`GET /api/v1/agents/:agentId/test-executions/:executionId/images/:imageId`); `frontend/lib/use-test-chat-photos.ts` over the pure `test-chat-photos.ts`, rendered by `frontend/components/dashboard/test-chat-composer.tsx`; the journey is `frontend/tests/e2e/test-chat-images.spec.ts`
+- `backend/tests/unit/test-execution-service.test.ts`, `test-execution-photo-turns.test.ts`
 - `backend/tests/integration/test-execution-repository.integration.test.ts`
 - `backend/tests/integration/test-execution-routes.integration.test.ts`
 
@@ -1138,9 +1140,12 @@ to the user message id the moment the preparer stores it
 (`onUserMessageStored`); a turn that stores no message releases the claim.
 An erasure deletes a conversation's photos and queues their objects to the
 `visitor_images.object_deletion` job in its transaction; a retention rule sweeps
-photos no message carries after 24 hours. The agent flag is
+photos no message and no test carries after 24 hours. The agent flag is
 `visitorImagesEnabled`; the public session's and the conversation list's `acceptsImages` add whether the
-agent's chat model reads images.
+agent's chat model reads images. Test Chat sends photos through the same claim
+and binds them to the test (`test_execution_id`, migration `258`), since a test
+keeps its transcript apart from conversations; it takes photos exactly when the
+agent does, since the flag and the chat model are the agent's, not a revision's.
 
 Public surfaces and key files:
 
@@ -1149,10 +1154,11 @@ Public surfaces and key files:
 - `backend/src/modules/chat/services/visitorImageTurn.ts` (the door's claim, rendering, bind and release); `turnUserMessage.ts` (stores the user message, then calls `onUserMessageStored`)
 - `backend/src/app/http/routes/publicVisitorImageRoutes.ts` (`POST`/`GET /api/v1/public/chat/{token}/images[/{imageId}]`)
 - `backend/src/app/http/routes/assistantRoutes.ts` (`POST /api/v1/assistant/images`), `agentChannelImageRoute.ts` (`POST /api/v1/agents/{agentId}/images`)
-- `backend/src/app/http/routes/conversationImageRoutes.ts` (`GET /api/v1/conversations/{conversationId}/images/{imageId}`, audited)
+- `backend/src/app/http/routes/conversationImageRoutes.ts` (`GET /api/v1/conversations/{conversationId}/images/{imageId}`, audited); `testChatImageRoutes.ts` (`GET /api/v1/agents/{agentId}/test-executions/{executionId}/images/{imageId}`, a photo a test's transcript names or the caller uploaded; a visitor's, copied in by a seed, is audited)
 - `backend/src/app/http/shared/visitorImageUpload.ts`, `backend/src/app/http/middleware/visitorImageUploadRateLimiter.ts`
 - `backend/prompts/chat/visitor-image-reading.md`
-- `backend/src/db/migrations/256_visitor_images.sql`
+- `backend/src/db/migrations/256_visitor_images.sql`, `258_visitor_images_test_chat.sql` (the Test Chat holder)
+- `backend/src/modules/chat/services/testChatPhotoTurns.ts` (Test Chat's photos over `claimVisitorImageTurn`, bound with `bind({ testExecutionId })`)
 - `frontend/components/chat/visitor-image-composer.tsx` (attach button, preview chips, paste and drop) rendered by `PublicChatBubbleComposerForm` in `public-chat-bubble-view.tsx`; `frontend/lib/use-visitor-image-attachments.ts` over `visitor-image-attachment-controller.ts` (shrink, upload, remove, the three-photo limit) and the pure `visitor-image-attachments.ts` (state transitions), `visitor-image-downsize.ts` (sizing and fallbacks over an `ImageCodec`; `visitor-image-browser-codec.ts` is the browser one)
 - `frontend/components/chat/visitor-image-thumbnails.tsx` and `visitor-message-body.tsx` (the visitor's bubble from `inputMetadata.imageInput`, read with `frontend/lib/visitor-image-input.ts`; the public chat fetches a photo with its session header into `visitor-image-blob-cache.ts`, a teammate's view loads it from the conversation route), `ChatMessageThread`'s `visitorImages` prop, and the operator hosts `inbox-response-view.tsx` and `conversation-drawer.tsx`
 - `frontend/lib/anonymous-chat-context.tsx` (`acceptsImages`, `uploadImage`, `sendMessage(..., { imageIds })`), `frontend/lib/api-public-chat.ts` (`uploadImage`, `fetchImage`), `frontend/app/api/public/chat/[token]/route.ts` (the relay's `imageIds`); `acceptsImages` comes from the conversation list each load (`GET /api/v1/public/chat/:token`), and `frontend/lib/use-public-chat-photos.ts` is the shell's photo glue (composer controls, thread config, the send, which gives the photos and words back when the server did not take them, per `public-chat-errors.ts`; photos the chat stops offering are dropped with a notice; `use-file-drop-guard.ts` keeps a file dropped outside the composer from navigating the page), with the shared shapes in `visitor-image-types.ts`; a teammate's thumbnail asks for its photo only once `use-once-intersecting.ts` says it is on screen. The agent's `chatModelReadsImages` is computed by `createChatModelImageReading` in `backend/src/app/composition/visitorImages.ts` (the same port the availability check uses) for `GET`/`PUT /api/v1/agents/:agentId`
@@ -1164,6 +1170,7 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/unit/agents/agent-visitor-images-flag.test.ts tests/contract/visitor-images.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/visitor-images.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/unit/chat/test-chat-photo-turns.test.ts tests/unit/test-execution-photo-turns.test.ts tests/contract/test-chat-images.contract.test.ts` and `cd frontend && pnpm exec vitest run tests/unit/test-chat-photos.test.ts` (Test Chat photos)
 - `cd backend && pnpm exec vitest run tests/unit/connectors/connectorImageTurns.test.ts tests/unit/connectors/connectorChatPort.test.ts tests/unit/connectors/whatsapp tests/contract/connectors/connector-chat-port.contract.test.ts` (WhatsApp photos)
 - `cd typescript-sdk && pnpm exec vitest run tests/unit/chat-images.test.ts`
 - `cd frontend && pnpm exec vitest run tests/unit/visitor-image-*.test.ts tests/unit/anonymous-chat-images.test.tsx tests/unit/public-chat-relay-route.test.ts tests/unit/api-public-chat-images.test.ts`; the journey is `frontend/tests/e2e/visitor-image-composer.spec.ts`

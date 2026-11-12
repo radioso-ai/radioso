@@ -1,7 +1,7 @@
 import type { LlmCapabilityOverride } from "../../shared/infra/llm/workspaceContext.js";
-import type { VisitorImageOwner } from "./contracts/turnInput.js";
+import type { VisitorImageHolder, VisitorImageOwner } from "./contracts/turnInput.js";
 
-export type { VisitorImageOwner, VisitorImageOwnerKind } from "./contracts/turnInput.js";
+export type { VisitorImageHolder, VisitorImageOwner, VisitorImageOwnerKind } from "./contracts/turnInput.js";
 
 /** The bounds every channel's photos are held to; the server is the authority for all of them. */
 export const VISITOR_IMAGE_LIMITS = {
@@ -48,6 +48,8 @@ export interface StoredVisitorImage {
   readonly owner: VisitorImageOwner;
   readonly conversationId: string | null;
   readonly messageId: string | null;
+  /** The Test Chat test that carries the photo, in place of a conversation's message. */
+  readonly testExecutionId: string | null;
   readonly object: VisitorImageObject;
   readonly byteSize: number;
   readonly width: number;
@@ -100,11 +102,13 @@ export interface VisitorImageStore {
     claimId: string;
     claimedAt: Date;
   }): Promise<ClaimedVisitorImageRow[] | null>;
-  /** Binds the claim's unbound photos to one message of one conversation. Returns how many it bound. */
-  bindClaim(input: { workspaceId: string; claimId: string; conversationId: string; messageId: string; boundAt: Date }): Promise<number>;
-  /** Lets the claim's photos that no message carries be claimed again. Returns how many it let go. */
+  /** Binds the claim's unbound photos to one conversation's message, or to one test. Returns how many it bound. */
+  bindClaim(input: { workspaceId: string; claimId: string; boundAt: Date } & VisitorImageHolder): Promise<number>;
+  /** Lets the claim's photos that no message and no test carries be claimed again. Returns how many it let go. */
   releaseClaim(input: { workspaceId: string; claimId: string }): Promise<number>;
   findForOwner(input: { workspaceId: string; owner: VisitorImageOwner; id: string }): Promise<StoredVisitorImage | null>;
+  /** The agent's photo a message or a test carries, whichever; null for one nothing carries. */
+  findCarried(input: { workspaceId: string; agentId: string; id: string }): Promise<StoredVisitorImage | null>;
   findInConversation(input: { workspaceId: string; conversationId: string; id: string }): Promise<StoredVisitorImage | null>;
   /** Removes the row of an upload whose bytes could not be stored. */
   delete(input: { workspaceId: string; id: string }): Promise<void>;

@@ -1,5 +1,5 @@
 import type { ExecutionState, TestExecution, TestExecutionEvent, TestExecutionHistoryDetail } from './api-agent-revisions'
-import type { TurnTraceEnvelope } from './api-types'
+import type { TurnTraceEnvelope, VisitorImageInput } from './api-types'
 
 export interface TestExecutionSideState {
   id: string
@@ -23,6 +23,8 @@ interface TestExecutionMessage {
   turnTrace?: TurnTraceEnvelope
   /** Said on a call from Test Chat rather than typed. */
   spoken?: true
+  /** The photos a message carried and what was typed with them; `content` is the turn text with the readings. */
+  imageInput?: VisitorImageInput
 }
 
 export interface TestExecutionState {
@@ -76,6 +78,7 @@ export const initializeTestExecutionState = (execution: TestExecution): TestExec
       persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
       turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
       ...(entry.spoken ? { spoken: true as const } : {}),
+      ...(entry.role === 'user' && entry.imageInput ? { imageInput: entry.imageInput } : {}),
     })),
   }])),
 })
@@ -133,6 +136,7 @@ const hydrateSideMessages = (side: PersistedSide, latestByTurn: Map<string, Pers
       persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
       turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
       ...(entry.spoken ? { spoken: true as const } : {}),
+      ...(entry.role === 'user' && entry.imageInput ? { imageInput: entry.imageInput } : {}),
     }
     const endsUnansweredTurn = lastIndexByTurn.get(entry.turnId) === index && !answeredTurnIds.has(entry.turnId)
     const placeholder = endsUnansweredTurn
@@ -177,8 +181,11 @@ export const hydrateTestExecutionState = (execution: TestExecutionHistoryDetail)
   }
 }
 
-/** Add the one operator message to every independently pinned test side. */
-export const beginTestExecutionTurn = (state: TestExecutionState, message: string, turnId: string, attemptId: string): TestExecutionState => ({
+/**
+ * Add the one operator message to every independently pinned test side. A message with photos shows
+ * them with what was typed until the test's stored readings replace them (`withStoredImageInputs`).
+ */
+export const beginTestExecutionTurn = (state: TestExecutionState, message: string, turnId: string, attemptId: string, imageIds: readonly string[] = []): TestExecutionState => ({
   ...state,
   activeTurnId: turnId,
   activeAttemptId: attemptId,
@@ -188,11 +195,31 @@ export const beginTestExecutionTurn = (state: TestExecutionState, message: strin
     errorCode: undefined,
     retryable: false,
     messages: [...side.messages,
-      { id: `${sideId}-${turnId}-user`, role: 'user' as const, content: message, state: 'completed' as const, turnId, attemptId },
+      {
+        id: `${sideId}-${turnId}-user`, role: 'user' as const, content: message, state: 'completed' as const, turnId, attemptId,
+        ...(imageIds.length > 0 ? { imageInput: { typedText: message, images: imageIds.map((id) => ({ id, reading: null })) } } : {}),
+      },
       { id: `${sideId}-${turnId}-assistant`, role: 'assistant' as const, content: '', state: 'streaming' as const, turnId, attemptId },
     ],
   }])),
 })
+
+/** The photos each message of the test carries as the test stored them, with the agent's readings. */
+export const withStoredImageInputs = (state: TestExecutionState, stored: TestExecutionHistoryDetail): TestExecutionState => {
+  if (stored.id !== state.executionId) return state
+  const storedInputs = new Map(stored.sides.flatMap((side) => side.history.flatMap((entry) =>
+    entry.role === 'user' && entry.imageInput ? [[`${side.id}:${entry.turnId}`, entry.imageInput] as const] : [])))
+  return {
+    ...state,
+    sides: Object.fromEntries(Object.entries(state.sides).map(([sideId, side]) => [sideId, {
+      ...side,
+      messages: side.messages.map((message) => {
+        const imageInput = message.role === 'user' ? storedInputs.get(`${sideId}:${message.turnId}`) : undefined
+        return imageInput ? { ...message, imageInput } : message
+      }),
+    }])),
+  }
+}
 
 export const beginTestExecutionRetry = (
   state: TestExecutionState,

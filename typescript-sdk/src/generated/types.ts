@@ -3889,7 +3889,7 @@ export interface paths {
         put?: never;
         /**
          * Upload an image for a chat message
-         * @description The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts.
+         * @description The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`, or in a message to one of that agent's tests (`POST /api/v1/agents/{agentId}/test-executions/{executionId}/messages`), which is how Test Chat sends photos. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts.
          */
         post: operations["uploadAssistantChatImage"];
         delete?: never;
@@ -3930,6 +3930,26 @@ export interface paths {
          * @description The image ids are in the user message's `inputMetadata.imageInput`. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<img>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`. Every response that carries the image records a `conversation.image_viewed` audit event with the teammate's user id.
          */
         get: operations["getConversationImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/images/{imageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * View an image in a Test Chat transcript
+         * @description A test keeps its transcript apart from conversations, so its images are read here. The image ids are in a user entry's `imageInput` in the test's history. It serves an image the test's history names: one sent in the test, in the comparison it continues, or with the conversation it started from. Before the message that sends it is stored, it serves an image only to the caller who uploaded it. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<img>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`. A response that carries a visitor's image, copied in with a conversation, records a `conversation.image_viewed` audit event with the teammate's user id.
+         */
+        get: operations["getAgentTestExecutionImage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11739,6 +11759,20 @@ export interface components {
             /** Format: uuid */
             attemptId: string;
         };
+        /** @description The photos a user message carries. `content` is the turn text the agent ran on: the typed text followed by one `<attached_photo>` block per photo. Show `typedText` and the photos; the readings are the agent's. */
+        TestExecutionImageInput: {
+            /** @description What was typed with the photos, without their readings. Empty for photos sent alone. */
+            typedText: string;
+            images: {
+                /**
+                 * Format: uuid
+                 * @description The image id; read the photo from the test's image route.
+                 */
+                id: string;
+                /** @description What the agent's chat model read in the photo; null when it could not read it. */
+                reading: string | null;
+            }[];
+        };
         TestExecutionSide: {
             /** Format: uuid */
             id: string;
@@ -11777,6 +11811,7 @@ export interface components {
                  * @enum {boolean}
                  */
                 spoken?: true;
+                imageInput?: components["schemas"]["TestExecutionImageInput"];
             }[];
         };
         StartTestExecutionRequest: {
@@ -11806,7 +11841,6 @@ export interface components {
             sides: components["schemas"]["TestExecutionSide"][];
         };
         TestExecutionMessageRequest: {
-            message: string;
             executionGeneration: number;
             /** Format: uuid */
             turnId: string;
@@ -11814,6 +11848,10 @@ export interface components {
             attemptId: string;
             /** @description The operator's IANA time zone, such as America/Los_Angeles, which Test Chat sends from the browser with every message and retry. The turn reads today, tomorrow and this weekend in it; without it, or with an unknown zone, the workspace's time zone applies, then UTC. */
             userTimeZone?: string;
+            /** @description What the operator typed. Required unless `imageIds` is present. */
+            message?: string;
+            /** @description Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo. */
+            imageIds?: string[];
         };
         TestExecutionRetryRequest: {
             executionGeneration: number;
@@ -11917,6 +11955,7 @@ export interface components {
                      * @enum {boolean}
                      */
                     spoken?: true;
+                    imageInput?: components["schemas"]["TestExecutionImageInput"];
                 }[];
             }[];
             /** @description User messages copied in from the real conversation this test continues; 0 when it started fresh. */
@@ -28801,6 +28840,68 @@ export interface operations {
                 };
             };
             /** @description The conversation carries no such image */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentTestExecutionImage: {
+        parameters: {
+            query?: {
+                workspaceId?: string;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                imageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stored image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                };
+            };
+            /** @description Invalid agent, test or image id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent management and history read permissions required, the caller is not a dashboard session, or another site started the request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The test is gone, or it carries no such image */
             404: {
                 headers: {
                     [name: string]: unknown;

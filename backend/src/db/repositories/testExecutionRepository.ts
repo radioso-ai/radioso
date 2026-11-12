@@ -24,7 +24,9 @@ const isLatestTurn = (history: TestExecutionSide["history"], turnId: string): bo
   history.filter((entry) => entry.role === "user").at(-1)?.turnId === turnId;
 /** A spoken turn's entries say so; a typed turn's carry no marker at all. */
 const spokenMark = (input: { spoken?: true }) => (input.spoken ? { spoken: true as const } : {});
-const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now, ...spokenMark(input) }];
+const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now, ...spokenMark(input), ...(input.imageInput ? { imageInput: input.imageInput } : {}) }];
+/** What a turn is listed by: the operator's message, or, for one with photos, what they typed, never the readings the turn text carries. */
+const listedMessage = (input: ClaimInput): string => input.imageInput ? input.imageInput.typedText : input.message;
 const appendAssistant = (history: TestExecutionSide["history"], input: CompleteInput) => [...history, {
   turnId: input.turnId,
   attemptId: input.attemptId,
@@ -261,7 +263,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
         // instead of a failure that repeats on retry locking the session for good.
         const running = await trx.selectFrom("agent_test_execution_turns").select("turn_id").where("execution_id", "=", input.executionId).where("state", "=", "running").executeTakeFirst();
         if (running || sides.some((side) => side.active_attempt_id !== null)) return "turn_in_progress";
-        await trx.insertInto("agent_test_execution_turns").values({ execution_id: input.executionId, turn_id: input.turnId, message: input.message, input_fingerprint: input.inputFingerprint, state: "running" }).execute();
+        await trx.insertInto("agent_test_execution_turns").values({ execution_id: input.executionId, turn_id: input.turnId, message: listedMessage(input), input_fingerprint: input.inputFingerprint, state: "running" }).execute();
         return this.startClaims(trx, sides, input, 1);
       }
       if (turn.input_fingerprint !== input.inputFingerprint) return "turn_conflict";

@@ -28,6 +28,7 @@ const mapRow = (row: VisitorImageRow): StoredVisitorImage => ({
   },
   conversationId: row.conversation_id,
   messageId: row.message_id,
+  testExecutionId: row.test_execution_id,
   object: { bucket: row.storage_bucket, objectPath: row.storage_object_path, generation: row.storage_generation },
   byteSize: row.byte_size,
   width: row.width,
@@ -105,14 +106,21 @@ export class PostgresVisitorImageStore implements VisitorImageStore {
     }
   }
 
-  /** The door names the message: the one the turn stored, in the same request, before the turn ran on. */
+  /**
+   * The caller names what carries the photos: the message the turn stored, or the Test Chat test
+   * whose turn it stored, in the same request, before the turn ran on.
+   */
   async bindClaim(input: Parameters<VisitorImageStore["bindClaim"]>[0]): Promise<number> {
+    const holder = "testExecutionId" in input
+      ? { test_execution_id: input.testExecutionId }
+      : { conversation_id: input.conversationId, message_id: input.messageId };
     const result = await this.db
       .updateTable("visitor_images")
-      .set({ conversation_id: input.conversationId, message_id: input.messageId, bound_at: input.boundAt })
+      .set({ ...holder, bound_at: input.boundAt })
       .where("workspace_id", "=", input.workspaceId)
       .where("claim_id", "=", input.claimId)
       .where("message_id", "is", null)
+      .where("test_execution_id", "is", null)
       .executeTakeFirst();
     return Number(result.numUpdatedRows);
   }
@@ -124,6 +132,7 @@ export class PostgresVisitorImageStore implements VisitorImageStore {
       .where("workspace_id", "=", input.workspaceId)
       .where("claim_id", "=", input.claimId)
       .where("message_id", "is", null)
+      .where("test_execution_id", "is", null)
       .executeTakeFirst();
     return Number(result.numUpdatedRows);
   }
@@ -136,6 +145,18 @@ export class PostgresVisitorImageStore implements VisitorImageStore {
       .where("id", "=", input.id)
       .where("owner_kind", "=", input.owner.kind)
       .where("owner_id", "=", input.owner.id)
+      .executeTakeFirst();
+    return row ? mapRow(row) : null;
+  }
+
+  async findCarried(input: { workspaceId: string; agentId: string; id: string }): Promise<StoredVisitorImage | null> {
+    const row = await this.db
+      .selectFrom("visitor_images")
+      .selectAll()
+      .where("workspace_id", "=", input.workspaceId)
+      .where("agent_id", "=", input.agentId)
+      .where("id", "=", input.id)
+      .where((eb) => eb.or([eb("message_id", "is not", null), eb("test_execution_id", "is not", null)]))
       .executeTakeFirst();
     return row ? mapRow(row) : null;
   }

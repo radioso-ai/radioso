@@ -3,6 +3,7 @@ import {
   type ProviderCacheCapability,
   type ProviderUsage,
   type TextGenerationClient,
+  type TextGenerationImage,
   type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStopReason,
@@ -13,6 +14,7 @@ import { streamWithUsage } from "./providerStreaming.js";
 import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
 import { parseSseEvents } from "./sse.js";
 import { normalizeCacheAccounting, reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
+import { imageInputCapabilityFor } from "./knownModels.js";
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_VERSION = "2023-06-01";
@@ -35,8 +37,21 @@ const renderClaudeSystem = (config: LlmCapabilityConfig, input: Pick<TextGenerat
   ];
 };
 
+// Anthropic recommends images ahead of the text that asks about them.
+const buildClaudeUserContent = (prompt: string, images: readonly TextGenerationImage[] | undefined) =>
+  images && images.length > 0
+    ? [
+        ...images.map((image) => ({
+          type: "image" as const,
+          source: { type: "base64" as const, media_type: image.mediaType, data: image.base64Data },
+        })),
+        { type: "text" as const, text: prompt },
+      ]
+    : prompt;
+
 const buildClaudeBody = (config: LlmCapabilityConfig, input: {
   prompt: string;
+  images?: readonly TextGenerationImage[];
   systemPrompt?: string;
   temperature?: number;
   maxOutputTokens?: number;
@@ -51,7 +66,7 @@ const buildClaudeBody = (config: LlmCapabilityConfig, input: {
   messages: [
     {
       role: "user",
-      content: input.prompt,
+      content: buildClaudeUserContent(input.prompt, input.images),
     },
   ],
   ...(input.responseFormat
@@ -136,6 +151,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
       provider: config.provider,
       model: config.model,
       cacheCapability: claudeCacheCapability(config.model),
+      imageInputCapability: imageInputCapabilityFor(config.provider, config.model),
     };
   }
 

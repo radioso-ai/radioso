@@ -48,7 +48,7 @@ describe("chat stream", () => {
     }
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(init.body))).toMatchObject({ message: "hi", stream: true, clientContextCapabilities });
+    expect(JSON.parse(init.body as string)).toMatchObject({ message: "hi", stream: true, clientContextCapabilities });
     expect(events).toEqual([
       { type: "chunk", text: "We carry two." },
       { type: "block", conversationId: "c1", assistantMessageId: "m1", block },

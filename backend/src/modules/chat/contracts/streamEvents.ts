@@ -9,6 +9,7 @@ import type {
   ChatAnswerCoverageInteractionTrace,
 } from "./answerCoverage.js";
 import type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "./routineTurnState.js";
+import type { ReplyBlock } from "./replyBlocks.js";
 
 type SkillStreamPhase = "active" | "completed" | "failed";
 export type ChatStatusStage = "interpreting" | "searching" | "composing";
@@ -74,6 +75,8 @@ export type ChatStreamEvent =
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
       suggestions?: ChatSuggestion[];
+      /** The reply's blocks; the HTTP stream also sends each one as a `block` event before `done`. */
+      blocks?: ReplyBlock[];
       activitySummary: ActivitySummary;
       activityTrace: ActivityTrace;
       ownership?: ChatOwnershipAck;

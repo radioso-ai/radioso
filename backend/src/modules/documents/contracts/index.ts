@@ -50,6 +50,13 @@ export type {
   DocumentStoragePort,
 } from "./storage.js";
 export { isCanonicalWorkspaceId } from "./storage.js";
+export {
+  DOCUMENT_IMAGE_RENDITION_WIDTHS,
+  type DocumentImageEvidenceReader,
+  type DocumentImageObjectLookup,
+  type DocumentImageRole,
+  type StoredDocumentImageRef,
+} from "./documentImages.js";
 export { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID, documentSourceIdSchema } from "../domain/sourceConstants.js";
 export {
   describeDocumentReviewedOperationPlan,

@@ -104,6 +104,46 @@ describe("public chat presenter", () => {
     expect(result.answerSegments).toEqual([{ text: "Grounded answer." }]);
   });
 
+  it("keeps a reply block's open link when citation display is disabled: a card links to its item's page, not to a source", async () => {
+    const block = {
+      type: "item_list" as const,
+      id: "b1",
+      layout: "carousel" as const,
+      selection: "none" as const,
+      caption: "Hiking guides",
+      items: [{
+        key: "image-1",
+        title: "Hut to Hut",
+        image: { src: "https://app.example/backend/api/v1/public/reply-images/image-1/640", width: 800, height: 1200, alt: "" },
+        actions: [{ type: "open" as const, url: "https://shop.example/books/hut-to-hut" }],
+      }],
+    };
+    const json = stripPublicChatCitationArtifacts({ ...payload(), blocks: [block] }, false) as Record<string, unknown>;
+    // The SSE writer sends each of `done.blocks` as its own `block` event, after this strip.
+    const events = await collect(stripPublicStreamCitationArtifacts((async function* () {
+      yield { type: "done" as const, conversationId: "c1", assistantMessageId: "m1", ...payload(), blocks: [block] } as unknown as ChatStreamEvent;
+    })(), false));
+    const message = { id: "m1", role: "assistant", content: "Grounded answer.", createdAt: "2026-11-12T00:00:00.000Z", citations: payload().citations, blocks: [block] };
+    const detail = stripPublicConversationCitationArtifacts(
+      { conversation: { id: "c1" }, messages: [message] } as unknown as ChatConversationDetail,
+      "anonymous-session-1",
+      false,
+    );
+    const tail = stripPublicConversationTailCitationArtifacts(
+      { conversationId: "c1", messages: [message], cursor: null } as unknown as Parameters<typeof stripPublicConversationTailCitationArtifacts>[0],
+      false,
+    );
+
+    expect(json.citations).toBeUndefined();
+    expect(json.blocks).toEqual([block]);
+    expect(events[0]).not.toHaveProperty("citations");
+    expect(events[0]).toHaveProperty("blocks", [block]);
+    for (const read of [detail.messages[0], tail.messages[0]]) {
+      expect(read).not.toHaveProperty("citations");
+      expect(read).toHaveProperty("blocks", [block]);
+    }
+  });
+
   it("removes coverage diagnostics from public JSON and done events without mutating the operator payload", async () => {
     const operatorPayload = {
       ...payload(),

@@ -16,7 +16,7 @@ import type {
   RetrievalAnswerResult,
 } from "../domain/retrievalCapabilityTypes.js";
 import type { CitationEvidence } from "../../chat/contracts/answerTypes.js";
-import { resolveContextSourceUrl } from "./contextSourceUrl.js";
+import { resolveContextSourceUrl } from "../domain/contextSourceUrl.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
 import type { DirectiveSteeringPort } from "../../directives/public.js";

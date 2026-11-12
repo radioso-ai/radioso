@@ -7,6 +7,7 @@ import type {
   ChatAnswerCoverageInteractionTrace,
 } from "../contracts/answerCoverage.js";
 import type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
+import type { ReplyBlock } from "../contracts/replyBlocks.js";
 
 export type ChatSuggestionKind = string;
 
@@ -71,6 +72,8 @@ export interface ChatResponse {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
+  /** Structured parts of the reply a client renders beside its text, such as picture cards. */
+  blocks?: ReplyBlock[];
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
   ownership?: ChatOwnershipAck;

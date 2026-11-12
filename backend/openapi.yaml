@@ -6660,6 +6660,21 @@ components:
                 - available
                 - mode
                 - supportedOperations
+            reply.blocks:
+              type: object
+              properties:
+                item_list:
+                  type: object
+                  properties:
+                    layouts:
+                      type: array
+                      items:
+                        type: string
+                        maxLength: 32
+                      maxItems: 16
+                      description: "The layouts the client draws an item list in: `carousel`, `grid`, `list`. A layout left out reaches the client as `list`."
+                  required:
+                    - layouts
       required:
         - channel
     PublicVoiceSessionRequest:
@@ -10240,6 +10255,107 @@ components:
         - agentScope
         - answer
         - validation
+    ReplyBlock:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - item_list
+        id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        layout:
+          type: string
+          enum:
+            - carousel
+            - grid
+            - list
+        selection:
+          type: string
+          enum:
+            - none
+            - single
+        caption:
+          type: string
+          maxLength: 120
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                minLength: 1
+                maxLength: 128
+              title:
+                type: string
+                maxLength: 160
+              description:
+                type: string
+                maxLength: 400
+              image:
+                type: object
+                properties:
+                  src:
+                    type: string
+                    format: uri
+                  alt:
+                    type: string
+                  width:
+                    type: integer
+                    exclusiveMinimum: 0
+                  height:
+                    type: integer
+                    exclusiveMinimum: 0
+                  srcSet:
+                    type: string
+                required:
+                  - src
+                  - alt
+                  - width
+                  - height
+              actions:
+                type: array
+                items:
+                  oneOf:
+                    - type: object
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                            - open
+                        url:
+                          type: string
+                          maxLength: 2048
+                          format: uri
+                      required:
+                        - type
+                        - url
+                    - type: object
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                            - select
+                      required:
+                        - type
+                maxItems: 2
+            required:
+              - key
+              - title
+              - actions
+          minItems: 1
+          maxItems: 10
+      required:
+        - type
+        - id
+        - layout
+        - selection
+        - caption
+        - items
+      description: "A structured part of an assistant reply that a client renders beside its text. `item_list` is a list of items, such as picture cards, laid out as `carousel`, `grid` or `list`; a client renders a layout it does not know as `list`. A server sends only the block kinds a client declared under `clientContextCapabilities[\"reply.blocks\"]`, and only the layouts it declared, sending `list` in place of any other. Each item is built from the content the answer used: its `image.src` and `image.srcSet` are addresses this server serves, and an item's picture stops loading once the document it came from is deleted."
     CallerKind:
       type: string
       enum:
@@ -11136,6 +11252,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReplyBlock"
         ownership:
           type: object
           properties:
@@ -11183,6 +11303,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReplyBlock"
         ownership:
           type: object
           properties:
@@ -11293,6 +11417,24 @@ components:
         metadataFilter:
           type: object
           additionalProperties: {}
+        clientContextCapabilities:
+          type: object
+          properties:
+            reply.blocks:
+              type: object
+              properties:
+                item_list:
+                  type: object
+                  properties:
+                    layouts:
+                      type: array
+                      items:
+                        type: string
+                        maxLength: 32
+                      maxItems: 16
+                      description: "The layouts the client draws an item list in: `carousel`, `grid`, `list`. A layout left out reaches the client as `list`."
+                  required:
+                    - layouts
         previewRoutineIds:
           type: array
           items:
@@ -11394,6 +11536,21 @@ components:
                 - available
                 - mode
                 - supportedOperations
+            reply.blocks:
+              type: object
+              properties:
+                item_list:
+                  type: object
+                  properties:
+                    layouts:
+                      type: array
+                      items:
+                        type: string
+                        maxLength: 32
+                      maxItems: 16
+                      description: "The layouts the client draws an item list in: `carousel`, `grid`, `list`. A layout left out reaches the client as `list`."
+                  required:
+                    - layouts
         signedIdentity:
           type: string
           maxLength: 8192
@@ -12373,6 +12530,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReplyBlock"
+          description: "On an assistant reply: the reply blocks it showed, read back from the message as they were sent. An item's picture stops loading once the document it came from is deleted."
         answerFeedbackEntries:
           type: array
           items:
@@ -12435,6 +12597,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatSuggestion"
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReplyBlock"
+          description: "On an assistant reply: the reply blocks it showed, read back from the message as they were sent. An item's picture stops loading once the document it came from is deleted."
         answerFeedbackEntries:
           type: array
           items:
@@ -19381,7 +19548,7 @@ components:
       description: "`locale` is the caller's language tag; without it the agent's default language applies, then `en`."
     AssistantChatSseStream:
       type: string
-      description: "A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it."
+      description: 'A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, one block event per reply block, done, then optional suggestions. A block event carries `conversationId`, `assistantMessageId` and one `block` (the ReplyBlock schema); `done.blocks` repeats them all. Blocks are sent only to a client that declared `clientContextCapabilities["reply.blocks"]`. A cancelled event is terminal and no event follows it.'
       example: |
         event: status
         data: {"stage":"interpreting"}
@@ -19399,7 +19566,7 @@ components:
         - error
     PublicChatSseStream:
       type: string
-      description: "A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it."
+      description: 'A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, one block event per reply block, done, then optional suggestions. A block event carries `conversationId`, `assistantMessageId` and one `block` (the ReplyBlock schema); `done.blocks` repeats them all. Blocks are sent only to a client that declared `clientContextCapabilities["reply.blocks"]`. A cancelled event is terminal and no event follows it.'
       example: |
         event: status
         data: {"stage":"interpreting"}
@@ -42853,6 +43020,46 @@ paths:
                 format: binary
         "404":
           description: Launch token unknown, or the agent has no logo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/public/reply-images/{imageId}/{width}:
+    get:
+      tags:
+        - Assistant
+      summary: Read a reply block's image
+      description: "Unauthenticated: the image id is an unguessable capability, so a page embedding the chat loads it cross-origin and a messaging provider can fetch it. Clients take the address from a reply block's `image.src` or `image.srcSet` rather than building it. Responses are WebP, `Cache-Control: private`, and `Cross-Origin-Resource-Policy: cross-origin`. Once the document the image came from is deleted, the image answers 404."
+      operationId: getPublicReplyImage
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+            description: The image's id, from the `image.src` of a reply block item.
+          required: true
+          description: The image's id, from the `image.src` of a reply block item.
+          name: imageId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "320"
+              - "640"
+            description: "The rendition width in pixels, spelled exactly: 320 or 640."
+          required: true
+          description: "The rendition width in pixels, spelled exactly: 320 or 640."
+          name: width
+          in: path
+      responses:
+        "200":
+          description: The image, re-encoded as WebP at the requested width
+          content:
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Unknown image, an image whose document was deleted, or a width other than 320 or 640
           content:
             application/json:
               schema:

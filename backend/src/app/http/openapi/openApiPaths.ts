@@ -51,6 +51,7 @@ import { registerWorkspaceEventsPaths } from "./paths/workspaceEventsPaths.js";
 import { registerApiAccessPaths } from "./paths/apiAccessPaths.js";
 import { registerOperatorMcpPaths } from "./paths/operatorMcpPaths.js";
 import { registerTestExecutionPaths } from "./paths/testExecutionPaths.js";
+import { registerReplyImagePaths } from "./paths/replyImagePaths.js";
 
 export const registerOpenApiPaths = (
   registry: OpenAPIRegistry,
@@ -107,5 +108,6 @@ export const registerOpenApiPaths = (
   registerMcpConversePaths(registry, schemas, security);
   registerAgentDiscoveryPaths(registry, schemas);
   registerAssistantPublicChatPaths(registry, schemas, security);
+  registerReplyImagePaths(registry, schemas);
   registerWorkspaceEventsPaths(registry, schemas, security);
 };

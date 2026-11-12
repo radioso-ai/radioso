@@ -175,7 +175,7 @@ A visitor asks the operator to withdraw their consent. The operator opens the co
 
 ## Assumptions
 
-- Proof records follow workspace retention (#1541) from their decision time. With no retention set, they live as long as the workspace.
+- A proof record is kept while its conversation exists, then follows workspace retention (#1541), counted from its decision time. With no retention set, it lives as long as the workspace.
 - A decision covers the rest of the conversation for the same consent key and wording version.
 - Free-text special-category data typed outside a routine is out of scope; it belongs to the special-category workspace mode (#1546).
 

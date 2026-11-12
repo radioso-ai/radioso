@@ -37,6 +37,23 @@ describe("sensitiveSlotsAwaited (#1543)", () => {
     expect(sensitiveSlotsAwaited([booking], { routineId: "def_booking", path: ["ask_class", "ask_injury", "confirm"] })).toEqual([]);
   });
 
+  it("names the slots a consent covers while the routine waits on that consent (#1544)", () => {
+    const withConsent: RoutineDefinition = {
+      ...booking,
+      consents: [{
+        key: "injury_use",
+        slotKeys: ["injury"],
+        variants: [{ locale: "en", body: "May we use your injury details?", agreeLabel: "Yes", declineLabel: "No" }],
+        onDecline: "continue",
+      }],
+    };
+    // The compiled consent step before ask_injury: a reply to it may already state the injury.
+    expect(sensitiveSlotsAwaited([withConsent], { routineId: "def_booking", path: ["ask_class", "consent:injury_use:ask_injury"] }))
+      .toEqual(["injury"]);
+    expect(sensitiveSlotsAwaited([withConsent], { routineId: "def_booking", path: ["ask_class", "consent:unknown:ask_injury"] }))
+      .toEqual([]);
+  });
+
   it("names none for a routine the definitions do not hold", () => {
     expect(sensitiveSlotsAwaited([booking], { routineId: "def_other", path: ["ask_injury"] })).toEqual([]);
   });

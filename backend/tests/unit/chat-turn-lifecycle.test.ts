@@ -1,7 +1,7 @@
 import { DatabaseError } from "pg";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationTrace } from "@radioso/conversation-contract";
+import type { ConversationTrace, RoutineConsentEvent } from "@radioso/conversation-contract";
 
 import type { AuditService } from "../../src/modules/audit/contracts/index.js";
 import { createAuditService, InMemoryAuditEventRepository } from "../support/fakes.js";
@@ -1167,6 +1167,63 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
 
       expect(persisted.sensitiveVisitorMessage).toBeUndefined();
       expect(persisted.assistantMessage.metadata).not.toHaveProperty("sensitiveSlotKeys");
+    });
+  });
+
+  describe("a turn whose routine asked or decided a consent (#1544)", () => {
+    const wording = { locale: "en", body: "We use your health details only to plan your class.", agreeLabel: "I agree", declineLabel: "No thanks" };
+    const completeWithConsentEvents = async (consentEvents?: RoutineConsentEvent[]) => {
+      const assistantTurnPersistence: AssistantTurnPersistencePort = {
+        completeAssistantTurn: vi.fn(async (input) => ({ message: {
+          id: input.assistantMessage.id!,
+          conversationId: input.assistantMessage.conversationId,
+          workspaceId: input.assistantMessage.workspaceId,
+          role: "assistant" as const,
+          content: input.assistantMessage.content,
+          createdAt: new Date(),
+        }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
+      };
+      const lifecycle = new ChatTurnLifecycle(
+        { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort,
+        { create: vi.fn() } as unknown as MessageRepositoryPort,
+        createAuditService(new InMemoryAuditEventRepository()),
+        undefined,
+        undefined,
+        assistantTurnPersistence,
+      );
+      const conversation = { id: "conv_1", visitorId: "visitor_1", sourceChannel: "whatsapp" };
+      await lifecycle.completeAssistantTurn({
+        workspaceId: "workspace_1",
+        session: { ...session(), conversation } as unknown as PreparedSession,
+        presentation: presentation(),
+        requestReceivedAt: Date.now(),
+        answerStartedAt: Date.now(),
+        stream: false,
+        engineTrace: engineTrace(),
+        consentEvents,
+      });
+      return vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    };
+
+    it("records each decision in the turn's transaction with the agent, visitor, channel and the message that carried it", async () => {
+      const events: RoutineConsentEvent[] = [
+        { kind: "decided", routineId: "booking", consentKey: "health", slotKeys: ["injury"], decision: "granted", method: "reply", defaulted: false, wording },
+      ];
+
+      const persisted = await completeWithConsentEvents(events);
+
+      expect(persisted.routineConsent).toEqual({
+        agentId: "agent_1",
+        visitorId: "visitor_1",
+        channel: "whatsapp",
+        decisionMessageId: "msg_1",
+        events,
+      });
+    });
+
+    it("hands the turn's transaction nothing to record when the routine asked no consent", async () => {
+      expect((await completeWithConsentEvents()).routineConsent).toBeUndefined();
+      expect((await completeWithConsentEvents([])).routineConsent).toBeUndefined();
     });
   });
 

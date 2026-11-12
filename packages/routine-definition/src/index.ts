@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import { routineConsentEditingSchema, routineConsentSchema } from "./consent.js";
+
+export * from "./consent.js";
+
 export const ROUTINE_DEFINITION_LIMITS = {
   name: 200,
   triggerDescription: 2000,
@@ -82,6 +86,12 @@ export const routineValidationCodes = [
   "exposure_requires_ungated_activation",
   "operator_notice_skill_unavailable",
   "operator_notice_reply_to_slot_invalid",
+  "consent_slot_unknown",
+  "consent_slot_not_sensitive",
+  "consent_slot_covered_twice",
+  "consent_key_duplicate",
+  "consent_missing_default_variant",
+  "consent_text_invalid",
 ] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
@@ -471,6 +481,7 @@ const routineDefinitionDraftSchema = <
   TTransitions extends z.ZodTypeAny,
   TTerminals extends z.ZodTypeAny,
   TCompletionExport extends z.ZodTypeAny,
+  TConsent extends z.ZodTypeAny,
 >(
   name: TName,
   triggerDescription: TTriggerDescription,
@@ -479,6 +490,7 @@ const routineDefinitionDraftSchema = <
   transitions: TTransitions,
   terminals: TTerminals,
   completionExport: TCompletionExport,
+  consent: TConsent,
 ) => z.object({
   name,
   // Whether the routine may activate, mirroring `agent_skills.enabled`. Defaults to
@@ -499,6 +511,10 @@ const routineDefinitionDraftSchema = <
   // Optional with no default: absent means "not offered as a tool", and the update schema
   // below can carry an omission forward as-is because no field inside it defaults either.
   exposure: routineExposureSchema.optional(),
+  // Optional with no default, like `exposure`: absent reads as no consents, so stored rows and
+  // published snapshots from before consents parse unchanged, and an update that leaves the field
+  // out keeps the stored consents.
+  consents: z.array(consent).optional(),
 }).strict();
 
 // Fields added to the persistence draft schema must be classified as strict or
@@ -511,6 +527,7 @@ export const routineDefinitionDraftInputSchema = routineDefinitionDraftSchema(
   z.array(routineTransitionSchema).default([]),
   z.array(routineTerminalSchema).min(1),
   routineCompletionExportSchema.optional(),
+  routineConsentSchema,
 );
 
 const withoutDefault = <T extends z.ZodTypeAny>(schema: z.ZodDefault<T>): z.ZodOptional<T> =>
@@ -551,6 +568,7 @@ export const routineDefinitionDraftEditingInputSchema = routineDefinitionDraftSc
   z.array(routineTransitionEditingSchema).default([]),
   z.array(routineTerminalEditingSchema).default([]),
   createRoutineCompletionExportSchema().optional(),
+  routineConsentEditingSchema,
 );
 
 export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend({

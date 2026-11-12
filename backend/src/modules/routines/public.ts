@@ -5,6 +5,7 @@ export {
   routineDefinitionDraftUpdateInputSchema,
   routineDefinitionSchema,
   routineGuardProvenance,
+  routineConsentStoredSchema,
   routineReentryModes,
   routineSlotTypes,
   routineStepSchema,
@@ -86,3 +87,5 @@ export {
   type RoutineDraftAssistTextGenerationPort,
 } from "./assist.js";
 export * from "./copilotPrimitiveRegistry.js";
+export type { RoutineConsentStore, RoutineConsentTurnFacts } from "./consent/consentTurnPort.js";
+export { createRoutineConsentTelemetry } from "./consent/consentTelemetry.js";

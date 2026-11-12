@@ -378,10 +378,14 @@ and over.
 
 A routine can carry `consents` (#1544). Each one names the slots it covers and what
 happens on decline: `continue` runs the routine without those slots, `handoff` hands
-the conversation to a person. A `consent` step sits before a step that collects a
-covered slot, and its default exit leads on to that step. The runner treats it as a
-transit step, like a tool step, and asks the host through the `consent` option of
-`DefaultRoutineRunner` (`ConversationRoutineConsentPort`). The wording, the channel,
+the conversation to a person. The author never places a `consent` step. The backend
+compiler (`modules/routines/consentGates.ts`) puts one, with the id
+`consent:<key>:<stepId>`, before every step that collects a covered slot by the shared
+collection rule (`collectedSlotsByStep`): each transition into that step leads to the
+gate instead, the gate's default exit leads on to the step, two consents on one step
+chain in the order they are written, and a gated root hands the root to its gate. The
+runner treats it as a transit step, like a tool step, and asks the host through the
+`consent` option of `DefaultRoutineRunner` (`ConversationRoutineConsentPort`). The wording, the channel,
 and the records stay with the host.
 
 At the start of every turn the runner reads what the conversation already decided.
@@ -428,6 +432,51 @@ Each turn reports what it did in `hostEffects.consentEvents`: `asked`, `decided`
 (with the method, `button` or `reply`, and whether it was `defaulted`), or
 `skipped`. Each event carries keys and the host's own wording value, never the
 visitor's reply or a slot value.
+
+The backend's port is `modules/routines/consent/consentTurnPort.ts`, built per turn
+by the routines turn provider from the `RoutineConsentTurnFacts` chat hands it
+(`chat/services/routines/routineConsentTurn.ts`): the conversation, visitor, source
+channel, the visitor message, the languages to try, and the agent's default
+language. The first language to try is the one the turn answers in: the tag its
+plan gives it or, on a turn an active routine holds (which runs no plan), the tag
+of the language its detector reported, the one the routine's replies are written
+in. The visitor's page and browser languages follow. The compiler carries every language of each consent's wording on the
+compiled routine's metadata (`consent/consentWording.ts`), so the port reads the
+wording of the revision the conversation runs. `consentPresentationFor` in
+`shared/domain/conversationSource.ts` decides how a channel shows a consent:
+buttons on the web, text on email, WhatsApp, Slack and the operator surfaces that
+show a reply's text alone (Test Chat, eval replay, Ray's probe), and no ask on voice
+or a calling agent's channel. The port picks the variant by the Exact Words rule, reads
+the standing decisions of all a routine's consents, every language of each, in one
+lookup (and none on a channel that never asks), and reads an answer against the
+wording the conversation last showed (its `consentPrompt` stamp): a click on that
+message's `agree` or `decline` chip (`suggestion_click` with `suggestionId` and
+`suggestionSourceMessageId` naming it, `shared/domain/chatInputMetadata.ts`) is a
+`button` decision taken from the chip id on a `buttons` channel only, and anything else,
+a click on an older prompt or any click on a channel that shows the choices as text
+included, goes to the reply reader. Both reads go through the
+`RoutineConsentStore` port, which `RoutineConsentRepository` satisfies for a durable
+conversation. A conversation no row is kept for brings its own store instead: the
+replay runner binds `chat/services/routines/sessionRoutineConsentStore.ts` on the turn
+assembly (`routineConsentStore`, passed to the provider as `consentStore`), seeded from
+and saved to Test Chat's continuation (`consents`), so a decision holds across a test's
+turns and nothing reaches the consent records. The provider never reads the workspace's
+records for such a conversation; a reply whose session carries no prompt is read against
+the wording the turn would show.
+
+Chat carries the events unread to `PostgresAssistantTurnPersistence`, whose turn
+transaction records them (`RoutineConsentRepository.writeTurnEvents`): a shown
+consent keeps its wording version and stamps `consentPrompt` on the reply, a
+decision keeps its version and records the visitor message that carried it, and a
+skipped consent records nothing. When the routine it saves asks consent, the same
+transaction strips the slots of any consent withdrawn in the conversation from the
+routine state it saves. Once the
+turn commits, `consent/consentTelemetry.ts` logs `routine_consent_shown`,
+`routine_consent_decided`, `routine_consent_defaulted` and
+`routine_consent_skipped` (an error for `wording_unavailable`) and counts
+`routine_consent_outcomes_total{outcome}`, with ids, keys and codes only. A
+workbench replay keeps no records, so its port reads no standing decisions and
+reads a reply against the wording the turn would show.
 
 ## Text routine formats
 

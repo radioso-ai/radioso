@@ -100,6 +100,7 @@ const definitionSelect = sql`
     d.exposure_enabled,
     d.exposure_tool_name,
     d.exposure_description,
+    d.consents,
     d.created_at,
     d.updated_at
   FROM routine_definition d
@@ -177,11 +178,15 @@ const definitionSelect = sql`
   ) completion_export ON true
 `;
 
-/** The three routine_definition columns a draft's exposure block writes, cleared when absent. */
-const exposureColumns = (draft: RoutineDefinitionDraftInput) => ({
+/**
+ * The routine_definition columns a draft writes beside its graph: the exposure block, cleared when
+ * absent, and the consents, none when absent.
+ */
+const definitionColumns = (draft: RoutineDefinitionDraftInput) => ({
   exposure_enabled: draft.exposure?.enabled ?? false,
   exposure_tool_name: draft.exposure?.toolName ?? null,
   exposure_description: draft.exposure ? draft.exposure.description : null,
+  consents: toJsonb(draft.consents ?? []),
 });
 
 export class RoutineDefinitionRepository {
@@ -247,7 +252,7 @@ export class RoutineDefinitionRepository {
         activation_priority: draft.activation.priority,
         activation_reentry_mode: draft.activation.reentryMode,
         activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
-        ...exposureColumns(draft),
+        ...definitionColumns(draft),
         lineage_id: id,
       }).execute();
       await this.replaceChildren(trx, id, draft);
@@ -277,7 +282,7 @@ export class RoutineDefinitionRepository {
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
-          ...exposureColumns(draft),
+          ...definitionColumns(draft),
           updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)
@@ -474,7 +479,7 @@ export class RoutineDefinitionRepository {
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
-          ...exposureColumns(draft),
+          ...definitionColumns(draft),
           lineage_id: id,
         })
         .execute();
@@ -511,7 +516,7 @@ export class RoutineDefinitionRepository {
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
-          ...exposureColumns(draft),
+          ...definitionColumns(draft),
           updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)

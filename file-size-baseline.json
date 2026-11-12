@@ -15,7 +15,7 @@
   "backend/src/modules/chat/services/turnPlanService.ts": 1044,
   "backend/src/modules/documents/services/documentIngestionService.ts": 1157,
   "backend/src/modules/emailChannel/persistence/emailInboundRepository.ts": 1024,
-  "backend/src/modules/operatorCopilot/proposalAdapters.ts": 1656,
+  "backend/src/modules/operatorCopilot/proposalAdapters.ts": 1646,
   "backend/src/modules/operatorCopilot/service.ts": 1071,
   "backend/src/modules/voiceChannel/services/voiceTurnService.ts": 1090,
   "ee/packages/backend-module/src/radiosoModuleTypes.ts": 1030,

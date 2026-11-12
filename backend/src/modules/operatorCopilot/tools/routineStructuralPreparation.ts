@@ -18,7 +18,7 @@ import {
 } from "../../routines/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
-import { routineValidationRefusal } from "../routineValidationRefusal.js";
+import { diagnosticsIntroducedBy, routineValidationRefusal } from "../routineValidationRefusal.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { reviewedConfirmationSchema } from "../reviewedOperation.js";
 import { persistReviewedPreparation, reviewedPreparationConfirmation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
@@ -258,8 +258,16 @@ export const createRoutineStructuralPreparationTool = (
           removedSlotIds: references.removedSlotIds,
         });
       }
-      const validation = await deps.routines.validateForDraftMutation(context.workspaceId, input.agentId, draft);
-      if (!validation.ok) throw routineValidationRefusal(ROUTINE_NOT_SERVABLE_MESSAGE, input.routineId, validation.diagnostics);
+      // Only findings the edit adds block it, the rule propose_routine_edit keeps, so a routine
+      // already failing validation can still take the edit that fixes it. Both sides go through
+      // the owner's draft rule, which validates only a routine in service: a parked routine
+      // carries nothing, so taking it into service answers for every finding it has.
+      const [carried, validation] = await Promise.all([
+        deps.routines.validateForDraftMutation(context.workspaceId, input.agentId, canonicalRoutineAuthoringDraft(current)),
+        deps.routines.validateForDraftMutation(context.workspaceId, input.agentId, draft),
+      ]);
+      const introduced = diagnosticsIntroducedBy(carried.diagnostics, validation.diagnostics);
+      if (introduced.length > 0) throw routineValidationRefusal(ROUTINE_NOT_SERVABLE_MESSAGE, input.routineId, introduced);
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
       const targetRef = { agentId: input.agentId, routineId: input.routineId };
       const payload = { kind: "structural", draft, operations: input.operations };

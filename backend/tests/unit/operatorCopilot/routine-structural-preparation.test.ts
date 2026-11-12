@@ -185,16 +185,67 @@ describe("routine structural preparation", () => {
     expect(output).toMatchObject({ proposalId: "proposal-1", reviewDigest: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/), review: { beforeConnections: [{ fromStep: "step_collect", toRef: "terminal_done" }], afterConnections: [] } });
   });
 
-  it("refuses a graph draft with canonical owner diagnostics before it can be reviewed", async () => {
+  it("refuses a graph draft with the canonical owner diagnostics it adds before it can be reviewed", async () => {
     const createProposal = vi.fn();
+    const carried = { code: "declared_unused_slot", location: "slot:note", message: "Unused" };
+    // The routine already carries one finding; the edit that drops its only exit adds another.
+    const validateForDraftMutation = vi.fn(async (_workspaceId: string, _agentId: string, draft: { transitions: unknown[] }) => ({
+      ok: false,
+      diagnostics: draft.transitions.length === 0 ? [carried, { code: "dangling", location: "step_collect", message: "Dangling" }] : [carried],
+    }));
     const descriptor = createRoutineStructuralPreparationTool({
-      routines: { get: vi.fn(async () => routine), validateForDraftMutation: vi.fn(async () => ({ ok: false, diagnostics: [{ code: "dangling", location: "step_collect", message: "Dangling" }] })) },
+      routines: { get: vi.fn(async () => routine), validateForDraftMutation },
       proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
-    await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never)).rejects.toMatchObject({
+    await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "remove_transition", transition: routine.transitions[0] }] }, {} as never)).rejects.toMatchObject({
       statusCode: 422, code: "revision_invalid", details: { diagnostics: [{ routineId: routine.id, code: "dangling", location: "step_collect", message: "The routine structure is not valid for serving." }] },
     });
     expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("refuses to take a parked routine into service with any finding it carries", async () => {
+    const createProposal = vi.fn();
+    const finding = { code: "dangling", location: "step_collect", message: "Dangling" };
+    // The owner validates a draft only when it would serve, so a parked routine carries nothing.
+    const validateForDraftMutation = vi.fn(async (_workspaceId: string, _agentId: string, draft: { enabled: boolean }) =>
+      (draft.enabled ? { ok: false, diagnostics: [finding] } : { ok: true, diagnostics: [] }));
+    const descriptor = createRoutineStructuralPreparationTool({
+      routines: { get: vi.fn(async () => ({ ...routine, enabled: false })), validateForDraftMutation },
+      proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
+    });
+    await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "set_enabled", enabled: true }] }, {} as never)).rejects.toMatchObject({
+      statusCode: 422, code: "revision_invalid", details: { diagnostics: [expect.objectContaining({ code: "dangling", location: "step_collect" })] },
+    });
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("still splits a step in a routine whose sensitive field no consent covers yet, so a consent can follow (#1544)", async () => {
+    const injury = { stableSlotId: "slot_injury", key: "injury", type: "text" as const, required: false, description: null, ordinal: 0, sensitivity: "sensitive" as const };
+    const askBoth = { ...routine.steps[0], instruction: "Ask for the order number and about {{slot.injury}}." };
+    const intake = { ...routine, slots: [injury], steps: [askBoth] };
+    const uncovered = { code: "sensitive_slot_without_consent", location: "slot:injury", message: "Uncovered" };
+    // Both before and after the split, the owner reports the field no consent covers yet.
+    const validateForDraftMutation = vi.fn(async () => ({ ok: false, diagnostics: [uncovered] }));
+    const createProposal = vi.fn(async () => ({ id: "proposal-split" }));
+    const descriptor = createRoutineStructuralPreparationTool({
+      routines: { get: vi.fn(async () => intake), validateForDraftMutation },
+      proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
+    });
+    const askInjury = { stableStepId: "ask_injury", kind: "chat", instruction: "Ask about {{slot.injury}}.", toolRef: null, ordinal: 1, metadata: {} };
+    const toInjury = { ...routine.transitions[0], toRef: "ask_injury" };
+    const output = await descriptor.createTool(context).invoke({
+      kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id,
+      operations: [
+        { kind: "replace_step", previous: askBoth, next: { ...askBoth, instruction: "Ask for the order number." } },
+        { kind: "insert_step", step: askInjury },
+        { kind: "replace_transition", previous: routine.transitions[0], next: toInjury },
+        { kind: "insert_transition", transition: { ...routine.transitions[0], fromStep: "ask_injury", ordinal: 1 } },
+      ],
+    }, {} as never);
+
+    expect(validateForDraftMutation).toHaveBeenCalledTimes(2);
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ kind: "structural", draft: expect.objectContaining({ steps: [expect.objectContaining({ instruction: "Ask for the order number." }), askInjury] }) }) }));
+    expect(output).toMatchObject({ proposalId: "proposal-split", diagnostics: [expect.objectContaining({ code: "sensitive_slot_without_consent", location: "slot:injury" })] });
   });
 
   it("does not misidentify a new routine as its agent when create validation fails", async () => {

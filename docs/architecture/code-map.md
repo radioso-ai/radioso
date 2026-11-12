@@ -1178,15 +1178,21 @@ Related specs and docs:
 
 Shared infrastructure for any image Radioso stores, whoever supplies it. The
 codec in `backend/src/shared/infra/images/` decides an image's type from its
-magic bytes, and only from types the caller accepts. JPEG, PNG, WebP, GIF
-(first frame only) and AVIF are available; SVG never is. It then decodes with
-`sharp` under the caller's pixel cap, which the decoder must agree with, waiting
-for a slot in the caller's own `NormalizationSlots` pool. Finally it re-encodes
-upright, with no metadata. A caller picks the output: `encodeJpegUnder` gives
-one JPEG within a byte budget (visitor images), and `encodeWebpRenditions`
-gives one WebP per requested width. The process runs `sharp` on one libuv
-thread per image with its cache off. Each caller owns its policy (types,
-limits, pool, sizes); the codec owns none.
+magic bytes, testing only the signatures of types the caller accepts. JPEG,
+PNG, WebP, GIF (first frame only) and AVIF are available; SVG never is. AVIF
+brands are read from the first 64 bytes of the `ftyp` box, whatever size the
+file declares. It then decodes with `sharp` under the caller's pixel cap, which
+the decoder must agree with, and re-encodes upright, with no metadata. A caller
+picks the output: `encodeJpegUnder` gives one JPEG within a byte budget (visitor
+images), and `encodeWebpRenditions` gives one WebP per requested width, at most
+16,383 px tall. A failure past the header checks is `encode_failed`.
+
+At most two images decode at once in the process, whichever caller asks, so
+libuv's four-thread pool keeps two threads for dns, fs and zlib; `sharp` runs
+one thread per image with its cache off. A caller may bring its own
+`NormalizationSlots` pool as its share of those two: its images wait there
+first, then for a process slot, within that pool's wait. Each caller owns its
+policy (types, limits, pool, sizes); the codec owns none.
 
 `fetchPublicBytes` (`backend/src/shared/infra/http/publicBytesFetch.ts`) is the
 opt-in bounded form of `fetchPublicUrl` for third-party bytes. It sets one
@@ -1206,7 +1212,7 @@ Public surfaces and key files:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/shared/images tests/unit/visitorImages/image-normalizer.test.ts tests/unit/public-bytes-fetch.test.ts tests/unit/public-url-fetch.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/shared/images tests/unit/visitorImages/image-normalizer.test.ts tests/unit/visitorImages/image-normalizer-byte-identity.test.ts tests/unit/public-bytes-fetch.test.ts tests/unit/public-url-fetch.test.ts`
 
 ## Conversation Erasure
 
@@ -2461,8 +2467,8 @@ Public surfaces and contracts:
 - `backend/src/app/composition/backgroundJobs.ts` (queue, runtime, retention
   sweep) and `createDefaultBackgroundJobWake` in `defaultComposition.ts`
 - `backend/src/app/composition/backgroundJobHandlers.ts` (every kind's handler,
-  the list `dependencies.ts` builds the runtime over; a new kind adds its
-  handler here)
+  the list `dependencies.ts` builds the runtime over; a new kind adds an input
+  field and a list entry here, and its argument in `dependencies.ts`)
 
 Primary internals:
 

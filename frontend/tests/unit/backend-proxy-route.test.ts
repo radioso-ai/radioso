@@ -766,4 +766,30 @@ describe('backend proxy route', () => {
       answer: 'ok',
     })
   })
+
+  it('forwards the reply blocks a public chat declares it renders', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200, headers: { 'Content-Type': 'text/event-stream' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { POST } = await import('@/app/api/public/chat/[token]/route')
+    const clientContextCapabilities = {
+      'page.read': { available: true, mode: 'metadata', supportedOperations: ['metadata'] },
+      'reply.blocks': { item_list: { layouts: ['carousel', 'grid'] } },
+    }
+
+    await POST(new Request('https://frontend.example.com/api/public/chat/public-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Which guides do you have?', stream: true, clientContextCapabilities }),
+    }), {
+      params: Promise.resolve({ token: 'public-token' }),
+    })
+
+    const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(upstreamInit.body as string)).toEqual({
+      message: 'Which guides do you have?',
+      stream: true,
+      clientContextCapabilities,
+    })
+  })
 })

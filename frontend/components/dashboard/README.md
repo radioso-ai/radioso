@@ -53,6 +53,9 @@ services.
   (footnote order, with a run of markers as one pill that highlights its sources);
   `answer-segment-layout.ts` holds the pure segment shaping it relies on: punctuation
   and prose rejoining a cited line, and list items merging into one list.
+  `frontend/components/chat/item-list-block.tsx` draws an assistant message's reply
+  blocks (#1763) under its text in `chat-message-thread.tsx`, so the public chat, the
+  embed, the conversation drawer and the Inbox show the same picture cards.
 - Turn diagnostics (both surfaces): `turn-inspector/turn-diagnostics-panel.tsx`.
 - Test history: Test Chat's **History** view lists durable immutable executions
   (`test-execution-history-view.tsx`, reopened through `reopenExecution`) above

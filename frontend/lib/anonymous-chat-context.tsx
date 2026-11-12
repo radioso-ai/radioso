@@ -11,13 +11,15 @@ import {
   type ReactNode,
 } from 'react'
 
-import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
+import { resolveAnonymousChatBootstrapLocale } from '@/lib/embed-locale'
+import type { WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import { createClientId } from '@/lib/client-id'
 import { deriveThemeOverridesFromModel } from '@/lib/public-chat-theme'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
 import { actionableSuggestionsOnly, clearMessageSuggestions } from '@/lib/public-chat-suggestion'
 import { publicChatUnavailableReasonOf, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import {
+  getLatestAssistantMessage,
   isHumanAgentReply,
   restoreMessageSuggestions,
   stripPublicSuggestionCitations,
@@ -46,6 +48,7 @@ import {
 } from '@/lib/api'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { choosePrivacyNotice, type ShownPrivacyNotice } from '@/lib/privacy-notice'
+import { withReplyBlocksCapability } from '@/lib/reply-blocks'
 import { rememberVisitorImage, visitorImageCacheKey } from '@/lib/visitor-image-blob-cache'
 import { withVisitorImageInput } from '@/lib/visitor-image-input'
 import { getErrorResponse, isRateLimitError, isUsageLimitExceededError, unsentImageSendOf, type UnsentImageSend } from '@/lib/public-chat-errors'
@@ -101,48 +104,9 @@ interface AnonymousChatContextValue {
 
 const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(null)
 
-const getLatestAssistantMessage = (
-  detail: ChatConversationDetail,
-  chatSessionId?: string | null,
-): ChatMessage | null => {
-  const assistantMessages = toChatMessages(detail, chatSessionId).filter((message) => message.role === 'assistant')
-  return assistantMessages.at(-1) ?? null
-}
-
 const INITIAL_MESSAGE_WINDOW_SIZE = 10
 const MESSAGE_WINDOW_SIZE = 50
 const PUBLIC_CHAT_EVENT_RECONNECT_DELAY_MS = 2_500
-const isValidLocaleHint = (value: string | null | undefined): value is string => {
-  if (!value) {
-    return false
-  }
-
-  const trimmed = value.trim()
-  return trimmed.length > 0 && trimmed.length <= 35 && normalizeWebsiteEmbedLocale(trimmed) !== null
-}
-
-const resolveAnonymousChatBootstrapLocale = ({
-  localeOverride,
-  pageContext,
-}: {
-  localeOverride?: string | null
-  pageContext?: WebsiteEmbedPageContext | null
-  browserLocales?: readonly string[]
-}) => {
-  if (isValidLocaleHint(localeOverride)) {
-    return localeOverride.trim()
-  }
-
-  if (isValidLocaleHint(pageContext?.pageLocale)) {
-    return pageContext.pageLocale.trim()
-  }
-
-  if (isValidLocaleHint(pageContext?.browserLocale)) {
-    return pageContext.browserLocale.trim()
-  }
-
-  return undefined
-}
 
 export function AnonymousChatProvider({
   token,
@@ -150,7 +114,7 @@ export function AnonymousChatProvider({
   consumeSessionHandoff,
   localeOverride,
   pageContext,
-  clientContextCapabilities,
+  clientContextCapabilities: hostCapabilities,
   resolveSignedIdentity,
   onAnalyticsEvent,
   children,
@@ -165,6 +129,7 @@ export function AnonymousChatProvider({
   onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
   children: ReactNode
 }) {
+  const clientContextCapabilities = useMemo(() => withReplyBlocksCapability(hostCapabilities), [hostCapabilities])
   const [effectivePublicChatToken, setEffectivePublicChatToken] = useState(() => readStoredEffectivePublicChatToken(token) ?? token)
   const publicChatTokenRef = useRef(effectivePublicChatToken)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -603,6 +568,7 @@ export function AnonymousChatProvider({
                       citations: [],
                       answerSegments: [],
                       suggestions: [],
+                      blocks: undefined,
                       status: 'complete' as const,
                     }
                   : message,
@@ -621,6 +587,7 @@ export function AnonymousChatProvider({
                 citations: completion.citations,
                 answerSegments: toPublicAnswerSegments(completion.answerSegments),
                 suggestions: stripPublicSuggestionCitations(completion.suggestions),
+                blocks: completion.blocks,
                 activitySummary: completion.debug?.activitySummary,
                 activityTrace: completion.debug?.activityTrace,
                 skill: completion.skill ?? message.skill,
@@ -659,6 +626,7 @@ export function AnonymousChatProvider({
                 citations: assistantMessage.citations,
                 answerSegments: toPublicAnswerSegments(assistantMessage.answerSegments),
                 suggestions: stripPublicSuggestionCitations(assistantMessage.suggestions),
+                blocks: assistantMessage.blocks,
                 answerFeedback: assistantMessage.answerFeedback,
                 answerFeedbackEntries: assistantMessage.answerFeedbackEntries,
                 activitySummary: assistantMessage.activitySummary,
@@ -802,6 +770,11 @@ export function AnonymousChatProvider({
                   )
                   setIsLoading(false)
                 },
+                onBlock: ({ blocks }) => {
+                  setMessages((prev) =>
+                    prev.map((message) => (message.id === assistantMessageId ? { ...message, blocks } : message)),
+                  )
+                },
                 onDone: (completion) => {
                   didComplete = true
                   applyCompletion(assistantMessageId, completion)
@@ -903,6 +876,7 @@ export function AnonymousChatProvider({
                 citations: completion.citations,
                 answerSegments: completion.answerSegments,
                 suggestions: completion.suggestions,
+                blocks: completion.blocks,
                 debug: completion.debug,
               })
             }
@@ -928,6 +902,7 @@ export function AnonymousChatProvider({
               citations: completion.citations,
               answerSegments: completion.answerSegments,
               suggestions: completion.suggestions,
+              blocks: completion.blocks,
               debug: completion.debug,
             })
           }

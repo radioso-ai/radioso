@@ -262,6 +262,8 @@ The layout follows from what the items show: the main pictures of several docume
 
 A card's `open` link is the item's own page, not a citation, so it stays on the card when the agent hides citations (`citationDisplayEnabled: false`).
 
+The website embed and the hosted chat page declare `item_list` with `carousel` and `grid` and draw each block under the reply's text: a carousel is a row of cards the visitor scrolls sideways, a grid is a gallery with each picture's title beneath it, and a list is a column of rows with a small picture. A card with an `open` link opens its page in a new tab, and the cards come back with the conversation's history, in the chat and in the dashboard's Inbox.
+
 On a stream, each block arrives as a `block` event after the last `chunk` and before `done`, carrying `conversationId`, `assistantMessageId` and the `block`; `done.blocks` repeats them. History returns the same blocks on the assistant message.
 
 Images are served by `GET /api/v1/public/reply-images/{imageId}/{width}` as WebP, at a `width` of exactly `320` or `640` pixels. The address is the permission: it needs no session, so an `<img>` on any page can load it, and responses are `Cache-Control: private`. Take `src` and `srcSet` from the block rather than building them. Once the document an image came from is deleted, its address answers `404`; an older conversation keeps the card and its link, so draw the card without its picture when the image fails to load.

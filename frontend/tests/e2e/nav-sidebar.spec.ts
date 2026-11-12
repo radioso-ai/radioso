@@ -205,7 +205,7 @@ test("the Inbox badge counts commented negative feedback too, matching the tab t
 test("an established workspace lands on the Inbox after login, not the agent chat surface", async ({ page }) => {
   // At least one prior conversation — an established workspace, not a
   // genuinely first-run one, so onboarding must not activate and hijack the
-  // landing section (see app/page.tsx's onboarding.shouldShowFirstRun gate).
+  // landing section (see app/(workspace-app)/page.tsx's onboarding.shouldShowFirstRun gate).
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     historyList: { conversations: [], total: 1, nextCursor: null, hasMore: false },
@@ -214,7 +214,7 @@ test("an established workspace lands on the Inbox after login, not the agent cha
   await page.goto("/");
 
   // Landing here resolves auth bootstrap, workspace, the agent list, and the
-  // onboarding summary in sequence before app/page.tsx redirects — a longer
+  // onboarding summary in sequence before app/(workspace-app)/page.tsx redirects — a longer
   // chain than a direct section navigation, so this gets a longer timeout
   // than the default 5s.
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity(\\?|$)`), { timeout: 15000 });

@@ -155,6 +155,8 @@ export const buildDocumentServices = (input: {
   embeddingProfileTerminalFailures?: EmbeddingProfileTerminalFailurePort;
   embeddingProfileProjectionCleanup: EmbeddingProfileProjectionCleanupPort;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
+  /** The zone a document's relative dates are read in when it is enriched. */
+  workspaceTimeZones: WorkspaceTimeZoneReader;
 }) => {
   const {
     auditService,
@@ -203,6 +205,7 @@ export const buildDocumentServices = (input: {
     settings.documentTypeCatalogService,
     input.workspaceInvalidationPublisher,
     telemetryService,
+    input.workspaceTimeZones,
   );
   const embeddingProfileJobService = input.pinnedDocumentEmbeddings
     ? new EmbeddingProfileJobService(

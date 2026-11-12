@@ -43,6 +43,7 @@ export async function POST(
     stream: parsedBody.stream,
     userExpectedLocale: parsedBody.userExpectedLocale,
     inputMetadata: parsedBody.inputMetadata,
+    imageIds: parsedBody.imageIds,
     pageContext: parsedBody.pageContext,
     clientContextCapabilities: parsedBody.clientContextCapabilities,
   })

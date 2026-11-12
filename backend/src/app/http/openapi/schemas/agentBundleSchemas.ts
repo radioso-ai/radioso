@@ -183,6 +183,9 @@ export const registerAgentBundleSchemas = (registry: OpenAPIRegistry, dependenci
       internalName: z.string().nullable(),
       customInstruction: z.string(),
       handoffOnRetrievalMiss: z.boolean(),
+      visitorImagesEnabled: z.boolean().optional().openapi({
+        description: "Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off.",
+      }),
       contactRequestsEnabled: z.boolean(),
       webhookExportsEnabled: z.boolean(),
       // Bare reference, no inline `.openapi()`: wrapping a $ref emits

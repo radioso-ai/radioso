@@ -1,12 +1,9 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { Fraunces } from 'next/font/google'
-import { SunriseProvider } from '@/components/auth/sunrise'
 import { ThemeProvider } from '@/components/theme-provider'
 import { FrontendErrorBoundary } from '@/components/frontend-error-boundary'
 import { ProductAnalyticsProvider } from '@/components/product-analytics-provider'
-import { AuthProvider } from '@/lib/auth-context'
-import { WorkspaceProvider } from '@/lib/workspace-context'
 import './globals.css'
 
 const fraunces = Fraunces({
@@ -43,13 +40,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <FrontendErrorBoundary>
-            <SunriseProvider>
-              <AuthProvider>
-                <WorkspaceProvider>
-                  {children}
-                </WorkspaceProvider>
-              </AuthProvider>
-            </SunriseProvider>
+            {children}
           </FrontendErrorBoundary>
           <Suspense fallback={null}>
             <ProductAnalyticsProvider />

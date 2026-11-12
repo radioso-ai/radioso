@@ -32,6 +32,7 @@ import { registerPrivacyPaths } from "./paths/privacyPaths.js";
 import { registerConversationActivityPaths } from "./paths/conversationActivityPaths.js";
 import { registerConversationOwnershipPaths } from "./paths/conversationOwnershipPaths.js";
 import { registerConversationRecordingPaths } from "./paths/conversationRecordingPaths.js";
+import { registerVisitorImagePaths } from "./paths/visitorImagePaths.js";
 import { registerAccountVoiceRecordingPaths } from "./paths/accountVoiceRecordingPaths.js";
 import { registerAgentVoiceConnectionPaths } from "./paths/agentVoiceConnectionPaths.js";
 import { registerDeliveryFailurePaths } from "./paths/deliveryFailurePaths.js";
@@ -91,6 +92,7 @@ export const registerOpenApiPaths = (
   registerConversationActivityPaths(registry, schemas, security);
   registerConversationOwnershipPaths(registry, schemas, security);
   registerConversationRecordingPaths(registry, schemas, security);
+  registerVisitorImagePaths(registry, schemas, security);
   registerAccountVoiceRecordingPaths(registry, schemas, security);
 
   registerDeliveryFailurePaths(registry, schemas, security);
@@ -101,7 +103,7 @@ export const registerOpenApiPaths = (
   registerAudiencePulsePaths(registry, schemas, security);
   registerCopilotPaths(registry, schemas, security);
   const evalSchemas = registerEvalPaths(registry, schemas, security);
-  registerTestExecutionPaths(registry, security, evalSchemas.EvalSnapshotSchema);
+  registerTestExecutionPaths(registry, security, evalSchemas.EvalSnapshotSchema, schemas);
   registerMcpConversePaths(registry, schemas, security);
   registerAgentDiscoveryPaths(registry, schemas);
   registerAssistantPublicChatPaths(registry, schemas, security);

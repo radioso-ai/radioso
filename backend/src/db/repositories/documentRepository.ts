@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { sql, type ExpressionBuilder, type RawBuilder, type SelectQueryBuilder } from "kysely";
+import { sql, type ExpressionBuilder, type SelectQueryBuilder } from "kysely";
 
 import type {
   BulkDocumentProcessingJobOptions,
@@ -24,8 +24,9 @@ import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/s
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import { anyOf, currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { DB, JsonValue } from "../../shared/infra/kysely/schema.js";
+import type { DB } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { enrichmentReplyAfterContentWrite, enrichmentReplyAfterUpsert } from "./documentEnrichmentReplySql.js";
 import {
   collectMetadataPaths,
   mapDocument,
@@ -36,18 +37,6 @@ import {
   appendVectorFilterUpdatesForDocument,
   appendVectorTombstonesForDocuments,
 } from "./vectorIndexWorkRepository.js";
-
-/**
- * A document's stored extraction reply quotes its title and text, so a write that changes either
- * drops it rather than keep quotes of content the document no longer holds.
- */
-const enrichmentReplyAfterContentWrite = (next: { title?: string; markdownContent: string }): RawBuilder<JsonValue | null> =>
-  next.title === undefined
-    ? sql`CASE WHEN documents.markdown_content IS DISTINCT FROM ${next.markdownContent} THEN NULL ELSE documents.enrichment_reply END`
-    : sql`CASE WHEN documents.markdown_content IS DISTINCT FROM ${next.markdownContent} OR documents.title IS DISTINCT FROM ${next.title} THEN NULL ELSE documents.enrichment_reply END`;
-
-const enrichmentReplyAfterUpsert = (): RawBuilder<JsonValue | null> =>
-  sql`CASE WHEN documents.markdown_content IS DISTINCT FROM excluded.markdown_content OR documents.title IS DISTINCT FROM excluded.title THEN NULL ELSE documents.enrichment_reply END`;
 
 interface QueuedDocumentRow {
   id: string;
@@ -167,6 +156,13 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return { eligible: Number(counts?.eligible_count ?? "0"), skipped: Number(counts?.skipped_count ?? "0") };
   }
   constructor(private readonly db: Db) {}
+
+  async hasReadyDocuments(workspaceId: string): Promise<boolean> {
+    const row = await this.db
+      .selectNoFrom((eb) => eb.exists(eb.selectFrom("documents").select("id").where("workspace_id", "=", workspaceId).where("status", "=", "ready")).as("has_ready"))
+      .executeTakeFirstOrThrow();
+    return Boolean(row.has_ready);
+  }
 
   async summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord> {
     const row = await this.db

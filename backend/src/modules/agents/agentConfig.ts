@@ -151,6 +151,8 @@ export interface AgentConfig {
    * agent that escalates differently from the one it was taken from.
    */
   handoffOnRetrievalMiss: boolean;
+  /** Whether visitors may attach photos. A config serialized before the field existed reads as off. */
+  visitorImagesEnabled: boolean;
   contactRequestsEnabled: boolean;
   webhookExportsEnabled: boolean;
   /**
@@ -696,6 +698,10 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
     portability: "portable",
     serialize: (agent) => agent.handoffOnRetrievalMiss ?? false,
   }),
+  visitorImagesEnabled: descriptor({
+    portability: "portable",
+    serialize: (agent) => agent.visitorImagesEnabled ?? false,
+  }),
   contactRequestsEnabled: descriptor({
     portability: "portable",
     serialize: (agent) => agent.contactRequestsEnabled,
@@ -812,6 +818,7 @@ export const projectInternalAgentConfig = (
   internalName: agent.internalName ?? null,
   customInstruction: agent.customInstruction,
   handoffOnRetrievalMiss: agent.handoffOnRetrievalMiss ?? false,
+  visitorImagesEnabled: agent.visitorImagesEnabled ?? false,
   contactRequestsEnabled: agent.contactRequestsEnabled,
   webhookExportsEnabled: agent.webhookExportsEnabled,
   contactRequestDelivery: cloneJson(agent.contactRequestDelivery),
@@ -899,6 +906,7 @@ export const materializeAgentFromConfig = (
     // rather than becoming an explicit `undefined` key.
     ...(config.internalName ? { internalName: config.internalName } : {}),
     handoffOnRetrievalMiss: config.handoffOnRetrievalMiss ?? false,
+    visitorImagesEnabled: config.visitorImagesEnabled ?? false,
     contactRequestDelivery: cloneJson(config.contactRequestDelivery),
     retrievalEnabled: retrievalAnswer.retrievalEnabled,
     logo: config.logo ? cloneJson(config.logo) : null,

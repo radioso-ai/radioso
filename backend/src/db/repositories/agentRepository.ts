@@ -240,10 +240,10 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
 const readBoolean = (record: Record<string, unknown>, key: string): boolean | undefined =>
   typeof record[key] === "boolean" ? record[key] : undefined;
 
-const readStringArray = (record: Record<string, unknown>, key: string): string[] | undefined =>
-  Array.isArray(record[key])
-    ? (record[key] as unknown[]).filter((item): item is string => typeof item === "string")
-    : undefined;
+const readStringArray = <T extends object>(record: T, key: keyof T & string): string[] | undefined => {
+  const value: unknown = (record as Record<string, unknown>)[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
+};
 
 const sourceScopeFromRetrieveConfig = (
   config: Record<string, unknown> | null,
@@ -320,24 +320,16 @@ const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): Authored
     condition,
     action: value.action,
     priority: typeof value.priority === "number" ? value.priority : null,
-    requiredCapabilities: Array.isArray(value.requiredCapabilities)
-      ? value.requiredCapabilities.filter((item): item is string => typeof item === "string")
-      : [],
-    dependsOn: Array.isArray(value.dependsOn)
-      ? value.dependsOn.filter((item): item is string => typeof item === "string")
-      : [],
-    excludes: Array.isArray(value.excludes)
-      ? value.excludes.filter((item): item is string => typeof item === "string")
-      : [],
+    requiredCapabilities: readStringArray(value, "requiredCapabilities") ?? [],
+    dependsOn: readStringArray(value, "dependsOn") ?? [],
+    excludes: readStringArray(value, "excludes") ?? [],
     surfaces: Array.isArray(value.surfaces)
       ? value.surfaces.filter((item): item is AuthoredDirective["surfaces"][number] => typeof item === "string")
       : [],
     routes: Array.isArray(value.routes)
       ? value.routes.filter((item): item is AuthoredDirective["routes"][number] => typeof item === "string")
       : [],
-    tags: Array.isArray(value.tags)
-      ? value.tags.filter((item): item is string => typeof item === "string")
-      : [],
+    tags: readStringArray(value, "tags") ?? [],
     description: typeof value.description === "string" ? value.description : null,
     binding: asDirectiveBinding(value.binding),
     lifecycle: asDirectiveLifecycle(value.lifecycle),
@@ -427,6 +419,7 @@ const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown
   contactRequestsEnabled: agent.contactRequestsEnabled,
   webhookExportsEnabled: agent.webhookExportsEnabled,
   handoffOnRetrievalMiss: agent.handoffOnRetrievalMiss,
+  visitorImagesEnabled: agent.visitorImagesEnabled,
   contactRequestDelivery: agent.contactRequestDelivery,
   logo: agent.logo,
   theme: agent.theme,
@@ -542,6 +535,7 @@ const mapAgent = (
     contactRequestsEnabled: readBoolean(behavior, "contactRequestsEnabled") ?? false,
     webhookExportsEnabled: readBoolean(behavior, "webhookExportsEnabled") ?? false,
     handoffOnRetrievalMiss: readBoolean(behavior, "handoffOnRetrievalMiss") ?? false,
+    visitorImagesEnabled: readBoolean(behavior, "visitorImagesEnabled") ?? false,
     contactRequestDelivery: readContactRequestDelivery(behavior),
     retrievalEnabled: hasDefaultRetrieveSkill ? row.default_retrieve_enabled ?? true : row.retrieval_enabled,
     sourceScope,

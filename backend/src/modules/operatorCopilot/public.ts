@@ -1,6 +1,7 @@
 export * from "./catalog.js";
 export * from "./contracts.js";
 export * from "./contribution.js";
+export * from "./proposalContribution.js";
 export * from "./applicationPrimitiveRegistry.js";
 export type {
   CopilotEvalCaseCapturePort,
@@ -12,6 +13,9 @@ export type {
   CopilotReplayEvidenceRepositoryPort,
 } from "./contracts/evalCases.js";
 export { MAX_COPILOT_EVAL_SUITE_CASES } from "./contracts/evalCases.js";
+export * from "./context/contributor.js";
+export { WorkspaceSetupContext } from "./context/workspaceSetup.js";
+export { CopilotEmptyStateService, copilotOpenEndedIntents } from "./services/emptyStateService.js";
 export * from "./neverList.js";
 export * from "./operatorMcpDisposition.js";
 export * from "./mcpCatalog.js";
@@ -24,7 +28,7 @@ export * from "./service.js";
 export { AgentTurnProbeService } from "./services/agentTurnProbeService.js";
 export { EvalCaseCaptureService } from "./services/evalCaseCaptureService.js";
 export { EvalCaseReplayService } from "./services/evalCaseReplayService.js";
-export { summarizeProposalEvidence } from "./proposalEvidence.js";
+export { presentProposalCard } from "./proposalCard.js";
 export type { ProposalEvidenceDependencies } from "./services/proposalEvidenceService.js";
 export { EvalSuiteProbeService } from "./services/evalSuiteProbeService.js";
 export { ReplyDraftProbeService } from "./services/replyDraftProbeService.js";

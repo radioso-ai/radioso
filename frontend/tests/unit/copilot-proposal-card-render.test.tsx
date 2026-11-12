@@ -143,6 +143,48 @@ describe('CopilotProposalCard', () => {
     expect(container.textContent).toContain('start the crawl from Knowledge')
   })
 
+  describe('a proposal an extension contributed', () => {
+    const bare: CopilotProposalSummary = {
+      id: 'proposal-alert',
+      targetType: 'alert_threshold',
+      targetLabel: 'Alert at 500 answers',
+      summary: 'Alert the workspace once it uses 500 answers this month.',
+      status: 'applied',
+    }
+    const contributed: CopilotProposalSummary = {
+      ...bare,
+      presentation: { label: 'usage alerts', dashboardPath: '/settings?settingsTab=usage' },
+    }
+    const openLink = (label: string) => Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes(label))
+
+    it('opens the dashboard page its presentation names once applied', () => {
+      const onOpenDashboardPath = vi.fn()
+      const onOpenEntity = vi.fn()
+      act(() => root.render(<CopilotProposalCard proposal={contributed} canApply onOpenEntity={onOpenEntity} onOpenDashboardPath={onOpenDashboardPath} />))
+
+      act(() => {
+        openLink('Open usage alerts')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(onOpenDashboardPath).toHaveBeenCalledWith('/settings?settingsTab=usage')
+      expect(onOpenEntity).not.toHaveBeenCalled()
+    })
+
+    it('offers no link before it is applied', () => {
+      act(() => root.render(<CopilotProposalCard proposal={{ ...contributed, status: 'pending' }} canApply onOpenEntity={vi.fn()} onOpenDashboardPath={vi.fn()} />))
+
+      expect(openLink('Open usage alerts')).toBeUndefined()
+    })
+
+    it('borrows no first-party link when it carries no presentation', () => {
+      const detail = { targetRef: { directiveId: 'directive-1', agentId: 'agent-1' } } as CopilotProposalDetail
+
+      expect(targetReference(bare, detail, { directiveId: 'directive-1' }, 'agent-1')).toBeNull()
+      act(() => root.render(<CopilotProposalCard proposal={bare} canApply onOpenEntity={vi.fn()} onOpenDashboardPath={vi.fn()} />))
+      expect(openLink('Open')).toBeUndefined()
+    })
+  })
+
   it('stays quiet on an applied proposal that finished cleanly', () => {
     act(() => root.render(
       <CopilotProposalCard

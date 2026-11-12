@@ -124,6 +124,20 @@ const MOUNTAIN_COURSE_FIGURES_ABSENT: ConversationQualityCase["assertions"] = ["
 
 const FULL_QUOTE_FOR_THE_EVENT_ITALIAN = "Mi mandi un preventivo completo compreso di pernottamento per l'evento?";
 
+/**
+ * The corpus gives no Source URL, so the only link an answer about it may carry is to an email
+ * address the conversation gave; any other Markdown link is one the model made up (#1751), and
+ * the answer must show it as its text. RE2 has no lookahead, so "`](` not followed by
+ * `mailto:`" is spelled out.
+ */
+const NO_INVENTED_LINKS: ConversationQualityCase["assertions"] = [
+  {
+    type: "answer_does_not_contain",
+    pattern: String.raw`\]\(([^m]|m[^a]|ma[^i]|mai[^l]|mail[^t]|mailt[^o]|mailto[^:])`,
+    matchMode: "regex",
+  },
+];
+
 /** A line that opens a Markdown bulleted or numbered list item. */
 const MARKDOWN_LIST_ITEM = String.raw`(?m)^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S`;
 
@@ -534,12 +548,19 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     ],
   },
   {
-    id: "clarification-ambiguous-plan",
-    name: "An under-specified plan question triggers a clarifying question",
-    description: "The flakiest case — it depends on the model choosing to clarify rather than answer broadly. The baseline records current behaviour either way.",
-    tags: ["clarification"],
+    id: "retrieval-plan-choice-compared",
+    name: "Asking which plan to pick lays out every plan from the pricing page",
+    description:
+      "Only the pricing page answers this. The refund and security pages come back behind it, but they are not other meanings of the question, so the turn answers with all three plans instead of asking which page the visitor meant (#1742).",
+    tags: ["retrieval"],
     query: "I want to switch plans — which one should I pick?",
-    assertions: [{ type: "turn_asks_clarification" }],
+    assertions: [
+      { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
+      { type: "answer_cites_document", documentId: PRICING_DOC_ID },
+      { type: "answer_contains", pattern: "Starter", matchMode: "substring" },
+      { type: "answer_contains", pattern: "\\bPro\\b", matchMode: "regex" },
+      { type: "answer_contains", pattern: "Enterprise", matchMode: "substring" },
+    ],
   },
   {
     id: "multiturn-pricing-followup",
@@ -573,6 +594,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "answer_does_not_contain", pattern: "280", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "220", matchMode: "substring" },
       ...MOUNTAIN_COURSE_FIGURES_ABSENT,
+      ...NO_INVENTED_LINKS,
     ],
   },
   {
@@ -593,6 +615,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "answer_does_not_contain", pattern: "260", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "180", matchMode: "substring" },
       ...MOUNTAIN_COURSE_FIGURES_ABSENT,
+      ...NO_INVENTED_LINKS,
     ],
   },
   {

@@ -9,6 +9,7 @@ import {
 } from "./agentRevisionRoutes.js";
 import { presentRevisionState } from "./agentRevisionPresenters.js";
 import { registerAgentChannelChatRoute } from "./agentChannelChatRoute.js";
+import { registerAgentChannelImageRoute } from "./agentChannelImageRoute.js";
 import { registerAgentVoiceRoutes } from "./agentVoiceRoute.js";
 import { registerAgentVoiceConnectionRoutes } from "./agentVoiceConnectionRoutes.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
@@ -96,6 +97,7 @@ export const agentBodySchema = z.object({
   contactRequestsEnabled: agentInputFieldSchemas.contactRequestsEnabled.optional(),
   webhookExportsEnabled: agentInputFieldSchemas.webhookExportsEnabled.optional(),
   handoffOnRetrievalMiss: agentInputFieldSchemas.handoffOnRetrievalMiss.optional(),
+  visitorImagesEnabled: agentInputFieldSchemas.visitorImagesEnabled.optional(),
   contactRequestDelivery: agentInputFieldSchemas.contactRequestDelivery.optional(),
   theme: agentInputFieldSchemas.theme.optional(),
   branding: agentInputFieldSchemas.branding.optional(),
@@ -117,7 +119,7 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability" | "voiceRuntimeConnections">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability" | "voiceRuntimeConnections" | "visitorImages" | "visitorImageAvailability" | "chatModelImageReading">;
 
 const proposedAgentRecipientEmails = (body: unknown): string[] | null => {
   if (!body || typeof body !== "object" || Array.isArray(body)
@@ -293,6 +295,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   });
 
   registerAgentChannelChatRoute(router, dependencies);
+  registerAgentChannelImageRoute(router, dependencies);
   registerAgentVoiceRoutes(router, dependencies);
   registerAgentVoiceConnectionRoutes(router, dependencies);
 
@@ -316,6 +319,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         });
       res.status(200).json({
         ...presentAgentForPrincipal(agent, authPrincipal),
+        chatModelReadsImages: await dependencies.chatModelImageReading.readsImages(agent),
         ...(voiceCallReadiness ? { voiceCallReadiness } : {}),
       });
     } catch (error) {
@@ -689,6 +693,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       }
       res.status(200).json({
         ...presentAgentForPrincipal(agent, authPrincipal),
+        chatModelReadsImages: await dependencies.chatModelImageReading.readsImages(agent),
         ...(customInstruction === undefined
           ? {}
           : { revisionState: presentRevisionState(await dependencies.agentRevisionService.state(workspaceId, parsed.agentId), true) }),

@@ -2011,6 +2011,30 @@ export interface VectorIndexWork {
   workspace_id: string;
 }
 
+export interface VisitorImages {
+  agent_id: string | null;
+  bound_at: Timestamp | null;
+  byte_size: number;
+  claim_id: string | null;
+  claimed_at: Timestamp | null;
+  conversation_id: string | null;
+  created_at: Generated<Timestamp>;
+  height: number;
+  id: string;
+  message_id: string | null;
+  owner_id: string;
+  owner_kind: string;
+  read_at: Timestamp | null;
+  reading: string | null;
+  reading_status: Generated<string>;
+  sha256: string;
+  storage_bucket: string;
+  storage_generation: string | null;
+  storage_object_path: string;
+  width: number;
+  workspace_id: string;
+}
+
 export interface Visitors {
   conversation_count: Generated<number>;
   created_at: Generated<Timestamp>;
@@ -2057,8 +2081,10 @@ export interface VoiceSessions {
   id: Generated<string>;
   session_key: string;
   start_expires_at: Timestamp | null;
+  started_account_id: string | null;
   started_public_session_id: string | null;
   started_visitor_key: string | null;
+  test_execution_id: string | null;
   vendor: string;
   vendor_agent_id: string | null;
   vendor_conversation_id: string | null;
@@ -2329,6 +2355,7 @@ export interface DB {
   users: Users;
   vector_index_checkpoints: VectorIndexCheckpoints;
   vector_index_work: VectorIndexWork;
+  visitor_images: VisitorImages;
   visitors: Visitors;
   voice_recording_erasure_items: VoiceRecordingErasureItems;
   voice_recording_erasures: VoiceRecordingErasures;

@@ -102,6 +102,7 @@ Every kind of work that reserves against the account counts toward the conversat
 |---|---|
 | A conversation reaching a block of `repliesPerConversation` replies | 1 |
 | A standalone answer over the API or MCP | 1 |
+| A photo a visitor or API caller uploads, once the agent has read it | 1 |
 | A Ray turn | 0.5 |
 | A test run (dashboard test chat, Workbench replay, eval run, or test execution) | 0.5 |
 | An Audience Pulse report | 10 |
@@ -249,7 +250,7 @@ Every dashboard member also sees a banner reflecting the same signal, regardless
 Limits are enforced before expensive work begins, so customers cannot race past a cap with concurrent uploads or chat traffic.
 
 - Inline document creation and file imports reserve indexed storage bytes before the document is persisted.
-- Assistant and retrieval answers reserve a monthly answer slot before the model is called, or a conversation-meter reservation on a conversation-metered account.
+- Assistant and retrieval answers, and the reading of an uploaded photo, reserve a monthly answer slot before the model is called, or a conversation-meter reservation on a conversation-metered account.
 - The reservation is released if the work fails before commit.
 
 Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, `monthly_answers`, or `monthly_conversations`. On a conversation-metered account, a `monthly_conversations` refusal only happens once the [grace allowance](#grace-allowance) is also exhausted — Ray, Test Chat, Workbench replays, eval runs, and Pulse reports reach this `429` as soon as the allowance and any positive credits run out, since they never borrow.

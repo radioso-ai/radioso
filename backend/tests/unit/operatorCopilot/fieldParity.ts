@@ -106,6 +106,9 @@ const turnProbeNoTransportChoice = permanent(
 const turnProbeNoLiveChannel = permanent(
   "sourceContext identifies which real customer-facing surface (authenticated_chat/public_chat/website_embed) sent the message, for visitor-context directive matching. test_agent_turn is a copilot-run synthetic probe, not a live customer channel, so it has no surface to report.",
 );
+const turnProbeNoImageUpload = permanent(
+  "imageIds names images a caller uploaded for the message, each owned by the credential or public session that uploaded it. test_agent_turn sends a synthetic text turn under Ray's own principal and has no upload of its own; an image's reading reaches the turn as text, which a probe message can carry directly.",
+);
 const turnProbeUnreviewedMetadataFilter = deferred(
   "test_agent_turn does not yet let Ray scope a test turn's retrieval to a metadata filter. Nobody has reviewed whether that belongs on this probe, the same open question document_search's metadataFilter gap carries.",
 );
@@ -176,7 +179,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields([
       "name", "internalName", "customInstruction", "suggestedQuestionsEnabled", "assistantLinkUtmEnabled",
       "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss",
-      "contactRequestDelivery", "theme", "branding", "retrievalEnabled", "sourceScope", "greetingInstruction",
+      "visitorImagesEnabled", "contactRequestDelivery", "theme", "branding", "retrievalEnabled", "sourceScope", "greetingInstruction",
       "assistantDefaultLocale", "proactiveGreetingEnabled", "chatModelOverride", "skillSettings", "surfaceSettings",
       "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour",
       "voice", "mechanicsReplies",
@@ -245,6 +248,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["includeDebug"], internalDebugTraceNeverToModel),
     ...fields(["sourceContext"], turnProbeNoLiveChannel),
     ...fields(["metadataFilter"], turnProbeUnreviewedMetadataFilter),
+    ...fields(["imageIds"], turnProbeNoImageUpload),
   },
   prepare_agent_publication: {
     ...fields(["expectedDraftGeneration"], publicationFenceIsReadFresh),
@@ -256,7 +260,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["embeddingModel"], ingestionEmbeddingModelNeverList),
   },
   prepare_agent_settings: {
-    ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour", "voice", "mechanicsReplies"], reviewedAgentSettingsPatch),
+    ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "visitorImagesEnabled", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour", "voice", "mechanicsReplies"], reviewedAgentSettingsPatch),
     ...fields(["suggestedQuestionsEnabled", "retrievalEnabled", "sourceScope", "chatModelOverride", "skillSettings", "surfaceSettings"], reviewedAgentSettingsDedicatedOwnerFlow),
   },
   send_test_chat_message: {

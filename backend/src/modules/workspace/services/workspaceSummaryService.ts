@@ -63,16 +63,37 @@ export class WorkspaceSummaryService {
       hasCompletedChat: conversationCount > 0,
       sampleDocumentsImported: documentSummary.sampleDocumentCount > 0,
       websiteCrawlerEnabled: this.featureFlags.websiteCrawlerEnabled,
-      setup: {
-        purpose: setupState.purpose,
-        dismissed: setupState.dismissedAt !== null,
-        skippedSteps: setupState.skippedSteps,
-        shouldShowFirstRun: setupState.dismissedAt === null && conversationCount === 0,
-        hasDirectivesOrRoutines: outcomes.hasDirectivesOrRoutines,
-        hasNotifyDestination: outcomes.hasNotifyDestination,
-        hasNotifyDeliveryConfirmed: outcomes.hasNotifyDeliveryConfirmed,
-        hasCredential: outcomes.hasCredential,
-      },
+      setup: projectSetup(setupState, outcomes, conversationCount > 0),
     };
   }
+
+  /**
+   * The setup facts without the counts. Ray reads these on every turn, so the two booleans that
+   * need the documents and conversations tables are answered with EXISTS: a workspace with a long
+   * history must not pay a scan on each question to learn that one document is ready.
+   */
+  async getSetupSignals(workspaceId: string): Promise<Pick<WorkspaceSummary, "hasReadyDocuments" | "hasCompletedChat" | "setup">> {
+    const [hasReadyDocuments, hasCompletedChat, setupState, outcomes] = await Promise.all([
+      this.documentRepository.hasReadyDocuments(workspaceId),
+      this.conversationRepository.hasAnyForWorkspace(workspaceId),
+      this.setupStateRepository.get(workspaceId),
+      this.setupStateRepository.getOutcomeFlags(workspaceId),
+    ]);
+    return { hasReadyDocuments, hasCompletedChat, setup: projectSetup(setupState, outcomes, hasCompletedChat) };
+  }
 }
+
+const projectSetup = (
+  setupState: Awaited<ReturnType<WorkspaceSetupStateRepositoryPort["get"]>>,
+  outcomes: Awaited<ReturnType<WorkspaceSetupStateRepositoryPort["getOutcomeFlags"]>>,
+  hasConversation: boolean,
+): WorkspaceSummary["setup"] => ({
+  purpose: setupState.purpose,
+  dismissed: setupState.dismissedAt !== null,
+  skippedSteps: setupState.skippedSteps,
+  shouldShowFirstRun: setupState.dismissedAt === null && !hasConversation,
+  hasDirectivesOrRoutines: outcomes.hasDirectivesOrRoutines,
+  hasNotifyDestination: outcomes.hasNotifyDestination,
+  hasNotifyDeliveryConfirmed: outcomes.hasNotifyDeliveryConfirmed,
+  hasCredential: outcomes.hasCredential,
+});

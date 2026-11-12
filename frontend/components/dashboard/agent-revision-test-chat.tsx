@@ -2,7 +2,6 @@
 
 import {
   type FormEvent,
-  type KeyboardEvent,
   type ReactNode,
   type SetStateAction,
   useCallback,
@@ -12,7 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Ellipsis, Link2, Loader2, Plus, Send, Workflow, X } from "lucide-react";
+import { AlertCircle, Ellipsis, Link2, Loader2, Plus, Workflow, X } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +23,7 @@ import {
 import { buildAssistantIdentity, PrivacyNoticeLine } from "@/components/chat/assistant-identity";
 import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
+import { TestChatComposer } from "@/components/dashboard/test-chat-composer";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
 import { TurnFlowOverlay } from "@/components/dashboard/turn-flow-overlay";
 import {
@@ -883,12 +883,8 @@ export function AgentRevisionTestChat({
     setRevisionDetails({});
     return { state: next, selected: nextSelected };
   };
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!message.trim() || isSending || isStarting) return;
-    setLinkOpenFailure(null);
-    setUsageLimitNotice(null);
-    const text = message.trim();
+  /** The test the next turn runs on: the open one, or a fresh one on the saved draft when the draft changed or none is open. */
+  const prepareExecution = async (): Promise<TestExecutionState | null> => {
     const requestGeneration = testRequestGeneration.current;
     const nextMode = mode;
     let nextSelected = [...selected];
@@ -901,12 +897,12 @@ export function AgentRevisionTestChat({
       setError(null);
       try {
         await saveAgentDraft(agentId);
-        if (testRequestGeneration.current !== requestGeneration) return;
+        if (testRequestGeneration.current !== requestGeneration) return null;
         const refreshed = await refreshSavedCandidate(
           nextSelected,
           requestGeneration,
         );
-        if (!refreshed) return;
+        if (!refreshed) return null;
         nextSelected = refreshed.selected;
         expectedDraftGeneration = refreshed.state.draft.generation;
         // The preceding conversation captured an older immutable candidate.
@@ -919,22 +915,23 @@ export function AgentRevisionTestChat({
               ? cause.message
               : "Unable to save the draft. The test was not started.",
           );
-        return;
+        return null;
       } finally {
         savingDraftForSend.current = false;
         if (testRequestGeneration.current === requestGeneration)
           setStartingState(false);
       }
     }
-    if (!active) {
-      active = await start(
-        nextMode,
-        nextSelected,
-        nextValues,
-        expectedDraftGeneration,
-      );
-      if (!active) return;
-    }
+    return active ?? await start(nextMode, nextSelected, nextValues, expectedDraftGeneration);
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!message.trim() || isSending || isStarting) return;
+    setLinkOpenFailure(null);
+    setUsageLimitNotice(null);
+    const text = message.trim();
+    const active = await prepareExecution();
+    if (!active) return;
     // A failed side does not block the next message; only a turn still running does.
     if (active.activeTurnId) return;
     const turnId = crypto.randomUUID();
@@ -1491,11 +1488,6 @@ export function AgentRevisionTestChat({
     : mode === "compare"
       ? "Send to both"
       : "Send";
-  const submitOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
-    event.preventDefault();
-    event.currentTarget.form?.requestSubmit();
-  };
   const actionMenu = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1786,6 +1778,7 @@ export function AgentRevisionTestChat({
                         role: item.role,
                         content: item.content,
                         persistedAssistantMessageId: item.persistedAssistantMessageId,
+                        ...(item.spoken ? { spokenLabel: DEFAULT_WEBSITE_EMBED_COPY.publicChatSpokenLabel } : {}),
                         status:
                           item.state === "streaming"
                             ? "streaming"
@@ -1892,33 +1885,20 @@ export function AgentRevisionTestChat({
                 {blockingContextError}
               </p>
             ) : null}
-            <form onSubmit={submit} className="mx-auto w-full max-w-3xl">
-              <div className="flex items-end gap-1 rounded-2xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
-                <Textarea
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  onKeyDown={submitOnEnter}
-                  placeholder="Ask a question..."
-                  className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
-                  disabled={!canSend}
-                />
-                <Button
-                  type="submit"
-                  size="icon"
-                  className="shrink-0 rounded-full"
-                  aria-label={sendLabel}
-                  title={sendLabel}
-                  disabled={!canSend || !message.trim()}
-                >
-                  {isStarting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  <span className="sr-only">{sendLabel}</span>
-                </Button>
-              </div>
-            </form>
+            <TestChatComposer
+              agentId={agentId}
+              message={message}
+              onMessageChange={setMessage}
+              onSubmit={submit}
+              canSend={canSend}
+              sendLabel={sendLabel}
+              isStarting={isStarting}
+              talk={mode === "single" ? {
+                executionId: execution?.executionId ?? null,
+                prepareExecution: async () => (await prepareExecution())?.executionId ?? null,
+                onSpokenTurns: (detail) => setExecutionState((current) => current?.executionId === detail.id ? hydrateTestExecutionState(detail) : current),
+              } : undefined}
+            />
               </>
             )}
             <Dialog open={contextOpen} onOpenChange={setContextOpen}>

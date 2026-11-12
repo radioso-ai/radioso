@@ -1,4 +1,4 @@
-import type { LlmProviderName, ReasoningEffort } from "./providerTypes.js";
+import type { LlmProviderName, ProviderImageInputCapability, ReasoningEffort } from "./providerTypes.js";
 
 /**
  * Single source of truth for the (provider, model) pairs Radioso supports for
@@ -50,6 +50,14 @@ export const isKnownModelForProvider = (provider: LlmProviderName, model: string
   }
   return knownModelsByProvider[provider].includes(model);
 };
+
+/**
+ * Every catalog model reads images. `openai-compatible` serves whatever model the operator's
+ * endpoint names, which Radioso cannot know reads images, and a model outside the catalog is
+ * unvetted, so both are unsupported rather than guessed.
+ */
+export const imageInputCapabilityFor = (provider: LlmProviderName, model: string): ProviderImageInputCapability =>
+  provider !== "openai-compatible" && knownModelsByProvider[provider].includes(model) ? "supported" : "unsupported";
 
 const catalogModelIds: ReadonlySet<string> = new Set(Object.values(knownModelsByProvider).flat());
 

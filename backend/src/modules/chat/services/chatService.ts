@@ -48,10 +48,7 @@ import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
 import { chatReviewResult, withReplyLanguageTag } from "./reviewDraft.js";
-import type {
-  AssistantClientContextCapabilities,
-  AssistantPageContext,
-} from "../types/assistantApi.js";
+import type { AssistantClientContextCapabilities, AssistantPageContext, UserMessageStoredListener } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { CALLER_KIND_MATCH_KEY, visitorMatchContext } from "./visitorMatchContext.js";
@@ -111,10 +108,7 @@ import {
   type CompletedAssistantTurn,
 } from "./chatTurnLifecycle.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
-import {
-  ApprovalResumeTurn,
-  type SuspendedRoutineReader,
-} from "./approvalResumeTurn.js";
+import { ApprovalResumeTurn, type SuspendedRoutineReader } from "./approvalResumeTurn.js";
 import { DeferredClarificationStore } from "./clarification/deferredClarificationStore.js";
 import {
   resolvePendingClarification,
@@ -294,6 +288,8 @@ interface ChatAnswerInput {
   stream: boolean;
   userExpectedLocale?: string | null;
   inputMetadata?: UserMessageInputMetadata;
+  /** Told the moment the turn stores the customer message, before the rest of the turn runs. */
+  onUserMessageStored?: UserMessageStoredListener;
   metadataFilter?: Record<string, unknown>;
   pageContext?: AssistantPageContext | null;
   /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
@@ -582,6 +578,7 @@ export class ChatService {
       conversationTurnRegistry,
       routineProvider,
       suspendedRoutineReader,
+      workspaceTimeZones,
       detectResponseLanguage: (input, session) => this.detectResponseLanguage(input, session),
     });
   }
@@ -1411,6 +1408,8 @@ export class ChatService {
     stream: boolean;
     userExpectedLocale?: string | null;
     inputMetadata?: UserMessageInputMetadata;
+    /** Told the moment the turn stores the customer message, before the rest of the turn runs. */
+    onUserMessageStored?: UserMessageStoredListener;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
     /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
@@ -1496,42 +1495,13 @@ export class ChatService {
     }
   }
 
-  private async *streamAnswerWithinTrace(input: {
-    workspaceId: string;
-    agentId?: string | null;
-    accountId?: string;
-    conversationId?: string;
-    bootstrapGreetingId?: string;
-    query: string;
-    stream: boolean;
-    userExpectedLocale?: string | null;
-    inputMetadata?: UserMessageInputMetadata;
-    metadataFilter?: Record<string, unknown>;
-    pageContext?: AssistantPageContext | null;
-    /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
-    visitorTimeZone?: string | null;
-  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
-  requestContext?: ConversationRequestContext | null;
-  /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
-  entryReferrer?: string | null;
-  /** The privacy notice version the client showed before this first message (#1545); ignored for a resumed conversation. */
-  privacyNoticeVersion?: string | null;
-  /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
-  visitorKey?: string | null;
-    clientContextCapabilities?: AssistantClientContextCapabilities;
-    sourceChannel?: string | null;
-    channelContext?: ConversationChannelContext | null;
-    chatSessionId?: string | null;
-    /** @deprecated Use chatSessionId. */
-    anonymousSessionId?: string | null;
-    sourceOrigin?: string | null;
-    verifiedCustomerId?: string | null;
-    verifiedIdentity?: Record<string, unknown> | null;
-    previewRoutineIds?: string[];
-    routineInvocation?: RoutineInvocation;
-    deliveredReply?: DeliveredReplyReader;
-    signal?: AbortSignal;
-  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, requestReceivedAt: number, turnLanguage: TurnLanguageReport | null): AsyncIterable<ChatStreamEvent> {
+  private async *streamAnswerWithinTrace(
+    input: Parameters<ChatService["streamAnswer"]>[0],
+    coordination: TurnCoordinationState,
+    modelCallTrace: ModelCallTraceCollector,
+    requestReceivedAt: number,
+    turnLanguage: TurnLanguageReport | null,
+  ): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
     const observeFirstAnswerChunk = (
       route: "direct" | "retrieval" | "routine" | "other",

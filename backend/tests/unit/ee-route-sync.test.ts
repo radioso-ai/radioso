@@ -253,9 +253,25 @@ describe("Enterprise frontend route sync", () => {
     expect(frontendRouteContributions.map((route: { relativePath: string }) => route.relativePath))
       .not
       .toEqual(expect.arrayContaining([
-        "app/reset-password/page.tsx",
-        "app/verify-email/page.tsx",
+        "app/(workspace-app)/reset-password/page.tsx",
+        "app/(workspace-app)/verify-email/page.tsx",
       ]));
+  });
+
+  it("cleans up a generated route inside a route group without removing the group its OSS routes share", async () => {
+    const { collectGeneratedDirectories } = await import(manifestModuleUrl.href);
+
+    expect(collectGeneratedDirectories([
+      { relativePath: "app/(workspace-app)/sample/settings/page.tsx" },
+      { relativePath: "app/sample-top/page.tsx" },
+      { relativePath: "app/api/sample/start/route.ts" },
+    ])).toEqual([
+      "app/(workspace-app)/sample/settings",
+      "app/(workspace-app)/sample",
+      "app/api/sample/start",
+      "app/sample-top",
+      "app/api/sample",
+    ]);
   });
 
   it("keeps Docker frontend build inputs in sync with route manifest dependencies", async () => {

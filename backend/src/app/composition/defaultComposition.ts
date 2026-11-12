@@ -140,6 +140,7 @@ export interface ApplicationComposition {
   chatActionSuggestionProviders: ReturnType<typeof createApplicationExtensionRegistry>["chatActionSuggestionProviders"];
   oauthProviders: ReturnType<typeof createApplicationExtensionRegistry>["oauthProviders"];
   copilotToolRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["copilotToolRegistrations"];
+  copilotProposalAdapterRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["copilotProposalAdapterRegistrations"];
   periodicTaskRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["periodicTaskRegistrations"];
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
@@ -238,6 +239,7 @@ export const createDefaultApplicationComposition = (options: {
     chatActionSuggestionProviders: registry.chatActionSuggestionProviders,
     oauthProviders: registry.oauthProviders,
     copilotToolRegistrations: registry.copilotToolRegistrations,
+    copilotProposalAdapterRegistrations: registry.copilotProposalAdapterRegistrations,
     periodicTaskRegistrations: registry.periodicTaskRegistrations,
     lifecycle: coordinator,
     modules: coordinator.registeredModules,

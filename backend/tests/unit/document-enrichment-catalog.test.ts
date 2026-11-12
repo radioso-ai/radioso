@@ -64,7 +64,7 @@ const enrichInput = (overrides: {
       metadata: overrides.chunkMetadata ?? {},
     },
   ],
-  anchor: { source: "document_created_at" as const, date: "2026-08-01" },
+  anchor: { source: "document_created_at" as const, date: "2026-08-01", timeZone: "UTC" },
   catalog: overrides.catalog ?? catalog(),
   previousProvenance: overrides.previousProvenance ?? null,
   source: overrides.source ?? null,

@@ -1,5 +1,5 @@
 import type { DocumentImageRole, StoredDocumentImageRef } from "../../documents/contracts/index.js";
-import { resolveContextSourceUrl } from "../services/contextSourceUrl.js";
+import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 
 /** At most this many images ride on one evidence item. */
 const EVIDENCE_IMAGES_PER_ITEM = 3;

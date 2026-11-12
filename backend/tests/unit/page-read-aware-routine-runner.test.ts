@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   ConversationRoutineResumeInput,
@@ -6,7 +6,9 @@ import type {
   PendingRenderableTurn,
   RenderableTurn,
   Routine,
+  RoutineState,
 } from "@radioso/conversation-contract";
+import { DefaultConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { pageReadRecordOf } from "../../src/modules/chat/services/pageRead/pageReadSessionOutcome.js";
@@ -251,6 +253,63 @@ describe("pageReadAwareRoutineRunner", () => {
       const target = session();
 
       expect(withCommittedPageRead(target, undefined)).toBe(target);
+    });
+  });
+
+  describe("a correction after the routine ended, through the runner as chat builds it (#1544)", () => {
+    const intake: Routine = {
+      id: "intake",
+      rootStepId: "ask_health",
+      slots: [{ id: "slot_pregnant", key: "pregnant", type: "boolean", required: true, sensitivity: "sensitive", mutable: true }],
+      consents: [{ key: "health", slotKeys: ["pregnant"], onDecline: "continue" }],
+      steps: [{ id: "ask_health", kind: "chat" }, { id: "done", kind: "terminal" }],
+      transitions: [{ from: "ask_health", to: "done", condition: "always" }],
+    };
+    const completed: RoutineState = {
+      sessionId: "session_1",
+      routineId: "intake",
+      path: ["ask_health", "done"],
+      variables: { pregnant: true },
+      status: "completed",
+    };
+
+    it("never writes a slot the routine's consent covers", async () => {
+      const save = vi.fn(async () => {});
+      const routineRunner = pageReadAwareRoutineRunner({
+        session: session(),
+        routines: [intake],
+        runner: new DefaultRoutineRunner([intake], { select: vi.fn() }, { render: vi.fn() }),
+        chatSessionPreparer: { stagedPageContextFor: () => [], applyFrozenPageReadOutcome: () => {} },
+      });
+
+      const result = await new DefaultConversationEngine().attemptRoutine({
+        agent: { id: "agent_1", name: "Assistant" },
+        sessionId: "session_1",
+        inputEvent: { id: "input_1", kind: "message", content: "actually, I am not pregnant" },
+        stores: { loadHistory: vi.fn(async () => []), appendEvent: vi.fn(async () => {}) },
+        routineStore: {
+          loadActive: vi.fn(async () => null),
+          loadCompleted: vi.fn(async () => [completed]),
+          save,
+          clear: vi.fn(async () => {}),
+        },
+        routineRunner,
+        routineSlotCorrection: {
+          // The chat corrector never offers a covered slot; the engine refuses one all the same.
+          detect: vi.fn(async () => ({
+            kind: "correction" as const,
+            slots: intake.slots ?? [],
+            consents: intake.consents ?? [],
+            slotKey: "pregnant",
+            rawValue: "false",
+          })),
+          confirm: vi.fn(async () => "Updated."),
+          rejectInvalid: vi.fn(async () => "Which value?"),
+        },
+      });
+
+      expect(result).toBeNull();
+      expect(save).not.toHaveBeenCalled();
     });
   });
 });

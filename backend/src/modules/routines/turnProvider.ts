@@ -11,6 +11,8 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 import {
+  RoutineConsentReplyReader,
+  RoutineConsentUnclearAnswerer,
   RoutineRegistry,
   RoutineNextStepSelector,
   RoutineReentryGate,
@@ -41,6 +43,11 @@ import { setTraceAttributes } from "../../shared/observability/tracing/operation
 import type { RoutineTurnReporter } from "./turnReport.js";
 import { createDirectInvocationTurnPorts } from "./exposure/directInvocationTurn.js";
 import type { RoutineInvocation } from "./exposure/routineInvocationValidator.js";
+import {
+  createRoutineConsentTurnPort,
+  type RoutineConsentStore,
+  type RoutineConsentTurnFacts,
+} from "./consent/consentTurnPort.js";
 
 interface RoutineRegistrationSource {
   load(input: { agentId: string; workspaceId?: string; agentRevisionId?: string }): Promise<RoutineRegistration[]>;
@@ -79,6 +86,11 @@ interface RoutineTurnProviderDependencies {
   skillExecutorRegistry: SkillExecutorRegistry;
   approvalResumeEffectJournal: ApprovalResumeEffectJournal;
   turnPlanAdapters: RoutineTurnPlanAdapters;
+  /**
+   * What durable conversations recorded of their consents (#1544), never read for one no row is
+   * kept for. Absent, no consent can be asked: a routine that reaches one takes its decline path.
+   */
+  consentStore?: RoutineConsentStore;
 }
 
 interface RoutineTurnScope {
@@ -124,6 +136,14 @@ interface RoutineTurnProvider {
      * Chat, eval) sets this.
      */
     includeSlotValues?: boolean;
+    /** The conversation as consents read it (#1544); absent, no consent can be asked this turn. */
+    consent?: RoutineConsentTurnFacts;
+    /**
+     * The consents of a conversation no row is kept for, held by its own session (Test Chat).
+     * Absent, a durable conversation's consents are the workspace's records, and one no row is
+     * kept for asks none.
+     */
+    consentStore?: RoutineConsentStore;
   }): Promise<{
     routines?: readonly Routine[];
     activator: ConversationRoutineActivator;
@@ -315,6 +335,8 @@ export const createRoutineTurnProvider = (
     conversationDurability,
     approvalResume,
     includeSlotValues,
+    consent,
+    consentStore = consent?.durable ? dependencies.consentStore : undefined,
   }) {
     const effectiveRegistrations = await loadEffectiveRegistrations(dependencies, {
       agentId,
@@ -478,6 +500,7 @@ export const createRoutineTurnProvider = (
         slotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-slots.md"),
         filledSlotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-filled-slots.md"),
         dateRulePromptTemplate: loadPromptTemplate("chat/routine-next-step-date-rule.md"),
+        earlierSlotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-earlier-slots.md"),
         slotFallbackPromptTemplate: loadPromptTemplate("chat/routine-next-step-slot-fallback.md"),
         onCompletion: selectorCompletionTelemetry({
           logger: dependencies.logger,
@@ -537,7 +560,25 @@ export const createRoutineTurnProvider = (
       })(),
       // `{{context.<name>}}` in a step instruction reads staged visitor context through
       // the context-variables module, which owns what each variable may show.
-      { contextRenderer: routineContextRenderer, includeSlotValues, ...direct?.runnerOptions },
+      {
+        contextRenderer: routineContextRenderer,
+        includeSlotValues,
+        ...(consent && consentStore
+          ? {
+              consent: createRoutineConsentTurnPort({
+                facts: consent,
+                store: consentStore,
+                reader: new RoutineConsentReplyReader(modelGateway, {
+                  promptTemplate: loadPromptTemplate("chat/routine-consent-reply.md"),
+                }),
+                answerer: new RoutineConsentUnclearAnswerer(modelGateway, {
+                  promptTemplate: loadPromptTemplate("chat/routine-consent-unclear-answer.md"),
+                }),
+              }),
+            }
+          : {}),
+        ...direct?.runnerOptions,
+      },
     );
 
     if (routineInvocation && direct) {

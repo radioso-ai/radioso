@@ -2,6 +2,7 @@ import type {
   ConversationEngine,
   ConversationRoutineDecisionResult,
   ConversationTrace,
+  Routine,
   RoutineState,
 } from "@radioso/conversation-contract";
 
@@ -25,8 +26,9 @@ import {
   createRoutineGroundedAnswerRenderer,
   presentRoutineRenderableAnswer,
 } from "./routines/routineGroundedAnswerRenderer.js";
-import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
+import { asksConsentField, type CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
+import { routineConsentTurnFacts } from "./routines/routineConsentTurn.js";
 import {
   buildChatTurnContext,
   toConversationAgentConfig,
@@ -91,7 +93,10 @@ interface ResumeCoordination {
  * completed run (#1457). Anything else fails the resume, so the decision's transaction rolls
  * back and the decision stays pending, rather than wiping the routine (#1460).
  */
-const approvalResumeTransition = (result: ConversationRoutineDecisionResult): CapturedRoutineTransition => {
+const approvalResumeTransition = (
+  result: ConversationRoutineDecisionResult,
+  routines: readonly Routine[] | undefined,
+): CapturedRoutineTransition => {
   if (result.yielded) {
     throw new Error("approval_resume_yielded");
   }
@@ -99,7 +104,7 @@ const approvalResumeTransition = (result: ConversationRoutineDecisionResult): Ca
   if (!keptState) {
     throw new Error("approval_resume_without_routine_state");
   }
-  return { kind: "save", state: keptState };
+  return { kind: "save", state: keptState, ...asksConsentField(routines, keptState.routineId) };
 };
 
 export class ApprovalResumeTurn {
@@ -194,6 +199,7 @@ export class ApprovalResumeTurn {
         chatAnswerPresenter: this.options.chatAnswerPresenter,
       }),
       throwIfCancelled: () => this.checkTurnCancellation(coordination, "routing"),
+      consent: routineConsentTurnFacts(session, session.responseLanguage),
     });
     this.checkTurnCancellation(coordination, "routing");
     if (!routineTurnPorts) {
@@ -225,7 +231,7 @@ export class ApprovalResumeTurn {
       throw new Error("approval_resume_suspended_state_missing");
     }
 
-    const routineStateTransition = approvalResumeTransition(result);
+    const routineStateTransition = approvalResumeTransition(result, routineTurnPorts.routines);
     const presentation = presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, result.response, {
       logger: this.options.logger,
       conversation: session.conversation,
@@ -238,7 +244,7 @@ export class ApprovalResumeTurn {
     // Parked at its next gate, the routine asks operators for that decision as a live turn does.
     const decisionEffects = routineAwaitingDecisionEffects({
       session,
-      awaitingDecision: result.awaitingDecision,
+      awaitingDecision: result.hostEffects?.awaitingDecision,
       routineStateTransition,
       actions: routineEnding.actions,
     });
@@ -260,7 +266,9 @@ export class ApprovalResumeTurn {
       // Marks the resumed reply when the routine holds a sensitive value, as a live turn's is (#1543).
       routineReporter: routineTurnPorts.reporter,
       pendingDecisionTransition: decisionEffects.pendingDecisionTransition,
-      suspended: Boolean(result.awaitingDecision),
+      // A walk on from the decision can show the next consent, or pass one the channel never asks.
+      consentEvents: result.hostEffects?.consentEvents,
+      suspended: Boolean(result.hostEffects?.awaitingDecision),
       additionalAuditEvent: {
         accountId: input.decidedBy,
         workspaceId: input.record.workspaceId,

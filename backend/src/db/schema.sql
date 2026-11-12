@@ -3696,6 +3696,51 @@ CREATE TABLE public.routine_completion_export (
 
 
 --
+-- Name: routine_consent_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.routine_consent_records (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid,
+    conversation_id uuid,
+    visitor_id uuid,
+    routine_id text NOT NULL,
+    consent_key text NOT NULL,
+    slot_keys text[] NOT NULL,
+    wording_version_id text NOT NULL,
+    locale text NOT NULL,
+    decision text NOT NULL,
+    method text NOT NULL,
+    defaulted boolean DEFAULT false NOT NULL,
+    channel text,
+    decision_message_id uuid,
+    decided_at timestamp with time zone DEFAULT now() NOT NULL,
+    withdrawn_at timestamp with time zone,
+    withdrawn_by_account_id uuid,
+    withdrawn_by_user_id uuid,
+    CONSTRAINT routine_consent_records_check CHECK (((withdrawn_at IS NULL) OR (decision = 'granted'::text))),
+    CONSTRAINT routine_consent_records_decision_check CHECK ((decision = ANY (ARRAY['granted'::text, 'declined'::text]))),
+    CONSTRAINT routine_consent_records_method_check CHECK ((method = ANY (ARRAY['button'::text, 'reply'::text])))
+);
+
+
+--
+-- Name: routine_consent_wording_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.routine_consent_wording_versions (
+    workspace_id uuid NOT NULL,
+    id text NOT NULL,
+    locale text NOT NULL,
+    body text NOT NULL,
+    agree_label text NOT NULL,
+    decline_label text NOT NULL,
+    first_shown_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: routine_definition; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3720,8 +3765,10 @@ CREATE TABLE public.routine_definition (
     exposure_enabled boolean DEFAULT false NOT NULL,
     exposure_tool_name text,
     exposure_description text,
+    consents jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT routine_definition_activation_reentry_mode_check CHECK ((activation_reentry_mode = ANY (ARRAY['once_per_conversation'::text, 'always'::text, 'semantic'::text]))),
     CONSTRAINT routine_definition_activation_trigger_description_check CHECK ((NULLIF(btrim(activation_trigger_description), ''::text) IS NOT NULL)),
+    CONSTRAINT routine_definition_consents_array_check CHECK ((jsonb_typeof(consents) = 'array'::text)),
     CONSTRAINT routine_definition_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL)),
     CONSTRAINT routine_definition_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'superseded'::text, 'archived'::text]))),
     CONSTRAINT routine_definition_version_check CHECK ((version > 0))
@@ -6353,6 +6400,22 @@ ALTER TABLE ONLY public.routine_action_requests
 
 ALTER TABLE ONLY public.routine_completion_export
     ADD CONSTRAINT routine_completion_export_pkey PRIMARY KEY (definition_id);
+
+
+--
+-- Name: routine_consent_records routine_consent_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_consent_records
+    ADD CONSTRAINT routine_consent_records_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: routine_consent_wording_versions routine_consent_wording_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_consent_wording_versions
+    ADD CONSTRAINT routine_consent_wording_versions_pkey PRIMARY KEY (workspace_id, id);
 
 
 --
@@ -9327,6 +9390,55 @@ CREATE INDEX routine_action_requests_conversation_idx ON public.routine_action_r
 --
 
 CREATE UNIQUE INDEX routine_action_requests_idempotency_idx ON public.routine_action_requests USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL);
+
+
+--
+-- Name: routine_consent_records_agent_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_consent_records_agent_idx ON public.routine_consent_records USING btree (agent_id) WHERE (agent_id IS NOT NULL);
+
+
+--
+-- Name: routine_consent_records_decision_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX routine_consent_records_decision_key ON public.routine_consent_records USING btree (conversation_id, routine_id, consent_key, wording_version_id);
+
+
+--
+-- Name: routine_consent_records_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_consent_records_message_idx ON public.routine_consent_records USING btree (decision_message_id) WHERE (decision_message_id IS NOT NULL);
+
+
+--
+-- Name: routine_consent_records_retention_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_consent_records_retention_idx ON public.routine_consent_records USING btree (workspace_id, decided_at);
+
+
+--
+-- Name: routine_consent_records_visitor_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_consent_records_visitor_idx ON public.routine_consent_records USING btree (workspace_id, visitor_id) WHERE (visitor_id IS NOT NULL);
+
+
+--
+-- Name: routine_consent_records_wording_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_consent_records_wording_idx ON public.routine_consent_records USING btree (workspace_id, wording_version_id);
+
+
+--
+-- Name: routine_consent_wording_versions_retention_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_consent_wording_versions_retention_idx ON public.routine_consent_wording_versions USING btree (workspace_id, first_shown_at);
 
 
 --
@@ -12502,6 +12614,46 @@ ALTER TABLE ONLY public.routine_action_requests
 
 ALTER TABLE ONLY public.routine_completion_export
     ADD CONSTRAINT routine_completion_export_definition_id_fkey FOREIGN KEY (definition_id) REFERENCES public.routine_definition(id) ON DELETE CASCADE;
+
+
+--
+-- Name: routine_consent_records routine_consent_records_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_consent_records
+    ADD CONSTRAINT routine_consent_records_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
+
+
+--
+-- Name: routine_consent_records routine_consent_records_decision_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_consent_records
+    ADD CONSTRAINT routine_consent_records_decision_message_id_fkey FOREIGN KEY (decision_message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: routine_consent_records routine_consent_records_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_consent_records
+    ADD CONSTRAINT routine_consent_records_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: routine_consent_records routine_consent_records_workspace_id_wording_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_consent_records
+    ADD CONSTRAINT routine_consent_records_workspace_id_wording_version_id_fkey FOREIGN KEY (workspace_id, wording_version_id) REFERENCES public.routine_consent_wording_versions(workspace_id, id);
+
+
+--
+-- Name: routine_consent_wording_versions routine_consent_wording_versions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_consent_wording_versions
+    ADD CONSTRAINT routine_consent_wording_versions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

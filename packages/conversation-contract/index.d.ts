@@ -2,6 +2,19 @@ import type { ConversationModelGateway } from "./modelGateway.js";
 import type { ReferenceTimeZone } from "./referenceTimeZone.js";
 import type { RoutineRunTrace, RoutineSelectionTrace } from "./routineTrace.js";
 import type { ConversationRoutineSlotCorrection } from "./routineSlotCorrection.js";
+import type { RoutineConsentEvent, RoutineConsentSelectorInput } from "./routineConsent.js";
+import type { ConversationRoutineReentryGate } from "./routineReentry.js";
+import type {
+  DecisionOption,
+  Routine,
+  RoutineHandoffTerminalKind,
+  RoutineInputBinding,
+  RoutineOperatorNoticeTemplate,
+  RoutineSlotSchema,
+  RoutineStep,
+  RoutineTerminalKind,
+  RoutineTransition,
+} from "./routineGraph.js";
 import type { PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
@@ -945,75 +958,33 @@ export interface RoutineState {
   metadata?: Record<string, unknown>;
 }
 
-export interface DecisionOption {
-  id: string;
-  label: string;
-  description?: string;
-  payload?: unknown;
-}
+export type {
+  DecisionOption,
+  Routine,
+  RoutineActivation,
+  RoutineAuthoredTerminalKind,
+  RoutineCompletionExport,
+  RoutineFieldGuardOp,
+  RoutineFieldGuardUnit,
+  RoutineFieldGuardValue,
+  RoutineGuard,
+  RoutineHandoffTerminalKind,
+  RoutineInputBinding,
+  RoutineOperatorNoticeTemplate,
+  RoutineReentryMode,
+  RoutineSlotSchema,
+  RoutineSlotType,
+  RoutineStep,
+  RoutineStepMode,
+  RoutineTerminalKind,
+  RoutineTransition,
+} from "./routineGraph.js";
 
 export interface RoutineAwaitingDecision {
   stepId: string;
   options: DecisionOption[];
   captureKey: string;
   reason?: string;
-}
-
-export type RoutineInputBinding =
-  | { kind: "literal"; value: string | number | boolean }
-  | { kind: "variableRef"; ref: string }
-  | { kind: "contextVariableRef"; contextVariable: string };
-
-export type RoutineStepMode = "typed" | "untyped";
-
-/**
- * A Routine is an authored graph of steps connected by conditional transitions.
- * A `chat` step's `action` is projected into a steering rule (it steers the reply);
- * a `skill` step dispatches `skillName`; a `terminal` step ends the routine.
- */
-export interface RoutineStep {
-  id: string;
-  kind: "chat" | "skill" | "action" | "terminal" | "await";
-  /** Instruction projected into steering for a `chat`/`terminal` step. */
-  action?: string;
-  /** The skill a `skill` step dispatches. */
-  skillName?: string;
-  /**
-   * The action an `action` step emits (fire-and-forget): the engine records an
-   * {@link RoutineActionRequest} with this `type` and the routine's variables as the
-   * payload, then auto-advances. The `type` is authored here — never chosen by the
-   * model — so an emitted action can't be redirected by user/payload text.
-   */
-  actionType?: string;
-  decision?: {
-    captureKey: string;
-    options: DecisionOption[];
-  };
-  /** Per skill input binding authored for a typed skill step. */
-  inputBindings?: Record<string, RoutineInputBinding>;
-  /** Per skill output field assignment to a routine variable name. */
-  outputAssignments?: Record<string, string>;
-  /** Skill-step mode. Absence is treated as typed by routine authoring. */
-  mode?: RoutineStepMode;
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * The authored text an operator notice renders from, carried on a compiled terminal step's
- * `metadata.operatorNotice` exactly when that ending notifies operators. Either text may hold
- * `{{slot.<key>}}` references the host substitutes; an absent text means the host's default
- * for the ending's kind. `skillName` names the host skill that delivers the notice; absent
- * means the host's default destination. `replyToSlot` is the key of the collected slot whose
- * value replies to the notice go to; absent means no reply-to. The engine reports the template,
- * it never renders or delivers it.
- */
-export interface RoutineOperatorNoticeTemplate {
-  subject?: string;
-  intro?: string;
-  skillName?: string;
-  replyToSlot?: string;
-  /** Ask the host to append a background-generated, non-slot conversation summary. */
-  includeAiSummary?: boolean;
 }
 
 /** A fire-and-forget side effect a routine requested: an authored `type` + payload. */
@@ -1026,79 +997,6 @@ export interface RoutineActionRequest {
    */
   skillName?: string;
 }
-
-/** The kinds an authored `terminal` step declares in `metadata.terminalKind`. */
-export type RoutineAuthoredTerminalKind = "complete" | "handoff" | "action";
-
-/**
- * How a routine run ended. An authored kind means the run reached a `terminal` step of that
- * kind. `stuck` is the runner's own ending, never authored: the visitor stayed stuck on one
- * chat step past the re-ask limit, the routine has a hand-off end, and so the run ended on
- * that step and the conversation goes to a person (#1384). A `stuck` ending runs no terminal
- * step and no completion export.
- */
-export type RoutineTerminalKind = RoutineAuthoredTerminalKind | "stuck";
-
-/** The endings that hand the conversation to a person. */
-export type RoutineHandoffTerminalKind = Extract<RoutineTerminalKind, "handoff" | "stuck">;
-
-export interface RoutineCompletionExport {
-  enabled: boolean;
-  triggerKinds: Array<"complete" | "handoff">;
-  destinationRef: string;
-}
-
-export interface RoutineTransition {
-  from: string;
-  to: string;
-  /** Condition the next-step selector evaluates to decide whether this edge fires. */
-  condition: string;
-  /** Optional deterministic guard. Absent/llm preserves legacy selector behavior. */
-  guard?: RoutineGuard;
-  /** Set only on an LLM transition synthesized from a plain collection step's default edge. */
-  origin?: "compiler_slot_gate";
-}
-
-/**
- * Operators a deterministic field guard evaluates against a resolved value.
- * `gt`/`gte`/`lt`/`lte` are numeric; `older_than`/`within` compare a date against
- * `now ± (value × unit)`.
- */
-export type RoutineFieldGuardOp =
-  | "is_true"
-  | "is_false"
-  | "equals"
-  | "not_equals"
-  | "in"
-  | "is_present"
-  | "is_absent"
-  | "gt"
-  | "gte"
-  | "lt"
-  | "lte"
-  | "older_than"
-  | "within";
-
-export type RoutineFieldGuardValue = string | number | boolean;
-
-/** Duration unit for relative date comparisons (`older_than` / `within`). */
-export type RoutineFieldGuardUnit = "days" | "weeks" | "months" | "years";
-
-export type RoutineGuard =
-  | { kind: "slot_filled"; slots: string[] }
-  | { kind: "outcome"; status: RoutineSkillOutcomeStatus }
-  | { kind: "counter"; limit: number }
-  /**
-   * Deterministic branch on a resolved value — a typed field from the last skill
-   * result's `outputs`, or a captured slot — evaluated in code before the model is
-   * ever consulted. `ref` resolves against skill outputs first, then slot variables.
-   * `unit` applies to the relative-date operators (`older_than` / `within`).
-   */
-  | { kind: "field"; ref: string; op: RoutineFieldGuardOp; value?: RoutineFieldGuardValue; values?: RoutineFieldGuardValue[]; unit?: RoutineFieldGuardUnit }
-  | { kind: "default" }
-  | { kind: "llm" };
-
-export type RoutineSlotType = "text" | "number" | "boolean" | "email" | "date";
 
 /**
  * Whether a value may leave the conversation as it was given. It is authored on whatever holds
@@ -1121,62 +1019,6 @@ export declare function redactSensitiveValues<TValue>(
   values: Readonly<Record<string, TValue>>,
   sensitiveKeys: Iterable<string>,
 ): Record<string, TValue | typeof REDACTED_VALUE>;
-
-export interface RoutineSlotSchema {
-  id: string;
-  key: string;
-  type: RoutineSlotType;
-  required: boolean;
-  description?: string;
-  /** When true, the captured value may be corrected after the routine completes. */
-  mutable?: boolean;
-  /** Absent means `normal`. A sensitive slot's value is masked in every copy the engine hands out. */
-  sensitivity?: ValueSensitivity;
-}
-
-/**
- * Reentry policy for a completed routine instance within a conversation.
- * - `once_per_conversation` (default): a completed instance suppresses future
- *   activation in the same conversation.
- * - `always`: a completed instance never suppresses; the trigger may fire again.
- * - `semantic`: a model gate decides whether the completed instance re-opens; it
- *   never re-enters through fresh ranked activation.
- */
-export type RoutineReentryMode = "once_per_conversation" | "always" | "semantic";
-
-/**
- * The author-chosen activation policy compiled onto a routine. It is the single
- * source of truth for every consumer that decides whether a routine may start:
- * the host registry's completed-instance suppression and the semantic reentry gate
- * both read it here, so the two cannot drift apart.
- */
-export interface RoutineActivation {
-  /** Natural-language description of what makes this routine the right one to start. */
-  triggerDescription: string;
-  priority: number;
-  reentryMode: RoutineReentryMode;
-  /** Optional skill/gate the host consults before offering the routine. */
-  gateRef?: string;
-  /** Optional typed semantic gate; absent retains the historical activation path. */
-  coverageCriteria?: AnswerCoverageCriteria;
-}
-
-export interface Routine {
-  id: string;
-  rootStepId: string;
-  /** Optional typed slot schema. Routines without it keep legacy traversal behavior. */
-  slots?: RoutineSlotSchema[];
-  steps: RoutineStep[];
-  transitions: RoutineTransition[];
-  /** Optional terminal-triggered export emitted as a generic routine action. */
-  completionExport?: RoutineCompletionExport;
-  /**
-   * Authored activation policy. Absent on hand-built routines, which the host
-   * treats as `once_per_conversation`.
-   */
-  activation?: RoutineActivation;
-  metadata?: Record<string, unknown>;
-}
 
 export interface RoutineNextStepDecision {
   /**
@@ -1279,7 +1121,7 @@ export interface ConversationRoutineNextStepSelector {
     skillResult?: RoutineSkillResult;
     /** False when the message is a structured call that states no slot values: only the exit is kept. */
     messageStatesSlotValues?: boolean;
-  }): Promise<RoutineNextStepDecision>;
+  } & RoutineConsentSelectorInput): Promise<RoutineNextStepDecision>;
 }
 
 /**
@@ -1388,6 +1230,8 @@ export interface SuspendedRoutineReader {
   loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
+export type * from "./routineConsent.js";
+
 export type {
   ConversationRoutineSlotCorrection,
   RoutineSlotCorrectionCandidate,
@@ -1395,27 +1239,7 @@ export type {
   RoutineSlotCorrectionSkipReason,
 } from "./routineSlotCorrection.js";
 
-/**
- * Structured decision for a completed routine whose reentry mode is `semantic` (issue #746):
- * - `suppress`: leave the completed routine suppressed (the safe default for any non-semantic
- *   routine the gate is asked about, and for an unrelated message).
- * - `resume_existing`: re-open the same instance, keeping its captured variables.
- * - `start_new`: run the routine again from scratch, discarding the prior captured variables.
- */
-export type RoutineReentryDecision =
-  | { kind: "suppress" }
-  | { kind: "resume_existing" }
-  | { kind: "start_new" };
-
-/**
- * Host port that decides whether a completed `semantic`-reentry routine should re-activate.
- * The host owns routine resolution + the model-driven decision; it returns `suppress` (no
- * model call) for any routine that is not in semantic mode, so the gate is inert unless an
- * author opted into it.
- */
-export interface ConversationRoutineReentryGate {
-  decide(input: { turn: TurnContext; completedState: RoutineState }): Promise<RoutineReentryDecision>;
-}
+export type { ConversationRoutineReentryGate, RoutineReentryDecision } from "./routineReentry.js";
 
 export interface RoutineDecisionInput {
   handle: string;
@@ -1436,6 +1260,28 @@ export type {
   RoutineTraceStepEntry,
   RoutineUnreadableReason,
 } from "./routineTrace.js";
+
+/**
+ * What a routine turn asks its host to record with the turn, beside its reply and routine state:
+ * records that exist only because a routine step ran. The runner reports them, and the engine
+ * carries the object whole, unread, from the runner's result to the claim's effects, the settled
+ * {@link ProcessTurnResult}, and a decision resume's result, so a new kind of record is one more
+ * field here. Absent when the turn has none.
+ *
+ * The turn's outbox `actions`, its ending (`terminal`, and the `handoff` and `operatorNotice` the
+ * engine derives from it) and `skillsWithExternalEffects` stay beside it: the host merges its own
+ * actions into the outbox, the engine reads the ending, and the host records nothing for the last.
+ */
+export interface RoutineHostEffects {
+  /**
+   * The routine parked at an external decision gate. Mutually exclusive with terminal exits and
+   * yielded turns; when present, `nextState.status === "suspended"`, and the host creates a
+   * pending decision before the routine can be resumed.
+   */
+  awaitingDecision?: RoutineAwaitingDecision;
+  /** What the turn did with the routine's consents, in order; see {@link RoutineConsentEvent}. */
+  consentEvents?: RoutineConsentEvent[];
+}
 
 export interface ConversationRoutineResumeResult {
   response: RenderableTurn;
@@ -1471,11 +1317,8 @@ export interface ConversationRoutineResumeResult {
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];
-  /**
-   * The routine parked at an external decision gate. Mutually exclusive with terminal
-   * exits and yielded turns; when present, `nextState.status === "suspended"`.
-   */
-  awaitingDecision?: RoutineAwaitingDecision;
+  /** What the host records with this turn because a routine step ran; see {@link RoutineHostEffects}. */
+  hostEffects?: RoutineHostEffects;
   /**
    * The skills this turn's skill steps ran, in order, that may have acted outside the
    * conversation the moment they ran (an email sent, a webhook called) — every dispatched
@@ -1796,11 +1639,8 @@ export interface ProcessTurnResult {
    * the engine only declares them.
    */
   actions?: RoutineActionRequest[];
-  /**
-   * Present when a routine parked at an external decision gate and the host must
-   * create a pending decision row before the routine can be resumed.
-   */
-  awaitingDecision?: RoutineAwaitingDecision;
+  /** What the host records with this turn because the routine that ran asked it to; see {@link RoutineHostEffects}. */
+  hostEffects?: RoutineHostEffects;
   /**
    * The skills a routine's skill steps ran this turn that may have acted outside the
    * conversation; see {@link ConversationRoutineResumeResult.skillsWithExternalEffects}.
@@ -1810,8 +1650,8 @@ export interface ProcessTurnResult {
   awaitingSkillInput?: AwaitingSkillInput[];
   /**
    * Present when a routine ended by handing the conversation to a person: at an authored
-   * hand-off terminal (`terminalKind: "handoff"`, `stepId` names it), or stuck past its re-ask
-   * limit (`terminalKind: "stuck"`, `stepId` names the step it was stuck on). Ownership only —
+   * hand-off terminal (`terminalKind: "handoff"`), stuck past its re-ask limit (`"stuck"`, on the
+   * step it was stuck on), or on a declined consent (`"consent_declined"`, on its step). Ownership only —
    * whether operators are told is `operatorNotice`. `collected` carries the routine's declared
    * slot values keyed by slot key, for the host's operator notice.
    */
@@ -1835,15 +1675,15 @@ export interface ProcessTurnResult {
 /**
  * What a routine ending tells operators, as the engine reports it; see
  * {@link ProcessTurnResult.operatorNotice}. The notice an author stores on a terminal is
- * `RoutineOperatorNotice` in `@radioso/routine-definition`. `terminalKind: "stuck"` only ever
- * comes from a host's own default notice for a visitor stuck past the re-ask limit (#1384) —
- * the engine itself never reports one, since a stuck ending lands on no authored terminal step
- * to carry one.
+ * `RoutineOperatorNotice` in `@radioso/routine-definition`. `stuck` and `consent_declined` only
+ * ever come from a host's own default notice for a runner-owned hand-off (#1384, #1544) — the
+ * engine itself never reports one, since such an ending lands on no authored terminal step to
+ * carry one.
  */
 export interface RoutineOperatorNoticeEffect extends RoutineOperatorNoticeTemplate {
   routineId: string;
   stepId: string;
-  terminalKind: "complete" | "handoff" | "stuck";
+  terminalKind: "complete" | RoutineHandoffTerminalKind;
   collected?: Record<string, unknown>;
   /**
    * The keys of `collected` whose values were masked as sensitive; absent when none were. A
@@ -1909,7 +1749,7 @@ export interface RoutineTurnEffects {
   /** How the routine ended this turn, when it did. */
   terminalKind?: RoutineTerminalKind;
   actions?: RoutineActionRequest[];
-  awaitingDecision?: RoutineAwaitingDecision;
+  hostEffects?: RoutineHostEffects;
   handoff?: ProcessTurnResult["handoff"];
   operatorNotice?: RoutineOperatorNoticeEffect;
   /** The skills the routine already ran while claiming the turn that may have acted outside the conversation. */

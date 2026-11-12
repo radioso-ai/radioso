@@ -7,6 +7,7 @@ import {
   AnswerFeedbackExporter,
   DataSubjectConversationRepository,
 } from "../../db/repositories/dataSubjectConversationRepository.js";
+import { ConsentRecordExporter } from "../../db/repositories/routineConsentRepository.js";
 import { RoutineValueExporter } from "../../db/repositories/routineStateRepository.js";
 import { A2aTaskExporter } from "../../modules/a2a/public.js";
 import { SlackUserIdentityFinder } from "../../modules/connectors/plugins/index.js";
@@ -37,6 +38,7 @@ export const defaultDataSubjectDataExporters: readonly DataSubjectDataExporterBi
   (trx) => new DataSubjectConversationRepository(trx),
   (trx) => new VisitorRecordExporter(trx),
   (trx) => new RoutineValueExporter(trx),
+  (trx) => new ConsentRecordExporter(trx),
   (trx) => new ActionRequestExporter(trx),
   (trx) => new ConversationSummaryExporter(trx),
   (trx) => new ContextVariableValueExporter(trx),

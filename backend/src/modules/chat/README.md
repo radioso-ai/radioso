@@ -579,9 +579,19 @@ imports from `services/`.
   `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
   the turn's transaction when the handoff changed ownership.
 - Routine turns: `ChatTurnAssembly.claimRoutineTurn` runs the routine path up to the
-  reply — whether a routine claims the turn, and its `effects` (actions, decision
-  gate, hand-off, operator notice, how the routine ended) — and its `reply` renders or
+  reply — whether a routine claims the turn, and its `effects` (actions, hand-off,
+  operator notice, how the routine ended, and in `hostEffects` what the routine asks chat
+  to record with the turn, such as a decision gate) — and its `reply` renders or
   streams the reply, then settles the turn into a `ChatTurnAssemblyRoutineResult`.
+  Both routine attempts a message turn makes (before retrieval, and as a coverage
+  reaction) ask the provider for the turn through `services/routines/routineTurnRequest.ts`,
+  which also hands it the conversation as a routine's consents read it
+  (`services/routines/routineConsentTurn.ts`, #1544). The routine's
+  `hostEffects.consentEvents` ride the result to `completeAssistantTurn` unread, and
+  `PostgresAssistantTurnPersistence` records them in the turn's transaction. A replayed
+  turn (Test Chat, eval) records them in its session's own store instead
+  (`services/routines/sessionRoutineConsentStore.ts`, the assembly's
+  `routineConsentStore`), which Test Chat's continuation carries to the next turn.
   `attemptRoutineTurn` is that claim rendered whole, the path the non-stream turn and
   eval replay take. A claim from an engine without `claimRoutine` comes from a whole
   `attemptRoutine` and reports the same effects. The stream turn — live chat's SSE turn
@@ -646,14 +656,17 @@ imports from `services/`.
   never authored and so never carries an `operatorNotice` either, and so always
   takes this same default path — queued with its own reason, `routine_stuck`, so
   it stays distinguishable from an authored hand-off's `routine_handoff`. A
+  visitor who declined a consent whose decline choice hands off
+  (`terminalKind: "consent_declined"`, #1544) takes the same path with reason
+  `routine_consent_declined`, and its notice's headline says so. A
   completion notice never changes ownership and
   creates no Inbox item. `services/operatorNoticeAction.ts` owns the notice payload
   and `ROUTINE_ENDING_NOTICE_ACTIONS`, the table from each *authored* ending kind
   to its own action type, reason code, and notification kind, plus
-  `routineEndingNoticeAction`, which resolves any terminal kind — stuck included —
-  to the row it queues and delivers through: stuck shares the hand-off row's type
-  and notification kind (never its own registered type, which would collide at
-  registration) but keeps its own reason. Both action types dispatch
+  `routineEndingNoticeAction`, which resolves any terminal kind — stuck and
+  consent_declined included — to the row it queues and delivers through: each
+  shares the hand-off row's type and notification kind (never its own registered
+  type, which would collide at registration) but keeps its own reason. Both action types dispatch
   through one `RoutineEndingNotifyActionHandler`, registered once per row in
   `app/composition/builtIn/contactRoutineModule.ts`, which resolves the agent and
   routine names, the routine's slot order, and the conversation's entry page at

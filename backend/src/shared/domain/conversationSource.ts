@@ -57,3 +57,23 @@ export const callerKindForSourceChannel = (sourceChannel: string | null | undefi
   sourceChannel != null && (AGENT_SOURCE_CHANNELS as readonly string[]).includes(sourceChannel)
     ? "agent"
     : "human";
+
+// Channels that carry a person but show no buttons, so a consent's choices go out as text under its
+// wording and the visitor answers in writing: email, WhatsApp and Slack, and the operator surfaces
+// that show a reply's text alone (Test Chat and eval replays, Ray's probe).
+const TEXT_ONLY_SOURCE_CHANNELS: readonly string[] = ["email", "whatsapp", "slack", "workbench_replay", OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL];
+
+/**
+ * How a channel shows a routine's consent (#1544): `buttons` (the wording, with the two choices as
+ * buttons), `text` (the wording, then the two choices as lines of text), or `not_asked`. Voice asks
+ * none because its transcript is weak proof and no audio is kept, and a calling agent asks none
+ * because it cannot give a person's consent; there the routine takes the consent's decline path.
+ * Like {@link callerKindForSourceChannel}, total over the untyped column: a channel nobody has
+ * classified gets buttons, which a person can always answer in writing instead.
+ */
+export const consentPresentationFor = (sourceChannel: string | null | undefined): "buttons" | "text" | "not_asked" => {
+  if (sourceChannel === VOICE_SOURCE_CHANNEL || callerKindForSourceChannel(sourceChannel) === "agent") {
+    return "not_asked";
+  }
+  return sourceChannel != null && TEXT_ONLY_SOURCE_CHANNELS.includes(sourceChannel) ? "text" : "buttons";
+};

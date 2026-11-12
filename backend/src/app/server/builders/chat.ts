@@ -59,7 +59,6 @@ import {
   ChatTurnAssemblyFactory,
   InMemoryConversationTurnRegistry,
   LoggingConversationTurnInterruptionObserver,
-  type ChatRoutineProvider,
   type PublicConversationEventBus,
   ChainedPublicChatActionAdvertiser,
   buildChatTurnRuntime,
@@ -78,9 +77,6 @@ import {
   WorkbenchReplayRunner,
   TurnPlanCoordinator,
   TurnPlanService,
-  planAwareRoutineActivator,
-  planAwareRoutineReentryGate,
-  planAwareRoutineSlotCorrection,
   CONTACT_SEND_ACTION_TYPE,
   type PreparedSession,
 } from "../../../modules/chat/composition.js";
@@ -128,7 +124,7 @@ import {
   SlackSkillDefinitionRepository,
 } from "../../../modules/slackSkills/public.js";
 import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
-import { createRoutineTurnProvider, type RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
+import { createRoutineConsentTelemetry, type RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
 import type { FacetExtractionJobStore } from "../../../modules/facets/contracts.js";
 import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver, WorkspaceTimeZoneReader } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
@@ -146,11 +142,10 @@ import { SkillBackedContextResolver } from "../../composition/builtIn/contextRes
 import { RepositoryAgentSkillTurnSkillProvider } from "../../composition/builtIn/agentSkillTurnSkillProvider.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
-import { createPublishedRoutineRegistrationSource } from "../../composition/routineDefinitionSource.js";
+import { composeRoutineTurnProvider } from "../../composition/routineTurnProvider.js";
 import { ChatAnswerSupport, recordClarificationDecision } from "../../../modules/chat/composition.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { connectorEncryptionKeys, type Env } from "../../config/env.js";
-import type { ChatTurnPlanHandle } from "../../../modules/chat/services/turnPlanCoordinator.js";
 import { buildInfrastructure } from "./infra.js";
 import { RoutineChatModelGateway } from "../../../modules/chat/services/routines/routineChatModelGateway.js";
 import { DocumentImageRepository } from "../../../modules/documents/composition.js";
@@ -499,6 +494,7 @@ export const buildChatServices = (input: {
     actionDrainDispatcher,
     input.logger,
     input.backgroundJobs,
+    createRoutineConsentTelemetry({ logger: input.logger, metricsRegistry: input.metricsRegistry ?? null }),
   );
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({
@@ -555,59 +551,6 @@ export const buildChatServices = (input: {
     logger: input.logger,
     run: reportActionOutboxQueueState,
   });
-// Routine machinery (spec 070 / #520). The owning routines module loads the
-  // per-turn catalog, applies capability gates, and assembles the runtime ports.
-  const publishedRoutineSource = input.composition.publishedRoutineRegistrationSource ??
-    createPublishedRoutineRegistrationSource(input.routineDefinitionRepository, {
-      revisionReader: new AgentRevisionRuntimeRepository(input.database.kysely),
-      onDefinitionError: ({ agentId, definitionId, error }) => {
-        input.logger.warn(
-          {
-            agentId,
-            definitionId,
-            err: error,
-          },
-          "Published routine definition failed to compile; skipping",
-        );
-      },
-      onPinnedDefinitionError: ({ agentId, routineId, definitionId, error }) => {
-        input.logger.warn(
-          {
-            agentId,
-            routineId,
-            definitionId,
-            err: error,
-          },
-          "Pinned routine definition failed to load or compile; skipping resume-only registration",
-        );
-      },
-      onPreviewDefinitionError: ({ agentId, routineId, error }) => {
-        input.logger.warn(
-          {
-            agentId,
-            routineId,
-            err: error,
-          },
-          "Preview (draft) routine definition failed to load or compile; workbench draft test will not run it",
-        );
-      },
-      resolveCompletionExport: async (definition) => {
-        const skill = await input.agentSkillRepository.findByAgentAndName(definition.agentId, "completion_export");
-        if (!skill) {
-          return null;
-        }
-        if (skill.kind !== "webhook" || !skill.enabled || !skill.targetId) {
-          return { enabled: false, triggerKinds: [], destinationRef: "" };
-        }
-        return {
-          enabled: true,
-          triggerKinds: definition.completionExport?.triggerKinds?.length
-            ? definition.completionExport.triggerKinds
-            : ["complete", "handoff"],
-          destinationRef: skill.targetId,
-        };
-      },
-    });
   // Approval resumes hold a main-pool connection for their decision transaction while an
   // external skill is journaled. A separate, bounded pool prevents a max-one main pool (or
   // saturated main pool) from self-deadlocking on that autonomous write.
@@ -621,39 +564,20 @@ export const buildChatServices = (input: {
     logger: input.logger,
   });
   const approvalResumeEffectJournal = new ApprovalResumeEffectJournalRepository(approvalResumeEffectJournalDatabase.kysely);
-  const routineProvider: ChatRoutineProvider = createRoutineTurnProvider({
+  // Routine machinery (spec 070 / #520): the published routine source and the routines module's turn provider.
+  const routineProvider = composeRoutineTurnProvider({
     agentSkillRepository: input.agentSkillRepository,
-    capabilityPolicy: input.composition.capabilityPolicy,
+    composition: input.composition,
+    db: input.database.kysely,
     clusteringEmbeddings: input.clusteringEmbeddings,
     embeddingModelForWorkspace: async (workspaceId) =>
       (await input.ingestionSettingsService.getForWorkspace(workspaceId)).embeddingModel,
     logger: input.logger,
     metricsRegistry: input.metricsRegistry,
-    publishedRoutineSource,
     routineDefinitionRepository: input.routineDefinitionRepository,
     routineInvocableSkillNames: input.routineInvocableSkillNames,
-    routineRegistrations: input.composition.routineRegistrations,
     routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
-    skillExecutorRegistry: input.composition.skillExecutorRegistry,
     approvalResumeEffectJournal,
-    turnPlanAdapters: {
-      activator: ({ handle, registry, fallback }) =>
-        planAwareRoutineActivator({
-          handle: handle as ChatTurnPlanHandle | undefined,
-          registry,
-          fallback,
-        }),
-      slotCorrection: ({ handle, fallback }) =>
-        planAwareRoutineSlotCorrection({
-          handle: handle as ChatTurnPlanHandle | undefined,
-          fallback,
-        }),
-      reentryGate: ({ handle, fallback }) =>
-        planAwareRoutineReentryGate({
-          handle: handle as ChatTurnPlanHandle | undefined,
-          fallback,
-        }),
-    },
   });
   const retrievalTurn = new RetrievalTurnController(
     input.retrievalPipeline,

@@ -254,6 +254,27 @@ describe("routineEndingEffectsForTurn", () => {
     }]);
   });
 
+  it("hands off and notifies with reason routine_consent_declined when a visitor declines a consent (#1544)", () => {
+    const effects = routineEndingEffectsForTurn({
+      session,
+      workspaceId: "ws_1",
+      turn: {
+        handoff: { routineId: "routine_1", stepId: "consent:health:ask_health", terminalKind: "consent_declined", collected: { name: "Ada" } },
+      },
+    });
+
+    expect(effects.ownershipHandoff).toEqual({
+      reason: "routine_consent_declined",
+      routineId: "routine_1",
+      stepId: "consent:health:ask_health",
+      collectedSlotCount: 1,
+    });
+    expect(effects.actions).toEqual([{
+      type: HANDOFF_NOTIFY_ACTION_TYPE,
+      payload: expect.objectContaining({ reason: "routine_consent_declined", collected: { name: "Ada" } }),
+    }]);
+  });
+
   // The outbox idempotency key hashes the serialized payload, so a hand-off without authored
   // notice text must queue exactly the bytes it queued before endings could carry a notice:
   // same keys, same order, no `notice` key.

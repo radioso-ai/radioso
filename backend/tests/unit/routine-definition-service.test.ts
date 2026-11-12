@@ -355,6 +355,7 @@ const createService = (options: {
   triggerEmbeddingService?: ConstructorParameters<typeof RoutineDefinitionService>[0]["triggerEmbeddingService"];
   auditService?: ConstructorParameters<typeof RoutineDefinitionService>[0]["auditService"];
   logger?: ConstructorParameters<typeof RoutineDefinitionService>[0]["logger"];
+  agentDefaultLocale?: string;
 } = {}) => {
   const repository = new FakeRoutineDefinitionRepository();
   const auditService = options.auditService ?? { record: vi.fn().mockResolvedValue(undefined) };
@@ -364,7 +365,7 @@ const createService = (options: {
     agentRepository: {
       async findByIdAndWorkspaceId(inputAgentId, inputWorkspaceId) {
         return inputAgentId === agentId && inputWorkspaceId === workspaceId
-          ? { id: agentId }
+          ? { assistantDefaultLocale: options.agentDefaultLocale ?? null }
           : null;
       },
     },
@@ -740,6 +741,50 @@ describe("RoutineDefinitionService", () => {
     const calls = (auditService.record as ReturnType<typeof vi.fn>).mock.calls as Array<[{ metadata: Record<string, unknown> }]>;
     expect(calls.every(([event]) => !("exposureDescription" in event.metadata))).toBe(true);
     expect(calls.at(-1)?.[0].metadata).toMatchObject({ exposureEnabled: false, exposureToolName: "start_return" });
+  });
+
+  it("persists consents, keeps them through an edit that omits them, and checks their wording against the agent's language", async () => {
+    const { service } = createService({ agentDefaultLocale: "de" });
+    const sensitiveDraft = (): RoutineDefinitionDraftInput => ({
+      ...validDraft(),
+      slots: [{ ...validDraft().slots[0], sensitivity: "sensitive" }],
+    });
+    const consents = [{
+      key: "topic_consent",
+      slotKeys: ["topic"],
+      variants: [{ locale: "en", body: "We ask about your topic to route it.", agreeLabel: "Agree", declineLabel: "Decline" }],
+      onDecline: "handoff" as const,
+    }];
+
+    const created = await service.createDraft(workspaceId, agentId, { ...sensitiveDraft(), consents });
+    expect(created.routine.consents).toEqual(consents);
+    expect(created.validation.diagnostics).toEqual([expect.objectContaining({ code: "consent_missing_default_variant", location: "consent:topic_consent.variants" })]);
+
+    const renamed = await service.updateDraft(workspaceId, agentId, created.routine.id, { ...sensitiveDraft(), name: "support-intake-v2" });
+    expect(renamed.routine.consents).toEqual(consents);
+
+    const validation = await service.validate(workspaceId, agentId, { id: created.routine.id });
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["consent_missing_default_variant"]);
+    const served = await service.validateManyForServing(workspaceId, [renamed.routine]);
+    expect(served.get(renamed.routine.id)?.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["consent_missing_default_variant"]);
+
+    const cleared = await service.updateDraft(workspaceId, agentId, created.routine.id, { ...sensitiveDraft(), consents: [] });
+    expect(cleared.routine.consents ?? []).toEqual([]);
+  });
+
+  it("checks consent wording against English when the agent has no default language", async () => {
+    const { service } = createService();
+    const created = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      slots: [{ ...validDraft().slots[0], sensitivity: "sensitive" }],
+      consents: [{
+        key: "topic_consent",
+        slotKeys: ["topic"],
+        variants: [{ locale: "en", body: "We ask about your topic to route it.", agreeLabel: "Agree", declineLabel: "Decline" }],
+        onDecline: "continue",
+      }],
+    });
+    expect(created.validation).toEqual({ ok: true, diagnostics: [] });
   });
 
   it("reports an invalid tool name as a diagnostic on a saved draft rather than refusing the save", async () => {

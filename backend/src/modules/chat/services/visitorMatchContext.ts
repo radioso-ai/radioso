@@ -1,5 +1,6 @@
 import { projectContextForMatching, type MatchContextProjection } from "../../context-variables/public.js";
 import { callerKindForSourceChannel } from "../../../shared/domain/conversationSource.js";
+import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
 
 import type { PreparedSession } from "./chatSessionPreparer.js";
 
@@ -35,4 +36,24 @@ export const visitorMatchContext = (session: PreparedSession): MatchContextProje
         ?? callerKindForSourceChannel(session.conversation.sourceChannel),
     },
   };
+};
+
+/**
+ * The bounded visitor context handed to the planner's directive classification.
+ * Counts only — never values — reach the trace: the context can carry visitor
+ * data, and the redaction boundary is upstream in the snapshot.
+ */
+export const plannerVisitorContext = (session: PreparedSession): Record<string, unknown> => {
+  const { context, dropped, clamped } = visitorMatchContext(session);
+  // Radioso's own facts are not operator-defined context variables. Counting them would make
+  // this attribute fire on every turn and report one more variable than resolved.
+  const variableCount = Object.keys(context).filter((key) => key !== CALLER_KIND_MATCH_KEY).length;
+  if (variableCount > 0 || dropped.length > 0) {
+    setTraceAttributes({
+      "chat.directive_match.visitor_context_variables": variableCount,
+      "chat.directive_match.visitor_context_dropped": dropped.length,
+      "chat.directive_match.visitor_context_clamped": clamped.length,
+    });
+  }
+  return context;
 };

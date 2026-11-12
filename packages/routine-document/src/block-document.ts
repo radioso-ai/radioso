@@ -76,6 +76,8 @@ export type RoutineBlockDoc = {
   unreferencedEndings: RoutineBlockEnding[]
   completionExport?: RoutineDefinitionDraftEditingInput['completionExport']
   exposure?: RoutineDefinitionDraftEditingInput['exposure']
+  // Carried whole, so a document save keeps the routine's consents.
+  consents?: RoutineDefinitionDraftEditingInput['consents']
 }
 
 export type RoutineBlockDiagnostic =
@@ -233,6 +235,7 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
       })(),
       ...(draft.completionExport === undefined ? {} : { completionExport: draft.completionExport }),
       ...(draft.exposure === undefined ? {} : { exposure: draft.exposure }),
+      ...(draft.consents === undefined ? {} : { consents: draft.consents }),
     },
   }
 }
@@ -302,5 +305,6 @@ export function draftFromBlockDoc(doc: RoutineBlockDoc): RoutineDefinitionDraftA
     terminals,
     ...(doc.completionExport === undefined ? {} : { completionExport: doc.completionExport }),
     ...(doc.exposure === undefined ? {} : { exposure: doc.exposure }),
+    ...(doc.consents === undefined ? {} : { consents: doc.consents }),
   }
 }

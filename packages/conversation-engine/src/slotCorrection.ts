@@ -1,4 +1,4 @@
-import type { RoutineSlotSchema } from "@radioso/conversation-contract";
+import type { RoutineConsent, RoutineSlotSchema } from "@radioso/conversation-contract";
 
 import { checkSlotValue } from "./slotValue.js";
 
@@ -24,15 +24,20 @@ export type SlotCorrectionResult =
 
 /**
  * The slots a completed run's values can be corrected in (#1714): declared, marked `mutable`,
- * and holding a value in `held`. The one statement of the rule: a host offers only these, and
- * the engine claims a correction only to one of them, so a correction the host offers is never
- * declined for its slot.
+ * covered by none of the routine's `consents` (#1544), and holding a value in `held`. The one
+ * statement of the rule: a host offers only these, and the engine claims a correction only to
+ * one of them, so a correction the host offers is never declined for its slot. A covered slot
+ * takes a value only while the routine runs, past its consent.
  */
 export const correctableSlots = (
   slots: readonly RoutineSlotSchema[],
   held: Readonly<Record<string, unknown>>,
-): RoutineSlotSchema[] =>
-  slots.filter((slot) => slot.mutable === true && Object.prototype.hasOwnProperty.call(held, slot.key));
+  consents: readonly RoutineConsent[] = [],
+): RoutineSlotSchema[] => {
+  const covered = new Set(consents.flatMap((consent) => consent.slotKeys));
+  return slots.filter((slot) =>
+    slot.mutable === true && !covered.has(slot.key) && Object.prototype.hasOwnProperty.call(held, slot.key));
+};
 
 export const verifySlotCorrection = (input: {
   slots: readonly RoutineSlotSchema[];

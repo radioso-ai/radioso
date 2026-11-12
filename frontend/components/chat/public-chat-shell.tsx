@@ -39,6 +39,7 @@ import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { useElementHeight } from '@/hooks/use-element-height'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import { publicChatUnavailableMessage, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
+import { suggestionInputMetadata } from '@/lib/public-chat-suggestion'
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
 import { useCanAskForMicrophone, useVoiceSession } from '@/lib/use-voice-session'
 import { usePublicChatPhotos } from '@/lib/use-public-chat-photos'
@@ -814,19 +815,7 @@ function PublicChatContent({
   const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
     if (isLoading || callInProgress) return
 
-    if (suggestion.action?.kind === 'start_intent') {
-      void sendMessage(suggestion.text, {
-        method: 'intent_click',
-        intent: suggestion.action.intent,
-        suggestionSourceMessageId: messageId,
-      })
-      return
-    }
-
-    void sendMessage(suggestion.text, {
-      method: 'suggestion_click',
-      suggestionSourceMessageId: messageId,
-    })
+    void sendMessage(suggestion.text, suggestionInputMetadata(suggestion, messageId))
   }
 
   const handleManualContact = () => {

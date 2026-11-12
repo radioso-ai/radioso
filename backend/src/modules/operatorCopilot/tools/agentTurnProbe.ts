@@ -9,6 +9,7 @@ import type {
 } from "../contracts/agentTurnProbe.js";
 export type { CopilotAgentTurnProbePort } from "../contracts/agentTurnProbe.js";
 import { describeNamedAgent, requiredCopilotConversation, requiredPageAgent, testTurnTimeZoneSchema, type CopilotAgentLookupPort } from "./shared.js";
+import { strictChatInputMetadataSchema } from "../../../shared/domain/chatInputMetadata.js";
 
 const idSchema = z.string().uuid();
 const boundedIdSchema = z.string().min(1).max(160);
@@ -27,22 +28,6 @@ const omissionReasonSchema = z.enum([
   "not_allowlisted",
   "string_length",
 ]);
-
-const userInputMetadataSchema = z.object({
-  method: z.enum(["typed", "suggestion_click", "intent_click"]),
-  suggestionSourceMessageId: idSchema.optional(),
-  intent: z.object({
-    skillName: z.string().trim().min(1).max(120),
-    intentName: z.string().trim().min(1).max(120).optional(),
-  }).strict().optional(),
-}).strict().superRefine((value, context) => {
-  if (value.method === "suggestion_click" && !value.suggestionSourceMessageId) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "suggestionSourceMessageId is required for suggestion_click", path: ["suggestionSourceMessageId"] });
-  }
-  if (value.method === "intent_click" && !value.intent) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "intent is required for intent_click", path: ["intent"] });
-  }
-});
 
 const assistantPageContextSchema = z.object({
   pageUrl: z.string().trim().max(2_048).nullable().optional(),
@@ -66,7 +51,7 @@ const agentTurnProbeInputSchema = z.object({
   userExpectedLocale: z.string().trim().max(35).optional(),
   /** Tests the turn as a visitor in this IANA zone: relative dates resolve against their today. */
   userTimeZone: testTurnTimeZoneSchema.optional(),
-  inputMetadata: userInputMetadataSchema.optional(),
+  inputMetadata: strictChatInputMetadataSchema.optional(),
   pageContext: assistantPageContextSchema.optional(),
   clientContextCapabilities: clientContextCapabilitiesSchema.optional(),
 }).strict();

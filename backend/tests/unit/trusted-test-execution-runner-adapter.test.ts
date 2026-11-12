@@ -166,6 +166,8 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       candidateRevision: revision,
       history: [expect.objectContaining({ conversationId: "private-side-1", content: "Earlier" })],
       directiveStateStartState: continuation.directiveState,
+      // A continuation stored before routine consents (#1544) carries none.
+      consentStartState: null,
       preResolvedHostVariables: [{
         name: "plan", description: "Current plan", value: { tier: "gold" }, surfacing: "always", sensitive: false, trust: "verified",
       }],
@@ -216,6 +218,10 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     await expect(collect(adapter.stream({ ...input, continuation: { version: 2 } }))).rejects.toThrow("test_execution_continuation_invalid");
     await expect(collect(adapter.stream({ ...input, continuation: { version: 1, routineState: "bad", pendingClarification: null, directiveState: null } })))
       .rejects.toThrow("test_execution_continuation_invalid");
+    await expect(collect(adapter.stream({
+      ...input,
+      continuation: { version: 1, routineState: null, pendingClarification: null, directiveState: null, consents: { decisions: [{ decision: "maybe" }], prompts: [] } },
+    }))).rejects.toThrow("test_execution_continuation_invalid");
     expect(replay.stream).not.toHaveBeenCalled();
   });
 

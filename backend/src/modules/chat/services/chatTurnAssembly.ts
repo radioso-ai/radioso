@@ -27,7 +27,7 @@ import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSki
 import { turnExecutionCapabilities } from "../../../shared/domain/turnExecutionMode.js";
 import type { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
-import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
+import type { ChatRoutineConsentStore, ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
@@ -58,6 +58,7 @@ import type {
 import { RoutineChatModelGateway, type RoutineChatGateway } from "./routines/routineChatModelGateway.js";
 import { pageReadAwareRoutineRunner, type CommittedPageRead } from "./routines/pageReadAwareRoutineRunner.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
+import { routineTurnRequest } from "./routines/routineTurnRequest.js";
 import {
   createRoutineGroundedAnswerRenderer,
   presentRoutineRenderableAnswer,
@@ -231,6 +232,8 @@ export interface ChatTurnAssemblyRoutineResult {
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
+  /** What the routine did with its consents this turn (#1544), for the turn's transaction to record. */
+  consentEvents?: NonNullable<ProcessTurnResult["hostEffects"]>["consentEvents"];
   suspended?: boolean;
   clarificationTransition?: CapturedClarificationTransition | null;
   commitRoutineState: () => Promise<void>;
@@ -321,21 +324,14 @@ export interface ChatTurnAssemblyOptions {
    * eval persists its trace into an append-only, longer-retained record.
    */
   includeSlotValues?: boolean;
+  /** The consents of a conversation no row is kept for, held by its session (Test Chat); absent, the workspace's records. */
+  routineConsentStore?: ChatRoutineConsentStore;
 }
 
-type ChatTurnAssemblySharedOptions = Omit<
-  ChatTurnAssemblyOptions,
-  "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "includeSlotValues"
->;
-
-interface ChatTurnAssemblyEffectPorts {
-  chatSessionPreparer: ChatSessionPreparer;
-  directiveStateStore: DirectiveStateStore;
-  routineStore?: ConversationRoutineStore;
-  coverageHeadRecorder?: AnswerCoverageHeadRecorder;
-  coverageShadowAssessor?: AnswerCoverageShadowAssessor;
-  includeSlotValues?: boolean;
-}
+/** What each surface brings to an assembly: its persistence and state effects. */
+type ChatTurnAssemblyEffectKey = "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "routineConsentStore" | "includeSlotValues";
+type ChatTurnAssemblySharedOptions = Omit<ChatTurnAssemblyOptions, ChatTurnAssemblyEffectKey>;
+type ChatTurnAssemblyEffectPorts = Pick<ChatTurnAssemblyOptions, ChatTurnAssemblyEffectKey | "coverageHeadRecorder" | "coverageShadowAssessor">;
 
 /**
  * Binds the runtime behavior shared by durable chat and ephemeral replay once.
@@ -435,17 +431,10 @@ export class ChatTurnAssembly {
       usageContext: this.answerSupport.buildChatUsageContext(session, input.accountId, "routine_turn"),
       signal: input.coordination?.signal,
     });
-    const routineTurnPorts = await this.options.routineProvider.forTurn({
+    const routineTurnPorts = await this.options.routineProvider.forTurn(routineTurnRequest(session, {
       modelGateway,
-      agentId: session.agent.id,
-      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
-      workspaceId: session.conversation.workspaceId,
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),
-      previewRoutineIds: session.previewRoutineIds,
-      routineInvocation: session.routineInvocation,
-      skillEffects: session.skillEffects,
-      conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,
@@ -458,9 +447,9 @@ export class ChatTurnAssembly {
       throwIfCancelled: input.coordination
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
-      turnPlan: session.turnPlan,
       includeSlotValues: this.options.includeSlotValues,
-    });
+      consentStore: this.options.routineConsentStore,
+    }));
     if (!routineTurnPorts) {
       return null;
     }
@@ -472,7 +461,7 @@ export class ChatTurnAssembly {
     session.routineStartMessageId = input.activeRoutine
       ? input.activeRoutine.startedMessageId
       : session.userMessage.id;
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId, routineTurnPorts.routines);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
     const routineRunner = pageReadAwareRoutineRunner({
@@ -526,7 +515,7 @@ export class ChatTurnAssembly {
       const routineStateTransition = deferredStore.getTransition();
       const { pendingDecisionTransition, actions } = routineAwaitingDecisionEffects({
         session,
-        awaitingDecision: outcome.result.awaitingDecision,
+        awaitingDecision: outcome.result.hostEffects?.awaitingDecision,
         routineStateTransition,
         actions: outcome.result.actions,
       });
@@ -539,7 +528,8 @@ export class ChatTurnAssembly {
         routineStateTransition,
         routineReporter: routineTurnPorts.reporter,
         pendingDecisionTransition,
-        suspended: Boolean(outcome.result.awaitingDecision),
+        consentEvents: outcome.result.hostEffects?.consentEvents,
+        suspended: Boolean(outcome.result.hostEffects?.awaitingDecision),
         clarificationTransition: deferredClarificationStore?.getTransition(),
         commitRoutineState: () => deferredStore.commit(),
         commitClarificationState: deferredClarificationStore
@@ -657,17 +647,10 @@ export class ChatTurnAssembly {
       usageContext: this.answerSupport.buildChatUsageContext(session, input.accountId, "routine_coverage_turn"),
       signal: input.coordination?.signal,
     });
-    const routineTurnPorts = await this.options.routineProvider.forTurn({
+    const routineTurnPorts = await this.options.routineProvider.forTurn(routineTurnRequest(session, {
       modelGateway,
-      agentId: session.agent.id,
-      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
-      workspaceId: session.conversation.workspaceId,
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, null),
-      previewRoutineIds: session.previewRoutineIds,
-      routineInvocation: session.routineInvocation,
-      skillEffects: session.skillEffects,
-      conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,
@@ -679,9 +662,9 @@ export class ChatTurnAssembly {
       throwIfCancelled: input.coordination
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
-      turnPlan: session.turnPlan,
       includeSlotValues: this.options.includeSlotValues,
-    });
+      consentStore: this.options.routineConsentStore,
+    }));
     if (!routineTurnPorts?.coverageActivator) {
       return {
         coverageReactionRecorder: deferredReactionRecorder,
@@ -691,7 +674,7 @@ export class ChatTurnAssembly {
     }
     const routineStartMessageId = getSession().userMessage.id;
     getSession().routineStartMessageId = routineStartMessageId;
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore, routineStartMessageId);
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, routineStartMessageId, routineTurnPorts.routines);
     const deferredClarificationStore = input.clarification?.store;
     return {
       coverageRoutineActivator: routineTurnPorts.coverageActivator,
@@ -705,7 +688,7 @@ export class ChatTurnAssembly {
         const routineStateTransition = deferredStore.getTransition();
         const { pendingDecisionTransition, actions } = routineAwaitingDecisionEffects({
           session: getSession(),
-          awaitingDecision: result.awaitingDecision,
+          awaitingDecision: result.hostEffects?.awaitingDecision,
           routineStateTransition,
           actions: result.actions,
         });
@@ -717,7 +700,8 @@ export class ChatTurnAssembly {
           routineStateTransition,
           routineReporter: routineTurnPorts.reporter,
           pendingDecisionTransition,
-          suspended: Boolean(result.awaitingDecision),
+          consentEvents: result.hostEffects?.consentEvents,
+          suspended: Boolean(result.hostEffects?.awaitingDecision),
           commitRoutineState: () => deferredStore.commit(),
           clarificationTransition: deferredClarificationStore?.getTransition(),
           commitClarificationState: deferredClarificationStore
@@ -1440,14 +1424,8 @@ export class ChatTurnAssembly {
     };
   }
 
-  private withResponseLanguage(
-    session: PreparedSession,
-    responseLanguage: string | undefined,
-  ): PreparedSession {
-    return {
-      ...session,
-      responseLanguage,
-    };
+  private withResponseLanguage(session: PreparedSession, responseLanguage: string | undefined): PreparedSession {
+    return { ...session, responseLanguage };
   }
 
   private async routeTurn(

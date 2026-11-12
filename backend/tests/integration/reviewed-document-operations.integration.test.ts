@@ -14,13 +14,14 @@ import { canonicalReviewedOperationDigest } from "../../src/modules/operatorCopi
 import { NoopDocumentCapacityReadPort, NoopUsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { noContributedCopilotProposals, firstPartyCopilotProposalTargetTypes } from "../../src/modules/operatorCopilot/proposalContribution.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("reviewed document operations (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const repository = new DocumentRepository(database.kysely);
-  const copilotRepository = new CopilotRepository(database.kysely);
+  const copilotRepository = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const operatorUserId = randomUUID();
@@ -36,7 +37,7 @@ describeIntegration("reviewed document operations (Postgres)", () => {
   const operations = new DocumentReviewedOperationService(repository, ingestion, deletion, new NoopDocumentCapacityReadPort());
   const adapter = createDocumentReviewedOperationAdapter({ operations });
   const authorization = { async hasAllPermissions() { return true; } };
-  const copilot = new OperatorCopilotService({
+  const copilot = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     repository: copilotRepository,
     capabilityRunner: { runStreaming: async function* () {} } as never,
     usageLimitPolicy: new NoopUsageLimitPolicy(), auditService: audit, prompt: "test",

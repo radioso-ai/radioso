@@ -90,6 +90,7 @@ import type {
   VoiceVendorConversationReportPort,
   VoiceRecordingsLeftAtVendorReader,
 } from "../../modules/voiceChannel/public.js";
+import type { ChatModelImageReading, VisitorImageAvailability, VisitorImageService } from "../../modules/visitorImages/public.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
@@ -163,13 +164,13 @@ import type {
   EmbeddingBindingResolverPort,
   EmbeddingCoverageReadPort,
 } from "../../modules/embeddingProfiles/public.js";
-import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import type { CopilotContextContributor, CopilotEmptyStateService, OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
 import type { OperatorMcpApplicationService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
 import type { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import type { PeriodicTaskRunner } from "../composition/periodicTaskRunner.js";
-import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
+import type { CopilotProposalTargetTypeSet, CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
 import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
 import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.js";
@@ -393,6 +394,12 @@ export interface AppDependencies {
   voiceRecordings: VoiceVendorConversationReportPort & VoiceRecordingAvailabilityPort & VoiceRecordingPlaybackPort;
   /** The organization's own list of call recordings its deletions left at the vendor for good. */
   voiceRecordingsLeftAtVendor: VoiceRecordingsLeftAtVendorReader;
+  /** Photos visitors and API callers attach to a message: upload, the reading, and serving them back. */
+  visitorImages: VisitorImageService;
+  /** Whether an agent takes photos now: the public session tells the chat, and an upload checks. */
+  visitorImageAvailability: VisitorImageAvailability;
+  /** Whether an agent's chat model reads images, for the settings read and the public chat's `acceptsImages`. */
+  chatModelImageReading: ChatModelImageReading;
   /** The vendor agent Radioso creates and maintains for an agent's voice channel; the Voice card's Connect. */
   voiceRuntimeConnections: VoiceRuntimeConnectionPort;
 
@@ -456,12 +463,17 @@ export interface AppDependencies {
   chatInferencePipeline: ModelInferencePipeline;
   agentWizardService: AgentWizardService;
   operatorCopilotService: OperatorCopilotService;
+  /** Published beside the copilot prompt so the eval suite observes the same context a turn is given. */
+  copilotContextContributors: ReadonlyArray<CopilotContextContributor>;
+  copilotEmptyStateService: CopilotEmptyStateService;
   /**
    * The three pieces the copilot turn is assembled from, published alongside the service so the
    * behavioural eval suite can drive a real turn through the same catalog, prompt, and runner
    * rather than assembling a parallel copilot that nobody talks to.
    */
   copilotToolCatalog: ReadonlyArray<CopilotToolDescriptor>;
+  /** The Ray proposal target types this deployment stores, reads, and applies: first-party and contributed. */
+  copilotProposalTargetTypes: CopilotProposalTargetTypeSet;
   copilotCapabilityRunner: AgenticCapabilityRunner;
   copilotPrompt: string;
   copilotWorkspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;

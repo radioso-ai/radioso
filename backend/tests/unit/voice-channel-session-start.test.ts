@@ -12,6 +12,7 @@ import {
   type VoiceVendorCredentialReading,
 } from "../../src/modules/voiceChannel/domain.js";
 import { VoiceSessionStartService } from "../../src/modules/voiceChannel/public.js";
+import { isTestChatSession, testChatSessionKey } from "../../src/modules/voiceChannel/testChatSessionDomain.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -129,7 +130,7 @@ describe("voice session start", () => {
     expect(result).toEqual({ kind: "started", vendor: "elevenlabs", signedUrl, sessionKey, locale: "de-CH", expiresAt });
     expect(read).toHaveBeenCalledWith({ workspaceId, vendor: "elevenlabs" });
     expect(startSession).toHaveBeenCalledWith({ vendorAgentId: "agent_42", region: "eu", credential: { apiKey } });
-    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "started" }]);
+    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "started" }]);
   });
 
   it("records the minted key with the visitor who asked for it before asking the vendor, for well past the URL's validity", async () => {
@@ -179,7 +180,7 @@ describe("voice session start", () => {
     expect(read).not.toHaveBeenCalled();
     expect(register).not.toHaveBeenCalled();
     expect(startSession).not.toHaveBeenCalled();
-    expect(startOutcomes(metrics)).toEqual([{ vendor, outcome }]);
+    expect(startOutcomes(metrics)).toEqual([{ vendor, surface: "website_embed", outcome }]);
   });
 
   it.each([
@@ -191,8 +192,8 @@ describe("voice session start", () => {
     expect(await service.start({ workspaceId, agentId, visitor })).toEqual({ kind: "failed" });
     expect(startSession).not.toHaveBeenCalled();
     expect(register).not.toHaveBeenCalled();
-    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome }]);
-    expect(logger.warn).toHaveBeenCalledWith({ workspaceId, agentId, vendor: "elevenlabs", outcome }, "Voice session start failed");
+    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome }]);
+    expect(logger.warn).toHaveBeenCalledWith({ workspaceId, agentId, vendor: "elevenlabs", surface: "website_embed", outcome }, "Voice session start failed");
   });
 
   it("counts a credential store that cannot be read apart from a stored key that cannot be decrypted", async () => {
@@ -200,9 +201,9 @@ describe("voice session start", () => {
 
     expect(await service.start({ workspaceId, agentId, visitor })).toEqual({ kind: "failed" });
     expect(startSession).not.toHaveBeenCalled();
-    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "credential_read_failed" }]);
+    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "credential_read_failed" }]);
     expect(logger.warn).toHaveBeenCalledWith(
-      { workspaceId, agentId, vendor: "elevenlabs", outcome: "credential_read_failed", errorClass: "Error" },
+      { workspaceId, agentId, vendor: "elevenlabs", surface: "website_embed", outcome: "credential_read_failed", errorClass: "Error" },
       "Voice session start failed",
     );
   });
@@ -216,7 +217,7 @@ describe("voice session start", () => {
 
     expect(await service.start({ workspaceId, agentId, visitor })).toEqual({ kind: "failed" });
     expect(startSession).not.toHaveBeenCalled();
-    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "registration_failed" }]);
+    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "registration_failed" }]);
   });
 
   it("fails a start the vendor refused, and logs the vendor's status but never the key or the url", async () => {
@@ -232,6 +233,7 @@ describe("voice session start", () => {
         workspaceId,
         agentId,
         vendor: "elevenlabs",
+        surface: "website_embed",
         outcome: "vendor_failed",
         errorClass: "VoiceVendorRequestError",
         reason: "rejected",
@@ -240,7 +242,7 @@ describe("voice session start", () => {
       "Voice session start failed",
     );
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(apiKey);
-    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "vendor_failed" }]);
+    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "vendor_failed" }]);
   });
 
   it("treats any other failure of the vendor call as the vendor failing", async () => {
@@ -252,7 +254,7 @@ describe("voice session start", () => {
 
     expect(await service.start({ workspaceId, agentId, visitor })).toEqual({ kind: "failed" });
     expect(logger.warn).toHaveBeenCalledWith(
-      { workspaceId, agentId, vendor: "elevenlabs", outcome: "vendor_failed", errorClass: "TypeError" },
+      { workspaceId, agentId, vendor: "elevenlabs", surface: "website_embed", outcome: "vendor_failed", errorClass: "TypeError" },
       "Voice session start failed",
     );
   });
@@ -270,7 +272,7 @@ describe("voice session start: the call's first message", () => {
     expect(result).toMatchObject({ kind: "started", firstMessage: "Ciao! Sono Marta, la tua guida. Prenota una visita." });
     expect(findConnection).toHaveBeenCalledWith({ workspaceId, agentId });
     expect(greetingFor).toHaveBeenCalledWith({ workspaceId, agentId, locale: "it-CH" });
-    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "spoken" }]);
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "spoken" }]);
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId, agentId, vendor: "elevenlabs", outcome: "spoken", recordingNotice: false }),
       "Voice session greeting prepared",
@@ -301,7 +303,7 @@ describe("voice session start: the call's first message", () => {
     const { service, metrics } = serviceWith({ voice: noticed, connection: maintainedConnection, greeting: async () => null });
 
     expect(await service.start({ workspaceId, agentId, visitor, locale: "en" })).toMatchObject({ firstMessage: "This call is recorded." });
-    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "none" }]);
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "none" }]);
   });
 
   it("carries no first message when there is nothing to say", async () => {
@@ -311,7 +313,7 @@ describe("voice session start: the call's first message", () => {
 
     expect(result).toMatchObject({ kind: "started" });
     expect(result).not.toHaveProperty("firstMessage");
-    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "none" }]);
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "none" }]);
   });
 
   it.each([
@@ -339,7 +341,7 @@ describe("voice session start: the call's first message", () => {
     const result = await service.start({ workspaceId, agentId, visitor, locale: "en" });
 
     expect(result).toMatchObject({ kind: "started", firstMessage: "This call is recorded." });
-    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "timed_out" }]);
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "timed_out" }]);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId, agentId, vendor: "elevenlabs", outcome: "timed_out", waitMs: 10 }),
       "Voice session greeting was not ready in time; the call starts without it",
@@ -358,7 +360,7 @@ describe("voice session start: the call's first message", () => {
 
     expect(result).toMatchObject({ kind: "started" });
     expect(result).not.toHaveProperty("firstMessage");
-    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "failed" }]);
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "failed" }]);
     expect(logger.warn).toHaveBeenCalledWith(
       { workspaceId, agentId, vendor: "elevenlabs", outcome: "failed", step: "greeting", errorClass: "Error" },
       "Voice session greeting could not be read; the call starts without it",
@@ -373,7 +375,7 @@ describe("voice session start: the call's first message", () => {
     expect(result).toMatchObject({ kind: "started", recordingNotice: "This call is recorded." });
     expect(result).not.toHaveProperty("firstMessage");
     expect(greetingFor).not.toHaveBeenCalled();
-    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "failed" }]);
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "failed" }]);
     expect(logger.warn).toHaveBeenCalledWith(
       { workspaceId, agentId, vendor: "elevenlabs", outcome: "failed", step: "connection", errorClass: "Error" },
       "Voice session greeting could not be read; the call starts without it",
@@ -421,7 +423,7 @@ describe("voice session start: the call's language", () => {
 
     expect(result).toMatchObject({ kind: "started", locale: "it-CH", vendorLanguage: "it" });
     expect(languageFor).toHaveBeenCalledWith({ region: "eu", credential: { apiKey }, vendorAgentId: "agent_42", locale: "it-CH", signal: expect.any(AbortSignal) });
-    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "set" }]);
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "set" }]);
     expect(logger.info).toHaveBeenCalledWith(
       { workspaceId, agentId, vendor: "elevenlabs", outcome: "set", language: "it", durationMs: expect.any(Number) },
       "Voice session language prepared",
@@ -441,7 +443,7 @@ describe("voice session start: the call's language", () => {
     expect(languageFor).toHaveBeenCalledWith(expect.objectContaining({ locale: "pt-BR" }));
     expect(result).toMatchObject({ kind: "started", locale: "pt-BR" });
     expect(result).not.toHaveProperty("vendorLanguage");
-    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "default" }]);
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "default" }]);
     expect(logger.info).toHaveBeenCalledWith(
       { workspaceId, agentId, vendor: "elevenlabs", outcome: "default", durationMs: expect.any(Number) },
       "Voice session language prepared",
@@ -471,7 +473,7 @@ describe("voice session start: the call's language", () => {
 
     expect(result).toMatchObject({ kind: "started", locale: "km" });
     expect(result).not.toHaveProperty("vendorLanguage");
-    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "unsupported" }]);
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "unsupported" }]);
     expect(logger.info).toHaveBeenCalledWith(
       { workspaceId, agentId, vendor: "elevenlabs", outcome: "unsupported", durationMs: expect.any(Number) },
       "Voice session language prepared",
@@ -489,7 +491,7 @@ describe("voice session start: the call's language", () => {
 
     expect(result).toMatchObject({ kind: "started", firstMessage: "Ciao!" });
     expect(result).not.toHaveProperty("vendorLanguage");
-    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "not_allowed" }]);
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "not_allowed" }]);
     expect(logger.warn).toHaveBeenCalledWith(
       { workspaceId, agentId, vendor: "elevenlabs", outcome: "not_allowed", durationMs: expect.any(Number) },
       "Voice session language is not allowed on the vendor agent; the call starts in its default language until Reconnect sets it up",
@@ -533,7 +535,7 @@ describe("voice session start: the call's language", () => {
 
     expect(result).toMatchObject({ kind: "started" });
     expect(result).not.toHaveProperty("vendorLanguage");
-    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "failed" }]);
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "failed" }]);
     expect(logger.warn).toHaveBeenCalledWith(
       {
         workspaceId,
@@ -561,7 +563,7 @@ describe("voice session start: the call's language", () => {
 
     expect(result).toMatchObject({ kind: "started" });
     expect(result).not.toHaveProperty("vendorLanguage");
-    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "timed_out" }]);
+    expect(languageOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "website_embed", outcome: "timed_out" }]);
     expect(logger.warn).toHaveBeenCalledWith(
       { workspaceId, agentId, vendor: "elevenlabs", outcome: "timed_out", waitMs: 10 },
       "Voice session language was not ready in time; the call starts in the vendor agent's default language",
@@ -721,5 +723,58 @@ describe("voice session availability", () => {
     );
     expect(startOutcomes(metrics)).toEqual([]);
     await expect(service.readiness({ workspaceId, agentId, voice: boundVoice })).rejects.toThrow("connection refused");
+  });
+});
+
+describe("voice session start for a Test Chat test (#1536)", () => {
+  const testExecutionId = "77777777-7777-4777-8777-777777777777";
+  const accountId = "88888888-8888-4888-8888-888888888888";
+  const test = { testExecutionId, accountId, greeting: "Hi, I'm the draft. How can I help?" };
+
+  it("records the session for the test it was started from, never for a visitor, and counts it on the test_chat surface", async () => {
+    const { service, register, metrics } = serviceWith();
+
+    // Its key is in Test Chat's own namespace, so a turn tells it apart even once its row is gone.
+    expect(await service.start({ workspaceId, agentId, test })).toMatchObject({ kind: "started", sessionKey: testChatSessionKey(sessionKey) });
+    expect(isTestChatSession({ vendor: "elevenlabs", sessionKey: testChatSessionKey(sessionKey) })).toBe(true);
+    expect(isTestChatSession({ vendor: "elevenlabs", sessionKey })).toBe(false);
+
+    expect(register).toHaveBeenCalledWith({
+      session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: testChatSessionKey(sessionKey) },
+      test: { testExecutionId, accountId },
+      expiresAt: new Date(now + 60 * 60_000),
+      vendorAgent: { agentId: "agent_42", region: "eu" },
+    });
+    expect(register.mock.calls[0][0]).not.toHaveProperty("visitor");
+    expect(startOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "test_chat", outcome: "started" }]);
+  });
+
+  it("opens with the test's own greeting on a maintained vendor agent, never the published one", async () => {
+    const { service, greetingFor, metrics } = serviceWith({ connection: maintainedConnection, greeting: async () => "The published greeting." });
+
+    const result = await service.start({ workspaceId, agentId, test, locale: "en" });
+
+    expect(result).toMatchObject({ kind: "started", firstMessage: "Hi, I'm the draft. How can I help?" });
+    expect(greetingFor).not.toHaveBeenCalled();
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", surface: "test_chat", outcome: "spoken" }]);
+  });
+
+  it("opens with nothing of the agent's own once the test has moved past its greeting", async () => {
+    const { service, greetingFor } = serviceWith({ connection: maintainedConnection, greeting: async () => "The published greeting." });
+
+    const result = await service.start({ workspaceId, agentId, test: { ...test, greeting: null }, locale: "en" });
+
+    expect(result).toMatchObject({ kind: "started" });
+    expect(result).not.toHaveProperty("firstMessage");
+    expect(greetingFor).not.toHaveBeenCalled();
+  });
+
+  it("passes the same gate a website start does, and counts a refusal on its own surface", async () => {
+    const { service, register, startSession, metrics } = serviceWith({ voice: { ...boundVoice, enabled: false } });
+
+    expect(await service.start({ workspaceId, agentId, test })).toEqual({ kind: "unavailable" });
+    expect(register).not.toHaveBeenCalled();
+    expect(startSession).not.toHaveBeenCalled();
+    expect(startOutcomes(metrics)).toEqual([{ vendor: "none", surface: "test_chat", outcome: "voice_off" }]);
   });
 });

@@ -2785,6 +2785,9 @@ components:
               type: boolean
             handoffOnRetrievalMiss:
               type: boolean
+            visitorImagesEnabled:
+              type: boolean
+              description: Whether visitors and API callers may attach photos to a message. The agent's chat model reads each photo at upload, so this takes effect only when that model reads images.
             contactRequestDelivery:
               $ref: "#/components/schemas/AgentContactRequestDelivery"
             theme:
@@ -2909,6 +2912,7 @@ components:
             - contactRequestsEnabled
             - webhookExportsEnabled
             - handoffOnRetrievalMiss
+            - visitorImagesEnabled
             - contactRequestDelivery
             - theme
             - branding
@@ -2934,10 +2938,15 @@ components:
         - $ref: "#/components/schemas/ConversationAgent"
         - type: object
           properties:
+            chatModelReadsImages:
+              type: boolean
+              description: "Computed, read-only: whether the model the agent answers with reads images. It is decided from the agent's `chatModelOverride`, the workspace's chat model and the plan, as a turn is, and without touching keys. Photos reach visitors only when this is true and `visitorImagesEnabled` is on; it is true or false whatever `visitorImagesEnabled` says, and a model Radioso cannot vet (an `openai-compatible` endpoint, or one outside the catalogue) reads as false. A request cannot set it."
             voiceCallReadiness:
               allOf:
                 - $ref: "#/components/schemas/VoiceCallReadiness"
                 - description: "Present for dashboard sessions: whether the agent's voice is ready for the website embed's calls switch."
+          required:
+            - chatModelReadsImages
     AgentListResponse:
       type: object
       properties:
@@ -2970,6 +2979,8 @@ components:
         webhookExportsEnabled:
           type: boolean
         handoffOnRetrievalMiss:
+          type: boolean
+        visitorImagesEnabled:
           type: boolean
         contactRequestDelivery:
           $ref: "#/components/schemas/AgentContactRequestDeliveryRequest"
@@ -3663,6 +3674,14 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+        imageIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 3
+          description: Images uploaded for this message, in the order they were attached; at most three, each sent once. The agent reads each image at upload, and the message runs on its text followed by those readings.
         routine:
           type: object
           properties:
@@ -6273,6 +6292,9 @@ components:
           type:
             - string
             - "null"
+        acceptsImages:
+          type: boolean
+          description: "Whether the visitor may attach photos to a message: the agent has `visitorImagesEnabled` on and its chat model reads images. Upload with `POST /api/v1/public/chat/{token}/images`."
         theme:
           type: object
           properties:
@@ -6344,6 +6366,7 @@ components:
         - publicSessionToken
         - resumeToken
         - assistantBootstrapActive
+        - acceptsImages
         - expiresAt
         - resumeExpiresAt
     PublicChatSessionRequest:
@@ -6456,6 +6479,115 @@ components:
           type: string
           format: uuid
           description: "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`."
+        locale:
+          type: string
+          description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`."
+        expiresAt:
+          type: string
+          format: date-time
+          description: "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL."
+        recordingNotice:
+          type: string
+          description: "The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts."
+        firstMessage:
+          type: string
+          description: "What the call says first: the recording notice, then the agent's greeting in the session's language, as plain speech. Present only when the agent's vendor agent is one Radioso maintains (connected from the agent's Voice card) and there is something to say. Pass it as the session's first-message override, on `elevenlabs` the client's `overrides.agent.firstMessage`, and send no override when it is absent: a vendor agent set up outside Radioso closes a session that sets a first message it does not allow."
+        vendorLanguage:
+          type: string
+          enum:
+            - en
+            - zh
+            - es
+            - hi
+            - pt
+            - fr
+            - de
+            - ja
+            - ar
+            - ko
+            - id
+            - it
+            - nl
+            - tr
+            - pl
+            - ru
+            - sv
+            - tl
+            - ms
+            - ro
+            - uk
+            - el
+            - cs
+            - da
+            - fi
+            - bg
+            - hr
+            - sk
+            - ta
+            - vi
+            - no
+            - hu
+            - af
+            - hy
+            - as
+            - az
+            - be
+            - bn
+            - bs
+            - ca
+            - et
+            - gl
+            - ka
+            - gu
+            - ha
+            - he
+            - is
+            - ga
+            - jv
+            - kn
+            - kk
+            - ky
+            - lv
+            - lt
+            - lb
+            - mk
+            - ml
+            - mr
+            - ne
+            - ps
+            - fa
+            - pa
+            - sr
+            - sd
+            - sl
+            - so
+            - sw
+            - te
+            - th
+            - ur
+            - cy
+            - pt-br
+          description: "The vendor's code for the language the call starts in: `locale` mapped onto the languages the vendor speaks, such as `it` for `it-CH` or `pt-br` for `pt-BR`. Present only when the agent's vendor agent is one Radioso maintains, that vendor agent lets a session set its language, the vendor's browser client can set `locale`'s language and the vendor agent's voice speaks it, and it is not the language the vendor agent starts calls in already. Pass it as the session's language override, on `elevenlabs` the client's `overrides.agent.language`, and send no override when it is absent: the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one. The values are the codes the `elevenlabs` browser client's language override takes."
+      required:
+        - vendor
+        - signedUrl
+        - sessionKey
+        - locale
+    TestChatVoiceSessionResponse:
+      type: object
+      properties:
+        vendor:
+          type: string
+          enum:
+            - elevenlabs
+          description: "The voice runtime the session opens on: the agent's `voice.runtime.vendor`."
+        signedUrl:
+          type: string
+          format: uri
+          description: "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. Hand it to the vendor's client once and never store, log or share it."
+        sessionKey:
+          type: string
+          description: "Radioso's key for this Test Chat session: a correlation handle, not a credential, in the form Radioso reserves for Test Chat (`radioso-test-chat_` before a UUID). The page hands it to the vendor, which sends it back on every turn, and every turn runs on the test; on `elevenlabs` it travels as the custom LLM extra body's `session_key`."
         locale:
           type: string
           description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`."
@@ -6817,6 +6949,9 @@ components:
           type: string
         handoffOnRetrievalMiss:
           type: boolean
+        visitorImagesEnabled:
+          type: boolean
+          description: Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off.
         contactRequestsEnabled:
           type: boolean
         webhookExportsEnabled:
@@ -7688,6 +7823,9 @@ components:
           type: string
         handoffOnRetrievalMiss:
           type: boolean
+        visitorImagesEnabled:
+          type: boolean
+          description: Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off.
         contactRequestsEnabled:
           type: boolean
         webhookExportsEnabled:
@@ -10828,6 +10966,14 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+        imageIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 3
+          description: Images uploaded for this message, in the order they were attached; at most three, each sent once. The agent reads each image at upload, and the message runs on its text followed by those readings.
         startConversation:
           type: boolean
           default: false
@@ -10894,7 +11040,7 @@ components:
             type: string
             format: uuid
           maxItems: 20
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`. `imageIds` needs `agentId`."
     PublicChatRequest:
       type: object
       properties:
@@ -10902,6 +11048,14 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+        imageIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 3
+          description: Images uploaded for this message, in the order they were attached; at most three, each sent once. The agent reads each image at upload, and the message runs on its text followed by those readings.
         stream:
           type: boolean
           default: false
@@ -11015,7 +11169,7 @@ components:
                 - skillName
           required:
             - method
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`."
     ConversationOwnership:
       type: object
       properties:
@@ -11817,6 +11971,35 @@ components:
           type: boolean
       required:
         - cleared
+    VisitorImageInput:
+      type: object
+      properties:
+        typedText:
+          type: string
+          description: What the visitor typed, without the photo readings. Empty when they sent photos alone.
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: The image id; read the photo from the conversation's image route.
+              reading:
+                type:
+                  - string
+                  - "null"
+                description: What the agent's chat model read in the photo, in the visitor's language; null when it could not read it.
+            required:
+              - id
+              - reading
+          minItems: 1
+          maxItems: 3
+      required:
+        - typedText
+        - images
+      description: The photos a message carries. Render `typedText` and the photos in the visitor's bubble; the readings are the agent's, not the visitor's words.
     UserMessageInputMetadata:
       type: object
       properties:
@@ -11850,6 +12033,8 @@ components:
           required:
             - toolName
             - input
+        imageInput:
+          $ref: "#/components/schemas/VisitorImageInput"
       required:
         - method
     ReplyInterruption:
@@ -12623,6 +12808,9 @@ components:
           type: string
         assistantBootstrapActive:
           type: boolean
+        acceptsImages:
+          type: boolean
+          description: "Whether the visitor may attach photos to a message, computed as the session response computes it: the agent has `visitorImagesEnabled` on and its chat model reads images. A chat that reloads reads it here, so it needs no new session to know."
         conversations:
           type: array
           items:
@@ -12639,6 +12827,7 @@ components:
       required:
         - workspaceName
         - assistantBootstrapActive
+        - acceptsImages
         - conversations
         - total
         - nextCursor
@@ -16822,6 +17011,35 @@ components:
       required:
         - identities
       additionalProperties: false
+    VisitorImageUploadRequest:
+      type: object
+      properties:
+        image:
+          type: string
+          format: binary
+          description: "The image: JPEG, PNG or WebP, at most 10 MiB."
+        locale:
+          type: string
+          maxLength: 35
+          description: BCP 47 tag of the language the agent writes the image's reading in.
+      required:
+        - image
+    VisitorImageUploadResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Send it in the message's `imageIds`.
+        readingStatus:
+          type: string
+          enum:
+            - read
+            - unread
+          description: "`read`: the agent's chat model described the image. `unread`: it could not; a message still carries the image, and its turn text marks it `<attached_photo index=\"n\" status=\"unreadable\"/>`."
+      required:
+        - id
+        - readingStatus
     VoiceRecordingLeftAtVendor:
       type: object
       properties:
@@ -18445,6 +18663,11 @@ components:
               createdAt:
                 type: string
                 format: date-time
+              spoken:
+                type: boolean
+                enum:
+                  - true
+                description: The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
             required:
               - turnId
               - role
@@ -18552,6 +18775,10 @@ components:
         attemptId:
           type: string
           format: uuid
+        userTimeZone:
+          type: string
+          maxLength: 64
+          description: The operator's IANA time zone, such as America/Los_Angeles, which Test Chat sends from the browser with every message and retry. The turn reads today, tomorrow and this weekend in it; without it, or with an unknown zone, the workspace's time zone applies, then UTC.
       required:
         - message
         - executionGeneration
@@ -18570,6 +18797,10 @@ components:
         attemptId:
           type: string
           format: uuid
+        userTimeZone:
+          type: string
+          maxLength: 64
+          description: The operator's IANA time zone, such as America/Los_Angeles, which Test Chat sends from the browser with every message and retry. The turn reads today, tomorrow and this weekend in it; without it, or with an unknown zone, the workspace's time zone applies, then UTC.
       required:
         - executionGeneration
         - turnId
@@ -18796,6 +19027,11 @@ components:
                         createdAt:
                           type: string
                           format: date-time
+                        spoken:
+                          type: boolean
+                          enum:
+                            - true
+                          description: The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
                       required:
                         - turnId
                         - role
@@ -18870,6 +19106,13 @@ components:
           $ref: "#/components/schemas/TestExecutionHistoryDetail"
       required:
         - execution
+    TestChatVoiceSessionRequest:
+      type: object
+      properties:
+        locale:
+          type: string
+      additionalProperties: false
+      description: "`locale` is the caller's language tag; without it the agent's default language applies, then `en`."
     AssistantChatSseStream:
       type: string
       description: "A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it."
@@ -24653,7 +24896,7 @@ paths:
         - Settings
       summary: Set the zone the workspace reads today's date in
       operationId: updateTimeZoneSettings
-      description: "Sets the IANA zone relative dates resolve in: the query rewrite, the answer, the rerank, the date-range lookup, the `today()` metadata rule token, and a routine's date slots and lookups all read today's date in it. A visitor whose client reports a valid zone (the website embed sends the browser's; `userTimeZone` on a chat request) reads today in their own zone instead. Null, the default, reads today in UTC. Each change records a `workspace.time_zone_settings.updated` audit event. Requires workspace.settings.manage."
+      description: "Sets the IANA zone relative dates resolve in: the query rewrite, the answer, the rerank, the date-range lookup, the `today()` metadata rule token, and a routine's date slots and lookups all read today's date in it, and a document's relative dates, such as next Friday, count from its creation day in it when the document is enriched. A visitor whose client reports a valid zone (the website embed and Test Chat send the browser's; `userTimeZone` on a chat request) reads today in their own zone instead, and a routine resumed by an approval click reads the zone of the visitor's last message first. Null, the default, reads today in UTC. Each change records a `workspace.time_zone_settings.updated` audit event. Requires workspace.settings.manage."
       security:
         - bearerAuth: []
       requestBody:
@@ -25417,7 +25660,7 @@ paths:
       tags:
         - Agent Channels
       summary: Run chat through a REST credential bound to this agent
-      description: "Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine`."
+      description: "Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. A message turn may carry `imageIds` the same credential uploaded with `POST /api/v1/agents/{agentId}/images`, with or without `message`. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine` or `imageIds`."
       operationId: createAgentChannelChatResponse
       security:
         - agentChannelBearerAuth: []
@@ -25447,7 +25690,7 @@ paths:
         "204":
           description: Conversation start completed without a greeting
         "400":
-          description: Request validation failed, or routine invocation input did not match the tool's schema
+          description: Request validation failed, including `imageIds` with `routine` or `startConversation`, more than three, or one named twice; or routine invocation input did not match the tool's schema
           content:
             application/json:
               schema:
@@ -25460,6 +25703,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: "Routine tool is not in the agent's catalog; or `agent_not_published`: the agent has never been published, so it can answer nothing yet. Publishing it lifts this."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another credential or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent."
           content:
             application/json:
               schema:
@@ -25530,7 +25779,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ConversationAgent"
+                $ref: "#/components/schemas/AgentDetail"
         "400":
           description: Request validation failed
           content:
@@ -35394,7 +35643,7 @@ paths:
         "204":
           description: Bootstrap request completed without creating a greeting
         "400":
-          description: Request validation failed
+          description: Request validation failed, including `imageIds` without `agentId`, with `startConversation`, more than three or one named twice; or `imageIds` from a caller that cannot own images (only an API credential or a signed-in user can).
           content:
             application/json:
               schema:
@@ -35412,7 +35661,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Turn superseded by a newer message in the same conversation
+          description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent."
           content:
             application/json:
               schema:
@@ -36960,6 +37209,329 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/public/chat/{token}/images:
+    post:
+      tags:
+        - Assistant
+      summary: Upload an image for the visitor's next message
+      description: "For the website embed and the public link: send the public session as `x-radioso-public-session`, as for a chat message. The session's `acceptsImages` says whether the agent takes images. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend their own budgets, per visitor session and source and per workspace, before the agent is checked or the body read, so a refused upload still counts."
+      operationId: uploadPublicChatImage
+      security:
+        - anonymousSessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/VisitorImageUploadRequest"
+      responses:
+        "201":
+          description: Image stored and read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisitorImageUploadResponse"
+        "400":
+          description: No `image` field, more than one file, or an invalid `locale`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "`visitor_images_unavailable`: the agent does not take images (its `visitorImagesEnabled` is off, or its chat model cannot read images)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: "`image_too_large`: over 10 MiB; or `image_too_many_pixels`: too many pixels to decode"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: "`unsupported_image_type`: not a JPEG, PNG or WebP image"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: The upload budget is spent (`rate_limit_exceeded`), or the plan has no answers left for the reading (`usage_limit_exceeded`, the refusal a chat message gets; without `details` on the public route).
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/RateLimitExceededResponse"
+                  - $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/public/chat/{token}/images/{imageId}:
+    get:
+      tags:
+        - Assistant
+      summary: Read an image the visitor uploaded
+      description: "Only the public session that uploaded the image can read it, whether or not a message carries it yet. The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`."
+      operationId: getPublicChatImage
+      security:
+        - anonymousSessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: imageId
+          in: path
+      responses:
+        "200":
+          description: The stored image
+          content:
+            image/jpeg: &a36
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: "`imageId` is not a UUID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No such image for this public session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: The public session's read budget is spent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
+  /api/v1/assistant/images:
+    post:
+      tags:
+        - Assistant
+      summary: Upload an image for a chat message
+      description: "The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts."
+      operationId: uploadAssistantChatImage
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: query
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/VisitorImageUploadRequest"
+      responses:
+        "201":
+          description: Image stored and read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisitorImageUploadResponse"
+        "400":
+          description: "`agentId` is missing or not a UUID; no `image` field, more than one file, or an invalid `locale`; or a caller that cannot own images (only an API credential or a signed-in user can)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace chat permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "`visitor_images_unavailable`: the agent does not take images (its `visitorImagesEnabled` is off, or its chat model cannot read images)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: "`image_too_large`: over 10 MiB; or `image_too_many_pixels`: too many pixels to decode"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: "`unsupported_image_type`: not a JPEG, PNG or WebP image"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: The upload budget is spent (`rate_limit_exceeded`), or the plan has no answers left for the reading (`usage_limit_exceeded`, the refusal a chat message gets; without `details` on the public route).
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/RateLimitExceededResponse"
+                  - $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/images:
+    post:
+      tags:
+        - Agent Channels
+      summary: Upload an image through a REST credential bound to this agent
+      description: "The image belongs to the REST credential that uploads it, and only that credential can send the image, in `POST /api/v1/agents/{agentId}/chat`. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend the channel's source budget and their own, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts."
+      operationId: uploadAgentChannelImage
+      security:
+        - agentChannelBearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/VisitorImageUploadRequest"
+      responses:
+        "201":
+          description: Image stored and read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisitorImageUploadResponse"
+        "400":
+          description: No `image` field, more than one file, or an invalid `locale`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: The REST credential is missing, invalid, expired, or bound to a different agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "`visitor_images_unavailable`: the agent does not take images (its `visitorImagesEnabled` is off, or its chat model cannot read images)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: "`image_too_large`: over 10 MiB; or `image_too_many_pixels`: too many pixels to decode"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: "`unsupported_image_type`: not a JPEG, PNG or WebP image"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: The upload budget is spent (`rate_limit_exceeded`), or the plan has no answers left for the reading (`usage_limit_exceeded`, the refusal a chat message gets; without `details` on the public route).
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/RateLimitExceededResponse"
+                  - $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/conversations/{conversationId}/images/{imageId}:
+    get:
+      tags:
+        - Conversation History
+      summary: View an image a visitor sent in a conversation
+      description: "The image ids are in the user message's `inputMetadata.imageInput`. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<img>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`. Every response that carries the image records a `conversation.image_viewed` audit event with the teammate's user id."
+      operationId: getConversationImage
+      security: *a3
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: imageId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: workspaceId
+          in: query
+      responses:
+        "200":
+          description: The stored image
+          content:
+            image/jpeg: *a36
+        "400":
+          description: Invalid conversation or image id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace history read permission required, the caller is not a dashboard session, or another site started the request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The conversation carries no such image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/account/voice-recordings/left-at-vendor:
     get:
       tags:
@@ -37016,12 +37588,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures:
     get:
-      tags: &a36
+      tags: &a37
         - Conversation Ownership
       summary: List delivery failures
       description: "Replies that may not have reached the customer, newest first: the open ones, or with `state=all` the cleared ones too."
       operationId: listDeliveryFailures
-      security: &a37
+      security: &a38
         - bearerAuth: []
       parameters:
         - schema:
@@ -37085,11 +37657,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures/{failureId}/acknowledge:
     post:
-      tags: *a36
+      tags: *a37
       summary: Acknowledge a delivery failure
       description: Clears the failure as seen by the signed-in teammate. Sends nothing.
       operationId: acknowledgeDeliveryFailure
-      security: *a37
+      security: *a38
       parameters:
         - schema:
             type: string
@@ -37136,11 +37708,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures/{failureId}/resolve:
     post:
-      tags: *a36
+      tags: *a37
       summary: Resolve a delivery failure
       description: An audited decision on a reply whose delivery failed. `marked_sent` settles an `uncertain` send as sent. `resend` sends an `uncertain` or `halted` reply once more, once its channel can send; it is the only way a reply goes out twice.
       operationId: resolveDeliveryFailure
-      security: *a37
+      security: *a38
       parameters:
         - schema:
             type: string
@@ -37193,12 +37765,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/held-replies:
     get:
-      tags: &a38
+      tags: &a39
         - Conversation Ownership
       summary: List held replies
       description: Replies an agent wrote in review that wait for a teammate, newest first. With `attention=all`, the decided, replaced and automatically queued ones too.
       operationId: listHeldReplies
-      security: &a39
+      security: &a40
         - bearerAuth: []
       parameters:
         - schema:
@@ -37262,11 +37834,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-reply:
     get:
-      tags: *a38
+      tags: *a39
       summary: Get a conversation's current held reply
       description: The conversation's newest held reply, whatever its state, under a `heldReply` root; null when it has none.
       operationId: getCurrentHeldReply
-      security: *a39
+      security: *a40
       parameters:
         - schema:
             type: string
@@ -37307,11 +37879,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/release:
     post:
-      tags: *a38
+      tags: *a39
       summary: Release a held reply
       description: Sends a pending draft to the customer. Without `editedText` it goes out as the agent wrote it, as the agent's message; with `editedText` the teammate's edit goes out as their own message and the draft is kept. Who owns the conversation does not change. Each refusal carries the held reply as it is now in `details.heldReply`.
       operationId: releaseHeldReply
-      security: *a39
+      security: *a40
       parameters:
         - schema:
             type: string
@@ -37370,11 +37942,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/discard:
     post:
-      tags: *a38
+      tags: *a39
       summary: Discard a held reply
       description: Sets a pending draft aside. The customer hears nothing, and the conversation keeps waiting for a teammate until one replies or takes it over.
       operationId: discardHeldReply
-      security: *a39
+      security: *a40
       parameters:
         - schema:
             type: string
@@ -38342,6 +38914,7 @@ paths:
                         - agent_greeting
                         - privacy_setting
                         - time_zone_setting
+                    description: The proposal target types this operator may apply. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list.
                 required:
                   - available
                   - reason
@@ -38349,6 +38922,109 @@ paths:
                   - applyableProposalTargets
         "403":
           description: Forbidden
+  /api/v1/copilot/empty-state:
+    get:
+      tags:
+        - Copilot
+      summary: Read the greeting and suggestions Ray's empty panel shows
+      description: "Dashboard session only; bearer API tokens are rejected. The structure comes from the workspace setup state: while setup is open, each suggestion names a next incomplete step with the dashboard path that completes it; once setup is complete or dismissed, suggestions are open-ended requests to send Ray. The model writes only the words, in the requested locale. `greeting` is null when there is no copy to show."
+      operationId: getCopilotEmptyState
+      security: *a3
+      parameters:
+        - schema:
+            type: string
+            maxLength: 35
+            description: A BCP 47 language tag naming the language to write in, such as `fr` or `pt-BR`.
+          required: false
+          description: A BCP 47 language tag naming the language to write in, such as `fr` or `pt-BR`.
+          name: locale
+          in: query
+      responses:
+        "200":
+          description: Empty state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  phase:
+                    type: string
+                    enum:
+                      - setup
+                      - open
+                  firstConversationHappened:
+                    type:
+                      - boolean
+                      - "null"
+                    description: Whether any conversation exists. A client shows retrospective copy only when this is true; null means the server could not say, which reads as no.
+                  greeting:
+                    type:
+                      - string
+                      - "null"
+                  suggestions:
+                    type: array
+                    items:
+                      oneOf:
+                        - type: object
+                          properties:
+                            kind:
+                              type: string
+                              enum:
+                                - setup_step
+                            step:
+                              type: string
+                              enum:
+                                - purpose
+                                - documents
+                                - conversation
+                                - directives_or_routines
+                                - notify_destination
+                                - credential
+                            text:
+                              type: string
+                            href:
+                              type: string
+                              description: The dashboard path that completes the step.
+                          required:
+                            - kind
+                            - step
+                            - text
+                            - href
+                        - type: object
+                          properties:
+                            kind:
+                              type: string
+                              enum:
+                                - prompt
+                            intent:
+                              type: string
+                              enum:
+                                - crawl_more
+                                - tighten_tone
+                                - draft_routine
+                            text:
+                              type: string
+                          required:
+                            - kind
+                            - intent
+                            - text
+                required:
+                  - phase
+                  - firstConversationHappened
+                  - greeting
+                  - suggestions
+        "400":
+          description: The locale is not a language tag
+        "403":
+          description: Forbidden
+        "429":
+          description: Copilot rate limit exceeded for this operator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No LLM capability
   /api/v1/copilot/conversations:
     get:
       tags:
@@ -38519,6 +39195,7 @@ paths:
                                       - agent_greeting
                                       - privacy_setting
                                       - time_zone_setting
+                                    description: "What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list. A proposal of such a contributed type also carries an optional `presentation` ({ label, dashboardPath }): the link label and a path inside the workspace dashboard that the applied card opens."
                                   targetLabel:
                                     type: string
                                   summary:
@@ -38752,6 +39429,7 @@ paths:
                       - agent_greeting
                       - privacy_setting
                       - time_zone_setting
+                    description: What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list.
                   targetRef: {}
                   target:
                     type: object
@@ -38774,6 +39452,7 @@ paths:
                           - agent_greeting
                           - privacy_setting
                           - time_zone_setting
+                        description: What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list.
                       ref: {}
                     required:
                       - type
@@ -39087,7 +39766,7 @@ paths:
         - Evals
       summary: Run frozen Eval cases against immutable agent candidates
       operationId: createRevisionEvalRun
-      security: &a40
+      security: &a41
         - bearerAuth: []
       requestBody:
         required: true
@@ -39120,7 +39799,7 @@ paths:
         - Evals
       summary: Get frozen revision Eval evidence
       operationId: getRevisionEvalRun
-      security: *a40
+      security: *a41
       parameters:
         - schema:
             type: string
@@ -39153,7 +39832,7 @@ paths:
         - Evals
       summary: Retry one failed frozen revision Eval case
       operationId: retryRevisionEvalCase
-      security: *a40
+      security: *a41
       parameters:
         - schema:
             type: string
@@ -39198,7 +39877,7 @@ paths:
         - Evals
       summary: Capture an Eval snapshot
       operationId: createEvalSnapshot
-      security: &a41
+      security: &a42
         - sessionCookie: []
           workspaceSelection: []
         - bearerAuth: []
@@ -39254,7 +39933,7 @@ paths:
         - Evals
       summary: Get an Eval snapshot
       operationId: getEvalSnapshot
-      security: *a41
+      security: *a42
       parameters:
         - schema:
             type: string
@@ -39299,7 +39978,7 @@ paths:
         - Evals
       summary: Create an Eval case
       operationId: createEvalCase
-      security: *a41
+      security: *a42
       requestBody:
         required: true
         content:
@@ -39507,7 +40186,7 @@ paths:
         - Evals
       summary: List Eval cases and latest results
       operationId: listEvalCases
-      security: *a41
+      security: *a42
       responses:
         "200":
           description: Eval cases with each case's latest result
@@ -39673,7 +40352,7 @@ paths:
         - Evals
       summary: Get an Eval case and its run history
       operationId: getEvalCase
-      security: *a41
+      security: *a42
       parameters:
         - schema:
             type: string
@@ -39717,7 +40396,7 @@ paths:
         - Evals
       summary: Rename an Eval case
       operationId: renameEvalCase
-      security: *a41
+      security: *a42
       parameters:
         - schema:
             type: string
@@ -39775,7 +40454,7 @@ paths:
         - Evals
       summary: Replace an Eval case's assertions
       operationId: replaceEvalCaseAssertions
-      security: *a41
+      security: *a42
       parameters:
         - schema:
             type: string
@@ -40046,7 +40725,7 @@ paths:
       summary: Run an Eval case
       description: Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.
       operationId: createEvalCaseRun
-      security: *a41
+      security: *a42
       parameters:
         - schema:
             type: string
@@ -40649,7 +41328,7 @@ paths:
         - Agents
       summary: List private immutable revision tests
       operationId: listAgentTestExecutions
-      security: &a42
+      security: &a43
         - bearerAuth: []
       parameters:
         - schema:
@@ -40685,7 +41364,7 @@ paths:
       summary: Start an operator-private immutable revision test
       description: "A `single` execution may set `seedConversationId` to continue an existing conversation of the same workspace and agent: the side starts with that thread as its history and resumes its active routine, pending clarification, and directive state, skipping the greeting. The source conversation is unchanged."
       operationId: startAgentTestExecution
-      security: *a42
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -40712,7 +41391,7 @@ paths:
         - Agents
       summary: Get private immutable revision test evidence
       operationId: getAgentTestExecution
-      security: *a42
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -40739,7 +41418,7 @@ paths:
         - Agents
       summary: Run a fenced private test turn
       operationId: sendAgentTestExecutionMessage
-      security: *a42
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -40772,7 +41451,7 @@ paths:
         - Agents
       summary: Continue one settled comparison version as a private test
       operationId: retainAgentTestExecutionSide
-      security: *a42
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -40805,7 +41484,7 @@ paths:
         - Agents
       summary: Capture a private test response as immutable Eval evidence
       operationId: captureAgentTestExecutionEvalSnapshot
-      security: *a42
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -40844,7 +41523,7 @@ paths:
         - Agents
       summary: Retry one failed private test side
       operationId: retryAgentTestExecutionSide
-      security: *a42
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -40877,6 +41556,75 @@ paths:
             text/event-stream:
               schema:
                 $ref: "#/components/schemas/TestExecutionEvent"
+  /api/v1/agents/{agentId}/test-executions/{executionId}/voice-sessions:
+    post:
+      tags:
+        - Agents
+      summary: Start a voice session on a private test
+      description: "Test Chat's Talk. Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own vendor key, and returns what `createPublicVoiceSession` does, with a session key in the form Radioso reserves for Test Chat. Every turn of the session runs on the test's revision and is recorded in the test as spoken, never as a conversation: no Inbox, Activity, analytics, visitor or conversation metering. The session's turns are taken for 60 minutes; later ones are refused. A dashboard session only, with `X-Radioso-CSRF: 1`. The agent must take voice calls as the website embed's start requires: published, voice on, a vendor agent bound, and the vendor key stored. The call opens with the test's own greeting while no message has been sent, on a vendor agent Radioso maintains. The signed URL is a bearer credential: the response is `Cache-Control: no-store`."
+      operationId: startAgentTestExecutionVoiceSession
+      security: *a43
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: executionId
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestChatVoiceSessionRequest"
+      responses:
+        "200":
+          description: Voice session started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestChatVoiceSessionResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: No dashboard session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: The CSRF header is missing, or the operator may not manage the agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "The test is gone, or the agent takes no voice calls: it has never been published, voice is off, or no vendor agent is bound"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`test_execution_not_single`: a comparison test takes no spoken turns"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: "`voice_unavailable`: the session could not be started (the vendor key is missing or unreadable, or the vendor did not start it)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/mcp/converse/session:
     post:
       tags:
@@ -41342,7 +42090,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PublicChatSseStream"
         "400":
-          description: Request validation failed
+          description: Request validation failed, including `imageIds` with `startConversation`, more than three, or one named twice.
           content:
             application/json:
               schema:
@@ -41354,7 +42102,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Turn superseded by a newer message in the same conversation
+          description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent."
           content:
             application/json:
               schema:
@@ -41931,7 +42679,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Reconnect or distributed workspace/account/principal admission limit exceeded
-          headers: &a43
+          headers: &a44
             Retry-After:
               description: Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff.
               schema:
@@ -41943,7 +42691,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Realtime admission, broker subscription, or runtime capacity is temporarily unavailable
-          headers: *a43
+          headers: *a44
           content:
             application/json:
               schema:

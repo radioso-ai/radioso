@@ -7,8 +7,7 @@ import type {
   CopilotAgentTurnProbeResult,
 } from "../contracts/agentTurnProbe.js";
 export type { CopilotAgentTurnProbePort } from "../contracts/agentTurnProbe.js";
-import { describeNamedAgent, requiredCopilotConversation, requiredPageAgent, type CopilotAgentLookupPort } from "./shared.js";
-import { TIME_ZONE_MAX_LENGTH } from "../../../shared/domain/referenceTimeZone.js";
+import { describeNamedAgent, requiredCopilotConversation, requiredPageAgent, testTurnTimeZoneSchema, type CopilotAgentLookupPort } from "./shared.js";
 import { strictChatInputMetadataSchema } from "../../../shared/domain/chatInputMetadata.js";
 
 const idSchema = z.string().uuid();
@@ -53,7 +52,7 @@ const agentTurnProbeInputSchema = z.object({
   previewRoutineIds: z.array(idSchema).max(20).optional(),
   userExpectedLocale: z.string().trim().max(35).optional(),
   /** Tests the turn as a visitor in this IANA zone: relative dates resolve against their today. */
-  userTimeZone: z.string().trim().min(1).max(TIME_ZONE_MAX_LENGTH).optional(),
+  userTimeZone: testTurnTimeZoneSchema.optional(),
   inputMetadata: strictChatInputMetadataSchema.optional(),
   pageContext: assistantPageContextSchema.optional(),
   clientContextCapabilities: clientContextCapabilitiesSchema.optional(),

@@ -39,20 +39,18 @@ const securityHeaders = [
     value: "nosniff",
   },
   {
+    // Pages on this origin may ask for the microphone, and the browser still asks the person: Test
+    // Chat's Talk does, and so does the chat frame on a customer's page, whose host delegates it with
+    // the iframe's `allow="microphone"` (the launcher sets it only when the agent takes voice calls).
+    // `self` reaches no frame of another origin. The policy is fixed when a document loads, and the
+    // dashboard is entered through `/` and moved to `/w/...` on the client, so it is set on every page.
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=()",
+    value: "camera=(), microphone=(self), geolocation=()",
   },
 ];
 
-// The chat frame may use the microphone for a voice call; the host page delegates it with the
-// iframe's `allow="microphone"`, which the launcher sets only when the agent takes voice calls.
-const voicePermissionsPolicy = "camera=(), microphone=(self), geolocation=()";
-
-const embedSecurityHeaders = securityHeaders.map((header) => {
-  if (header.key === "Content-Security-Policy") return { ...header, value: embedCspDirectives };
-  if (header.key === "Permissions-Policy") return { ...header, value: voicePermissionsPolicy };
-  return header;
-});
+const embedSecurityHeaders = securityHeaders.map((header) =>
+  header.key === "Content-Security-Policy" ? { ...header, value: embedCspDirectives } : header);
 
 const resolvePublicMcpUrl = () => {
   if (process.env.NEXT_PUBLIC_MCP_URL) {

@@ -92,11 +92,29 @@ export interface PeriodicTasksLifecycle {
 /** Aggregates every registered periodic task behind one start/stop pair, mirroring the shape
  *  of the other single-lifecycle objects (`credentialExpiryWarningLifecycle`,
  *  `realtimePublisherLifecycle`) the runtime already drives. */
-export const createPeriodicTasksLifecycle = (tasks: readonly PeriodicTaskRunner[]): PeriodicTasksLifecycle => ({
+const createPeriodicTasksLifecycle = (tasks: readonly PeriodicTaskRunner[]): PeriodicTasksLifecycle => ({
   async start() {
     await Promise.all(tasks.map((task) => task.start()));
   },
   async stop() {
     await Promise.all(tasks.map((task) => task.stop()));
   },
+});
+
+interface PeriodicTaskHandle {
+  run(): Promise<void>;
+}
+
+/**
+ * Both ways a registered periodic task runs: the poll worker's interval loop wraps each handle in
+ * a `PeriodicTaskRunner`, and the push worker's task route looks the same handle up by id instead,
+ * so a registration is built exactly once regardless of which runtime drives it.
+ */
+export const createPeriodicTasks = <THandle extends PeriodicTaskHandle>(
+  entries: readonly { id: string; intervalMs: number; handle: THandle }[],
+  logger: Pick<AppLogger, "error">,
+): { lifecycle: PeriodicTasksLifecycle; handlesById: Map<string, THandle> } => ({
+  lifecycle: createPeriodicTasksLifecycle(entries.map(({ id, intervalMs, handle }) =>
+    new PeriodicTaskRunner({ id, intervalMs, run: () => handle.run(), logger }))),
+  handlesById: new Map(entries.map(({ id, handle }) => [id, handle])),
 });

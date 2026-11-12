@@ -28,11 +28,19 @@ export const collectFrontendComponentContributions = (manifests) =>
 export const collectFrontendAgentCreationActionContributions = (manifests) =>
   manifests.flatMap((manifest) => manifest.frontendAgentCreationActions ?? []);
 
+// A route group folder, such as `(workspace-app)`, is shared with OSS routes, so cleanup
+// starts below it, at the route's first URL segment.
+const isRouteGroupSegment = (segment) => segment.startsWith("(") && segment.endsWith(")");
+
 export const collectGeneratedDirectories = (routes) => {
   const directories = new Set();
   for (const route of routes) {
     const parts = route.relativePath.split("/");
-    const minimumDirectoryDepth = parts[1] === "api" ? 3 : 2;
+    let firstUrlSegment = 1;
+    while (isRouteGroupSegment(parts[firstUrlSegment] ?? "")) {
+      firstUrlSegment += 1;
+    }
+    const minimumDirectoryDepth = firstUrlSegment + (parts[firstUrlSegment] === "api" ? 2 : 1);
     for (let index = parts.length - 1; index >= minimumDirectoryDepth; index -= 1) {
       directories.add(parts.slice(0, index).join("/"));
     }

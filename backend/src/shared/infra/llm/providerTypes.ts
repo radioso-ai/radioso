@@ -14,6 +14,8 @@ export interface LlmProviderMetadata {
   model: string;
   /** Adapter-local cache support, exposed only as a bounded telemetry label. */
   cacheCapability?: ProviderCacheCapability;
+  /** Whether this model reads images attached to the user turn. Absent means it was not declared, so unsupported. */
+  imageInputCapability?: ProviderImageInputCapability;
 }
 
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
@@ -46,6 +48,15 @@ export interface ReusableInputBoundary {
 
 export type ProviderCacheCapability = "unsupported" | "implicit" | "explicit_checkpoint";
 
+export type ProviderImageInputCapability = "unsupported" | "supported";
+
+/** One image on the user turn, in a format every vision provider accepts. */
+export interface TextGenerationImage {
+  mediaType: "image/jpeg" | "image/png" | "image/webp";
+  /** Raw base64 with no `data:` prefix. Never log or trace this value. */
+  base64Data: string;
+}
+
 /** Provider evidence only: omitted values are unknown, never inferred as zero. */
 export interface CacheAccounting {
   state: "reported" | "unknown";
@@ -55,6 +66,11 @@ export interface CacheAccounting {
 
 export interface TextGenerationRequest {
   prompt: string;
+  /**
+   * Attached to the user turn. Absent or empty is the text-only request. The pipeline refuses a
+   * request with images when the resolved model cannot read them.
+   */
+  images?: readonly TextGenerationImage[];
   systemPrompt?: string;
   reusableInputBoundary?: ReusableInputBoundary;
   temperature?: number;

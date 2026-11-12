@@ -68,7 +68,10 @@ imports from `services/` or `infra/`.
 - `services/retrievalPipelineService.ts`: high-level pipeline orchestration.
 - `services/retrievalPipelineStages.ts`: stage construction and ordering.
 - `services/retrievalSearchService.ts`: candidate search coordination.
-- `services/retrievalAnswerService.ts`: retrieval answer assembly.
+- `services/retrievalAnswerService.ts`: retrieval answer assembly. A link in the
+  answer to an address the model was not sent becomes its text, through the shared
+  `shared/text/markdownLinkGuard.ts` and `givenLinkTargets.ts`, counted on
+  `retrieval_answer_links_unwrapped_total{reason, surface}` (#1751).
 - `domain/vectorAdapter.ts`: backend-neutral capability, writer,
   candidate-search, and administration ports.
 - `domain/vectorFilter.ts`: backend-neutral source and metadata filter contract

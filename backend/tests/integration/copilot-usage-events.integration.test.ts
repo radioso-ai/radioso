@@ -25,6 +25,7 @@ import {
 import { OperatorCopilotService } from "../../src/modules/operatorCopilot/public.js";
 import { NoopUsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { noContributedCopilotProposals, firstPartyCopilotProposalTargetTypes } from "../../src/modules/operatorCopilot/proposalContribution.js";
 
 // Proves the real route Ray's model calls take: AgenticCapabilityRunner -> DefaultAgentRuntime ->
 // TextRoutedToolCallingGateway -> ModelInferencePipelineService -> the real DurableUsageEventRecorder
@@ -81,7 +82,7 @@ describeIntegration("copilot (Ray) usage events against the real ledger", () => 
     database = new Database(integrationDatabaseUrl);
     accountRepository = new AccountRepository(database.kysely);
     workspaceRepository = new WorkspaceRepository(database.kysely);
-    copilotRepository = new CopilotRepository(database.kysely);
+    copilotRepository = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   });
 
   afterAll(async () => {
@@ -121,7 +122,7 @@ describeIntegration("copilot (Ray) usage events against the real ledger", () => 
     const gateway = new TextRoutedToolCallingGateway(pipeline);
     const runtime = new DefaultAgentRuntime({ gateway });
     const capabilityRunner = new AgenticCapabilityRunner({ runtime });
-    return new OperatorCopilotService({
+    return new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository: copilotRepository,
       capabilityRunner,
       usageLimitPolicy: new NoopUsageLimitPolicy(),

@@ -219,7 +219,15 @@ imports from `services/`.
 
 ## Read First
 
-- `services/assistantChatService.ts`: assistant chat orchestration.
+- `services/assistantChatService.ts`: assistant chat orchestration. A send with
+  `imageIds` goes through `services/visitorImageTurn.ts`: the door claims the
+  photos for `imageOwner` through the `visitorImages` module's
+  `VisitorImageTurnInput` port, runs the turn on the typed text followed by one
+  `<attached_photo>` block per reading, and records `inputMetadata.imageInput`.
+  It passes `onUserMessageStored` with the turn; `services/turnUserMessage.ts`
+  calls it right after the preparer stores the user message, and the door binds
+  the claim to that message id then. A turn that ends without storing one
+  releases the claim. Chat never touches image storage or the reading call.
 - `services/chatService.ts`: core chat service behavior.
 - `services/chatSessionPreparer.ts`: session setup for chat turns.
 - `services/chatTurnLifecycle.ts`: turn lifecycle and persistence flow.
@@ -416,6 +424,48 @@ imports from `services/`.
   Tests: `tests/unit/answer-presentation.test.ts`,
   `tests/unit/markdown-split-boundary.test.ts`,
   `tests/unit/citation-text-normalization.test.ts`.
+- Answer links (#1751): a grounded answer links only to addresses its models were
+  sent. `RetrievalAnswerComposer` keeps one `AnswerLinkGuard`
+  (`services/answerLinkGuard.ts`) per turn and records each model call's input at
+  its call site: a gateway call's system prompt, prompt, and every history message
+  (`sendsAnswer`), and a focused decline's prompt (`sendsDecline`, built by the same
+  `groundedMissPrompt` the decline composer sends). The Results with their
+  `Source:` lines and text, the admitted page, instructions, directives, and the
+  conversation reach a model only that way. The guard covers the grounded answer,
+  the page-context answer, the focused decline, and a routine step that answers
+  from documents through this composer. A link to any
+  other address (a made-up site, `#`, a relative path, a page title, the website of
+  an email address's domain) becomes its text. Both entry points read the answer as
+  the visitor does, citation markers already removed, so they apply one grammar to
+  the same text and the joined stream equals the finished answer: the stream after
+  the `CitationAnchorSanitizer` in `services/streamedAnswerText.ts`, where
+  `MarkdownLinkGuardStream` holds a link from its `[` until its destination is
+  checked, so an unwrapped link never reaches the client, not even in part; the
+  finished answer after `ChatAnswerPresenter`, its text and each of its segments,
+  so the stored message, the `done` event, the REST and MCP replies, and the email
+  channel carry the guarded text. The pure halves live in `shared/text/`:
+  `markdownLinkGuard.ts` knows Markdown link syntax, with every hold bounded, and
+  asks a policy about each destination; `givenLinkTargets.ts` builds that policy
+  (`givenLinkPolicy`), matching an address in the prompt text across scheme,
+  `www.`, host case, trailing slash and punctuation, fragment, percent-encoding,
+  and internationalised host forms, and keeping a home page or parent path of a
+  given address; `mailto:` and `tel:` count when the address is in the prompt. The
+  standalone retrieval answer (`modules/retrieval/services/retrievalAnswerService.ts`,
+  behind `POST /api/v1/retrieval/answer` and its `mcp_grounded_answer` path)
+  applies the same two helpers to its presented answer, against its call's system
+  prompt, prompt, and history. Each unwrapped link counts
+  on `chat_answer_links_unwrapped_total{reason, stream}` (`fragment`, `relative`,
+  `malformed`, `not_given`), or `retrieval_answer_links_unwrapped_total{reason,
+  surface}` for the standalone answer, and a streamed turn's compose stage records
+  `unwrappedLinkCount` as a trace metric; no address or answer text is recorded.
+  Direct answers, quick replies, skill-result answers, and routine replies that do
+  not answer from documents have their own composers and are not guarded. Tests:
+  `tests/unit/shared/markdownLinkGuard.test.ts`,
+  `tests/unit/shared/givenLinkTargets.test.ts`,
+  `tests/unit/chat/answerLinkGuard.test.ts` (with the stream-equals-answer
+  property over random chunkings),
+  `tests/unit/retrieval-answer-link-guard.test.ts`,
+  `tests/unit/retrieval/retrievalAnswerLinks.test.ts`.
 - Turn interruption: `services/conversationTurnRegistry.ts` coordinates one
   in-flight turn per conversation. `ChatService` cancels a pre-emission turn,
   waits for its cleanup, and latches immediately before assistant persistence or

@@ -15,12 +15,13 @@ import type {
   ChatConversationDetail,
   PublicChatConversationTail,
   PublicChatConversationEvent,
-  ChatHistoryListResponse,
   ChatResponse,
   ChatStreamHandlers,
   ChatUserInputMetadata,
   ClientContextCapabilities,
+  PublicChatHistoryList,
   PublicChatSessionResponse,
+  VisitorImageUploadResponse,
   WebsiteEmbedPageContext,
 } from './api-types'
 
@@ -37,6 +38,21 @@ const isInvalidResumeSessionError = (error: unknown) => (
     error.error.message === 'Invalid public chat session request',
   )
 )
+
+/** A message turn. `message` may be empty when `imageIds` carries the photos the visitor uploaded. */
+interface PublicChatMessageRequest {
+  message?: string
+  stream: boolean
+  conversationId?: string
+  bootstrapGreetingId?: string
+  privacyNoticeVersion?: string
+  inputMetadata?: ChatUserInputMetadata
+  imageIds?: string[]
+  userExpectedLocale?: string
+  pageContext?: WebsiteEmbedPageContext | null
+  clientContextCapabilities?: ClientContextCapabilities
+  signedIdentity?: string | null
+}
 
 export const publicChatApi = {
   async createSession(
@@ -97,7 +113,7 @@ export const publicChatApi = {
 
   async sendMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; privacyNoticeVersion?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; clientContextCapabilities?: ClientContextCapabilities; signedIdentity?: string | null },
+    data: PublicChatMessageRequest,
   ): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
@@ -120,7 +136,7 @@ export const publicChatApi = {
 
   async streamMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; privacyNoticeVersion?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; clientContextCapabilities?: ClientContextCapabilities; signedIdentity?: string | null },
+    data: PublicChatMessageRequest,
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
     const response = await fetch(`${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}`, {
@@ -167,6 +183,58 @@ export const publicChatApi = {
     return streamChatEvents(response, handlers)
   },
 
+  /**
+   * Uploads one photo for the visitor's session. The backend answers once the agent has read it,
+   * which takes a few seconds, and the id it returns goes in the next message's `imageIds`.
+   */
+  async uploadImage(
+    token: string,
+    file: Blob & { name?: string },
+    options: { locale?: string; signal?: AbortSignal } = {},
+  ): Promise<VisitorImageUploadResponse> {
+    const form = new FormData()
+    form.append('image', file, file.name ?? 'photo.jpg')
+    if (options.locale) {
+      form.append('locale', options.locale)
+    }
+    const response = await fetch(`${API_BASE}/public/chat/${token}/images`, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'include',
+      signal: options.signal,
+      // No Content-Type: the browser writes the multipart boundary.
+      headers: attachAnonymousSessionHeader(token, { 'X-Forwarded-Prefix': '/backend' }),
+      body: form,
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    persistAnonymousSessionHeader(token, response)
+    return response.json() as Promise<VisitorImageUploadResponse>
+  },
+
+  /**
+   * A photo the visitor's session uploaded. The route needs the public session header, which an
+   * `<img src>` cannot send, so the bytes come back as a blob for the caller to show.
+   */
+  async fetchImage(token: string, imageId: string, options: { signal?: AbortSignal } = {}): Promise<Blob> {
+    const response = await fetch(`${API_BASE}/public/chat/${token}/images/${encodeURIComponent(imageId)}`, {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
+      signal: options.signal,
+      headers: attachAnonymousSessionHeader(token, { 'X-Forwarded-Prefix': '/backend' }),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    return response.blob()
+  },
+
   async bootstrapConversation(
     token: string,
     data: { stream: boolean; startConversation: true; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; clientContextCapabilities?: ClientContextCapabilities },
@@ -198,7 +266,7 @@ export const publicChatApi = {
   async listConversations(
     token: string,
     input?: { limit?: number; offset?: number; cursor?: string },
-  ): Promise<ChatHistoryListResponse> {
+  ): Promise<PublicChatHistoryList> {
     const query = buildQueryString({
       limit: input?.limit,
       offset: input?.offset,
@@ -218,7 +286,7 @@ export const publicChatApi = {
     }
 
     persistAnonymousSessionHeader(token, response)
-    return response.json() as Promise<ChatHistoryListResponse>
+    return response.json() as Promise<PublicChatHistoryList>
   },
 
   async getConversationDetail(

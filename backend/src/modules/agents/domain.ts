@@ -1,10 +1,7 @@
 import { badRequest } from "../../shared/domain/errors.js";
 import { normalizeLocaleTag } from "../../shared/domain/locale.js";
 import { PUBLIC_ASSISTANT_FALLBACK_NAME } from "../../shared/domain/responseIdentity.js";
-import {
-  defaultWebsiteEmbedTheme,
-  type WebsiteEmbedThemeSettings,
-} from "../../shared/domain/websiteEmbed.js";
+import { defaultWebsiteEmbedTheme, type WebsiteEmbedThemeSettings } from "../../shared/domain/websiteEmbed.js";
 import { isKnownModelForProvider } from "../../shared/infra/llm/knownModels.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import { stringifyUnknown } from "../../shared/text/stringifyUnknown.js";
@@ -68,6 +65,8 @@ const DEFAULT_CITATION_DISPLAY_ENABLED = true;
 const DEFAULT_CONTACT_REQUESTS_ENABLED = false;
 const DEFAULT_WEBHOOK_EXPORTS_ENABLED = false;
 const DEFAULT_HANDOFF_ON_RETRIEVAL_MISS = false;
+// Photos are opt-in per assistant: each one is read by the agent's chat model and kept with the conversation.
+const DEFAULT_VISITOR_IMAGES_ENABLED = false;
 const MAX_CONTACT_REQUEST_RECIPIENT_EMAILS = 5;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
 const MAX_EMBED_COPY_LOCALES = 10;
@@ -175,6 +174,9 @@ export interface AgentBehaviorSettings {
   webhookExportsEnabled: boolean;
   // Whether a structured retrieval no-context outcome should request human ownership.
   handoffOnRetrievalMiss?: boolean;
+  // Whether visitors and API callers may attach photos to a message, which the agent's chat model
+  // reads at upload. Takes effect only when that model reads images.
+  visitorImagesEnabled?: boolean;
   contactRequestDelivery: AgentContactRequestDelivery;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
@@ -917,6 +919,7 @@ export const validateAgentInput = (
     contactRequestsEnabled: input.contactRequestsEnabled ?? DEFAULT_CONTACT_REQUESTS_ENABLED,
     webhookExportsEnabled: input.webhookExportsEnabled ?? DEFAULT_WEBHOOK_EXPORTS_ENABLED,
     handoffOnRetrievalMiss: input.handoffOnRetrievalMiss ?? DEFAULT_HANDOFF_ON_RETRIEVAL_MISS,
+    visitorImagesEnabled: input.visitorImagesEnabled ?? DEFAULT_VISITOR_IMAGES_ENABLED,
     contactRequestDelivery: normalizeContactRequestDelivery(input.contactRequestDelivery),
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),

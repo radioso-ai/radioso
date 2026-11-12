@@ -55,6 +55,8 @@ export interface MessageRecord {
   createdAt: Date;
 }
 
+export type { UserMessageInputMetadata } from "../../shared/domain/chatInputMetadata.js";
+
 export interface ConversationMessageSummary {
   messageCount: number;
   userMessageCount: number;

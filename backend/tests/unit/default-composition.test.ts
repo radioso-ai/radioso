@@ -522,6 +522,7 @@ describe("default application composition", () => {
     };
     const documentStorage = {
       upload: vi.fn(),
+      locate: vi.fn(),
       read: vi.fn(),
       delete: vi.fn(),
       listWorkspaceObjects: vi.fn(),

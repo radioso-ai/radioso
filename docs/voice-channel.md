@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
-description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, and the period's call numbers on the Quality page."
-last_updated: 2026-11-09
+description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, the period's call numbers on the Quality page, and calls from Test Chat that run on the draft under test."
+last_updated: 2026-11-11
 ---
 
 # Voice Channel
@@ -351,7 +351,9 @@ the start or did not answer within 5 seconds; `vendorStatus: 401` means the
 stored key is wrong). The `voice_session_start_total` metric counts the same
 outcomes, and counts each `404` start with no log line, as `agent_not_found`,
 `not_published` (nobody has published the agent), `voice_off` or
-`no_runtime`.
+`no_runtime`. Its `surface` label says where the start came from:
+`website_embed`, or `test_chat` for a call from
+[Test Chat](#talk-to-the-draft-from-test-chat).
 
 ### Use an ElevenLabs agent you set up yourself
 
@@ -549,6 +551,69 @@ embed's built-in languages: `publicChatTalkLabel`, `publicChatEndCallLabel`,
 `publicChatSpokenLabel`. Override them like any other embed string, with
 `data-radioso-copy` on the script tag or in the agent's per-language copy
 packs.
+
+### Talk to the draft from Test Chat
+
+Test Chat lets you hear a change before you publish it. Its composer offers the
+same **Talk** button as the website embed, and the call runs on the draft you
+are testing: change a directive or the persona, press **Talk**, and the agent
+answers with the change while visitors still reach the published agent.
+
+Talk shows in Test Chat whenever the agent's voice would take a call from the
+website embed: the agent published once, an ElevenLabs key under **Voice
+runtime keys**, ElevenLabs connected, and the **Voice channel** on. The
+widget's **Offer calls on the website** switch plays no part here. While the
+voice channel is off there is no **Talk** button; once it is on, a **Talk**
+that cannot start yet is disabled, with one line under the composer naming
+what voice still needs. A comparison of two versions offers no **Talk**: a
+call has one voice to answer in.
+
+When you press **Talk**, Test Chat does what **Send** would before the first
+message: it saves the draft and starts a test on it when the draft changed or
+no test is open. It then asks for a session at
+`POST /api/v1/agents/:agentId/test-executions/:executionId/voice-sessions`,
+with your dashboard session, the `X-Radioso-CSRF: 1` header and permission to
+manage the agent. The answer is the same as the website embed's start (see
+[Start sessions from Radioso](#start-sessions-from-radioso)), and the call bar,
+**Listening**, **Speaking** and **End call** work the same way. On an agent
+connected from the Voice card, the call opens with the test's own greeting
+while you have sent nothing yet, and otherwise waits for you to speak.
+
+ElevenLabs calls the same chat-completions endpoint with the same REST
+credential as for any call. Radioso recognizes the session key as one it
+started from Test Chat and runs each turn on the test's revision. Each turn
+lands in the test, and Test Chat shows what you said and the reply marked
+**Spoken**, beside the turns you typed. A spoken turn counts as a test run, as
+a typed one does. Nothing from the call reaches the Inbox, Activity,
+analytics, Audience Pulse, visitor records or conversation metering. A Test
+Chat turn speaks no bridge or fallback line, and when you talk over a reply,
+your next turn starts once the test has recorded the one before it.
+
+The dashboard asks the browser for the microphone itself. Talk in Test Chat
+needs a browser that sets the microphone's sample rate, such as Chrome, Edge
+or Safari: Firefox resamples a call's audio with a WebAssembly module, which
+the dashboard's content security policy does not run, so there the call ends
+with "Talking isn't available right now."
+
+A Test Chat session takes turns for 60 minutes after its start. Turns after
+that, and turns on a test that has since been deleted, are refused with a
+`404`; they never run on the published agent. Radioso mints a Test Chat
+session's key in a form it reserves, `radioso-test-chat_` followed by a UUID
+(see [Dialects](#dialects)), so it recognizes a Test Chat turn by its key even
+after the session's record is cleared. Opening another test or starting a new
+chat ends the call.
+
+A Test Chat call spends the same budgets as the agent's live calls: ElevenLabs
+calls with the agent's **Voice calls** REST credential, so each turn counts
+against that credential and the workspace's REST agent-channel chat limits,
+which visitors' calls share, and the credential's last use and its
+`agent_api.chat` audit events include Test Chat turns. A busy round of testing
+can therefore slow live calls down to those limits.
+
+ElevenLabs keeps the call's recording in your account as it does for every
+call. Test Chat does not play it, and Radioso does not delete it; remove it in
+ElevenLabs when you need to. Ray does not start calls, and reads the call's
+turns in the test's transcript like typed ones.
 
 ### Start sessions from your own page
 
@@ -971,7 +1036,11 @@ falls back to one.
 
 Use `generic` for a runtime you control, such as LiveKit Agents or Pipecat:
 set the header to your own session id on every request of the session. A
-session key is opaque to Radioso and can be up to 256 characters.
+session key is opaque to Radioso and can be up to 256 characters. One form is
+reserved on `elevenlabs`: `radioso-test-chat_` followed by a lowercase UUID is
+a session Radioso started from [Test Chat](#talk-to-the-draft-from-test-chat),
+and a turn with such a key runs only on that test, or is refused. Every other
+key, and every key on `generic`, is yours.
 
 ### ElevenLabs first-sentence length
 
@@ -1049,7 +1118,7 @@ The backend logs `Voice session language prepared` with the outcome, the
 ElevenLabs language code when the session sets one, and `durationMs`, or a
 warn when the ElevenLabs agent doesn't allow the override, answered late, or
 failed. It counts each started call on a connected agent in
-`voice_session_language_total` by `outcome`: `set`, `default` (the
+`voice_session_language_total` by `surface` (`website_embed`, `test_chat`) and `outcome`: `set`, `default` (the
 ElevenLabs agent starts calls in the session's language already),
 `unsupported` (one of the cases above), `not_allowed`, `timed_out` or
 `failed`. Each counts one read of the ElevenLabs agent, except an
@@ -1684,8 +1753,9 @@ session. A greeting that takes longer, or can't be read, leaves the call to
 open with the notice alone, or with the caller speaking first; the call itself
 always starts. The backend logs `Voice session greeting prepared`, or a warn
 when the greeting was late or failed, and counts each started call in
-`voice_session_greeting_total` by `outcome` (`spoken`, `none`, `timed_out`,
-`failed`), with ids and timings only, never the words.
+`voice_session_greeting_total` by `surface` (`website_embed`, `test_chat`) and
+`outcome` (`spoken`, `none`, `timed_out`, `failed`), with ids and timings only,
+never the words.
 
 The greeting the call says is not part of the call's conversation: the Inbox
 and Activity show the call from the caller's first words. The embed's panel

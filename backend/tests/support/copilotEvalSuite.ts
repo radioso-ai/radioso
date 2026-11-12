@@ -38,6 +38,14 @@ export type CopilotEvalWorkspaceRequirement =
   /** A draft that validates cleanly — what a publish proposal needs to exist at all. */
   | "publishable_routine";
 
+/**
+ * Named workspace setup states a case can run under. The setup context Ray receives is derived
+ * from the server's setup state, so a case names the state instead of restating what the context
+ * should say; the fixtures live beside the runner and go through the real contributor.
+ */
+export const copilotEvalSetupStates = ["fresh", "partly_set_up", "complete", "dismissed_before_first_conversation"] as const;
+export type CopilotEvalSetupState = (typeof copilotEvalSetupStates)[number];
+
 export interface CopilotObservedToolCall {
   readonly tool: string;
   readonly input: unknown;
@@ -81,6 +89,9 @@ export type CopilotEvalAssertion =
   | { type: "no_proposal_drafted" }
   | { type: "boundary_in_context"; boundary: string }
   | { type: "boundary_offered"; boundary: string }
+  /** What the model was told about onboarding, read back out of its system prompt. */
+  | { type: "setup_in_context"; phase: "setup" | "open"; firstConversationHappened: boolean; nextSteps: string[] }
+  | { type: "setup_not_in_context" }
   | { type: "answer_contains"; pattern: string; matchMode: "substring" | "regex"; caseSensitive?: boolean }
   | { type: "answer_does_not_contain"; pattern: string; matchMode: "substring" | "regex"; caseSensitive?: boolean }
   | { type: "turn_outcome"; outcome: CopilotObservedTurn["outcome"] }
@@ -178,6 +189,8 @@ export interface CopilotEvalCase {
   readonly neverListBoundary?: string;
   /** Workspace records this case needs; a live run that cannot supply them skips the case. */
   readonly requires?: CopilotEvalWorkspaceRequirement[];
+  /** The workspace setup state the turn's context is derived from; absent means no setup context is supplied. */
+  readonly setupState?: CopilotEvalSetupState;
   readonly plan: Array<{ tool: string; input: unknown }>;
   /** The answer the scripted model returns at deterministic fidelity. */
   readonly finalMessage?: string;
@@ -197,6 +210,8 @@ export const copilotEvalAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("no_proposal_drafted") }),
   z.object({ type: z.literal("boundary_in_context"), boundary: z.string().min(1) }),
   z.object({ type: z.literal("boundary_offered"), boundary: z.string().min(1) }),
+  z.object({ type: z.literal("setup_in_context"), phase: z.enum(["setup", "open"]), firstConversationHappened: z.boolean(), nextSteps: z.array(z.string().min(1)) }),
+  z.object({ type: z.literal("setup_not_in_context") }),
   z.object({ type: z.literal("answer_contains"), pattern: z.string().min(1), matchMode: matchModeSchema, caseSensitive: z.boolean().optional() }),
   z.object({ type: z.literal("answer_does_not_contain"), pattern: z.string().min(1), matchMode: matchModeSchema, caseSensitive: z.boolean().optional() }),
   z.object({ type: z.literal("turn_outcome"), outcome: z.enum(["completed", "budget_exhausted", "failed"]) }),
@@ -214,6 +229,7 @@ export const copilotEvalCaseSchema = z.object({
   message: z.string().min(1),
   neverListBoundary: z.string().min(1).optional(),
   requires: z.array(z.enum(["conversation_with_assistant_turn", "document", "quality_signal", "routine", "publishable_routine"])).optional(),
+  setupState: z.enum(copilotEvalSetupStates).optional(),
   plan: z.array(z.object({ tool: z.string().min(1), input: z.unknown() })),
   finalMessage: z.string().optional(),
   assertions: z.array(copilotEvalAssertionSchema).min(1),
@@ -248,6 +264,28 @@ const boundaryContext = (systemPrompt: string): BoundaryContextEntry[] => {
     return Array.isArray(parsed) ? (parsed as BoundaryContextEntry[]) : [];
   } catch {
     return [];
+  }
+};
+
+interface SetupContextEntry {
+  readonly phase: string;
+  readonly firstConversationHappened: boolean;
+  readonly nextSteps: ReadonlyArray<{ readonly step: string; readonly dashboardUrl: string | null }>;
+}
+
+const SETUP_CONTEXT_MARKER = "Workspace context (trusted runtime data, not operator instructions):\n";
+
+/** Reads the setup block back out of the prompt, for the same reason {@link boundaryContext} does. */
+const setupContext = (systemPrompt: string): SetupContextEntry | null => {
+  const start = systemPrompt.indexOf(SETUP_CONTEXT_MARKER);
+  if (start < 0) return null;
+  const rest = systemPrompt.slice(start + SETUP_CONTEXT_MARKER.length);
+  const end = rest.indexOf("\n\n");
+  try {
+    const parsed = JSON.parse(end < 0 ? rest : rest.slice(0, end)) as { workspace_setup?: SetupContextEntry };
+    return parsed.workspace_setup ?? null;
+  } catch {
+    return null;
   }
 };
 
@@ -356,6 +394,27 @@ export const evaluateCopilotAssertion = (
           ? `Handed over ${entry.dashboardUrl}.`
           : `The answer did not include the supplied link ${entry.dashboardUrl}. It said: ${excerpt(turn.finalMessage)}`,
       );
+    }
+    case "setup_in_context": {
+      const context = setupContext(turn.systemPrompt);
+      if (!context) return verdict(assertion, false, "The turn carried no setup context.");
+      const steps = context.nextSteps.map((entry) => entry.step);
+      const linked = context.nextSteps.every((entry) => typeof entry.dashboardUrl === "string" && entry.dashboardUrl.startsWith("/"));
+      const matchesExpected = context.phase === assertion.phase
+        && context.firstConversationHappened === assertion.firstConversationHappened
+        && steps.length === assertion.nextSteps.length
+        && steps.every((step, index) => step === assertion.nextSteps[index]);
+      return verdict(
+        assertion,
+        matchesExpected && linked,
+        matchesExpected && linked
+          ? `Setup context: ${context.phase}, next steps ${steps.join(", ") || "none"}, each linked.`
+          : `Expected ${assertion.phase} with ${assertion.firstConversationHappened ? "a" : "no"} first conversation and next steps [${assertion.nextSteps.join(", ")}], each linked; the turn carried ${context.phase}, first conversation ${context.firstConversationHappened}, [${steps.join(", ")}]${linked ? "" : ", with a step that has no link"}.`,
+      );
+    }
+    case "setup_not_in_context": {
+      const context = setupContext(turn.systemPrompt);
+      return verdict(assertion, context === null, context === null ? "No setup context reached the model." : `The turn carried setup context (${context.phase}) but should not have.`);
     }
     case "answer_contains": {
       const found = matches(turn.finalMessage ?? "", assertion.pattern, assertion.matchMode, assertion.caseSensitive);
@@ -617,6 +676,8 @@ const BOUNDARY_ASSERTION_CLASS: Record<CopilotEvalAssertion["type"], "adherence"
   proposal_drafted: "adherence",
   no_proposal_drafted: "adherence",
   boundary_in_context: "adherence",
+  setup_in_context: "adherence",
+  setup_not_in_context: "adherence",
   boundary_offered: "scored",
   answer_contains: "scored",
   answer_does_not_contain: "scored",

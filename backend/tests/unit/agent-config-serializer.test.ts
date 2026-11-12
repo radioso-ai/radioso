@@ -26,8 +26,9 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   internalName: "Procurement (EU)",
   customInstruction: "Answer with precise procurement guidance.",
   // Always written by the repository (`?? false`), so a fixture standing in for a
-  // stored agent carries it too.
+  // stored agent carries them too.
   handoffOnRetrievalMiss: true,
+  visitorImagesEnabled: true,
   suggestedQuestionsEnabled: false,
   assistantLinkUtmEnabled: false,
   citationDisplayEnabled: false,
@@ -255,6 +256,7 @@ describe("serializeAgentConfig", () => {
     expect(config.name).toBe("Support Bot");
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
     expect(config.contactRequestsEnabled).toBe(true);
+    expect(config.visitorImagesEnabled).toBe(true);
     expect(config.webhookExportsEnabled).toBe(true);
     // Redacted in the portable projection: an imported agent that kept these would
     // deliver contact requests to the source workspace's people, from elsewhere.

@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { closeInOrder, dependencyCloseSteps, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
 import type { AppDependencies } from "../src/app/server/types.js";
 import { agentVoiceSettingsInputSchema, type AgentVoiceSettings } from "../src/modules/agents/public.js";
+import { DEFAULT_WORKSPACE_NAME } from "../src/modules/workspace/public.js";
 import {
   isDeterministicOnlyAssertion,
   parseBaselineFile,
@@ -312,7 +313,9 @@ interface ReplyBlockTargetPorts {
  * The workspace and agent the reply block cases run on: a workspace in the run target's own
  * account, created on the first run and found by name after. It goes through the account rather
  * than registering one, since a single-organization install closes registration after its first
- * account.
+ * account. A sign-in lands on an account's newest workspace when none is named
+ * `DEFAULT_WORKSPACE_NAME`, so in such an account it refuses to create one rather than become
+ * where its people sign in.
  */
 export const ensureReplyBlockTarget = async (
   ports: ReplyBlockTargetPorts,
@@ -322,8 +325,13 @@ export const ensureReplyBlockTarget = async (
   if (!target) {
     throw new Error(`Workspace ${targetWorkspaceId} not found; the reply block cases run in a workspace beside it.`);
   }
-  const existing = (await ports.workspaceService.listForAccount(target.accountId))
-    .find((workspace) => workspace.name === REPLY_BLOCK_EVAL_WORKSPACE_NAME);
+  const workspaces = await ports.workspaceService.listForAccount(target.accountId);
+  const existing = workspaces.find((workspace) => workspace.name === REPLY_BLOCK_EVAL_WORKSPACE_NAME);
+  if (!existing && !workspaces.some((workspace) => workspace.name === DEFAULT_WORKSPACE_NAME)) {
+    throw new Error(
+      `The account of workspace ${targetWorkspaceId} has no "${DEFAULT_WORKSPACE_NAME}" workspace, so a new "${REPLY_BLOCK_EVAL_WORKSPACE_NAME}" workspace would become where it signs in; point the run at a disposable account.`,
+    );
+  }
   const workspaceId = existing?.id
     ?? (await ports.workspaceService.create(target.accountId, REPLY_BLOCK_EVAL_WORKSPACE_NAME)).id;
   const agent = await ports.agentService.resolve(workspaceId);

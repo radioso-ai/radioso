@@ -16,7 +16,7 @@ repo-committed regression suite you run from the CLI.
 | `replyBlockCases.ts` | the `reply-blocks` cases and their own corpus: five bookshop product pages with covers, the bookshop's returns page with a picture, and a guest house page with photos in its text, and the images the runner seeds for them |
 | `routines.ts` | 6 seed `RoutineDefinition`s: `contact-support`, `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, and `kitchen-note`, whose confirm step reads a held note back |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
-| `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
+| `agent.ts` | the seed agent (retrieval on, directives attached) every case runs against, except the `reply-blocks` cases, which run on the agent of a workspace of their own that carries the same directives (see [Reply block cases](#reply-block-cases)) |
 | `cases.ts` | the seed cases, the reply block cases included |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
@@ -123,7 +123,11 @@ Their pages are a corpus of their own, with `Source:` URLs, so the live runner k
 of the workspace every other case grounds against. It runs them in a workspace beside
 the run's target, in the same account, named `Conversation-quality reply blocks` and reused by
 later runs (`partitionCasesByCorpus` and `ensureReplyBlockTarget` in
-`scripts/evalRunnerSupport.ts`), and seeds only the reply block pages there. Once they are
+`scripts/evalRunnerSupport.ts`), and seeds only the reply block pages there. Its agent gets the
+seed directives too, so a grounded answer commits its adherence plan ahead of `present`, as a
+production agent's does. A sign-in that names no workspace lands on the account's `Default`
+workspace, or on its newest one when it has none, so the runner refuses to create the reply
+block workspace in an account without a `Default` workspace. Once they are
 processed, it writes their `document_images` rows itself (`seedReplyBlockImages`), as image
 capture would leave them: a cover as its page's primary image, a photo anchored to the page's
 first chunk. `tests/unit/eval-suite/reply-block-cases.test.ts` drives each case through

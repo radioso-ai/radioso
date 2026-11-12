@@ -513,6 +513,13 @@ describe("live runner reply block corpus", () => {
     expect(created).toEqual([]);
   });
 
+  it("refuses to create the reply block workspace in an account without a Default workspace, where it would become the login workspace", async () => {
+    const { ports, created } = targetPorts([{ id: "target-ws", name: "Storefront" }]);
+
+    await expect(ensureReplyBlockTarget(ports, "target-ws")).rejects.toThrow("no \"Default\" workspace");
+    expect(created).toEqual([]);
+  });
+
   it("refuses a target workspace it cannot find", async () => {
     const { ports } = targetPorts([]);
 

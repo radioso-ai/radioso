@@ -496,6 +496,30 @@ describe("presentRoutineRenderableAnswer", () => {
 
     expect(result.replyBlocks).toEqual({ presented, stored });
   });
+
+  it("drops both forms and warns with ids only when the stored blocks do not read back or do not pair with the presented ones", () => {
+    const card = { type: "item_list" as const, id: "b1", layout: "carousel" as const, selection: "none" as const, caption: "The course guide" };
+    const presented = [{ ...card, items: [{ key: "doc_1", title: "Course Guide", image: { src: "https://app.example/i/cover-1/640", alt: "", width: 1280, height: 960 }, actions: [] }] }];
+    const stored = { ...card, items: [{ key: "doc_1", title: "Course Guide", image: { imageId: "cover-1", alt: "", width: 1280, height: 960 }, actions: [] }] };
+    const restore = (storedReplyBlocks: unknown) => {
+      const warn = vi.fn();
+      const result = presentRoutineRenderableAnswer(chatAnswerPresenter(), {
+        answer: "Here is the guide that introduces Valmora.",
+        blocks: presented,
+        metadata: { skillName: RETRIEVAL_TURN_SKILL, skillOutcome: "grounded", skillStatus: "completed", storedReplyBlocks },
+      }, { logger: { warn }, conversation: { id: "conv_1", workspaceId: "workspace_1" } });
+      return { result, warn };
+    };
+
+    for (const storedReplyBlocks of [[{ ...stored, items: [{ key: "doc_1", title: "Course Guide", actions: [{ type: "open", url: "not a url" }] }] }], [stored, { ...stored, id: "b2" }], [], undefined]) {
+      const { result, warn } = restore(storedReplyBlocks);
+
+      expect(result.replyBlocks).toBeUndefined();
+      expect(result.answer).toBe("Here is the guide that introduces Valmora.");
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn.mock.calls[0]?.[0]).toEqual({ workspaceId: "workspace_1", conversationId: "conv_1", blockIds: ["b1"] });
+    }
+  });
 });
 
 describe("a routine step that answers from evidence for a client that renders reply blocks", () => {

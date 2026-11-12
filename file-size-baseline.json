@@ -9,7 +9,7 @@
   "backend/src/modules/audiencePulse/services/audiencePulseService.ts": 1156,
   "backend/src/modules/auth/services/authService.ts": 1413,
   "backend/src/modules/chat/services/chatHistoryService.ts": 1533,
-  "backend/src/modules/chat/services/chatService.ts": 2199,
+  "backend/src/modules/chat/services/chatService.ts": 2197,
   "backend/src/modules/chat/services/chatSessionPreparer.ts": 1293,
   "backend/src/modules/chat/services/chatTurnAssembly.ts": 1482,
   "backend/src/modules/chat/services/chatTurnLifecycle.ts": 1385,

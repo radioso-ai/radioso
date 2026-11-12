@@ -37,6 +37,7 @@ import {
 } from "../../fixtures/conversation-quality/index.js";
 import { BREATH_COURSE_DOC_ID, conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
 import { pricesFromTheCoursePageDirective } from "../../fixtures/conversation-quality/directives.js";
+import { replyBlockCases, replyBlockDocuments } from "../../fixtures/conversation-quality/replyBlockCases.js";
 import {
   canonicalAnswerEnvelope,
   conversationQualityChatHarness,
@@ -1351,10 +1352,13 @@ describe("seed fixtures", () => {
     ])).toThrow();
   });
 
-  it("only references document and routine ids that exist in the fixtures", () => {
-    const documentIds = new Set(conversationQualityCorpus.map((doc) => doc.id));
+  it("only references document and routine ids that exist in the fixtures, each case in the corpus it grounds against", () => {
+    const sharedDocumentIds = new Set(conversationQualityCorpus.map((doc) => doc.id));
+    const replyBlockDocumentIds = new Set(replyBlockDocuments.map((doc) => doc.id));
+    const replyBlockCaseIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
     const routineIds = new Set(conversationQualityRoutines.map((routine) => routine.id));
     for (const evalCase of conversationQualityCases) {
+      const documentIds = replyBlockCaseIds.has(evalCase.id) ? replyBlockDocumentIds : sharedDocumentIds;
       for (const assertion of evalCase.assertions) {
         if ("documentId" in assertion) {
           expect(documentIds.has(assertion.documentId)).toBe(true);

@@ -80,6 +80,13 @@ imports from `services/` or `infra/`.
   temporal, and candidate-preparation adapters.
 - `domain/retrievalSourceFilter.ts`: shared source scoping values used by
   retrieval contracts and filter compilers.
+- `domain/evidenceImages.ts` and `services/evidenceImageAttacher.ts` (exported
+  through `public.ts`): which stored images each evidence item of an answer
+  carries. A document's primary image rides once, on its first item; an inline
+  image rides on the item whose chunk it is anchored to; at most three per item.
+  Items are numbered as the answer prompt numbers its Results, and carry the
+  document's title and http(s) address. The attacher reads the rows once per turn
+  through the documents' `DocumentImageEvidenceReader`, which composition binds.
 - `domain/agentRetrievalScope.ts`: the single derivation of how one agent
   retrieves — source scope, answering behavior, and skill settings — plus the
   port composition adapts to load an agent. Every surface that runs retrieval
@@ -297,6 +304,7 @@ Focused starting points:
 - `cd backend && pnpm exec vitest run tests/unit/retrieval/retrievalPipelineActivityTraceBuilder.test.ts`
   and `tests/unit/candidate-retrieval-branches.test.ts` for measured stage timings.
 - `cd backend && pnpm run test:integration` for end-to-end retrieval behavior.
+- `cd backend && pnpm exec vitest run tests/unit/retrieval/evidenceImageAttacher.test.ts`
 - `cd backend && pnpm test -- tests/unit/retrieval/vectorIndexReconciler.test.ts`
   for projection drain and checkpoint callback behavior.
 

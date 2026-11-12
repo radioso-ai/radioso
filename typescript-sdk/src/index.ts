@@ -37,6 +37,7 @@ export type {
   ChatStreamRequest,
   ChatRequest,
   ChatResponse,
+  ReplyBlock,
   Agent,
   ConversationAgent,
   ConversationAgentRequest,
@@ -91,6 +92,7 @@ export type {
 export { DEFAULT_BASE_URL } from "./core/config.js";
 export type { RadiosoClientOptions } from "./core/config.js";
 export type {
+  RadiosoChatStreamBlockEvent,
   RadiosoChatStreamCancelledEvent,
   RadiosoChatStatusStage,
   RadiosoChatStreamEvent,

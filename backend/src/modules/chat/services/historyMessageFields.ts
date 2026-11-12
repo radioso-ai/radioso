@@ -1,14 +1,44 @@
+import { z } from "zod";
+
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ReplyInterruption } from "../contracts/interruption.js";
 import type { OperatorReplySpeech } from "../contracts/operatorReplySpeech.js";
+import { storedReplyBlockSchema, type ReplyBlock, type ReplyImageUrls } from "../contracts/replyBlocks.js";
+import { presentReplyBlocks } from "./replyBlocks/replyBlockBuilder.js";
 import type { ChatCitation } from "../contracts/answerTypes.js";
 import { skillDisplayMetadataSchema, type SkillDisplayMetadata } from "../../skills/public.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 
-/** The voice markers a message carries: a reply's interruption, a teammate reply's speech state. */
-export const voiceMarkerFields = (message: MessageRecord): { interruption?: ReplyInterruption; speech?: OperatorReplySpeech } => ({
+/** What a message row carries beside its text, on every read of it, public reads included. */
+export interface StoredMessageFields {
+  /** On an assistant reply the caller spoke over: how much of it they heard, in spoken characters. */
+  interruption?: ReplyInterruption;
+  /** On a teammate's reply to a caller: pending until a turn of the call speaks it, then spoken. */
+  speech?: OperatorReplySpeech;
+  /** The reply blocks an assistant reply showed, as the visitor saw them. */
+  blocks?: ReplyBlock[];
+}
+
+const storedReplyBlocksSchema = z.array(storedReplyBlockSchema).min(1);
+
+/**
+ * A reply's blocks, read from the message row they were stored on rather than the audit stream,
+ * so they replay whatever the audit retention. Blocks the row does not hold in the stored shape
+ * are left out. Image addresses are built now, from the image ids the row keeps.
+ */
+const replyBlockFields = (message: MessageRecord, imageUrls: ReplyImageUrls | null): Pick<StoredMessageFields, "blocks"> => {
+  if (!imageUrls || message.role !== "assistant") {
+    return {};
+  }
+  const parsed = storedReplyBlocksSchema.safeParse((message.metadata as { blocks?: unknown } | undefined)?.blocks);
+  return parsed.success ? { blocks: presentReplyBlocks(parsed.data, imageUrls) } : {};
+};
+
+/** The voice markers and reply blocks a message carries. */
+export const storedMessageFields = (message: MessageRecord, imageUrls: ReplyImageUrls | null): StoredMessageFields => ({
   ...(message.interruption ? { interruption: message.interruption } : {}),
   ...(message.speech ? { speech: message.speech } : {}),
+  ...replyBlockFields(message, imageUrls),
 });
 
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();

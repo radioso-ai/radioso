@@ -13,6 +13,12 @@ export interface WorkspacePersonalCredentialTerminationPort {
   endWorkspace(input: { accountId: string; workspaceId: string; actorUserId?: string | null }): Promise<void>;
 }
 
+/**
+ * The name of an account's first workspace. A sign-in that names no workspace lands on the one by
+ * this name, or on the account's newest workspace when it has none.
+ */
+export const DEFAULT_WORKSPACE_NAME = "Default";
+
 export class WorkspaceService {
   constructor(
     private readonly workspaceRepository: WorkspaceRepositoryPort,
@@ -51,16 +57,16 @@ export class WorkspaceService {
   async createDefault(accountId: string): Promise<WorkspaceRecord> {
     const existing = await this.workspaceRepository.listByAccountId(accountId);
     if (existing.length > 0) {
-      return existing.find((workspace) => workspace.name === "Default") ?? existing[0];
+      return existing.find((workspace) => workspace.name === DEFAULT_WORKSPACE_NAME) ?? existing[0];
     }
 
-    return this.createWorkspaceWithPublicRouteKey(accountId, "Default");
+    return this.createWorkspaceWithPublicRouteKey(accountId, DEFAULT_WORKSPACE_NAME);
   }
 
   async resolveLoginWorkspace(accountId: string, preferredWorkspaceId?: string | null): Promise<WorkspaceRecord> {
     const existing = await this.workspaceRepository.listByAccountId(accountId);
     if (existing.length === 0) {
-      return this.createWorkspaceWithPublicRouteKey(accountId, "Default");
+      return this.createWorkspaceWithPublicRouteKey(accountId, DEFAULT_WORKSPACE_NAME);
     }
 
     if (preferredWorkspaceId) {
@@ -70,7 +76,7 @@ export class WorkspaceService {
       }
     }
 
-    return existing.find((workspace) => workspace.name === "Default") ?? existing.at(-1)!;
+    return existing.find((workspace) => workspace.name === DEFAULT_WORKSPACE_NAME) ?? existing.at(-1)!;
   }
 
   async listForAccount(accountId: string): Promise<WorkspaceRecord[]> {

@@ -10,10 +10,13 @@ import { CHAT_TURN_ROUTE } from "../../../../shared/domain/chatTurnRoute.js";
 import { directiveAdherenceMetadataOf } from "../../../../shared/domain/directiveAdherence.js";
 import { readRetrievalResult, type RetrievalPipelineResult } from "../../../retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "../../contracts/answerTypes.js";
+import type { AppLogger } from "../../../../shared/observability/logger.js";
+import { storedReplyBlockSchema } from "../../contracts/replyBlocks.js";
 import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
 } from "../chatAnswerPresenter.js";
+import type { PresentedReplyBlocks } from "../replyBlocks/replyBlockTurn.js";
 import type { SkillTurnStatus } from "../assistantTurnOutcomeTypes.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
 import {
@@ -77,10 +80,15 @@ const withRoutineGrounding = (input: {
   };
 };
 
+/**
+ * The turn carries its reply blocks as a client receives them; the stored form the message row
+ * keeps rides the metadata, so `presentRoutineRenderableAnswer` restores both.
+ */
 const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => ({
   answer: presentation.answer,
   citations: presentation.citations,
   suggestions: presentation.suggestions,
+  ...(presentation.replyBlocks ? { blocks: presentation.replyBlocks.presented } : {}),
   metadata: {
     skillName: presentation.skillName,
     skillOutcome: presentation.skillOutcome,
@@ -91,6 +99,7 @@ const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => 
     grounding: presentation.grounding,
     ...directiveAdherenceMetadataOf(presentation.metadata),
     effectiveRetrieval: presentation.effectiveRetrieval,
+    ...(presentation.replyBlocks ? { storedReplyBlocks: presentation.replyBlocks.stored } : {}),
   },
 });
 
@@ -130,7 +139,45 @@ const optionalEffectiveRetrieval = (value: unknown): PreparedSession["retrieval"
     ? value as unknown as PreparedSession["retrieval"]
     : undefined;
 
-const presentationFromRenderableTurn = (response: RenderableTurn): ChatPresentedAnswer | null => {
+/** Where a restore reports reply blocks it drops, and the turn it names: ids only, never a block's text. */
+interface RoutineRenderableAnswerRestore {
+  logger?: Pick<AppLogger, "warn">;
+  conversation: { id: string; workspaceId: string };
+}
+
+const storedReplyBlocksSchema = storedReplyBlockSchema.array();
+
+/**
+ * The turn's reply blocks in both forms. The stored form rides untyped metadata, so it is read
+ * through its schema, and each stored block pairs with the presented one at its position, so the
+ * two must be as many. Blocks that fail either check are dropped in both forms: the message row
+ * never keeps a block the visitor was not shown, nor the other way round.
+ */
+const restoredReplyBlocks = (
+  blocks: RenderableTurn["blocks"],
+  stored: unknown,
+  restore: RoutineRenderableAnswerRestore | undefined,
+): PresentedReplyBlocks | undefined => {
+  const presented = blocks ?? [];
+  const parsed = storedReplyBlocksSchema.safeParse(stored ?? []);
+  if (parsed.success && parsed.data.length === presented.length) {
+    return presented.length > 0 ? { stored: parsed.data, presented } : undefined;
+  }
+  restore?.logger?.warn(
+    {
+      workspaceId: restore.conversation.workspaceId,
+      conversationId: restore.conversation.id,
+      blockIds: presented.map((block) => block.id),
+    },
+    "A routine reply's stored blocks did not match its presented blocks; the reply goes without them",
+  );
+  return undefined;
+};
+
+const presentationFromRenderableTurn = (
+  response: RenderableTurn,
+  restore: RoutineRenderableAnswerRestore | undefined,
+): ChatPresentedAnswer | null => {
   if (!isRecord(response.metadata)) {
     return null;
   }
@@ -140,6 +187,7 @@ const presentationFromRenderableTurn = (response: RenderableTurn): ChatPresented
   if (!skillName || !skillOutcome || !skillStatus) {
     return null;
   }
+  const replyBlocks = restoredReplyBlocks(response.blocks, response.metadata.storedReplyBlocks, restore);
   return {
     answer: response.answer,
     ...(optionalChatCitations(response.citations) ? { citations: optionalChatCitations(response.citations) } : {}),
@@ -160,14 +208,16 @@ const presentationFromRenderableTurn = (response: RenderableTurn): ChatPresented
     ...(optionalEffectiveRetrieval(response.metadata.effectiveRetrieval)
       ? { effectiveRetrieval: optionalEffectiveRetrieval(response.metadata.effectiveRetrieval) }
       : {}),
+    ...(replyBlocks ? { replyBlocks } : {}),
   };
 };
 
 export const presentRoutineRenderableAnswer = (
   presenter: ChatAnswerPresenter,
   response: RenderableTurn,
+  restore?: RoutineRenderableAnswerRestore,
 ): ChatPresentedAnswer => {
-  const presented = presentationFromRenderableTurn(response);
+  const presented = presentationFromRenderableTurn(response, restore);
   if (presented) {
     return presented;
   }

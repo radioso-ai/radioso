@@ -1,3 +1,4 @@
+import type { ConversationRecord } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort, UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import type { ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
@@ -47,3 +48,19 @@ export const storeTurnUserMessage = async (
   await input.onUserMessageStored?.({ conversationId: message.conversationId, messageId: message.id });
   return message;
 };
+
+/** A recorded customer message a review turn answers instead of recording one. */
+export interface ExistingUserMessage {
+  message: MessageRecord;
+  historyWindow: { maxMessages: number };
+}
+
+export const isMessageOf = (
+  message: MessageRecord,
+  workspaceId: string,
+  conversation: ConversationRecord | null,
+): boolean =>
+  conversation !== null
+  && message.workspaceId === workspaceId
+  && message.conversationId === conversation.id
+  && message.role === "user";

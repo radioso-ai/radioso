@@ -1,9 +1,11 @@
 import { z } from "zod";
 
 import type { InternalAgentConfig } from "../../agents/public.js";
-import type {
-  AssistantClientContextCapabilities,
-  AssistantPageContext,
+import {
+  pageReadCapabilitySchema,
+  replyBlocksCapabilitySchema,
+  type AssistantClientContextCapabilities,
+  type AssistantPageContext,
 } from "../../chat/contracts/index.js";
 import { renderRoutineInvocation } from "../../routines/public.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
@@ -122,13 +124,8 @@ const pageContextSchema = z.object({
   content: z.string().trim().max(6000).nullable().optional(),
 });
 const clientContextCapabilitiesSchema = z.object({
-  "page.read": z.object({
-    available: z.boolean(),
-    mode: z.enum(["metadata", "content"]).nullable(),
-    supportedOperations: z
-      .array(z.enum(["metadata", "lookup", "summarize"]))
-      .max(3),
-  }).optional(),
+  "page.read": pageReadCapabilitySchema.optional(),
+  "reply.blocks": replyBlocksCapabilitySchema.optional(),
 });
 
 /**
@@ -169,6 +166,14 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
     kind: z.enum(["continue", "callback_requested"]),
     deterministicOnly: z.boolean().optional(),
   }),
+  z.object({
+    type: z.literal("reply_block"),
+    layout: z.enum(["carousel", "grid", "list"]).optional(),
+    minItems: z.number().int().positive().optional(),
+    itemsFromEvidence: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal("no_reply_block") }),
+  z.object({ type: z.literal("answer_excludes_image_url") }),
 ]);
 
 const voiceEvalChatScriptEventSchema = z.discriminatedUnion("type", [

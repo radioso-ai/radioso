@@ -98,6 +98,12 @@ Primary paths:
 - `backend/src/app/http/presenters/`
 - `backend/src/app/http/middleware/`
 - `backend/src/app/http/openapi/`
+- `backend/src/app/http/routes/replyImageRoutes.ts` — the unauthenticated
+  `GET /api/v1/public/reply-images/{imageId}/{width}`, serving a reply block's
+  stored image by its capability id through `AppDependencies.replyImageObjectLookup`;
+  `replyImageAddress.ts` beside it owns the path, the served widths (spelled from
+  the documents contract's `DOCUMENT_IMAGE_RENDITION_WIDTHS`), the URL builder and
+  the lookup port, which has the documents lookup's shape under the route's name
 
 Useful searches:
 
@@ -1698,6 +1704,7 @@ Public surfaces and contracts:
 - `packages/conversation-contract/modelGateway.d.ts` (the model port a host implements: request, completion with its stop reason, and `ConversationModelGateway`; re-exported from `index.d.ts`)
 - `packages/conversation-contract/routineGraph.d.ts` (the authored routine graph: steps, transitions, guards, slots, and ending kinds; re-exported from `index.d.ts`)
 - `packages/conversation-contract/routineTrace.d.ts` (the routine sub-trace: per-step entries, captured and replaced slot keys, opt-in slot values; re-exported from `index.d.ts`)
+- `packages/conversation-contract/renderableTurn.d.ts` (`RenderableTurn`, `PendingRenderableTurn`, `DirectiveAdherenceEntry`) and `replyBlocks.d.ts` (`ReplyBlock`, the `item_list` kind and its item, image and action primitives a turn's `blocks` carry); both re-exported from `index.d.ts`
 - `packages/conversation-contract/routineConsent.d.ts` (a routine's consents before a sensitive slot, #1544: the compiled `RoutineConsent`, the `ConversationRoutineConsentPort` a host asks and reads them through, and the `RoutineConsentEvent`s a turn reports in `RoutineHostEffects.consentEvents`; re-exported from `index.d.ts`)
 - `packages/conversation-contract/routineReentry.d.ts` (whether a routine that already ended starts again: `ConversationRoutineReentryGate`; re-exported from `index.d.ts`)
 - `packages/conversation-contract/skillOutcome.d.ts` (what a skill reports when it runs: `SkillOutcome`, its status, control and error; re-exported from `index.d.ts`)
@@ -1786,6 +1793,9 @@ Primary internals:
 - `backend/src/modules/documents/services/documentProcessingWorker.ts`
 - `backend/src/modules/documents/services/documentJobMessage.ts`
 - `backend/src/modules/documents/infra/`
+- `backend/src/modules/documents/infra/documentImageRepository.ts` — the
+  `document_images` rows (a document's stored pictures, primary or anchored to a
+  chunk), read for an answer's evidence and for the public image route
 
 Useful searches:
 
@@ -1880,6 +1890,9 @@ Primary internals:
 - `backend/src/modules/retrieval/services/agenticTools/`
 - `backend/src/modules/retrieval/services/retrievalSearchService.ts`
 - `backend/src/modules/retrieval/services/retrievalAnswerService.ts`
+- `backend/src/modules/retrieval/services/evidenceImageAttacher.ts` over the pure
+  `domain/evidenceImages.ts` (#1763: the stored images each evidence item of an
+  answer carries, read once per turn through the documents' image reader)
 - `backend/src/modules/retrieval/infra/pgVectorAdapter.ts` (canonical
   `chunk_embeddings` candidate search)
 - `backend/src/modules/retrieval/infra/chunkEmbeddingVectorIndex.ts` (per-width
@@ -1992,6 +2005,11 @@ Primary internals:
   `turnPlanCoordinator.ts` (fused turn planning), with `turnPlanQuickReply.ts`
   (when the direct answer is the planner's own quick reply)
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
+- `backend/src/modules/chat/services/replyBlocks/` and `contracts/replyBlocks.ts`
+  (#1763: the turn's image ledger, the `present` field ahead of `answer`, building a
+  reply block from the picked handles, and presenting stored image ids as URLs),
+  wired by `backend/src/app/composition/replyBlocks.ts`; the golden prompt and
+  schema of a turn without them are in `backend/tests/fixtures/reply-blocks/`
 - `backend/src/modules/chat/services/answerLinkGuard.ts` and
   `streamedAnswerText.ts` (#1751: a grounded answer's link to an address its
   model was not sent becomes its text, streamed and finished alike), over the
@@ -2985,7 +3003,12 @@ Primary paths:
 
 - `backend/src/modules/eval/suite/` — case schema, trace assertions (including
   the voice-only `voice_bridge_emitted`, `voice_turn_limit_reached`,
-  `voice_turn_outcome`), scoring, baseline diff, sampling reducer, report
+  `voice_turn_outcome`, and `reply_block` and `answer_excludes_image_url` in
+  `replyBlockAssertions.ts`), scoring, baseline diff, sampling reducer, report
+- `backend/tests/fixtures/conversation-quality/replyBlockCases.ts` — the
+  `reply-blocks` cases and their product and guest house pages; the live runner
+  seeds their `document_images` rows after the corpus is processed
+  (`evalRunnerSupport.ts`'s `seedReplyBlockImages`)
 - `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
   routines and directives, agent, cases, `baseline.json`) and its `README.md`
 - `backend/tests/fixtures/voice-eval/` — the voice cases (bridge timing, the

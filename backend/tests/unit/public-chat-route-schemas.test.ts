@@ -5,6 +5,7 @@ import {
   pageContextSchema,
   publicChatSessionSchema,
 } from "../../src/app/http/routes/publicChatRouteSchemas.js";
+import { replyBlocksCapabilityFromRequest } from "../../src/modules/chat/contracts/replyBlocks.js";
 
 const clientContextCapabilities = {
   "page.read": {
@@ -74,5 +75,36 @@ describe("public chat route schemas", () => {
       const parsed = pageContextSchema.parse({ referrer: `https://example.com/${longPath}` });
       expect(parsed?.referrer?.length).toBe(2048);
     });
+  });
+});
+
+describe("public chat reply blocks capability", () => {
+  it("accepts the reply blocks a client renders, keeping the layouts as declared", () => {
+    const parsed = anonymousChatSchema.parse({
+      message: "Hiking guides?",
+      clientContextCapabilities: { "reply.blocks": { item_list: { layouts: ["carousel", "grid", "table"] } } },
+    });
+
+    expect(parsed.clientContextCapabilities?.["reply.blocks"]).toEqual({ item_list: { layouts: ["carousel", "grid", "table"] } });
+    expect(replyBlocksCapabilityFromRequest(parsed.clientContextCapabilities?.["reply.blocks"])).toEqual({
+      item_list: { layouts: ["carousel", "grid"] },
+    });
+  });
+
+  it("drops a block kind the server does not know", () => {
+    const parsed = anonymousChatSchema.parse({
+      message: "Hiking guides?",
+      clientContextCapabilities: { "reply.blocks": { choices: { max: 3 } } },
+    });
+
+    expect(parsed.clientContextCapabilities?.["reply.blocks"]).toEqual({});
+    expect(replyBlocksCapabilityFromRequest(parsed.clientContextCapabilities?.["reply.blocks"])).toBeNull();
+  });
+
+  it("refuses an oversized declaration", () => {
+    expect(anonymousChatSchema.safeParse({
+      message: "Hiking guides?",
+      clientContextCapabilities: { "reply.blocks": { item_list: { layouts: Array.from({ length: 40 }, () => "grid") } } },
+    }).success).toBe(false);
   });
 });

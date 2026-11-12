@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { replyBlocksCapabilitySchema } from "../../../modules/chat/contracts/index.js";
 import { chatInputMetadataSchema } from "../../../shared/domain/chatInputMetadata.js";
 import { metadataFilterSchema } from "./metadataFilterSchema.js";
 import { chatMessageSchema } from "./textInputLimits.js";
@@ -7,6 +8,14 @@ import { visitorImageIdsSchema } from "./visitorImageSchemas.js";
 import { userTimeZoneSchema } from "./timeZoneSchemas.js";
 
 const localeHintSchema = z.string().trim().max(35);
+
+/**
+ * What the client renders beyond text. This route takes `reply.blocks` alone: it carries no page
+ * context, so a `page.read` declaration would have nothing to read and is dropped.
+ */
+const assistantClientContextCapabilitiesSchema = z.object({
+  "reply.blocks": replyBlocksCapabilitySchema.optional(),
+}).optional();
 
 const sourceContextSchema = z.object({
   surface: z.enum(["authenticated_chat", "public_chat", "website_embed"]).optional(),
@@ -28,6 +37,7 @@ export const assistantChatSchema = z.object({
   inputMetadata: chatInputMetadataSchema.optional(),
   sourceContext: sourceContextSchema,
   metadataFilter: metadataFilterSchema,
+  clientContextCapabilities: assistantClientContextCapabilitiesSchema,
   // Operator-only workbench test override: routine definition ids (including
   // unpublished drafts) to make eligible for this conversation so an author can
   // test-run a draft end-to-end. Only reachable on this workspace-session route;

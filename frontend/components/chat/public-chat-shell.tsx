@@ -42,6 +42,7 @@ import { publicChatUnavailableMessage, type PublicChatUnavailableReason } from '
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
 import { useCanAskForMicrophone, useVoiceSession } from '@/lib/use-voice-session'
 import { usePublicChatPhotos } from '@/lib/use-public-chat-photos'
+import { publicVoiceSessionCalls } from '@/lib/api-public-voice'
 import { interleaveVoiceTranscript } from '@/lib/voice-session'
 import {
   answerFeedbackApi,
@@ -650,7 +651,7 @@ function PublicChatContent({
   // Talk needs both the agent's voice and a page that can ask for the microphone.
   const microphoneAskable = useCanAskForMicrophone(surface === 'embed' && voiceAvailable)
   const voiceOffered = surface === 'embed' && voiceAvailable && microphoneAskable
-  const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, privacyNotice, precedingMessageIds: readMessageIdsNewestFirst, offered: voiceOffered })
+  const voice = useVoiceSession({ calls: publicVoiceSessionCalls(publicChatToken, { locale: visitorLocale, privacyNotice }), precedingMessageIds: readMessageIdsNewestFirst, offered: voiceOffered })
   const { isActive: isVoiceCallActive, stop: stopVoiceCall, reset: resetVoiceCall } = voice
   useEffect(() => {
     if (!panelOpen && isVoiceCallActive) stopVoiceCall()
@@ -770,9 +771,8 @@ function PublicChatContent({
   }
 
   // The call bar stands in for the composer during a call, so typing goes nowhere then.
-  const composerShown = !(voiceOffered && isVoiceCallActive)
   useEffect(() => {
-    if (surface !== 'embed' || isHydrating || isUnavailable || !composerShown) {
+    if (surface !== 'embed' || isHydrating || isUnavailable || callInProgress) {
       return
     }
 
@@ -809,7 +809,7 @@ function PublicChatContent({
 
     window.addEventListener('keydown', handleTypingShortcut)
     return () => window.removeEventListener('keydown', handleTypingShortcut)
-  }, [composerShown, input.length, isHydrating, isUnavailable, surface])
+  }, [callInProgress, input.length, isHydrating, isUnavailable, surface])
 
   const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
     if (isLoading || callInProgress) return
@@ -1093,7 +1093,7 @@ function PublicChatContent({
             ) : null}
             <PublicChatBubbleComposerSurface theme={theme} compact={isCompactKeyboardLayout}>
               {voiceOffered ? <VoiceCallNotice theme={theme} copy={copy} state={voice.state} /> : null}
-              {!composerShown ? (
+              {callInProgress ? (
                 <VoiceCallBar theme={theme} copy={copy} state={voice.state} onStop={stopVoiceCall} recordingNotice={voice.recordingNotice} />
               ) : (
                 <PublicChatBubbleComposerForm

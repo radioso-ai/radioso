@@ -742,4 +742,100 @@ export const copilotEvalCases: CopilotEvalCase[] = [
       { type: "turn_outcome", outcome: "completed" },
     ],
   },
+  // Setup context on a Ray turn (#1163). These run under a named setup state, so the context Ray is
+  // given is the one the server's own state implies; they check that context and the tools Ray
+  // reaches for, not the empty panel's greeting, which is written outside a turn and is covered by
+  // copilot-empty-state*.test.ts. The plan is empty because a correct Ray answers from that context
+  // rather than reading anything: the retrospective tools are exactly what a workspace nobody has
+  // talked to yet has nothing for.
+  {
+    id: "setup-fresh-workspace-picks-up-setup",
+    name: "On a workspace nothing has happened in, Ray picks up setup instead of reviewing what happened",
+    description: "Nothing is ready: no documents, no conversation. Ray is told the first conversation has not happened and is handed the next incomplete steps with their dashboard links. The failure to avoid is the retrospective opener — claiming the agent is answering visitors or offering to review how conversations are going.",
+    tags: ["setup_state", "empty_state"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("other"),
+    setupState: "fresh",
+    message: "I just opened Ray. Where should I start?",
+    plan: [],
+    finalMessage: "Let's get you started: add documents your agent can answer from in [Knowledge](/w/sunny-co/knowledge).",
+    assertions: [
+      { type: "setup_in_context", phase: "setup", firstConversationHappened: false, nextSteps: ["documents", "conversation", "directives_or_routines"] },
+      { type: "tool_not_called", tool: "workspace_triage" },
+      { type: "tool_not_called", tool: "conversation_history_search" },
+      { type: "tool_not_called", tool: "quality_signals" },
+      { type: "no_proposal_drafted" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Ray points the operator at the first incomplete step, adding documents, with the Knowledge link. It never says or implies that the agent is answering visitors, and it does not offer to review conversations.",
+      },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "setup-partly-set-up-skips-done-steps",
+    name: "On a partly set-up workspace Ray never suggests a step that is already done",
+    description: "Documents are ready and a conversation has happened. Ray is handed only the steps still open, so documents and the first conversation are never offered again.",
+    tags: ["setup_state", "empty_state"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("other"),
+    setupState: "partly_set_up",
+    message: "What is left to set up?",
+    plan: [],
+    finalMessage: "Documents are in and the agent has answered its first conversation. Next, give it a directive or routine in [Behavior](/w/sunny-co/agents?tab=behavior&anchor=assistant-directives).",
+    assertions: [
+      { type: "setup_in_context", phase: "setup", firstConversationHappened: true, nextSteps: ["directives_or_routines", "notify_destination", "credential"] },
+      { type: "tool_not_called", tool: "document_search" },
+      { type: "no_proposal_drafted" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Ray names directives or routines, the handoff destination, and API access as what is left, and does not suggest adding documents or asking the agent a first question.",
+      },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "setup-complete-open-ended",
+    name: "Once setup is complete Ray is not told about setup and turns to open-ended work",
+    description: "Every step is done and a conversation has happened. No setup context is supplied, so Ray has nothing to steer by and offers the open-ended tail through the proposal tools it already has.",
+    tags: ["setup_state", "empty_state"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("other"),
+    setupState: "complete",
+    message: "What should I work on next?",
+    plan: [],
+    finalMessage: "Good next moves: bring more of your website into Knowledge, tighten how the agent sounds, or draft a routine for a task it should carry through.",
+    assertions: [
+      { type: "setup_not_in_context" },
+      { type: "no_proposal_drafted" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Ray offers open-ended next work such as crawling more content, tightening tone, or drafting a routine, and does not bring up onboarding steps.",
+      },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "setup-dismissed-before-first-conversation",
+    name: "After setup is dismissed Ray stops steering setup but still never claims a conversation happened",
+    description: "The operator dismissed setup before anything was tried. Ray is told there are no next steps and that no conversation has happened, so it neither nags about setup nor claims the agent is answering visitors.",
+    tags: ["setup_state", "empty_state"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("other"),
+    setupState: "dismissed_before_first_conversation",
+    message: "What should I look at first?",
+    plan: [],
+    finalMessage: "Nothing has talked to your agents yet, so there is nothing to review. A good place to begin is drafting a routine or tightening how the agent sounds.",
+    assertions: [
+      { type: "setup_in_context", phase: "open", firstConversationHappened: false, nextSteps: [] },
+      { type: "tool_not_called", tool: "workspace_triage" },
+      { type: "tool_not_called", tool: "conversation_history_search" },
+      { type: "no_proposal_drafted" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Ray does not push setup steps and does not claim the agent has answered anyone or offer to review conversations.",
+      },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
 ];

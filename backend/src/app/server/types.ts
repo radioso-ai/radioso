@@ -164,13 +164,13 @@ import type {
   EmbeddingBindingResolverPort,
   EmbeddingCoverageReadPort,
 } from "../../modules/embeddingProfiles/public.js";
-import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import type { CopilotContextContributor, CopilotEmptyStateService, OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
 import type { OperatorMcpApplicationService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
 import type { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import type { PeriodicTaskRunner } from "../composition/periodicTaskRunner.js";
-import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
+import type { CopilotProposalTargetTypeSet, CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
 import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
 import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.js";
@@ -463,12 +463,17 @@ export interface AppDependencies {
   chatInferencePipeline: ModelInferencePipeline;
   agentWizardService: AgentWizardService;
   operatorCopilotService: OperatorCopilotService;
+  /** Published beside the copilot prompt so the eval suite observes the same context a turn is given. */
+  copilotContextContributors: ReadonlyArray<CopilotContextContributor>;
+  copilotEmptyStateService: CopilotEmptyStateService;
   /**
    * The three pieces the copilot turn is assembled from, published alongside the service so the
    * behavioural eval suite can drive a real turn through the same catalog, prompt, and runner
    * rather than assembling a parallel copilot that nobody talks to.
    */
   copilotToolCatalog: ReadonlyArray<CopilotToolDescriptor>;
+  /** The Ray proposal target types this deployment stores, reads, and applies: first-party and contributed. */
+  copilotProposalTargetTypes: CopilotProposalTargetTypeSet;
   copilotCapabilityRunner: AgenticCapabilityRunner;
   copilotPrompt: string;
   copilotWorkspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;

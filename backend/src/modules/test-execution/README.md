@@ -72,6 +72,17 @@ reached through `TestExecutionDefaultRevisionPort` and wired in composition. It
 is a separate port from the revision reader because choosing can freeze a
 candidate, which is a write.
 
+A turn can be spoken: Test Chat's Talk runs each utterance of a call through
+`streamSpokenMessage`, which mints the turn and attempt identity itself (a call
+has no client that names or retries a turn), runs at the test's own generation,
+marks both history entries `spoken`, and charges the turn as a `test_run` like a
+typed one. Only a single test takes one (`test_execution_not_single`, 409).
+`spokenSessionOpening` says what such a call opens with: the test's greeting
+while no message has been sent, else nothing. The voice module reaches both
+through composition (`createTestChatVoiceTurns` in
+`app/composition/voiceChannel.ts`) and the session-start route; this module
+knows nothing of sessions, vendors or speech.
+
 Operator Copilot reads and drives Test Chat through `summaries`, `transcript`,
 `turn`, `start`, and `send`, from
 `operatorCopilot/services/testChatService.ts`, which adds its spend guard,
@@ -91,5 +102,5 @@ revision does not make a private test conversation resumable by a visitor.
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/test-execution-service.test.ts tests/unit/trusted-test-execution-runner-adapter.test.ts tests/unit/conversation-test-execution-seed-source.test.ts tests/unit/test-execution-request-schema.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/test-execution-service.test.ts tests/unit/test-execution-spoken-turns.test.ts tests/unit/trusted-test-execution-runner-adapter.test.ts tests/unit/conversation-test-execution-seed-source.test.ts tests/unit/test-execution-request-schema.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/test-execution-repository.integration.test.ts tests/integration/test-execution-routes.integration.test.ts tests/integration/conversation-test-execution-seed-source.integration.test.ts --no-file-parallelism`

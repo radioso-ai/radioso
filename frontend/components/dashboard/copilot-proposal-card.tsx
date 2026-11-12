@@ -250,12 +250,15 @@ export function CopilotProposalCard({
   workspaceId,
   defaultAgentId,
   onOpenEntity,
+  onOpenDashboardPath,
 }: {
   proposal: CopilotProposalSummary
   canApply: boolean
   workspaceId?: string
   defaultAgentId?: string | null
   onOpenEntity: (entity: CopilotEntityReference, agentId?: string) => void
+  /** Opens a contributed proposal's `presentation.dashboardPath`; without it the card offers no such link. */
+  onOpenDashboardPath?: (dashboardPath: string) => void
 }) {
   const [cardState, setCardState] = useState(() => createCopilotProposalCardState(proposal.status))
   const [detail, setDetail] = useState<CopilotProposalDetail | null>(null)
@@ -270,6 +273,8 @@ export function CopilotProposalCard({
   // The detail read is authoritative; the streamed card only carries the summary until it loads.
   const evidenceSummary = detail?.evidence ?? proposal.evidence
   const entityTarget = targetReference(proposal, detail, effectiveState.appliedRef, defaultAgentId)
+  // A contributed target type names its own dashboard page; targetReference links the first-party ones.
+  const presentation = proposal.presentation
   const statusText = statusMessage(effectiveState, detail, proposal.reason)
   const readProposal = () => workspaceId
     ? copilotApi.getProposal(proposal.id, undefined, workspaceId)
@@ -363,7 +368,14 @@ export function CopilotProposalCard({
           </p>
         ) : null}
         {evidenceSummary ? <ProposalEvidence summary={evidenceSummary} cases={detail?.evidenceCases ?? null} /> : null}
-        {effectiveState.status === 'applied' && entityTarget ? (
+        {effectiveState.status === 'applied' && presentation && onOpenDashboardPath ? (
+          <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => onOpenDashboardPath(presentation.dashboardPath)}>
+            <Check className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+            Open {presentation.label}
+            <ExternalLink className="ml-1.5 h-3.5 w-3.5" aria-hidden />
+          </Button>
+        ) : null}
+        {effectiveState.status === 'applied' && !presentation && entityTarget ? (
           <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => onOpenEntity(entityTarget.entity, entityTarget.agentId)}>
             <Check className="mr-1.5 h-3.5 w-3.5" aria-hidden />
             Open {proposal.targetLabel}

@@ -1,6 +1,7 @@
 // First: Zod 4 gives `.openapi()` only to schemas built after this runs; other packages load this harness too.
 import "../../src/app/http/openapi/zodOpenApiExtension.js";
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { createCopilotContext } from "../../src/app/composition/copilotContext.js";
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
@@ -76,6 +77,8 @@ import {
   type VoiceSessionStore,
   type VoiceSessionVendorAgent,
   type VoiceSessionVisitor,
+  type VoiceTestChatBindingLookup,
+  type VoiceTestChatSubject,
 } from "../../src/modules/voiceChannel/public.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import {
@@ -234,6 +237,7 @@ import {
   EvalCaseReplayService,
   CopilotRetentionWorker,
   EvalSuiteProbeService,
+  firstPartyCopilotProposalTargetTypes,
   OperatorCopilotService,
   RetrievalProbeService,
   TestChatService,
@@ -385,6 +389,7 @@ import {
   bindClusteringEmbeddingPort,
   bindDocumentEmbeddingPort,
 } from "./embeddingPorts.js";
+import { noContributedCopilotProposals } from "../../src/modules/operatorCopilot/proposalContribution.js";
 
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
@@ -871,7 +876,9 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
 
 interface InMemoryVoiceStart {
   session: VoiceSessionRef;
-  visitor: VoiceSessionVisitor;
+  /** A website visitor's start; a Test Chat start has none. */
+  visitor: VoiceSessionVisitor | null;
+  test: VoiceTestChatSubject | null;
   expiresAt: Date;
   vendorAgent: VoiceSessionVendorAgent;
   vendorConversationId?: string;
@@ -881,7 +888,7 @@ interface InMemoryVoiceStart {
  * `voice_sessions` in memory: session bindings, started sessions waiting for their first turn, and
  * the vendor conversation their page reported, which names the call's recording.
  */
-const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartRegistry & VoiceSessionStartLookup & VoiceRecordingStore & {
+const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartRegistry & VoiceSessionStartLookup & VoiceTestChatBindingLookup & VoiceRecordingStore & {
   readonly started: ReadonlyMap<string, InMemoryVoiceStart>;
 } => {
   const bound = new Map<string, string>();
@@ -901,7 +908,7 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
           region: start.vendorAgent.region,
           vendorConversationId: start.vendorConversationId,
         },
-        visitorKey: start.visitor.visitorKey,
+        visitorKey: start.visitor?.visitorKey ?? null,
       }]
       : []);
   const reportable = (report: { workspaceId: string; agentId: string; sessionKey: string; publicSessionId: string }) =>
@@ -909,18 +916,26 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
       candidate.session.workspaceId === report.workspaceId
       && candidate.session.agentId === report.agentId
       && candidate.session.sessionKey === report.sessionKey
-      && candidate.visitor.publicSessionId === report.publicSessionId
+      && candidate.visitor?.publicSessionId === report.publicSessionId
       && candidate.expiresAt.getTime() > Date.now()
       && !candidate.vendorConversationId);
   return {
     started,
     findConversationId: async (session) => bound.get(keyOf(session)) ?? null,
     bind: async (session, conversationId) => {
+      // As the `voice_sessions_test_chat_session` CHECK refuses it in Postgres.
+      if (started.get(keyOf(session))?.test) throw new Error("A Test Chat voice session never binds a conversation");
       if (!bound.has(keyOf(session))) bound.set(keyOf(session), conversationId);
       return bound.get(keyOf(session)) ?? conversationId;
     },
-    register: async ({ session, visitor, expiresAt, vendorAgent }) => {
-      if (!started.has(keyOf(session))) started.set(keyOf(session), { session, visitor, expiresAt, vendorAgent });
+    register: async (start) => {
+      const { session, expiresAt, vendorAgent } = start;
+      const startedFor = "test" in start ? { visitor: null, test: start.test } : { visitor: start.visitor, test: null };
+      if (!started.has(keyOf(session))) started.set(keyOf(session), { session, ...startedFor, expiresAt, vendorAgent });
+    },
+    findTestChatBinding: async (session) => {
+      const start = started.get(keyOf(session));
+      return start?.test ? { ...start.test, expiresAt: start.expiresAt } : null;
     },
     findReportableSession: async (report) => {
       const start = reportable(report);
@@ -949,7 +964,7 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
     )],
     findStartedVisitor: async (session) => {
       const start = started.get(keyOf(session));
-      if (!start || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;
+      if (!start?.visitor || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;
       return start.visitor;
     },
   };
@@ -2852,7 +2867,9 @@ export const createTestDependencies = (overrides: {
   // `copilotToolCatalog` and `operatorCopilotService` are mutually dependent (its reviewed-proposal
   // tools call back into this service; the service runs the tools), so the closures above reference
   // this `const` ahead of its declaration, mirroring production wiring in `app/server/dependencies.ts`.
-  const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
+  const copilotContext = createCopilotContext({ workspaceSetupState: workspaceSummaryService, capabilityRunner: copilotCapabilityRunner, usageLimitPolicy, prompt: copilotPrompt, workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver, logger });
+  const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
+    contextContributors: copilotContext.contributors,
     repository: copilotRepository,
     capabilityRunner: copilotCapabilityRunner,
     usageLimitPolicy,
@@ -3011,10 +3028,13 @@ export const createTestDependencies = (overrides: {
     realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
     logger,
     operatorCopilotService,
+    copilotContextContributors: copilotContext.contributors,
+    copilotEmptyStateService: copilotContext.emptyState,
     operatorMcpGrantService: { list: async () => ({ grants: [], canViewWorkspace: false }), get: async () => null, revoke: async () => null } as never,
     operatorMcpReadiness: Promise.resolve(false),
     operatorMcpClientResolver: { resolve: async () => { throw new Error("Operator MCP is disabled in the test app"); } },
     copilotToolCatalog,
+    copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
     copilotCapabilityRunner,
     copilotPrompt,
     copilotWorkspaceRouteKeyResolver,
@@ -3228,6 +3248,7 @@ export const createTestDependencies = (overrides: {
     assistantChatService,
     voiceTurns: createVoiceChannelComposition({
       sessions: voiceSessions,
+      testExecutions: testExecutionService,
       assistantChatService,
       agentRepository,
       routineStates: routineStateStore,

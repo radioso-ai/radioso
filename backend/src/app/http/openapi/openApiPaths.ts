@@ -103,7 +103,7 @@ export const registerOpenApiPaths = (
   registerAudiencePulsePaths(registry, schemas, security);
   registerCopilotPaths(registry, schemas, security);
   const evalSchemas = registerEvalPaths(registry, schemas, security);
-  registerTestExecutionPaths(registry, security, evalSchemas.EvalSnapshotSchema);
+  registerTestExecutionPaths(registry, security, evalSchemas.EvalSnapshotSchema, schemas);
   registerMcpConversePaths(registry, schemas, security);
   registerAgentDiscoveryPaths(registry, schemas);
   registerAssistantPublicChatPaths(registry, schemas, security);

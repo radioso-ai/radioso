@@ -237,6 +237,24 @@ Ray never had an action to refuse. Two of the eleven boundary cases were written
 the only two that flaked. Name the capability the boundary covers, and let `requires` carry whatever
 the case genuinely needs to exist.
 
+## Setup-state cases
+
+Ray is told where the workspace's setup stands on every turn, through a context contributor that
+reads the same port as `workspace_setup_state`. A case that names a `setupState` (`fresh`,
+`partly_set_up`, `complete`, or `dismissed_before_first_conversation`) runs under the fixture of
+that name, in both fidelities, because a live workspace holds whatever state it holds and could not
+stand in for a fresh one. The fixtures go through the real contributor, so a case cannot assert a
+state the product would not derive.
+
+`setup_in_context` reads the setup block back out of the system prompt and checks the phase, whether
+a first conversation has happened, and the next steps in order, each with a dashboard link;
+`setup_not_in_context` checks that a finished workspace sends Ray nothing about setup. Both are
+structural, so they score in a deterministic run. What Ray *says* with that context — that it does
+not claim the agent is answering visitors, that it does not recommend a done step — is a
+`llm_judge` assertion and waits for the judge seam like every other prose check. The empty
+panel's own greeting is written by the empty-state service, not by a turn, and is covered by
+`tests/unit/operatorCopilot/copilot-empty-state.test.ts`.
+
 ## Judge grading
 
 `llm_judge` is authorable and reported, and nothing scores it: the grader

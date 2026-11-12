@@ -13,7 +13,7 @@ export interface PresentHead {
 // The same on every turn that offers it: the handles are plain strings rather than a per-turn
 // enum, so the schema stays in the provider's response-schema cache. The block builder drops
 // any handle this turn did not offer.
-const PRESENT_HEAD_EXTENSION: AnswerSchemaExtension = {
+const PRESENT_HEAD_FIELDS = {
   properties: {
     [PRESENT_FIELD]: {
       type: "object",
@@ -22,7 +22,7 @@ const PRESENT_HEAD_EXTENSION: AnswerSchemaExtension = {
       properties: {
         images: {
           type: "array",
-          description: "Image handles from the Results' image lines, such as m3, in the order to show them. Empty to show none.",
+          description: "Before you write the answer: image handles from the Results' image lines, such as m3, in the order to show them. Empty to show none.",
           maxItems: REPLY_BLOCK_LIMITS.items,
           items: { type: "string" },
         },
@@ -38,9 +38,16 @@ const PRESENT_HEAD_EXTENSION: AnswerSchemaExtension = {
   required: [PRESENT_FIELD],
 };
 
+const PRESENT_HEAD_EXTENSION: AnswerSchemaExtension = {
+  properties: {},
+  required: [],
+  beforeAnswer: PRESENT_HEAD_FIELDS,
+};
+
 /**
- * The `present` field, written after `answer` so it adds nothing before the first visible
- * token: the model writes its answer first and picks the images after.
+ * The `present` field, written ahead of `answer`: the model decides which pictures to show
+ * first, then writes the answer around them. Written after the answer, a lead that already
+ * listed the items left no reason to show them (#1763).
  */
 export const presentHeadSchemaExtension = (): AnswerSchemaExtension => PRESENT_HEAD_EXTENSION;
 

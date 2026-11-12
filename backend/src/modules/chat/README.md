@@ -187,7 +187,8 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   stored image, `ReplyBlockTurnFactory.forTurn` gives the turn a ledger of the
   images under per-turn handles (`turnImageLedger.ts`), the Result images section
   of the prompt, and the `present` field (`presentHead.ts`), which the composer
-  merges after `answer` with `mergeAnswerSchemaExtensions`. Without the
+  merges ahead of `answer` with `mergeAnswerSchemaExtensions`, so the model picks
+  the pictures before it writes a short lead around them. Without the
   capability, or without a stored image, nothing is read and the prompt and schema
   are what they would be without reply blocks (`tests/fixtures/reply-blocks/`
   holds the golden). `replyBlockBuilder.ts` builds the block from the handles the

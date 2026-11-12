@@ -7,14 +7,15 @@ import {
 } from "../../../../src/modules/chat/services/replyBlocks/presentHead.js";
 
 describe("present head", () => {
-  it("is a strict tail field after the answer, the same on every turn", () => {
+  it("is a strict head field written before the answer, the same on every turn", () => {
     const extension = presentHeadSchemaExtension();
 
-    expect(extension.beforeAnswer).toBeUndefined();
-    expect(extension.required).toEqual([PRESENT_FIELD]);
+    expect(extension.properties).toEqual({});
+    expect(extension.required).toEqual([]);
+    expect(extension.beforeAnswer?.required).toEqual([PRESENT_FIELD]);
     expect(presentHeadSchemaExtension()).toStrictEqual(extension);
 
-    const present = extension.properties[PRESENT_FIELD] as {
+    const present = extension.beforeAnswer?.properties[PRESENT_FIELD] as {
       type: string;
       additionalProperties: boolean;
       required: string[];

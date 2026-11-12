@@ -348,6 +348,32 @@ describe("GroundedAnswerEnvelopeReader", () => {
     expect(finalized.extras).toEqual({ adherencePlan: plan });
   });
 
+  it("streams only the answer when the present head is written ahead of it", () => {
+    const reader = new GroundedAnswerEnvelopeReader();
+    const present = { images: ["m2", "m1"], caption: "Covers, \"answer\": {not this}" };
+    const raw = JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "hiking guides",
+      outcome: "answer",
+      adherencePlan: [],
+      present,
+      answer: "Here are two guides we carry[[1]][[2]].",
+      v: 2,
+      claims: [[1], [2]],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    const emitted: string[] = [];
+    for (let offset = 0; offset < raw.length; offset += 3) {
+      emitted.push(reader.push(raw.slice(offset, offset + 3)));
+    }
+    const finalized = reader.finalize();
+
+    expect(emitted.join("") + finalized.trailingAnswer).toBe("Here are two guides we carry[[1]][[2]].");
+    expect(finalized.parseStatus).toBe("valid_v2");
+    expect(finalized.extras).toEqual({ adherencePlan: [], present });
+  });
+
   it("returns held answer bytes with missing status when no sentinel arrives", () => {
     const reader = new GroundedAnswerEnvelopeReader();
     const emitted = reader.push("Answer with no sentinel anywhere.");

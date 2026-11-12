@@ -52,17 +52,19 @@ const evidence: EvidenceItemImages[] = [1, 2].map((index) => ({
   images: [{ imageId: `cover-${index}`, role: "primary", alt: "", caption: null, width: 1280, height: 960, sha256: `sha-${index}` }],
 }));
 
+// In schema order: `present` is a head field, written before `answer`.
 const envelope = (overrides: Record<string, unknown> = {}) => JSON.stringify({
   coverage: "answered_sufficient_evidence",
   requestFocus: "hiking guides",
   outcome: "answer",
+  adherencePlan: [],
+  present: { images: ["m2", "m1"], caption: "Two hiking guides" },
   answer: "We carry two hiking guides[[1]][[2]].",
   v: 2,
   claims: [[1], [2]],
   suggestions: [],
   grounding: "degraded",
   adherence: [],
-  present: { images: ["m2", "m1"], caption: "Two hiking guides" },
   ...overrides,
 });
 
@@ -147,8 +149,10 @@ describe("reply blocks on the grounded answer", () => {
       alt: "",
     });
     const [input] = inputs;
-    const properties = Object.keys((input?.generation?.responseFormat?.schema.properties ?? {}));
-    expect(properties.at(-1)).toBe("present");
+    const schema = input?.generation?.responseFormat?.schema as { properties: Record<string, unknown>; required: string[] };
+    const head = ["coverage", "requestFocus", "outcome", "adherencePlan", "present", "answer"];
+    expect(Object.keys(schema.properties).slice(0, head.length)).toEqual(head);
+    expect(schema.required.slice(0, head.length)).toEqual(head);
     expect(input?.prompt).toContain("Result images");
     expect(input?.prompt).toContain("Result 1: [m1] main picture");
     expect(input?.systemPrompt).toContain("`present`");

@@ -16,6 +16,7 @@ import type {
   RoutineTransition,
 } from "./routineGraph.js";
 import type { PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
+import type { RoutineSkillOutcomeStatus, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeStatus } from "./skillOutcome.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
@@ -412,39 +413,7 @@ export interface SkillDefinition {
   metadata?: Record<string, unknown>;
 }
 
-export type SkillOutcomeStatus =
-  | "active"
-  | "paused"
-  | "completed"
-  | "failed"
-  | "awaiting_confirmation"
-  | "awaiting_tool"
-  | "cancelled"
-  | "expired";
-
-export type RoutineSkillOutcomeStatus = SkillOutcomeStatus | (string & {});
-
-export interface SkillOutcomeControl {
-  sessionMode?: "automatic" | "manual";
-  lifespan?: "response" | "session";
-}
-
-export interface SkillOutcome {
-  status: SkillOutcomeStatus;
-  answer?: string;
-  outputs?: Record<string, unknown>;
-  control?: SkillOutcomeControl;
-  guidance?: SkillTransientGuidance[];
-  metadata?: Record<string, unknown>;
-  error?: SkillOutcomeError;
-}
-
-export interface SkillOutcomeError {
-  code: string;
-  message: string;
-  retryable?: boolean;
-  metadata?: Record<string, unknown>;
-}
+export type { RoutineSkillOutcomeStatus, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeStatus } from "./skillOutcome.js";
 
 /**
  * Narrow, per-turn channel handed to a skill executor so it can append

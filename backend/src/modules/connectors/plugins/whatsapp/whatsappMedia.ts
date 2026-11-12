@@ -1,3 +1,4 @@
+import { PublicNetworkPolicyError } from "../../../../shared/domain/publicNetwork.js";
 import { WHATSAPP_GRAPH_BASE_URL, WhatsAppClientError } from "./whatsappGraph.js";
 
 /** Why a photo could not be had, when asking again will not help. */
@@ -169,6 +170,11 @@ export const downloadWhatsAppMedia = async (
   } catch (error) {
     if (error instanceof WhatsAppClientError) {
       throw error;
+    }
+    // The public transport refuses a link that does not resolve to a public host: asking again
+    // reaches the same host, so it is not a link to fetch, whatever Graph said.
+    if (error instanceof PublicNetworkPolicyError) {
+      return unavailable("invalid_response");
     }
     throw signal.aborted
       ? new WhatsAppClientError("WhatsApp media download timed out", 504, true)

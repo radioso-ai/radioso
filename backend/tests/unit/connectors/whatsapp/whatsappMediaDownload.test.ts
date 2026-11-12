@@ -2,6 +2,7 @@ import { Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 
 import { WhatsAppClient, WhatsAppClientError } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
+import { PublicNetworkPolicyError } from "../../../../src/shared/domain/publicNetwork.js";
 import { createLogger } from "../../../../src/shared/observability/logger.js";
 
 const MEDIA_URL = "https://lookaside.example/whatsapp_business/attachments/?mid=media-1&token=signed-secret";
@@ -187,6 +188,15 @@ describe("WhatsAppClient.downloadImage", () => {
     const { client } = clientFor(fetchMock, { mediaTimeoutMs: 20 });
 
     await expect(client.downloadImage(CONFIG, INPUT)).rejects.toMatchObject({ retryable: true, message: "WhatsApp media download timed out" });
+  });
+
+  it("treats a link the public transport refuses to reach as not a usable link, not as a failure worth retrying", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(metadata());
+    const mediaFetch = vi.fn<typeof fetch>().mockRejectedValueOnce(new PublicNetworkPolicyError());
+    const { client, metrics } = clientFor(fetchMock, { mediaFetch });
+
+    await expect(client.downloadImage(CONFIG, INPUT)).resolves.toEqual({ kind: "unavailable", reason: "invalid_response" });
+    expect(outcomes(metrics)).toEqual(["invalid_response"]);
   });
 
   it("never carries a transport error's text into the error it raises", async () => {

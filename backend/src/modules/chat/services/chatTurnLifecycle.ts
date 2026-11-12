@@ -44,7 +44,6 @@ import {
   legacyAnswerOutcomeForSkillTurnOutcome,
 } from "./assistantTurnOutcomeTypes.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
-import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
 import {
   buildAssistantTurnSuccessAuditEvent,
   buildAssistantTurnSuspendedAuditEvent,
@@ -52,7 +51,6 @@ import {
   type AssistantTurnSuccessInput,
   type OwnershipHandoffInput,
 } from "./assistantTurnAuditEvents.js";
-import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,

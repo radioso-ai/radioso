@@ -51,15 +51,23 @@ export const formatIsoDate = (now: Date, timeZone: string = DEFAULT_TIME_ZONE): 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
 /**
+ * A calendar date, `YYYY-MM-DD`, with its weekday: `2026-10-21 (Wednesday)`. For a date a caller
+ * already holds, such as an anchor the provenance records, so the prompt shows exactly that date.
+ * Anything that is not a calendar date is returned as given, without a weekday.
+ */
+export const describeIsoDate = (isoDate: string): string => {
+  const weekday = WEEKDAYS[new Date(`${isoDate}T00:00:00.000Z`).getUTCDay()];
+  return weekday ? `${isoDate} (${weekday})` : isoDate;
+};
+
+/**
  * Today's date in `timeZone` with its weekday, `2026-10-21 (Wednesday)`, for prompts that
  * resolve a period a question names. "This weekend" or "next Friday" is weekday arithmetic, and
  * a planner decoding straight into JSON at low reasoning effort should not have to derive the
  * weekday from the ISO date first.
  */
-export const formatPromptDate = (now: Date, timeZone: string = DEFAULT_TIME_ZONE): string => {
-  const isoDate = formatIsoDate(now, timeZone);
-  return `${isoDate} (${WEEKDAYS[new Date(`${isoDate}T00:00:00.000Z`).getUTCDay()]})`;
-};
+export const formatPromptDate = (now: Date, timeZone: string = DEFAULT_TIME_ZONE): string =>
+  describeIsoDate(formatIsoDate(now, timeZone));
 
 /** As long as the longest date `formatPromptDate` renders, for prompt size estimates. */
 export const PROMPT_DATE_BUDGET_STAND_IN = "0000-00-00 (Wednesday)";

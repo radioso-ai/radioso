@@ -2057,8 +2057,10 @@ export interface VoiceSessions {
   id: Generated<string>;
   session_key: string;
   start_expires_at: Timestamp | null;
+  started_account_id: string | null;
   started_public_session_id: string | null;
   started_visitor_key: string | null;
+  test_execution_id: string | null;
   vendor: string;
   vendor_agent_id: string | null;
   vendor_conversation_id: string | null;

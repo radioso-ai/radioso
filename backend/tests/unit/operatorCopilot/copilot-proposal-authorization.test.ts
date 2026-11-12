@@ -5,7 +5,7 @@ import { badRequest, notFound } from "../../../src/shared/domain/errors.js";
 
 import { copilotProposalPermissions, type CopilotProposal } from "../../../src/modules/operatorCopilot/contracts.js";
 import { boundedSummary } from "../../../src/modules/operatorCopilot/tools/shared.js";
-import { presentProposalCard } from "../../../src/db/repositories/copilotRepository.js";
+import { presentProposalCard } from "../../../src/modules/operatorCopilot/proposalCard.js";
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
 import { createDocumentProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/documentProposals.js";
 import { createDocumentCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/documentProposalAdapter.js";
@@ -17,6 +17,7 @@ import { createCopilotWorkspaceSettingPort } from "../../../src/app/composition/
 import { createWebsiteCrawlProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/websiteCrawlProposals.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import { createCopilotDocumentAuthoringPort } from "../../../src/app/composition/copilotToolCatalog.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const proposalRow = (overrides: Record<string, unknown> = {}) => ({
   id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -48,7 +49,7 @@ const serviceFor = (proposal = proposalRow(), holds: ReadonlyArray<string> = [])
     releaseProposalApplyClaim: vi.fn(async () => undefined),
     updateProposalOutcome: vi.fn(async () => proposal),
   };
-  const service = new OperatorCopilotService({
+  const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     repository,
     proposalAdapters: [{ targetType: proposal.targetType, readVersionToken: vi.fn(), preview: vi.fn(async () => ({ targetLabel: "Refund policy", current: null, proposed: null })), applyIfVersionMatches }],
     auditService: { record },

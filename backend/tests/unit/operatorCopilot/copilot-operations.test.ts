@@ -10,6 +10,7 @@ import {
 } from "../../../src/modules/operatorCopilot/public.js";
 import { recordProposalCreated } from "../../../src/modules/operatorCopilot/tools/shared.js";
 import { InMemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
+import { noContributedCopilotProposals } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const now = new Date("2026-08-31T00:00:00.000Z");
 const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "acme" };
@@ -60,7 +61,7 @@ const buildService = (overrides: {
 } = {}) => {
   const repository = overrides.repository ?? new InMemoryCopilotRepository();
   const auditRecord = overrides.auditRecord ?? auditSpy();
-  const service = new OperatorCopilotService({
+  const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     repository,
     capabilityRunner: { runStreaming: (overrides.runStreaming ?? emptyStream) as never },
     usageLimitPolicy: usageLimitPolicy(),
@@ -168,7 +169,7 @@ describe("copilot audit attribution", () => {
     });
     const applied = await makeProposal();
     const dismissed = await makeProposal();
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: emptyStream },
       usageLimitPolicy: usageLimitPolicy(),
@@ -251,7 +252,7 @@ describe("copilot audit attribution", () => {
       versionToken: "v1",
       evidence: null,
     });
-    const service = new OperatorCopilotService({
+    const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       capabilityRunner: { runStreaming: emptyStream },
       usageLimitPolicy: usageLimitPolicy(),

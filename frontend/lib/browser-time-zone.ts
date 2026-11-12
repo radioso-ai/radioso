@@ -24,3 +24,12 @@ export const withBrowserTimeZone = <T extends { pageContext?: WebsiteEmbedPageCo
   const timeZone = browserTimeZone()
   return timeZone ? { ...request, pageContext: { ...request.pageContext, browserTimeZone: timeZone } } : request
 }
+
+/**
+ * Adds the operator's browser zone to a dashboard request as `userTimeZone`, the field the
+ * authenticated chat and Test Chat APIs take, so a test turn reads today in the operator's day.
+ */
+export const withUserTimeZone = <T extends object>(request: T): T & { userTimeZone?: string } => {
+  const timeZone = browserTimeZone()
+  return timeZone ? { ...request, userTimeZone: timeZone } : request
+}

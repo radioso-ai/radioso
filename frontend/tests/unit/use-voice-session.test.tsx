@@ -37,11 +37,18 @@ vi.mock('@/lib/voice-runtime', async (importActual) => ({
   })),
 }))
 
-import { useVoiceSession } from '@/lib/use-voice-session'
+import { reportVoiceVendorConversation, startPublicVoiceSession } from '@/lib/api-public-voice'
+import { useVoiceSession, type VoiceSessionCalls } from '@/lib/use-voice-session'
 
 type Session = ReturnType<typeof useVoiceSession>
 
 const readMessageIds = () => ['greeting']
+
+/** The website embed's calls over the mocked public start and report. */
+const embedCalls: VoiceSessionCalls = {
+  startSession: () => startPublicVoiceSession('launch-token', {}),
+  reportVendorConversation: (report) => reportVoiceVendorConversation('launch-token', report),
+}
 
 beforeAll(() => {
   ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -53,7 +60,7 @@ describe('useVoiceSession', () => {
   let latest: Session
 
   function Harness() {
-    latest = useVoiceSession({ token: 'launch-token', precedingMessageIds: readMessageIds, offered: true })
+    latest = useVoiceSession({ calls: embedCalls, precedingMessageIds: readMessageIds, offered: true })
     return null
   }
 

@@ -24,6 +24,7 @@ import type { OperatorMcpPrincipal } from "../../../src/modules/operatorMcpAutho
 import { NoopUsageLimitPolicy } from "../../../src/shared/domain/usageLimitPolicy.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
+import { noContributedCopilotProposals, firstPartyCopilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -32,7 +33,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
   const accountRepository = new AccountRepository(database.kysely);
   const workspaceRepository = new WorkspaceRepository(database.kysely);
   const agentRepository = new AgentRepository(database.kysely);
-  const proposals = new CopilotRepository(database.kysely);
+  const proposals = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   const invocationsRepo = new OperatorMcpInvocationRepository(database.kysely);
   const coherenceChecker = { check: async () => ({ coherent: true as const, conflicts: [], rationale: "Coherent." }) };
   const authoredDirectiveService = new AuthoredDirectiveService({ repository: agentRepository, coherenceChecker, registeredCapabilityNames: new Set() });
@@ -40,10 +41,10 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
     authoredDirectiveService,
     directiveAuthorService: { draftForProposal: async () => { throw new Error("not exercised by these tests"); } },
     agentService: { get: async (workspaceId: string, agentId: string) => (await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId))! } as never,
-    reviewedReceipt: createReviewedReceiptSettlement(database.kysely),
+    reviewedReceipt: createReviewedReceiptSettlement(database.kysely, firstPartyCopilotProposalTargetTypes),
   });
   const authorization = { hasAllPermissions: async () => true };
-  const copilot = new OperatorCopilotService({
+  const copilot = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
     repository: proposals,
     capabilityRunner: { runStreaming: async function* () {} } as never,
     usageLimitPolicy: new NoopUsageLimitPolicy(),
@@ -169,7 +170,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
     // A test-local `OperatorCopilotService` rather than the shared `copilot` above, so each test's
     // audit events are its own -- the shared instance's no-op audit stub is used by every other test
     // in this file and must stay unaffected.
-    const localCopilot = new OperatorCopilotService({
+    const localCopilot = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository: proposals,
       capabilityRunner: { runStreaming: async function* () {} } as never,
       usageLimitPolicy: new NoopUsageLimitPolicy(),

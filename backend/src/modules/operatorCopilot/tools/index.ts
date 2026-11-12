@@ -66,6 +66,7 @@ import type { AgentPublicationCopilotToolDependencies } from "./agentPublication
 import { createRetrievalAuthoringCopilotTools } from "./retrievalAuthoring.js";
 import type { RetrievalAuthoringCopilotToolDependencies } from "./retrievalAuthoring.js";
 import { createProposalDetailTool } from "./proposalDetail.js";
+import type { CopilotProposalTargetTypeSet } from "../proposalContribution.js";
 import type { CopilotProposalDetailReadPort } from "../service.js";
 import { createDocumentReviewedOperationTools } from "./documentReviewedOperations.js";
 import type { DocumentReviewedOperationToolDependencies } from "./documentReviewedOperations.js";
@@ -117,7 +118,9 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & DocumentReviewedOperationToolDependencies
   & EmailChannelCopilotToolDependencies
   & { readonly workspaceSetupState: CopilotWorkspaceSetupStatePort }
-  & { readonly reviewedProposalExecution: ReviewedProposalExecutionPort; readonly reviewedProposalOutcome: ReviewedProposalOutcomePort; readonly cancelReviewedProposal: CancelReviewedProposalPort; readonly proposalDetail: CopilotProposalDetailReadPort };
+  & { readonly reviewedProposalExecution: ReviewedProposalExecutionPort; readonly reviewedProposalOutcome: ReviewedProposalOutcomePort; readonly cancelReviewedProposal: CancelReviewedProposalPort; readonly proposalDetail: CopilotProposalDetailReadPort }
+  /** The deployment's assembled target types; the first-party list when omitted. */
+  & { readonly proposalTargetTypes?: CopilotProposalTargetTypeSet };
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
@@ -170,7 +173,7 @@ export const createCopilotToolDescriptors = (
   createRoutineStructuralPreparationTool(deps),
   ...createAgentPublicationCopilotTools(deps),
   ...createRetrievalAuthoringCopilotTools(deps),
-  createProposalDetailTool(deps.proposalDetail),
+  createProposalDetailTool(deps.proposalDetail, deps.proposalTargetTypes),
   createReviewedProposalExecutionTool(deps.reviewedProposalExecution),
   createReviewedProposalOutcomeTool(deps.reviewedProposalOutcome),
   createCancelReviewedProposalTool(deps.cancelReviewedProposal),

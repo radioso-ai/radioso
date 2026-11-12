@@ -100,6 +100,8 @@ export interface CopilotTestChatSendInput extends CopilotTestChatExecutionScope 
   readonly testExecutionId?: string;
   /** The revision a new session starts on; without it the dashboard's default is used. */
   readonly revisionId?: string;
+  /** The IANA zone the turn reads today in, as a visitor there would; the workspace's zone when absent. */
+  readonly userTimeZone?: string;
 }
 
 /**

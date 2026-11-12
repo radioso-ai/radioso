@@ -49,11 +49,42 @@ export interface CopilotAvailability {
   applyableProposalTargets?: CopilotProposalTargetType[]
 }
 
+/**
+ * What Ray's empty panel shows. While setup is open (`phase: 'setup'`) every suggestion is a next
+ * incomplete step with the dashboard path that completes it; once setup is over it is a set of
+ * open-ended requests to send Ray. `greeting` is null when there is no copy to show.
+ * `firstConversationHappened` is the only thing that licenses retrospective copy: null means the
+ * server could not say, which reads as no.
+ */
+export type CopilotEmptySuggestion =
+  | { kind: 'setup_step'; step: string; text: string; href: string }
+  | { kind: 'prompt'; intent: string; text: string }
+
+export interface CopilotEmptyState {
+  phase: 'setup' | 'open'
+  firstConversationHappened: boolean | null
+  greeting: string | null
+  suggestions: CopilotEmptySuggestion[]
+}
+
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
-export type CopilotProposalTargetType = 'directive' | 'agent' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable' | 'document' | 'ingestion_settings' | 'website_crawl' | 'workspace_setting' | 'agent_greeting' | 'privacy_setting' | 'time_zone_setting'
+/**
+ * What a proposal changes. The first-party types (directive, agent, routine, document, workspace
+ * setting, ...) are linked by the card itself; an application module can contribute a type the
+ * dashboard has never heard of, whose card carries a `presentation` to link instead.
+ */
+export type CopilotProposalTargetType = string
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
+
+/** Where an applied contributed proposal's card links to. */
+export interface CopilotProposalPresentation {
+  /** What the link names, as in "Open usage alerts". */
+  label: string
+  /** A path inside the workspace's dashboard, relative to its root, such as `/settings`. */
+  dashboardPath: string
+}
 
 /** What the card states about replays run before the draft. Absent when nothing was measured. */
 export interface CopilotProposalEvidenceSummary {
@@ -97,6 +128,8 @@ export interface CopilotProposalSummary {
    * it from field names would have to know which of them mean reach.
    */
   reach?: boolean
+  /** Present only for a contributed target type: where the applied card links to. */
+  presentation?: CopilotProposalPresentation
 }
 
 export interface CopilotProposalPreview {
@@ -224,6 +257,7 @@ export interface CopilotProposalEvent {
   evidence?: CopilotProposalEvidenceSummary
   removal?: boolean
   reach?: boolean
+  presentation?: CopilotProposalPresentation
 }
 
 export interface CopilotChunkEvent {
@@ -412,6 +446,11 @@ export const copilotApi = {
       signal,
       headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined,
     }, { withSession: true })
+  },
+
+  getEmptyState(locale: string | null, signal?: AbortSignal): Promise<CopilotEmptyState> {
+    const query = locale ? `?locale=${encodeURIComponent(locale)}` : ''
+    return request<CopilotEmptyState>(copilotPath(`/empty-state${query}`), { method: 'GET', signal }, { withSession: true })
   },
 
   listConversations(signal?: AbortSignal): Promise<{ conversations: CopilotConversationSummary[] }> {

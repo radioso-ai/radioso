@@ -3,7 +3,6 @@ import type {
   ConversationChannelContext,
   ConversationRequestContext,
   ConversationTrace,
-  MessageSource,
   RoutineState,
   RoutineTurnYield,
   StagedContext,
@@ -23,14 +22,13 @@ import type { ConversationRecord, ConversationRepositoryPort } from "../../../db
 import type {
   MessageRecord,
   MessageRepositoryPort,
-  MessageRole,
   UserMessageInputMetadata,
 } from "../../../db/repositories/messageRepository.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { ChatRoutineInvocationReport } from "../contracts/routineTurnState.js";
 import { repliesAreSpoken } from "../contracts/operatorReplySpeech.js";
 import type { DescribedRoutineTurn } from "./routines/routineTurnDescription.js";
-import { isAudiencePulseCustomerSource, isAudiencePulseEndUserChannel } from "../audiencePulseHistorySource.js";
+import { enqueueFacetExtraction } from "./facetExtractionEligibility.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
@@ -64,7 +62,7 @@ import type {
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { sensitiveSlotsAwaited } from "../../routines/public.js";
-import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
+import { userMessageTurnMetadata } from "./userMessageTurnMetadata.js";
 import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/public.js";
 import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
 import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
@@ -96,23 +94,6 @@ interface ChatAnswerAuditMetadata {
 const defaultTurnFraming = (): TurnRouting["framing"] => ({
   isIdentityQuestion: false,
 });
-
-/**
- * The same eligibility rule Audience Pulse reads history with
- * ({@link isAudiencePulseCustomerSource}, {@link isAudiencePulseEndUserChannel}),
- * restated as a write-time predicate so a facet extraction job is enqueued for the
- * same population the census will later read. `role` is checked here too even though
- * this module only ever writes `"user"` messages: the rule is reused, not restated,
- * so it stays correct if that ever changes.
- */
-export const isEligibleForFacetExtraction = (input: {
-  role: MessageRole;
-  source: MessageSource | null | undefined;
-  sourceChannel: string | null;
-}): boolean =>
-  input.role === "user"
-  && isAudiencePulseCustomerSource(input.source ?? null)
-  && isAudiencePulseEndUserChannel(input.sourceChannel);
 
 export interface PreparedSession {
   /**
@@ -569,13 +550,11 @@ export class ChatSessionPreparer {
       workspaceId: input.workspaceId,
       role: "user",
       content: input.query,
-      ...(awaitedSensitiveSlotKeys.length > 0
-        ? { metadata: { ...userMessageInputMetadata, ...sensitiveTurnMetadata(awaitedSensitiveSlotKeys) } }
-        : { inputMetadata: userMessageInputMetadata }),
+      ...userMessageTurnMetadata({ inputMetadata: userMessageInputMetadata, sensitiveSlotKeys: awaitedSensitiveSlotKeys, referenceTimeZone }),
     }));
     // A message that answers a sensitive field is never restated as a facet.
     if (!existingUserMessage && awaitedSensitiveSlotKeys.length === 0) {
-      this.enqueueFacetExtraction(userMessage, persistedConversation);
+      enqueueFacetExtraction(this.facetExtractionJobs, this.logger, userMessage, persistedConversation);
     }
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
@@ -757,35 +736,6 @@ export class ChatSessionPreparer {
     }
     const active = await this.routineStates.loadActive({ sessionId: conversation.id });
     return active ? sensitiveSlotsAwaited(routines, active) : [];
-  }
-
-  /**
-   * Fire-and-forget: a queue outage must never fail the turn that triggered it, so the
-   * enqueue promise is never awaited by the caller and its rejection is caught here.
-   */
-  private enqueueFacetExtraction(userMessage: MessageRecord, conversation: ConversationRecord): void {
-    if (!this.facetExtractionJobs) {
-      return;
-    }
-    if (!isEligibleForFacetExtraction({
-      role: userMessage.role,
-      source: userMessage.source,
-      sourceChannel: conversation.sourceChannel,
-    })) {
-      return;
-    }
-    void this.facetExtractionJobs
-      .enqueue({ messageId: userMessage.id, workspaceId: userMessage.workspaceId })
-      .catch((error: unknown) => {
-        this.logger?.warn(
-          {
-            err: error,
-            workspaceId: userMessage.workspaceId,
-            messageId: userMessage.id,
-          },
-          "Facet extraction enqueue failed",
-        );
-      });
   }
 
   private async promoteBootstrapGreeting(

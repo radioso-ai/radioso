@@ -1,10 +1,10 @@
 'use client'
 
-import { CheckCircle2, Hand, MailWarning, ShieldCheck, ThumbsDown, type LucideIcon } from 'lucide-react'
+import { CheckCircle2, Hand, MailWarning, ShieldCheck, ThumbsDown, UserCheck, UserRound, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { closedByLine, recentlyClosedKindLabel } from '@/lib/conversation-activity'
-import { formatInboxRowTimestamp } from '@/lib/needs-attention-format'
+import { formatInboxRowTimestamp, inboxOwnerPresentation, type InboxOwnerPresentation } from '@/lib/needs-attention-format'
 import {
   formatInboxDuration,
   inboxWaitingPresentation,
@@ -39,54 +39,90 @@ const lastMessageLabel = (lastMessageAt: string | null | undefined, now: Date): 
   return elapsedMs < 60_000 ? 'last message just now' : `last message ${formatInboxDuration(elapsedMs)} ago`
 }
 
+const OWNER_LINE_CLASS: Record<InboxOwnerPresentation['kind'], string> = {
+  mine: 'font-medium text-primary',
+  teammate: 'font-medium text-amber-700 dark:text-amber-300',
+  unknown: 'text-muted-foreground',
+}
+
+function OwnerLine({ owner }: { owner: InboxOwnerPresentation }) {
+  const Icon = owner.kind === 'mine' ? UserCheck : UserRound
+  return (
+    <span className={cn('inline-flex items-center gap-1', OWNER_LINE_CLASS[owner.kind])}>
+      <Icon className="h-3 w-3" aria-hidden />
+      {owner.text}
+    </span>
+  )
+}
+
 export function InboxQueueRow({
   item,
   now,
+  currentUserId,
   selected,
   onSelect,
+  bulkSelection,
 }: {
   item: InboxItem
   now: Date
+  /** The signed-in teammate, so a row a teammate holds can look different from one I hold. */
+  currentUserId: string | null
   selected: boolean
   onSelect: (item: InboxItem) => void
+  /** Present on a row that can be dismissed in bulk. */
+  bulkSelection?: { checked: boolean; onToggle: (item: InboxItem) => void }
 }) {
   const { label: waitLabel, tone } = inboxWaitingPresentation(item, now)
   const lastMessage = lastMessageLabel(item.lastMessageAt, now)
+  const owner = inboxOwnerPresentation(item.takenBy, currentUserId)
 
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(item)}
-      aria-current={selected ? 'true' : undefined}
-      className={cn(
-        'flex w-full flex-col gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors',
-        selected ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-muted-foreground',
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <TypeChip type={item.type} />
-        <span
-          className={cn(
-            'ml-auto shrink-0 text-xs',
-            tone === 'amber' ? 'font-medium text-amber-700 dark:text-amber-300'
-              : tone === 'destructive' ? 'font-medium text-destructive'
-                : 'text-muted-foreground',
-          )}
-        >
-          {waitLabel}
+    <div className="relative">
+      {bulkSelection ? (
+        <input
+          type="checkbox"
+          aria-label={`Select ${item.title}`}
+          className="absolute left-3 top-3 z-10 h-4 w-4 rounded border-border"
+          checked={bulkSelection.checked}
+          onChange={() => bulkSelection.onToggle(item)}
+        />
+      ) : null}
+      <button
+        type="button"
+        onClick={() => onSelect(item)}
+        aria-current={selected ? 'true' : undefined}
+        className={cn(
+          'flex w-full flex-col gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors',
+          bulkSelection && 'pl-9',
+          selected ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-muted-foreground',
+          owner?.kind === 'teammate' && 'border-dashed bg-muted/40',
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <TypeChip type={item.type} />
+          <span
+            className={cn(
+              'ml-auto shrink-0 text-xs',
+              tone === 'amber' ? 'font-medium text-amber-700 dark:text-amber-300'
+                : tone === 'destructive' ? 'font-medium text-destructive'
+                  : 'text-muted-foreground',
+            )}
+          >
+            {waitLabel}
+          </span>
+        </div>
+        <span className="truncate text-sm font-medium text-foreground">{item.title}</span>
+        <span className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+          {lastMessage ? <span>{lastMessage}</span> : null}
+          {owner ? (
+            <>
+              {lastMessage ? <span aria-hidden>·</span> : null}
+              <OwnerLine owner={owner} />
+            </>
+          ) : null}
         </span>
-      </div>
-      <span className="truncate text-sm font-medium text-foreground">{item.title}</span>
-      <span className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-        {lastMessage ? <span>{lastMessage}</span> : null}
-        {item.takenBy ? (
-          <>
-            {lastMessage ? <span aria-hidden>·</span> : null}
-            <span>taken by {item.takenBy.label ?? 'a teammate'}</span>
-          </>
-        ) : null}
-      </span>
-    </button>
+      </button>
+    </div>
   )
 }
 

@@ -185,7 +185,7 @@ describe("enrichment through the model gateway", () => {
         createdAt: new Date("2026-07-01T00:00:00.000Z"),
       },
       chunks: [{ chunkIndex: 0, startOffset: 0, endOffset: 41, metadata: {} }],
-      anchor: { source: "document_created_at", date: "2026-07-01" },
+      anchor: { source: "document_created_at", date: "2026-07-01", timeZone: "UTC" },
     });
 
   it("applies a fenced reply", async () => {

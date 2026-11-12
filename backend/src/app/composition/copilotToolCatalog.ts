@@ -54,7 +54,8 @@ import type { CopilotDocumentAuthoringPort, CopilotDocumentSummary, CopilotWorks
 import type { CopilotWorkspaceSettingPort } from "../../modules/operatorCopilot/contracts/workspaceSettingAuthoring.js";
 import type { PlatformSettingsService } from "../../modules/settings/composition.js";
 import { websiteCrawlerCopilotPrimitives } from "../../modules/websiteCrawler/public.js";
-import type { CopilotToolContribution, CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
+import type { CopilotProposalAdapterContribution, CopilotProposalTargetTypeSet, CopilotToolContribution, CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
+import { createContributedProposalToolContributions } from "../../modules/operatorCopilot/tools/contributedProposals.js";
 import { copilotApplicationPrimitiveRegistry, resolveCopilotToolContributions } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
@@ -217,6 +218,13 @@ export const createCopilotToolCatalog = (deps: {
    * duplicate-name rejection, and dashboard handoffs apply to them with no special case.
    */
   readonly toolContributions?: ReadonlyArray<CopilotToolContribution>;
+  /**
+   * Proposal adapters contributed by application modules. Ray builds a propose tool for each and
+   * merges it with the contributed tools, so the same governance holds it to its declared identities.
+   */
+  readonly proposalContributions?: ReadonlyArray<CopilotProposalAdapterContribution>;
+  /** The deployment's assembled target types, which `proposal_detail` reads. */
+  readonly proposalTargetTypes?: CopilotProposalTargetTypeSet;
 }): ReadonlyArray<CopilotToolDescriptor> => {
   const firstPartyDescriptors = createCopilotToolDescriptors(deps);
   const publicOperationIds = new Set(Object.values(createOpenApiDocument().paths ?? {})
@@ -244,7 +252,10 @@ export const createCopilotToolCatalog = (deps: {
   // Running it over the merged catalog would report every contributed descriptor as ungoverned and
   // force this repository to enumerate identities it does not own.
   assertCopilotCapabilityProvenanceRegistry(firstPartyDescriptors);
-  const contributed = resolveCopilotToolContributions(deps.toolContributions ?? [], {
+  const contributed = resolveCopilotToolContributions([
+    ...(deps.toolContributions ?? []),
+    ...createContributedProposalToolContributions(deps.proposalContributions ?? [], deps),
+  ], {
     operationIds: publicOperationIds,
     applicationPrimitiveIds: new Set(Object.keys(copilotApplicationPrimitiveRegistry)),
   });

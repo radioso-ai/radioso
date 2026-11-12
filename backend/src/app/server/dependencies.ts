@@ -37,7 +37,7 @@ import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/confi
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
-import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
+import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills } from "../../modules/agents/public.js";
 import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
 import {
   ConversationIngestService,
@@ -58,7 +58,6 @@ import { MetadataFieldSuggestionService } from "../../modules/settings/compositi
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
-import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
 import { OperatorMcpAuthorizationRepository } from "../../db/repositories/operatorMcpAuthorizationRepository.js";
 import type { AppDependencies } from "./types.js";
 import {
@@ -108,7 +107,10 @@ import {
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
+import { createCopilotContext } from "../composition/copilotContext.js";
+import { createCopilotEvidencePorts } from "../composition/copilotEvidencePorts.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
+import { resolveCopilotContributions } from "../composition/copilotContributions.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ReviewTurnAuditReader } from "../../modules/chat/contracts/index.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
@@ -195,6 +197,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     widgetOrigin: env.RADIOSO_WIDGET_ORIGIN ?? env.APP_BASE_URL,
   });
   const infrastructure = buildInfrastructure({ env, logger, composition });
+  const copilotContributions = resolveCopilotContributions(composition, { database: infrastructure.database, logger, auditService: infrastructure.auditService });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   for (const extension of composition.agentSurfaceExtensions) {
     agentSurfaceExtensions.register(extension);
@@ -210,10 +213,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     errorReporter: infrastructure.errorReportingService,
     audit: infrastructure.auditService,
   });
-  const repositories = buildRepositories(infrastructure.database, {
-    agentSurfaceExtensions,
-    agentSkillSettings,
-  });
+  const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings, copilotProposalTargetTypes: copilotContributions.proposals.targetTypes, logger });
   const abuseControlComposition = createAbuseControlComposition({
     env,
     logger,
@@ -800,8 +800,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documents.workspaceIngestionReprocessService,
   );
   const copilotProposalAdapters = [
-    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
-    createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
+    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely, copilotContributions.proposals.targetTypes) }),
+    createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely, copilotContributions.proposals.targetTypes) }),
     createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
@@ -811,7 +811,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentService,
       routineDraftAssistService,
       routineDefinitionService,
-      routineMcpApply: createRoutineMcpApplyPort(infrastructure.database.kysely, {
+      routineMcpApply: createRoutineMcpApplyPort(infrastructure.database.kysely, { proposalTargetTypes: copilotContributions.proposals.targetTypes,
         validateScopedReferences: async (input, db) => createRoutineScopedReferenceGuard({
           listDirectiveTags: async ({ workspaceId, agentId }) => (await new AgentRepository(db).listDirectives(agentId, workspaceId)).map((directive) => directive.tags),
           buildStepScopeTag: scopeTag.step,
@@ -824,7 +824,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentService,
       agentSkillsService,
       skillCapabilityRegistry,
-      atomicMcpApply: createAgentSkillMcpApplyPort(infrastructure.database.kysely),
+      atomicMcpApply: createAgentSkillMcpApplyPort(infrastructure.database.kysely, copilotContributions.proposals.targetTypes),
       retrievalAuthoring,
     }),
     createAgentPublicationProposalAdapter({ revisions: agentRevisionService }),
@@ -835,7 +835,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
     createDocumentReviewedOperationAdapter({ operations: documentReviewedOperations }),
-    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
+    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely, copilotContributions.proposals.targetTypes) }),
     createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createPrivacySettingCopilotProposalAdapter({ privacySettings: privacySettingsService }),
     createTimeZoneSettingCopilotProposalAdapter({ timeZoneSettings: settings.timeZoneSettingsService }),
@@ -962,38 +962,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
     },
   });
-  const copilotReplayEvidenceRepository = new CopilotReplayEvidenceRepository(infrastructure.database.kysely);
-  const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
-  // Shared by the replay service (dates a run's baseline) and proposal-evidence resolution (reads
-  // an agent_skill proposal's captured baseline skill config) — both need the case's frozen
-  // snapshot, never the live agent.
-  const copilotEvalCaseReader = {
-    findCase: (workspaceId: string, caseId: string) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId),
-  };
-  // The live counterpart copilotEvalCaseReader's captured snapshot is compared against: an
-  // agent_skill proposal's evidence is stale when this drifts from what a cited case captured.
-  // A skill edit persists through agent_skills, a table agents.updated_at never reflects, so this
-  // reads the skill directly rather than leaning on copilotAgentVersion.
-  const copilotAgentSkillConfig = {
-    getDefaultAnswerSkill: async (workspaceId: string, agentId: string) => {
-      const skill = await agentSkillRepository.findDefaultAnswer(workspaceId, agentId);
-      return skill ? { enabled: skill.enabled, config: skill.config ?? {} } : null;
-    },
-  };
-  // Directive removal evidence needs a directive's real id and content from the live agent, never
-  // from a model-supplied replay override, so this reads through the same resolver the agent's
-  // own config serialization uses rather than trusting anything the copilot sends.
-  const copilotAgentDirectives = {
-    listDirectives: async (workspaceId: string, agentId: string) => {
-      const agent = await agentService.resolve(workspaceId, agentId);
-      // The port takes an opaque record — Ray's replay tool schema does too — so the widening from
-      // the agents module's typed config to that shape belongs at this composition boundary.
-      return serializeAuthoredDirectivesWithIds(agent).map((directive) => ({
-        id: directive.id,
-        config: directive.config as unknown as Record<string, unknown>,
-      }));
-    },
-  };
+  const {
+    replayEvidenceRepository: copilotReplayEvidenceRepository,
+    agentVersion: copilotAgentVersion,
+    evalCaseReader: copilotEvalCaseReader,
+    agentSkillConfig: copilotAgentSkillConfig,
+    agentDirectives: copilotAgentDirectives,
+  } = createCopilotEvidencePorts({ database: infrastructure.database.kysely, agentService, agentSkillRepository, evalCaseService });
   const evalCaseReplayService = new EvalCaseReplayService({
     cases: copilotEvalCaseReader,
     evidence: copilotReplayEvidenceRepository,
@@ -1023,15 +998,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // Named rather than inlined so the copilot's behavioural eval suite can drive a real turn through
   // the same catalog, prompt, and runner the dashboard uses. A suite that assembled its own would
   // measure a copilot nobody talks to.
-  // Resolved here rather than at registration time so a contributing module receives the same
-  // constructed infrastructure every other application-module provider does.
-  const copilotToolContributions = composition.copilotToolRegistrations.map((registration) =>
-    typeof registration === "function"
-      ? registration({ database: infrastructure.database, logger, auditService: infrastructure.auditService })
-      : registration);
   const copilotToolCatalog = createCopilotToolCatalog({
     appBaseUrl: env.APP_BASE_URL,
-    toolContributions: copilotToolContributions,
+    toolContributions: copilotContributions.toolContributions,
+    proposalContributions: copilotContributions.proposals.contributions,
+    proposalTargetTypes: copilotContributions.proposals.targetTypes,
     emailChannel: emailChannel?.copilotView ?? null,
     deliveryFailures: deliveryFailureRecords,
     heldReplies,
@@ -1163,13 +1134,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documents: documentReviewedOperations,
     logger,
   });
+  const copilotContext = createCopilotContext({ workspaceSetupState: workspace.workspaceSummaryService, capabilityRunner: copilotCapabilityRunner, usageLimitPolicy: infrastructure.usageLimitPolicy, prompt: copilotPrompt, workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver, logger });
   const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
+    contextContributors: copilotContext.contributors,
     repository: repositories.copilotRepository,
     capabilityRunner: copilotCapabilityRunner,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     auditService: infrastructure.auditService,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     proposalAdapters: copilotProposalAdapters,
+    contributedProposals: copilotContributions.proposals,
     prompt: copilotPrompt,
     tools: copilotToolCatalog,
     probeBudgetPerTurn: env.COPILOT_PROBE_BUDGET_PER_TURN,
@@ -1440,7 +1414,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,
     voiceTurns: createVoiceChannelComposition({
-      sessions: voiceSessions,
+      sessions: voiceSessions, testExecutions: testExecutionService,
       assistantChatService: chat.assistantChatService,
       agentRepository: repositories.agentRepository,
       routineStates: new RoutineStateRepository(infrastructure.database.kysely),
@@ -1515,9 +1489,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     connectorDb: infrastructure.database,
     chatInferencePipeline,
     operatorCopilotService,
+    copilotContextContributors: copilotContext.contributors,
+    copilotEmptyStateService: copilotContext.emptyState,
     ...retentionWorkers,
     revisionEvalRunRetentionWorker,
     copilotToolCatalog,
+    copilotProposalTargetTypes: copilotContributions.proposals.targetTypes,
     copilotCapabilityRunner,
     copilotPrompt,
     copilotWorkspaceRouteKeyResolver,

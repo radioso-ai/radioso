@@ -82,7 +82,6 @@ import {
   planAwareRoutineActivator,
   planAwareRoutineReentryGate,
   planAwareRoutineSlotCorrection,
-  AgentConverseAudit,
   CONTACT_SEND_ACTION_TYPE,
   type PreparedSession,
 } from "../../../modules/chat/composition.js";
@@ -107,7 +106,7 @@ import { OauthConnectionRepository } from "../../../db/repositories/oauthConnect
 import { FetchWebhookHttpClient, type WebhookDestinationRuntimePort } from "../../../modules/webhooks/public.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
-import { IngestionSettingsService, AgentConverseSessionService } from "../../../modules/settings/composition.js";
+import { IngestionSettingsService } from "../../../modules/settings/composition.js";
 import { retrievalAnswerSkillDefinition, type RoutineInvocableSkillNames } from "../../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../../modules/retrieval/public.js";
 import {
@@ -152,56 +151,9 @@ import { createPublishedRoutineRegistrationSource } from "../../composition/rout
 import { ChatAnswerSupport, recordClarificationDecision } from "../../../modules/chat/composition.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { connectorEncryptionKeys, type Env } from "../../config/env.js";
-import type { McpConverseRouteDependencies, McpConverseRouteServices } from "../../http/routes/mcpConverseRoutes.js";
 import type { ChatTurnPlanHandle } from "../../../modules/chat/services/turnPlanCoordinator.js";
 import { buildInfrastructure } from "./infra.js";
 import { RoutineChatModelGateway } from "../../../modules/chat/services/routines/routineChatModelGateway.js";
-import {
-  createAgentConverseOriginVerifier,
-  createAgentConverseWalkInIssuer,
-  createAgentConverseWalkInObserver,
-} from "../../composition/agentConverseOrigins.js";
-import { createAgentConverseService } from "../../composition/agentConverse.js";
-import { createConverseVisitorIdentityVerifier } from "../../composition/converseVisitorIdentity.js";
-import { createConversationUpdatesComposition } from "../../composition/conversationUpdates.js";
-
-
-export const buildMcpConverseServices = (
-  dependencies: McpConverseRouteDependencies,
-): McpConverseRouteServices => {
-  const audit = new AgentConverseAudit(dependencies.auditService);
-  const walkInObserver = createAgentConverseWalkInObserver({
-    metrics: dependencies.metricsRegistry,
-    logger: dependencies.logger,
-  });
-  const sessionService = new AgentConverseSessionService({
-    accessGrantService: dependencies.accessGrantService,
-    agentLookup: dependencies.agentRepository,
-    sessionMapping: dependencies.agentConverseSessionMappingRepository,
-    originVerifier: createAgentConverseOriginVerifier({
-      accessGrantService: dependencies.accessGrantService,
-      agentRepository: dependencies.agentRepository,
-      audit,
-    }),
-    walkInIssuer: createAgentConverseWalkInIssuer({ agentRepository: dependencies.agentRepository }),
-    walkInObserver,
-    publicChatSessionSecret: dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
-    audit,
-  });
-  const converseService = createAgentConverseService(dependencies, {
-    audit,
-    visitorIdentity: createConverseVisitorIdentityVerifier(dependencies),
-  });
-  const conversationUpdates = createConversationUpdatesComposition(dependencies);
-  return {
-    audit,
-    sessionService,
-    converseService,
-    walkInObserver,
-    conversationUpdateReader: conversationUpdates.reader,
-    conversationUpdateWaiter: conversationUpdates.waiter,
-  };
-};
 
 export const buildChatServices = (input: {
   abuseControlService: AbuseControlService;

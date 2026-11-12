@@ -187,6 +187,26 @@ describe('agent test execution state', () => {
     ])
   })
 
+  it('keeps a turn said on a Test Chat call marked spoken, and a typed one unmarked', () => {
+    const reopened = hydrateTestExecutionState({
+      id: 'execution-1', generation: 2, mode: 'single', skillEffects: 'suppressed', state: 'completed', createdAt: '', testValues: [], seededTurnCount: 0,
+      sides: [{
+        id: 'left', revision: { id: 'revision-8', label: 'Draft', kind: 'candidate', versionNumber: null, createdAt: '' }, conversationId: 'left-chat', state: 'completed', retryable: false,
+        history: [
+          { turnId: 'turn-1', role: 'user', content: 'Typed', attemptId: 'attempt-1', createdAt: '' },
+          { turnId: 'turn-1', role: 'assistant', content: 'Typed answer', messageId: 'message-1', attemptId: 'attempt-1', createdAt: '' },
+          { turnId: 'turn-2', role: 'user', content: 'Said', attemptId: 'attempt-2', createdAt: '', spoken: true },
+          { turnId: 'turn-2', role: 'assistant', content: 'Spoken answer', messageId: 'message-2', attemptId: 'attempt-2', createdAt: '', spoken: true },
+        ],
+      }],
+      attempts: [],
+    })
+
+    expect(reopened.sides.left.messages.map((message) => [message.content, message.spoken ?? false])).toEqual([
+      ['Typed', false], ['Typed answer', false], ['Said', true], ['Spoken answer', true],
+    ])
+  })
+
   it('projects a missing failed assistant placeholder for the exact later turn so retry stays pinned', () => {
     const reopened = hydrateTestExecutionState({
       id: 'execution-1', generation: 2, mode: 'compare', skillEffects: 'suppressed', state: 'partial', createdAt: '', testValues: [], seededTurnCount: 0,

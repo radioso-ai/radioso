@@ -10,16 +10,17 @@ import { AgentSkillRepository } from "../../../src/modules/agentSkills/repositor
 import type { RoutineDefinitionDraftInput } from "../../../src/modules/routines/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
+import { firstPartyCopilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/proposalContribution.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("operator MCP proposal origin", () => {
   const database = new Database(integrationDatabaseUrl);
-  const proposals = new CopilotRepository(database.kysely);
+  const proposals = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   const invocations = new OperatorMcpInvocationRepository(database.kysely);
   const routines = new RoutineDefinitionRepository(database.kysely);
-  const structuralApply = createRoutineMcpApplyPort(database.kysely, { validateScopedReferences: async () => undefined });
-  const agentSkillApply = createAgentSkillMcpApplyPort(database.kysely);
+  const structuralApply = createRoutineMcpApplyPort(database.kysely, { proposalTargetTypes: firstPartyCopilotProposalTargetTypes, validateScopedReferences: async () => undefined });
+  const agentSkillApply = createAgentSkillMcpApplyPort(database.kysely, firstPartyCopilotProposalTargetTypes);
   const agentSkills = new AgentSkillRepository(database.kysely);
   const resource = `https://mcp.example/${randomUUID()}/operator/mcp`;
   const accountId = randomUUID(); const workspaceId = randomUUID(); const userId = randomUUID(); const membershipId = randomUUID();

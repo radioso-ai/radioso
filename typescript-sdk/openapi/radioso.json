@@ -4140,6 +4140,10 @@
           {
             "type": "object",
             "properties": {
+              "chatModelReadsImages": {
+                "type": "boolean",
+                "description": "Computed, read-only: whether the model the agent answers with reads images. It is decided from the agent's `chatModelOverride`, the workspace's chat model and the plan, as a turn is, and without touching keys. Photos reach visitors only when this is true and `visitorImagesEnabled` is on; it is true or false whatever `visitorImagesEnabled` says, and a model Radioso cannot vet (an `openai-compatible` endpoint, or one outside the catalogue) reads as false. A request cannot set it."
+              },
               "voiceCallReadiness": {
                 "allOf": [
                   {
@@ -4150,7 +4154,10 @@
                   }
                 ]
               }
-            }
+            },
+            "required": [
+              "chatModelReadsImages"
+            ]
           }
         ]
       },
@@ -18046,6 +18053,10 @@
           "assistantBootstrapActive": {
             "type": "boolean"
           },
+          "acceptsImages": {
+            "type": "boolean",
+            "description": "Whether the visitor may attach photos to a message, computed as the session response computes it: the agent has `visitorImagesEnabled` on and its chat model reads images. A chat that reloads reads it here, so it needs no new session to know."
+          },
           "conversations": {
             "type": "array",
             "items": {
@@ -18069,6 +18080,7 @@
         "required": [
           "workspaceName",
           "assistantBootstrapActive",
+          "acceptsImages",
           "conversations",
           "total",
           "nextCursor",
@@ -37290,7 +37302,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConversationAgent"
+                  "$ref": "#/components/schemas/AgentDetail"
                 }
               }
             }

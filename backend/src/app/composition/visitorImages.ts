@@ -12,6 +12,7 @@ import {
   type VisitorImageReadingModel,
 } from "../../modules/visitorImages/composition.js";
 import type {
+  ChatModelImageReading,
   VisitorImageAudit,
   VisitorImageAvailability,
   VisitorImageObjectStore,
@@ -46,10 +47,10 @@ export const visitorImageObjectStore = (storage: DocumentStoragePort & DocumentS
 });
 
 /**
- * The agent's chat model as its turns resolve it (the agent's override, then the workspace's
- * chat preference, then the plan or the workspace's key), through the inference pipeline, so the
- * reading call has its span and usage event. The resolved client reports whether the model reads
- * images, and the pipeline refuses the call before any provider sees it when it does not.
+ * The model the agent answers with, resolved as its turns resolve it, through the inference
+ * pipeline, so the reading call has its span and usage event. The resolved client reports whether
+ * the model reads images, and the pipeline refuses the call before any provider sees it when it
+ * does not.
  */
 const visitorImageReadingModel = (deps: {
   agents: AgentLookup;
@@ -64,26 +65,34 @@ const visitorImageReadingModel = (deps: {
 });
 
 /**
- * Photos are available where the agent has them on and its chat model reads images. The model is
- * the one a reading would run on, decided without touching keys; a selection that cannot be
- * decided reads as a model that cannot read.
+ * Whether the agent's chat model reads images: the model a reading would run on, decided without
+ * touching keys. A selection that cannot be decided reads as a model that cannot read.
  */
-export const createVisitorImageAvailability = (deps: {
-  agents: AgentLookup;
+export const createChatModelImageReading = (deps: {
   resolver: Pick<LlmCapabilityResolver, "resolveSelection">;
   logger: Pick<AppLogger, "warn">;
+}): ChatModelImageReading => ({
+  readsImages: async (agent) => {
+    try {
+      const selection = await deps.resolver.resolveSelection("chat", buildAgentChatWorkspaceContext(agent));
+      return imageInputCapabilityFor(selection.provider, selection.model) === "supported";
+    } catch (error) {
+      deps.logger.warn({ workspaceId: agent.workspaceId, agentId: agent.id, errorClass: errorClassOf(error) }, "visitor_image_model_unresolved");
+      return false;
+    }
+  },
+});
+
+/** Photos are available where the agent has them on and its chat model reads images. */
+export const createVisitorImageAvailability = (deps: {
+  agents: AgentLookup;
+  modelReading: ChatModelImageReading;
 }): VisitorImageAvailability => ({
   forAgent: async ({ workspaceId, agentId }) => {
     const agent = await deps.agents.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!agent) return "agent_not_found";
     if (!agent.visitorImagesEnabled) return "disabled";
-    try {
-      const selection = await deps.resolver.resolveSelection("chat", buildAgentChatWorkspaceContext(agent));
-      return imageInputCapabilityFor(selection.provider, selection.model) === "supported" ? "available" : "model_cannot_read";
-    } catch (error) {
-      deps.logger.warn({ workspaceId, agentId, errorClass: errorClassOf(error) }, "visitor_image_model_unresolved");
-      return "model_cannot_read";
-    }
+    return await deps.modelReading.readsImages(agent) ? "available" : "model_cannot_read";
   },
 });
 
@@ -115,24 +124,27 @@ export const wireVisitorImages = (deps: {
   logger: AppLogger;
 }): {
   service: VisitorImageService;
-  availability: VisitorImageAvailability;
+  /** What the application's dependencies carry for photos: the service, availability and the model check. */
+  ports: { visitorImages: VisitorImageService; visitorImageAvailability: VisitorImageAvailability; chatModelImageReading: ChatModelImageReading };
   objectDeletionJobHandler: BackgroundJobHandlerRegistration;
 } => {
   const objects = visitorImageObjectStore(deps.storage);
   const inference = new ContextualStructuredInferenceFactory({ resolver: deps.resolver }, deps.infrastructure.usageEventRecorder);
-  const availability = createVisitorImageAvailability({ agents: deps.agents, resolver: deps.resolver, logger: deps.logger });
-  return {
-    service: new VisitorImageService({
-      store: new PostgresVisitorImageStore(deps.infrastructure.database.kysely),
-      objects,
-      reader: new ModelVisitorImageReader({ model: visitorImageReadingModel({ agents: deps.agents, inference }), logger: deps.logger }),
-      audit: visitorImageAudit(deps.infrastructure.auditService),
-      availability,
-      usage: deps.infrastructure.usageLimitPolicy,
-      metrics: deps.infrastructure.metricsRegistry,
-      logger: deps.logger,
-    }),
+  const modelReading = createChatModelImageReading({ resolver: deps.resolver, logger: deps.logger });
+  const availability = createVisitorImageAvailability({ agents: deps.agents, modelReading });
+  const service = new VisitorImageService({
+    store: new PostgresVisitorImageStore(deps.infrastructure.database.kysely),
+    objects,
+    reader: new ModelVisitorImageReader({ model: visitorImageReadingModel({ agents: deps.agents, inference }), logger: deps.logger }),
+    audit: visitorImageAudit(deps.infrastructure.auditService),
     availability,
+    usage: deps.infrastructure.usageLimitPolicy,
+    metrics: deps.infrastructure.metricsRegistry,
+    logger: deps.logger,
+  });
+  return {
+    service,
+    ports: { visitorImages: service, visitorImageAvailability: availability, chatModelImageReading: modelReading },
     objectDeletionJobHandler: visitorImageObjectDeletionHandler({ objects, logger: deps.logger }),
   };
 };

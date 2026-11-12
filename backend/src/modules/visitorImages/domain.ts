@@ -1,3 +1,4 @@
+import type { LlmCapabilityOverride } from "../../shared/infra/llm/workspaceContext.js";
 import type { VisitorImageOwner } from "./contracts/turnInput.js";
 
 export type { VisitorImageOwner, VisitorImageOwnerKind } from "./contracts/turnInput.js";
@@ -161,4 +162,15 @@ export type VisitorImageAgentAvailability = "available" | "disabled" | "model_ca
 
 export interface VisitorImageAvailability {
   forAgent(input: { workspaceId: string; agentId: string }): Promise<VisitorImageAgentAvailability>;
+}
+
+/**
+ * Whether the model an agent answers with reads images, decided as its turns decide it (its own
+ * override, the workspace's chat model, the plan, the deployment's default), without
+ * touching keys. Photos are available where this holds and the operator has them on; a settings
+ * read reports it alone. A selection that cannot be decided reads as a model that cannot read.
+ * Composition implements it.
+ */
+export interface ChatModelImageReading {
+  readsImages(agent: { id?: string; workspaceId: string; chatModelOverride: LlmCapabilityOverride | null }): Promise<boolean>;
 }

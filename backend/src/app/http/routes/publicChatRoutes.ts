@@ -815,6 +815,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           assistantLinkUtmEnabled: Boolean((res.locals as { assistantLinkUtmEnabled?: boolean }).assistantLinkUtmEnabled ?? true),
           citationDisplayEnabled: Boolean((res.locals as { citationDisplayEnabled?: boolean }).citationDisplayEnabled ?? true),
           assistantBootstrapActive: Boolean((res.locals as { assistantBootstrapActive?: boolean }).assistantBootstrapActive),
+          acceptsImages: await acceptsImages({ workspaceId, agentId }),
           intakeActions: await resolvePublicIntakeActions({
             workspaceId,
             agentId,

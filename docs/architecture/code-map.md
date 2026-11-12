@@ -1139,7 +1139,7 @@ to the user message id the moment the preparer stores it
 An erasure deletes a conversation's photos and queues their objects to the
 `visitor_images.object_deletion` job in its transaction; a retention rule sweeps
 photos no message carries after 24 hours. The agent flag is
-`visitorImagesEnabled`; the public session's `acceptsImages` adds whether the
+`visitorImagesEnabled`; the public session's and the conversation list's `acceptsImages` add whether the
 agent's chat model reads images.
 
 Public surfaces and key files:
@@ -1153,6 +1153,10 @@ Public surfaces and key files:
 - `backend/src/app/http/shared/visitorImageUpload.ts`, `backend/src/app/http/middleware/visitorImageUploadRateLimiter.ts`
 - `backend/prompts/chat/visitor-image-reading.md`
 - `backend/src/db/migrations/256_visitor_images.sql`
+- `frontend/components/chat/visitor-image-composer.tsx` (attach button, preview chips, paste and drop) rendered by `PublicChatBubbleComposerForm` in `public-chat-bubble-view.tsx`; `frontend/lib/use-visitor-image-attachments.ts` over `visitor-image-attachment-controller.ts` (shrink, upload, remove, the three-photo limit) and the pure `visitor-image-attachments.ts` (state transitions), `visitor-image-downsize.ts` (sizing and fallbacks over an `ImageCodec`; `visitor-image-browser-codec.ts` is the browser one)
+- `frontend/components/chat/visitor-image-thumbnails.tsx` and `visitor-message-body.tsx` (the visitor's bubble from `inputMetadata.imageInput`, read with `frontend/lib/visitor-image-input.ts`; the public chat fetches a photo with its session header into `visitor-image-blob-cache.ts`, a teammate's view loads it from the conversation route), `ChatMessageThread`'s `visitorImages` prop, and the operator hosts `inbox-response-view.tsx` and `conversation-drawer.tsx`
+- `frontend/lib/anonymous-chat-context.tsx` (`acceptsImages`, `uploadImage`, `sendMessage(..., { imageIds })`), `frontend/lib/api-public-chat.ts` (`uploadImage`, `fetchImage`), `frontend/app/api/public/chat/[token]/route.ts` (the relay's `imageIds`); `acceptsImages` comes from the conversation list each load (`GET /api/v1/public/chat/:token`), and `frontend/lib/use-public-chat-photos.ts` is the shell's photo glue (composer controls, thread config, the send, which gives the photos and words back when the server did not take them, per `public-chat-errors.ts`; photos the chat stops offering are dropped with a notice; `use-file-drop-guard.ts` keeps a file dropped outside the composer from navigating the page), with the shared shapes in `visitor-image-types.ts`; a teammate's thumbnail asks for its photo only once `use-once-intersecting.ts` says it is on screen. The agent's `chatModelReadsImages` is computed by `createChatModelImageReading` in `backend/src/app/composition/visitorImages.ts` (the same port the availability check uses) for `GET`/`PUT /api/v1/agents/:agentId`
+- `frontend/components/dashboard/settings/visitor-images-setting.tsx` (the Answers switch, over the agent's `chatModelReadsImages`)
 - `backend/src/modules/connectors/services/connectorImageTurns.ts` (a connector turn's photos: the per-conversation allowance, the upload for owner `connector_conversation`, then the turn through the chat door's `ChatDoorPhotoTurnPort`; a busy decode is a retryable 503, and `ConnectorStoredImage` receipts let a retry reuse stored photos); `connectorChatPort.ts` carries `imageAllowance` and `answer({ images, onImagesStored })`; WhatsApp keeps a receipt in the inbound message log's payload (`savePhotoReceipt`)
 - `backend/src/modules/connectors/plugins/whatsapp/whatsappMedia.ts` and `whatsappClient.ts` `downloadImage` (Graph media id to bytes: size cap, timeout, https-only redirects; counter `whatsapp_media_downloads_total{outcome}`); `whatsappMessageHandler.ts` turns an album batch into one turn of up to three photos, the caption as typed text
 
@@ -1162,6 +1166,7 @@ Focused checks:
 - `cd backend && pnpm exec vitest run tests/integration/visitor-images.integration.test.ts --no-file-parallelism`
 - `cd backend && pnpm exec vitest run tests/unit/connectors/connectorImageTurns.test.ts tests/unit/connectors/connectorChatPort.test.ts tests/unit/connectors/whatsapp tests/contract/connectors/connector-chat-port.contract.test.ts` (WhatsApp photos)
 - `cd typescript-sdk && pnpm exec vitest run tests/unit/chat-images.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/visitor-image-*.test.ts tests/unit/anonymous-chat-images.test.tsx tests/unit/public-chat-relay-route.test.ts tests/unit/api-public-chat-images.test.ts`; the journey is `frontend/tests/e2e/visitor-image-composer.spec.ts`
 
 Related specs and docs:
 

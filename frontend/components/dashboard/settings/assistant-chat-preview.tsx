@@ -14,7 +14,7 @@ import { choosePrivacyNotice } from '@/lib/privacy-notice'
 import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
 import { Button } from '@/components/ui/button'
 import type { AgentBrandingSettings, AnswerSegment, ChatSuggestion, Citation } from '@/lib/api'
-import { deriveThemeOverridesFromModel } from '@/lib/anonymous-chat-context'
+import { deriveThemeOverridesFromModel } from '@/lib/public-chat-theme'
 import type { WebsiteEmbedThemeSettings } from '@/lib/api'
 import { contrastRatio } from '@/lib/color'
 import {

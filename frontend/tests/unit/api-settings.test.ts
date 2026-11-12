@@ -16,6 +16,7 @@ const behaviorSettings = (handoffOnRetrievalMiss: boolean): AssistantBehaviorSet
   contactRequestsEnabled: false,
   webhookExportsEnabled: false,
   handoffOnRetrievalMiss,
+  visitorImagesEnabled: false,
   contactRequestDelivery: { recipientEmails: [], webhook: null },
   theme: {
     brand: '#0f172a',
@@ -42,7 +43,6 @@ const responseAgent = (behavior: AssistantBehaviorSettings): AgentSettings => ({
   agentCardEnabled: false,
   publicAgentAccessEnabled: false,
   walkInConversationsPerHour: null,
-  visitorImagesEnabled: false,
   createdAt: '2026-09-01T10:00:00.000Z',
   updatedAt: '2026-09-01T10:00:00.000Z',
   isDefault: true,
@@ -86,6 +86,38 @@ describe('agentsApi.updateBehaviorSettings', () => {
       { method: 'PUT', body: JSON.stringify({ handoffOnRetrievalMiss: true }) },
       { withSession: true },
     )
+  })
+
+  it('sends the photo setting in the agent update payload, as a live change', async () => {
+    const saved = behaviorSettings(false)
+    const next = { ...saved, visitorImagesEnabled: true, customInstruction: 'Private draft only' }
+    requestMock.mockResolvedValueOnce(responseAgent(next))
+
+    const { agentsApi } = await import('@/lib/api-settings')
+    const updated = await agentsApi.updateBehaviorSettings('agent-1', next, saved, 'live')
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/agents/agent-1',
+      { method: 'PUT', body: JSON.stringify({ visitorImagesEnabled: true }) },
+      { withSession: true },
+    )
+    expect(updated.visitorImagesEnabled).toBe(true)
+  })
+
+  it('reads whether the chat model reads images from the saved agent, and never sends it back', async () => {
+    const saved = { ...behaviorSettings(false), chatModelReadsImages: true }
+    const next = { ...saved, chatModelOverride: { provider: 'openai-compatible' as const, model: 'llava' }, chatModelReadsImages: false }
+    requestMock.mockResolvedValueOnce(responseAgent(next))
+
+    const { agentsApi } = await import('@/lib/api-settings')
+    const updated = await agentsApi.updateBehaviorSettings('agent-1', next, saved, 'live')
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/agents/agent-1',
+      { method: 'PUT', body: JSON.stringify({ chatModelOverride: { provider: 'openai-compatible', model: 'llava' } }) },
+      { withSession: true },
+    )
+    expect(updated.chatModelReadsImages).toBe(false)
   })
 
   it('keeps an unsaved private instruction out of a live settings update', async () => {

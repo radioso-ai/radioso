@@ -289,8 +289,8 @@ export const agentsApi = {
     }, { withSession: true })
   },
 
-  async updateAgent(agentId: string, data: AgentSettingsUpdate): Promise<AgentSettings> {
-    return request<AgentSettings>(`/agents/${agentId}`, {
+  async updateAgent(agentId: string, data: AgentSettingsUpdate): Promise<AgentDetail> {
+    return request<AgentDetail>(`/agents/${agentId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }, { withSession: true })
@@ -397,6 +397,7 @@ export const agentsApi = {
       if (data.contactRequestsEnabled !== saved.contactRequestsEnabled) update.contactRequestsEnabled = data.contactRequestsEnabled
       if (data.webhookExportsEnabled !== saved.webhookExportsEnabled) update.webhookExportsEnabled = data.webhookExportsEnabled
       if (data.handoffOnRetrievalMiss !== saved.handoffOnRetrievalMiss) update.handoffOnRetrievalMiss = data.handoffOnRetrievalMiss
+      if (data.visitorImagesEnabled !== saved.visitorImagesEnabled) update.visitorImagesEnabled = data.visitorImagesEnabled
       if (hasChanged(data.contactRequestDelivery, saved.contactRequestDelivery)) update.contactRequestDelivery = data.contactRequestDelivery
       if (data.retrievalEnabled !== saved.retrievalEnabled) update.retrievalEnabled = data.retrievalEnabled
       if (hasChanged(data.theme, saved.theme)) update.theme = data.theme

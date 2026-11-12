@@ -7,7 +7,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-import { REPLY_IMAGE_WIDTHS } from "../src/app/http/routes/replyImageAddress.js";
 import { closeInOrder, dependencyCloseSteps, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
 import type { AppDependencies } from "../src/app/server/types.js";
 import { agentVoiceSettingsInputSchema, type AgentVoiceSettings } from "../src/modules/agents/public.js";
@@ -20,6 +19,7 @@ import {
 import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
 import { replyBlockCases, replyBlockImages } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
+import { DOCUMENT_IMAGE_RENDITION_WIDTHS } from "../src/modules/documents/contracts/documentImages.js";
 import { workspaceStoragePrefix } from "../src/modules/documents/contracts/storage.js";
 import { toJsonb } from "../src/shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../src/shared/infra/kysely/types.js";
@@ -368,7 +368,7 @@ export const seedReplyBlockImages = async (
           width: image.width,
           height: image.height,
           sha256: createHash("sha256").update(image.sourceUrl).digest("hex"),
-          renditions: toJsonb(REPLY_IMAGE_WIDTHS.map(Number).map((width) => ({ width, bucket: "eval", objectPath: `${objectPath}-w${width}`, generation: null, sizeBytes: 1 }))),
+          renditions: toJsonb(DOCUMENT_IMAGE_RENDITION_WIDTHS.map((width) => ({ width, bucket: "eval", objectPath: `${objectPath}-w${width}`, generation: null, sizeBytes: 1 }))),
         })
         .onConflict((conflict) => conflict.columns(["document_id", "source_url"]).doUpdateSet({ chunk_id: chunkId }))
         .executeTakeFirst();

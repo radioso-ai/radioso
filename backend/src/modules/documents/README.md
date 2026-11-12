@@ -87,8 +87,9 @@ imports from `services/` or `infra/`.
 - `infra/documentImageRepository.ts` (contracts in `contracts/documentImages.ts`):
   the `document_images` rows, the pictures a document's content carries. A
   `primary` image is the one its metadata names; an `inline` one sits in its text,
-  anchored to a chunk. A row is `pending` until its re-encoded renditions are
-  written, then `stored`; only stored rows are read. `listStoredForEvidence` gives
+  anchored to a chunk. A row is `pending` until its renditions, re-encoded at each
+  of `DOCUMENT_IMAGE_RENDITION_WIDTHS`, are written, then `stored`; only stored
+  rows are read. `listStoredForEvidence` gives
   retrieval the stored images of an answer's documents and chunks, never where the
   bytes live; `findServable` gives the public image route the stored rendition at
   a width. Rows cascade with their document, and they own their objects' paths.

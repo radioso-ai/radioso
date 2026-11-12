@@ -4262,6 +4262,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/copilot/empty-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the greeting and suggestions Ray's empty panel shows
+         * @description Dashboard session only; bearer API tokens are rejected. The structure comes from the workspace setup state: while setup is open, each suggestion names a next incomplete step with the dashboard path that completes it; once setup is complete or dismissed, suggestions are open-ended requests to send Ray. The model writes only the words, in the requested locale. `greeting` is null when there is no copy to show.
+         */
+        get: operations["getCopilotEmptyState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/copilot/conversations": {
         parameters: {
             query?: never;
@@ -4728,6 +4748,26 @@ export interface paths {
         put?: never;
         /** Retry one failed private test side */
         post: operations["retryAgentTestExecutionSide"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/voice-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a voice session on a private test
+         * @description Test Chat's Talk. Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own vendor key, and returns what `createPublicVoiceSession` does, with a session key in the form Radioso reserves for Test Chat. Every turn of the session runs on the test's revision and is recorded in the test as spoken, never as a conversation: no Inbox, Activity, analytics, visitor or conversation metering. The session's turns are taken for 60 minutes; later ones are refused. A dashboard session only, with `X-Radioso-CSRF: 1`. The agent must take voice calls as the website embed's start requires: published, voice on, a vendor agent bound, and the vendor key stored. The call opens with the test's own greeting while no message has been sent, on a vendor agent Radioso maintains. The signed URL is a bearer credential: the response is `Cache-Control: no-store`.
+         */
+        post: operations["startAgentTestExecutionVoiceSession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7206,6 +7246,36 @@ export interface components {
              * Format: uuid
              * @description Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.
              */
+            sessionKey: string;
+            /** @description The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`. */
+            locale: string;
+            /**
+             * Format: date-time
+             * @description When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL.
+             */
+            expiresAt?: string;
+            /** @description The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts. */
+            recordingNotice?: string;
+            /** @description What the call says first: the recording notice, then the agent's greeting in the session's language, as plain speech. Present only when the agent's vendor agent is one Radioso maintains (connected from the agent's Voice card) and there is something to say. Pass it as the session's first-message override, on `elevenlabs` the client's `overrides.agent.firstMessage`, and send no override when it is absent: a vendor agent set up outside Radioso closes a session that sets a first message it does not allow. */
+            firstMessage?: string;
+            /**
+             * @description The vendor's code for the language the call starts in: `locale` mapped onto the languages the vendor speaks, such as `it` for `it-CH` or `pt-br` for `pt-BR`. Present only when the agent's vendor agent is one Radioso maintains, that vendor agent lets a session set its language, the vendor's browser client can set `locale`'s language and the vendor agent's voice speaks it, and it is not the language the vendor agent starts calls in already. Pass it as the session's language override, on `elevenlabs` the client's `overrides.agent.language`, and send no override when it is absent: the call then starts in the vendor agent's own language, and a vendor agent that does not allow the override closes a session that sets one. The values are the codes the `elevenlabs` browser client's language override takes.
+             * @enum {string}
+             */
+            vendorLanguage?: "en" | "zh" | "es" | "hi" | "pt" | "fr" | "de" | "ja" | "ar" | "ko" | "id" | "it" | "nl" | "tr" | "pl" | "ru" | "sv" | "tl" | "ms" | "ro" | "uk" | "el" | "cs" | "da" | "fi" | "bg" | "hr" | "sk" | "ta" | "vi" | "no" | "hu" | "af" | "hy" | "as" | "az" | "be" | "bn" | "bs" | "ca" | "et" | "gl" | "ka" | "gu" | "ha" | "he" | "is" | "ga" | "jv" | "kn" | "kk" | "ky" | "lv" | "lt" | "lb" | "mk" | "ml" | "mr" | "ne" | "ps" | "fa" | "pa" | "sr" | "sd" | "sl" | "so" | "sw" | "te" | "th" | "ur" | "cy" | "pt-br";
+        };
+        TestChatVoiceSessionResponse: {
+            /**
+             * @description The voice runtime the session opens on: the agent's `voice.runtime.vendor`.
+             * @enum {string}
+             */
+            vendor: "elevenlabs";
+            /**
+             * Format: uri
+             * @description The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. Hand it to the vendor's client once and never store, log or share it.
+             */
+            signedUrl: string;
+            /** @description Radioso's key for this Test Chat session: a correlation handle, not a credential, in the form Radioso reserves for Test Chat (`radioso-test-chat_` before a UUID). The page hands it to the vendor, which sends it back on every turn, and every turn runs on the test; on `elevenlabs` it travels as the custom LLM extra body's `session_key`. */
             sessionKey: string;
             /** @description The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`. */
             locale: string;
@@ -11626,6 +11696,11 @@ export interface components {
                 attemptId: string;
                 /** Format: date-time */
                 createdAt: string;
+                /**
+                 * @description The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
+                 * @enum {boolean}
+                 */
+                spoken?: true;
             }[];
         };
         StartTestExecutionRequest: {
@@ -11761,6 +11836,11 @@ export interface components {
                     attemptId: string;
                     /** Format: date-time */
                     createdAt: string;
+                    /**
+                     * @description The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.
+                     * @enum {boolean}
+                     */
+                    spoken?: true;
                 }[];
             }[];
             /** @description User messages copied in from the real conversation this test continues; 0 when it started fresh. */
@@ -11783,6 +11863,10 @@ export interface components {
         };
         TestExecutionHistoryDetailResponse: {
             execution: components["schemas"]["TestExecutionHistoryDetail"];
+        };
+        /** @description `locale` is the caller's language tag; without it the agent's default language applies, then `en`. */
+        TestChatVoiceSessionRequest: {
+            locale?: string;
         };
         /**
          * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, one block event per reply block, done, then optional suggestions. A block event carries `conversationId`, `assistantMessageId` and one `block` (the ReplyBlock schema); `done.blocks` repeats them all. Blocks are sent only to a client that declared `clientContextCapabilities["reply.blocks"]`. A cancelled event is terminal and no event follows it.
@@ -29621,12 +29705,87 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
+                        /** @description The proposal target types this operator may apply. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list. */
                         applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting")[];
                     };
                 };
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getCopilotEmptyState: {
+        parameters: {
+            query?: {
+                /** @description A BCP 47 language tag naming the language to write in, such as `fr` or `pt-BR`. */
+                locale?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Empty state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        phase: "setup" | "open";
+                        /** @description Whether any conversation exists. A client shows retrospective copy only when this is true; null means the server could not say, which reads as no. */
+                        firstConversationHappened: boolean | null;
+                        greeting: string | null;
+                        suggestions: ({
+                            /** @enum {string} */
+                            kind: "setup_step";
+                            /** @enum {string} */
+                            step: "purpose" | "documents" | "conversation" | "directives_or_routines" | "notify_destination" | "credential";
+                            text: string;
+                            /** @description The dashboard path that completes the step. */
+                            href: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "prompt";
+                            /** @enum {string} */
+                            intent: "crawl_more" | "tighten_tone" | "draft_routine";
+                            text: string;
+                        })[];
+                    };
+                };
+            };
+            /** @description The locale is not a language tag */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Copilot rate limit exceeded for this operator */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No LLM capability */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -29715,7 +29874,10 @@ export interface operations {
                             proposals: {
                                 /** Format: uuid */
                                 id: string;
-                                /** @enum {string} */
+                                /**
+                                 * @description What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list. A proposal of such a contributed type also carries an optional `presentation` ({ label, dashboardPath }): the link label and a path inside the workspace dashboard that the applied card opens.
+                                 * @enum {string}
+                                 */
                                 targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                                 targetLabel: string;
                                 summary: string;
@@ -29861,11 +30023,17 @@ export interface operations {
                         id: string;
                         /** Format: uuid */
                         workspaceId: string;
-                        /** @enum {string} */
+                        /**
+                         * @description What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list.
+                         * @enum {string}
+                         */
                         targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                         targetRef?: unknown;
                         target: {
-                            /** @enum {string} */
+                            /**
+                             * @description What the proposal changes. A deployment running an application module that contributes a proposal target type may also return that type, a lowercase identifier outside this list.
+                             * @enum {string}
+                             */
                             type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting" | "time_zone_setting";
                             ref?: unknown;
                         };
@@ -31543,6 +31711,87 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": components["schemas"]["TestExecutionEvent"];
+                };
+            };
+        };
+    };
+    startAgentTestExecutionVoiceSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TestChatVoiceSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Voice session started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestChatVoiceSessionResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No dashboard session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The CSRF header is missing, or the operator may not manage the agent */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The test is gone, or the agent takes no voice calls: it has never been published, voice is off, or no vendor agent is bound */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `test_execution_not_single`: a comparison test takes no spoken turns */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `voice_unavailable`: the session could not be started (the vendor key is missing or unreadable, or the vendor did not start it) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

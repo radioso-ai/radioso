@@ -3,8 +3,9 @@ import type { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
-import type { VoiceSessionStartResult, VoiceVendorConversationReportPort } from "../../../modules/voiceChannel/public.js";
+import type { VoiceVendorConversationReportPort } from "../../../modules/voiceChannel/public.js";
 
+import { presentStartedVoiceSession } from "../presenters/voiceSessionPresenter.js";
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
 import {
   publicVoiceSessionStartRateLimiter,
@@ -22,17 +23,6 @@ type PublicVoiceSessionRouteDependencies = PublicVoiceSessionRateLimiterDependen
   & { voiceRecordings: VoiceVendorConversationReportPort };
 
 const UNAVAILABLE_MESSAGE = "Voice sessions are not available for this agent.";
-
-const presentStartedSession = (result: Extract<VoiceSessionStartResult, { kind: "started" }>) => ({
-  vendor: result.vendor,
-  signedUrl: result.signedUrl,
-  sessionKey: result.sessionKey,
-  locale: result.locale,
-  ...(result.expiresAt ? { expiresAt: result.expiresAt.toISOString() } : {}),
-  ...(result.recordingNotice ? { recordingNotice: result.recordingNotice } : {}),
-  ...(result.firstMessage ? { firstMessage: result.firstMessage } : {}),
-  ...(result.vendorLanguage ? { vendorLanguage: result.vendorLanguage } : {}),
-});
 
 /**
  * Only the website embed binds a public session to an origin the operator admitted, so only its
@@ -135,7 +125,7 @@ export const registerPublicVoiceSessionRoute = (
         }
         // The signed URL opens sessions on the workspace's vendor account until it expires: no cache may keep it.
         res.setHeader("Cache-Control", "no-store");
-        res.status(200).json(presentStartedSession(result));
+        res.status(200).json(presentStartedVoiceSession(result));
       } catch (error) {
         next(error);
       }

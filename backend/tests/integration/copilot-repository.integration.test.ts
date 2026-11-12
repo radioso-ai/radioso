@@ -1,17 +1,18 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { CopilotRepository } from "../../src/db/repositories/copilotRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { copilotProposalTargetTypes, type CopilotProposal } from "../../src/modules/operatorCopilot/public.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { firstPartyCopilotProposalTargetTypes } from "../../src/modules/operatorCopilot/proposalContribution.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("CopilotRepository apply-claim recovery (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new CopilotRepository(database.kysely);
+  const repository = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const operatorUserId = randomUUID();
@@ -213,5 +214,30 @@ describeIntegration("CopilotRepository apply-claim recovery (Postgres)", () => {
       });
       expect(proposal.targetType).toBe(targetType);
     }
+  });
+
+  // A module removed or renamed, a rollback, or the previous revision serving mid-rollout all leave
+  // stored proposals whose type this deployment no longer knows. The conversation they sit in, and
+  // the transcript a new turn reads from it, must stay readable.
+  it("loads a conversation holding a card of a target type the deployment no longer knows, without that card", async () => {
+    const warn = vi.fn();
+    const knowing = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes, { warn });
+    const conversation = await knowing.createConversation({ workspaceId, operatorUserId, title: "Retired module" });
+    const message = await knowing.createMessage({ conversationId: conversation.id, role: "copilot", content: "Two proposals to review.", outcome: "completed", activity: [] });
+    const known = await knowing.createProposal({ workspaceId, operatorUserId, conversationId: conversation.id, targetType: "agent_setting", targetRef: { settingKey: "retrievalEnabled" }, payload: { summary: "Turn retrieval on." }, versionToken: "v1", evidence: null });
+    // Written as a deployment that knew the type wrote it.
+    const retiredId = randomUUID();
+    await database.query(
+      `INSERT INTO copilot_proposals (id, workspace_id, operator_user_id, conversation_id, target_type, target_ref, payload, version_token) VALUES ($1, $2, $3, $4, 'retired_alert_threshold', '{}'::jsonb, '{"name":"Alert","summary":"Alert."}'::jsonb, 'create')`,
+      [retiredId, workspaceId, operatorUserId, conversation.id],
+    );
+    await knowing.attachProposalsToMessage({ proposalIds: [known.id, retiredId], messageId: message.id, conversationId: conversation.id });
+
+    const messages = await knowing.listMessages({ conversationId: conversation.id });
+
+    expect(messages.find((candidate) => candidate.id === message.id)?.proposals?.map((card) => card.id)).toEqual([known.id]);
+    expect(warn).toHaveBeenCalledWith({ proposalId: retiredId, targetType: "retired_alert_threshold" }, "copilot_proposal_card_skipped_unknown_target_type");
+    // Reading or claiming that one proposal by id still refuses it: nothing can apply it.
+    await expect(knowing.findProposal({ id: retiredId, workspaceId, operatorUserId })).rejects.toThrow(/Unknown copilot proposal target type/u);
   });
 });

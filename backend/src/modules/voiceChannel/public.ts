@@ -28,9 +28,14 @@ export type {
   VoiceSessionRef,
   VoiceSessionVendorAgent,
   VoiceSessionVisitor,
+  VoiceTestChatBindingLookup,
+  VoiceTestChatSubject,
+  VoiceTestChatTurns,
   VoiceTurnPort,
 } from "./domain.js";
 export { VoiceTurnService, type VoiceChatTurnRequest, type VoiceSessionStore, type VoiceTurnNotes } from "./services/voiceTurnService.js";
+export { TestChatVoiceTurnService } from "./services/testChatVoiceTurns.js";
+export { VoiceSessionTurnRouter } from "./services/voiceSessionTurnRouter.js";
 export type { VoiceStoredReplyReader } from "./services/languageSwitchFollowUp.js";
 export { VoiceSessionStartService } from "./services/voiceSessionStartService.js";
 export { VoiceRuntimeConnectionService } from "./services/voiceRuntimeConnectionService.js";

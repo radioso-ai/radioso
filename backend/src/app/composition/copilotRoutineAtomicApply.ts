@@ -2,6 +2,7 @@ import { CopilotRepository } from "../../db/repositories/copilotRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { agentRevisionLockKey } from "../../db/repositories/agentDraftMutation.js";
 import type { RoutineMcpApplyPort } from "../../modules/operatorCopilot/proposalAdapters.js";
+import type { CopilotProposalTargetTypeSet } from "../../modules/operatorCopilot/public.js";
 import { translateRoutineDefinitionWriteConflict, type RoutineDefinition } from "../../modules/routines/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { conflict } from "../../shared/domain/errors.js";
@@ -12,6 +13,8 @@ import { transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js
  * routine repository remains unaware that a Copilot receipt exists.
  */
 export const createRoutineMcpApplyPort = (db: Db, deps: {
+  /** The deployment's assembled set, so the receipt settles through the same narrowing every reader uses. */
+  readonly proposalTargetTypes: CopilotProposalTargetTypeSet;
   validateScopedReferences(input: {
     readonly workspaceId: string;
     readonly agentId: string;
@@ -43,7 +46,7 @@ const applyOn = async (
     // A domain conflict, so the reviewed executor settles the proposal stale instead of uncertain.
     if (deleted.outcome !== "deleted") throw conflict("Routine changed while its draft was being deleted — reload it and try again");
     const appliedRef = { agentId: input.agentId, routineId: input.routineId };
-    const settled = await new CopilotRepository(db).settleMcpAppliedOn({ proposalId: input.proposalId, executionInvocationId: input.executionInvocationId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimedAt: input.claimedAt, appliedRef, now: new Date() }, db);
+    const settled = await new CopilotRepository(db, deps.proposalTargetTypes).settleMcpAppliedOn({ proposalId: input.proposalId, executionInvocationId: input.executionInvocationId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimedAt: input.claimedAt, appliedRef, now: new Date() }, db);
     if (!settled) throw new Error("reviewed_proposal_receipt_conflict");
     return { appliedRef };
   }
@@ -60,7 +63,7 @@ const applyOn = async (
     throw translateRoutineDefinitionWriteConflict(error) ?? error;
   }
   const appliedRef = { agentId: input.agentId, routineId: saved.id };
-  const settled = await new CopilotRepository(db).settleMcpAppliedOn({
+  const settled = await new CopilotRepository(db, deps.proposalTargetTypes).settleMcpAppliedOn({
     proposalId: input.proposalId,
     executionInvocationId: input.executionInvocationId,
     workspaceId: input.workspaceId,

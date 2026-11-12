@@ -152,13 +152,23 @@ export const withCopilotActor = (
 ): Record<string, unknown> => ({ ...metadata, operatorUserId: actor.operatorUserId, surface: actor.surface });
 
 /**
- * The single runtime list of proposal target types. Every completeness guard over target types
- * (the copilot service's tool-output narrowing, the repository's row narrowing, the OpenAPI and
- * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
- * literal enum, so adding a target type cannot silently miss one of those sites again.
+ * The first-party proposal target types. Every completeness guard over target types derives from
+ * this array rather than repeating its own OR-chain or literal enum, so adding a target type cannot
+ * silently miss one of those sites again. The guards that read stored or streamed proposals (the
+ * repository's row narrowing, the service's tool-output narrowing, `proposal_detail`, the
+ * applyable-target list) read the composition-assembled `CopilotProposalTargetTypeSet` instead,
+ * whose first-party half is this array and whose rest application modules contribute (see
+ * `proposalContribution.ts`). The published OpenAPI enum stays this array: the contract this
+ * repository publishes describes this repository's surfaces.
  */
 export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "document_operation", "ingestion_settings", "website_crawl", "workspace_setting", "agent_publication", "agent_greeting", "privacy_setting", "time_zone_setting"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
+/**
+ * A stored or streamed proposal's target type: a first-party {@link CopilotProposalTargetType}, or
+ * one an application module contributed. Which ones a deployment knows is decided at composition,
+ * so the type is open here and every reader narrows against the assembled set.
+ */
+export type CopilotStoredProposalTargetType = string;
 /**
  * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
  * the owning domain, so it has to ask for that domain's permission rather than one permission for
@@ -211,7 +221,7 @@ export interface CopilotProposal {
   readonly conversationId: string | null;
   readonly operatorMcpInvocationId: string | null;
   readonly messageId: string | null;
-  readonly targetType: CopilotProposalTargetType;
+  readonly targetType: CopilotStoredProposalTargetType;
   readonly targetRef: unknown;
   readonly payload: unknown;
   readonly versionToken: string;
@@ -260,9 +270,21 @@ export type CopilotProposalDraft = CopilotProposalDraftFields & CopilotProposalO
     }
 );
 
+/**
+ * Where an applied proposal's card links to, for a target type the dashboard has no route of its
+ * own for. Stored on the proposal payload by the tool that drafted it, so the live card and the
+ * reloaded card read the same value.
+ */
+export interface CopilotProposalPresentation {
+  /** What the link names, as in "Open usage alerts". */
+  readonly label: string;
+  /** A path inside the workspace's dashboard, relative to its root: `/settings?settingsTab=usage`. */
+  readonly dashboardPath: string;
+}
+
 export interface CopilotProposalCard {
   readonly id: string;
-  readonly targetType: CopilotProposalTargetType;
+  readonly targetType: CopilotStoredProposalTargetType;
   readonly targetLabel: string;
   readonly summary: string;
   readonly status: CopilotProposalStatus;
@@ -286,10 +308,12 @@ export interface CopilotProposalCard {
    * proposal changes wording only.
    */
   readonly reach?: boolean;
+  /** Present only for a contributed target type; the dashboard links first-party types itself. */
+  readonly presentation?: CopilotProposalPresentation;
 }
 
 export interface CopilotProposalAdapter {
-  readonly targetType: CopilotProposalTargetType;
+  readonly targetType: CopilotStoredProposalTargetType;
   /**
    * `payload` is the proposal's stored payload where the caller has one (getProposal always
    * does; a tool minting the very first token for a fresh create does too, once it has drafted
@@ -726,7 +750,7 @@ export type CopilotSseEvent =
   | { readonly event: "conversation"; readonly data: { conversationId: string; turnId: string } }
   | { readonly event: "activity"; readonly data: { toolCallId: string; tool: string; stage: "started" | "completed" | "failed"; entity?: CopilotEntityReference } }
   | { readonly event: "chunk"; readonly data: { text: string } }
-  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean; reach?: boolean } }
+  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotStoredProposalTargetType; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean; reach?: boolean; presentation?: CopilotProposalPresentation } }
   | { readonly event: "outcome"; readonly data: { status: CopilotTurnOutcome } }
   | { readonly event: "done"; readonly data: Record<string, never> };
 

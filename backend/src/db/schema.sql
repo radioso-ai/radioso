@@ -2313,7 +2313,7 @@ CREATE TABLE public.copilot_proposals (
     CONSTRAINT copilot_proposals_message_requires_conversation_check CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_reviewed_requirement_check CHECK (((review_digest IS NULL) OR (confirmation_requirement IS NOT NULL))),
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
-    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'document_operation'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text, 'agent_greeting'::text, 'privacy_setting'::text, 'time_zone_setting'::text])))
+    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type ~ '^[a-z][a-z0-9_]{0,62}$'::text))
 );
 
 
@@ -4257,9 +4257,13 @@ CREATE TABLE public.voice_sessions (
     vendor_agent_id text,
     vendor_region text,
     vendor_conversation_id text,
+    test_execution_id uuid,
+    started_account_id uuid,
     CONSTRAINT voice_sessions_session_key_check CHECK (((length(session_key) >= 1) AND (length(session_key) <= 256))),
+    CONSTRAINT voice_sessions_started_account_is_test_chat CHECK (((started_account_id IS NULL) OR (test_execution_id IS NOT NULL))),
     CONSTRAINT voice_sessions_started_public_session_id_check CHECK (((started_public_session_id IS NULL) OR ((length(started_public_session_id) >= 1) AND (length(started_public_session_id) <= 256)))),
     CONSTRAINT voice_sessions_started_visitor_key_check CHECK (((started_visitor_key IS NULL) OR ((length(started_visitor_key) >= 1) AND (length(started_visitor_key) <= 256)))),
+    CONSTRAINT voice_sessions_test_chat_session CHECK (((test_execution_id IS NULL) OR ((conversation_id IS NULL) AND (started_public_session_id IS NULL) AND (start_expires_at IS NOT NULL)))),
     CONSTRAINT voice_sessions_vendor_agent_id_check CHECK (((vendor_agent_id IS NULL) OR ((length(vendor_agent_id) >= 1) AND (length(vendor_agent_id) <= 128)))),
     CONSTRAINT voice_sessions_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 64))),
     CONSTRAINT voice_sessions_vendor_conversation_has_origin CHECK (((vendor_conversation_id IS NULL) OR ((vendor_region IS NOT NULL) AND (vendor_agent_id IS NOT NULL)))),

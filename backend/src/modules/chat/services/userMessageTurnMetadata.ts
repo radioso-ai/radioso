@@ -2,16 +2,6 @@ import type { MessageCreateInput, UserMessageInputMetadata } from "../../../db/r
 import type { ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
 import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
 import { visitorTimeZoneTurnMetadata } from "./turnReferenceTimeZone.js";
-import type { RoutineInvocation } from "../contracts/routineInvocation.js";
-
-/**
- * The recorded form of a tool call: Activity and the Inbox render it as a tool-call block
- * from this, while the message content stays the rendered text a person would have typed.
- */
-export const routineInvocationInputMetadata = (invocation: RoutineInvocation): UserMessageInputMetadata => ({
-  method: "routine_invocation",
-  routine: { toolName: invocation.toolName, input: { ...invocation.input } },
-});
 
 /**
  * What a visitor's message records about its own turn, as the fields the message is created

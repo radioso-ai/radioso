@@ -34,6 +34,7 @@ The chat request schema also supports:
 - `conversationId` for follow-up turns
 - `startConversation: true` for bootstrap flows
 - `userExpectedLocale` when the caller knows the user's locale
+- `imageIds` for photos the same credential uploaded with `POST /api/v1/agents/{agentId}/images`, with or without `message` (see [Let visitors send photos](/guides/image-input))
 - `userTimeZone` when the caller knows the user's IANA time zone, such as `America/Los_Angeles`: "today", "tomorrow" and "this weekend" in the question then mean the user's own day. Without it, or with a zone the server does not know, the turn reads today in the workspace time zone (see [Settings](/api/settings#time-zone))
 
 The agent id in the path must match the one stored on the credential. A REST credential for another agent, an MCP-audience credential, a personal token, or a service-account credential receives `401`.
@@ -177,6 +178,7 @@ GET  /api/v1/agents/{agentId}
 PUT  /api/v1/agents/{agentId}
 POST /api/v1/agents/{agentId}/default
 POST /api/v1/agents/{agentId}/chat
+POST /api/v1/agents/{agentId}/images
 GET  /api/v1/agents/{agentId}/channel-credentials
 POST /api/v1/agents/{agentId}/channel-credentials
 POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate
@@ -197,6 +199,7 @@ POST /api/v1/privacy/data-subjects/conversations
 POST /api/v1/privacy/data-subjects/export
 POST /api/v1/privacy/data-subjects/erase
 GET  /api/v1/conversations/{conversationId}/recording
+GET  /api/v1/conversations/{conversationId}/images/{imageId}
 GET  /api/v1/history/search
 GET  /api/v1/history/search/{searchId}
 ```

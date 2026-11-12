@@ -33,6 +33,7 @@ export const agentInputFieldSchemas = {
   contactRequestsEnabled: z.boolean(),
   webhookExportsEnabled: z.boolean(),
   handoffOnRetrievalMiss: z.boolean(),
+  visitorImagesEnabled: z.boolean(),
   contactRequestDelivery: z.object({
     recipientEmails: z.array(z.string().max(320)).max(5).optional(),
     webhook: z.union([
@@ -122,6 +123,7 @@ export const agentReviewedSettingsPatchSchema = z.object({
   citationDisplayEnabled: agentInputFieldSchemas.citationDisplayEnabled,
   assistantLinkUtmEnabled: agentInputFieldSchemas.assistantLinkUtmEnabled,
   handoffOnRetrievalMiss: agentInputFieldSchemas.handoffOnRetrievalMiss,
+  visitorImagesEnabled: agentInputFieldSchemas.visitorImagesEnabled,
   contactRequestsEnabled: agentInputFieldSchemas.contactRequestsEnabled,
   contactRequestDelivery: agentInputFieldSchemas.contactRequestDelivery,
   webhookExportsEnabled: agentInputFieldSchemas.webhookExportsEnabled,

@@ -3,6 +3,7 @@ import { requestJson } from "./core/http.js";
 import {
   GeneratedRadiosoClient,
   type ChatCreateRequest,
+  type ChatImageUploadResponse,
   type ChatStreamRequest,
   type DataSubjectIdentity,
   type DocumentOperationResponse,
@@ -32,6 +33,7 @@ export type {
   AssistantChatRequest,
   AssistantChatResponse,
   ChatCreateRequest,
+  ChatImageUploadResponse,
   ChatStreamRequest,
   ChatRequest,
   ChatResponse,
@@ -173,6 +175,17 @@ export interface DocumentImportFileRequest {
   filename?: string;
   title?: string;
   mimeType?: string;
+}
+
+export interface ChatImageUploadRequest {
+  /** The agent the image is for; send it with the same `agentId` in `chat.create` or `chat.stream`. */
+  agentId: string;
+  /** A JPEG, PNG or WebP image, at most 10 MiB. */
+  image: Blob | Uint8Array | ArrayBuffer;
+  filename?: string;
+  mimeType?: string;
+  /** The language the agent writes the image's reading in; the agent's default locale when absent. */
+  locale?: string;
 }
 
 export interface DocumentReprocessOptions {
@@ -349,6 +362,24 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
         query?: Parameters<GeneratedRadiosoClient["getChatHistoryConversation"]>[1],
       ) => generated.getChatHistoryConversation(conversationId, query),
       stream: (body: ChatStreamRequest): AsyncGenerator<RadiosoChatStreamEvent> => streamChat(config, body),
+      /**
+       * Uploads an image for the next message to `agentId`, which the agent reads before this
+       * resolves. Send the returned `id` in that message's `imageIds`.
+       */
+      uploadImage: (input: ChatImageUploadRequest) => {
+        const formData = new FormData();
+        formData.set("image", createUploadBlob({ file: input.image, mimeType: input.mimeType }), input.filename ?? "image");
+        if (input.locale) {
+          formData.set("locale", input.locale);
+        }
+
+        return requestJson<ChatImageUploadResponse>(config, {
+          method: "POST",
+          path: "/api/v1/assistant/images",
+          query: { agentId: input.agentId },
+          body: formData,
+        });
+      },
     },
   };
 };

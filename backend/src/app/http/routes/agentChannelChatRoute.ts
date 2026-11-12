@@ -15,6 +15,7 @@ import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.j
 import { presentChatPayload, sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import { resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 import { agentChannelChatSchema } from "../schemas/agentChannelSchemas.js";
+import { agentChannelVisitorImageOwner } from "../shared/visitorImageUpload.js";
 import {
   buildAgentReplyEnvelope,
   chatRequestInputFor,
@@ -73,7 +74,9 @@ export const registerAgentChannelChatRoute = (
         const { context: requestContext } = resolveConversationRequestContext(dependencies, req, res);
         // A tool call is validated against the catalog of the release the
         // conversation is pinned to, before any turn state is written.
-        const turnInput: AgentTurnInput | null = req.body.startConversation
+        const imageIds = req.body.imageIds as string[] | undefined;
+        // Images alone are a message turn with no typed text; the door renders their readings.
+        const turnInput: AgentTurnInput | null = req.body.startConversation || (imageIds && req.body.message === undefined)
           ? null
           : await resolveAgentTurnInput(dependencies.agentToolCatalog, {
               workspaceId: agentChannelGrant.workspaceId,
@@ -88,6 +91,7 @@ export const registerAgentChannelChatRoute = (
           accountId: undefined,
           conversationId: req.body.conversationId,
           ...(turnInput ? chatRequestInputFor(turnInput) : {}),
+          ...(imageIds ? { imageIds, imageOwner: agentChannelVisitorImageOwner(agentChannelGrant) } : {}),
           startConversation: req.body.startConversation,
           stream: req.body.stream,
           userExpectedLocale: req.body.userExpectedLocale,

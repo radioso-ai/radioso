@@ -238,7 +238,15 @@ imports from `services/`.
 
 ## Read First
 
-- `services/assistantChatService.ts`: assistant chat orchestration.
+- `services/assistantChatService.ts`: assistant chat orchestration. A send with
+  `imageIds` goes through `services/visitorImageTurn.ts`: the door claims the
+  photos for `imageOwner` through the `visitorImages` module's
+  `VisitorImageTurnInput` port, runs the turn on the typed text followed by one
+  `<attached_photo>` block per reading, and records `inputMetadata.imageInput`.
+  It passes `onUserMessageStored` with the turn; `services/turnUserMessage.ts`
+  calls it right after the preparer stores the user message, and the door binds
+  the claim to that message id then. A turn that ends without storing one
+  releases the claim. Chat never touches image storage or the reading call.
 - `services/chatService.ts`: core chat service behavior.
 - `services/chatSessionPreparer.ts`: session setup for chat turns.
 - `services/chatTurnLifecycle.ts`: turn lifecycle and persistence flow.

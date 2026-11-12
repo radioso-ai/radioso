@@ -70,6 +70,7 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
     storage = new LocalDocumentStorage(root);
     const workerStorage: DocumentStorageAdapter = {
       upload: (input) => storage.upload(input),
+      locate: (input) => storage.locate(input),
       read: (input) => storage.read(input),
       delete: async (input) => {
         if (failingDeletes) throw new Error("storage unavailable");

@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { ExternalLink } from 'lucide-react'
 
+import { operatorVisitorImages } from '@/components/chat/visitor-image-thumbnails'
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import {
@@ -305,6 +306,10 @@ export function InboxResponseView({
     [effectiveItem, pendingDecisions],
   )
 
+  const visitorImages = useMemo(
+    () => (conversationId ? operatorVisitorImages(workspaceId, conversationId) : undefined),
+    [workspaceId, conversationId],
+  )
   const renderedMessages = effectiveConversationMessages.map((message) =>
     message.role === 'assistant' ? { ...message, persistedAssistantMessageId: message.id } : message)
   // A reply, a released draft and a resend all wait until the conversation's channel is known, and
@@ -482,6 +487,7 @@ export function InboxResponseView({
               audience="operator"
               activity={activity}
               hasOlderMessages={conversationDetail?.hasOlderMessages ?? false}
+              visitorImages={visitorImages}
             />
           </div>
         )}

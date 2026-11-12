@@ -163,6 +163,28 @@ describe("public chat contract", () => {
     expect(anonCookie).toBeDefined();
   });
 
+  it("offers no image attachment until the agent takes images, and refuses images the session never uploaded", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-images-off@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+
+    const publicSession = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}/sessions`)
+      .send({ channel: "anonymous_link" })
+      .expect(200);
+    expect(publicSession.body.acceptsImages).toBe(false);
+
+    const send = (body: object) => request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken as string)
+      .send({ stream: false, ...body });
+    // With images a message may carry no text; without either, it is still refused.
+    await send({}).expect(400);
+    await send({ imageIds: ["6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12"], startConversation: true }).expect(400);
+    const refused = await send({ imageIds: ["6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12"] }).expect(409);
+    expect(refused.body.error.code).toBe("visitor_image_unavailable");
+  });
+
   it("does not expose diagnostics when public callers request debug", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-debug-request@example.com");

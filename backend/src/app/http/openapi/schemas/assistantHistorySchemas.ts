@@ -40,9 +40,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   }).openapi("AnswerFeedbackParams");
   // Registered once and shared: the list row and the detail answer the same question about the
   // same conversation, and a second inline enum would let them drift apart.
-  const CallerKindSchema = registry.register("CallerKind", z.enum(["human", "agent"]).openapi({
-    description: "Whether a person or a calling agent is on the other side of the conversation.",
-  }));
+  const CallerKindSchema = registry.register("CallerKind", z.enum(["human", "agent"]).openapi({ description: "Whether a person or a calling agent is on the other side of the conversation." }));
   const SkillAvailabilitySchema = registry.register("SkillAvailability", skillAvailabilitySchema);
   const SkillContractReferenceSchema = registry.register("SkillContractReference", skillContractReferenceSchema);
   const SkillDiagnosticsSummarySchema = registry.register("SkillDiagnosticsSummary", skillDiagnosticsSummarySchema);
@@ -281,13 +279,13 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const AssistantChatRequestSchema = registry.register(
     "AssistantChatRequest",
     assistantChatSchema.openapi({
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`. `imageIds` needs `agentId`.",
     }),
   );
   const PublicChatRequestSchema = registry.register(
     "PublicChatRequest",
     anonymousChatSchema.openapi({
-      description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`.",
+      description: "`message` is required unless `startConversation` is true or `imageIds` is present; bootstrap requests cannot include `conversationId`.",
     }),
   );
 
@@ -888,6 +886,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       workspaceName: z.string(),
       assistantBootstrapActive: z.boolean(),
+      acceptsImages: z.boolean().openapi({ description: "Whether the visitor may attach photos to a message, computed as the session response computes it: the agent has `visitorImagesEnabled` on and its chat model reads images. A chat that reloads reads it here, so it needs no new session to know." }),
       conversations: z.array(PublicConversationSummarySchema),
       total: z.number().int().min(0),
       nextCursor: z.string().nullable(),

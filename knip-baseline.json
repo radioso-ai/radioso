@@ -14,7 +14,6 @@
   "exports|backend/src/modules/chat/services/chatAnswerErrors.ts|hasCitedAnswerSegment",
   "exports|backend/src/modules/chat/services/chatExecutionPolicy.ts|assertDeferredAssistantWorkflow",
   "exports|backend/src/modules/chat/services/turnRouter.ts|ChatGatewayTurnRouterGateway",
-  "exports|backend/src/modules/connectors/plugins/whatsapp/whatsappPlugin.ts|WHATSAPP_CONFIG_KEYS",
   "exports|backend/src/modules/customerEmail/oauthMailProviders.ts|customerEmailCapabilities",
   "exports|backend/src/modules/customerEmail/routineSkillResolver.ts|customerEmailRoutineSkillDefinition",
   "exports|backend/src/modules/customerEmail/services/emailSkillActivityPresenter.ts|summarizeEmailRecipients",

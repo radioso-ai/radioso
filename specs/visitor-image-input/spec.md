@@ -99,6 +99,18 @@ it raw bytes plus an owner, and gets back an image id.
   - multer has `files`, `fields` and `parts` limits. Rate limiting runs before the body is buffered.
 - **WhatsApp.** An inbound image message downloads the media through the Graph API with the connector's token, goes
   through the same validation and storage, and is read. Its caption becomes the typed text.
+  - The connector already answers messages from one number that arrive within three seconds as one
+    turn, so an album's photos (at most three, in the order sent) are one turn with their captions
+    joined. Photos beyond the third are unsupported messages. No new coalescing exists.
+  - The turn goes through the chat door with the ids the upload returned and owner
+    `connector_conversation`: the conversation's id, or an id of its own for a first turn.
+  - A retry reuses what an earlier attempt stored. The host hands the connector a receipt per stored photo
+    (`ConnectorStoredImage`), before the turn runs; the connector keeps it in the inbound message's log row (the
+    jsonb payload, under a `radioso` key, so no migration) and sends it back instead of the bytes. A receipt names
+    the photo and the owner it was stored for. A receipt that cannot be claimed (the message was stored and
+    already carries the photo, or the photo was swept) is refused as stale and the photo is sent again.
+  - A photo whose download fails for good counts as an unavailable photo: captions and text are answered and an
+    uncaptioned photo is an unsupported message. Transient failures retry first.
 - **Bytes.** Stored through `DocumentStoragePort` under `workspaces/<ws>/visitor-images/<id>`, so a workspace purge
   covers them.
 - **Row.** Table `visitor_images` holds:
@@ -150,7 +162,9 @@ it raw bytes plus an owner, and gets back an image id.
   sweep and the routes.
 
 Dependency direction: chat depends on the visitorImages port, visitorImages depends on the shared llm and storage
-ports, and composition assembles. Nothing in `packages/` changes.
+ports, and composition assembles. The one change in `packages/` is the connector contract: `connector-api` gains
+`ConnectorChatPort.imageAllowance`, `ConnectorInboundImage`, `ConnectorImageAllowance` and `ConnectorStoredImage`, for
+a connector that takes photos (WhatsApp).
 
 ## Delivery
 

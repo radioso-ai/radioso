@@ -28,8 +28,10 @@ composition calls them and assembles the result.
 - `backend/src/modules/*/composition.ts`: module-owned construction helpers.
 - `backgroundJobs.ts`: the durable background job queue, the runtime the worker
   drains, and the dead-letter retention sweep. Modules enqueue through the
-  `BackgroundJobQueue` port and return handlers that `dependencies.ts` passes to
-  `createRuntime`; see `backend/src/shared/background-jobs/README.md`.
+  `BackgroundJobQueue` port and return handlers; `backgroundJobHandlers.ts`
+  lists every kind's handler, and `dependencies.ts` passes that list to
+  `createRuntime`. A new job kind adds its handler there. See
+  `backend/src/shared/background-jobs/README.md`.
 - `conversationErasure.ts` and `conversationRetention.ts`: every module's eraser
   for conversation-derived rows no foreign key reaches, and every module's fixed
   retention window (`ConversationDataRetentionRule`), run on its own schedule

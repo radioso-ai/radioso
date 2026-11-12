@@ -122,10 +122,7 @@ import { createAgentSkillMcpApplyPort } from "../composition/copilotAgentSkillAt
 import { createReviewedReceiptSettlement } from "../composition/copilotReviewedReceiptSettlement.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
 import { createDocumentReviewedOperationAdapter } from "../../modules/operatorCopilot/documentReviewedOperationAdapter.js";
-import {
-  DocumentReviewedOperationService,
-  workspaceStoragePurgeHandler,
-} from "../../modules/documents/composition.js";
+import { DocumentReviewedOperationService, workspaceStoragePurgeHandler } from "../../modules/documents/composition.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createPrivacySettingCopilotProposalAdapter } from "../../modules/operatorCopilot/privacySettingProposalAdapter.js";
@@ -144,6 +141,7 @@ import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolut
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
 import { createBackgroundJobComposition } from "../composition/backgroundJobs.js";
+import { backgroundJobHandlers } from "../composition/backgroundJobHandlers.js";
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
@@ -1258,22 +1256,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     starterPrompts: chat.agentStarterPromptReader,
     conversationLinks,
   });
-  const backgroundJobRuntime = backgroundJobs.createRuntime([
-    ...chat.backgroundJobHandlers,
-    ...slackInboundJobs.backgroundJobHandlers,
-    // The recordings a deletion handed off, deleted at the voice vendor with the key held beside them.
-    voiceRecordings.erasureJobHandler,
-    // The photos an erasure or the unbound sweep handed off.
-    visitorImages.objectDeletionJobHandler,
-    // A deleted workspace's stored files: handed off by its deletion, or queued by an operator.
-    workspaceStoragePurgeHandler({
-      storage: documents.documentStorage,
-      owners: repositories.documentStorageOwnerRepository,
-      queue: backgroundJobs.queue,
-      audit: infrastructure.auditService,
-      logger,
-    }),
-  ]);
+  const backgroundJobRuntime = backgroundJobs.createRuntime(backgroundJobHandlers({
+    chat: chat.backgroundJobHandlers,
+    slackInbound: slackInboundJobs.backgroundJobHandlers,
+    voiceRecordingErasure: voiceRecordings.erasureJobHandler,
+    visitorImageObjectDeletion: visitorImages.objectDeletionJobHandler,
+    workspaceStoragePurge: workspaceStoragePurgeHandler({ storage: documents.documentStorage, owners: repositories.documentStorageOwnerRepository, queue: backgroundJobs.queue, audit: infrastructure.auditService, logger }),
+  }));
   refreshEmbedConfigsOnVoiceReadinessChange({ credentials: workspaceProviderCredentialsService, publications: agentRevisionService, embedConfigs: agentService });
   const { voiceSessionStarts, voiceRuntimeConnections } = wireVoiceRuntimeConnections({
     database: infrastructure.database,

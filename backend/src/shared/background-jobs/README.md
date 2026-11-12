@@ -262,8 +262,10 @@ each tick runs up to ten jobs, each under its own deadline.
 
 3. Export a handler factory from the module's composition entry point,
    `backgroundJobHandler(MY_JOB, (payload, { signal }) => service.run(payload, { signal }))`,
-   and add it to the handler list `backend/src/app/server/dependencies.ts`
-   passes to `backgroundJobs.createRuntime`. The runtime refuses two handlers
+   and add it to the handler list in
+   `backend/src/app/composition/backgroundJobHandlers.ts`, which
+   `backend/src/app/server/dependencies.ts` passes to
+   `backgroundJobs.createRuntime`. The runtime refuses two handlers
    for one kind, and a worker claims only kinds it has handlers for. Let a
    failure the job should retry reject; resolve with nothing when the work is
    done, or `{ skipped: "reason" }` when it ran but a configured transport

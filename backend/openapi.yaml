@@ -5264,6 +5264,9 @@ components:
                   - consent_key_duplicate
                   - consent_missing_default_variant
                   - consent_text_invalid
+                  - sensitive_slot_without_consent
+                  - consent_step_mixes_fields
+                  - consent_step_needs_default_exit
               location:
                 type: string
               message:

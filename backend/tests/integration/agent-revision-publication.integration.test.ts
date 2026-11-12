@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentRevisionRepository } from "../../src/db/repositories/agentRevisionRepository.js";
 import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
+import { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
+import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { createAgentPublicationProposalAdapter } from "../../src/modules/operatorCopilot/agentPublicationProposalAdapter.js";
 import { AgentRevisionService } from "../../src/modules/agents/agentRevision.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -158,6 +160,62 @@ describeDb("agent revision publication concurrency", () => {
     const second = await repository.createCandidate(workspaceId, exposedAgentId, { id: randomUUID(), expectedDraftGeneration: withdrawn.generation });
     if (second === "conflict") throw new Error("second candidate conflicted");
     await expect(repository.publish({ workspaceId, agentId: exposedAgentId, actorAccountId: null, revisionId: second.id, expectedDraftGeneration: withdrawn.generation, expectedPublishedRevisionId: first.id, idempotencyKey: "expose-v2" })).resolves.toMatchObject({ idempotentReplay: false });
+  });
+
+  it("refuses to publish a sensitive field no consent covers, while the release published before consents keeps serving (#1544)", async () => {
+    const consentAgentId = randomUUID();
+    const lineageId = randomUUID();
+    const english = { locale: "en", body: "We ask whether you are pregnant to book a safe session.", agreeLabel: "I agree", declineLabel: "No thanks" };
+    const routine = (consents?: unknown[]) => ({
+      id: randomUUID(), agentId: consentAgentId, lineageId, version: 1, name: "Book a session", enabled: true,
+      activation: { triggerDescription: "A visitor wants to book a session.", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
+      slots: [{ stableSlotId: "slot_pregnant", key: "pregnant", type: "boolean", required: true, description: null, ordinal: 0, sensitivity: "sensitive" }],
+      steps: [{ stableStepId: "ask_pregnant", kind: "chat", instruction: "Ask whether {{slot.pregnant}}.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: "ask_pregnant", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm the booking.", ordinal: 0 }],
+      ...(consents ? { consents } : {}),
+      createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
+    });
+    const snapshotWith = (routines: unknown[]) => JSON.stringify({ customInstruction: null, directives: [], routines, contextVariableEnablements: [], agentSkills: [] });
+    const legacySnapshot = snapshotWith([routine()]);
+    await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [consentAgentId, workspaceId, "consent"]);
+    // A release published before the coverage rule existed reaches the table the way it did then.
+    const legacyRevisionId = randomUUID();
+    await database.query("INSERT INTO agent_revisions (id,agent_id,workspace_id,snapshot,source_draft_generation,source_base_published_revision_id,published_at,published_version) VALUES ($1,$2,$3,$4::jsonb,1,NULL,now(),1)", [legacyRevisionId, consentAgentId, workspaceId, legacySnapshot]);
+    await database.query("UPDATE agents SET published_revision_id=$1 WHERE id=$2", [legacyRevisionId, consentAgentId]);
+    await database.query("INSERT INTO agent_drafts (agent_id,workspace_id,generation,base_published_revision_id,snapshot) VALUES ($1,$2,1,$3,$4::jsonb)", [consentAgentId, workspaceId, legacyRevisionId, legacySnapshot]);
+    const draftWith = async (routines: unknown[]) => {
+      const draft = await repository.mutateDraft(workspaceId, consentAgentId, (snapshot) => ({ ...snapshot, routines: routines as never }));
+      if (!draft) throw new Error("draft unavailable");
+      return draft.generation;
+    };
+    // The refusal names what to fix in a message the dashboard shows as is.
+    const refusal = (code: string, location: string, named: string) => ({ statusCode: 422, code: "revision_invalid", details: { diagnostics: [expect.objectContaining({ code, location, message: expect.stringContaining(named) })] } });
+
+    // Its next publish asks for the consent, naming the field, at the candidate and again at publish.
+    const uncovered = await draftWith([routine()]);
+    await expect(repository.createCandidate(workspaceId, consentAgentId, { id: randomUUID(), expectedDraftGeneration: uncovered })).rejects.toMatchObject(refusal("sensitive_slot_without_consent", "slot:pregnant", '"pregnant"'));
+    const smuggledCandidateId = randomUUID();
+    await database.query("INSERT INTO agent_revisions (id,agent_id,workspace_id,snapshot,source_draft_generation,source_base_published_revision_id) VALUES ($1,$2,$3,$4::jsonb,$5,$6)", [smuggledCandidateId, consentAgentId, workspaceId, legacySnapshot, uncovered, legacyRevisionId]);
+    await expect(repository.publish({ workspaceId, agentId: consentAgentId, actorAccountId: null, revisionId: smuggledCandidateId, expectedDraftGeneration: uncovered, expectedPublishedRevisionId: legacyRevisionId, idempotencyKey: "uncovered" })).rejects.toMatchObject(refusal("sensitive_slot_without_consent", "slot:pregnant", '"pregnant"'));
+
+    // Meanwhile the release already published keeps serving: the runtime compiles it as published.
+    const runtime = new AgentRevisionRuntimeRepository(database.kysely);
+    const routines = createPublishedRoutineRegistrationSource(new RoutineDefinitionRepository(database.kysely), { revisionReader: runtime });
+    await expect(runtime.findCurrentPublished({ workspaceId, agentId: consentAgentId })).resolves.toMatchObject({ id: legacyRevisionId });
+    const served = await routines.load({ workspaceId, agentId: consentAgentId, agentRevisionId: legacyRevisionId });
+    expect(served.map((registration) => registration.routine.steps.map((step) => step.kind))).toEqual([["chat", "terminal"]]);
+
+    // A consent that covers the field clears the way.
+    const covered = await draftWith([routine([{ key: "pregnancy", slotKeys: ["pregnant"], onDecline: "handoff", variants: [english] }])]);
+    const candidate = await repository.createCandidate(workspaceId, consentAgentId, { id: randomUUID(), expectedDraftGeneration: covered });
+    if (candidate === "conflict") throw new Error("covered candidate conflicted");
+    await expect(repository.publish({ workspaceId, agentId: consentAgentId, actorAccountId: null, revisionId: candidate.id, expectedDraftGeneration: covered, expectedPublishedRevisionId: legacyRevisionId, idempotencyKey: "covered" })).resolves.toMatchObject({ idempotentReplay: false });
+
+    // The agent's default language changes after that publish: the next one needs wording in it.
+    await database.query("UPDATE agents SET greeting_settings = COALESCE(greeting_settings, '{}'::jsonb) || '{\"assistantDefaultLocale\":\"it\"}'::jsonb WHERE id=$1", [consentAgentId]);
+    const italianDefault = await draftWith([routine([{ key: "pregnancy", slotKeys: ["pregnant"], onDecline: "handoff", variants: [english] }])]);
+    await expect(repository.createCandidate(workspaceId, consentAgentId, { id: randomUUID(), expectedDraftGeneration: italianDefault })).rejects.toMatchObject(refusal("consent_missing_default_variant", "consent:pregnancy.variants", '"pregnancy"'));
   });
 
   it("recovers the original adapter publication receipt after a later revision supersedes it", async () => {

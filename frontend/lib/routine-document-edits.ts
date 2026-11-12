@@ -2,6 +2,7 @@ import { mapRoutineOperatorNoticeText } from '@radioso/routine-definition'
 import { blockSegmentsToInstruction, instructionToBlockSegments, slugifyVariableKey, type ApprovalDocOption, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockSlot, type RoutineBlockStep, type RoutineInputBinding } from '@/lib/routine-prose'
 import type { RoutineGuardKind, RoutineStepKind, RoutineTerminalKind } from '@/lib/api-types'
 import { approvalCaptureFieldRef } from '@/lib/routine-approval'
+import { consentsCoveringField, dropFieldFromConsents, renameFieldInConsents } from '@/lib/routine-consent-editor'
 
 const copy = <T>(value: T): T => structuredClone(value)
 
@@ -355,7 +356,7 @@ export const renameSlot = (doc: RoutineBlockDoc, stableSlotId: string, key: stri
     (renamed, ending) => mapEnding(renamed, ending.stableStepId, (current) => current.operatorNotice
       ? { ...current, operatorNotice: renameNoticeSlot(current.operatorNotice, previous.key, nextKey) }
       : current),
-    next,
+    renameFieldInConsents(next, previous.key, nextKey),
   )
 }
 
@@ -464,18 +465,32 @@ export const updateSlot = (doc: RoutineBlockDoc, stableSlotId: string, patch: Pa
 })
 
 // Whether a field's value may leave the conversation (#1543). Normal is the absence of the field,
-// as a saved slot reads back, so a field set back to normal leaves the document as it was.
-export const setSlotSensitivity = (doc: RoutineBlockDoc, stableSlotId: string, sensitive: boolean): RoutineBlockDoc => ({
-  ...copy(doc),
-  information: doc.information.map((slot) => {
-    const next = copy(slot)
-    if (slot.stableSlotId !== stableSlotId) return next
-    delete next.sensitivity
-    return sensitive ? { ...next, sensitivity: 'sensitive' as const } : next
-  }),
-})
+// as a saved slot reads back, so a field set back to normal leaves the document as it was. A
+// consent covers sensitive fields only (#1544), so a field set back to normal leaves every consent
+// that covered it; marking it sensitive again leaves the choice of consent to the operator.
+export const setSlotSensitivity = (doc: RoutineBlockDoc, stableSlotId: string, sensitive: boolean): RoutineBlockDoc => {
+  const next: RoutineBlockDoc = {
+    ...copy(doc),
+    information: doc.information.map((slot) => {
+      const field = copy(slot)
+      if (slot.stableSlotId !== stableSlotId) return field
+      delete field.sensitivity
+      return sensitive ? { ...field, sensitivity: 'sensitive' as const } : field
+    }),
+  }
+  const key = doc.information.find((slot) => slot.stableSlotId === stableSlotId)?.key
+  return sensitive || key === undefined ? next : dropFieldFromConsents(next, key)
+}
 
-export const slotReferences = (doc: RoutineBlockDoc, key: string): string[] => {
+// Every place a field is named. A consent that covers it is one of them, but never a reason to
+// keep the field: removing the field takes it out of the consent (`slotRemovalBlockers`).
+export const slotReferences = (doc: RoutineBlockDoc, key: string): string[] => [
+  ...slotRemovalBlockers(doc, key),
+  ...consentsCoveringField(doc, key).map((consentKey) => `consent ${consentKey}`),
+]
+
+// The references removing a field would leave pointing at nothing, so the operator removes them first.
+export const slotRemovalBlockers = (doc: RoutineBlockDoc, key: string): string[] => {
   const references: string[] = []
   for (const step of doc.steps) {
     if (step.instruction.some((segment) => segment.kind === 'slotReference' && segment.key === key)) references.push(`instruction in ${step.stableStepId}`)
@@ -488,9 +503,11 @@ export const slotReferences = (doc: RoutineBlockDoc, key: string): string[] => {
   return references
 }
 
-export const removeSlot = (doc: RoutineBlockDoc, stableSlotId: string): RoutineBlockDoc => ({
-  ...copy(doc), information: doc.information.filter((slot) => slot.stableSlotId !== stableSlotId).map(copy),
-})
+export const removeSlot = (doc: RoutineBlockDoc, stableSlotId: string): RoutineBlockDoc => {
+  const next = { ...copy(doc), information: doc.information.filter((slot) => slot.stableSlotId !== stableSlotId).map(copy) }
+  const key = doc.information.find((slot) => slot.stableSlotId === stableSlotId)?.key
+  return key === undefined ? next : dropFieldFromConsents(next, key)
+}
 
 export const updateBindings = (doc: RoutineBlockDoc, stepId: string, state: { inputBindings?: Record<string, RoutineInputBinding>; outputAssignments?: Record<string, string>; mode?: 'typed' | 'untyped' }): RoutineBlockDoc => ({
   ...copy(doc), steps: doc.steps.map((step) => step.stableStepId === stepId ? { ...copy(step), ...copy(state) } : copy(step)),

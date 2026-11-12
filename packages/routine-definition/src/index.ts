@@ -92,6 +92,9 @@ export const routineValidationCodes = [
   "consent_key_duplicate",
   "consent_missing_default_variant",
   "consent_text_invalid",
+  "sensitive_slot_without_consent",
+  "consent_step_mixes_fields",
+  "consent_step_needs_default_exit",
 ] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;

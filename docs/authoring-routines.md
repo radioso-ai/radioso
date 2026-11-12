@@ -237,13 +237,48 @@ the value up again is not masked.
 
 Masking keeps a value from travelling. Some values need more: health details,
 religious beliefs, and the other special categories of personal data need the
-visitor's explicit consent before the routine collects them. A routine carries
-that consent in its `consents` list, which you write through the routine API
-(`POST /api/v1/agents/{agentId}/routines` and
-`PATCH /api/v1/agents/{agentId}/routines/{routineId}`). The Document view keeps
-a routine's consents when you save it from there.
+visitor's explicit consent before the routine collects them. That's why every
+field you mark **Sensitive** needs a consent that covers it, and a routine with
+a sensitive field no consent covers doesn't publish.
 
-For the yoga booking above:
+As soon as you turn on **Sensitive**, the field's row in **Collected
+information** reads **Needs a consent before publishing**, next to an **Add
+consent** button. That button adds a consent for the field to the **Consents**
+section underneath, which is where you write it:
+
+- **Asked before collecting** lists the routine's sensitive fields. Pick the ones
+  this consent covers. A field another consent already covers is greyed out,
+  since one consent covers each field.
+- **If the visitor declines** decides what a no does. **Continue without** runs
+  the routine without the covered fields, and **Hand off** ends it and hands the
+  conversation to a person.
+- The wording comes in one box per language, starting with the agent's default
+  language, which every consent needs. Write the text and the two labels, one
+  to agree and one to decline, exactly as you want visitors to read them. The
+  fields the consent covers sit beside the text, so you can name each one in
+  it. **Add a language** adds another box.
+
+You don't place a consent in the flow. Radioso asks it immediately before the
+step that collects the first field it covers, and that step reads **Asks consent
+first** in the document. Here it comes right before the step that asks about
+`@injury`. A routine exposed as a tool leaves covered fields out of its input
+schema, because a calling agent can't consent for a person.
+
+Turning **Sensitive** off takes the field out of every consent that covered it,
+and removing a field does the same. A note under **Collected information** names
+the consent each time. A consent left covering no field doesn't save until you
+pick one for it or remove it.
+
+Ray writes consents with you, in your words. Ask it to add a consent for
+`@injury` and give it the text and both labels for each language, and it
+proposes them exactly as you wrote them, for you to apply. It never writes or
+translates consent wording itself: ask without the wording and it asks you for
+it.
+
+Through the routine API (`POST /api/v1/agents/{agentId}/routines` and
+`PATCH /api/v1/agents/{agentId}/routines/{routineId}`), the routine carries
+its consents in a `consents` list. A `PATCH` that leaves `consents` out keeps
+them, and an empty list removes them all. For the yoga booking above:
 
 ```json
 "consents": [
@@ -270,36 +305,40 @@ For the yoga booking above:
 ```
 
 - `key` names the consent within the routine: letters, digits, and
-  underscores, starting with a letter or underscore.
+  underscores, starting with a letter or underscore. The editor names a new
+  consent after the field it starts with.
 - `slotKeys` lists the sensitive fields the consent covers, at least one.
 - `variants` holds the wording, one per language. The `body` and the two labels
-  are shown exactly as you write them, so write them the way you want them read.
-  One variant must be in the agent's default language, or in English when the
-  agent has none set.
-- `onDecline` is what happens when the visitor says no: `continue` runs the
-  routine without the covered fields, and `handoff` ends it and hands the
-  conversation to a person.
+  are shown exactly as you write them. One variant must be in the agent's
+  default language, or in English when the agent has none set.
+- `onDecline` is `continue` or `handoff`, the two choices above.
 
-You don't place a consent in the flow. Radioso asks it immediately before the
-step that collects the first field it covers, so here it comes right before the
-step that asks about `@injury`. A routine exposed as a tool leaves covered fields out
-of its input schema, because a calling agent can't consent for a person.
-
-Validation names the consent or field to fix:
+Validation names the consent, field, or step to fix. The editor shows each
+note beside the part it's about, and a publish refused for one of them names
+it too:
 
 | Code | What it means |
 |---|---|
+| `sensitive_slot_without_consent` | A field marked **Sensitive** has no consent covering it. |
 | `consent_slot_unknown` | The consent covers a field the routine doesn't declare. |
 | `consent_slot_not_sensitive` | The consent covers a field that isn't marked **Sensitive**. |
 | `consent_slot_covered_twice` | Two consents cover the same field. Keep it in one. |
 | `consent_key_duplicate` | Two consents share a `key`. |
 | `consent_missing_default_variant` | No variant is in the agent's default language. |
 | `consent_text_invalid` | A `body` or label is blank or too long (8,000 characters for a body, 80 for a label), a `locale` isn't a valid language tag or repeats another variant's, the text holds a `{{…}}` reference, or both labels read the same. |
+| `consent_step_mixes_fields` | The consent continues on decline, but the step that collects one of its fields also asks for a field it doesn't cover, so a decline can't skip that step. Ask that field in a step of its own, or hand off on decline. |
+| `consent_step_needs_default_exit` | The consent continues on decline, but the step that collects one of its fields has no default exit, so a decline can't skip that step. Give the step a default exit, or hand off on decline. |
 
 A `consent_text_invalid` location points at the field, such as
-`consent:health.variants[1].agreeLabel`. The checks use the agent's default
-language as it is when you save, validate, or publish, so changing that language
-can stop a routine whose consent has no wording in it from publishing.
+`consent:health.variants[1].agreeLabel`, and the two step codes name the step,
+such as `consent:health.steps.ask_injury`. The checks use the agent's default
+language as it is when you save, validate, or publish, so after you change that
+language, a consent with no wording in it holds the routine's next publish until
+you add some. Visitors keep getting the routine as it was last published until
+then, and the same goes for a routine published before it had a consent: these
+checks hold its next publish, never the one already serving. An agent bundle
+import keeps an imported routine whose sensitive field has no consent in
+service, and the new agent's first publish asks for the consent.
 
 #### What the visitor sees
 

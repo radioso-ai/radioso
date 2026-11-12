@@ -130,4 +130,12 @@ describe("routine consent schema", () => {
       "consent_text_invalid",
     ]));
   });
+
+  it("publishes the coverage codes that hold a routine back from publishing", () => {
+    expect(routineValidationCodes).toEqual(expect.arrayContaining([
+      "sensitive_slot_without_consent",
+      "consent_step_mixes_fields",
+      "consent_step_needs_default_exit",
+    ]));
+  });
 });

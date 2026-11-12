@@ -10,7 +10,7 @@ import type { AgentInput, ConversationAgent } from "../../modules/agents/public.
 import type { AgentService, AuthoredDirectiveService } from "../../modules/agents/public.js";
 import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
 import type { ContextVariableService } from "../../modules/context-variables/public.js";
-import type { RoutineDefinitionService } from "../../modules/routines/public.js";
+import { consentPublishRuleCodes, type RoutineDefinitionService } from "../../modules/routines/public.js";
 import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { WorkspaceModelAvailability } from "../../shared/domain/workspaceModelAvailability.js";
@@ -187,7 +187,9 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
       // The routines an import creates all belong to one freshly created agent, so this resolves
       // that agent's workspace-scoped skill/context-variable state once for the whole batch via
       // `validateManyForServing`, instead of the per-routine `validate` this replaced doing it
-      // once per routine.
+      // once per routine. The port asks whether a routine can run; a consent rule that only holds
+      // back publishing (`consentPublishRuleCodes`) does not make it unrunnable, and the imported
+      // agent's first publish enforces it.
       validateMany: async (workspaceId, agentId, routineIds) => {
         const routines = await Promise.all(
           routineIds.map((routineId) => deps.routineDefinitionService.get(workspaceId, agentId, routineId)),
@@ -195,7 +197,9 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
         const results = await deps.routineDefinitionService.validateManyForServing(workspaceId, routines);
         return new Map(routineIds.map((routineId) => [
           routineId,
-          (results.get(routineId)?.diagnostics ?? []).map((diagnostic) => diagnostic.message),
+          (results.get(routineId)?.diagnostics ?? [])
+            .filter((diagnostic) => !consentPublishRuleCodes.has(diagnostic.code))
+            .map((diagnostic) => diagnostic.message),
         ]));
       },
       setEnabled: async (workspaceId, agentId, routineId, enabled) => {

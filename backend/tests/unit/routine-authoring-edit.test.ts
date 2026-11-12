@@ -254,6 +254,7 @@ describe("routine authoring edits", () => {
       terminals: { done: { kind: "complete", instruction: "Thank them.", operatorNotice: null, ordinal: 0 } },
       completionExport: null,
       exposure: null,
+      consents: {},
     });
   });
 
@@ -356,6 +357,56 @@ describe("routine authoring edits", () => {
     expect(projectRoutineForReview(routine({ exposure }))).toMatchObject({ exposure });
   });
 
+  it("replaces a routine's consents whole, keeps them when the edit leaves them out, and clears them on an empty list (#1544)", () => {
+    const dietary = {
+      key: "dietary",
+      slotKeys: ["order_number"],
+      onDecline: "continue" as const,
+      variants: [
+        { locale: "en", body: "We ask about your diet to prepare your meal.", agreeLabel: "I agree", declineLabel: "No thanks" },
+        { locale: "it", body: "Chiediamo della tua dieta per preparare il pasto.", agreeLabel: "Accetto", declineLabel: "No, grazie" },
+      ],
+    };
+    const sensitive = routine({ slots: [{ ...routine().slots[0], sensitivity: "sensitive" }] });
+
+    const added = applyRoutineFieldPatch(sensitive, routineFieldPatchSchema.parse({ consents: [dietary] }));
+    expect(added.consents).toEqual([dietary]);
+    expect(routineDefinitionDraftInputSchema.parse(added).consents).toEqual([dietary]);
+    expect(added.slots).toEqual(sensitive.slots);
+
+    const stored = routine({ ...sensitive, consents: [dietary] });
+    expect(applyRoutineFieldPatch(stored, routineFieldPatchSchema.parse({ name: "support-intake-v2" })).consents).toEqual([dietary]);
+    expect(applyRoutineFieldPatch(stored, routineFieldPatchSchema.parse({ consents: [] })).consents).toEqual([]);
+  });
+
+  it("refuses a consent edit the stored shape would refuse", () => {
+    const variant = { locale: "en", body: "We ask about your diet.", agreeLabel: "Yes", declineLabel: "No" };
+
+    expect(routineFieldPatchSchema.safeParse({ consents: [{ key: "diet", slotKeys: [], onDecline: "continue", variants: [variant] }] }).success).toBe(false);
+    expect(routineFieldPatchSchema.safeParse({ consents: [{ key: "diet", slotKeys: ["order_number"], onDecline: "ask_again", variants: [variant] }] }).success).toBe(false);
+    expect(routineFieldPatchSchema.safeParse({ consents: [{ key: "diet", slotKeys: ["order_number"], onDecline: "continue", variants: [] }] }).success).toBe(false);
+  });
+
+  it("shows a reviewer each consent by key, with its covered fields, decline choice and wording per language", () => {
+    const consent = {
+      key: "dietary",
+      slotKeys: ["order_number"],
+      onDecline: "handoff" as const,
+      variants: [{ locale: "en", body: "We ask about your diet.", agreeLabel: "I agree", declineLabel: "No thanks" }],
+    };
+
+    expect(projectRoutineForReview(routine())).toMatchObject({ consents: {} });
+    expect(projectRoutineForReview(routine({ consents: [consent] }))).toMatchObject({
+      consents: {
+        dietary: {
+          slotKeys: ["order_number"],
+          onDecline: "handoff",
+          variants: { en: { body: "We ask about your diet.", agreeLabel: "I agree", declineLabel: "No thanks" } },
+        },
+      },
+    });
+  });
+
   it("projects a stored routine and its authoring draft identically, so an untouched field never reads as changed", () => {
     const source = routine();
 
@@ -423,6 +474,15 @@ describe("routine edit descriptions", () => {
       name: "support-intake-v2",
       enabled: false,
     }))).toBe("name, disabled");
+  });
+
+  it("names the consents an edit sets, or that it removes them", () => {
+    const variant = { locale: "en", body: "We ask about your diet.", agreeLabel: "Yes", declineLabel: "No" };
+
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({
+      consents: [{ key: "dietary", slotKeys: ["diet"], onDecline: "continue", variants: [variant] }],
+    }))).toBe("consent dietary");
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({ consents: [] }))).toBe("consents removed");
   });
 
   it("describes a tool exposure change by the tool name a calling agent would see", () => {

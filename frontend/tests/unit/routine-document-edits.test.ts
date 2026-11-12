@@ -21,8 +21,10 @@ import {
   renameStep,
   replaceInstruction,
   setEndingNotice,
+  removeSlot,
   setSlotSensitivity,
   slotReferences,
+  slotRemovalBlockers,
   targetBranchAtStep,
   updateApproval,
   updateBindings,
@@ -557,6 +559,39 @@ describe('slot sensitivity', () => {
     // Normal is the absence of the field, as a saved slot reads back, so setting it back leaves
     // a document equal to the one before it was marked.
     expect(setSlotSensitivity(sensitive, 'email', false)).toEqual(doc)
+  })
+})
+
+describe('fields a consent covers (#1544)', () => {
+  const consent = { key: 'contact', slotKeys: ['email'], onDecline: 'continue' as const, variants: [{ locale: 'en', body: 'We ask for your email to reply.', agreeLabel: 'Yes', declineLabel: 'No' }] }
+  const covered = (): RoutineBlockDoc => ({ ...setSlotSensitivity(source(), 'email', true), consents: [consent] })
+
+  it('renames a covered field in its consent, and lists the consent among the field references', () => {
+    const renamed = renameSlot(covered(), 'email', 'Customer email')
+
+    expect(renamed.consents?.[0]?.slotKeys).toEqual(['customer_email'])
+    expect(slotReferences(renamed, 'customer_email')).toContain('consent contact')
+    expect(slotReferences(renamed, 'email')).toEqual([])
+  })
+
+  it('takes a removed field out of its consent, and a consent alone never blocks the removal', () => {
+    const withoutInstruction = replaceInstruction(covered(), 'ask_email', [{ kind: 'text', text: 'Ask how we can help.' }])
+
+    expect(slotReferences(withoutInstruction, 'email')).toEqual(['consent contact'])
+    expect(slotRemovalBlockers(withoutInstruction, 'email')).toEqual([])
+    expect(slotRemovalBlockers(covered(), 'email')).toEqual(['instruction in ask_email'])
+    const removed = removeSlot(withoutInstruction, 'email')
+    expect(removed.information).toEqual([])
+    expect(removed.consents).toEqual([{ ...consent, slotKeys: [] }])
+  })
+
+  it('takes a field no longer sensitive out of every consent, since a consent covers sensitive fields only', () => {
+    const normal = setSlotSensitivity(covered(), 'email', false)
+
+    expect(normal.information[0]).not.toHaveProperty('sensitivity')
+    expect(normal.consents).toEqual([{ ...consent, slotKeys: [] }])
+    // Marking it sensitive again does not quietly put it back: the operator picks the consent.
+    expect(setSlotSensitivity(normal, 'email', true).consents).toEqual([{ ...consent, slotKeys: [] }])
   })
 })
 

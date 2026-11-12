@@ -49,6 +49,11 @@ constructing ad hoc fetches.
   `embed-locale-packs.ts` owns the built-in translations; the launcher cannot
   import it, so `embed-launcher-script.ts` writes the packs and copy keys into
   the script as `/radioso-embed.js` serves it.
+- `routine-consent-editor.ts`: a routine's consents in the Document view — the
+  sensitive fields each covers, the decline choice, and the wording per language,
+  edited through the exact-greeting variant transitions — plus where each is asked
+  and where a validation finding belongs. `routine-document-edits.ts` keeps them in
+  step when a field is renamed, removed, or set back to normal.
 - `privacy-notice.ts`: the agent's privacy notice on the visitor surfaces — which
   language's notice a visitor sees (the backend's rule: their language, else
   English, else the first), and the Privacy notice card's form, which saves only

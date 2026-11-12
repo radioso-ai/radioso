@@ -42,6 +42,7 @@ import {
 import {
   formToRoutineDraft,
   renderedDraftTargets,
+  routineDraftError,
   routineLevelDiagnostics,
   buildCompletionExportPayloadPreview,
   routineContentUpdatePayload,
@@ -75,31 +76,6 @@ const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
   terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
 })
-
-const draftError = (draft: RoutineDefinitionDraft): string | null => {
-  if (!draft.name.trim()) return 'Name is required.'
-  if (!draft.activation.triggerDescription.trim()) return 'Activation trigger is required.'
-  if (draft.steps.length === 0 || draft.steps.some((step) => !step.instruction.trim())) {
-    return 'Each routine needs at least one step with an instruction.'
-  }
-  if (draft.terminals.length === 0) return 'At least one terminal is required.'
-  if (draft.steps.some((step) => step.kind === 'tool' && !step.toolRef?.trim())) {
-    return 'Tool steps need a tool reference.'
-  }
-  if (draft.steps.some((step) => step.kind === 'action' && !step.actionType?.trim())) {
-    return 'Action steps need an action type.'
-  }
-  if (draft.steps.some((step) => (step.options ?? []).some((option) => !option.label.trim()))) {
-    return 'Each approval option needs a label.'
-  }
-  if (draft.completionExport?.enabled && !draft.completionExport.destinationRef.trim()) {
-    return 'Completion export needs a webhook destination.'
-  }
-  if (draft.completionExport?.enabled && draft.completionExport.triggerKinds.length === 0) {
-    return 'Completion export needs at least one terminal trigger.'
-  }
-  return null
-}
 
 const draftAsRoutine = (draft: RoutineDefinitionDraft, routine?: RoutineDefinition | null): RoutineDefinition => ({
   ...draft,
@@ -249,11 +225,14 @@ export function AssistantRoutinesSection({
   agentId,
   routeState,
   onSaveStateChange,
+  agentDefaultLocale,
 }: {
   accountId: string
   agentId: string
   routeState?: DashboardRouteState
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
+  // The language every consent needs wording in (#1544).
+  agentDefaultLocale?: string
 }) {
   if (routeState?.agentRoutineId) {
     return (
@@ -263,6 +242,7 @@ export function AssistantRoutinesSection({
         routeState={routeState}
         routineRouteId={routeState.agentRoutineId}
         onSaveStateChange={onSaveStateChange}
+        agentDefaultLocale={agentDefaultLocale}
       />
     )
   }
@@ -450,12 +430,14 @@ function RoutineEditorScreen({
   routeState,
   routineRouteId,
   onSaveStateChange,
+  agentDefaultLocale,
 }: {
   accountId: string
   agentId: string
   routeState: DashboardRouteState
   routineRouteId: string
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
+  agentDefaultLocale?: string
 }) {
   const router = useRouter()
   const isNewRoutine = routineRouteId === 'new'
@@ -534,7 +516,7 @@ function RoutineEditorScreen({
   )
   const activeRoutineDraftError = useMemo(
     () => {
-      return activeRoutineDraft ? draftError(activeRoutineDraft) : 'Routine draft is not ready.'
+      return activeRoutineDraft ? routineDraftError(activeRoutineDraft) : 'Routine draft is not ready.'
     },
     [activeRoutineDraft],
   )
@@ -708,7 +690,7 @@ function RoutineEditorScreen({
   const saveDraft = async ({ refreshEditor = true }: { refreshEditor?: boolean } = {}): Promise<RoutineDefinition | null> => {
     const draft = activeRoutineDraft
     if (!draft) return null
-    const errorMessage = activeRoutineDraftError ?? draftError(draft)
+    const errorMessage = activeRoutineDraftError ?? routineDraftError(draft)
     if (errorMessage) {
       setError(errorMessage)
       setValidatedDraftSignature(null)
@@ -977,6 +959,7 @@ function RoutineEditorScreen({
                 key={`${agentId}:${documentSessionNonce}`}
                 draft={activeRoutineDraft}
                 diagnostics={validationDiagnostics}
+                agentDefaultLocale={agentDefaultLocale}
                 onOpenDraftAssist={onOpenDraftAssist}
                 onDraftChange={(nextDraft) => {
                   // Completion export is edited in the panel below, not in the document, so

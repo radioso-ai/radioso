@@ -116,6 +116,7 @@ export type RoutineTerminal = Omit<ApiSchemas['RoutineDefinition']['terminals'][
 export type RoutineOperatorNotice = NonNullable<RoutineTerminal['operatorNotice']>
 export type RoutineCompletionExport = NonNullable<ApiSchemas['RoutineDefinition']['completionExport']>
 export type RoutineExposure = NonNullable<ApiSchemas['RoutineDefinition']['exposure']>
+export type RoutineConsent = NonNullable<ApiSchemas['RoutineDefinition']['consents']>[number]
 export type RoutineDefinitionDraft = {
   name: string
   // Whether the routine may activate. Optional on the draft shape so a caller that never reads
@@ -140,6 +141,9 @@ export type RoutineDefinitionDraft = {
   // How the routine is offered to calling AI agents as a named tool. Absent means not offered;
   // omitted from an update payload means unchanged, the same as completionExport.
   exposure?: RoutineExposure
+  // The consents visitors give before a sensitive field is collected (#1544). Omitted from an
+  // update payload means unchanged; an empty list removes them.
+  consents?: RoutineConsent[]
 }
 export type RoutineDefinition = RoutineDefinitionDraft & {
   id: string

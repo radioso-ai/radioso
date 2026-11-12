@@ -32,8 +32,6 @@ import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
 import type { TurnOutcome, TurnRenderContext, TurnSkill, TurnStreamResult } from "./turnOutcome.js";
 import {
   computeGroundingSummary,
-  declineReasonForCommittedOutcome,
-  type CommittedDeclineOutcome,
   type GroundingSummary,
   type GroundingVerdict,
 } from "./groundingAssertions.js";
@@ -43,7 +41,7 @@ import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { RetrievalAnswerMetrics } from "./retrievalAnswerMetrics.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 import { GroundedAnswerHeadReader, headOfCompletedEnvelope } from "./groundedAnswerHeadReader.js";
-import { steeringForKnownVerdict, type RoutinePendingStep } from "../../../shared/domain/steeringRule.js";
+import { steeringForKnownVerdict } from "../../../shared/domain/steeringRule.js";
 import {
   buildAnswerCoverageAssessmentFromHead,
   buildDeterministicZeroEvidenceAssessment,
@@ -51,35 +49,21 @@ import {
 } from "./answerCoverageFromHead.js";
 import { REQUEST_FOCUS_MAX_LENGTH } from "../../answerCoverage/public.js";
 import type { AnswerCoverageAssessment, RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
-
-class GroundingStreamGateBoundError extends Error {
-  constructor() {
-    super("grounding_stream_gate_bound");
-    this.name = "GroundingStreamGateBoundError";
-  }
-}
-
-/** Abort reason for the model stream when a coverage verdict sink yields the turn (#1260, FR-006). */
-class CoverageVerdictYieldedError extends Error {
-  constructor() {
-    super("coverage_verdict_yielded");
-    this.name = "CoverageVerdictYieldedError";
-  }
-}
-
-/** The compose-stage trace metrics that were measured; none when nothing was. */
-const measuredTraceMetrics = (metrics: Record<string, number | undefined>): { traceMetrics?: Record<string, number> } => {
-  const measured = Object.fromEntries(
-    Object.entries(metrics).filter((entry): entry is [string, number] => entry[1] !== undefined),
-  );
-  return Object.keys(measured).length > 0 ? { traceMetrics: measured } : {};
-};
-
-/** How many links the answer carried to addresses its model was not given; none when it carried none. */
-const unwrappedLinkCount = (unwrapped: readonly unknown[]): number | undefined => unwrapped.length || undefined;
-
-const combineAbortSignals = (turnSignal: AbortSignal | undefined, gateSignal: AbortSignal): AbortSignal =>
-  turnSignal ? AbortSignal.any([turnSignal, gateSignal]) : gateSignal;
+import {
+  blankDeclineCommitment,
+  blankDeclineReason,
+  declinePendingRoutineStep,
+  shouldSuppressUnsupportedDraft,
+  type EnvelopeAnswer,
+  type PageContextAnswer,
+} from "./groundedAnswerDeclines.js";
+import {
+  combineAbortSignals,
+  CoverageVerdictYieldedError,
+  GroundingStreamGateBoundError,
+  measuredTraceMetrics,
+  unwrappedLinkCount,
+} from "./retrievalTurnStreamSupport.js";
 
 /** The outcome kind a grounded/retrieval turn produces (chat-side renderer tag). */
 export const RETRIEVAL_OUTCOME_KIND = "retrieval";
@@ -89,73 +73,6 @@ export const RETRIEVAL_TURN_SKILL = builtInAnswerSkills.retrieval;
 
 export const buildRetrievalTurnOutcome = (session: PreparedSession): TurnOutcome =>
   buildPreparedTurnOutcome(session, { kind: RETRIEVAL_OUTCOME_KIND, skillName: RETRIEVAL_TURN_SKILL });
-
-/**
- * Enforces the v2 grounding protocol at delivery time. A valid answer envelope must carry at
- * least one in-range sourced assertion; lexical similarity is not evidence and cannot turn an
- * anchor-free draft into a grounded answer. Admitted page evidence is a source of its own.
- */
-const shouldSuppressUnsupportedDraft = (
-  session: PreparedSession,
-  envelope: Pick<GroundedAnswerEnvelope, "parseStatus" | "outcome">,
-  summary: GroundingSummary,
-): boolean =>
-  session.retrieval.contexts.length > 0
-  && !admitsPageEvidence(session.pageReadOutcome)
-  && envelope.parseStatus === "valid_v2"
-  && envelope.outcome === "answer"
-  && summary.sourcedClaimCount === 0;
-
-/**
- * A routine that yielded this turn stays parked on a step, and the answer closes by
- * pointing back to it (#1377) — unless the answer hands the visitor to a person. On an
- * agent set to hand retrieval misses over, a `no_support` decline is that hand-off. A
- * composed decline there gets no lead-back; a grounded answer commits its own outcome, so
- * its prompt tells it to leave the lead-back out of a `no_support` decline.
- */
-const declinePendingRoutineStep = (session: PreparedSession): RoutinePendingStep | undefined =>
-  session.agent.handoffOnRetrievalMiss === true ? undefined : session.routineYield?.pendingStep;
-
-/**
- * The decline (`no_support` or `out_of_scope`) the grounded answer committed in a valid
- * head without writing any text for it, or `null` when it did not. The commitment is
- * still a valid verdict, so the turn delivers the focused decline that outcome promised
- * instead of failing as a blank generation; a tail that failed to parse after the head
- * does not take it back. An empty `answer` commitment, or a decline outcome on a head
- * that did not parse, stays a generation failure.
- */
-const blankDeclineCommitment = (
-  envelope: Pick<GroundedAnswerEnvelope, "protocolVersion" | "coverage" | "requestFocus" | "outcome">,
-  answer: string,
-): CommittedDeclineOutcome | null => {
-  if (answer.trim()) {
-    return null;
-  }
-  const outcome = headOfCompletedEnvelope(envelope)?.outcome;
-  return outcome === "no_support" || outcome === "out_of_scope" ? outcome : null;
-};
-
-/**
- * The reason a blank decline is presented with. The composed decline only words the
- * reply; why the turn declined is what the head committed, so an `out_of_scope`
- * commitment never becomes a content gap that hands the visitor off. A decline model
- * that could not generate at all leaves the turn unavailable instead.
- */
-const blankDeclineReason = (committed: CommittedDeclineOutcome, composed: ComposedDecline): TurnDeclineReason =>
-  composed.declineReason === "generation_unavailable"
-    ? composed.declineReason
-    : declineReasonForCommittedOutcome(committed);
-
-/**
- * What a grounded envelope call answered with: text, or a decline its head committed
- * without writing any, whose wording the caller composes.
- */
-type EnvelopeAnswer =
-  | { kind: "answer"; envelope: GroundedAnswerEnvelope }
-  | { kind: "blank_decline"; committed: CommittedDeclineOutcome };
-
-/** What the page-context call produced; `no_page` when the turn carries no page to answer from. */
-type PageContextAnswer = EnvelopeAnswer | { kind: "no_page" };
 
 /**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the

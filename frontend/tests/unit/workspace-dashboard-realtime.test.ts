@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 describe('canonical workspace dashboard realtime wiring', () => {
   it('derives the browser interest from the server-resolved realtime flag', async () => {
-    const source = await readFile('app/w/[workspaceKey]/[[...segments]]/page.tsx', 'utf8')
+    const source = await readFile('app/(workspace-app)/w/[workspaceKey]/[[...segments]]/page.tsx', 'utf8')
 
     expect(source).toContain('realtimeEnabled')
     expect(source).toContain('WorkspaceEventsProvider')

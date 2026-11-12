@@ -6,7 +6,7 @@ export type * from "./replyBlocks.js";
 
 export interface RenderableTurn {
   answer: string;
-  /** Sources the turn grounded on; carries {@link ConversationCitation}[] when present. */
+  /** Sources the turn grounded on; carries `ConversationCitation[]` when present. */
   citations?: unknown[];
   suggestions?: unknown[];
   /** Structured parts of the reply a channel renders beside its text, such as picture cards. */

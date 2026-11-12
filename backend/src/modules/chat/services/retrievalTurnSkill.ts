@@ -561,7 +561,7 @@ export class RetrievalAnswerComposer {
         answer = envelope.answer;
         plannedSuggestions = envelope.suggestions;
         metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
-        replyBlocks = replyTurn?.build(envelope.extras);
+        replyBlocks = replyTurn?.build(envelope);
         grounding = summary;
         this.answerMetrics.groundingOutcome(summary, envelope, false);
       }
@@ -934,7 +934,7 @@ export class RetrievalAnswerComposer {
         // Resolved only for the answer that ships: a replaced draft's plan and grades
         // describe text the visitor never sees.
         metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
-        replyBlocks = replyTurn?.build(finalized.extras);
+        replyBlocks = replyTurn?.build(finalized);
         grounding = summary;
         this.answerMetrics.groundingOutcome(summary, finalized, true);
       }

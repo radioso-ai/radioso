@@ -8,6 +8,7 @@ import { setTraceAttributes } from "../../../../shared/observability/tracing/ope
 import type { EvidenceImageAttacher } from "../../../retrieval/public.js";
 import type { ReplyImageUrls, StoredReplyBlock } from "../../contracts/replyBlocks.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
+import type { GroundedAnswerEnvelope } from "../groundedAnswerEnvelope.js";
 import { presentHeadSchemaExtension, readPresentHead } from "./presentHead.js";
 import { buildReplyBlock, presentReplyBlocks, type ReplyBlockDropReason } from "./replyBlockBuilder.js";
 import { TurnImageLedger } from "./turnImageLedger.js";
@@ -24,8 +25,11 @@ export interface ReplyBlockTurn {
   readonly schemaExtension: AnswerSchemaExtension;
   /** The Result images section of the answer prompt. */
   readonly promptSection: string;
-  /** The blocks the model's `present` field asks for, or undefined when it asks for none. */
-  build(extras: Record<string, unknown> | undefined): PresentedReplyBlocks | undefined;
+  /**
+   * The blocks the model's `present` field asks for, or undefined when it asks for none or the
+   * envelope declines: cards belong to an answer, never to a `no_support` or `out_of_scope` reply.
+   */
+  build(envelope: Pick<GroundedAnswerEnvelope, "outcome" | "extras">): PresentedReplyBlocks | undefined;
 }
 
 interface ReplyBlockTurnFactoryDependencies {
@@ -64,8 +68,8 @@ export class ReplyBlockTurnFactory {
       promptSection: renderPromptTemplate("chat/answer-present-images.md", {
         image_lines: ledger.promptLines().join("\n"),
       }),
-      build: (extras) => {
-        const head = readPresentHead(extras);
+      build: ({ outcome, extras }) => {
+        const head = outcome === "answer" ? readPresentHead(extras) : null;
         if (!head) {
           return undefined;
         }

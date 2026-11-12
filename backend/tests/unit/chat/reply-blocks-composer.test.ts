@@ -198,6 +198,26 @@ describe("reply blocks on the grounded answer", () => {
     expect(streamed.finalPresentation.replyBlocks).toBeUndefined();
   });
 
+  it("returns no block on an inline decline, even when the model picked pictures", async () => {
+    for (const outcome of ["no_support", "out_of_scope"]) {
+      const raw = envelope({
+        coverage: outcome === "no_support" ? "unanswered_insufficient_evidence" : "unanswered_intentional_scope_boundary",
+        outcome,
+        answer: "I can't confirm that one, but I can help with our hiking guides.",
+        claims: [],
+      });
+      const { composer } = buildComposer(raw);
+
+      const composed = await composer.composeAnswer(session(), "Which hiking guides do you have?", "en", undefined);
+      const streamed = await drain(composer.streamAnswer(session(), "Which hiking guides do you have?", "en", undefined));
+
+      expect(composed.answer).toBe("I can't confirm that one, but I can help with our hiking guides.");
+      expect(composed.replyBlocks).toBeUndefined();
+      expect(streamed.finalPresentation.answer).toBe("I can't confirm that one, but I can help with our hiking guides.");
+      expect(streamed.finalPresentation.replyBlocks).toBeUndefined();
+    }
+  });
+
   it("returns no block when an unsupported draft is replaced by a decline", async () => {
     const raw = envelope({ answer: "We carry two hiking guides.", claims: [] });
     const { composer } = buildComposer(raw);

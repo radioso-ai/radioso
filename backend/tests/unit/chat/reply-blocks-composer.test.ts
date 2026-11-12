@@ -150,8 +150,9 @@ describe("reply blocks on the grounded answer", () => {
     const properties = Object.keys((input?.generation?.responseFormat?.schema.properties ?? {}));
     expect(properties.at(-1)).toBe("present");
     expect(input?.prompt).toContain("Result images");
-    expect(input?.prompt).toContain("Result 1: [m1] (primary)");
+    expect(input?.prompt).toContain("Result 1: [m1] main picture");
     expect(input?.systemPrompt).toContain("`present`");
+    expect(input?.systemPrompt).toContain("A main picture is the Result's own picture");
   });
 
   it("returns the same block when streaming", async () => {

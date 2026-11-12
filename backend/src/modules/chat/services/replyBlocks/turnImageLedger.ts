@@ -33,12 +33,14 @@ const quotedText = (value: string): string => {
   return capped.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 };
 
+/**
+ * A primary image is named "main picture", the term `answer-present-head.md` defines, so the model
+ * can tell a Result's own picture, such as a product's cover, from one inside its page.
+ */
 const describeEntry = (entry: LedgerEntry): string => {
-  if (entry.role === "primary") {
-    return `[${entry.handle}] (primary)`;
-  }
+  const label = entry.role === "primary" ? `[${entry.handle}] main picture` : `[${entry.handle}]`;
   const text = quotedText(entry.caption?.trim() || entry.alt);
-  return text ? `[${entry.handle}] "${text}"` : `[${entry.handle}]`;
+  return text ? `${label} "${text}"` : label;
 };
 
 /**
@@ -88,7 +90,7 @@ export class TurnImageLedger {
     return this.byHandle.get(handle);
   }
 
-  /** One line per Result that carries images: `Result 3: [m7] (primary) · [m8] "Gentians…"`. */
+  /** One line per Result that carries images: `Result 3: [m7] main picture · [m8] "Gentians…"`. */
   promptLines(): string[] {
     const byResult = new Map<number, LedgerEntry[]>();
     for (const entry of this.entries) {

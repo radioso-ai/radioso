@@ -35,9 +35,17 @@ describe("TurnImageLedger", () => {
     expect(ledger.entry("m3")).toMatchObject({ imageId: "cover-3", resultNumber: 3 });
     expect(ledger.entry("m4")).toBeUndefined();
     expect(ledger.promptLines()).toEqual([
-      'Result 1: [m1] (primary) · [m2] "Gentians on the ridge"',
-      "Result 3: [m3] (primary)",
+      'Result 1: [m1] main picture · [m2] "Gentians on the ridge"',
+      "Result 3: [m3] main picture",
     ]);
+  });
+
+  it("quotes a main picture's own description when the page gives one", () => {
+    const ledger = TurnImageLedger.fromEvidence([
+      item(1, [image("cover", { role: "primary", alt: "Cover of the alpine flower guide" })]),
+    ]);
+
+    expect(ledger.promptLines()).toEqual(['Result 1: [m1] main picture "Cover of the alpine flower guide"']);
   });
 
   it("gives one image found in two documents a single handle, on its first item", () => {

@@ -8841,6 +8841,14 @@ export interface components {
             metadataFilter?: {
                 [key: string]: unknown;
             };
+            clientContextCapabilities?: {
+                "reply.blocks"?: {
+                    item_list?: {
+                        /** @description The layouts the client draws an item list in: `carousel`, `grid`, `list`. A layout left out reaches the client as `list`. */
+                        layouts: string[];
+                    };
+                };
+            };
             previewRoutineIds?: string[];
         };
         /** @description `message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`. */
@@ -32479,7 +32487,7 @@ export interface operations {
             path: {
                 /** @description The image's id, from the `image.src` of a reply block item. */
                 imageId: string;
-                /** @description The rendition width in pixels. */
+                /** @description The rendition width in pixels, spelled exactly: 320 or 640. */
                 width: "320" | "640";
             };
             cookie?: never;

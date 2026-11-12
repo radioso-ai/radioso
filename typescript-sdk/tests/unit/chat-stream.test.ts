@@ -13,7 +13,7 @@ const streamFromText = (value: string): ReadableStream<Uint8Array> =>
   });
 
 describe("chat stream", () => {
-  it("parses a reply block event and the blocks on done", async () => {
+  it("declares reply blocks and parses a block event and the blocks on done", async () => {
     const block = {
       type: "item_list",
       id: "b1",
@@ -41,11 +41,14 @@ describe("chat stream", () => {
     );
     const client = createRadiosoClient({ baseUrl: "https://api.example.com", apiToken: "token-123", fetch: fetchMock });
 
+    const clientContextCapabilities = { "reply.blocks": { item_list: { layouts: ["carousel", "grid"] } } };
     const events = [];
-    for await (const event of client.chat.stream({ message: "hi", conversationId: undefined })) {
+    for await (const event of client.chat.stream({ message: "hi", conversationId: undefined, clientContextCapabilities })) {
       events.push(event);
     }
 
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({ message: "hi", stream: true, clientContextCapabilities });
     expect(events).toEqual([
       { type: "chunk", text: "We carry two." },
       { type: "block", conversationId: "c1", assistantMessageId: "m1", block },

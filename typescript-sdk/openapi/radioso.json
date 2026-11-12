@@ -15558,6 +15558,33 @@
             "type": "object",
             "additionalProperties": {}
           },
+          "clientContextCapabilities": {
+            "type": "object",
+            "properties": {
+              "reply.blocks": {
+                "type": "object",
+                "properties": {
+                  "item_list": {
+                    "type": "object",
+                    "properties": {
+                      "layouts": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 32
+                        },
+                        "maxItems": 16,
+                        "description": "The layouts the client draws an item list in: `carousel`, `grid`, `list`. A layout left out reaches the client as `list`."
+                      }
+                    },
+                    "required": [
+                      "layouts"
+                    ]
+                  }
+                }
+              }
+            }
+          },
           "previewRoutineIds": {
             "type": "array",
             "items": {
@@ -63409,10 +63436,10 @@
                 "320",
                 "640"
               ],
-              "description": "The rendition width in pixels."
+              "description": "The rendition width in pixels, spelled exactly: 320 or 640."
             },
             "required": true,
-            "description": "The rendition width in pixels.",
+            "description": "The rendition width in pixels, spelled exactly: 320 or 640.",
             "name": "width",
             "in": "path"
           }

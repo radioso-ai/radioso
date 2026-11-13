@@ -61,7 +61,7 @@ const conversationList = {
   assistantBootstrapActive: false,
   conversations: [{
     id: 'conversation-1', agentId: null, agentName: null, agentInternalName: null, sourceChannel: 'website_embed',
-    callerKind: 'human', sourceOrigin: null, channelContext: null, anonymousSessionId: null, entryPageUrl: null,
+    callerKind: 'human' as const, sourceOrigin: null, channelContext: null, anonymousSessionId: null, entryPageUrl: null,
     visitorCountry: null, title: null, createdAt: '2026-11-13T10:00:00.000Z', updatedAt: '2026-11-13T10:00:00.000Z',
     messageCount: 1, userMessageCount: 0, assistantMessageCount: 1, preview: 'Two tours leave at dawn.',
   }],

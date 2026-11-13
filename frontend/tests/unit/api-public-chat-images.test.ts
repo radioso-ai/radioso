@@ -10,6 +10,7 @@ vi.mock('@/lib/api-client', async (importActual) => ({
 }))
 
 import { publicChatApi } from '@/lib/api-public-chat'
+import type { ChatStreamCompletion, ReplyBlock } from '@/lib/api-types'
 
 const IMAGE_ID = '6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12'
 
@@ -90,5 +91,38 @@ describe('reading a visitor photo back', () => {
     vi.stubGlobal('fetch', vi.fn(async () => respond(404, { error: { code: 'not_found', message: 'Image not found' } })))
 
     await expect(publicChatApi.fetchImage('chat-token', IMAGE_ID)).rejects.toMatchObject({ status: 404 })
+  })
+})
+
+describe('a reply the server sends whole instead of as a stream', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('hands the reply blocks over with the completion', async () => {
+    const block: ReplyBlock = {
+      type: 'item_list',
+      id: 'block-1',
+      layout: 'grid',
+      selection: 'none',
+      caption: 'Rooms at the guest house',
+      items: [{
+        key: 'image-1',
+        title: 'Garden room',
+        image: { src: 'https://app.example/backend/api/v1/public/reply-images/image-1/640', alt: 'A bright room opening onto the garden', width: 640, height: 480 },
+        actions: [],
+      }],
+    }
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      respond(200, { conversationId: 'conversation-1', assistantMessageId: 'assistant-1', answer: 'Here are the rooms.', blocks: [block] })))
+    let donePayload: ChatStreamCompletion | undefined
+
+    await publicChatApi.streamMessage('chat-token', { message: 'What do the rooms look like?', stream: true }, {
+      onDone: (payload) => {
+        donePayload = payload
+      },
+    })
+
+    expect(donePayload).toMatchObject({ conversationId: 'conversation-1', answer: 'Here are the rooms.', blocks: [block] })
   })
 })

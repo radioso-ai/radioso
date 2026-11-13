@@ -174,6 +174,7 @@ export const publicChatApi = {
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         suggestions: payload.suggestions,
+        blocks: payload.blocks,
         ownership: payload.ownership,
         debug: payload.debug,
       })

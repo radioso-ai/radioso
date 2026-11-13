@@ -1,6 +1,7 @@
 import type {
   AnswerSegment,
   ChatResponse,
+  ChatStreamBlock,
   ChatStreamChunk,
   ChatStreamCancelled,
   ChatStreamCompletion,
@@ -12,6 +13,7 @@ import type {
   Citation,
   ActivitySummary,
   ActivityTrace,
+  ReplyBlock,
 } from './api-types'
 
 export const parseSseEvent = (rawEvent: string) => {
@@ -37,6 +39,12 @@ export const parseSseEvent = (rawEvent: string) => {
   }
 }
 
+/** The reply's blocks with one more: a block sent again under the same id takes its first place. */
+const withReplyBlock = (blocks: ReplyBlock[], block: ReplyBlock): ReplyBlock[] =>
+  blocks.some(({ id }) => id === block.id)
+    ? blocks.map((shown) => (shown.id === block.id ? block : shown))
+    : [...blocks, block]
+
 export const streamChatEvents = async (
   response: Response,
   handlers: ChatStreamHandlers,
@@ -53,6 +61,8 @@ export const streamChatEvents = async (
   let citations: Citation[] | undefined
   let answerSegments: AnswerSegment[] | undefined
   let suggestions: ChatSuggestion[] | undefined
+  // Each `block` event carries one reply block, kept once per id; `done.blocks` repeats them all and wins.
+  let blocks: ReplyBlock[] | undefined
   let assistantMessageId: string | undefined
   let agentId: string | undefined
   let agentName: string | undefined
@@ -79,6 +89,7 @@ export const streamChatEvents = async (
       | (ChatStreamCancelled & { type?: 'cancelled' })
       | (ChatStreamSuggestions & { type?: 'suggestions' })
       | (ChatStreamSkill & { type?: 'skill' })
+      | (ChatStreamBlock & { type?: 'block' })
       | (ChatStreamCompletion & { type?: 'done' })
 
     const normalizedEventName =
@@ -111,6 +122,15 @@ export const streamChatEvents = async (
       return
     }
 
+    if (normalizedEventName === 'block') {
+      const blockPayload = payload as ChatStreamBlock
+      conversationId = blockPayload.conversationId ?? conversationId
+      assistantMessageId = blockPayload.assistantMessageId ?? assistantMessageId
+      blocks = withReplyBlock(blocks ?? [], blockPayload.block)
+      handlers.onBlock?.({ conversationId, assistantMessageId, block: blockPayload.block, blocks })
+      return
+    }
+
     if (normalizedEventName === 'done') {
       const completionPayload = payload as ChatStreamCompletion
       conversationId = completionPayload.conversationId ?? conversationId
@@ -121,6 +141,7 @@ export const streamChatEvents = async (
       citations = completionPayload.citations
       answerSegments = completionPayload.answerSegments
       suggestions = completionPayload.suggestions
+      blocks = completionPayload.blocks ?? blocks
       activitySummary = completionPayload.debug?.activitySummary
       activityTrace = completionPayload.debug?.activityTrace
       route = completionPayload.debug?.route
@@ -135,6 +156,7 @@ export const streamChatEvents = async (
         citations,
         answerSegments,
         suggestions,
+        blocks,
         ownership,
         debug: completionPayload.debug,
         skill: completionPayload.skill,
@@ -198,6 +220,7 @@ export const streamChatEvents = async (
     citations,
     answerSegments,
     suggestions,
+    ...(blocks ? { blocks } : {}),
     ownership,
     ...(debug ? { debug } : {}),
     ...(activitySummary ? { activitySummary } : {}),

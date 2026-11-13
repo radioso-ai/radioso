@@ -9,6 +9,7 @@ import type {
   ChatSuggestion,
   ChatUserInputMetadata,
   Citation,
+  ReplyBlock,
   SkillStreamPayload,
 } from '@/lib/api'
 import type { WebsiteEmbedCopy } from '@/lib/embed-widget'
@@ -23,6 +24,8 @@ export interface ChatMessage {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  /** The reply's blocks, such as picture cards, shown under its text. */
+  blocks?: ReplyBlock[]
   answerFeedback?: AnswerFeedbackState
   answerFeedbackEntries?: AnswerFeedbackEntry[]
   activitySummary?: ActivitySummary
@@ -83,6 +86,7 @@ export const toChatMessagesFromTurns = (
       citations: message.citations,
       answerSegments: toPublicAnswerSegments(message.answerSegments),
       suggestions: stripPublicSuggestionCitations(message.suggestions),
+      blocks: message.blocks,
       answerFeedback: message.role === 'assistant'
         ? resolveOwnFeedback(message.answerFeedbackEntries, chatSessionId)
         : undefined,
@@ -125,6 +129,14 @@ export const toChatMessages = (
   detail: ChatConversationDetail,
   chatSessionId?: string | null,
 ): ChatMessage[] => toChatMessagesFromTurns(detail.messages, chatSessionId)
+
+export const getLatestAssistantMessage = (
+  detail: ChatConversationDetail,
+  chatSessionId?: string | null,
+): ChatMessage | null => {
+  const assistantMessages = toChatMessages(detail, chatSessionId).filter((message) => message.role === 'assistant')
+  return assistantMessages.at(-1) ?? null
+}
 
 export const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
   message.role === 'assistant' && isHumanAuthoredSource(message.source)

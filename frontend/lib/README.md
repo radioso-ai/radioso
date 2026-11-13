@@ -28,7 +28,8 @@ constructing ad hoc fetches.
   third-party frame, that session lives in memory for the life of the frame.
 - `api-types.ts`: shared frontend API types.
 - `auth-context.tsx`, `workspace-context.tsx`: React providers for major client
-  state; `anonymous-chat-context.tsx` is the public embed's chat session.
+  state; `anonymous-chat-context.tsx` is the public embed's chat session, and
+  `public-chat-messages.ts` turns a stored conversation into its messages.
 - `dashboard-routes.ts`: dashboard route helpers.
 - `teammate-label.ts`: how operator surfaces name a teammate — display name,
   else email. Visitor-facing surfaces never fall back to an email.
@@ -51,6 +52,12 @@ constructing ad hoc fetches.
   `embed-locale-packs.ts` owns the built-in translations; the launcher cannot
   import it, so `embed-launcher-script.ts` writes the packs and copy keys into
   the script as `/radioso-embed.js` serves it.
+- `reply-blocks.ts`: the reply blocks the chat declares under
+  `clientContextCapabilities["reply.blocks"]` (`item_list` as `carousel` or
+  `grid`), which block kinds it draws (stored blocks of other kinds are left
+  out), how it draws any other layout (as a list), the frame a block's
+  pictures share, and which item links it follows. `anonymous-chat-context.tsx`
+  adds the declaration to the host page's capabilities on every request.
 - `routine-consent-editor.ts`: a routine's consents in the Document view — the
   sensitive fields each covers, the decline choice, and the wording per language,
   edited through the exact-greeting variant transitions — plus where each is asked

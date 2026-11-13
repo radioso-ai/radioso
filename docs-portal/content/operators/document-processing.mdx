@@ -39,7 +39,7 @@ The worker materializes the source content, applies workspace ingestion settings
 
 If metadata extraction is enabled for the run, the worker queues a separate, lower-priority enrich job after publishing the chunks. That job makes one extraction model call and patches structured tags — the built-in `dateFrom` and `dateTo`, plus whatever fields the matched document type declares — onto the document and its chunks. The document is searchable before this job runs, and the worker drains `vectorize` jobs before `enrich` jobs.
 
-When the content names pictures (a crawled page's `og:image` and the images in its main content, a WordPress featured image), the worker also queues an `images` job at the same low priority. It fetches each picture from its public address, keeps a WebP copy at 320 and 640 pixels wide in document storage, and ties each picture in the text to the chunk it sits in. A picture under 200 pixels on its short side, an SVG, or one at an address that is not public is not kept, a document keeps at most 12, and a picture that cannot be fetched never fails the document. One that timed out is tried again on the next sync.
+When the content names pictures (a crawled page's `og:image` and the images in its main content, a WordPress featured image), the worker also queues an `images` job at the same low priority. It fetches each picture from its public address, keeps a WebP copy at 320 and 640 pixels wide in document storage, and ties each picture in the text to the chunk it sits in. A picture under 200 pixels on its short side, an SVG, or one at an address that is not public is not kept, a document keeps at most 12, and a picture that cannot be fetched never fails the document. One that timed out is tried again on the next sync. [Show picture cards in replies](/guides/reply-cards) lists what is kept.
 </Steps>
 
 ## What users will notice
@@ -113,5 +113,6 @@ Cloud deployment changes two important things:
 ## Read next
 
 - [Extract document metadata](/guides/document-metadata) — author document types, choose where extraction runs, and read its provenance.
+- [Show picture cards in replies](/guides/reply-cards) — which pictures documents keep and how an agent shows them.
 - [Document upload](/guides/document-upload) — what an upload does and what to verify afterwards.
 - [Document processing lifecycle](/architecture/document-processing-lifecycle) — the job model, chunk metadata merge, and tag ownership underneath these controls.

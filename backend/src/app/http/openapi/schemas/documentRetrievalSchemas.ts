@@ -223,10 +223,36 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     documentRetrievalUpdateSchema,
   );
 
+  const DocumentImageSchema = registry.register(
+    "DocumentImage",
+    z.object({
+      id: z.string().uuid(),
+      role: z.enum(["primary", "inline"]).openapi({
+        description: "`primary` is the picture the document's metadata names for itself (a page's `og:image`, a post's featured image); `inline` sits in its text.",
+      }),
+      status: z.enum(["pending", "stored", "skipped"]).openapi({
+        description: "`stored` once Radioso keeps a copy; `pending` until the worker fetches it; `skipped` when it was refused (smaller than 200 px on its short side, a type Radioso does not read, too large, or at an address it may not fetch).",
+      }),
+      alt: z.string(),
+      caption: z.string().nullable(),
+      width: z.number().int().positive().nullable().openapi({ description: "The source's upright width in pixels; null until stored." }),
+      height: z.number().int().positive().nullable(),
+      sourceUrl: z.string().openapi({ description: "The address the content names the picture by." }),
+      siteWide: z.boolean().openapi({
+        description: "A stored main picture that more than five documents in the workspace name as theirs, such as a site banner: answers never show it as this document's own.",
+      }),
+      src: z.string().optional().openapi({ description: "The stored copy at its widest width, served by `GET /api/v1/public/reply-images/{imageId}/{width}`; present once stored." }),
+      srcSet: z.string().optional().openapi({ description: "Every stored width as an `srcset`; present once stored." }),
+    }),
+  );
+
   const DocumentDetailsSchema = registry.register(
     "DocumentDetails",
     DocumentSummarySchema.extend({
       content: z.string(),
+      images: z.array(DocumentImageSchema).optional().openapi({
+        description: "The pictures the document's content names, in document order, with whether Radioso kept each one. An agent with `replyCardsEnabled` shows stored ones as cards in its replies.",
+      }),
     }),
   );
 

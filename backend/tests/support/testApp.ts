@@ -61,6 +61,10 @@ import { scopeTag } from "@radioso/conversation-defaults";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createReplyBlocksComposition } from "../../src/app/composition/replyBlocks.js";
 import { InMemoryDocumentImages } from "./inMemoryDocumentImages.js";
+import { InMemoryDocumentImageRows } from "./inMemoryDocumentImageRows.js";
+import { addressedDocumentImageListing } from "../../src/app/composition/documentImageCapture.js";
+import { publicApiBaseUrl } from "../../src/app/composition/publicApiBase.js";
+import { createReplyImageUrls } from "../../src/app/http/routes/replyImageAddress.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
@@ -1030,6 +1034,8 @@ export const createTestDependencies = (overrides: {
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** The documents' stored images answers present as reply blocks; omitted means a workspace with none. */
   documentImages?: InMemoryDocumentImages;
+  /** The image rows a document's detail lists; omitted means document details carry no images. */
+  documentImageRows?: InMemoryDocumentImageRows;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -1497,6 +1503,12 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     usageLimitPolicy,
     documentSourceRepository,
+    undefined,
+    undefined,
+    undefined,
+    overrides.documentImageRows
+      ? addressedDocumentImageListing(overrides.documentImageRows, createReplyImageUrls(publicApiBaseUrl(env)))
+      : undefined,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
@@ -3440,6 +3452,7 @@ export const createTestApp = (overrides: {
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   documentImages?: InMemoryDocumentImages;
+  documentImageRows?: InMemoryDocumentImageRows;
 } = {}) => {
   const {
     dependencies,

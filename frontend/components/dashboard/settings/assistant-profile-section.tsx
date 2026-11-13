@@ -389,6 +389,28 @@ export function AssistantProfileSection({
                 }
               />
             </div>
+            {assistantBehaviorSettings.replyCardsEnabled !== undefined ? (
+              <div className="flex items-start justify-between gap-4 p-3">
+                <div className="min-w-0">
+                  <Label htmlFor="replyCardsEnabled" className="text-foreground">
+                    Show cards in replies
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Replies can show pictures from your documents as cards in the web chat.
+                  </p>
+                </div>
+                <Switch
+                  id="replyCardsEnabled"
+                  checked={assistantBehaviorSettings.replyCardsEnabled}
+                  onCheckedChange={(checked) =>
+                    onAssistantBehaviorDraft((current) => ({
+                      ...current,
+                      replyCardsEnabled: checked,
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
             {assistantBehaviorSettings.visitorImagesEnabled !== undefined ? (
               <VisitorImagesSetting
                 enabled={assistantBehaviorSettings.visitorImagesEnabled}

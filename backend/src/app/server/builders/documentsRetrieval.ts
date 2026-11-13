@@ -17,6 +17,8 @@ import {
   type ApplicationComposition,
 } from "../../composition/index.js";
 import { createDocumentImageCapture } from "../../composition/documentImageCapture.js";
+import { publicApiBaseUrl } from "../../composition/publicApiBase.js";
+import { createReplyImageUrls } from "../../http/routes/replyImageAddress.js";
 import {
   type DocumentJobDispatcherPort,
   DocumentDeletionService,
@@ -229,6 +231,7 @@ export const buildDocumentServices = (input: {
     storage: documentStorage,
     metrics: input.metricsRegistry,
     logger,
+    imageUrls: createReplyImageUrls(publicApiBaseUrl(env)),
   });
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,
@@ -242,6 +245,7 @@ export const buildDocumentServices = (input: {
     input.embeddingCoverage,
     input.workspaceInvalidationPublisher,
     documentImageCapture.candidates,
+    documentImageCapture.listing,
   );
   const websiteCrawlerIngestionPort = createWebsiteCrawlerIngestionPort(documentIngestionService);
   const websiteCrawlJobService = new WebsiteCrawlJobService({

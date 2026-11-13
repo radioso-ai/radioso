@@ -224,6 +224,7 @@ module.exports = {
           "^src/app/server/builders/",
           "^src/app/composition/defaultComposition\\.ts$",
           "^src/app/composition/workspaceDeletion\\.ts$",
+          "^src/app/composition/documentImageCapture\\.ts$",
           "^src/app/cli/",
         ],
       },

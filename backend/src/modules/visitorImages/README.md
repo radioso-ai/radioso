@@ -111,9 +111,10 @@ a test: a visitor's photo as `conversation.image_viewed`, any other as
   test a Test Chat turn names, never both.
 - `infra/visitorImagePrivacy.ts`: the conversation eraser, the 24-hour unbound
   sweep (a conversation retention rule) of photos no message and no test
-  carries, and the data subject export section.
+  carries, the data subject export section, and the withholder that deletes
+  the photos a withheld message carried (a consent withdrawal, #1544).
 - `services/visitorImageObjectDeletion.ts`: the `visitor_images.object_deletion`
-  background job. The eraser and the sweep write it in the same transaction as
+  background job. The eraser, the withholder and the sweep write it in the same transaction as
   the rows they delete; the job deletes the objects after commit and refuses any
   path outside `workspaces/<ws>/visitor-images/`.
 

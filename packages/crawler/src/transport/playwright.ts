@@ -1,5 +1,7 @@
 import type { Page, Response, Route } from "playwright";
 import type { FetchPage, FetchedPage, ValidateNavigationUrl } from "./crawler.js";
+import { load } from "cheerio";
+import { extractInlineImages, extractMetadataImages, mergePageImages } from "./htmlImageExtraction.js";
 import { extractStructuredTextWithFallback } from "./htmlProcessing.js";
 
 export type FetchedPageWithScreenshot = FetchedPage & {
@@ -286,6 +288,14 @@ const fetchWithPlaywright = async (
           }
         });
 
+        const rendered = load(html);
+        const metadataImages = extractMetadataImages(rendered, loadedUrl);
+        const images = mergePageImages(metadataImages, extractInlineImages(rendered, {
+          baseUrl: loadedUrl,
+          text,
+          options: { preserveContentLinks: options?.preserveContentLinks },
+        }));
+
         let screenshot: Uint8Array | null = null;
         if (options?.captureScreenshot !== false) {
           screenshot = (await page.screenshot({ type: "png" }).catch(() => null)) as Uint8Array | null;
@@ -301,6 +311,7 @@ const fetchWithPlaywright = async (
           httpStatus,
           links,
           parsedData: null,
+          images,
           transportUsed: "browser",
           httpAttempted: false,
           browserAttempted: true,

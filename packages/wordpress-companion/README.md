@@ -155,6 +155,20 @@ the request finished with.
 Deletes are sent immediately, since by the end of the request the post and its
 permalink are gone. A delete cancels any update queued for the same post.
 
+### Featured image
+
+Every push carries the post's featured image as `featured_image`: its address
+and its alt text, or `null` when the post has none. Radioso fetches the picture,
+keeps a re-encoded copy at most 640 px wide, and an agent with pictures turned
+on can show it as a card beside an answer about the post. A `null` drops the
+copy Radioso kept for a post whose featured image was removed.
+
+The plugin sends WordPress's `medium_large` size (768 px wide by default), or
+`large`, when one is at least 640 px wide, and the original upload otherwise, so
+Radioso downloads no more than the copy needs. An address that is not http(s)
+or is longer than 2,048 characters is sent as `null`; alt text is cut to 150
+characters, within the 300 the webhook accepts.
+
 ### Author taxonomy
 
 `post_author` is the account that created the record. On a page or a post that

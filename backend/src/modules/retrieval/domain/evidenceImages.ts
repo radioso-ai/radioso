@@ -4,6 +4,22 @@ import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 /** At most this many images ride on one evidence item. */
 const EVIDENCE_IMAGES_PER_ITEM = 3;
 
+/**
+ * Many sites name the same `og:image` on every page: a banner or a logo. A picture more than this
+ * many documents in the workspace name as their own is the site's, not any one document's, so it
+ * is never shown as a document's main picture. The rule is structural (how widely one picture is
+ * shared), and it is read at answer time, so it follows documents as they come and go. A series
+ * that shares a cover across a handful of volumes stays under it.
+ */
+const SITE_BANNER_PRIMARY_DOCUMENTS = 5;
+
+/** How far the reader counts the documents that share a primary: one past the threshold settles the rule. */
+export const PRIMARY_DOCUMENT_COUNT_LIMIT = SITE_BANNER_PRIMARY_DOCUMENTS + 1;
+
+/** Whether a stored image is a site banner rather than its document's own main picture. */
+export const isSiteBanner = (image: Pick<StoredDocumentImageRef, "role" | "primaryDocumentCount">): boolean =>
+  image.role === "primary" && image.primaryDocumentCount > SITE_BANNER_PRIMARY_DOCUMENTS;
+
 /** The part of an evidence item that decides which images it carries. */
 export interface EvidenceContext {
   documentId: string;
@@ -50,14 +66,15 @@ const byPosition = (left: StoredDocumentImageRef, right: StoredDocumentImageRef)
 
 /**
  * Which stored images each evidence item carries. A document's primary image rides once, on the
- * first item of that document; an inline image rides on the item whose chunk it is anchored to.
- * Items keep the evidence order, and an item without images is left out.
+ * first item of that document; a site banner is never one, so the next primary stands in. An
+ * inline image rides on the item whose chunk it is anchored to. Items keep the evidence order, and
+ * an item without images is left out.
  */
 export const assignEvidenceImages = (
   contexts: readonly EvidenceContext[],
   rows: readonly StoredDocumentImageRef[],
 ): EvidenceItemImages[] => {
-  const sorted = [...rows].sort(byPosition);
+  const sorted = rows.filter((row) => !isSiteBanner(row)).sort(byPosition);
   const primaryByDocument = new Map<string, StoredDocumentImageRef>();
   for (const row of sorted) {
     if (row.role === "primary" && !primaryByDocument.has(row.documentId)) {

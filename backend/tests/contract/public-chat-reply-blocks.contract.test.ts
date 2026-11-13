@@ -61,6 +61,13 @@ const guidesWithCovers = async () => {
     },
   });
   const session = await issueTestSession(app, `reply-blocks-${Math.random().toString(36).slice(2)}@example.com`);
+  // The operator turns reply cards on, which every agent starts without.
+  const agents = await request(app).get("/api/v1/agents").set(adminSessionHeaders(session)).expect(200);
+  await request(app)
+    .put(`/api/v1/agents/${String(agents.body.agents[0].id)}`)
+    .set(adminSessionHeaders(session))
+    .send({ replyCardsEnabled: true })
+    .expect(200);
   for (const [index, title] of ["Alpine Flowers", "Trail Maps"].entries()) {
     const created = await request(app)
       .post("/api/v1/document/")

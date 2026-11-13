@@ -63,6 +63,10 @@ import { createReplyBlocksComposition } from "../../src/app/composition/replyBlo
 import { composeReplyImageLookup } from "../../src/app/composition/toolImages.js";
 import type { ToolImageLookup } from "../../src/modules/toolImages/composition.js";
 import { InMemoryDocumentImages } from "./inMemoryDocumentImages.js";
+import { InMemoryDocumentImageRows } from "./inMemoryDocumentImageRows.js";
+import { addressedDocumentImageListing } from "../../src/app/composition/documentImageCapture.js";
+import { publicApiBaseUrl } from "../../src/app/composition/publicApiBase.js";
+import { createReplyImageUrls } from "../../src/app/http/routes/replyImageAddress.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
@@ -1008,6 +1012,8 @@ export const createTestDependencies = (overrides: {
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
   /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
   conversationErasure?: AppDependencies["conversationErasure"];
+  /** Consent records and their withdrawal; omitted means a conversation with none. */
+  conversationConsents?: AppDependencies["conversationConsents"];
   /** Data subject lookup, export and erasure; omitted means a workspace where a lookup finds nobody. */
   dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   /** Held replies and the decisions on them; omitted means a workspace with none. */
@@ -1030,6 +1036,8 @@ export const createTestDependencies = (overrides: {
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** The documents' stored images answers present as reply blocks; omitted means a workspace with none. */
   documentImages?: InMemoryDocumentImages;
+  /** The image rows a document's detail lists; omitted means document details carry no images. */
+  documentImageRows?: InMemoryDocumentImageRows;
   /** The pictures cards from a skill's result show, found after the documents' images; omitted means none. */
   toolImages?: Pick<ToolImageLookup, "findServable">;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -1499,6 +1507,12 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     usageLimitPolicy,
     documentSourceRepository,
+    undefined,
+    undefined,
+    undefined,
+    overrides.documentImageRows
+      ? addressedDocumentImageListing(overrides.documentImageRows, createReplyImageUrls(publicApiBaseUrl(env)))
+      : undefined,
   );
   const documentImportService = new DocumentImportService(
     documentRepository,
@@ -3290,6 +3304,11 @@ export const createTestDependencies = (overrides: {
       eraseConversation: async () => { throw notFound("Conversation not found"); },
       eraseVisitor: async () => { throw notFound("Visitor not found"); },
     },
+    conversationConsents: overrides.conversationConsents ?? {
+      // The Postgres withdrawal is covered by tests/integration/consent-withdrawal.integration.test.ts.
+      list: async () => [],
+      withdraw: async () => ({ kind: "not_found" }),
+    },
     privacySettingsService,
     timeZoneSettingsService,
     dataSubjectAccess: overrides.dataSubjectAccess ?? {
@@ -3426,6 +3445,7 @@ export const createTestApp = (overrides: {
   deliveryFailures?: AppDependencies["deliveryFailures"];
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
   conversationErasure?: AppDependencies["conversationErasure"];
+  conversationConsents?: AppDependencies["conversationConsents"];
   dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
@@ -3437,6 +3457,7 @@ export const createTestApp = (overrides: {
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   documentImages?: InMemoryDocumentImages;
+  documentImageRows?: InMemoryDocumentImageRows;
   toolImages?: Pick<ToolImageLookup, "findServable">;
 } = {}) => {
   const {

@@ -1,0 +1,74 @@
+---
+title: "Show picture cards in replies"
+description: "How an agent shows the pictures from your documents as cards beside an answer: the reply cards setting, which pictures Radioso keeps from crawled pages and WordPress posts, the rules it applies, and what to check when a picture is missing."
+---
+
+# Show picture cards in replies
+
+Some answers are better seen than read. A visitor asking for hiking books wants to see the covers; one asking what the guest house looks like wants the rooms. Turn on reply cards for an agent and, when an answer draws on pages that have pictures, the agent can show them as cards beside its text: the cover of each book with its title and a link to its page, or a small gallery of the photos on the page it quoted.
+
+The pictures come from your own content. Radioso keeps a copy of the images your website pages and WordPress posts name while it processes them, for every document whether or not an agent shows them, so turning the setting on takes effect on the next answer with no re-sync.
+
+## Turn reply cards on
+
+Open the agent's **Profile**, find **Answers**, and turn on **Show cards in replies**. You can also ask Ray to turn it on and apply the card it drafts, or set `replyCardsEnabled` over the API:
+
+```bash
+curl -sS -X PUT https://api.radioso.ai/api/v1/agents/$AGENT_ID \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"replyCardsEnabled":true}'
+```
+
+The setting is off on every agent until you turn it on, and it applies as soon as you change it. It is the one switch for every kind of card a reply can carry; today those are the pictures of an answer's documents. Cards appear where a client draws them: the website widget, the public chat link, and any client of the [chat API](/api/public-chat-and-embed#reply-blocks) that declares `reply.blocks`. Test Chat and channels that carry text alone get the answer as text.
+
+## What the agent shows
+
+The agent decides whether pictures help the answer and which ones to show, from the pictures of the documents the answer is grounded in. It writes a short caption for the cards and never invents a picture or an address: Radioso builds every card from a stored image, its document's title and its document's link.
+
+- **A document's main picture.** The picture a page names for itself, such as a book's cover or a post's featured image. When an answer draws on several documents, their main pictures form a row of cards, one per document.
+- **Pictures in the text.** An image inside a page is tied to the passage around it, so the agent can show it only when the answer uses that passage. Several of them form a gallery.
+
+An answer shows at most ten cards, and each document offers at most three of its pictures to one answer. An answer that says the content does not cover the question shows none.
+
+Many sites name the same picture on every page, a banner or a logo. A picture that more than five documents in the workspace name as their main picture is treated as the site's, never as any one document's: the document's next main picture stands in, or it shows none.
+
+## Which pictures Radioso keeps
+
+| Content | Main picture | Pictures in the text |
+|---|---|---|
+| Crawled website pages | `og:image`, then `twitter:image`, then the JSON-LD `image` | Each `<img>` in the page's main content, with its alt text and its `<figcaption>` |
+| WordPress posts and products | The featured image, from the REST sync and from the Radioso Sync plugin 0.8.0 or later | — |
+| Uploaded files and text added by hand | — | — |
+
+Each picture goes through the same steps:
+
+- **Fetched from a public address**, the way the crawler fetches a page: private and internal addresses are refused, every redirect is checked, and a fetch has 8 seconds and 15 MB.
+- **Read from its bytes.** JPEG, PNG, WebP, GIF (its first frame) and AVIF are kept. SVG never is.
+- **Filtered.** A picture under 200 pixels on its short side is an icon or a tracking pixel and is not kept. Each address is kept once per document, and a document keeps at most 12 pictures, in the order its content names them.
+- **Re-encoded** to WebP 320 and 640 pixels wide, turned upright, with its EXIF and GPS data dropped. Visitors load Radioso's copy, never your site's.
+
+Pictures are fetched after the document's text is processed, by the same worker, so a page is searchable before its pictures are ready. A picture that cannot be fetched never holds up or fails its document.
+
+## Check what a document kept
+
+Open the document from **Knowledge**. **Images** lists every picture its content names: a thumbnail of each one kept, and whether it is the document's main picture or sits in its text. A picture that is still waiting reads **Not fetched yet**; one that was refused (too small, not a picture Radioso reads, too large, or at an address it may not fetch) reads **Not kept**. A main picture more than five documents share reads **Site-wide, not shown**: answers never show it as this document's own.
+
+## When content changes
+
+A re-crawl or a re-sync checks each picture again. One whose address and content did not change keeps its copy, asked about with the entity tag the site sent; one the content no longer names is deleted, copy and all; a new one is fetched. A page crawled before Radioso kept pictures gets its pictures on its next crawl, even when its text did not change.
+
+Pictures belong to their document. Deleting a document, or a source with its documents, stops its pictures from being served at once, and the worker deletes their stored copies within a few minutes. Deleting the workspace deletes them with it. A conversation that showed a card keeps the card's title and link, and its picture stops loading.
+
+## Common failure modes
+
+- **A page shows no main picture.** Its `og:image` may be an SVG, smaller than 200 pixels, or shared by more than five pages. Check the document's **Images**.
+- **A picture from the page never appears in answers.** Pictures in the text are offered only with their passage. Ask about what the passage says, or give the page an `og:image`.
+- **Every answer shows the site logo.** It is in the page's main content, larger than 200 pixels. The banner rule covers main pictures only; move the logo out of `<main>` or `<article>`.
+- **WordPress pushes carry no picture.** The plugin sends the featured image from version 0.8.0. A post without a featured image has no main picture.
+
+## Read next
+
+- [Reply blocks](/api/public-chat-and-embed#reply-blocks) for the cards' shape and the image address.
+- [Document processing](/operators/document-processing) for the worker that fetches pictures.
+- [WordPress connector](/operators/wordpress-connector) for featured images.

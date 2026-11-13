@@ -72,6 +72,7 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     undefined,
     new DefaultBackgroundJobQueue({ writer: new BackgroundJobRepository(database.kysely), wake: { requestDrain: async () => {} }, logger: { warn: vi.fn() } }),
     undefined,
+    undefined,
     store,
   );
   const history = new ChatHistoryService(

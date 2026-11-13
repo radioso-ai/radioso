@@ -13,6 +13,7 @@ import {
 } from "../../../modules/chat/composition.js";
 import { BackgroundJobRuntime, type BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 import { PeriodicTaskRunner } from "../../composition/periodicTaskRunner.js";
+import { bindConsentMessageWithholding } from "../../composition/consentWithdrawal.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ApprovalResumeEffectJournalRepository } from "../../../db/repositories/approvalResumeEffectJournalRepository.js";
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
@@ -509,6 +510,8 @@ export const buildChatServices = (input: {
     input.logger,
     input.backgroundJobs,
     createRoutineConsentTelemetry({ logger: input.logger, metricsRegistry: input.metricsRegistry ?? null }),
+    // A turn that raced a consent withdrawal withholds what it wrote, as the withdrawal would have.
+    bindConsentMessageWithholding,
     toolImages.rows,
   );
   const actionHandlerRegistry = new ActionHandlerRegistry(

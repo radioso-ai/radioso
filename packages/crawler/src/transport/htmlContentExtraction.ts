@@ -7,6 +7,7 @@ import {
   normalizeText,
   type ExtractionOptions,
 } from "./htmlProcessing.js";
+import { extractInlineImages, extractMetadataImages, mergePageImages } from "./htmlImageExtraction.js";
 import { normalizePageTitle } from "./pageTitle.js";
 
 const ALWAYS_NON_CONTENT_SELECTOR = [
@@ -306,6 +307,7 @@ export const buildFetchedHtmlPage = (input: {
   const title = extractPageTitle($);
   const originalLinks = extractLinks($, input.loadedUrl);
   const structurallyLinkDense = isStructurallyLinkDensePage($);
+  const metadataImages = extractMetadataImages($, input.loadedUrl);
   removePageChrome($);
   const html = $.html();
   const cleanedLinks = extractLinks($, input.loadedUrl);
@@ -327,6 +329,7 @@ export const buildFetchedHtmlPage = (input: {
     extractedContainer: hasPrimaryContentContainer(input.originalHtml) ? "primary" : "body",
     normalizedContentHash: hashNormalizedContent(text),
   };
+  const inlineImages = extractInlineImages($, { baseUrl: input.loadedUrl, text, options: input.options });
   return {
     url: input.loadedUrl,
     title,
@@ -343,6 +346,7 @@ export const buildFetchedHtmlPage = (input: {
     browserAttempted: false,
     browserFallbackReason: null,
     httpQualityScore: null,
+    images: mergePageImages(metadataImages, inlineImages),
     ...diagnostics,
   };
 };

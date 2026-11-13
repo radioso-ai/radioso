@@ -13,6 +13,8 @@ export interface PublicBytesLimits {
   readonly accept?: string;
   /** Redirects followed, each re-checked before it is requested. Three when unset. */
   readonly maxRedirects?: number;
+  /** An entity tag from an earlier fetch: a body that has not changed comes back as `not_modified`. */
+  readonly ifNoneMatch?: string;
   /** The caller's own deadline or cancellation, on top of `timeoutMs`; its abort ends the fetch as a timeout. */
   readonly signal?: AbortSignal;
 }
@@ -39,7 +41,15 @@ export type PublicBytesFetchFailure =
   | "unreachable";
 
 export type PublicBytesFetchResult =
-  | { readonly kind: "fetched"; readonly bytes: Buffer; readonly contentType: string | null; readonly url: string }
+  | {
+      readonly kind: "fetched";
+      readonly bytes: Buffer;
+      readonly contentType: string | null;
+      readonly url: string;
+      /** The response's entity tag, when it sent one, for a later conditional fetch. */
+      readonly etag?: string;
+    }
+  | { readonly kind: "not_modified"; readonly url: string }
   | { readonly kind: "failed"; readonly reason: PublicBytesFetchFailure; readonly status?: number };
 
 const DEFAULT_MAX_REDIRECTS = 3;
@@ -69,7 +79,10 @@ export const fetchPublicBytes = async (
     for (let hop = 0; hop <= maxRedirects; hop += 1) {
       const response = await request(current.toString(), {
         method: "GET",
-        headers: limits.accept ? { accept: limits.accept } : {},
+        headers: {
+          ...(limits.accept ? { accept: limits.accept } : {}),
+          ...(limits.ifNoneMatch ? { "if-none-match": limits.ifNoneMatch } : {}),
+        },
         redirect: "manual",
         signal,
       });
@@ -87,6 +100,10 @@ export const fetchPublicBytes = async (
 };
 
 const readBounded = async (response: Response, url: URL, limits: PublicBytesLimits): Promise<PublicBytesFetchResult> => {
+  if (response.status === 304 && limits.ifNoneMatch) {
+    await discard(response);
+    return { kind: "not_modified", url: url.toString() };
+  }
   if (!response.ok) {
     await discard(response);
     return failed("http_status", response.status);
@@ -102,7 +119,8 @@ const readBounded = async (response: Response, url: URL, limits: PublicBytesLimi
     return failed("too_large");
   }
   const bytes = await readCapped(response, limits.maxBytes);
-  return bytes ? { kind: "fetched", bytes, contentType, url: url.toString() } : failed("too_large");
+  const etag = response.headers.get("etag");
+  return bytes ? { kind: "fetched", bytes, contentType, url: url.toString(), ...(etag ? { etag } : {}) } : failed("too_large");
 };
 
 /** Reads the body up to the cap and no further: a body that outgrows it is cut off and `null` comes back. */

@@ -1,4 +1,5 @@
 import type { DocumentSourceResolverInput, IndexedFieldValue } from "./documentContracts.js";
+import type { DocumentImageCandidate } from "./documentImages.js";
 
 export { documentInventoryStatuses } from "./documentContracts.js";
 
@@ -52,9 +53,20 @@ export type {
 export { isCanonicalWorkspaceId } from "./storage.js";
 export {
   DOCUMENT_IMAGE_RENDITION_WIDTHS,
+  MAX_STORED_IMAGES_PER_DOCUMENT,
+  type CapturableDocumentImage,
+  type DocumentImageCandidate,
+  type DocumentImageCandidateWriter,
+  type DocumentImageCaptureStore,
   type DocumentImageEvidenceReader,
+  type DocumentImageListing,
   type DocumentImageObjectLookup,
+  type DocumentImageRows,
+  type ListedDocumentImage,
+  type DocumentImageRendition,
   type DocumentImageRole,
+  type PlacedDocumentImage,
+  type ReleasedDocumentImageStore,
   type StoredDocumentImageRef,
 } from "./documentImages.js";
 export { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID, documentSourceIdSchema } from "../domain/sourceConstants.js";
@@ -81,5 +93,11 @@ export interface DocumentIngestionPort {
     indexedFields?: Record<string, IndexedFieldValue>;
     externalDocumentId?: string | null;
     source?: DocumentSourceResolverInput;
+    /**
+     * The images the content names, by address: its metadata picture and the images in its text.
+     * Absent means the source says nothing about images, and the document's images stay as they
+     * are; an empty list means the content names none.
+     */
+    images?: readonly DocumentImageCandidate[];
   }): Promise<{ documentId: string; status: string }>;
 }

@@ -3579,6 +3579,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history/chat/{conversationId}/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a conversation's consent records
+         * @description Every consent decision a visitor gave in the conversation, oldest first, each with the exact wording they were shown. Records outlive their conversation, so a conversation that was erased still lists its records; one with no routine consent lists none. Requires workspace.history.read.
+         */
+        get: operations["listHistoryConversationConsents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/chat/{conversationId}/consents/{recordId}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw a visitor's consent
+         * @description Withdraws a granted consent on the visitor's request, in one transaction. The values of the fields it covered are erased from the conversation's routine state, a finished run's included. Each message that carried one, marked by a routine turn or stating a value the routine held (four characters or longer, ignoring case and spacing), keeps `[redacted]` as its text and is marked `withheld`, and so are the copies Radioso keeps of it: the inbound email's body and raw copy, the turn's content audit, its coverage text and any photo it carried. The conversation's summary and title are cleared and written again from the transcript. The record keeps its proof and gains `withdrawnAt` and the acting member. A routine still running in the conversation goes on without those fields and doesn't ask the consent again. Text already delivered to Slack or WhatsApp stays with those providers. Records one `routine_consent.withdrawn` audit event with ids only. Requires workspace.history.delete.
+         */
+        post: operations["withdrawHistoryConversationConsent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history/contact": {
         parameters: {
             query?: never;
@@ -6271,6 +6311,8 @@ export interface components {
             handoffOnRetrievalMiss: boolean;
             /** @description Whether visitors and API callers may attach photos to a message. This is the draft's value: visitors and API callers get it when the agent is published, and Test Chat tests it before then. The agent's chat model reads each photo at upload, so it takes effect only when that model reads images. */
             visitorImagesEnabled: boolean;
+            /** @description Whether the agent's replies may carry cards (reply blocks), such as the pictures captured from the documents an answer draws on, on clients that declare `reply.blocks`. Off until an operator turns it on. */
+            replyCardsEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
             theme: {
                 brand: string;
@@ -6337,6 +6379,7 @@ export interface components {
             webhookExportsEnabled?: boolean;
             handoffOnRetrievalMiss?: boolean;
             visitorImagesEnabled?: boolean;
+            replyCardsEnabled?: boolean;
             contactRequestDelivery?: components["schemas"]["AgentContactRequestDeliveryRequest"];
             theme?: {
                 brand?: string;
@@ -7574,7 +7617,7 @@ export interface components {
                 enabled: boolean;
             }[];
         };
-        /** @description The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on. */
+        /** @description The agent configuration projection (AgentConfig) at schemaVersion 5. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on. */
         AgentBundleAgentConfig: {
             schemaVersion: number;
             /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
@@ -7587,6 +7630,8 @@ export interface components {
             handoffOnRetrievalMiss: boolean;
             /** @description Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off. */
             visitorImagesEnabled?: boolean;
+            /** @description Whether the agent's replies may carry cards (reply blocks). An import of a bundle exported before the field existed reads it as off. */
+            replyCardsEnabled: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
@@ -7873,6 +7918,8 @@ export interface components {
             handoffOnRetrievalMiss?: boolean;
             /** @description Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off. */
             visitorImagesEnabled?: boolean;
+            /** @description Whether the agent's replies may carry cards (reply blocks). An import of a bundle exported before the field existed reads it as off. */
+            replyCardsEnabled?: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
@@ -8209,8 +8256,37 @@ export interface components {
                 [key: string]: string | number | boolean | null;
             };
         };
+        DocumentImage: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `primary` is the picture the document's metadata names for itself (a page's `og:image`, a post's featured image); `inline` sits in its text.
+             * @enum {string}
+             */
+            role: "primary" | "inline";
+            /**
+             * @description `stored` once Radioso keeps a copy; `pending` until the worker fetches it; `skipped` when it was refused (smaller than 200 px on its short side, a type Radioso does not read, too large, or at an address it may not fetch).
+             * @enum {string}
+             */
+            status: "pending" | "stored" | "skipped";
+            alt: string;
+            caption: string | null;
+            /** @description The source's upright width in pixels; null until stored. */
+            width: number | null;
+            height: number | null;
+            /** @description The address the content names the picture by. */
+            sourceUrl: string;
+            /** @description A stored main picture that more than five documents in the workspace name as theirs, such as a site banner: answers never show it as this document's own. */
+            siteWide: boolean;
+            /** @description The stored copy at its widest width, served by `GET /api/v1/public/reply-images/{imageId}/{width}`; present once stored. */
+            src?: string;
+            /** @description Every stored width as an `srcset`; present once stored. */
+            srcSet?: string;
+        };
         DocumentDetails: components["schemas"]["DocumentSummary"] & {
             content: string;
+            /** @description The pictures the document's content names, in document order, with whether Radioso kept each one. An agent with `replyCardsEnabled` shows stored ones as cards in its replies. */
+            images?: components["schemas"]["DocumentImage"][];
         };
         DocumentChunkSummary: {
             /** Format: uuid */
@@ -9538,6 +9614,13 @@ export interface components {
             /** Format: date-time */
             spokenAt?: string;
         };
+        /** @description Present on a message withheld after the consent that covered what it carried was withdrawn: `content` is `[redacted]`, and the message carries no answer segments, suggestions, reply blocks or photos. `at` is when the consent was withdrawn. */
+        MessageWithholding: {
+            /** @enum {string} */
+            reason: "consent_withdrawn";
+            /** Format: date-time */
+            at: string;
+        };
         ChatConversationMessage: {
             /** Format: uuid */
             id: string;
@@ -9558,6 +9641,7 @@ export interface components {
             operatorDisplayName?: string;
             interruption?: components["schemas"]["ReplyInterruption"];
             speech?: components["schemas"]["OperatorReplySpeech"];
+            withheld?: components["schemas"]["MessageWithholding"];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
             turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
             /** @description Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API. */
@@ -9583,6 +9667,7 @@ export interface components {
             operatorDisplayName?: string;
             interruption?: components["schemas"]["ReplyInterruption"];
             speech?: components["schemas"]["OperatorReplySpeech"];
+            withheld?: components["schemas"]["MessageWithholding"];
         };
         ConversationOwnershipResponse: {
             ownership: components["schemas"]["ConversationOwnership"];
@@ -11221,6 +11306,66 @@ export interface components {
             items: components["schemas"]["NotificationDelivery"][];
             /** @description Pass back as `cursor` for the next page; null on the last one. */
             nextCursor: string | null;
+        };
+        /** @description One consent decision a visitor gave in a conversation (#1544): the proof, with no reply text and no field values. A record outlives its conversation. */
+        ConversationConsent: {
+            /** Format: uuid */
+            id: string;
+            /** @description The routine that asked the consent. */
+            routineId: string;
+            /** @description The consent's `key` within the routine. */
+            consentKey: string;
+            /** @description The sensitive fields the consent covered when it was decided: the values a withdrawal erases. */
+            slotKeys: string[];
+            /** @enum {string} */
+            decision: "granted" | "declined";
+            /**
+             * @description `button`: a click on one of the two choices. `reply`: an answer read from the visitor's message.
+             * @enum {string}
+             */
+            method: "button" | "reply";
+            /** @description True for a decline recorded because the visitor's replies stayed unclear after the consent was asked twice. */
+            defaulted: boolean;
+            /** @description The language of the wording the visitor was shown. */
+            locale: string;
+            /** @description The conversation's channel, such as `website_embed` or `email`. */
+            channel: string | null;
+            /** @description The immutable version of the wording shown: a hash of exactly what the visitor saw. */
+            wordingVersionId: string;
+            /** @description The wording exactly as the visitor was shown it. */
+            wording: {
+                body: string;
+                agreeLabel: string;
+                declineLabel: string;
+            };
+            /** Format: date-time */
+            decidedAt: string;
+            /**
+             * Format: date-time
+             * @description When an operator withdrew the consent; null while it stands.
+             */
+            withdrawnAt: string | null;
+        };
+        ConsentNotWithdrawableError: {
+            error: {
+                /** @enum {string} */
+                code: "consent_not_withdrawable";
+                message: string;
+                details: {
+                    /**
+                     * @description `declined`: the visitor never granted it, so nothing was collected under it. `already_withdrawn`: it was withdrawn before.
+                     * @enum {string}
+                     */
+                    reason: "declined" | "already_withdrawn";
+                    consent: components["schemas"]["ConversationConsent"];
+                };
+            };
+        };
+        ConversationConsentList: {
+            consents: components["schemas"]["ConversationConsent"][];
+        };
+        ConversationConsentWithdrawal: {
+            consent: components["schemas"]["ConversationConsent"];
         };
         /** @description One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id. */
         DataSubjectIdentity: {
@@ -27835,6 +27980,123 @@ export interface operations {
             };
         };
     };
+    listHistoryConversationConsents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The conversation's consent records */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationConsentList"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    withdrawHistoryConversationConsent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                recordId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The consent, withdrawn */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationConsentWithdrawal"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The conversation has no such consent record */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `consent_not_withdrawable`: the consent was declined or is already withdrawn, so nothing changed. `details.reason` says which, and `details.consent` is the record as it stands. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentNotWithdrawableError"];
+                };
+            };
+        };
+    };
     listContactRequests: {
         parameters: {
             query?: {
@@ -33588,6 +33850,15 @@ export interface operations {
             };
             /** @description Unknown image, an image whose document was deleted, or a width other than 320 or 640 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The calling source has used its budget of public reads for the window */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

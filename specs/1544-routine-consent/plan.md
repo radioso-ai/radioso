@@ -256,6 +256,19 @@ Effects: `consentEvents?: RoutineConsentEvent[]` follows `awaitingDecision`'s ro
 
 **Frontend:** `frontend/components/dashboard/conversation-consents.tsx` in `conversation-drawer.tsx`, with a confirm dialog patterned on `delete-conversation-action.tsx`.
 
+**As built (PR4, 2026-11-12).**
+- A shared `MessageCopyWithholder` port (`shared/domain/messageWithholding.ts`) beside the erasure ports; composition binds four: the turn's `chat.answer` / `chat.suspended` audit events (deleted, they carry answer segments, rewritten queries and traces), the coverage assessment's `contextualized_request` / `unresolved_request` (redacted), the inbound email's `body_text` (redacted) and `raw_mime` (cleared), and the photos the message carried (rows deleted, objects to the deletion job).
+- The withheld message also drops `answerSegments`, `composedInstructions`, `suggestions` and `imageInput` from its metadata; history messages carry `withheld {reason, at}`.
+- Left as they are, with the reason: summaries, titles, eval snapshots and Test Chat seeds read a marked message as withheld already (`sensitiveTranscript.ts`); facets are deleted with the message; topics come from facets a marked message never has; routine actions and completion exports carry sensitive values masked; review turns, the only ones that hold a reply, run no routine; voice, MCP, agent API and A2A never ask consent. Known copies outside the reach: the WhatsApp message log (no link to the message row; goes with the conversation's erasure), an email send still in flight (its frozen body clears when it settles), a value already passed to a skill, and text delivered to Slack or WhatsApp.
+- The record type lives in `shared/domain/routineConsentRecord.ts`, so the repository reads it without reaching into privacy. The dashboard's tail never re-delivers a withheld message, so the drawer restarts its tail after a withdrawal.
+
+**PR4 review fixes (2026-11-12).**
+- Carrying messages are found by value too: the erase reads back the values it removes, and any message of the conversation, visitor or agent, whose text contains one (strings of four characters or more, case and whitespace aside; numbers, booleans and shorter strings by marker only) is withheld with the marked ones. That reaches a value stated before any routine ran and read through option A, and a reply after the routine ended that repeats it. The coverage and audit withholders also withhold a copy whose own text states a value; the email's raw MIME goes with its message.
+- When option A fills a covered slot (the run trace's `earlierMessageSlotKeys`), the turn marks the earlier visitor messages that state the value, or, for a value the rule does not search, those read from before the routine started.
+- The summary and title are cleared on a withholding and a refresh is queued, since both were written from the transcript before any mark.
+- A turn that commits after a withdrawal it raced withholds its own visitor message and reply, with their copies, through the same `withholdMessagesWithCopies`; the withdrawal locks the conversation's routine state whichever routine it holds, so one of the two always sees the other. A repeat withdrawal still answers 409.
+- After commit the withdrawal publishes `conversation.turn_committed`; the visitor's chat shows a localized withheld label after a reload.
+
 ## 6. Authoring surfaces
 
 ### 6.1 Definition schema

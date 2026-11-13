@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DOCUMENT_IMAGE_RENDITION_WIDTHS } from "../../src/modules/documents/contracts/index.js";
 import sharp from "sharp";
@@ -86,6 +86,19 @@ describe("public reply image route", () => {
     for (const width of DOCUMENT_IMAGE_RENDITION_WIDTHS) {
       await request(app).get(`/api/v1/public/reply-images/${imageId}/${width}`).expect(200);
     }
+  });
+
+  it("answers a source past its budget of public reads with 429, before any lookup", async () => {
+    const documentImages = new InMemoryDocumentImages();
+    const findServable = vi.spyOn(documentImages, "findServable");
+    const { app } = createTestApp({ documentImages, envOverrides: { PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS: 2 } });
+    const imageUrl = `/api/v1/public/reply-images/${randomUUID()}/640`;
+
+    await request(app).get(imageUrl).expect(404);
+    await request(app).get(imageUrl).expect(404);
+    await request(app).get(imageUrl).expect(429);
+
+    expect(findServable).toHaveBeenCalledTimes(2);
   });
 
   it("answers 404 for an unknown image, a deleted one, and any width other than 320 or 640, spelled exactly", async () => {

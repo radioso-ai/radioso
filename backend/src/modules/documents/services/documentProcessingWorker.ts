@@ -29,9 +29,22 @@ import {
   type EmbeddingProfileCleanupService,
 } from "../../embeddingProfiles/public.js";
 
+/**
+ * The image stage of the worker: it captures a revision's images as their own `images` job, queues
+ * that job once a vectorize job has published the chunks the images anchor to, and, once a minute on
+ * the worker's tick, sweeps the stored copies of images whose document is gone. Queueing and
+ * sweeping never throw.
+ */
+export interface DocumentImageCaptureStage {
+  capture(job: DocumentProcessingJobRecord): Promise<"completed" | "stale" | "deleted">;
+  afterRevisionPublished(job: DocumentProcessingJobRecord): Promise<void>;
+  sweepReleased(): Promise<void>;
+}
+
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_JOB_LEASE_MS = 300_000;
 const EMBEDDING_CLEANUP_INTERVAL_MS = 60_000;
+const RELEASED_IMAGE_SWEEP_INTERVAL_MS = 60_000;
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 const CLAIM_EXPIRED_REASON = "claim_expired";
@@ -74,6 +87,7 @@ export class DocumentProcessingWorker {
   private running = false;
   private lastActivityState: "idle" | "processing" | null = null;
   private lastEmbeddingCleanupAt = 0;
+  private lastReleasedImageSweepAt = 0;
 
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
@@ -97,6 +111,7 @@ export class DocumentProcessingWorker {
     private readonly embeddingProfileTerminalFailures?: EmbeddingProfileTerminalFailurePort,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
+    private readonly imageCapture?: DocumentImageCaptureStage,
   ) {}
 
   async runPostJobMaintenance(
@@ -252,6 +267,7 @@ export class DocumentProcessingWorker {
 
   async runOnce(now: Date = new Date()): Promise<boolean> {
     await this.runEmbeddingCleanupIfDue(now);
+    await this.sweepReleasedImagesIfDue(now);
     await this.releaseStaleClaims(now);
     const job = await this.claimNextAvailableJob(now);
     if (!job) {
@@ -410,9 +426,13 @@ export class DocumentProcessingWorker {
           ? await this.requireEmbeddingProfileJobService().process(job)
           : job.kind === "enrich"
             ? await this.processingService.processEnrichment(job)
-            : await this.processingService.process(job);
+            : job.kind === "images"
+              ? await this.requireImageCapture().capture(job)
+              : await this.processingService.process(job);
         if (outcome === "completed") {
           await this.jobRepository.markCompleted(job.id);
+          // After completion, so a failure to queue capture can never send the vectorize job round again.
+          if (job.kind === "vectorize") await this.imageCapture?.afterRevisionPublished(job);
           await this.runPostJobMaintenance(10, job.workspaceId);
           await this.emitJobTelemetry("document.worker.job_completed", job, {
             durationMs: Date.now() - startedAt,
@@ -692,6 +712,13 @@ export class DocumentProcessingWorker {
     });
   }
 
+  private requireImageCapture(): DocumentImageCaptureStage {
+    if (!this.imageCapture) {
+      throw new Error("Document image capture is not configured");
+    }
+    return this.imageCapture;
+  }
+
   private requireEmbeddingProfileJobService(): Pick<EmbeddingProfileJobService, "process"> {
     if (!this.embeddingProfileJobService) {
       throw new Error("Embedding profile job service is not configured");
@@ -735,6 +762,19 @@ export class DocumentProcessingWorker {
     }
 
     return repairedJobCount;
+  }
+
+  /**
+   * Deletes the stored copies of a batch of images that deleted documents or re-syncs released.
+   * On every tick, idle or not, so cleanup never waits for a job: the poll loop ticks in a local
+   * deployment and the recovery task ticks in a task-server one.
+   */
+  private async sweepReleasedImagesIfDue(now: Date): Promise<void> {
+    if (!this.imageCapture || now.getTime() - this.lastReleasedImageSweepAt < RELEASED_IMAGE_SWEEP_INTERVAL_MS) {
+      return;
+    }
+    this.lastReleasedImageSweepAt = now.getTime();
+    await this.imageCapture.sweepReleased();
   }
 
   private async runEmbeddingCleanupIfDue(now: Date): Promise<void> {

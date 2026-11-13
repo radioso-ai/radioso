@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, Boxes, ExternalLink, FileText, PanelRight, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react'
 
 import { DocumentStatus } from '@/components/dashboard/document-status'
+import { DocumentImagesList } from '@/components/dashboard/documents/document-images-list'
 import { MetadataKeyValueEditor } from '@/components/dashboard/shared/metadata-key-value-editor'
 import type { MetadataRecord } from '@/components/dashboard/shared/metadata-key-value-rows'
 import { MarkdownContent } from '@/components/markdown/markdown-content'
@@ -21,7 +22,7 @@ import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { DocumentSourceListItem, DocumentSummary } from '@/lib/api'
+import type { DocumentDetails, DocumentSourceListItem, DocumentSummary } from '@/lib/api'
 import {
   endOfDayIsoFromDateInput,
   isRetrievable,
@@ -92,7 +93,8 @@ export function DocumentEditorPage({
   retrievalError,
   onSubmit,
 }: {
-  document: DocumentSummary | null
+  /** A summary while the document loads; its details, pictures included, once loaded. */
+  document: (DocumentSummary & Pick<DocumentDetails, 'images'>) | null
   values: DocumentEditorValues
   metadataError: string | null
   saveError?: ReactNode
@@ -321,6 +323,7 @@ export function DocumentEditorPage({
           <div className="flex h-full min-h-0">
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
               <div className="w-full">
+                {!isEditing && document.images ? <DocumentImagesList images={document.images} /> : null}
                 {isEditing ? (
                   <Textarea
                     id="document-content"

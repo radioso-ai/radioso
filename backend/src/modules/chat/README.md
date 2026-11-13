@@ -183,13 +183,15 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   structured parts of a reply a client renders beside its text (the types are
   `ReplyBlock` in `@radioso/conversation-contract`). A client declares the kinds it
   renders in `clientContextCapabilities["reply.blocks"]`; the preparer keeps that
-  on the session as `replyBlocks`. On a grounded answer whose evidence carries a
-  stored image, `ReplyBlockTurnFactory.forTurn` gives the turn a ledger of the
+  on the session as `replyBlocks`. On a grounded answer of an agent with
+  `replyCardsEnabled` on, whose evidence carries a stored image (never a site
+  banner: retrieval's `evidenceImages.ts` leaves out a primary more than five
+  documents share), `ReplyBlockTurnFactory.forTurn` gives the turn a ledger of the
   images under per-turn handles (`turnImageLedger.ts`), the Result images section
   of the prompt, and the `present` field (`presentHead.ts`), which the composer
   merges ahead of `answer` with `mergeAnswerSchemaExtensions`, so the model picks
-  the pictures before it writes a short lead around them. Without the
-  capability, or without a stored image, nothing is read and the prompt and schema
+  the pictures before it writes a short lead around them. Without the setting,
+  the capability, or a stored image, nothing is read and the prompt and schema
   are what they would be without reply blocks (`tests/fixtures/reply-blocks/`
   holds the golden). `replyBlockBuilder.ts` builds the block from the handles the
   model picked and nothing else it wrote: an unknown handle is dropped, titles and
@@ -609,7 +611,12 @@ imports from `services/`.
   which also hands it the conversation as a routine's consents read it
   (`services/routines/routineConsentTurn.ts`, #1544). The routine's
   `hostEffects.consentEvents` ride the result to `completeAssistantTurn` unread, and
-  `PostgresAssistantTurnPersistence` records them in the turn's transaction. A replayed
+  `PostgresAssistantTurnPersistence` records them in the turn's transaction. The same
+  transaction marks the visitor messages `sensitiveMessageMarks`
+  (`services/routines/sensitiveTurnMarker.ts`) names, the earlier ones a step read a covered
+  value from included, and, after a consent of the conversation was withdrawn while the turn
+  ran, withholds the turn's visitor message and reply through the composition-bound
+  withholding (`bindConsentMessageWithholding`). A replayed
   turn (Test Chat, eval) records them in its session's own store instead
   (`services/routines/sessionRoutineConsentStore.ts`, the assembly's
   `routineConsentStore`), which Test Chat's continuation carries to the next turn.

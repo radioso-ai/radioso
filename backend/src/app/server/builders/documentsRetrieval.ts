@@ -16,6 +16,9 @@ import {
   createDefaultWebsiteCrawlJobDispatcher,
   type ApplicationComposition,
 } from "../../composition/index.js";
+import { createDocumentImageCapture } from "../../composition/documentImageCapture.js";
+import { publicApiBaseUrl } from "../../composition/publicApiBase.js";
+import { createReplyImageUrls } from "../../http/routes/replyImageAddress.js";
 import {
   type DocumentJobDispatcherPort,
   DocumentDeletionService,
@@ -77,6 +80,7 @@ import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import { Database } from "../../../shared/infra/database.js";
 import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import type { Env } from "../../config/env.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
@@ -157,6 +161,7 @@ export const buildDocumentServices = (input: {
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
   /** The zone a document's relative dates are read in when it is enriched. */
   workspaceTimeZones: WorkspaceTimeZoneReader;
+  metricsRegistry?: MetricsRegistry | null;
 }) => {
   const {
     auditService,
@@ -217,6 +222,17 @@ export const buildDocumentServices = (input: {
     repositories.embeddingProfileCleanupRepository,
     input.embeddingProfileProjectionCleanup,
   );
+  const documentImageCapture = createDocumentImageCapture({
+    images: repositories.documentImageRepository,
+    documents: repositories.documentRepository,
+    chunks: repositories.chunkRepository,
+    jobs: repositories.documentProcessingJobRepository,
+    dispatcher: documentJobDispatcher,
+    storage: documentStorage,
+    metrics: input.metricsRegistry,
+    logger,
+    imageUrls: createReplyImageUrls(publicApiBaseUrl(env)),
+  });
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,
     auditService,
@@ -228,6 +244,8 @@ export const buildDocumentServices = (input: {
     documentSourceRepository,
     input.embeddingCoverage,
     input.workspaceInvalidationPublisher,
+    documentImageCapture.candidates,
+    documentImageCapture.listing,
   );
   const websiteCrawlerIngestionPort = createWebsiteCrawlerIngestionPort(documentIngestionService);
   const websiteCrawlJobService = new WebsiteCrawlJobService({
@@ -269,6 +287,7 @@ export const buildDocumentServices = (input: {
     input.postJobMaintenance,
     input.embeddingProfileTerminalFailures,
     input.workspaceInvalidationPublisher,
+    documentImageCapture.stage,
   );
   const documentJobConsumer = composition.documentJobConsumer ?? createDefaultDocumentJobConsumer(
     env,

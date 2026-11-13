@@ -21,7 +21,8 @@ import type { CutReplyStore, CutReplyStoreInput } from "../services/cutReplyMess
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
-import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
+import { withholdMessagesWithCopies, type MessageWithholdingScope } from "../../../shared/domain/messageWithholding.js";
+import { matchableValueTexts, SENSITIVE_SLOT_KEYS_METADATA_KEY, sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
 import type { RoutineConsentCommitted, RoutineConsentWritten } from "../../../shared/domain/routineConsentTurn.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { BackgroundJobQueue, BackgroundJobRequest, BackgroundJobWakePort } from "../../../shared/background-jobs/index.js";
@@ -33,6 +34,9 @@ type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["compl
 interface RoutineConsentCommitObserver {
   committed(input: RoutineConsentCommitted): void;
 }
+
+/** A consent withdrawal's message withholding, bound to the turn's transaction (#1544). */
+type MessageWithholdingBinding = (db: Db) => MessageWithholdingScope;
 
 interface MessageRow {
   id: string;
@@ -266,23 +270,55 @@ const applyClarificationTransition = async (
  * Marks the visitor message of a turn whose routine holds a sensitive slot value (#1543), so every
  * copy of the transcript that leaves reads it as withheld, and drops a facet the extractor may have
  * stored from it before this turn committed (the extractor runs off the turn's path; its own write
- * refuses a marked message once this commits, see MessageFacetRepository.upsertFacet).
+ * refuses a marked message once this commits, see MessageFacetRepository.upsertFacet). The earlier
+ * messages the turn read a covered value from (#1544) gain those slots on the marker they have.
  */
-const markSensitiveVisitorMessage = async (db: Db, input: CompleteAssistantTurnInput): Promise<void> => {
+const markSensitiveVisitorMessages = async (db: Db, input: CompleteAssistantTurnInput): Promise<void> => {
   const marked = input.sensitiveVisitorMessage;
-  if (!marked) {
-    return;
+  if (marked) {
+    await sql`
+      UPDATE messages
+      SET metadata_json = metadata_json || ${toJsonb(sensitiveTurnMetadata(marked.sensitiveSlotKeys))}
+      WHERE id = ${marked.id}
+        AND workspace_id = ${input.workspaceId}
+        AND conversation_id = ${input.conversationId}
+    `.execute(db);
   }
-  await sql`
-    UPDATE messages
-    SET metadata_json = metadata_json || ${toJsonb(sensitiveTurnMetadata(marked.sensitiveSlotKeys))}
-    WHERE id = ${marked.id}
-      AND workspace_id = ${input.workspaceId}
-      AND conversation_id = ${input.conversationId}
-  `.execute(db);
-  await sql`
-    DELETE FROM message_facets WHERE message_id = ${marked.id} AND workspace_id = ${input.workspaceId}
-  `.execute(db);
+  for (const earlier of input.sensitiveEarlierMessages ?? []) {
+    await sql`
+      UPDATE messages
+      SET metadata_json = coalesce(metadata_json, '{}'::jsonb) || jsonb_build_object(${SENSITIVE_SLOT_KEYS_METADATA_KEY}::text, (
+            SELECT jsonb_agg(DISTINCT slot_key) FROM (
+              SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(metadata_json -> ${SENSITIVE_SLOT_KEYS_METADATA_KEY}::text) = 'array'
+                                                    THEN metadata_json -> ${SENSITIVE_SLOT_KEYS_METADATA_KEY}::text ELSE '[]'::jsonb END)
+              UNION SELECT unnest(${sql.val(earlier.sensitiveSlotKeys)}::text[])
+            ) AS keys(slot_key)))
+      WHERE id = ${earlier.id}
+        AND workspace_id = ${input.workspaceId}
+        AND conversation_id = ${input.conversationId}
+        AND role = 'user'
+    `.execute(db);
+  }
+  const ids = [...(marked ? [marked.id] : []), ...(input.sensitiveEarlierMessages ?? []).map((earlier) => earlier.id)];
+  if (ids.length > 0) {
+    await sql`
+      DELETE FROM message_facets WHERE message_id = ANY(${sql.val(ids)}::uuid[]) AND workspace_id = ${input.workspaceId}
+    `.execute(db);
+  }
+};
+
+/**
+ * The slots of the conversation's withdrawn consents, and the values of them this turn's routine
+ * state held, as text a message would state them in.
+ */
+const withdrawnCoverage = (
+  withdrawn: ReadonlyArray<{ routineId: string; slotKeys: readonly string[] }>,
+  transition: CapturedRoutineTransition | null | undefined,
+): { slotKeys: string[]; valueTexts: string[] } => {
+  const states = transition ? [transition.kind === "save" ? transition.state : null, transition.startedFrom ?? null] : [];
+  const values = withdrawn.flatMap((record) => states.flatMap((state) =>
+    state && state.routineId === record.routineId ? record.slotKeys.map((key) => state.variables[key]) : []));
+  return { slotKeys: [...new Set(withdrawn.flatMap((record) => record.slotKeys))], valueTexts: matchableValueTexts(values) };
 };
 
 const insertAuditEvent = async (
@@ -321,6 +357,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     private readonly backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">,
     // Told what a committed turn recorded of its routine's consents, for logs and metrics.
     private readonly routineConsentObserver?: RoutineConsentCommitObserver,
+    // Withholds what the turn wrote once a consent of its conversation was withdrawn (#1544).
+    private readonly consentMessageWithholding?: MessageWithholdingBinding,
     // Records the pictures a reply's cards show from a skill's result, with the reply.
     private readonly toolImageRows?: ToolImageRowWriter,
   ) {}
@@ -346,7 +384,7 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         )
         : null;
       await applyClarificationTransition(db, input.clarificationTransition);
-      await markSensitiveVisitorMessage(db, input);
+      await markSensitiveVisitorMessages(db, input);
 
       const messageId = input.assistantMessage.id ?? randomUUID();
       const result = await sql<MessageRow>`
@@ -436,12 +474,13 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       if (input.additionalAuditEvent) {
         await insertAuditEvent(db, input.additionalAuditEvent);
       }
+      const stored = await this.withholdAfterWithdrawal(db, input, message);
       // Last, inside the transaction: a turn the fence refuses rolls back whole, and one it admits
       // stays latched against a newer turn while COMMIT runs.
       input.commitFence?.();
 
       return {
-        message: mapMessage(message),
+        message: mapMessage(stored),
         committedFacts: {
           insertedActionTypes,
           decisionCreated: input.pendingDecisionTransition !== undefined && input.pendingDecisionTransition !== null,
@@ -475,6 +514,46 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         consentReport?.();
       },
     };
+  }
+
+  /**
+   * A consent of the conversation withdrawn while this turn ran (#1544): the withdrawal committed
+   * first, so it never saw what the turn writes now. The turn's visitor message and reply are
+   * withheld, with their copies, the way the withdrawal withholds its own, when they are marked
+   * with a slot it covered or state a value of one the turn's routine state held. Only a turn that
+   * marks a sensitive slot or saves a routine that asks consent can carry one. Its saved state
+   * locks the routine state the withdrawal erases, so one of the two always sees the other. Returns
+   * the reply as stored.
+   */
+  private async withholdAfterWithdrawal(db: Db, input: CompleteAssistantTurnInput, reply: MessageRow): Promise<MessageRow> {
+    const transition = input.routineStateTransition;
+    const mayCarry = input.sensitiveVisitorMessage !== undefined || (transition?.kind === "save" && transition.asksConsent !== false);
+    if (!this.consentMessageWithholding || !mayCarry) {
+      return reply;
+    }
+    const withdrawn = await new RoutineConsentRepository(db).withdrawnInConversation({ conversationId: input.conversationId });
+    const latest = withdrawn.at(-1);
+    if (!latest) {
+      return reply;
+    }
+    const { messageIds } = await withholdMessagesWithCopies(this.consentMessageWithholding(db), {
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      ...withdrawnCoverage(withdrawn, transition),
+      at: latest.withdrawnAt,
+      among: [reply.id, ...(input.visitorMessageId ? [input.visitorMessageId] : [])],
+    });
+    if (!messageIds.includes(reply.id)) {
+      return reply;
+    }
+    const reread = await sql<MessageRow>`
+      SELECT id, conversation_id, workspace_id, role, content, metadata_json,
+        skill_name, skill_outcome, skill_status, total_latency_ms,
+        grounding_verdict, grounding_claim_count, grounding_sourced_claim_count,
+        grounding_unsourced_claim_count, grounding_invalid_source_count, created_at
+      FROM messages WHERE id = ${reply.id}
+    `.execute(db);
+    return reread.rows[0] ?? reply;
   }
 
   /** Reports the turn's consent events once committed; a report that fails never fails the turn. */

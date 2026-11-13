@@ -6,6 +6,7 @@ import type {
   ChatHistoryListResponse,
   ContactHistoryDetailResponse,
   ContactHistoryListResponse,
+  ConversationConsent,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
   HistoryItemsApiResponse,
@@ -122,6 +123,25 @@ export const chatApi = {
     await request<void>(`/history/chat/${encodeURIComponent(conversationId)}`, {
       method: 'DELETE',
     }, { withSession: true })
+  },
+
+  /** The consent decisions a visitor gave in the conversation's routines, oldest first. */
+  async listConversationConsents(conversationId: string, signal?: AbortSignal): Promise<ConversationConsent[]> {
+    const response = await request<{ consents: ConversationConsent[] }>(`/history/chat/${encodeURIComponent(conversationId)}/consents`, {
+      method: 'GET',
+      ...(signal ? { signal } : {}),
+    }, { withSession: true })
+    return response.consents
+  },
+
+  /** Withdraws a granted consent on the visitor's request; answers the record as it now stands. */
+  async withdrawConversationConsent(conversationId: string, recordId: string): Promise<ConversationConsent> {
+    const response = await request<{ consent: ConversationConsent }>(
+      `/history/chat/${encodeURIComponent(conversationId)}/consents/${encodeURIComponent(recordId)}/withdraw`,
+      { method: 'POST' },
+      { withSession: true },
+    )
+    return response.consent
   },
 
   async listVisitorConversations(

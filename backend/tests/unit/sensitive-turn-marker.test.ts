@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationTrace, RoutineState, RoutineTraceRejectedSlot } from "@radioso/conversation-contract";
 
+import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { ChatRoutineTurnReporter } from "../../src/modules/chat/contracts/routineTurnState.js";
-import { sensitiveSlotKeysForTurn } from "../../src/modules/chat/services/routines/sensitiveTurnMarker.js";
+import { sensitiveMessageMarks, sensitiveSlotKeysForTurn } from "../../src/modules/chat/services/routines/sensitiveTurnMarker.js";
 
 const parked: RoutineState = {
   sessionId: "conv_1",
@@ -78,5 +79,64 @@ describe("sensitiveSlotKeysForTurn", () => {
     });
 
     expect(keys).toEqual([]);
+  });
+});
+
+describe("sensitiveMessageMarks", () => {
+  const message = (id: string, role: "user" | "assistant", content: string): MessageRecord =>
+    ({ id, conversationId: "conv_1", workspaceId: "ws_1", role, content, createdAt: new Date("2026-11-11T00:00:00.000Z") });
+  // Asked before any routine ran, then the routine's own turns, which marked what they read.
+  const history = [
+    message("before-1", "user", "Can I join while PREGNANT  with twins?"),
+    message("before-reply", "assistant", "Yes, we adapt the classes for pregnant with twins."),
+    message("before-2", "user", "And the price?"),
+    message("start", "user", "I want to book a class"),
+    message("name", "user", "I'm Ada"),
+    message("grant", "user", "Yes, I agree"),
+  ];
+  // The step filled `pregnancy` while it could read it from earlier messages.
+  const filledFromEarlier = (variables: Record<string, unknown>): ConversationTrace => {
+    const trace = routineTrace([]);
+    return {
+      ...trace,
+      stages: trace.stages.map((stage) => (stage.subTrace
+        ? { ...stage, subTrace: { ...stage.subTrace, payload: { ...stage.subTrace.payload as object, earlierMessageSlotKeys: Object.keys(variables) } } }
+        : stage)),
+    };
+  };
+  const marks = (input: { variables: Record<string, unknown>; visitorMessage?: string; startedMessageId?: string; earlier?: boolean }) =>
+    sensitiveMessageMarks({
+      session: { userMessage: { id: "current", content: input.visitorMessage ?? "Yes, that one" }, history },
+      sensitiveSlotKeys: ["pregnancy"],
+      routineStateTransition: {
+        kind: "save",
+        state: { ...parked, variables: { name: "Ada", ...input.variables }, startedMessageId: input.startedMessageId ?? "start" },
+      },
+      engineTrace: input.earlier === false ? routineTrace([]) : filledFromEarlier(input.variables),
+    });
+
+  it("marks the visitor's earlier messages that state the value the step took from them, never a reply", () => {
+    expect(marks({ variables: { pregnancy: "pregnant with twins" } })).toEqual({
+      visitorMessageId: "current",
+      sensitiveVisitorMessage: { id: "current", sensitiveSlotKeys: ["pregnancy"] },
+      sensitiveEarlierMessages: [{ id: "before-1", sensitiveSlotKeys: ["pregnancy"] }],
+    });
+  });
+
+  it("marks no earlier message when the turn's own message states the value", () => {
+    expect(marks({ variables: { pregnancy: "expecting a baby" }, visitorMessage: "I'm expecting a baby" })).not.toHaveProperty("sensitiveEarlierMessages");
+  });
+
+  it("marks every message read from before the routine started for a value it cannot search for", () => {
+    expect(marks({ variables: { pregnancy: true } }).sensitiveEarlierMessages).toEqual([
+      { id: "before-1", sensitiveSlotKeys: ["pregnancy"] },
+      { id: "before-2", sensitiveSlotKeys: ["pregnancy"] },
+    ]);
+    // A run that started before what the turn read: its own turns marked every source.
+    expect(marks({ variables: { pregnancy: true }, startedMessageId: "older" })).not.toHaveProperty("sensitiveEarlierMessages");
+  });
+
+  it("marks nothing earlier when the step filled the slot without the earlier-message rule", () => {
+    expect(marks({ variables: { pregnancy: "pregnant with twins" }, earlier: false })).not.toHaveProperty("sensitiveEarlierMessages");
   });
 });

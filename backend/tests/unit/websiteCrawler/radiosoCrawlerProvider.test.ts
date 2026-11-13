@@ -49,6 +49,10 @@ describe("RadiosoCrawlerProvider", () => {
       browserAttempted: false,
       browserFallbackReason: null,
       httpQualityScore: 0.95,
+      images: [
+        { url: "https://cdn.example.com/cover.jpg", role: "primary", alt: "", caption: null, textOffset: null },
+        { url: "https://cdn.example.com/ridge.jpg", role: "inline", alt: "Ridge", caption: "The ridge", textOffset: 13 },
+      ],
     }]);
 
     const provider = new RadiosoCrawlerProvider();
@@ -74,6 +78,10 @@ describe("RadiosoCrawlerProvider", () => {
         canonicalUrl: "https://example.com/docs",
         title: "Docs",
         content: "Documentation",
+        images: [
+          { sourceUrl: "https://cdn.example.com/cover.jpg", role: "primary", alt: "", caption: null, textOffset: null },
+          { sourceUrl: "https://cdn.example.com/ridge.jpg", role: "inline", alt: "Ridge", caption: "The ridge", textOffset: 13 },
+        ],
         metadata: {
           frontierUrl: "https://example.com",
           crawlerStatus: "success",

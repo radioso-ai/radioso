@@ -28,6 +28,7 @@ import { operatorVisitorImages } from '@/components/chat/visitor-image-thumbnail
 import { ChatMessageThread } from './chat-message-thread'
 import { ContinueInTestChatAction } from './workbench/continue-in-test-chat-action'
 import { DeleteConversationAction } from './delete-conversation-action'
+import { ConversationConsents } from './conversation-consents'
 import { VisitorPanel } from './visitor-panel'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
@@ -63,6 +64,7 @@ import {
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { computeRoutineThreadMarkers } from '@/lib/routine-thread-grouping'
 import { useRoutineCatalog } from '@/lib/routine-catalog'
+import { withheldMessageView } from '@/lib/conversation-consents'
 import { routineTurnSignalFromSpine } from '@/lib/turn-trace'
 
 const contactStatusLabels: Record<ContactHistoryDetail['status'], string> = {
@@ -259,6 +261,8 @@ export function ConversationDrawer({
   // `messages` — needs a stable callback now. `handleTailNotFound` reads this ref at call time,
   // always invoking whichever `closeDrawer` closure the latest render produced.
   const closeDrawerRef = useRef<() => void>(() => {})
+  // Bumped after a consent withdrawal, so the tail reads its window again with the withheld messages.
+  const [tailRestartKey, setTailRestartKey] = useState(0)
 
   const handleItemNotFound = useCallback(() => {
     onAfterClose?.()
@@ -278,6 +282,7 @@ export function ConversationDrawer({
     enabled: selectedChatConversationId !== null && !isAudiencePulseEvidence,
     intervalMs: 1000,
     onNotFound: handleTailNotFound,
+    restartKey: tailRestartKey,
   })
 
   const {
@@ -298,6 +303,7 @@ export function ConversationDrawer({
     setShowGraph,
     handleSelectThreadMessage,
     loadOlderMessages,
+    refetchDetail,
     effectiveConversationMessages,
   } = useHistoryDetailState({
     selectedItem,
@@ -325,7 +331,15 @@ export function ConversationDrawer({
 
   const [flowOpen, setFlowOpen] = useState(false)
 
-  const renderedConversationMessages = effectiveConversationMessages
+  // A message withheld after its consent was withdrawn reads as withheld, not as its redaction marker.
+  const renderedConversationMessages = useMemo(
+    () => effectiveConversationMessages.map(withheldMessageView),
+    [effectiveConversationMessages],
+  )
+  const handleConsentWithdrawn = useCallback(() => {
+    setTailRestartKey((key) => key + 1)
+    void refetchDetail()
+  }, [refetchDetail])
   // Held across renders so the thread re-places its events only when a read brings new ones.
   const conversationActivity = useConversationActivity({
     conversationId: selectedChatConversationId,
@@ -547,6 +561,14 @@ export function ConversationDrawer({
                     onSelectConversation={(conversationId) => onSelectedItemChange({ kind: 'chat', id: conversationId })}
                     className="mb-4"
                   />
+                  {selectedItem.kind === 'chat' ? (
+                    <ConversationConsents
+                      conversationId={selectedItem.id}
+                      routineNamesById={routineNamesById}
+                      onWithdrawn={handleConsentWithdrawn}
+                      className="mb-4"
+                    />
+                  ) : null}
                   {conversationDetail.hasOlderMessages ? (
                     <div className="mb-3 flex justify-center">
                       <Button

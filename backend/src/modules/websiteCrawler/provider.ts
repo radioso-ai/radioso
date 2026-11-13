@@ -1,3 +1,4 @@
+import type { DocumentImageCandidate } from "../documents/contracts/index.js";
 import type { WebsiteCrawlCheckpoint, WebsiteCrawlPolicy } from "./policy.js";
 
 export interface WebsiteCrawlRequest {
@@ -21,6 +22,8 @@ export interface WebsiteCrawlPage {
   title?: string | null;
   content: string;
   metadata?: Record<string, unknown>;
+  /** The page's metadata picture and the images in its main content; an inline image's offset indexes `content`. */
+  images?: DocumentImageCandidate[];
 }
 
 export type WebsiteCrawlExecutionOutcome = "completed" | "yielded";

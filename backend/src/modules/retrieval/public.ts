@@ -83,6 +83,7 @@ export {
 export { resolveContextSourceUrl } from "./domain/contextSourceUrl.js";
 export { EvidenceImageAttacher } from "./services/evidenceImageAttacher.js";
 export type { EvidenceContext, EvidenceImage, EvidenceItemImages } from "./domain/evidenceImages.js";
+export { isSiteBanner, PRIMARY_DOCUMENT_COUNT_LIMIT } from "./domain/evidenceImages.js";
 export { SharedAnswerInstructionBuilder } from "./services/sharedAnswerInstructionBuilder.js";
 export type { RetrievalDefaultsProvider } from "./domain/retrievalDefaultsProvider.js";
 export type { SkillSettingsResolver } from "./services/retrievalContextStage.js";

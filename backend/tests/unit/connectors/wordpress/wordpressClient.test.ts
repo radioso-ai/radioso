@@ -31,10 +31,13 @@ describe("WordpressClient", () => {
     expect(params.get("order")).toBe("asc");
     expect(params.get("status")).toBe("publish");
     expect(params.get("modified_after")).toBe("2026-05-15T00:00:00");
-    // Author name only travels in the embedded author relation, so we request
-    // embedding and keep the embedded payload in _fields.
-    expect(params.get("_embed")).toBe("author");
+    // The author name and the featured image only travel in embedded relations, so
+    // we request embedding and keep the embedded payload in _fields.
+    expect(params.get("_embed")).toBe("author,wp:featuredmedia");
     expect(params.get("_fields")).toContain("_embedded.author");
+    expect(params.get("_fields")).toContain("featured_media");
+    expect(params.get("_fields")).toContain("_links.wp:featuredmedia");
+    expect(params.get("_fields")).toContain("_embedded.wp:featuredmedia");
   });
 
   it("maps built-in post types to their REST base (page→pages, post→posts) and passes custom types through", () => {

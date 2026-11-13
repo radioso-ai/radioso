@@ -253,7 +253,9 @@ export class ToolImageCapture {
       signal,
     });
     if (signal.aborted) throw new CaptureAbortedError();
-    return fetched.kind === "fetched" ? { kind: "read", bytes: fetched.bytes } : { kind: "failed", outcome: fetchFailure(fetched) };
+    if (fetched.kind === "fetched") return { kind: "read", bytes: fetched.bytes };
+    // A capture sends no entity tag, so a 304 is a server that answered what it was not asked.
+    return { kind: "failed", outcome: fetched.kind === "not_modified" ? "http_error" : fetchFailure(fetched) };
   }
 
   private async finish(image: ClaimedToolImage, outcome: ToolImageCaptureOutcome): Promise<ToolImageCaptureOutcome> {

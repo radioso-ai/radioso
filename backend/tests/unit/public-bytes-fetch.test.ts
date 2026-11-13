@@ -126,6 +126,13 @@ describe("fetchPublicBytes", () => {
         };
         pump();
       }],
+      ["/tagged", (request, response) => {
+        if (request.headers["if-none-match"] === '"v1"') {
+          response.writeHead(304, { etag: '"v1"' }).end();
+          return;
+        }
+        response.writeHead(200, { "content-type": "image/jpeg", etag: '"v1"' }).end(PHOTO);
+      }],
       ["/to-photo", redirectTo("/photo")],
       ["/to-metadata", redirectTo("http://169.254.169.254/latest/meta-data/")],
       ["/to-private-host", redirectTo(`http://localhost:${new URL(canary.origin).port}/photo`)],
@@ -191,6 +198,16 @@ describe("fetchPublicBytes", () => {
 
     expect(result).toMatchObject({ kind: "fetched", contentType: "text/html" });
     expect(server.headers.get("/page")?.accept).toBe("*/*");
+  });
+
+  it("returns the entity tag a response carries, and reports an unchanged body when asked with it", async () => {
+    const first = await fetchPublicBytes(`${server.origin}/tagged`, LIMITS, transport());
+    const unchanged = await fetchPublicBytes(`${server.origin}/tagged`, { ...LIMITS, ifNoneMatch: '"v1"' }, transport());
+    const changed = await fetchPublicBytes(`${server.origin}/tagged`, { ...LIMITS, ifNoneMatch: '"v0"' }, transport());
+
+    expect(first).toEqual({ kind: "fetched", bytes: PHOTO, contentType: "image/jpeg", url: `${server.origin}/tagged`, etag: '"v1"' });
+    expect(unchanged).toEqual({ kind: "not_modified", url: `${server.origin}/tagged` });
+    expect(changed).toMatchObject({ kind: "fetched", etag: '"v1"' });
   });
 
   it("reports a status that is not a success", async () => {

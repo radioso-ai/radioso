@@ -35,6 +35,7 @@ import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/cont
 import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db, OwnerCommitHook } from "../../shared/infra/kysely/types.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
+import { toBehaviorSettings } from "./agentBehaviorSettingsRow.js";
 import { withAgentDraftMutation } from "./agentDraftMutation.js";
 import { withAgentDraftProjection } from "./agentDraftProjection.js";
 
@@ -412,23 +413,6 @@ const parseSurfaceExtensions = (
   return parsed;
 };
 
-const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown> => ({
-  customInstruction: agent.customInstruction,
-  suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-  assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
-  citationDisplayEnabled: agent.citationDisplayEnabled,
-  contactRequestsEnabled: agent.contactRequestsEnabled,
-  webhookExportsEnabled: agent.webhookExportsEnabled,
-  handoffOnRetrievalMiss: agent.handoffOnRetrievalMiss,
-  visitorImagesEnabled: agent.visitorImagesEnabled,
-  contactRequestDelivery: agent.contactRequestDelivery,
-  logo: agent.logo,
-  theme: agent.theme,
-  branding: agent.branding,
-  voice: agent.voice,
-  mechanicsReplies: agent.mechanicsReplies,
-});
-
 const toGreetingSettings = (agent: NormalizedAgentInput): Record<string, unknown> => ({
   greetingInstruction: agent.greetingInstruction,
   assistantDefaultLocale: agent.assistantDefaultLocale,
@@ -537,6 +521,7 @@ const mapAgent = (
     webhookExportsEnabled: readBoolean(behavior, "webhookExportsEnabled") ?? false,
     handoffOnRetrievalMiss: readBoolean(behavior, "handoffOnRetrievalMiss") ?? false,
     visitorImagesEnabled: readBoolean(behavior, "visitorImagesEnabled") ?? false,
+    replyCardsEnabled: readBoolean(behavior, "replyCardsEnabled") ?? false,
     contactRequestDelivery: readContactRequestDelivery(behavior),
     retrievalEnabled: hasDefaultRetrieveSkill ? row.default_retrieve_enabled ?? true : row.retrieval_enabled,
     sourceScope,

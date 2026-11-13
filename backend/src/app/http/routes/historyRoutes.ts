@@ -12,10 +12,12 @@ import { badRequest } from "../../../shared/domain/errors.js";
 import { isMachinePrincipal, type MachineAwareRoutePrincipal } from "../shared/machinePublicSurfacePolicy.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
+import { consentWithdrawalRefusal, presentConsentRecord } from "../presenters/consentRecordPresenter.js";
 import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
 import {
   chatHistoryPageQuerySchema,
   collectionPageQuerySchema,
+  conversationConsentParamsSchema,
   conversationParamsSchema,
   operatorConversationTailQuerySchema,
   historyContactParamsSchema,
@@ -30,7 +32,7 @@ import {
 
 type HistoryRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "assistantHistoryService" | "documentSearchHistoryService" | "conversationErasure"
+  "assistantHistoryService" | "documentSearchHistoryService" | "conversationErasure" | "conversationConsents"
 > & { voiceRecordings: VoiceRecordingAvailabilityPort };
 
 /**
@@ -56,9 +58,9 @@ const withRecordingAvailability = async <Detail extends { conversationId: string
 };
 
 /**
- * Who asked for an erasure: the signed-in teammate, or a personal credential's owner. A service
- * account has no person behind it; its credential joins the audit event from the request's own audit
- * context.
+ * Who asked for an erasure or a consent withdrawal: the signed-in teammate, or a personal
+ * credential's owner. A service account has no person behind it; its credential joins the audit
+ * event from the request's own audit context.
  */
 export const erasureActor = (res: Response): ConversationErasureActor => {
   const { accountId, userId, authPrincipal } = res.locals as {
@@ -242,6 +244,41 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         actor: erasureActor(res),
       });
       res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/chat/:conversationId/consents", workspaceSession, historyRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedParams = conversationParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const consents = await dependencies.conversationConsents.list({ workspaceId, conversationId: parsedParams.data.conversationId });
+      res.status(200).json({ consents: consents.map(presentConsentRecord) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Withdrawing a visitor's consent erases what it covered, so it carries erasure's permission.
+  router.post("/chat/:conversationId/consents/:recordId/withdraw", workspaceSession, historyDelete, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedParams = conversationConsentParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const outcome = await dependencies.conversationConsents.withdraw({ workspaceId, ...parsedParams.data, actor: erasureActor(res) });
+      if (outcome.kind !== "withdrawn") {
+        next(consentWithdrawalRefusal(outcome));
+        return;
+      }
+      res.status(200).json({ consent: presentConsentRecord(outcome.consent) });
     } catch (error) {
       next(error);
     }

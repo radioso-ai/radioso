@@ -433,6 +433,18 @@ describe("DefaultRoutineRunner consent before a covered slot (#1544)", () => {
       expect(selector.select).toHaveBeenCalledWith(expect.objectContaining({ earlierMessageSlotKeys: ["pregnant"] }));
       expect(result.endedVariables).toEqual({ name: "Ada", pregnant: true });
       expect(result.response.answer).toBe("[prenatal]");
+      // The trace names it, so the host can mark the earlier messages the value came from.
+      expect(result.trace?.earlierMessageSlotKeys).toEqual(["pregnant"]);
+    });
+
+    it("names no slot on the trace when the step filled none it could read from earlier messages", async () => {
+      const selector = readingEarlier({});
+      const runner = runnerWith(intake(), consentPort({ decisions: { health: "granted" } }), selector);
+
+      const result = await runner.resume({ turn: afterGrant("Hmm"), state: state(["ask_name", GATE, "ask_health"], { name: "Ada" }) });
+
+      expect(selector.select).toHaveBeenCalledWith(expect.objectContaining({ earlierMessageSlotKeys: ["pregnant"] }));
+      expect(result.trace).not.toHaveProperty("earlierMessageSlotKeys");
     });
 
     it("never lets a step read earlier messages on the turn that grants the consent", async () => {

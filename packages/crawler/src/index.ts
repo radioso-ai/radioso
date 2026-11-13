@@ -73,6 +73,7 @@ export {
   type FetchedPage,
   type ValidateNavigationUrl
 } from "./transport/crawler.js";
+export type { PageImage, PageImageRole } from "./transport/htmlImageExtraction.js";
 export {
   fetchPageWithPlaywright,
   fetchPageWithScreenshot,

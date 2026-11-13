@@ -31,3 +31,33 @@ export const sensitiveTurnMetadata = (sensitiveSlotKeys: readonly string[]): Rec
 /** A message's text as a copy of the transcript carries it. */
 export const transcriptCopyContent = (message: { content: string; metadata?: unknown }): string =>
   carriesSensitiveValue(message.metadata) ? REDACTED_VALUE : message.content;
+
+/**
+ * The shortest stored value, in characters, that a message's text is searched for (#1544). A
+ * shorter one, a number or a yes or no would match text that never stated it, so a message that
+ * carried one is found by its sensitive marker alone.
+ */
+const MIN_MATCHED_VALUE_LENGTH = 4;
+
+const collapseWhitespace = (text: string): string => text.replace(/\s+/gu, " ").trim();
+
+/**
+ * The texts a message that stated these slot values contains, each with its whitespace collapsed:
+ * every string value, and every string in a list value, at least {@link MIN_MATCHED_VALUE_LENGTH}
+ * characters long. A number, a yes or no, an object and a shorter string have none. Structural
+ * matching on what the visitor gave, never a list of words.
+ */
+export const matchableValueTexts = (values: readonly unknown[]): string[] => {
+  const texts = values
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter((value): value is string => typeof value === "string")
+    .map(collapseWhitespace)
+    .filter((text) => [...text].length >= MIN_MATCHED_VALUE_LENGTH);
+  return [...new Set(texts)];
+};
+
+/** Whether `text` states one of `valueTexts`: a substring, ignoring case, with whitespace collapsed on both sides. */
+export const containsValueText = (text: string, valueTexts: readonly string[]): boolean => {
+  const haystack = collapseWhitespace(text).toLowerCase();
+  return valueTexts.some((value) => haystack.includes(value.toLowerCase()));
+};

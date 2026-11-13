@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import { messageWithholdingOf, type MessageWithholding } from "../../../shared/domain/messageWithholding.js";
 import type { ReplyInterruption } from "../contracts/interruption.js";
 import type { OperatorReplySpeech } from "../contracts/operatorReplySpeech.js";
 import { storedReplyBlockSchema, type ReplyBlock, type ReplyImageUrls } from "../contracts/replyBlocks.js";
@@ -15,6 +16,8 @@ export interface StoredMessageFields {
   interruption?: ReplyInterruption;
   /** On a teammate's reply to a caller: pending until a turn of the call speaks it, then spoken. */
   speech?: OperatorReplySpeech;
+  /** On a message withheld once the consent that covered what it carried was withdrawn (#1544): its text is the redaction marker. */
+  withheld?: MessageWithholding;
   /** The reply blocks an assistant reply showed, as the visitor saw them. */
   blocks?: ReplyBlock[];
 }
@@ -34,12 +37,16 @@ const replyBlockFields = (message: MessageRecord, imageUrls: ReplyImageUrls | nu
   return parsed.success ? { blocks: presentReplyBlocks(parsed.data, imageUrls) } : {};
 };
 
-/** The voice markers and reply blocks a message carries. */
-export const storedMessageFields = (message: MessageRecord, imageUrls: ReplyImageUrls | null): StoredMessageFields => ({
-  ...(message.interruption ? { interruption: message.interruption } : {}),
-  ...(message.speech ? { speech: message.speech } : {}),
-  ...replyBlockFields(message, imageUrls),
-});
+/** The voice markers, withholding, and reply blocks a message carries. */
+export const storedMessageFields = (message: MessageRecord, imageUrls: ReplyImageUrls | null): StoredMessageFields => {
+  const withheld = messageWithholdingOf(message.metadata);
+  return {
+    ...(message.interruption ? { interruption: message.interruption } : {}),
+    ...(message.speech ? { speech: message.speech } : {}),
+    ...(withheld ? { withheld } : {}),
+    ...replyBlockFields(message, imageUrls),
+  };
+};
 
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 

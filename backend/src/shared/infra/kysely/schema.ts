@@ -826,7 +826,7 @@ export interface DocumentImages {
   caption: string | null;
   chunk_id: string | null;
   created_at: Generated<Timestamp>;
-  document_id: string;
+  document_id: string | null;
   height: number | null;
   id: Generated<string>;
   position: number;

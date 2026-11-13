@@ -208,6 +208,17 @@ function apply_filters($hook, $value, ...$args) {
 }
 function get_permalink($post) { return 'https://example.com/' . $post->post_name; }
 function get_the_author_meta($field, $id) { return 'Author'; }
+// Featured images: post id => attachment id, and attachment id => [size => [url, width, height]] plus its alt text.
+$GLOBALS['post_thumbnails'] = [];
+$GLOBALS['attachments'] = [];
+function get_post_thumbnail_id($post) { return $GLOBALS['post_thumbnails'][is_object($post) ? $post->ID : $post] ?? 0; }
+function wp_get_attachment_image_src($attachment_id, $size) {
+    $source = $GLOBALS['attachments'][$attachment_id]['sizes'][$size] ?? null;
+    return $source === null ? false : [$source[0], $source[1], $source[2], $size !== 'full'];
+}
+function get_post_meta($id, $key, $single = false) {
+    return $key === '_wp_attachment_image_alt' ? ($GLOBALS['attachments'][$id]['alt'] ?? '') : '';
+}
 function wp_remote_post($url, $args) {
     $GLOBALS['last_webhook_body'] = $args['body'];
     $GLOBALS['webhook_bodies'][] = $args['body'];

@@ -469,6 +469,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
   visitorImagesEnabled: false,
+  replyCardsEnabled: false,
   webhookExportsEnabled: false,
   handoffOnRetrievalMiss: false,
   contactRequestDelivery: {
@@ -1811,6 +1812,12 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === "/history/search") {
       await json(route, searchHistory);
+      return;
+    }
+
+    // A conversation's routine consent records: none, unless a spec routes its own.
+    if (request.method() === "GET" && /^\/history\/chat\/[^/]+\/consents$/.test(path)) {
+      await json(route, { consents: [] });
       return;
     }
 

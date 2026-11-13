@@ -55,7 +55,7 @@ const context = (index: number) => ({
 });
 
 const goldenSession = (): PreparedSession => ({
-  agent: { id: "agent-1", workspaceId: "workspace-1", chatModelOverride: null } as never,
+  agent: { id: "agent-1", workspaceId: "workspace-1", chatModelOverride: null, replyCardsEnabled: true } as never,
   conversation: { id: "conversation-1", workspaceId: "workspace-1", sourceChannel: "widget" } as never,
   history: [],
   userMessage: { id: "message-1", content: "Which hiking guides do you have?" } as never,
@@ -170,6 +170,18 @@ describe("reply blocks capability gating", () => {
     const { composer, attach } = composerWithReplyBlocks(recorded);
 
     expectGolden(await recordCalls(composer, recorded, sessionDeclaring({})));
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  it("sends the recorded prompt and schema, and reads no images, when the agent has reply cards off", async () => {
+    const recorded: Partial<GoldenCalls> = {};
+    const { composer, attach } = composerWithReplyBlocks(recorded);
+    const cardsOff = (): PreparedSession => {
+      const session = sessionDeclaring({ item_list: { layouts: ["carousel", "grid"] } })();
+      return { ...session, agent: { ...session.agent, replyCardsEnabled: false } };
+    };
+
+    expectGolden(await recordCalls(composer, recorded, cardsOff));
     expect(attach).not.toHaveBeenCalled();
   });
 

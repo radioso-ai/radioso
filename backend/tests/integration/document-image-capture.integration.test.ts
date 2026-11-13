@@ -189,7 +189,7 @@ describeIntegration("document image capture, from a crawled page to an answer's 
       evidenceImages: images,
     });
     const offer = await turnFactory.forTurn({
-      agent: { workspaceId, answerImagesEnabled: true },
+      agent: { workspaceId, replyCardsEnabled: true },
       conversation: { id: randomUUID(), sourceChannel: "web" },
       replyBlocks: { item_list: { layouts: ["carousel", "grid"] } },
       retrieval: {

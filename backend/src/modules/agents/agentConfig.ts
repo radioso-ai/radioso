@@ -40,10 +40,11 @@ import {
  * alone means two deployments can disagree about what the same version contains —
  * and the bundle importer's version gate would then wave through a config whose new
  * fields it silently ignores. Version 4 added `internalName` and
- * `handoffOnRetrievalMiss`; readers declare which versions they accept and what an
+ * `handoffOnRetrievalMiss`; version 5 added `visitorImagesEnabled` and
+ * `replyCardsEnabled`. Readers declare which versions they accept and what an
  * absent field means (see SUPPORTED_AGENT_CONFIG_VERSIONS in agentBundle).
  */
-export const AGENT_CONFIG_SCHEMA_VERSION = 4;
+export const AGENT_CONFIG_SCHEMA_VERSION = 5;
 
 export type {
   AgentConfigPortability,
@@ -153,6 +154,8 @@ export interface AgentConfig {
   handoffOnRetrievalMiss: boolean;
   /** Whether visitors may attach photos. A config serialized before the field existed reads as off. */
   visitorImagesEnabled: boolean;
+  /** Whether replies may carry cards (reply blocks). A config serialized before the field existed reads as off. */
+  replyCardsEnabled: boolean;
   contactRequestsEnabled: boolean;
   webhookExportsEnabled: boolean;
   /**
@@ -702,6 +705,10 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
     portability: "portable",
     serialize: (agent) => agent.visitorImagesEnabled ?? false,
   }),
+  replyCardsEnabled: descriptor({
+    portability: "portable",
+    serialize: (agent) => agent.replyCardsEnabled ?? false,
+  }),
   contactRequestsEnabled: descriptor({
     portability: "portable",
     serialize: (agent) => agent.contactRequestsEnabled,
@@ -819,6 +826,7 @@ export const projectInternalAgentConfig = (
   customInstruction: agent.customInstruction,
   handoffOnRetrievalMiss: agent.handoffOnRetrievalMiss ?? false,
   visitorImagesEnabled: agent.visitorImagesEnabled ?? false,
+  replyCardsEnabled: agent.replyCardsEnabled ?? false,
   contactRequestsEnabled: agent.contactRequestsEnabled,
   webhookExportsEnabled: agent.webhookExportsEnabled,
   contactRequestDelivery: cloneJson(agent.contactRequestDelivery),
@@ -907,6 +915,7 @@ export const materializeAgentFromConfig = (
     ...(config.internalName ? { internalName: config.internalName } : {}),
     handoffOnRetrievalMiss: config.handoffOnRetrievalMiss ?? false,
     visitorImagesEnabled: config.visitorImagesEnabled ?? false,
+    replyCardsEnabled: config.replyCardsEnabled ?? false,
     contactRequestDelivery: cloneJson(config.contactRequestDelivery),
     retrievalEnabled: retrievalAnswer.retrievalEnabled,
     logo: config.logo ? cloneJson(config.logo) : null,

@@ -119,12 +119,28 @@ describe("a pick on a presenting step (#1763)", () => {
 });
 
 describe("an item slot read from a message", () => {
-  it("is kept on the presenting step, as the name the visitor gave", async () => {
-    const result = await new DefaultRoutineRunner([homes()], reading({ chosen_home: "Casa Blu" }), renderer(), search())
-      .resume({ turn: turn("Casa Blu please"), state: state(["brief", "search", "choose"], { area: "Mitte" }) });
+  const listed = (content: string): TurnContext => ({
+    ...turn(content),
+    history: [{ role: "assistant", content: "Two homes match: Casa  Blu and Villa Rosa. Which one would you like?" }],
+  });
+
+  it("is kept on the presenting step when the assistant's latest message listed it by name", async () => {
+    const result = await new DefaultRoutineRunner([homes()], reading({ chosen_home: "casa blu" }), renderer(), search())
+      .resume({ turn: listed("Casa Blu please"), state: state(["brief", "search", "choose"], { area: "Mitte" }) });
 
     expect(result.terminal?.kind).toBe("handoff");
-    expect(result.terminal?.collected?.chosen_home).toEqual({ key: "Casa Blu", title: "Casa Blu", fields: {} });
+    expect(result.terminal?.collected?.chosen_home).toEqual({ key: "casa blu", title: "casa blu", fields: {} });
+  });
+
+  it.each([
+    ["a position", "the second one"],
+    ["a name the assistant never listed", "Casa Verde"],
+  ])("is dropped on the presenting step when the reply gives %s", async (_label, value) => {
+    const result = await new DefaultRoutineRunner([homes()], reading({ chosen_home: value }), renderer(), search())
+      .resume({ turn: listed(value), state: state(["brief", "search", "choose"], { area: "Mitte" }) });
+
+    expect(result.nextState?.variables.chosen_home).toBeUndefined();
+    expect(result.nextState?.path.at(-1)).toBe("choose");
   });
 
   it("is dropped on any other step: only the presenting step's reply names an item", async () => {

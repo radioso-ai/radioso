@@ -285,7 +285,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (!decision.variables) {
         return decision;
       }
-      const checked = checkDeclaredSlotValues(routine, withoutUnboundItemSlots(routine, decision.variables, selectInput.currentStep), consentGate.blocked);
+      const checked = checkDeclaredSlotValues(routine, withoutUnboundItemSlots(routine, decision.variables, selectInput.currentStep, turn), consentGate.blocked);
       lastRejectedSlots = [...lastRejectedSlots, ...checked.rejected];
       return { ...decision, variables: checked.values };
     };

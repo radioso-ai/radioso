@@ -299,8 +299,8 @@ export const buildChatServices = (input: {
       executor: new RetrievalAnswerSkillExecutor(input.retrievalPipeline),
     });
   }
-  // The pictures a reply's cards show from a skill's result: kept from a tool's bytes, recorded with
-  // the reply, copied by a job or on demand, and served at the reply image route.
+  // The pictures a reply's cards show from a skill's result: recorded with the reply, copied by a
+  // job or on demand, and served at the reply image route.
   const toolImages = wireToolImages({
     database: input.database,
     storage: input.documentStorage,
@@ -326,8 +326,6 @@ export const buildChatServices = (input: {
           logger: input.logger,
           transportFetchImpl: fetchPublicUrl,
           callTimeoutMs: input.env.EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS,
-          imageIntake: toolImages.intake,
-          metrics: input.metricsRegistry,
         }),
       ),
     });

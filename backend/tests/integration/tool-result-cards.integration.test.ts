@@ -14,13 +14,13 @@ import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryS
 import type { StoredReplyBlock } from "../../src/modules/chat/contracts/replyBlocks.js";
 import {
   PostgresToolImageStore,
-  StoredToolImageIntake,
   ToolImageCapture,
   ToolImageEraser,
   ToolImageLookup,
   UnboundToolImageRetention,
   toolImageCaptureHandler,
 } from "../../src/modules/toolImages/composition.js";
+import type { ToolImageSource } from "../../src/modules/toolImages/contracts/index.js";
 import type { ToolImageObject, ToolImageObjectStore } from "../../src/modules/toolImages/domain.js";
 import { DefaultBackgroundJobQueue } from "../../src/shared/background-jobs/index.js";
 import type { PublicBytesFetchResult } from "../../src/shared/infra/http/publicBytesFetch.js";
@@ -34,8 +34,8 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 /**
  * A reply's cards from a skill's result, end to end on Postgres: the turn writes the block, the
  * picture rows and the capture job in one commit; the job copies the pictures; history replays the
- * block; the conversation's erasure and the unbound sweep remove the rows and hand their objects
- * to the deletion job.
+ * block; a capture that outlived its claim changes nothing; the conversation's erasure and the
+ * unbound sweep remove the rows and hand their objects to the deletion job.
  */
 describeIntegration("cards from a skill's result (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
@@ -47,7 +47,6 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
       objects.set(`workspaces/${workspaceId}/tool-images/${imageId}-${suffix}`, bytes);
       return { sizeBytes: bytes.length };
     },
-    get: async (object: ToolImageObject) => objects.get(object.objectPath) ?? Promise.reject(new Error("missing")),
     remove: async (object: ToolImageObject) => {
       objects.delete(object.objectPath);
     },
@@ -55,9 +54,15 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
   let photo: Buffer;
   const fetchBytes = vi.fn(async (url: string): Promise<PublicBytesFetchResult> =>
     url.includes("expired") ? { kind: "failed", reason: "http_status", status: 403 } : { kind: "fetched", bytes: photo, contentType: "image/jpeg", url });
-  const capture = new ToolImageCapture({ store, objects: objectStore, fetchBytes, renditionWidths: [320, 640] });
+  let tags = 0;
+  const capture = new ToolImageCapture({
+    store,
+    objects: objectStore,
+    fetchBytes,
+    renditionWidths: [320, 640],
+    newCaptureTag: () => String(++tags).padStart(12, "0"),
+  });
   const lookup = new ToolImageLookup({ store, capture });
-  const intake = new StoredToolImageIntake({ objects: objectStore, rows: store });
   const persistence = new PostgresAssistantTurnPersistence(
     database.kysely,
     new ConversationActivityRepository(database.kysely),
@@ -97,8 +102,8 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     await database.close().catch(() => undefined);
   });
 
-  const row = async (id: string) => (await database.query<{ status: string; message_id: string | null; source_url: string | null; source_object: unknown; failure_reason: string | null; width: number | null }>(
-    "SELECT status, message_id, source_url, source_object, failure_reason, width FROM conversation_tool_images WHERE id = $1",
+  const row = async (id: string) => (await database.query<{ status: string; message_id: string | null; source_url: string | null; failure_reason: string | null; width: number | null; renditions: Array<{ objectPath: string }> }>(
+    "SELECT status, message_id, source_url, failure_reason, width, renditions FROM conversation_tool_images WHERE id = $1",
     [id],
   ))[0] ?? null;
 
@@ -106,6 +111,9 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     "SELECT payload FROM background_jobs WHERE kind = $1 ORDER BY created_at",
     [kind],
   );
+
+  const handedOffPaths = async () => (await jobs("tool_images.object_deletion"))
+    .flatMap((job) => (job.payload.objects as Array<{ objectPath: string }>).map((object) => object.objectPath));
 
   const block = (imageIds: readonly string[]): StoredReplyBlock => ({
     type: "item_list",
@@ -122,7 +130,7 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     })),
   });
 
-  const reply = async (conversation: string, sources: Parameters<PostgresToolImageStore["record"]>[1]["sources"]) => {
+  const reply = async (conversation: string, sources: readonly ToolImageSource[]) => {
     const messageId = randomUUID();
     const receipt = await persistence.completeAssistantTurn({
       workspaceId,
@@ -142,47 +150,61 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
   };
 
   it("writes the block, its picture rows and their capture job with the reply, and replays the block from history", async () => {
-    const urlImage = randomUUID();
-    const kept = await intake.accept({ workspaceId, conversationId, bytes: photo });
-    if (!kept.kept) throw new Error("intake refused the photo");
-    expect(await row(kept.imageId)).toMatchObject({ status: "pending", message_id: null });
+    const first = randomUUID();
+    const second = randomUUID();
 
     const { messageId, receipt } = await reply(conversationId, [
-      { kind: "url", imageId: urlImage, url: "https://img.homes.example/photos/flat-1.jpg?sig=secret" },
-      { kind: "inline", imageId: kept.imageId },
+      { imageId: first, url: "https://img.homes.example/photos/flat-1.jpg?sig=secret" },
+      { imageId: second, url: "https://img.homes.example/photos/flat-2.jpg" },
     ]);
 
-    expect(await row(urlImage)).toMatchObject({ status: "pending", message_id: messageId, source_url: "https://img.homes.example/photos/flat-1.jpg?sig=secret" });
-    expect(await row(kept.imageId)).toMatchObject({ status: "pending", message_id: messageId });
-    expect((await jobs("tool_images.capture")).map((job) => job.payload)).toContainEqual({ imageIds: [urlImage, kept.imageId] });
+    expect(await row(first)).toMatchObject({ status: "pending", message_id: messageId, source_url: "https://img.homes.example/photos/flat-1.jpg?sig=secret" });
+    expect((await jobs("tool_images.capture")).map((job) => job.payload)).toContainEqual({ imageIds: [first, second] });
     expect(receipt.afterCommit).toBeTypeOf("function");
 
     const detail = await history.getConversation(workspaceId, conversationId, { limit: 50, offset: 0 });
     const replayed = detail.messages.find((message) => message.id === messageId);
-    expect(replayed?.blocks?.[0]).toMatchObject({ layout: "carousel", items: [{ title: "Flat 1", image: { src: `https://api.example/api/v1/public/reply-images/${urlImage}/640` } }, { title: "Flat 2" }] });
+    expect(replayed?.blocks?.[0]).toMatchObject({ layout: "carousel", items: [{ title: "Flat 1", image: { src: `https://api.example/api/v1/public/reply-images/${first}/640` } }, { title: "Flat 2" }] });
     expect(replayed?.blocks?.[0]).not.toHaveProperty("origin");
-    const stored = await database.query<{ metadata_json: { blocks: Array<{ origin?: unknown }> } }>("SELECT metadata_json FROM messages WHERE id = $1", [messageId]);
-    expect(stored[0]?.metadata_json.blocks[0]?.origin).toEqual({ kind: "skill_result", skillName: "search_listings" });
 
-    // The job copies both pictures, clears the signed address, and retires the kept bytes.
+    // The job copies both pictures and clears the signed address.
     const handler = toolImageCaptureHandler({ capture, store });
-    await handler.run({ imageIds: [urlImage, kept.imageId] }, { jobId: randomUUID(), attempt: 1 } as never);
-    expect(await row(urlImage)).toMatchObject({ status: "stored", source_url: null, width: 800 });
-    expect(await row(kept.imageId)).toMatchObject({ status: "stored", source_object: null });
-    expect((await jobs("tool_images.object_deletion")).flatMap((job) => (job.payload.objects as Array<{ objectPath: string }>).map((object) => object.objectPath)))
-      .toContain(`workspaces/${workspaceId}/tool-images/${kept.imageId}-source`);
-    expect(await lookup.findServable({ imageId: urlImage, width: 320 })).toMatchObject({ objectPath: `workspaces/${workspaceId}/tool-images/${urlImage}-w320` });
+    await handler.run({ imageIds: [first, second] }, { jobId: randomUUID(), attempt: 1, signal: new AbortController().signal });
+    expect(await row(first)).toMatchObject({ status: "stored", source_url: null, width: 800 });
+    expect(await lookup.findServable({ imageId: first, width: 320 })).toMatchObject({ objectPath: expect.stringMatching(new RegExp(`/tool-images/${first}-w320-[0-9a-f]{12}$`)) });
+  });
+
+  it("changes nothing for a capture whose claim was taken over, and deletes only that capture's copies", async () => {
+    const image = randomUUID();
+    await reply(conversationId, [{ imageId: image, url: "https://img.homes.example/photos/flat-3.jpg" }]);
+    const claimedAt = new Date(Date.now() - 60_000);
+    const stale = await store.claim(image, claimedAt);
+    if (stale.kind !== "claimed") throw new Error("expected a claim");
+
+    // Past the claim timeout another capture takes over and stores the picture.
+    expect(await capture.capture(image, "job")).toBe("stored");
+    const stored = await row(image);
+
+    // The stale capture finishing writes nothing, and its own copies are the only ones handed off.
+    const staleCopies = [{ bucket: "local", objectPath: `workspaces/${workspaceId}/tool-images/${image}-w640-ffffffffffff`, generation: null, width: 640, height: 480, sizeBytes: 1 }];
+    expect(await store.markStored({ image: stale.image, width: 1, height: 1, sha256: "0".repeat(64), renditions: staleCopies })).toBe(false);
+    await store.release({ image: stale.image, reason: "timeout", leftovers: [] });
+    await store.markFailed({ image: stale.image, reason: "http_error" });
+
+    expect(await row(image)).toEqual(stored);
+    expect(await handedOffPaths()).toContain(staleCopies[0].objectPath);
+    for (const rendition of stored.renditions) expect(await handedOffPaths()).not.toContain(rendition.objectPath);
   });
 
   it("copies a waiting picture on demand, and serves nothing for one that failed", async () => {
     const waiting = randomUUID();
     const expired = randomUUID();
     await reply(conversationId, [
-      { kind: "url", imageId: waiting, url: "https://img.homes.example/photos/flat-2.jpg" },
-      { kind: "url", imageId: expired, url: "https://img.homes.example/expired.jpg" },
+      { imageId: waiting, url: "https://img.homes.example/photos/flat-4.jpg" },
+      { imageId: expired, url: "https://img.homes.example/expired.jpg" },
     ]);
 
-    expect(await lookup.findServable({ imageId: waiting, width: 640 })).toMatchObject({ objectPath: `workspaces/${workspaceId}/tool-images/${waiting}-w640` });
+    expect(await lookup.findServable({ imageId: waiting, width: 640 })).toMatchObject({ objectPath: expect.stringContaining(`/tool-images/${waiting}-w640-`) });
     expect(await lookup.findServable({ imageId: expired, width: 640 })).toBeNull();
     expect(await row(expired)).toMatchObject({ status: "failed", failure_reason: "http_error", source_url: null });
     const fetchesBefore = fetchBytes.mock.calls.length;
@@ -192,35 +214,31 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
 
   it("erases a conversation's pictures and hands their objects to the deletion job", async () => {
     const image = randomUUID();
-    await reply(erasedConversationId, [{ kind: "url", imageId: image, url: "https://img.homes.example/photos/flat-3.jpg" }]);
+    await reply(erasedConversationId, [{ imageId: image, url: "https://img.homes.example/photos/flat-5.jpg" }]);
     await capture.capture(image, "job");
+    const copies = (await row(image)).renditions.map((rendition) => rendition.objectPath);
 
     const erased = await database.kysely.transaction().execute(async (trx) =>
       new ToolImageEraser(trx, new BackgroundJobRepository(trx)).erase({ kind: "conversations", workspaceId, conversationIds: [erasedConversationId] }));
 
     expect(erased).toBe(1);
     expect(await row(image)).toBeNull();
-    const handedOff = (await jobs("tool_images.object_deletion")).flatMap((job) => (job.payload.objects as Array<{ objectPath: string }>).map((object) => object.objectPath));
-    expect(handedOff).toEqual(expect.arrayContaining([
-      `workspaces/${workspaceId}/tool-images/${image}-w320`,
-      `workspaces/${workspaceId}/tool-images/${image}-w640`,
-    ]));
+    expect(await handedOffPaths()).toEqual(expect.arrayContaining(copies));
     expect(await lookup.findServable({ imageId: image, width: 640 })).toBeNull();
   });
 
-  it("sweeps a kept picture no reply bound, a day after it was written", async () => {
-    const kept = await intake.accept({ workspaceId, conversationId, bytes: photo });
-    if (!kept.kept) throw new Error("intake refused the photo");
-    const fresh = await intake.accept({ workspaceId, conversationId, bytes: photo });
-    if (!fresh.kept) throw new Error("intake refused the photo");
-    await database.query("UPDATE conversation_tool_images SET created_at = now() - interval '25 hours' WHERE id = $1", [kept.imageId]);
+  it("sweeps a picture no message carries, a day after it was written", async () => {
+    const old = randomUUID();
+    const fresh = randomUUID();
+    await database.kysely.transaction().execute(async (trx) => {
+      await store.recordPreview(trx, { workspaceId, sources: [{ imageId: old, url: "https://img.homes.example/a.jpg" }, { imageId: fresh, url: "https://img.homes.example/b.jpg" }] });
+    });
+    await database.query("UPDATE conversation_tool_images SET created_at = now() - interval '25 hours' WHERE id = $1", [old]);
 
     const swept = await new UnboundToolImageRetention(database.kysely, (trx) => new BackgroundJobRepository(trx)).enforce({ now: new Date(), limit: 100 });
 
     expect(swept).toBeGreaterThanOrEqual(1);
-    expect(await row(kept.imageId)).toBeNull();
-    expect(await row(fresh.imageId)).not.toBeNull();
-    const handedOff = (await jobs("tool_images.object_deletion")).flatMap((job) => (job.payload.objects as Array<{ objectPath: string }>).map((object) => object.objectPath));
-    expect(handedOff).toContain(`workspaces/${workspaceId}/tool-images/${kept.imageId}-source`);
+    expect(await row(old)).toBeNull();
+    expect(await row(fresh)).not.toBeNull();
   });
 });

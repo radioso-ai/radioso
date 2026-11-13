@@ -2,7 +2,12 @@ import type { ReplyAction, ReplyBlockLayout } from "@radioso/conversation-contra
 
 import { isPubliclyReachableHostname } from "../../../../shared/domain/publicNetwork.js";
 import type { ToolImageSource } from "../../../toolImages/contracts/index.js";
-import { REPLY_BLOCK_LIMITS, type StoredReplyBlock, type StoredReplyItem } from "../../contracts/replyBlocks.js";
+import {
+  REPLY_BLOCK_LIMITS,
+  storedReplyBlockSchema,
+  type StoredReplyBlock,
+  type StoredReplyItem,
+} from "../../contracts/replyBlocks.js";
 import type { RecordPresentHead } from "./recordPresentHead.js";
 import { resolveJsonPointer, type ToolRecord, type ToolRecordLedger } from "./toolRecords.js";
 
@@ -12,7 +17,8 @@ export type RecordBlockDropReason =
   | "duplicate_record"
   | "over_limit"
   | "title_unresolved"
-  | "field_unresolved";
+  | "field_unresolved"
+  | "block_invalid";
 
 interface RecordBlockBuild {
   block: StoredReplyBlock | null;
@@ -27,7 +33,7 @@ const FIRST_BLOCK_ID = "b1";
 /** A handle as the model may write it: `r3`, or `[r3]` as the prompt shows it. Structural. */
 const HANDLE_PATTERN = /^\[?\s*(r\d{1,3})\s*\]?$/i;
 
-/** The longest address a card keeps, as the block contract allows. */
+/** The longest address a card keeps, as the block contract and the picture's row allow. */
 const MAX_URL_LENGTH = 2048;
 
 /**
@@ -39,7 +45,15 @@ const TOOL_IMAGE_FRAME = { width: 640, height: 480 } as const;
 const normalizeHandle = (value: string): string | null =>
   HANDLE_PATTERN.exec(value.trim())?.[1]?.toLowerCase() ?? null;
 
-const truncate = (value: string, maxLength: number): string => Array.from(value).slice(0, maxLength).join("");
+/**
+ * Cuts text to at most `maxLength` UTF-16 code units, the length the stored block's schema counts,
+ * without leaving half of a surrogate pair at the end.
+ */
+const truncateUtf16 = (value: string, maxLength: number): string => {
+  if (value.length <= maxLength) return value;
+  const end = maxLength > 0 && /[\uD800-\uDBFF]/.test(value[maxLength - 1] ?? "") ? maxLength - 1 : maxLength;
+  return value.slice(0, end);
+};
 
 /** Plain text from a resolved value: a string or a finite number, on one line; anything else is not text. */
 const textOf = (value: unknown): string | null => {
@@ -49,16 +63,19 @@ const textOf = (value: unknown): string | null => {
 };
 
 /**
- * A public http(s) address, or null. Its host must be one the public internet can reach by its
- * literal form, and it carries no credentials; anything else, `javascript:` included, is no address.
+ * A public http(s) address in the form the card stores it, or null. Its host must be one the
+ * public internet can reach by its literal form, it carries no credentials, and its normalized
+ * form, percent-encoding included, fits the stored limit; anything else, `javascript:` included,
+ * is no address.
  */
 const publicAddress = (value: unknown): string | null => {
-  if (typeof value !== "string" || value.length > MAX_URL_LENGTH) return null;
+  if (typeof value !== "string") return null;
   try {
     const url = new URL(value.trim());
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     if (url.username || url.password || !isPubliclyReachableHostname(url.hostname)) return null;
-    return url.toString();
+    const normalized = url.toString();
+    return normalized.length <= MAX_URL_LENGTH ? normalized : null;
   } catch {
     return null;
   }
@@ -68,9 +85,10 @@ const publicAddress = (value: unknown): string | null => {
  * Builds the cards the model's `present` head asks for from a skill's records. Every value on a
  * card comes from the record the model named, at the pointer it named: a handle the turn did not
  * offer is dropped, a title that is not text drops its card, and a field that is not what it must
- * be (a public address for a picture or a link) is left off that card, never invented. A picture
- * is either one the skill returned as bytes this turn or a public address, which gets a new id to
- * be copied under; the card stores only the id.
+ * be (a public address for a picture or a link) is left off that card, never invented. A picture's
+ * address gets a new id to be copied under; the card stores only the id. The block is checked
+ * against the stored schema before it is returned, so a block that would not read back is never
+ * built.
  */
 export const buildRecordBlock = (input: {
   head: RecordPresentHead;
@@ -98,18 +116,13 @@ export const buildRecordBlock = (input: {
   const toolImages: ToolImageSource[] = [];
   const imageIdsByUrl = new Map<string, string>();
   const imageFor = (value: unknown): string | null => {
-    const inline = input.ledger.mediaImageId(value);
-    if (inline) {
-      if (!toolImages.some((source) => source.imageId === inline)) toolImages.push({ kind: "inline", imageId: inline });
-      return inline;
-    }
     const url = publicAddress(value);
     if (!url) return null;
     const known = imageIdsByUrl.get(url);
     if (known) return known;
     const imageId = input.newImageId();
     imageIdsByUrl.set(url, imageId);
-    toolImages.push({ kind: "url", imageId, url });
+    toolImages.push({ imageId, url });
     return imageId;
   };
 
@@ -130,12 +143,12 @@ export const buildRecordBlock = (input: {
     const description = optional(fields.subtitle, textOf);
     const link = optional(fields.link, publicAddress);
     const imageId = optional(fields.image, imageFor);
-    const shownTitle = truncate(title, REPLY_BLOCK_LIMITS.titleLength);
+    const shownTitle = truncateUtf16(title, REPLY_BLOCK_LIMITS.titleLength);
     const actions: ReplyAction[] = link ? [{ type: "open", url: link }] : [];
     items.push({
       key: record.key,
       title: shownTitle,
-      ...(description ? { description: truncate(description, REPLY_BLOCK_LIMITS.descriptionLength) } : {}),
+      ...(description ? { description: truncateUtf16(description, REPLY_BLOCK_LIMITS.descriptionLength) } : {}),
       ...(imageId ? { image: { imageId, ...TOOL_IMAGE_FRAME, alt: shownTitle } } : {}),
       actions,
     });
@@ -148,17 +161,17 @@ export const buildRecordBlock = (input: {
   // A carousel of cards when the cards have pictures, a list when none does; a client that does
   // not draw a carousel gets a list.
   const layout: ReplyBlockLayout = shownImageIds.size > 0 && input.layouts.includes("carousel") ? "carousel" : "list";
-  return {
-    block: {
-      type: "item_list",
-      id: FIRST_BLOCK_ID,
-      layout,
-      selection: "none",
-      caption: truncate(input.head.caption.trim(), REPLY_BLOCK_LIMITS.captionLength),
-      items,
-      origin: { kind: "skill_result", skillName: input.skillName },
-    },
-    dropped,
-    toolImages: toolImages.filter((source) => shownImageIds.has(source.imageId)),
+  const block: StoredReplyBlock = {
+    type: "item_list",
+    id: FIRST_BLOCK_ID,
+    layout,
+    selection: "none",
+    caption: truncateUtf16(input.head.caption.trim(), REPLY_BLOCK_LIMITS.captionLength),
+    items,
+    origin: { kind: "skill_result", skillName: input.skillName },
   };
+  if (!storedReplyBlockSchema.safeParse(block).success) {
+    return { block: null, dropped: [...dropped, "block_invalid"], toolImages: [] };
+  }
+  return { block, dropped, toolImages: toolImages.filter((source) => shownImageIds.has(source.imageId)) };
 };

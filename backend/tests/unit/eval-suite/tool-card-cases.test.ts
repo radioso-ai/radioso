@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AGENT_SKILL_OUTCOME_KIND } from "../../../src/modules/chat/composition.js";
+import type { ChatGatewayInput } from "../../../src/modules/chat/contracts/chatGateway.js";
 import { buildChatTurnRuntime } from "../../../src/modules/chat/services/chatTurnRuntime.js";
 import type { PreparedSession } from "../../../src/modules/chat/services/chatSessionPreparer.js";
 import { SkillResultReplyBlocks } from "../../../src/modules/chat/services/replyBlocks/skillResultReplyBlocks.js";
@@ -20,15 +21,28 @@ const caseById = (id: string): ConversationQualityCase => conversationQualityCas
  * result for the case's message becomes the bound skill's outcome, and the skill-result reply is
  * written from it with the case's declared capability.
  */
-const runCase = async (evalCase: ConversationQualityCase, envelope: unknown): Promise<ConversationQualityObservedOutput> => {
+/** The model's reply: the envelope to a request offered cards, and `plain` to one written without them. */
+const scripted = (envelope: unknown, plain = "Several flats fit your budget.") => (input: ChatGatewayInput): string =>
+  input.generation?.responseFormat ? JSON.stringify(envelope) : plain;
+
+const runCase = async (
+  evalCase: ConversationQualityCase,
+  envelope: unknown,
+  calls: ChatGatewayInput[] = [],
+): Promise<ConversationQualityObservedOutput> => {
   const query = evalCase.query ?? "";
   const result = toolCardStubTool.respond({ message: query });
+  const reply = typeof envelope === "function" ? (envelope as (input: ChatGatewayInput) => string) : scripted(envelope);
   let next = 0;
   const runtime = buildChatTurnRuntime({
     chatGateway: {
-      answer: vi.fn(async () => JSON.stringify(envelope)),
-      async *streamAnswer() {
-        yield JSON.stringify(envelope);
+      answer: vi.fn(async (input: ChatGatewayInput) => {
+        calls.push(input);
+        return reply(input);
+      }),
+      async *streamAnswer(input: ChatGatewayInput) {
+        calls.push(input);
+        yield reply(input);
       },
     },
     fallbackReplyComposer: { composeNoContext: vi.fn(async () => ({ text: "I could not find that.", declineReason: "content_gap" as const })) },
@@ -79,6 +93,39 @@ describe("tool-card cases on the deterministic harness", () => {
       .toEqual(["pass", "pass", "pass"]);
     expect(await statuses(listings, { present: { records: [], fields, caption: "Flats" }, answer: "Four flats fit." }))
       .toEqual(["fail", "pass", "pass"]);
+  });
+
+  it("fails the listings case on a card for a listing over the budget", async () => {
+    const listings = caseById("tool-cards-listings-carousel");
+
+    expect(await statuses(listings, { present: { records: ["r1", "r5"], fields, caption: "Flats in Mitte" }, answer: "Two flats." }))
+      .toEqual(["fail", "pass", "pass"]);
+  });
+
+  it("fails the listings case on an answer that names a record by its handle", async () => {
+    const listings = caseById("tool-cards-listings-carousel");
+
+    expect(await statuses(listings, { present: { records: ["r1", "r2"], fields, caption: "Flats in Mitte" }, answer: "See [r1] and [r2]." }))
+      .toEqual(["pass", "fail", "pass"]);
+  });
+
+  it("answers again without cards when the model points the title at something that is not text", async () => {
+    const listings = caseById("tool-cards-listings-carousel");
+    const calls: ChatGatewayInput[] = [];
+    const wrongTitle = { present: { records: ["r1", "r2"], fields: { ...fields, title: "/photos" }, caption: "Flats" }, answer: "Here are the flats below." };
+
+    const output = await runCase(listings, scripted(wrongTitle, "The loft on Torstrasse and the Altbau flat fit your budget."), calls);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.generation).toBeUndefined();
+    expect(output.answer).toBe("The loft on Torstrasse and the Altbau flat fit your budget.");
+    expect(output.replyBlocks).toBeUndefined();
+    const scored = await scoreObservedOutput(
+      [{ type: "no_reply_block" }, { type: "answer_excludes_image_url" }],
+      output,
+      { workspaceId: "cq-workspace", question: listings.query ?? "", runId: "run-1" },
+    );
+    expect(scored.verdicts.map((verdict) => verdict.status)).toEqual(["pass", "pass"]);
   });
 
   it("fails the listings case on a card whose link is not its own record's", async () => {

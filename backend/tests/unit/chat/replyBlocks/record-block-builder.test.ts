@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { storedReplyBlockSchema } from "../../../../src/modules/chat/contracts/replyBlocks.js";
 import { buildRecordBlock } from "../../../../src/modules/chat/services/replyBlocks/recordBlockBuilder.js";
 import { readRecordPresentHead, type RecordPresentHead } from "../../../../src/modules/chat/services/replyBlocks/recordPresentHead.js";
 import { ToolRecordLedger } from "../../../../src/modules/chat/services/replyBlocks/toolRecords.js";
@@ -27,7 +28,7 @@ const ids = () => {
 const build = (over: Partial<RecordPresentHead>, outputs: Record<string, unknown> = { listings: [listing(1), listing(2), listing(3)] }) =>
   buildRecordBlock({
     head: head(over),
-    ledger: ToolRecordLedger.fromOutcome(outputs, [{ kind: "image", imageId: "kept-1" }]),
+    ledger: ToolRecordLedger.fromOutputs(outputs),
     layouts: ["carousel", "grid"],
     skillName: "search_listings",
     newImageId: ids(),
@@ -63,8 +64,8 @@ describe("record block builder", () => {
       ],
     });
     expect(toolImages).toEqual([
-      { kind: "url", imageId: "image-1", url: "https://img.homes.example/photos/flat-1.jpg" },
-      { kind: "url", imageId: "image-2", url: "https://img.homes.example/photos/flat-2.jpg" },
+      { imageId: "image-1", url: "https://img.homes.example/photos/flat-1.jpg" },
+      { imageId: "image-2", url: "https://img.homes.example/photos/flat-2.jpg" },
     ]);
   });
 
@@ -120,14 +121,33 @@ describe("record block builder", () => {
     expect(dropped).toEqual([]);
   });
 
-  it("accepts the token of a picture the skill returned this turn, and no other token", () => {
-    const outputs = { listings: [listing(1, { photos: [{ url: "tool-image:1" }] }), listing(2, { photos: [{ url: "tool-image:7" }] })] };
+  it("leaves off a picture or link whose address outgrows the stored limit once percent-encoded", () => {
+    // 2,024 characters as written; each ä becomes %C3%A4, so the stored form is 4,024 characters.
+    const base = "https://img.homes.example/";
+    const long = `${base}${"ä".repeat(400)}${"a".repeat(2024 - base.length - 400)}`;
+    expect(long).toHaveLength(2024);
+    const outputs = { listings: [listing(1, { url: long, photos: [{ url: long }] })] };
 
-    const { block, toolImages } = build({}, outputs);
+    const { block, dropped, toolImages } = build({ records: ["r1"] }, outputs);
 
-    expect(block?.items[0]?.image?.imageId).toBe("kept-1");
-    expect(block?.items[1]?.image).toBeUndefined();
-    expect(toolImages).toEqual([{ kind: "inline", imageId: "kept-1" }]);
+    expect(block?.items[0]).toEqual({ key: "/listings/0", title: "Flat 1", description: "Mitte", actions: [] });
+    expect(dropped).toEqual(["field_unresolved", "field_unresolved"]);
+    expect(toolImages).toEqual([]);
+  });
+
+  it("cuts long text by the stored schema's UTF-16 length without splitting an emoji, so the block reads back", () => {
+    const title = `${"🏠".repeat(100)}`;
+    const subtitle = `${"x".repeat(399)}🌳 garden`;
+    const outputs = { listings: [listing(1, { name: title, area: subtitle })] };
+
+    const { block } = build({ records: ["r1"], caption: "🏡".repeat(70) }, outputs);
+
+    const item = block!.items[0];
+    expect(item.title.length).toBeLessThanOrEqual(160);
+    expect(item.title).toBe("🏠".repeat(80));
+    expect(item.description).toBe("x".repeat(399));
+    expect(block!.caption).toBe("🏡".repeat(60));
+    expect(storedReplyBlockSchema.safeParse(block).success).toBe(true);
   });
 
   it("gives one picture address one id however many cards show it", () => {
@@ -149,7 +169,7 @@ describe("record block builder", () => {
   it("lays cards out as a list for a client that draws no carousel", () => {
     const { block } = buildRecordBlock({
       head: head(),
-      ledger: ToolRecordLedger.fromOutcome({ listings: [listing(1)] }, undefined),
+      ledger: ToolRecordLedger.fromOutputs({ listings: [listing(1)] }),
       layouts: ["grid"],
       skillName: "search_listings",
       newImageId: ids(),

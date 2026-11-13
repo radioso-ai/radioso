@@ -22,13 +22,13 @@ import {
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 /**
- * The only paths a deletion may name: one tool image's object under its workspace. A payload
- * naming anything else is refused before any delete, so the job can never reach a document, a
- * visitor's photo or a logo.
+ * The only paths a deletion may name: one capture's WebP of one tool image under its workspace,
+ * `<imageId>-w<width>-<capture tag>`. A payload naming anything else is refused before any delete,
+ * so the job can never reach a document, a visitor's photo or a logo.
  */
-const TOOL_IMAGE_OBJECT_PATH = new RegExp(`^workspaces/${UUID}/tool-images/${UUID}-(?:source|w\\d{2,4})$`);
+const TOOL_IMAGE_OBJECT_PATH = new RegExp(`^workspaces/${UUID}/tool-images/${UUID}-w\\d{2,4}-[0-9a-f]{12}$`);
 
-/** Objects one deletion job carries. A picture has at most three. */
+/** Objects one deletion job carries. A picture has two per capture. */
 const OBJECTS_PER_JOB = 100;
 
 /**
@@ -36,6 +36,7 @@ const OBJECTS_PER_JOB = 100;
  * commits, so a browser asking for a picture first captures it on demand and the job is the
  * backstop. A transient failure (the network, a busy decoder, a server error) is retried over
  * about fifteen minutes, because signed links expire; past that, the pictures still waiting fail.
+ * Each picture has its own capture deadline, and ten of them fit the run's.
  */
 const TOOL_IMAGE_CAPTURE_JOB = defineBackgroundJob({
   kind: "tool_images.capture",
@@ -43,8 +44,8 @@ const TOOL_IMAGE_CAPTURE_JOB = defineBackgroundJob({
   onDuplicateKey: "ignore",
   maxAttempts: 4,
   retryDelaysSeconds: [30, 120, 600],
-  timeoutSeconds: 120,
-  leaseSeconds: 180,
+  timeoutSeconds: 230,
+  leaseSeconds: 300,
 });
 
 /** How long after the reply commits the job first runs, leaving the first view to capture on demand. */
@@ -106,15 +107,20 @@ class ToolImageCaptureRetryError extends Error {
 }
 
 export const toolImageCaptureHandler = (deps: {
-  capture: { capture(imageId: string, trigger: "job"): Promise<ToolImageCaptureOutcome | "held"> };
+  capture: { capture(imageId: string, trigger: "job", options: { signal: AbortSignal }): Promise<ToolImageCaptureOutcome | "held"> };
   store: Pick<ToolImageStore, "failPending">;
 }): BackgroundJobHandlerRegistration =>
   backgroundJobHandler(
     TOOL_IMAGE_CAPTURE_JOB,
-    async ({ imageIds }) => {
+    async ({ imageIds }, { signal }) => {
       let pending = 0;
       for (const imageId of imageIds) {
-        const outcome = await deps.capture.capture(imageId, "job");
+        // The run's deadline passed or its lease went to another worker: what is left is the next run's.
+        if (signal.aborted) {
+          pending += 1;
+          continue;
+        }
+        const outcome = await deps.capture.capture(imageId, "job", { signal });
         if (outcome === "held" || TRANSIENT_CAPTURE_OUTCOMES.has(outcome)) pending += 1;
       }
       if (pending > 0) throw new ToolImageCaptureRetryError(pending);

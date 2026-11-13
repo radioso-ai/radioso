@@ -205,7 +205,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
 
   it("declares the cards Test Chat renders, returns the turn's blocks, and copies their pictures before it answers", async () => {
     const block = { type: "item_list", id: "b1", layout: "carousel", selection: "none", caption: "Flats", items: [{ key: "/0", title: "Loft", actions: [] }] };
-    const toolImages = [{ kind: "url" as const, imageId: "image-1", url: "https://img.homes.example/loft.jpg" }];
+    const toolImages = [{ imageId: "image-1", url: "https://img.homes.example/loft.jpg" }];
     const order: string[] = [];
     const replay = {
       stream: vi.fn(async function* () {

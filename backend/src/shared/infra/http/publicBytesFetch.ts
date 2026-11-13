@@ -13,6 +13,8 @@ export interface PublicBytesLimits {
   readonly accept?: string;
   /** Redirects followed, each re-checked before it is requested. Three when unset. */
   readonly maxRedirects?: number;
+  /** The caller's own deadline or cancellation, on top of `timeoutMs`; its abort ends the fetch as a timeout. */
+  readonly signal?: AbortSignal;
 }
 
 /** What reaches the network. Both default to the public policy; a test or a local setup may widen them. */
@@ -60,7 +62,8 @@ export const fetchPublicBytes = async (
   const request = transport.fetch ?? fetchPublicUrl;
   const assertUrl = transport.assertUrl ?? assertPublicHttpUrl;
   const maxRedirects = limits.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
-  const signal = AbortSignal.timeout(limits.timeoutMs);
+  const timeout = AbortSignal.timeout(limits.timeoutMs);
+  const signal = limits.signal ? AbortSignal.any([timeout, limits.signal]) : timeout;
   try {
     let current = assertUrl(url);
     for (let hop = 0; hop <= maxRedirects; hop += 1) {

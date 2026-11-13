@@ -3,9 +3,10 @@ import type { Kysely } from "kysely";
 import type { BackgroundJobRequest, BackgroundJobWriter } from "../../../shared/background-jobs/index.js";
 import { anyOf } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
-import type { ToolImageRowWriter, ToolImageSource } from "../contracts/index.js";
+import type { ToolImagePreviewRecorder, ToolImageRowWriter, ToolImageSource } from "../contracts/index.js";
 import {
   TOOL_IMAGE_LIMITS,
+  type ClaimedToolImage,
   type ToolImageCaptureOutcome,
   type ToolImageClaim,
   type ToolImageObject,
@@ -17,32 +18,29 @@ import { handOffToolImageObjects, toolImageCaptureRequests } from "../services/t
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
-/** An object as a row's jsonb keeps it, or null when the value is not one. */
-const toolImageObjectFrom = (value: unknown): ToolImageObject | null => {
-  if (!isRecord(value) || typeof value.bucket !== "string" || typeof value.objectPath !== "string") return null;
-  return { bucket: value.bucket, objectPath: value.objectPath, generation: typeof value.generation === "string" ? value.generation : null };
-};
-
 const renditionFrom = (value: unknown): ToolImageRendition | null => {
-  const object = toolImageObjectFrom(value);
-  if (!object || !isRecord(value)) return null;
-  const { width, height, sizeBytes } = value;
-  return typeof width === "number" && typeof height === "number" && typeof sizeBytes === "number"
-    ? { ...object, width, height, sizeBytes }
+  if (!isRecord(value)) return null;
+  const { bucket, objectPath, generation, width, height, sizeBytes } = value;
+  return typeof bucket === "string" && typeof objectPath === "string"
+    && typeof width === "number" && typeof height === "number" && typeof sizeBytes === "number"
+    ? { bucket, objectPath, generation: typeof generation === "string" ? generation : null, width, height, sizeBytes }
     : null;
 };
 
-/** Every stored object a row names: its source, when it still has one, and its renditions. */
-export const toolImageObjectsOf = (row: { source_object: unknown; renditions: unknown }): ToolImageObject[] => [
-  ...[toolImageObjectFrom(row.source_object)].filter((object): object is ToolImageObject => object !== null),
-  ...(Array.isArray(row.renditions) ? row.renditions.map(renditionFrom) : [])
+/** Every stored object a row names: its renditions. */
+export const toolImageObjectsOf = (row: { renditions: unknown }): ToolImageObject[] =>
+  (Array.isArray(row.renditions) ? row.renditions.map(renditionFrom) : [])
     .filter((rendition): rendition is ToolImageRendition => rendition !== null)
-    .map(({ bucket, objectPath, generation }) => ({ bucket, objectPath, generation })),
-];
+    .map(({ bucket, objectPath, generation }) => ({ bucket, objectPath, generation }));
+
+const asObjects = (objects: readonly ToolImageObject[]): ToolImageObject[] =>
+  objects.map(({ bucket, objectPath, generation }) => ({ bucket, objectPath, generation }));
 
 /**
- * The `conversation_tool_images` rows. A row's objects are handed to the deletion job in the same
- * transaction that retires the row, so no object outlives its row unrecorded.
+ * The `conversation_tool_images` rows. Every write that finishes a capture matches the claim's
+ * generation (`claimed_at`), so a capture whose claim another one took over after the claim
+ * timeout changes nothing it no longer owns. Objects are handed to the deletion job in the same
+ * transaction that retires them, so none outlives its row unrecorded.
  */
 export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWriter {
   constructor(
@@ -54,62 +52,33 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
     transaction: Db,
     input: { workspaceId: string; conversationId: string; messageId: string; sources: readonly ToolImageSource[] },
   ): Promise<BackgroundJobRequest[]> {
-    const urls = input.sources.filter((source) => source.kind === "url");
-    const inline = input.sources.filter((source) => source.kind === "inline").map((source) => source.imageId);
-    if (urls.length > 0) {
-      await transaction
-        .insertInto("conversation_tool_images")
-        .values(urls.map((source) => ({
-          id: source.imageId,
-          workspace_id: input.workspaceId,
-          conversation_id: input.conversationId,
-          message_id: input.messageId,
-          source_kind: "url",
-          source_url: source.url,
-        })))
-        .onConflict((conflict) => conflict.column("id").doNothing())
-        .execute();
-    }
-    const bound = inline.length === 0 ? [] : await transaction
-      .updateTable("conversation_tool_images")
-      .set({ message_id: input.messageId })
-      .where("workspace_id", "=", input.workspaceId)
-      .where("conversation_id", "=", input.conversationId)
-      .where("message_id", "is", null)
-      .where((eb) => anyOf(eb.ref("id"), inline, "uuid[]"))
-      .returning("id")
+    if (input.sources.length === 0) return [];
+    await transaction
+      .insertInto("conversation_tool_images")
+      .values(input.sources.map((source) => ({
+        id: source.imageId,
+        workspace_id: input.workspaceId,
+        conversation_id: input.conversationId,
+        message_id: input.messageId,
+        source_url: source.url,
+      })))
+      .onConflict((conflict) => conflict.column("id").doNothing())
       .execute();
-    return toolImageCaptureRequests([...urls.map((source) => source.imageId), ...bound.map((row) => row.id)]);
+    return toolImageCaptureRequests(input.sources.map((source) => source.imageId));
   }
 
   /**
-   * The address pictures of a reply in a conversation no row stores, such as Test Chat's: written
-   * with no conversation and no message, so the unbound sweep deletes them a day later. A picture
-   * a skill returned as bytes is never kept for such a conversation, so only addresses are written.
+   * The pictures of a reply in a conversation no row stores, such as Test Chat's: written with no
+   * conversation and no message, so the unbound sweep deletes them a day later.
    */
-  async recordPreview(transaction: Db, input: { workspaceId: string; sources: readonly ToolImageSource[] }): Promise<BackgroundJobRequest[]> {
-    const urls = input.sources.filter((source) => source.kind === "url");
-    if (urls.length === 0) return [];
+  async recordPreview(transaction: Db, input: Parameters<ToolImagePreviewRecorder["recordPreview"]>[0]): Promise<BackgroundJobRequest[]> {
+    if (input.sources.length === 0) return [];
     await transaction
       .insertInto("conversation_tool_images")
-      .values(urls.map((source) => ({ id: source.imageId, workspace_id: input.workspaceId, source_kind: "url", source_url: source.url })))
+      .values(input.sources.map((source) => ({ id: source.imageId, workspace_id: input.workspaceId, source_url: source.url })))
       .onConflict((conflict) => conflict.column("id").doNothing())
       .execute();
-    return toolImageCaptureRequests(urls.map((source) => source.imageId));
-  }
-
-  /** A picture a skill returned as bytes, kept unbound until the reply that shows it binds it. */
-  async insertInline(input: { id: string; workspaceId: string; conversationId: string; object: ToolImageObject }): Promise<void> {
-    await this.db
-      .insertInto("conversation_tool_images")
-      .values({
-        id: input.id,
-        workspace_id: input.workspaceId,
-        conversation_id: input.conversationId,
-        source_kind: "inline",
-        source_object: JSON.stringify(input.object),
-      })
-      .execute();
+    return toolImageCaptureRequests(input.sources.map((source) => source.imageId));
   }
 
   async claim(imageId: string, now: Date): Promise<ToolImageClaim> {
@@ -122,17 +91,14 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
         eb("status", "=", "pending"),
         eb.and([eb("status", "=", "capturing"), eb("claimed_at", "<", staleBefore)]),
       ]))
-      .returning(["id", "workspace_id", "source_kind", "source_url", "source_object"])
+      .returning(["id", "workspace_id", "source_url"])
       .executeTakeFirst();
     if (claimed) {
-      const object = toolImageObjectFrom(claimed.source_object);
-      if (claimed.source_kind === "url" && claimed.source_url) {
-        return { kind: "claimed", image: { id: claimed.id, workspaceId: claimed.workspace_id, source: { kind: "url", url: claimed.source_url } } };
+      const image: ClaimedToolImage = { id: claimed.id, workspaceId: claimed.workspace_id, url: claimed.source_url ?? "", claimedAt: now };
+      if (claimed.source_url) {
+        return { kind: "claimed", image };
       }
-      if (claimed.source_kind === "inline" && object) {
-        return { kind: "claimed", image: { id: claimed.id, workspaceId: claimed.workspace_id, source: { kind: "inline", object } } };
-      }
-      await this.markFailed({ imageId, reason: "source_missing" });
+      await this.markFailed({ image, reason: "source_missing" });
       return { kind: "failed" };
     }
     const row = await this.db.selectFrom("conversation_tool_images").select("status").where("id", "=", imageId).executeTakeFirst();
@@ -140,55 +106,55 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
     return row.status === "stored" ? { kind: "stored" } : row.status === "failed" ? { kind: "failed" } : { kind: "held" };
   }
 
-  async markStored(input: { imageId: string; width: number; height: number; sha256: string; renditions: readonly ToolImageRendition[] }): Promise<void> {
-    await this.db.transaction().execute(async (trx) => {
-      // RETURNING reads the row as updated, with its source already cleared: read the source first.
-      const before = await trx
-        .selectFrom("conversation_tool_images")
-        .select("source_object")
-        .where("id", "=", input.imageId)
-        .where("status", "=", "capturing")
-        .forUpdate()
-        .executeTakeFirst();
-      const row = before && await trx
+  async markStored(input: { image: ClaimedToolImage; width: number; height: number; sha256: string; renditions: readonly ToolImageRendition[] }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
         .updateTable("conversation_tool_images")
         .set({
           status: "stored",
           claimed_at: null,
           failure_reason: null,
           source_url: null,
-          source_object: null,
           width: input.width,
           height: input.height,
           sha256: input.sha256,
           renditions: JSON.stringify(input.renditions),
           stored_at: new Date(),
         })
-        .where("id", "=", input.imageId)
+        .where("id", "=", input.image.id)
         .where("status", "=", "capturing")
+        .where("claimed_at", "=", input.image.claimedAt)
         .returning("id")
         .executeTakeFirst();
-      // Another capture took the row over and finished first: what this one wrote is not the row's.
-      const leftover = row ? [toolImageObjectFrom(before.source_object)] : input.renditions;
-      await handOffToolImageObjects(this.jobsIn(trx), trx, leftover.filter((object): object is ToolImageObject => object !== null));
+      if (!row) {
+        // Another capture took the row over: what this one wrote is its own, under its own names.
+        await handOffToolImageObjects(this.jobsIn(trx), trx, asObjects(input.renditions));
+      }
+      return row !== undefined;
     });
   }
 
-  async markFailed(input: { imageId: string; reason: ToolImageCaptureOutcome; renditions?: readonly ToolImageRendition[] }): Promise<void> {
-    await this.retire([input.imageId], input.reason, ["capturing"], input.renditions ?? []);
-  }
-
-  async failPending(input: { imageIds: readonly string[]; reason: "retries_exhausted" }): Promise<void> {
-    await this.retire(input.imageIds, input.reason, ["pending", "capturing"], []);
-  }
-
-  async release(input: { imageId: string; reason: ToolImageCaptureOutcome }): Promise<void> {
+  async markFailed(input: { image: ClaimedToolImage; reason: ToolImageCaptureOutcome }): Promise<void> {
     await this.db
       .updateTable("conversation_tool_images")
-      .set({ status: "pending", claimed_at: null, failure_reason: input.reason })
-      .where("id", "=", input.imageId)
+      .set({ status: "failed", failure_reason: input.reason, claimed_at: null, source_url: null })
+      .where("id", "=", input.image.id)
       .where("status", "=", "capturing")
+      .where("claimed_at", "=", input.image.claimedAt)
       .execute();
+  }
+
+  async release(input: { image: ClaimedToolImage; reason: ToolImageCaptureOutcome; leftovers: readonly ToolImageObject[] }): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable("conversation_tool_images")
+        .set({ status: "pending", claimed_at: null, failure_reason: input.reason })
+        .where("id", "=", input.image.id)
+        .where("status", "=", "capturing")
+        .where("claimed_at", "=", input.image.claimedAt)
+        .execute();
+      await handOffToolImageObjects(this.jobsIn(trx), trx, asObjects(input.leftovers));
+    });
   }
 
   async findRendition(input: { imageId: string; width: number }): Promise<ToolImageRendition | null> {
@@ -203,32 +169,13 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
       .find((rendition): rendition is ToolImageRendition => rendition?.width === input.width) ?? null;
   }
 
-  /** Fails rows for good: the source is cleared, and its object and any partial copies go to the deletion job. */
-  private async retire(
-    imageIds: readonly string[],
-    reason: string,
-    from: ReadonlyArray<"pending" | "capturing">,
-    written: readonly ToolImageObject[],
-  ): Promise<void> {
-    if (imageIds.length === 0) return;
-    await this.db.transaction().execute(async (trx) => {
-      // RETURNING reads the rows as updated, with their sources already cleared: read them first.
-      const rows = await trx
-        .selectFrom("conversation_tool_images")
-        .select(["id", "source_object"])
-        .where((eb) => anyOf(eb.ref("id"), imageIds, "uuid[]"))
-        .where("status", "in", from)
-        .forUpdate()
-        .execute();
-      if (rows.length > 0) {
-        await trx
-          .updateTable("conversation_tool_images")
-          .set({ status: "failed", failure_reason: reason, claimed_at: null, source_url: null, source_object: null })
-          .where((eb) => anyOf(eb.ref("id"), rows.map((row) => row.id), "uuid[]"))
-          .execute();
-      }
-      const objects = [...rows.map((row) => toolImageObjectFrom(row.source_object)), ...written];
-      await handOffToolImageObjects(this.jobsIn(trx), trx, objects.filter((object): object is ToolImageObject => object !== null));
-    });
+  async failPending(input: { imageIds: readonly string[]; reason: "retries_exhausted" }): Promise<void> {
+    if (input.imageIds.length === 0) return;
+    await this.db
+      .updateTable("conversation_tool_images")
+      .set({ status: "failed", failure_reason: input.reason, claimed_at: null, source_url: null })
+      .where((eb) => anyOf(eb.ref("id"), input.imageIds, "uuid[]"))
+      .where("status", "in", ["pending", "capturing"])
+      .execute();
   }
 }

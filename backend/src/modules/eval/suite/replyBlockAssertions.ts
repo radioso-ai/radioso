@@ -84,9 +84,10 @@ export const judgeNoPictures = (blocks: readonly ReplyBlock[] | undefined): Verd
   return { passed: true, reason: block ? `The reply carried a ${block.layout} block without pictures.` : "The reply carried no block." };
 };
 
-// Structural patterns: an address of an image file, and a ledger handle.
+// Structural patterns: an address of an image file, and a handle the model was shown, an evidence
+// image's (`[m3]`) or a skill record's (`[r3]`).
 const IMAGE_URL_PATTERN = /https?:\/\/\S+?\.(?:png|jpe?g|gif|webp|avif|svg)(?:[?#)\s"']|$)/iu;
-const IMAGE_HANDLE_PATTERN = /\[m\d{1,3}\]/u;
+const HANDLE_PATTERN = /\[[mr]\d{1,3}\]/u;
 
 /** Every address the reply's blocks serve their images at: each `src`, and each URL in each `srcSet`. */
 const servedImageAddresses = (blocks: readonly ReplyBlock[]): string[] =>
@@ -96,13 +97,13 @@ const servedImageAddresses = (blocks: readonly ReplyBlock[]): string[] =>
     .filter((address) => address.length > 0);
 
 /**
- * Whether the answer text names a picture the way only the block may: by an image file's address,
- * by an address the reply's own blocks serve an image at, or by its handle.
+ * Whether the answer text names a picture or a record the way only the block may: by an image
+ * file's address, by an address the reply's own blocks serve an image at, or by a handle.
  */
 export const answerNamesImage = (answer: string | undefined, blocks: readonly ReplyBlock[] = []): string | null => {
   const text = answer ?? "";
   if (IMAGE_URL_PATTERN.test(text) || servedImageAddresses(blocks).some((address) => text.includes(address))) {
     return "The answer contains an image address.";
   }
-  return IMAGE_HANDLE_PATTERN.test(text) ? "The answer contains an image handle." : null;
+  return HANDLE_PATTERN.test(text) ? "The answer contains a handle the model was shown." : null;
 };

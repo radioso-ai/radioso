@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto";
 
-import type { SkillOutcomeMedia } from "@radioso/conversation-contract";
-
 import { CHAT_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import { estimateTextGenerationInputTokens } from "../../../../shared/infra/llm/modelInferencePipeline.js";
 
@@ -104,11 +102,6 @@ const collectRecordArrays = (value: unknown, pointer: string, depth: number, fou
   }
 };
 
-/** The token an image the skill returned as bytes stands under in its record, `tool-image:2`. */
-const MEDIA_TOKEN_PREFIX = "tool-image:";
-
-const mediaToken = (index: number): string => `${MEDIA_TOKEN_PREFIX}${index + 1}`;
-
 const ellipsis = (value: string, maxLength: number): string => {
   const characters = Array.from(value);
   return characters.length <= maxLength ? value : `${characters.slice(0, maxLength - 1).join("")}…`;
@@ -160,13 +153,21 @@ const compactValue = (value: unknown, depth: number): unknown => {
   return value;
 };
 
-const recordLine = (record: ToolRecord): string => `[${record.handle}] ${JSON.stringify(compactValue(record.value, 0))}`;
+/** A record's view as the model reads it: its shape kept, its size bounded. */
+const recordView = (record: ToolRecord): string => JSON.stringify(compactValue(record.value, 0));
 
-const SECTION_HEADING = "Records the tool returned, each under a handle such as [r1]. An address shortened with … is incomplete: never write one in the reply.";
+const SHORTENED_ADDRESS_NOTE = "An address shortened with … is incomplete: never write one in the reply.";
 
-const sectionText = (lines: readonly string[], hidden: number): string => [
-  SECTION_HEADING,
-  ...lines,
+/**
+ * The records as findings. With handles, for a reply offered cards, each record is `[r1] {…}`;
+ * without, for a reply written as text alone, each is a plain list entry, so no handle can reach a
+ * reply that shows no cards.
+ */
+const sectionText = (views: readonly string[], hidden: number, handles: boolean): string => [
+  handles
+    ? `Records the tool returned, each under a handle such as [r1]. ${SHORTENED_ADDRESS_NOTE}`
+    : `Records the tool returned. ${SHORTENED_ADDRESS_NOTE}`,
+  ...views.map((view, index) => (handles ? `[r${index + 1}] ${view}` : `- ${view}`)),
   ...(hidden > 0 ? [`(${hidden} more records not shown)`] : []),
 ].join("\n");
 
@@ -174,26 +175,33 @@ const fitsBudget = (text: string): boolean =>
   estimateTextGenerationInputTokens({ prompt: text }) <= CHAT_BEHAVIOR.skillResult.maxRecordInputTokens;
 
 /**
+ * Whether a skill's outputs hold at least one record: any non-empty outputs do, since an array of
+ * objects in them yields records and, failing that, the outputs themselves are one. A check of the
+ * shape alone, without walking or rendering anything.
+ */
+export const hasToolRecords = (outputs: JsonObject | undefined): boolean =>
+  outputs !== undefined && Object.keys(outputs).length > 0;
+
+/**
  * The records a skill's result holds, each under a handle (`r1`, `r2`, …) the reply prompt shows
  * and the model points at. Found structurally: every array of objects in the outputs, or the
- * outputs themselves when they hold none, then each picture the skill returned as bytes. Only the
- * records whose view fits the prompt budget are offered; the rest are counted, never shown. The
- * ledger lives for one turn and is never stored.
+ * outputs themselves when they hold none. Only the records whose view fits the prompt budget are
+ * offered; the rest are counted, never shown. The ledger lives for one turn and is never stored,
+ * and it is read only by a reply that offers cards, the one place its handles mean anything.
  */
 export class ToolRecordLedger {
   private readonly byHandle: ReadonlyMap<string, ToolRecord>;
 
   private constructor(
     private readonly records: readonly ToolRecord[],
-    private readonly media: readonly SkillOutcomeMedia[],
-    private readonly section: string,
+    private readonly views: readonly string[],
     /** Records found but not offered: past the count or the prompt budget. */
     readonly hidden: number,
   ) {
     this.byHandle = new Map(records.map((record) => [record.handle, record]));
   }
 
-  static fromOutcome(outputs: JsonObject | undefined, media: readonly SkillOutcomeMedia[] | undefined): ToolRecordLedger {
+  static fromOutputs(outputs: JsonObject | undefined): ToolRecordLedger {
     const found: FoundRecord[] = [];
     if (outputs) {
       collectRecordArrays(outputs, "", 0, found);
@@ -201,26 +209,16 @@ export class ToolRecordLedger {
         found.push({ pointer: "", value: outputs });
       }
     }
-    const images = (media ?? []).filter((item) => item.kind === "image");
-    const candidates: Array<{ key: string; value: unknown }> = [
-      ...found.map(({ pointer, value }) => ({ key: itemKey(pointer), value })),
-      ...images.map((_image, index) => ({ key: `media/${index + 1}`, value: { image: mediaToken(index) } })),
-    ];
+    const candidates = found.map(({ pointer, value }) => ({ key: itemKey(pointer), value }));
     const offered: ToolRecord[] = candidates
       .slice(0, TOOL_RECORD_LIMITS.records)
       .map((candidate, index) => ({ handle: `r${index + 1}`, ...candidate }));
     // Trimmed from the end: the first records are the ones a tool ranks first.
-    const lines = offered.map(recordLine);
-    while (lines.length > 0 && !fitsBudget(sectionText(lines, candidates.length - lines.length))) {
-      lines.pop();
+    const views = offered.map(recordView);
+    while (views.length > 0 && !fitsBudget(sectionText(views, candidates.length - views.length, true))) {
+      views.pop();
     }
-    const shown = offered.slice(0, lines.length);
-    return new ToolRecordLedger(
-      shown,
-      images,
-      shown.length > 0 ? sectionText(lines, candidates.length - shown.length) : "",
-      candidates.length - shown.length,
-    );
+    return new ToolRecordLedger(offered.slice(0, views.length), views, candidates.length - views.length);
   }
 
   get size(): number {
@@ -231,15 +229,11 @@ export class ToolRecordLedger {
     return this.byHandle.get(handle);
   }
 
-  /** The records as the model reads them, within the prompt budget; empty when there are none. */
-  promptSection(): string {
-    return this.section;
-  }
-
-  /** The stored image a record's value names by this turn's token, or undefined for any other value. */
-  mediaImageId(value: unknown): string | undefined {
-    if (typeof value !== "string" || !value.startsWith(MEDIA_TOKEN_PREFIX)) return undefined;
-    const position = Number(value.slice(MEDIA_TOKEN_PREFIX.length));
-    return Number.isInteger(position) && position >= 1 ? this.media[position - 1]?.imageId : undefined;
+  /**
+   * The records as the model reads them, within the prompt budget; empty when there are none.
+   * Without handles for a reply that shows no cards.
+   */
+  promptSection(options: { handles: boolean } = { handles: true }): string {
+    return this.views.length > 0 ? sectionText(this.views, this.hidden, options.handles) : "";
   }
 }

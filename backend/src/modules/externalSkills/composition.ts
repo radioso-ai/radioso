@@ -11,11 +11,8 @@ import type {
   ConnectionLookup,
   McpConnectionRecord,
   McpSkillExecutorDeps,
-  ToolServiceCallOptions,
   ToolServiceFactory,
 } from "./executor/mcpSkillExecutor.js";
-import type { ToolImageIntake } from "../toolImages/contracts/index.js";
-import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 
 /**
  * Builds a ToolService for a connection. Access-token connections present a static
@@ -34,7 +31,7 @@ export const createMcpToolServiceFactory = (
   fetchImpl?: typeof fetch,
   options: McpToolServiceFactoryOptions = {},
 ): ToolServiceFactory => ({
-  create: (connection: McpConnectionRecord, call?: ToolServiceCallOptions): SdkMcpToolService => {
+  create: (connection: McpConnectionRecord): SdkMcpToolService => {
     const credentialProvider =
       connection.authMethod === "oauth" && connection.oauthAccessTokenProvider
         ? {
@@ -51,7 +48,6 @@ export const createMcpToolServiceFactory = (
       assertPublicUrl,
       fetchImpl,
       callTimeoutMs: options.callTimeoutMs,
-      ...(call?.images ? { images: call.images } : {}),
     });
   },
 });
@@ -63,9 +59,6 @@ interface LiveMcpConnectionLookupOptions {
   transportFetchImpl?: typeof fetch;
   /** Bound applied to each external skill's `callTool` invocation. */
   callTimeoutMs?: number;
-  /** Keeps the pictures a tool returns as bytes for the conversation that called it. */
-  imageIntake?: ToolImageIntake;
-  metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
 }
 
 /**
@@ -142,6 +135,4 @@ export const buildExternalSkillsDeps = (
   // executor stays free of a direct conversation-tools (concrete) dependency.
   toolSkillExecutorFactory: createToolSkillExecutor,
   logger: options.logger,
-  imageIntake: options.imageIntake,
-  metrics: options.metrics,
 });

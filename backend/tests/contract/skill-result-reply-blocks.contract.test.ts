@@ -126,7 +126,7 @@ describe("cards from a skill's result over authenticated chat", () => {
     expect(assistant?.blocks).toEqual(blocks);
   });
 
-  it("answers from the records in text, with no cards, for a client that declares none", async () => {
+  it("leaves a records-only result unanswered by the skill for a client that declares no cards, as before cards existed", async () => {
     const { app, session, calls } = await listingAgent();
 
     const response = await request(app)
@@ -135,10 +135,9 @@ describe("cards from a skill's result over authenticated chat", () => {
       .send({ message: "Flats in Mitte under 2,000?", stream: false });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toBe(LEAD);
     expect(response.body).not.toHaveProperty("blocks");
-    const composed = calls.find((call) => call.usageContext.attemptKey === "skill_result");
-    expect(composed?.generation).toBeUndefined();
-    expect(composed?.prompt).toContain("Garden flat on Linienstrasse");
+    // No reply is written from the skill's records, so no record or handle reaches any prompt.
+    expect(calls.some((call) => call.usageContext.attemptKey === "skill_result")).toBe(false);
+    expect(calls.some((call) => /\[r\d+\]|Garden flat on Linienstrasse/.test(call.prompt))).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ import { TOOL_IMAGE_LIMITS } from "../domain.js";
 import { handOffToolImageObjects } from "../services/toolImageJobs.js";
 import { toolImageObjectsOf } from "./toolImageRepository.js";
 
-const OBJECT_COLUMNS = ["source_object", "renditions"] as const;
+const OBJECT_COLUMNS = ["renditions"] as const;
 
 /**
  * A conversation's tool images, as the conversation goes: the rows are deleted here, while the
@@ -17,8 +17,9 @@ const OBJECT_COLUMNS = ["source_object", "renditions"] as const;
  * transaction, which deletes them once the erasure commits. A whole workspace's erasure removes
  * nothing here: its rows cascade with it, and its storage purge takes every object under it.
  *
- * There is no data-subject export of these pictures: each is a copy of a third party's picture a
- * card showed, and the card's title and link are exported with the message that carried it.
+ * The data-subject export carries each card the conversation's replies showed, with its title,
+ * link and picture's id, from the messages; the copies themselves are a third party's pictures and
+ * stay out of it.
  */
 export class ToolImageEraser implements ConversationDataEraser {
   readonly owner = "tool-images";
@@ -42,9 +43,8 @@ export class ToolImageEraser implements ConversationDataEraser {
 }
 
 /**
- * Tool images no message carries, a day after their row was written: a picture a tool returned
- * for a reply that did not show it or did not commit, one whose message was deleted on its own,
- * or one Test Chat showed. Each batch deletes its rows and hands their objects to the deletion job
+ * Tool images no message carries, a day after their row was written: one whose message was
+ * deleted on its own, or one Test Chat showed. Each batch deletes its rows and hands their objects to the deletion job
  * in one transaction.
  */
 export class UnboundToolImageRetention implements ConversationDataRetentionRule {

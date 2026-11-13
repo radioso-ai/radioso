@@ -713,6 +713,7 @@ describe("RepositoryAgentSkillTurnSkillProvider suppressed-effects collector", (
 describe("RepositoryAgentSkillTurnSkillProvider dispatch failures", () => {
   const dispatchBoundSkill = async (
     executor: SkillExecutorPort["dispatch"] | null,
+    over: Partial<PreparedSession> = {},
   ) => {
     const logger = { warn: vi.fn() };
     const provider = new RepositoryAgentSkillTurnSkillProvider({
@@ -724,7 +725,7 @@ describe("RepositoryAgentSkillTurnSkillProvider dispatch failures", () => {
       skillResultRenderer,
       logger,
     });
-    const session = sessionWithBinding("order_lookup");
+    const session = { ...sessionWithBinding("order_lookup"), ...over };
     const runtime = await provider.forSession(session);
     const outcome = await new ChatTurnSkillSelector(
       [defaultTurnSkill, ...runtime.turnSkills],
@@ -761,14 +762,24 @@ describe("RepositoryAgentSkillTurnSkillProvider dispatch failures", () => {
     expect(logger.warn).toHaveBeenCalledWith(...failureLog("empty_answer"));
   });
 
-  it("settles a completed outcome with records and no text, because the reply is written from the records (#1763)", async () => {
+  it("settles a completed outcome with records and no text where the reply may show cards, which it is written from (#1763)", async () => {
     const { outcome, logger } = await dispatchBoundSkill(async () => ({
       disposition: "settled",
       outcome: { status: "completed", outputs: { structuredContent: [{ order: "123", status: "shipped" }] } },
-    }));
+    }), { replyBlocks: { item_list: { layouts: ["list"] } } });
 
     expect(outcome.outcome).toMatchObject({ status: "completed", outputs: { structuredContent: [{ order: "123" }] } });
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("settles records with no text as empty_answer where the reply shows no cards, exactly as without cards", async () => {
+    const { outcome, logger } = await dispatchBoundSkill(async () => ({
+      disposition: "settled",
+      outcome: { status: "completed", outputs: { structuredContent: [{ order: "123", status: "shipped" }] } },
+    }), { replyBlocks: null });
+
+    expect(outcome.outcome).toMatchObject({ status: "failed", error: { code: "empty_answer" } });
+    expect(logger.warn).toHaveBeenCalledWith(...failureLog("empty_answer"));
   });
 
   it("passes an executor's failed outcome through without a second warn, since the executor logs its own", async () => {

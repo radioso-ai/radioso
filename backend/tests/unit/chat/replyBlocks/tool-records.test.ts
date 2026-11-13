@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  hasToolRecords,
   resolveJsonPointer,
   TOOL_RECORD_LIMITS,
   ToolRecordLedger,
@@ -16,10 +17,10 @@ const listing = (index: number) => ({
 
 describe("tool record ledger", () => {
   it("offers each object of an array as a record, in document order across nested arrays", () => {
-    const ledger = ToolRecordLedger.fromOutcome({
+    const ledger = ToolRecordLedger.fromOutputs({
       results: { listings: [listing(1), listing(2)] },
       agents: [{ name: "Ada" }],
-    }, undefined);
+    });
 
     expect(ledger.size).toBe(3);
     expect(ledger.record("r1")).toMatchObject({ key: "/results/listings/0", value: listing(1) });
@@ -28,53 +29,56 @@ describe("tool record ledger", () => {
   });
 
   it("reads an array MCP wrapped as structured content", () => {
-    const ledger = ToolRecordLedger.fromOutcome({ structuredContent: [listing(1)] }, undefined);
+    const ledger = ToolRecordLedger.fromOutputs({ structuredContent: [listing(1)] });
 
     expect(ledger.record("r1")).toMatchObject({ key: "/structuredContent/0", value: listing(1) });
   });
 
   it("does not make a record's own arrays of objects into records beside it", () => {
-    const ledger = ToolRecordLedger.fromOutcome({ listings: [listing(1)] }, undefined);
+    const ledger = ToolRecordLedger.fromOutputs({ listings: [listing(1)] });
 
     expect(ledger.size).toBe(1);
   });
 
   it("offers the outputs themselves as one record when they hold no array of objects", () => {
-    const ledger = ToolRecordLedger.fromOutcome({ status: "shipped", tracking: "https://post.example/t/42" }, undefined);
+    const ledger = ToolRecordLedger.fromOutputs({ status: "shipped", tracking: "https://post.example/t/42" });
 
     expect(ledger.size).toBe(1);
     expect(ledger.record("r1")).toMatchObject({ key: "/", value: { status: "shipped" } });
   });
 
   it("offers nothing for empty outputs, or an array of plain values", () => {
-    expect(ToolRecordLedger.fromOutcome({}, undefined).size).toBe(0);
-    expect(ToolRecordLedger.fromOutcome(undefined, undefined).size).toBe(0);
-    expect(ToolRecordLedger.fromOutcome({ structuredContent: [] }, undefined).promptSection()).toContain("[r1]");
+    expect(ToolRecordLedger.fromOutputs({}).size).toBe(0);
+    expect(ToolRecordLedger.fromOutputs(undefined).size).toBe(0);
+    expect(ToolRecordLedger.fromOutputs({ structuredContent: [] }).promptSection()).toContain("[r1]");
   });
 
   it("leaves an array deeper than the walk reaches", () => {
     const deep = { a: { b: { c: { d: { e: [listing(1)] } } } } };
 
     // The array sits at depth 5, so the outputs themselves are the one record.
-    expect(ToolRecordLedger.fromOutcome(deep, undefined).record("r1")?.key).toBe("/");
-    expect(ToolRecordLedger.fromOutcome({ a: { b: { c: { d: [listing(1)] } } } }, undefined).record("r1")?.key).toBe("/a/b/c/d/0");
+    expect(ToolRecordLedger.fromOutputs(deep).record("r1")?.key).toBe("/");
+    expect(ToolRecordLedger.fromOutputs({ a: { b: { c: { d: [listing(1)] } } } }).record("r1")?.key).toBe("/a/b/c/d/0");
   });
 
-  it("offers each image the skill returned as bytes as a record naming this turn's token", () => {
-    const ledger = ToolRecordLedger.fromOutcome({ listings: [listing(1)] }, [
-      { kind: "image", imageId: "image-a" },
-      { kind: "image", imageId: "image-b" },
-    ]);
+  it("renders the same records without handles for a reply that shows no cards", () => {
+    const ledger = ToolRecordLedger.fromOutputs({ listings: [listing(1), listing(2)] });
 
-    expect(ledger.record("r2")).toMatchObject({ key: "media/1", value: { image: "tool-image:1" } });
-    expect(ledger.mediaImageId("tool-image:2")).toBe("image-b");
-    expect(ledger.mediaImageId("tool-image:3")).toBeUndefined();
-    expect(ledger.mediaImageId("tool-image:0")).toBeUndefined();
-    expect(ledger.mediaImageId("https://homes.example/a.jpg")).toBeUndefined();
+    const plain = ledger.promptSection({ handles: false });
+
+    expect(plain).not.toMatch(/\[r\d+\]/);
+    expect(plain).toContain('- {"name":"Flat 1"');
+    expect(ledger.promptSection()).toContain('[r2] {"name":"Flat 2"');
+  });
+
+  it("finds records by the outputs' shape alone, without walking them", () => {
+    expect(hasToolRecords({ listings: [] })).toBe(true);
+    expect(hasToolRecords({})).toBe(false);
+    expect(hasToolRecords(undefined)).toBe(false);
   });
 
   it("offers at most twenty records and says how many it left out", () => {
-    const ledger = ToolRecordLedger.fromOutcome({ listings: Array.from({ length: 25 }, (_v, index) => listing(index)) }, undefined);
+    const ledger = ToolRecordLedger.fromOutputs({ listings: Array.from({ length: 25 }, (_v, index) => listing(index)) });
 
     expect(ledger.size).toBe(TOOL_RECORD_LIMITS.records);
     expect(ledger.record("r21")).toBeUndefined();
@@ -89,7 +93,7 @@ describe("tool record ledger", () => {
       ...Object.fromEntries(Array.from({ length: 14 }, (_v, index) => [`k${index}`, index])),
       nested: { one: { two: { three: { four: "deep" } } } },
     };
-    const section = ToolRecordLedger.fromOutcome({ items: [record] }, undefined).promptSection();
+    const section = ToolRecordLedger.fromOutputs({ items: [record] }).promptSection();
     const shown = JSON.parse(section.split("\n")[1].replace(/^\[r1\] /, "")) as Record<string, unknown>;
 
     expect(Array.from(shown.title as string)).toHaveLength(TOOL_RECORD_LIMITS.stringLength);
@@ -100,7 +104,7 @@ describe("tool record ledger", () => {
 
   it("expands a record three containers deep, as a table row's photo field needs", () => {
     const row = { id: "rec1", fields: { Name: "Loft", Photos: [{ url: "https://dl.airtable.example/v1/abc/loft.jpg?sig=secret" }] } };
-    const section = ToolRecordLedger.fromOutcome({ records: [row] }, undefined).promptSection();
+    const section = ToolRecordLedger.fromOutputs({ records: [row] }).promptSection();
 
     expect(section).toContain('"Photos":[{"url":"https://dl.airtable.example/…/loft.jpg"}]');
     expect(section).not.toContain("sig=secret");
@@ -108,20 +112,20 @@ describe("tool record ledger", () => {
 
   it("cuts a long address to its origin and last segment, and says a cut one is incomplete", () => {
     const url = `https://homes.example/${"segment/".repeat(30)}photo.jpg`;
-    const section = ToolRecordLedger.fromOutcome({ items: [{ url }] }, undefined).promptSection();
+    const section = ToolRecordLedger.fromOutputs({ items: [{ url }] }).promptSection();
 
     expect(section).toContain('"url":"https://homes.example/…/photo.jpg"');
     expect(section.split("\n")[0]).toContain("An address shortened with … is incomplete");
   });
 
   it("shows a short address with no query whole, so a reply can link to it", () => {
-    const section = ToolRecordLedger.fromOutcome({ offices: [{ name: "Mitte office", url: "https://homes.example/offices/mitte" }] }, undefined).promptSection();
+    const section = ToolRecordLedger.fromOutputs({ offices: [{ name: "Mitte office", url: "https://homes.example/offices/mitte" }] }).promptSection();
 
     expect(section).toContain('"url":"https://homes.example/offices/mitte"');
   });
 
   it("shortens an address that carries a query, such as a signed link, whatever its length", () => {
-    const section = ToolRecordLedger.fromOutcome({ photos: [{ url: "https://img.homes.example/a.jpg?sig=secret" }] }, undefined).promptSection();
+    const section = ToolRecordLedger.fromOutputs({ photos: [{ url: "https://img.homes.example/a.jpg?sig=secret" }] }).promptSection();
 
     expect(section).toContain('"url":"https://img.homes.example/…/a.jpg"');
     expect(section).not.toContain("secret");
@@ -131,7 +135,7 @@ describe("tool record ledger", () => {
     const bulky = Array.from({ length: 20 }, (_v, index) => ({
       ...Object.fromEntries(Array.from({ length: 12 }, (_w, key) => [`field${key}`, `${"word ".repeat(23)}${index}`])),
     }));
-    const ledger = ToolRecordLedger.fromOutcome({ rows: bulky }, undefined);
+    const ledger = ToolRecordLedger.fromOutputs({ rows: bulky });
 
     expect(ledger.size).toBeLessThan(20);
     expect(ledger.size).toBeGreaterThan(0);
@@ -141,7 +145,7 @@ describe("tool record ledger", () => {
 
   it("hashes a key that is too long to carry", () => {
     const key = "k".repeat(200);
-    const ledger = ToolRecordLedger.fromOutcome({ [key]: [{ name: "A" }] }, undefined);
+    const ledger = ToolRecordLedger.fromOutputs({ [key]: [{ name: "A" }] });
 
     expect(ledger.record("r1")?.key).toMatch(/^sha256:[0-9a-f]{40}$/);
   });

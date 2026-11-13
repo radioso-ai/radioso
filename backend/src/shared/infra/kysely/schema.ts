@@ -737,8 +737,6 @@ export interface ConversationToolImages {
   message_id: string | null;
   renditions: Generated<Json>;
   sha256: string | null;
-  source_kind: string;
-  source_object: Json | null;
   source_url: string | null;
   status: Generated<string>;
   stored_at: Timestamp | null;

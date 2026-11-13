@@ -40,19 +40,22 @@ const outcome = (over: Partial<SkillOutcome> = {}): TurnOutcome => ({
   trace: { traceId: "trace-1", startedAt: new Date(0).toISOString(), stages: [] },
 });
 
-const harness = (reply: string, chunkSize = 7) => {
+const harness = (reply: string | ((input: ChatGatewayInput) => string), chunkSize = 7) => {
   const calls: ChatGatewayInput[] = [];
   const metrics: Array<{ name: string; labels: Record<string, string> | undefined }> = [];
+  const warnings: Array<Record<string, unknown>> = [];
   const fallback = vi.fn(async () => ({ text: "I could not find that.", declineReason: "content_gap" as const }));
+  const replyTo = (input: ChatGatewayInput) => (typeof reply === "string" ? reply : reply(input));
   const gateway: ChatGateway = {
     async answer(input) {
       calls.push(input);
-      return reply;
+      return replyTo(input);
     },
     async *streamAnswer(input) {
       calls.push(input);
-      for (let offset = 0; offset < reply.length; offset += chunkSize) {
-        yield reply.slice(offset, offset + chunkSize);
+      const text = replyTo(input);
+      for (let offset = 0; offset < text.length; offset += chunkSize) {
+        yield text.slice(offset, offset + chunkSize);
       }
     },
   };
@@ -64,10 +67,11 @@ const harness = (reply: string, chunkSize = 7) => {
     skillResultReplyBlocks: new SkillResultReplyBlocks({
       imageUrls: { forImage: (imageId) => ({ src: `https://api.example/reply-images/${imageId}/640`, srcSet: `https://api.example/reply-images/${imageId}/320 320w` }) },
       metrics: { incrementCounter: (name, options) => metrics.push({ name, labels: options.labels }) },
+      logger: { warn: (fields: Record<string, unknown>) => warnings.push(fields) },
       newImageId: () => `image-${++next}`,
     }),
   });
-  return { calls, metrics, fallback, renderer: runtime.skillResultRenderer };
+  return { calls, metrics, warnings, fallback, renderer: runtime.skillResultRenderer };
 };
 
 const drain = async (generator: AsyncGenerator<string, TurnStreamResult>) => {
@@ -100,8 +104,8 @@ describe("skill result reply with the present head", () => {
     expect(presentation.replyBlocks?.presented[0]).not.toHaveProperty("origin");
     expect(presentation.replyBlocks?.presented[0]?.items[0]?.image?.src).toBe("https://api.example/reply-images/image-1/640");
     expect(presentation.replyBlocks?.toolImages).toEqual([
-      { kind: "url", imageId: "image-1", url: "https://img.homes.example/altbau.jpg" },
-      { kind: "url", imageId: "image-2", url: "https://img.homes.example/loft.jpg" },
+      { imageId: "image-1", url: "https://img.homes.example/altbau.jpg" },
+      { imageId: "image-2", url: "https://img.homes.example/loft.jpg" },
     ]);
     expect(metrics).toContainEqual({ name: "reply_blocks_emitted_total", labels: { layout: "carousel", channel: "website_embed", source: "skill_result" } });
   });
@@ -155,25 +159,56 @@ describe("skill result reply with the present head", () => {
     expect(calls[0]?.prompt).toMatch(/\[r2\] .*\n\nPrices exclude heating\./s);
   });
 
-  it("writes a text reply from records alone when the client renders no cards", async () => {
+  it("writes from the skill's text alone, with no records or handles, when the client renders no cards", async () => {
     const { calls, renderer } = harness("Loft Mitte and Altbau Mitte fit your budget.");
 
-    const presentation = await renderer.render(outcome(), { session: session(null), query: QUERY });
+    const presentation = await renderer.render(outcome({ answer: "Found 2 listings." }), { session: session(null), query: QUERY });
 
-    expect(renderer.supports(outcome())).toBe(true);
-    expect(calls[0]?.prompt).toContain('[r1] {"name":"Loft Mitte"');
-    expect(calls[0]?.prompt).not.toContain("Cards\n");
+    expect(calls[0]?.prompt).toContain("<skill_findings>\nFound 2 listings.\n</skill_findings>");
+    expect(calls[0]?.prompt).not.toMatch(/\[r\d+\]/);
+    expect(calls[0]?.prompt).not.toContain("Loft Mitte");
     expect(calls[0]?.generation).toBeUndefined();
     expect(presentation.replyBlocks).toBeUndefined();
   });
 
-  it("claims no completed outcome that has neither text nor records", () => {
+  it("writes the reply again without cards when it named cards none of which could be built", async () => {
+    const wrongTitle = { ...PRESENT, fields: { ...PRESENT.fields, title: "/photo/name" } };
+    const { calls, warnings, renderer } = harness((input) =>
+      input.generation?.responseFormat ? envelope(wrongTitle, "Here are the two flats below.") : "Loft Mitte and Altbau Mitte fit your budget.");
+
+    const presentation = await renderer.render(outcome(), { session: session(), query: QUERY });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.generation).toBeUndefined();
+    expect(calls[1]?.prompt).not.toMatch(/\[r\d+\]/);
+    expect(calls[1]?.prompt).toContain('- {"name":"Loft Mitte"');
+    expect(calls[1]?.prompt).not.toContain("Cards\n");
+    expect(presentation.answer).toBe("Loft Mitte and Altbau Mitte fit your budget.");
+    expect(presentation.replyBlocks).toBeUndefined();
+    expect(warnings).toEqual([expect.objectContaining({ event: "chat.skill_result.cards_lost", conversationId: "conversation-1", skillName: "search_listings", namedRecords: 2 })]);
+    expect(JSON.stringify(warnings)).not.toContain("Loft");
+  });
+
+  it("keeps a streamed reply whose cards could not be built, and logs the loss", async () => {
+    const wrongTitle = { ...PRESENT, fields: { ...PRESENT.fields, title: "/photo/name" } };
+    const { calls, warnings, metrics, renderer } = harness(envelope(wrongTitle, "Here are the two flats below."));
+
+    const { result } = await drain(renderer.stream!(outcome(), { session: session(), query: QUERY }));
+
+    expect(calls).toHaveLength(1);
+    expect(result.finalPresentation.replyBlocks).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+    expect(metrics).toContainEqual({ name: "reply_block_items_dropped_total", labels: { reason: "title_unresolved" } });
+  });
+
+  it("claims a completed outcome with text or records, and none with neither", () => {
     const { renderer } = harness(LEAD);
 
     expect(renderer.supports(outcome({ outputs: undefined }))).toBe(false);
     expect(renderer.supports(outcome({ outputs: {} }))).toBe(false);
     expect(renderer.supports(outcome({ status: "failed" }))).toBe(false);
-    expect(renderer.supports(outcome({ outputs: undefined, media: [{ kind: "image", imageId: "kept-1" }] }))).toBe(true);
+    expect(renderer.supports(outcome({ outputs: undefined, answer: "Two flats." }))).toBe(true);
+    expect(renderer.supports(outcome())).toBe(true);
   });
 });
 

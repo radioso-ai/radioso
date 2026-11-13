@@ -10,8 +10,9 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * Finds the stored copy the image route serves for a tool image, and copies a picture that is
  * still waiting on demand, while the browser asks for it: the reply is shown as soon as it is
  * written, usually before the job has run. A picture is captured once at a time in this process,
- * and a request that finds another capture holding it waits for that one, within one budget. A
- * picture that failed is never retried here; it is a plain miss.
+ * and a request that finds another capture holding it waits for that one, within one budget. When
+ * the process is already running as many captures as it allows, or a picture failed, the request
+ * is a plain miss at once: the card shows without its picture, and the job copies it.
  */
 export class ToolImageLookup {
   private readonly inFlight = new Map<string, Promise<void>>();
@@ -19,7 +20,7 @@ export class ToolImageLookup {
   constructor(
     private readonly deps: {
       store: Pick<ToolImageStore, "findRendition">;
-      capture: { capture(imageId: string, trigger: ToolImageCaptureTrigger, options: { timeoutMs: number }): Promise<ToolImageCaptureResult> };
+      capture: { capture(imageId: string, trigger: ToolImageCaptureTrigger, options: { deadlineMs: number }): Promise<ToolImageCaptureResult> };
       budgetMs?: number;
     },
   ) {}
@@ -34,7 +35,7 @@ export class ToolImageLookup {
   private captureOnce(imageId: string): Promise<void> {
     const running = this.inFlight.get(imageId);
     if (running) return running;
-    const run = this.captureWithin(imageId, Date.now() + (this.deps.budgetMs ?? TOOL_IMAGE_LIMITS.onDemandBudgetMs))
+    const run = this.captureWithin(imageId, Date.now() + (this.deps.budgetMs ?? TOOL_IMAGE_LIMITS.onDemandCaptureDeadlineMs))
       .finally(() => this.inFlight.delete(imageId));
     this.inFlight.set(imageId, run);
     return run;
@@ -44,7 +45,7 @@ export class ToolImageLookup {
     for (;;) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) return;
-      const result = await this.deps.capture.capture(imageId, "on_demand", { timeoutMs: remaining });
+      const result = await this.deps.capture.capture(imageId, "on_demand", { deadlineMs: remaining });
       if (result !== "held" || Date.now() + HELD_POLL_MS >= deadline) return;
       await delay(HELD_POLL_MS);
     }

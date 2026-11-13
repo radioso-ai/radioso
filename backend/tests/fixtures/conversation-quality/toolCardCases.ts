@@ -85,8 +85,14 @@ export const toolCardStubTool = {
     resultsByMessage.get(typeof args.message === "string" ? args.message : "") ?? listingsResult,
 };
 
-/** The records a card may come from: its title, and the link of the record that title names. */
-const listingRecords = MITTE_LISTINGS.map((home) => ({ title: home.name, link: home.url }));
+/**
+ * The records a card may come from for a visitor with a 2,000 budget: the listings within it,
+ * each with the link of its own record. A card for an over-budget listing fails the case.
+ */
+const BUDGET = 2_000;
+const listingsWithinBudget = MITTE_LISTINGS
+  .filter((home) => home.rentPerMonth <= BUDGET)
+  .map((home) => ({ title: home.name, link: home.url }));
 
 /** The directive that binds every turn of the tool-card agent to the catalog search. */
 export const toolCardDirective = {
@@ -103,12 +109,12 @@ export const toolCardCases: ConversationQualityCase[] = [
   {
     id: "tool-cards-listings-carousel",
     name: "Listings a search returns come as a carousel of the matching ones",
-    description: "A visitor asks for flats in Mitte within a budget. The bound search returns six Mitte listings with photos, two of them over budget. The reply is a short lead and a carousel whose every card is one of the returned listings, titled and linked from its own record, and the text names no image address.",
+    description: "A visitor asks for flats in Mitte within a budget. The bound search returns six Mitte listings with photos, two of them over budget. The reply is a short lead and a carousel whose every card is one of the listings within budget, titled and linked from its own record, and the text names no image address or record handle.",
     tags: ["tool-cards", "reply-blocks"],
     query: TOOL_CARD_LISTINGS_QUERY,
     clientContextCapabilities: replyBlocksCapabilities,
     assertions: [
-      { type: "reply_block", layout: "carousel", minItems: 2, itemsFromRecords: listingRecords },
+      { type: "reply_block", layout: "carousel", minItems: 2, itemsFromRecords: listingsWithinBudget },
       { type: "answer_excludes_image_url" },
       noShortenedAddress,
     ],

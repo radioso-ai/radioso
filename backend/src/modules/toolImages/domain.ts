@@ -4,20 +4,18 @@ import type { ImageSourceType } from "../../shared/infra/images/imageSniff.js";
 export const TOOL_IMAGE_LIMITS = {
   /** A fetched picture's body is read no further than this. */
   maxSourceBytes: 8 * 1024 * 1024,
-  /** A picture a skill returns as bytes. */
-  maxInlineBytes: 5 * 1024 * 1024,
-  /** Pictures kept from one tool call's bytes. */
-  maxInlinePerCall: 4,
   /** Decoding stops past this many pixels, so a crafted file cannot exhaust memory. */
   maxInputPixels: 40_000_000,
   /** A picture smaller than this on either side is a tracking pixel or an icon, not a card's picture. */
   minSidePx: 32,
   /** A capture claim older than this belongs to a worker that is gone, and may be taken over. */
   claimTimeoutMs: 30_000,
-  /** The job's fetch budget. */
-  jobFetchTimeoutMs: 10_000,
-  /** The whole on-demand capture, fetch and encode, while the browser waits for the picture. */
-  onDemandBudgetMs: 6_000,
+  /** One deadline over a job's capture of one picture: the wait for a turn, the fetch, the encode and the uploads. */
+  jobCaptureDeadlineMs: 20_000,
+  /** The same deadline for a capture a browser waits on. */
+  onDemandCaptureDeadlineMs: 6_000,
+  /** Captures one process runs at once; an on-demand request that finds none free leaves the picture to the job. */
+  concurrentCaptures: 4,
   /** A picture no message carries is deleted this long after its row was written. */
   unboundLifetimeMs: 24 * 60 * 60 * 1_000,
   /** Pictures one capture job carries; a reply has at most ten cards. */
@@ -41,14 +39,18 @@ export interface ToolImageRendition extends ToolImageObject {
   readonly sizeBytes: number;
 }
 
-/** A row a capture has claimed, with what it needs to read the source. */
+/**
+ * A row a capture has claimed. `claimedAt` is the claim's generation: every write that finishes
+ * the capture matches it, so a capture whose claim another one took over changes nothing.
+ */
 export interface ClaimedToolImage {
   readonly id: string;
   readonly workspaceId: string;
-  readonly source: { readonly kind: "url"; readonly url: string } | { readonly kind: "inline"; readonly object: ToolImageObject };
+  readonly url: string;
+  readonly claimedAt: Date;
 }
 
-/** Where a picture's rows stand when a capture asks to claim it. */
+/** Where a picture's row stands when a capture asks to claim it. */
 export type ToolImageClaim =
   | { readonly kind: "claimed"; readonly image: ClaimedToolImage }
   | { readonly kind: "stored" }
@@ -80,26 +82,34 @@ export const TRANSIENT_CAPTURE_OUTCOMES: ReadonlySet<ToolImageCaptureOutcome> = 
 /** The module's rows. The Postgres implementation is `infra/toolImageRepository.ts`. */
 export interface ToolImageStore {
   claim(imageId: string, now: Date): Promise<ToolImageClaim>;
-  /** Marks a claimed row stored, clears its source, and hands an inline source object to the deletion job. */
-  markStored(input: { imageId: string; width: number; height: number; sha256: string; renditions: readonly ToolImageRendition[] }): Promise<void>;
-  /** Marks a claimed row failed for good, clears its source, and hands its objects to the deletion job. */
-  markFailed(input: { imageId: string; reason: ToolImageCaptureOutcome; renditions?: readonly ToolImageRendition[] }): Promise<void>;
-  /** Hands a claimed row back for a later attempt, keeping its source. */
-  release(input: { imageId: string; reason: ToolImageCaptureOutcome }): Promise<void>;
+  /**
+   * Marks the row stored if this claim still holds it, and clears its address. Resolves false when
+   * the claim was taken over; the renditions this claim wrote are then handed to the deletion job.
+   */
+  markStored(input: { image: ClaimedToolImage; width: number; height: number; sha256: string; renditions: readonly ToolImageRendition[] }): Promise<boolean>;
+  /** Fails the row for good if this claim still holds it, and clears its address. */
+  markFailed(input: { image: ClaimedToolImage; reason: ToolImageCaptureOutcome }): Promise<void>;
+  /**
+   * Hands the row back for a later attempt if this claim still holds it, keeping its address. The
+   * objects this claim may have written go to the deletion job either way.
+   */
+  release(input: { image: ClaimedToolImage; reason: ToolImageCaptureOutcome; leftovers: readonly ToolImageObject[] }): Promise<void>;
   /** The rendition at `width` of a stored row, or null. */
   findRendition(input: { imageId: string; width: number }): Promise<ToolImageRendition | null>;
   /** Fails the rows among `imageIds` still waiting for a capture, once no attempt is left. */
   failPending(input: { imageIds: readonly string[]; reason: "retries_exhausted" }): Promise<void>;
 }
 
+/**
+ * The objects one capture writes: one WebP per served width, named by the capture's own tag, so a
+ * capture never overwrites or deletes another's copies of the same picture.
+ */
+export type ToolImageObjectSuffix = `w${number}-${string}`;
+
 /** Document storage, narrowed to one tool image's objects under the workspace's `tool-images` folder. */
 export interface ToolImageObjectStore {
   /** Where `<imageId>-<suffix>` lands, known before it is written. */
   locate(input: { workspaceId: string; imageId: string; suffix: ToolImageObjectSuffix }): ToolImageObject;
   put(input: { workspaceId: string; imageId: string; suffix: ToolImageObjectSuffix; bytes: Buffer; mimeType: string }): Promise<{ sizeBytes: number }>;
-  get(object: ToolImageObject): Promise<Buffer>;
   remove(object: ToolImageObject): Promise<void>;
 }
-
-/** The objects one picture may have: the bytes a skill returned, and one WebP per served width. */
-export type ToolImageObjectSuffix = "source" | `w${number}`;

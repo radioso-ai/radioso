@@ -2224,9 +2224,7 @@ CREATE TABLE public.conversation_tool_images (
     workspace_id uuid NOT NULL,
     conversation_id uuid,
     message_id uuid,
-    source_kind text NOT NULL,
     source_url text,
-    source_object jsonb,
     status text DEFAULT 'pending'::text NOT NULL,
     claimed_at timestamp with time zone,
     failure_reason text,
@@ -2239,16 +2237,13 @@ CREATE TABLE public.conversation_tool_images (
     CONSTRAINT conversation_tool_images_claim_complete CHECK (((status = 'capturing'::text) = (claimed_at IS NOT NULL))),
     CONSTRAINT conversation_tool_images_failure_reason_check CHECK (((failure_reason IS NULL) OR (failure_reason ~ '^[a-z_]{1,40}$'::text))),
     CONSTRAINT conversation_tool_images_height_check CHECK ((height > 0)),
-    CONSTRAINT conversation_tool_images_inline_source CHECK (((source_kind <> 'inline'::text) OR ((source_url IS NULL) AND (conversation_id IS NOT NULL)))),
     CONSTRAINT conversation_tool_images_message_in_conversation CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
     CONSTRAINT conversation_tool_images_renditions_check CHECK ((jsonb_typeof(renditions) = 'array'::text)),
     CONSTRAINT conversation_tool_images_sha256_check CHECK (((sha256 IS NULL) OR (sha256 ~ '^[0-9a-f]{64}$'::text))),
-    CONSTRAINT conversation_tool_images_source_kind_check CHECK ((source_kind = ANY (ARRAY['url'::text, 'inline'::text]))),
-    CONSTRAINT conversation_tool_images_source_object_check CHECK (((source_object IS NULL) OR (jsonb_typeof(source_object) = 'object'::text))),
     CONSTRAINT conversation_tool_images_source_url_check CHECK (((source_url IS NULL) OR ((length(source_url) >= 1) AND (length(source_url) <= 2048)))),
     CONSTRAINT conversation_tool_images_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'capturing'::text, 'stored'::text, 'failed'::text]))),
     CONSTRAINT conversation_tool_images_stored_complete CHECK (((status <> 'stored'::text) OR ((width IS NOT NULL) AND (height IS NOT NULL) AND (sha256 IS NOT NULL) AND (renditions <> '[]'::jsonb) AND (stored_at IS NOT NULL)))),
-    CONSTRAINT conversation_tool_images_url_source CHECK (((source_kind <> 'url'::text) OR ((status = ANY (ARRAY['stored'::text, 'failed'::text])) AND (source_url IS NULL)) OR ((status = ANY (ARRAY['pending'::text, 'capturing'::text])) AND (source_url IS NOT NULL)))),
+    CONSTRAINT conversation_tool_images_url_source CHECK ((((status = ANY (ARRAY['stored'::text, 'failed'::text])) AND (source_url IS NULL)) OR ((status = ANY (ARRAY['pending'::text, 'capturing'::text])) AND (source_url IS NOT NULL)))),
     CONSTRAINT conversation_tool_images_width_check CHECK ((width > 0))
 );
 

@@ -1,7 +1,8 @@
 import type { SuppressedSkillEffectsSource } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { AgenticRetrievalToolFactory } from "../../retrieval/public.js";
 import type { SkillOutcome } from "../../skills/public.js";
-import { ToolRecordLedger } from "./replyBlocks/toolRecords.js";
+import { skillResultCardsFor } from "./replyBlocks/skillResultCardsGate.js";
+import { hasToolRecords } from "./replyBlocks/toolRecords.js";
 import type { DirectiveBindingSkillState } from "./directiveBindingResolution.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { TurnSkill } from "./turnOutcome.js";
@@ -18,14 +19,16 @@ export const hasAnswerText = (answer: string | undefined): boolean =>
   typeof answer === "string" && answer.trim().length > 0;
 
 /**
- * Whether a skill's result gives a reply something to be written from: text, or at least one
- * record (#1763). Shared by the agent-skill turn provider (a dispatch with neither fails the turn
- * as `empty_answer` rather than settling) and the skill-result renderer (which claims only a
- * completed outcome this predicate accepts), so "has a result" is one definition, not two that
- * could drift apart.
+ * Whether a skill's result gives this turn's reply something to be written from: text, or, where
+ * the reply may show cards, at least one record (#1763). Without cards a records-only result fails
+ * as `empty_answer`, as it always did, so a channel without cards never gets a reply written from
+ * raw records. Read by the agent-skill turn provider, which settles a dispatch this rejects as
+ * failed; the skill-result renderer then only meets results this accepted.
  */
-export const hasRenderableResult = (outcome: Pick<SkillOutcome, "answer" | "outputs" | "media">): boolean =>
-  hasAnswerText(outcome.answer) || ToolRecordLedger.fromOutcome(outcome.outputs, outcome.media).size > 0;
+export const hasRenderableResult = (
+  outcome: Pick<SkillOutcome, "answer" | "outputs">,
+  session: Pick<PreparedSession, "replyBlocks">,
+): boolean => hasAnswerText(outcome.answer) || (skillResultCardsFor(session) !== null && hasToolRecords(outcome.outputs));
 
 /**
  * One turn's agent-selectable skills. `suppressedEffects`, when the runtime reports it,

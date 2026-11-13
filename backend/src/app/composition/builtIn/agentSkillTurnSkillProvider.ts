@@ -441,8 +441,8 @@ const turnSkillForAgentSkill = (
       if (result.outcome.status !== "completed") {
         return outcomeFor(session, agentSkill.skillName, result.outcome);
       }
-      // The visitor's reply is written from the skill's text or its records; neither leaves it nothing.
-      if (!hasRenderableResult(result.outcome)) {
+      // The visitor's reply is written from the skill's text, or from its records where it shows cards.
+      if (!hasRenderableResult(result.outcome, session)) {
         return fail("empty_answer");
       }
       return outcomeFor(session, agentSkill.skillName, result.outcome);

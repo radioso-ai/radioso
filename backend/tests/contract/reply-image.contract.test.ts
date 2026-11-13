@@ -7,6 +7,7 @@ import { DOCUMENT_IMAGE_RENDITION_WIDTHS } from "../../src/modules/documents/con
 import sharp from "sharp";
 
 import { ToolImageCapture, ToolImageLookup } from "../../src/modules/toolImages/composition.js";
+import type { DocumentStorageLocator } from "../../src/modules/documents/contracts/storage.js";
 import type { ToolImageObjectStore } from "../../src/modules/toolImages/domain.js";
 import { InMemoryDocumentImages } from "../support/inMemoryDocumentImages.js";
 import { InMemoryToolImageStore } from "../support/inMemoryToolImages.js";
@@ -108,21 +109,19 @@ describe("public reply image route", () => {
     const workspaceId = randomUUID();
     const waiting = randomUUID();
     const expired = randomUUID();
-    store.add(waiting, workspaceId, { kind: "url", url: "https://img.homes.example/photos/loft.jpg" });
-    store.add(expired, workspaceId, { kind: "url", url: "https://img.homes.example/photos/expired.jpg" });
+    store.add(waiting, workspaceId, "https://img.homes.example/photos/loft.jpg");
+    store.add(expired, workspaceId, "https://img.homes.example/photos/expired.jpg");
     const photo = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 10, g: 80, b: 140 } } }).jpeg().toBuffer();
     const toolImages: { lookup?: ToolImageLookup } = {};
     const { app, dependencies } = createTestApp({ toolImages: { findServable: (input) => toolImages.lookup!.findServable(input) } });
     // Writes where the test app's storage puts it, so the route reads the copy the capture made.
-    const written = new Map<string, { bucket: string; objectPath: string }>();
+    const storage = dependencies.documentStorage as typeof dependencies.documentStorage & DocumentStorageLocator;
     const objects: ToolImageObjectStore = {
-      locate: ({ imageId, suffix }) => ({ ...written.get(`${imageId}-${suffix}`)!, generation: null }),
+      locate: ({ imageId, suffix }) => ({ ...storage.locate({ workspaceId, documentId: `tool-image-${imageId}-${suffix}` }), generation: null }),
       put: async ({ imageId, suffix, bytes, mimeType }) => {
-        const stored = await dependencies.documentStorage.upload({ workspaceId, documentId: `tool-image-${imageId}-${suffix}`, filename: "image.webp", mimeType, buffer: bytes });
-        written.set(`${imageId}-${suffix}`, stored);
+        const stored = await storage.upload({ workspaceId, documentId: `tool-image-${imageId}-${suffix}`, filename: "image.webp", mimeType, buffer: bytes });
         return { sizeBytes: stored.sizeBytes };
       },
-      get: async () => Buffer.alloc(0),
       remove: async () => {},
     };
     toolImages.lookup = new ToolImageLookup({

@@ -20,6 +20,7 @@ import {
 import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
 import { replyBlockCases, replyBlockImages } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
+import { toolCardCases } from "../tests/fixtures/conversation-quality/toolCardCases.js";
 import { DOCUMENT_IMAGE_RENDITION_WIDTHS } from "../src/modules/documents/contracts/documentImages.js";
 import { workspaceStoragePrefix } from "../src/modules/documents/contracts/storage.js";
 import { toJsonb } from "../src/shared/infra/kysely/sqlHelpers.js";
@@ -288,16 +289,22 @@ export const runThenClose = async <T>(
  */
 export const partitionCasesByCorpus = (
   cases: readonly ConversationQualityCase[],
-): { shared: ConversationQualityCase[]; replyBlocks: ConversationQualityCase[] } => {
+): { shared: ConversationQualityCase[]; replyBlocks: ConversationQualityCase[]; toolCards: ConversationQualityCase[] } => {
   const replyBlockIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
+  // The tool-card cases bind every turn of their agent to a search, so they need an agent of their own.
+  const toolCardIds = new Set(toolCardCases.map((evalCase) => evalCase.id));
   return {
-    shared: cases.filter((evalCase) => !replyBlockIds.has(evalCase.id)),
+    shared: cases.filter((evalCase) => !replyBlockIds.has(evalCase.id) && !toolCardIds.has(evalCase.id)),
     replyBlocks: cases.filter((evalCase) => replyBlockIds.has(evalCase.id)),
+    toolCards: cases.filter((evalCase) => toolCardIds.has(evalCase.id)),
   };
 };
 
 /** The name of the workspace the reply block cases run in, so a repeat run finds it. */
 export const REPLY_BLOCK_EVAL_WORKSPACE_NAME = "Conversation-quality reply blocks";
+
+/** The name of the workspace the tool-card cases run in. */
+export const TOOL_CARD_EVAL_WORKSPACE_NAME = "Conversation-quality tool cards";
 
 /** The workspace reads and writes `ensureReplyBlockTarget` makes, narrowed so a test can hand it fakes. */
 interface ReplyBlockTargetPorts {
@@ -310,8 +317,8 @@ interface ReplyBlockTargetPorts {
 }
 
 /**
- * The workspace and agent the reply block cases run on: a workspace in the run target's own
- * account, created on the first run and found by name after. It goes through the account rather
+ * The workspace and agent the reply block cases (or, by name, the tool-card cases) run on: a
+ * workspace in the run target's own account, created on the first run and found by name after. It goes through the account rather
  * than registering one, since a single-organization install closes registration after its first
  * account. A sign-in lands on an account's newest workspace when none is named
  * `DEFAULT_WORKSPACE_NAME`, so in such an account it refuses to create one rather than become
@@ -320,20 +327,21 @@ interface ReplyBlockTargetPorts {
 export const ensureReplyBlockTarget = async (
   ports: ReplyBlockTargetPorts,
   targetWorkspaceId: string,
+  workspaceName: string = REPLY_BLOCK_EVAL_WORKSPACE_NAME,
 ): Promise<{ workspaceId: string; agentId: string }> => {
   const target = await ports.workspaces.findById(targetWorkspaceId);
   if (!target) {
-    throw new Error(`Workspace ${targetWorkspaceId} not found; the reply block cases run in a workspace beside it.`);
+    throw new Error(`Workspace ${targetWorkspaceId} not found; the "${workspaceName}" cases run in a workspace beside it.`);
   }
   const workspaces = await ports.workspaceService.listForAccount(target.accountId);
-  const existing = workspaces.find((workspace) => workspace.name === REPLY_BLOCK_EVAL_WORKSPACE_NAME);
+  const existing = workspaces.find((workspace) => workspace.name === workspaceName);
   if (!existing && !workspaces.some((workspace) => workspace.name === DEFAULT_WORKSPACE_NAME)) {
     throw new Error(
-      `The account of workspace ${targetWorkspaceId} has no "${DEFAULT_WORKSPACE_NAME}" workspace, so a new "${REPLY_BLOCK_EVAL_WORKSPACE_NAME}" workspace would become where it signs in; point the run at a disposable account.`,
+      `The account of workspace ${targetWorkspaceId} has no "${DEFAULT_WORKSPACE_NAME}" workspace, so a new "${workspaceName}" workspace would become where it signs in; point the run at a disposable account.`,
     );
   }
   const workspaceId = existing?.id
-    ?? (await ports.workspaceService.create(target.accountId, REPLY_BLOCK_EVAL_WORKSPACE_NAME)).id;
+    ?? (await ports.workspaceService.create(target.accountId, workspaceName)).id;
   const agent = await ports.agentService.resolve(workspaceId);
   return { workspaceId, agentId: agent.id };
 };

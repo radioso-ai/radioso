@@ -468,8 +468,8 @@ describe("live runner reply block corpus", () => {
     expect(conversationQualityCorpus.filter((document) => document.metadata?.sourceUrl)).toEqual([]);
   });
 
-  it("runs the reply block cases apart, and every committed case in exactly one part", () => {
-    const { shared, replyBlocks } = partitionCasesByCorpus(conversationQualityCases);
+  it("runs the reply block and tool-card cases apart, and every committed case in exactly one part", () => {
+    const { shared, replyBlocks, toolCards } = partitionCasesByCorpus(conversationQualityCases);
 
     expect(replyBlocks.map((evalCase) => evalCase.id).sort()).toEqual([
       "reply-blocks-guest-house-photos",
@@ -477,8 +477,13 @@ describe("live runner reply block corpus", () => {
       "reply-blocks-returns-policy-no-pictures",
       "reply-blocks-unanswered-no-pictures",
     ]);
-    expect(shared).toHaveLength(conversationQualityCases.length - replyBlocks.length);
-    expect(shared.some((evalCase) => evalCase.id.startsWith("reply-blocks-"))).toBe(false);
+    expect(toolCards.map((evalCase) => evalCase.id).sort()).toEqual([
+      "tool-cards-listings-carousel",
+      "tool-cards-no-match-no-cards",
+      "tool-cards-records-without-pictures",
+    ]);
+    expect(shared).toHaveLength(conversationQualityCases.length - replyBlocks.length - toolCards.length);
+    expect(shared.some((evalCase) => evalCase.id.startsWith("reply-blocks-") || evalCase.id.startsWith("tool-cards-"))).toBe(false);
   });
 
   const targetPorts = (workspaces: Array<{ id: string; name: string }>) => {

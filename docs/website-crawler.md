@@ -113,7 +113,7 @@ Each page also hands ingestion the pictures it names, by address, never by bytes
 | The page's own picture | `og:image` (and its `:url` and `:secure_url` forms), then `twitter:image`, then the JSON-LD `image` of the page's entity or its `primaryImageOfPage` | `primary`, up to 3 distinct addresses |
 | Pictures in the content | Each `<img>` the text extraction keeps as main content: its `srcset` source at least 640 pixels wide (else the widest), a lazy loader's `data-src`, or `src`; its `alt`; its `<figure>`'s `<figcaption>`; and its offset in the page text | `inline`, up to 24 |
 
-`data:` addresses, SVG files, and anything that is not absolute http(s) are left out. The offset places the picture in the stored text, so the worker ties it to the chunk it sits in. The documents worker fetches, filters and stores the pictures after the page is processed ([Show pictures in answers](../docs-portal/content/guides/answer-images.mdx)); a page whose text did not change still records new pictures on a re-crawl, and a picture the page no longer names is deleted.
+`data:` addresses, SVG files, and anything that is not absolute http(s) are left out. The offset places the picture in the stored text, so the worker ties it to the chunk it sits in. The documents worker fetches, filters and stores the pictures after the page is processed ([Document processing lifecycle](../docs-portal/content/architecture/document-processing-lifecycle.mdx)); a page whose text did not change still records new pictures on a re-crawl, and a picture the page no longer names is deleted.
 
 ### Listing recent crawl jobs
 

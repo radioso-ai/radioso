@@ -1,4 +1,4 @@
-import { handOffWorkspaceStoragePurges } from "../../modules/documents/composition.js";
+import { DocumentImageRepository, handOffWorkspaceStoragePurges } from "../../modules/documents/composition.js";
 import type { BackgroundJobQueue } from "../../shared/background-jobs/index.js";
 import type { VendorHeldConversationDataEraser } from "../../shared/domain/conversationDataErasure.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -17,7 +17,8 @@ interface WorkspaceDeletionHooks {
  * cascade. Inside the transaction: the hand-off of what vendors hold for the workspaces'
  * conversations (each call recording, with the workspace's vendor key sealed beside it) to a
  * backlog that outlives the cascade, then every module's eraser for the conversation content that
- * outlives the rows, then the hand-off of each workspace's stored files to the worker. Each
+ * outlives the rows, the document image rows a deleted document leaves released, then the hand-off
+ * of each workspace's stored files to the worker. Each
  * hand-off commits with the deletion or not at all. Once it committed: one wake, so the worker
  * starts on both without waiting for the recovery sweep; it is also the vendor hand-off's own
  * after-commit step, which is a wake of the same queue.
@@ -37,6 +38,8 @@ export const createWorkspaceDeletionHooks = (deps: {
         scopes: workspaceIds.map((workspaceId) => ({ kind: "workspace", workspaceId })),
       });
       await eraseConversationData(trx, workspaceIds);
+      // Image rows outlive a deleted document (it releases them), so they go by workspace; the purge takes their copies.
+      await new DocumentImageRepository(trx).deleteForWorkspaces(workspaceIds);
       await handOffStoredFiles(trx, workspaceIds);
     },
     afterCommit: () => deps.queue.wake(),

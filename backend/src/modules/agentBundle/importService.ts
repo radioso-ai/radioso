@@ -519,7 +519,7 @@ const untrackedImports: AgentBundleImportRepositoryPort = {
  * An older version stays on this list only while every field it lacks has a default
  * that reads as the behaviour that version actually had: v3 predates `internalName`
  * and `handoffOnRetrievalMiss`, and v4 predates `visitorImagesEnabled` and
- * `answerImagesEnabled`; each defaults to the stored default, off, so an older bundle
+ * `replyCardsEnabled`; each defaults to the stored default, off, so an older bundle
  * imports as the agent it described. A version whose absent fields would change
  * behaviour must be dropped from this list, not defaulted.
  */

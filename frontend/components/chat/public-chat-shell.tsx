@@ -38,6 +38,7 @@ import { VoiceCallBar, VoiceCallNotice, VoiceTalkButton } from '@/components/cha
 import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { useElementHeight } from '@/hooks/use-element-height'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
+import { visitorThreadMessages } from '@/lib/public-chat-messages'
 import { publicChatUnavailableMessage, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import { suggestionInputMetadata } from '@/lib/public-chat-suggestion'
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
@@ -626,24 +627,8 @@ function PublicChatContent({
     intakeActions.some((action) => action.skillName === HUMAN_CONTACT_SKILL_NAME)
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const isUnavailable = unavailable !== null
-  // A turn that failed before producing any text renders the localized failure copy —
-  // the cause-specific one when the agent is out of conversation quota, the generic one
-  // otherwise. Resolving it here (rather than in the chat context) keeps the string on
-  // the same path as every other visitor-facing string: built-in locale pack, then the
-  // agent's copy pack, then operator overrides.
-  const visibleMessages = useMemo(
-    () => messages.map((message) => (
-      message.status === 'error' && !message.content
-        ? {
-            ...message,
-            content: message.failure === 'unavailable'
-              ? copy.publicChatAgentUnavailableMessage
-              : copy.publicChatMessageFailedMessage,
-          }
-        : message
-    )),
-    [copy.publicChatAgentUnavailableMessage, copy.publicChatMessageFailedMessage, messages],
-  )
+  // Failed turns and withheld messages read in the visitor's language.
+  const visibleMessages = useMemo(() => visitorThreadMessages(messages, copy), [copy, messages])
   const messageIdsNewestFirstRef = useRef<readonly string[]>([])
   useEffect(() => {
     messageIdsNewestFirstRef.current = messages.map((message) => message.id).reverse()

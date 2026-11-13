@@ -184,7 +184,7 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `ReplyBlock` in `@radioso/conversation-contract`). A client declares the kinds it
   renders in `clientContextCapabilities["reply.blocks"]`; the preparer keeps that
   on the session as `replyBlocks`. On a grounded answer of an agent with
-  `answerImagesEnabled` on, whose evidence carries a stored image (never a site
+  `replyCardsEnabled` on, whose evidence carries a stored image (never a site
   banner: retrieval's `evidenceImages.ts` leaves out a primary more than five
   documents share), `ReplyBlockTurnFactory.forTurn` gives the turn a ledger of the
   images under per-turn handles (`turnImageLedger.ts`), the Result images section
@@ -590,7 +590,12 @@ imports from `services/`.
   which also hands it the conversation as a routine's consents read it
   (`services/routines/routineConsentTurn.ts`, #1544). The routine's
   `hostEffects.consentEvents` ride the result to `completeAssistantTurn` unread, and
-  `PostgresAssistantTurnPersistence` records them in the turn's transaction. A replayed
+  `PostgresAssistantTurnPersistence` records them in the turn's transaction. The same
+  transaction marks the visitor messages `sensitiveMessageMarks`
+  (`services/routines/sensitiveTurnMarker.ts`) names, the earlier ones a step read a covered
+  value from included, and, after a consent of the conversation was withdrawn while the turn
+  ran, withholds the turn's visitor message and reply through the composition-bound
+  withholding (`bindConsentMessageWithholding`). A replayed
   turn (Test Chat, eval) records them in its session's own store instead
   (`services/routines/sessionRoutineConsentStore.ts`, the assembly's
   `routineConsentStore`), which Test Chat's continuation carries to the next turn.

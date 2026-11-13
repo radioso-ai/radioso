@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { MAX_STORED_IMAGES_PER_DOCUMENT } from "../../../src/modules/documents/contracts/index.js";
 import { DocumentImageCaptureQueue } from "../../../src/modules/documents/services/documentImageCaptureQueue.js";
 import { InMemoryDocumentProcessingJobRepository, InMemoryDocumentRepository } from "../../support/fakes.js";
 import { InMemoryDocumentImageRows } from "../../support/inMemoryDocumentImageRows.js";
@@ -36,18 +37,43 @@ describe("DocumentImageCaptureQueue", () => {
     expect(captureJobs()).toEqual([]);
   });
 
-  it("queues capture at once when an unchanged page names a new image, and not when nothing changed", async () => {
-    const { queue, dispatcher, captureJobs } = setup();
+  it("queues capture at once when an unchanged page names a new image, and not once its image is kept", async () => {
+    const { queue, rows, dispatcher, captureJobs } = setup();
     const images = [placed("https://cdn.shop.example/cover.jpg", 0)];
 
     await queue.recordCandidates({ workspaceId: WORKSPACE_ID, documentId: DOCUMENT_ID, revision: 2, published: true, images });
     const [first] = captureJobs();
     first.status = "completed";
+    rows.byUrl("https://cdn.shop.example/cover.jpg")!.status = "stored";
     await queue.recordCandidates({ workspaceId: WORKSPACE_ID, documentId: DOCUMENT_ID, revision: 2, published: true, images });
 
     expect(captureJobs()).toHaveLength(1);
     expect(captureJobs()[0]).toMatchObject({ documentRevision: 2, status: "completed" });
     expect(dispatcher.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues capture again on an unchanged page while an image it keeps is still pending", async () => {
+    const { queue, dispatcher, captureJobs } = setup();
+    const images = [placed("https://cdn.shop.example/cover.jpg", 0)];
+
+    // Recorded, then left pending: a timeout, a busy codec, the job's budget, or rows written after the job ran.
+    await queue.recordCandidates({ workspaceId: WORKSPACE_ID, documentId: DOCUMENT_ID, revision: 2, published: false, images });
+    await queue.recordCandidates({ workspaceId: WORKSPACE_ID, documentId: DOCUMENT_ID, revision: 2, published: true, images });
+
+    expect(captureJobs()).toHaveLength(1);
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves pending an image past the per-document limit, and a skipped one, without queueing capture for them", async () => {
+    const { queue, rows, captureJobs } = setup();
+    const images = Array.from({ length: MAX_STORED_IMAGES_PER_DOCUMENT + 2 }, (_value, index) => placed(`https://cdn.shop.example/g${index}.jpg`, index));
+    await queue.recordCandidates({ workspaceId: WORKSPACE_ID, documentId: DOCUMENT_ID, revision: 2, published: false, images });
+    for (const row of rows.forDocument(DOCUMENT_ID).slice(0, MAX_STORED_IMAGES_PER_DOCUMENT)) row.status = "stored";
+    rows.byUrl(`https://cdn.shop.example/g${MAX_STORED_IMAGES_PER_DOCUMENT}.jpg`)!.status = "skipped";
+
+    await queue.recordCandidates({ workspaceId: WORKSPACE_ID, documentId: DOCUMENT_ID, revision: 2, published: true, images });
+
+    expect(captureJobs()).toEqual([]);
   });
 
   it("releases an image the content no longer names", async () => {

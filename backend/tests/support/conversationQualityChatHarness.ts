@@ -199,10 +199,10 @@ const observedOutputFromReviewResult = (
 
 /**
  * The workspace's own agent has no settings row here, so it stands in for the conversation-quality
- * agent, which has pictures in answers on: a case that gives documents' images can be offered them.
+ * agent, which has reply cards on: a case that gives documents' images can be offered them.
  */
-const withPicturesInAnswers = (factory: Pick<ReplyBlockTurnFactory, "forTurn">): Pick<ReplyBlockTurnFactory, "forTurn"> => ({
-  forTurn: (session) => factory.forTurn({ ...session, agent: { ...session.agent, answerImagesEnabled: true } }),
+const withReplyCards = (factory: Pick<ReplyBlockTurnFactory, "forTurn">): Pick<ReplyBlockTurnFactory, "forTurn"> => ({
+  forTurn: (session) => factory.forTurn({ ...session, agent: { ...session.agent, replyCardsEnabled: true } }),
 });
 
 export interface ConversationQualityChatHarnessOptions {
@@ -264,7 +264,7 @@ export const conversationQualityChatHarness = (options: ConversationQualityChatH
       skillOutcomeCapabilities: { supportsGroundedAnswer: () => true },
       metrics,
       ...(options.documentImages
-        ? { replyBlocks: withPicturesInAnswers(new ReplyBlockTurnFactory({
+        ? { replyBlocks: withReplyCards(new ReplyBlockTurnFactory({
             evidenceImages: new EvidenceImageAttacher(options.documentImages),
             imageUrls: createReplyImageUrls("https://app.example/backend"),
             metrics,

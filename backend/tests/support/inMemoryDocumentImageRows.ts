@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { hasPendingKeptImage } from "../../src/modules/documents/domain/documentImageCandidates.js";
 import type {
   CapturableDocumentImage,
   DocumentImageCandidateWriter,
@@ -59,7 +60,10 @@ export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, 
     for (const row of existing) {
       if (!named.has(row.sourceUrl)) row.documentId = null;
     }
-    let captureNeeded = false;
+    let captureNeeded = hasPendingKeptImage(input.images.map((image) => ({
+      position: image.position,
+      status: existing.find((row) => row.sourceUrl === image.sourceUrl)?.status ?? "pending",
+    })));
     for (const image of input.images) {
       const kept = existing.find((row) => row.sourceUrl === image.sourceUrl);
       if (!kept) {
@@ -99,14 +103,14 @@ export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, 
     renditions: readonly DocumentImageRendition[];
   }): Promise<boolean> {
     const row = this.rows.get(input.id);
-    if (!row) return false;
+    if (!row || row.documentId === null) return false;
     Object.assign(row, { ...input, status: "stored", renditions: [...input.renditions] });
     return true;
   }
 
   async reanchor(input: { id: string; chunkId: string | null }): Promise<void> {
     const row = this.rows.get(input.id);
-    if (row) row.chunkId = input.chunkId;
+    if (row && row.documentId !== null) row.chunkId = input.chunkId;
   }
 
   async markSkipped(id: string): Promise<DocumentImageRendition[]> {
@@ -122,6 +126,16 @@ export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, 
       .filter((row) => row.documentId === null)
       .slice(0, limit)
       .map((row) => ({ id: row.id, renditions: [...row.renditions] }));
+  }
+
+  /** Sends rows to the back of the sweep's queue, as a fresh `updated_at` does. */
+  async touchReleased(ids: readonly string[]): Promise<void> {
+    for (const id of ids) {
+      const row = this.rows.get(id);
+      if (!row || row.documentId !== null) continue;
+      this.rows.delete(id);
+      this.rows.set(id, row);
+    }
   }
 
   async deleteReleased(ids: readonly string[]): Promise<void> {

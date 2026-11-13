@@ -88,6 +88,8 @@ export interface WebsiteEmbedCopy {
   /** The server was too busy to take a photo, even on a second try. */
   publicChatImageBusyMessage: string
   publicChatImageLimitTemplate: string
+  /** Stands in for a message withheld after the visitor's consent to what it carried was withdrawn. */
+  publicChatWithheldMessageLabel: string
 }
 
 export interface WebsiteEmbedTheme {
@@ -178,6 +180,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatImageRefusedMessage: "Photos can't be sent right now.",
   publicChatImageBusyMessage: 'Busy right now. Try that photo again.',
   publicChatImageLimitTemplate: 'You can send up to {count} photos at once.',
+  publicChatWithheldMessageLabel: 'Withheld after consent was withdrawn',
 }
 const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
@@ -256,6 +259,7 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatImageRefusedMessage',
   'publicChatImageBusyMessage',
   'publicChatImageLimitTemplate',
+  'publicChatWithheldMessageLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
 const THEME_OVERRIDE_KEYS = [

@@ -131,6 +131,36 @@ Use `GET /api/v1/history/visitors/{visitorId}/conversations` to page through a v
 
 Use `DELETE /api/v1/history/chat/{conversationId}` to permanently delete a conversation and everything derived from it, and `DELETE /api/v1/history/visitors/{visitorId}` to delete a visitor with every conversation they had. Both answer `204` with no body, need `workspace.history.delete` (owners, admins, and admin credentials), and record a content-free `conversation.erased` or `visitor.erased` audit event. [Deleting conversation data](/operators/deleting-conversation-data) lists what goes and what Radioso keeps.
 
+A conversation whose routine asked a visitor for consent keeps a record of each decision. Use `GET /api/v1/history/chat/{conversationId}/consents` to read them, oldest first, with `workspace.history.read`:
+
+```json
+{
+  "consents": [
+    {
+      "id": "6f1c2a3e-1d4b-4c7e-9a52-2f0b8c1d9e44",
+      "routineId": "b7f4e2a1-3c5d-4e6f-8a9b-0c1d2e3f4a5b",
+      "consentKey": "health",
+      "slotKeys": ["injury"],
+      "decision": "granted",
+      "method": "button",
+      "defaulted": false,
+      "locale": "en",
+      "channel": "website_embed",
+      "wordingVersionId": "KXqovha6q-9PFCNU50nv-0Fetb1DR5RtVHzHAI5oheY",
+      "wording": {
+        "body": "We ask about injuries only to adapt your class. Your answer stays with this booking.",
+        "agreeLabel": "I agree",
+        "declineLabel": "No thanks"
+      },
+      "decidedAt": "2026-11-10T09:00:00.000Z",
+      "withdrawnAt": null
+    }
+  ]
+}
+```
+
+Records outlive their conversation, so the route still lists them after the conversation is deleted. To withdraw a granted consent on the visitor's request, call `POST /api/v1/history/chat/{conversationId}/consents/{recordId}/withdraw` with `workspace.history.delete`. It answers `200` with `{ "consent": … }`, now carrying `withdrawnAt`, and records a `routine_consent.withdrawn` audit event with ids only. The values of the fields in `slotKeys` are erased from the conversation's routine state. Each message that carried one, because a routine turn marked it or because its text contains a value the routine held (four characters or longer, ignoring case and spacing), keeps `[redacted]` as its `content` and comes back from the history reads, the visitor's public chat history included, with `withheld: { "reason": "consent_withdrawn", "at": "…" }` and no answer segments, suggestions, reply blocks or photos. A declined or already withdrawn consent answers `409 consent_not_withdrawable`, with `details.reason` of `declined` or `already_withdrawn` and `details.consent` as the record stands; a record the conversation doesn't have answers `404`. [Withdrawing a consent](/guides/authoring-routines#withdrawing-a-consent) covers what else changes and what stays.
+
 To answer one person's access or erasure request across the website, email and Slack, use the data subject routes under `/api/v1/privacy/data-subjects`: a lookup by verified customer id, email address or Slack member id, then a conversation list, a JSON export and an erasure over the identities you confirm. [Answering a data subject request](/operators/data-subject-requests) walks through them.
 
 ## Contact request history
@@ -190,6 +220,8 @@ GET  /api/v1/history/chat
 GET  /api/v1/history/chat/{conversationId}
 DELETE /api/v1/history/chat/{conversationId}
 GET  /api/v1/history/chat/{conversationId}/tail
+GET  /api/v1/history/chat/{conversationId}/consents
+POST /api/v1/history/chat/{conversationId}/consents/{recordId}/withdraw
 GET  /api/v1/history/contact
 GET  /api/v1/history/contact/{requestId}
 GET  /api/v1/history/visitors/{visitorId}/conversations
@@ -208,7 +240,8 @@ GET  /api/v1/history/search/{searchId}
 
 - `400` usually means the request body is invalid.
 - `401` from agent chat means its REST-audience credential is missing, invalid, expired, or bound to a different agent.
-- `403` from a history `DELETE` or a data subject route means the caller lacks `workspace.history.delete`.
+- `403` from a history `DELETE`, a consent withdrawal or a data subject route means the caller lacks `workspace.history.delete`.
+- `409 consent_not_withdrawable` from a consent withdrawal means the visitor declined that consent, or someone already withdrew it; nothing changed.
 - `404` can mean the conversation id is not available in the current workspace context.
 - `204` is part of the route contract. Use the reference page for the exact no-body case.
 

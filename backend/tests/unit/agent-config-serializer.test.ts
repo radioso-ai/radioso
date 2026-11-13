@@ -29,7 +29,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   // stored agent carries them too.
   handoffOnRetrievalMiss: true,
   visitorImagesEnabled: true,
-  answerImagesEnabled: true,
+  replyCardsEnabled: true,
   suggestedQuestionsEnabled: false,
   assistantLinkUtmEnabled: false,
   citationDisplayEnabled: false,
@@ -258,7 +258,7 @@ describe("serializeAgentConfig", () => {
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
     expect(config.contactRequestsEnabled).toBe(true);
     expect(config.visitorImagesEnabled).toBe(true);
-    expect(config.answerImagesEnabled).toBe(true);
+    expect(config.replyCardsEnabled).toBe(true);
     expect(config.webhookExportsEnabled).toBe(true);
     // Redacted in the portable projection: an imported agent that kept these would
     // deliver contact requests to the source workspace's people, from elsewhere.

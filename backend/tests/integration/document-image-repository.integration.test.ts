@@ -109,7 +109,7 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
     await insertImage({ documentId, workspaceId, role: "inline", status: "pending", position: 2, chunkId, sourceUrl: "https://shop.example/pending.jpg" });
     await insertImage({ documentId, workspaceId, role: "inline", status: "stored", position: 3, chunkId: randomUUID(), sourceUrl: "https://shop.example/elsewhere.jpg" });
 
-    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [chunkId] });
+    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [chunkId], primaryDocumentCountLimit: 6 });
 
     expect(rows.map((row) => row.id).sort()).toEqual([primary, inline].sort());
     expect(rows.find((row) => row.id === primary)).toEqual({
@@ -131,13 +131,13 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
   it("never reads another workspace's images", async () => {
     await insertImage({ documentId: otherDocumentId, workspaceId: otherWorkspaceId, role: "primary", status: "stored", position: 0, sourceUrl: "https://other.example/cover.jpg" });
 
-    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [otherDocumentId], chunkIds: [] });
+    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [otherDocumentId], chunkIds: [], primaryDocumentCountLimit: 6 });
 
     expect(rows).toEqual([]);
   });
 
   it("asks nothing of the database for empty evidence", async () => {
-    await expect(repository.listStoredForEvidence({ workspaceId, documentIds: [], chunkIds: [] })).resolves.toEqual([]);
+    await expect(repository.listStoredForEvidence({ workspaceId, documentIds: [], chunkIds: [], primaryDocumentCountLimit: 6 })).resolves.toEqual([]);
   });
 
   it("finds the stored rendition for a width, and nothing for a pending image or another width", async () => {
@@ -180,31 +180,43 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
     await insertImage({ documentId: otherDocumentId, workspaceId: otherWorkspaceId, role: "primary", status: "stored", position: 0, sourceUrl: shared });
     await insertImage({ documentId, workspaceId, role: "inline", status: "stored", position: 1, chunkId, sourceUrl: `${shared}?inline` });
 
-    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [chunkId] });
+    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [chunkId], primaryDocumentCountLimit: 6 });
 
     expect(rows.map((row) => [row.role, row.primaryDocumentCount])).toEqual([["primary", 3], ["inline", 0]]);
+  });
+
+  it("stops counting the documents that share a primary at the limit asked for", async () => {
+    const shared = "https://shop.example/site-banner.jpg";
+    const documents = [documentId, ...Array.from({ length: 7 }, () => randomUUID())];
+    for (const id of documents.slice(1)) await insertDocument(id, workspaceId);
+    for (const id of documents) {
+      await insertImage({ documentId: id, workspaceId, role: "primary", status: "stored", position: 0, sourceUrl: shared });
+    }
+
+    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [], primaryDocumentCountLimit: 6 });
+
+    expect(rows.map((row) => row.primaryDocumentCount)).toEqual([6]);
   });
 
   it("records what the content names: new addresses pending, kept ones re-placed, the rest released", async () => {
     const place = (sourceUrl: string, position: number, role: "primary" | "inline" = "primary", textOffset: number | null = null) =>
       ({ sourceUrl, role, alt: "", caption: null, position, textOffset });
-    const first = await repository.recordCandidates({
-      workspaceId, documentId,
-      images: [place("https://shop.example/cover.jpg", 0), place("https://shop.example/ridge.jpg", 1, "inline", 40)],
-    });
-    const unchanged = await repository.recordCandidates({
-      workspaceId, documentId,
-      images: [place("https://shop.example/cover.jpg", 0), place("https://shop.example/ridge.jpg", 1, "inline", 40)],
-    });
+    const named = [place("https://shop.example/cover.jpg", 0), place("https://shop.example/ridge.jpg", 1, "inline", 40)];
+    const first = await repository.recordCandidates({ workspaceId, documentId, images: named });
+    const stillPending = await repository.recordCandidates({ workspaceId, documentId, images: named });
+    for (const row of await repository.listForCapture({ workspaceId, documentId })) {
+      await repository.markStored({ id: row.id, chunkId, width: 800, height: 600, sha256: `sha-${row.id}`, sourceEtag: null, renditions: [rendition(320)] });
+    }
+    const unchanged = await repository.recordCandidates({ workspaceId, documentId, images: named });
     const moved = await repository.recordCandidates({
       workspaceId, documentId,
       images: [place("https://shop.example/ridge.jpg", 0, "inline", 90)],
     });
 
-    expect([first.captureNeeded, unchanged.captureNeeded, moved.captureNeeded]).toEqual([true, false, true]);
+    expect([first.captureNeeded, stillPending.captureNeeded, unchanged.captureNeeded, moved.captureNeeded]).toEqual([true, true, false, true]);
     const rows = await repository.listForCapture({ workspaceId, documentId });
     expect(rows.map((row) => [row.sourceUrl, row.status, row.position, row.textOffset])).toEqual([
-      ["https://shop.example/ridge.jpg", "pending", 0, 90],
+      ["https://shop.example/ridge.jpg", "stored", 0, 90],
     ]);
     expect((await repository.listReleased(500)).length).toBeGreaterThan(0);
     await expect(repository.hasImages(documentId)).resolves.toBe(true);
@@ -230,5 +242,23 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
     expect(skipped).toMatchObject({ status: "skipped", renditions: [], sha256: null });
     await expect(repository.markStored({ id: randomUUID(), chunkId: null, width: 1, height: 1, sha256: "x", sourceEtag: null, renditions: [rendition(320)] }))
       .resolves.toBe(false);
+  });
+
+  it("never stores or re-anchors an image its document released, and sends a released one it could not sweep to the back", async () => {
+    const released = await insertImage({ documentId, workspaceId, role: "inline", status: "pending", position: 0, sourceUrl: "https://shop.example/a.jpg" });
+    const later = await insertImage({ documentId, workspaceId, role: "inline", status: "pending", position: 1, sourceUrl: "https://shop.example/b.jpg" });
+    await database.query("UPDATE document_images SET document_id = NULL, updated_at = now() - interval '1 hour' WHERE id = $1", [released]);
+    await database.query("UPDATE document_images SET document_id = NULL, updated_at = now() - interval '30 minutes' WHERE id = $1", [later]);
+
+    await expect(repository.markStored({
+      id: released, chunkId, width: 800, height: 600, sha256: "sha-a", sourceEtag: null, renditions: [rendition(320)],
+    })).resolves.toBe(false);
+    await repository.reanchor({ id: released, chunkId });
+    const [row] = await database.query<{ status: string; chunk_id: string | null }>("SELECT status, chunk_id FROM document_images WHERE id = $1", [released]);
+    expect(row).toEqual({ status: "pending", chunk_id: null });
+
+    await repository.touchReleased([released]);
+    const order = (await repository.listReleased(500)).map((image) => image.id).filter((id) => id === released || id === later);
+    expect(order).toEqual([later, released]);
   });
 });

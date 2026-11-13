@@ -89,7 +89,7 @@ export const projectAgentConfigForImport = (config: AgentConfig): AgentConfigImp
       customInstruction: config.customInstruction,
       handoffOnRetrievalMiss: config.handoffOnRetrievalMiss ?? false,
       visitorImagesEnabled: config.visitorImagesEnabled ?? false,
-      answerImagesEnabled: config.answerImagesEnabled ?? false,
+      replyCardsEnabled: config.replyCardsEnabled ?? false,
       retrievalEnabled: retrieval.retrievalEnabled,
       suggestedQuestionsEnabled: retrieval.suggestedQuestionsEnabled,
       assistantLinkUtmEnabled: retrieval.assistantLinkUtmEnabled,

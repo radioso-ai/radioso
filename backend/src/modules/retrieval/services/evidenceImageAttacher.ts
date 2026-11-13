@@ -1,5 +1,6 @@
 import type { DocumentImageEvidenceReader } from "../../documents/contracts/index.js";
 import {
+  PRIMARY_DOCUMENT_COUNT_LIMIT,
   assignEvidenceImages,
   type EvidenceContext,
   type EvidenceItemImages,
@@ -22,6 +23,7 @@ export class EvidenceImageAttacher {
       workspaceId,
       documentIds: unique(contexts.map((context) => context.documentId)),
       chunkIds: unique(contexts.map((context) => context.chunkId)),
+      primaryDocumentCountLimit: PRIMARY_DOCUMENT_COUNT_LIMIT,
     });
     return assignEvidenceImages(contexts, rows);
   }

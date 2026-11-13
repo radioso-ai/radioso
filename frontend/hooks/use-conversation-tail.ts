@@ -17,6 +17,11 @@ interface UseConversationTailInput {
    * Polling stops; the caller clears the view the same way a failed first read does.
    */
   onNotFound?: () => void
+  /**
+   * Changing it drops what the poll read and starts it again with a fresh first read, for a change
+   * the cursor never re-delivers, such as messages withheld after a consent was withdrawn.
+   */
+  restartKey?: number
 }
 
 interface ConversationTailState {
@@ -48,6 +53,7 @@ export const useConversationTail = ({
   intervalMs = 4000,
   initialCursor,
   onNotFound,
+  restartKey = 0,
 }: UseConversationTailInput): ConversationTailState => {
   const onNotFoundRef = useRef(onNotFound)
   useEffect(() => {
@@ -136,7 +142,8 @@ export const useConversationTail = ({
         clearTimeout(timeoutId)
       }
     }
-  }, [conversationId, enabled, initialCursor, intervalMs])
+    // restartKey only has to re-run the effect; the effect body reads nothing from it.
+  }, [conversationId, enabled, initialCursor, intervalMs, restartKey])
 
   return {
     messages: enabled ? messages : [],

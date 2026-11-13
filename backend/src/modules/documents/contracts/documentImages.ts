@@ -4,6 +4,13 @@ import type { StoredDocumentObject } from "./storage.js";
 export const DOCUMENT_IMAGE_RENDITION_WIDTHS = [320, 640] as const;
 
 /**
+ * A document keeps at most this many images, the first its content names that capture does not
+ * skip; the rest wait, pending and unfetched, for a place to free up.
+ */
+export const MAX_STORED_IMAGES_PER_DOCUMENT = 12;
+
+
+/**
  * Where an image sits in its document: `primary` is the one the document's metadata names (a
  * page's `og:image`, a featured image); `inline` appears in the text, anchored to a chunk.
  */
@@ -29,7 +36,8 @@ export interface StoredDocumentImageRef {
   sha256: string;
   /**
    * Primary only: how many documents in the workspace name an image with this content as their
-   * own stored primary, this one included. Zero for an inline image.
+   * own stored primary, this one included, counted no higher than the reader was asked to count.
+   * Zero for an inline image.
    */
   primaryDocumentCount: number;
 }
@@ -45,6 +53,8 @@ export interface DocumentImageEvidenceReader {
     workspaceId: string;
     documentIds: readonly string[];
     chunkIds: readonly string[];
+    /** Where counting the documents that share a primary stops, so the count costs at most this many index reads. */
+    primaryDocumentCountLimit: number;
   }): Promise<StoredDocumentImageRef[]>;
 }
 
@@ -123,7 +133,7 @@ export interface DocumentImageCaptureStore {
   /** Whether the document names any image at all, so a document without one never queues capture. */
   hasImages(documentId: string): Promise<boolean>;
   listForCapture(input: { workspaceId: string; documentId: string }): Promise<CapturableDocumentImage[]>;
-  /** False when the row is gone; the caller then deletes the copies it wrote. */
+  /** False when the row is gone or its document released it; the caller then deletes the copies it wrote. */
   markStored(input: {
     id: string;
     chunkId: string | null;
@@ -133,7 +143,7 @@ export interface DocumentImageCaptureStore {
     sourceEtag: string | null;
     renditions: readonly DocumentImageRendition[];
   }): Promise<boolean>;
-  /** A stored image whose source did not change keeps its copies; only its anchor moves. */
+  /** A stored image whose source did not change keeps its copies; only its anchor moves. A released row is left alone. */
   reanchor(input: { id: string; chunkId: string | null }): Promise<void>;
   /** Never shown or fetched again. Returns the copies a formerly stored image listed, to delete. */
   markSkipped(id: string): Promise<DocumentImageRendition[]>;
@@ -167,6 +177,9 @@ export interface DocumentImageListing {
 
 /** The rows a deleted document, or a re-sync, released: their stored copies are deleted, then the rows. */
 export interface ReleasedDocumentImageStore {
+  /** Oldest first, by when each was released or last tried. */
   listReleased(limit: number): Promise<Array<{ id: string; renditions: DocumentImageRendition[] }>>;
+  /** For rows whose copies did not all delete: they go to the back of the queue, to be tried again. */
+  touchReleased(ids: readonly string[]): Promise<void>;
   deleteReleased(ids: readonly string[]): Promise<void>;
 }

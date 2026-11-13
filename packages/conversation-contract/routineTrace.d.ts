@@ -166,6 +166,12 @@ export interface RoutineRunTrace {
   /** Declared slot keys filled after this turn (names only). */
   filledSlotKeys: string[];
   /**
+   * Covered slot keys this turn filled while they could take their value from the visitor's earlier
+   * messages (`RoutineConsentSelectorInput.earlierMessageSlotKeys`, #1544), names only; absent when
+   * none. The host marks those earlier messages as carrying the slot.
+   */
+  earlierMessageSlotKeys?: string[];
+  /**
    * Every filled declared slot's value after this turn, in the routine's declared order,
    * capped to a bounded count — present only when the caller opted in.
    */

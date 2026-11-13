@@ -188,7 +188,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields([
       "name", "internalName", "customInstruction", "suggestedQuestionsEnabled", "assistantLinkUtmEnabled",
       "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss",
-      "visitorImagesEnabled", "answerImagesEnabled", "contactRequestDelivery", "theme", "branding", "retrievalEnabled", "sourceScope", "greetingInstruction",
+      "visitorImagesEnabled", "replyCardsEnabled", "contactRequestDelivery", "theme", "branding", "retrievalEnabled", "sourceScope", "greetingInstruction",
       "assistantDefaultLocale", "proactiveGreetingEnabled", "chatModelOverride", "skillSettings", "surfaceSettings",
       "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour",
       "voice", "mechanicsReplies",
@@ -271,7 +271,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["embeddingModel"], ingestionEmbeddingModelNeverList),
   },
   prepare_agent_settings: {
-    ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "visitorImagesEnabled", "answerImagesEnabled", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour", "voice", "mechanicsReplies"], reviewedAgentSettingsPatch),
+    ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "visitorImagesEnabled", "replyCardsEnabled", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour", "voice", "mechanicsReplies"], reviewedAgentSettingsPatch),
     ...fields(["suggestedQuestionsEnabled", "retrievalEnabled", "sourceScope", "chatModelOverride", "skillSettings", "surfaceSettings"], reviewedAgentSettingsDedicatedOwnerFlow),
   },
   send_test_chat_message: {

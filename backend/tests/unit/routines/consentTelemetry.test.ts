@@ -48,6 +48,34 @@ describe("routine consent telemetry (#1544)", () => {
     expect(logger.info).not.toHaveBeenCalled();
   });
 
+  it("logs and counts an operator's withdrawal with ids and a count alone", () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const metricsRegistry = new MetricsRegistry();
+
+    createRoutineConsentTelemetry({ logger, metricsRegistry }).withdrawn({
+      workspaceId: place.workspaceId,
+      conversationId: place.conversationId,
+      channel: place.channel,
+      ...consent,
+      wordingVersionId: "version_1",
+      recordId: "record_1",
+      withheldMessageCount: 2,
+    });
+
+    expect(logger.info).toHaveBeenCalledWith({
+      event: "routine_consent_withdrawn",
+      workspaceId: place.workspaceId,
+      conversationId: place.conversationId,
+      channel: place.channel,
+      ...consent,
+      wordingVersionId: "version_1",
+      recordId: "record_1",
+      withheldMessageCount: 2,
+    }, expect.any(String));
+    expect(metricsRegistry.renderPrometheus().split("\n").filter((line) => line.startsWith("radioso_routine_consent_outcomes_total{")))
+      .toEqual(['radioso_routine_consent_outcomes_total{outcome="withdrawn"} 1']);
+  });
+
   it("does not count a decision a retried turn had already recorded", () => {
     const { logger, outcomes } = report([
       { kind: "decided", ...consent, decision: "declined", method: "reply", defaulted: false, wordingVersionId: "version_1", recorded: false },

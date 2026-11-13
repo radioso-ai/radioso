@@ -13,8 +13,12 @@ const EVIDENCE_IMAGES_PER_ITEM = 3;
  */
 const SITE_BANNER_PRIMARY_DOCUMENTS = 5;
 
-const isSiteBanner = (row: StoredDocumentImageRef): boolean =>
-  row.role === "primary" && row.primaryDocumentCount > SITE_BANNER_PRIMARY_DOCUMENTS;
+/** How far the reader counts the documents that share a primary: one past the threshold settles the rule. */
+export const PRIMARY_DOCUMENT_COUNT_LIMIT = SITE_BANNER_PRIMARY_DOCUMENTS + 1;
+
+/** Whether a stored image is a site banner rather than its document's own main picture. */
+const isSiteBanner = (image: Pick<StoredDocumentImageRef, "role" | "primaryDocumentCount">): boolean =>
+  image.role === "primary" && image.primaryDocumentCount > SITE_BANNER_PRIMARY_DOCUMENTS;
 
 /** The part of an evidence item that decides which images it carries. */
 export interface EvidenceContext {

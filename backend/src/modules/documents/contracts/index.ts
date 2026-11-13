@@ -53,6 +53,7 @@ export type {
 export { isCanonicalWorkspaceId } from "./storage.js";
 export {
   DOCUMENT_IMAGE_RENDITION_WIDTHS,
+  MAX_STORED_IMAGES_PER_DOCUMENT,
   type CapturableDocumentImage,
   type DocumentImageCandidate,
   type DocumentImageCandidateWriter,

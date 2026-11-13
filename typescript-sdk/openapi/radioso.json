@@ -3931,9 +3931,9 @@
                 "type": "boolean",
                 "description": "Whether visitors and API callers may attach photos to a message. This is the draft's value: visitors and API callers get it when the agent is published, and Test Chat tests it before then. The agent's chat model reads each photo at upload, so it takes effect only when that model reads images."
               },
-              "answerImagesEnabled": {
+              "replyCardsEnabled": {
                 "type": "boolean",
-                "description": "Whether a grounded answer may show the pictures captured from its documents as reply block cards, on clients that declare `reply.blocks`. Off until an operator turns it on."
+                "description": "Whether the agent's replies may carry cards (reply blocks), such as the pictures captured from the documents an answer draws on, on clients that declare `reply.blocks`. Off until an operator turns it on."
               },
               "contactRequestDelivery": {
                 "$ref": "#/components/schemas/AgentContactRequestDelivery"
@@ -4112,7 +4112,7 @@
               "webhookExportsEnabled",
               "handoffOnRetrievalMiss",
               "visitorImagesEnabled",
-              "answerImagesEnabled",
+              "replyCardsEnabled",
               "contactRequestDelivery",
               "theme",
               "branding",
@@ -4216,7 +4216,7 @@
           "visitorImagesEnabled": {
             "type": "boolean"
           },
-          "answerImagesEnabled": {
+          "replyCardsEnabled": {
             "type": "boolean"
           },
           "contactRequestDelivery": {
@@ -10078,9 +10078,9 @@
             "type": "boolean",
             "description": "Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off."
           },
-          "answerImagesEnabled": {
+          "replyCardsEnabled": {
             "type": "boolean",
-            "description": "Whether answers may show the pictures captured from their documents as cards. An import of a bundle exported before the field existed reads it as off."
+            "description": "Whether the agent's replies may carry cards (reply blocks). An import of a bundle exported before the field existed reads it as off."
           },
           "contactRequestsEnabled": {
             "type": "boolean"
@@ -10373,7 +10373,7 @@
           "internalName",
           "customInstruction",
           "handoffOnRetrievalMiss",
-          "answerImagesEnabled",
+          "replyCardsEnabled",
           "contactRequestsEnabled",
           "webhookExportsEnabled",
           "contactRequestDelivery",
@@ -11356,9 +11356,9 @@
             "type": "boolean",
             "description": "Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off."
           },
-          "answerImagesEnabled": {
+          "replyCardsEnabled": {
             "type": "boolean",
-            "description": "Whether answers may show the pictures captured from their documents as cards. An import of a bundle exported before the field existed reads it as off."
+            "description": "Whether the agent's replies may carry cards (reply blocks). An import of a bundle exported before the field existed reads it as off."
           },
           "contactRequestsEnabled": {
             "type": "boolean"
@@ -12663,78 +12663,6 @@
         },
         "additionalProperties": false
       },
-      "DocumentImage": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "primary",
-              "inline"
-            ],
-            "description": "`primary` is the picture the document's metadata names for itself (a page's `og:image`, a post's featured image); `inline` sits in its text."
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "stored",
-              "skipped"
-            ],
-            "description": "`stored` once Radioso keeps a copy; `pending` until the worker fetches it; `skipped` when it was refused (smaller than 200 px on its short side, a type Radioso does not read, too large, or at an address it may not fetch)."
-          },
-          "alt": {
-            "type": "string"
-          },
-          "caption": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "width": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "exclusiveMinimum": 0,
-            "description": "The source's upright width in pixels; null until stored."
-          },
-          "height": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "exclusiveMinimum": 0
-          },
-          "sourceUrl": {
-            "type": "string",
-            "description": "The address the content names the picture by."
-          },
-          "src": {
-            "type": "string",
-            "description": "The stored copy at its widest width, served by `GET /api/v1/public/reply-images/{imageId}/{width}`; present once stored."
-          },
-          "srcSet": {
-            "type": "string",
-            "description": "Every stored width as an `srcset`; present once stored."
-          }
-        },
-        "required": [
-          "id",
-          "role",
-          "status",
-          "alt",
-          "caption",
-          "width",
-          "height",
-          "sourceUrl"
-        ]
-      },
       "DocumentDetails": {
         "allOf": [
           {
@@ -12745,13 +12673,6 @@
             "properties": {
               "content": {
                 "type": "string"
-              },
-              "images": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/DocumentImage"
-                },
-                "description": "The pictures the document's content names, in document order, with whether Radioso kept each one. An agent with `answerImagesEnabled` shows stored ones as cards in its answers."
               }
             },
             "required": [
@@ -17704,6 +17625,26 @@
         ],
         "description": "Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when the turn that spoke it ended. When the caller speaks over a turn before it finished, a reply the voice runtime played to its end is `spoken`, and the reply it was playing, with any after it, stays `pending` for the turn that cut in to speak whole. `skipped`: the reply has no words a call can speak, so no turn speaks it."
       },
+      "MessageWithholding": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "consent_withdrawn"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reason",
+          "at"
+        ],
+        "description": "Present on a message withheld after the consent that covered what it carried was withdrawn: `content` is `[redacted]`, and the message carries no answer segments, suggestions, reply blocks or photos. `at` is when the consent was withdrawn."
+      },
       "ChatConversationMessage": {
         "type": "object",
         "properties": {
@@ -17778,6 +17719,9 @@
           },
           "speech": {
             "$ref": "#/components/schemas/OperatorReplySpeech"
+          },
+          "withheld": {
+            "$ref": "#/components/schemas/MessageWithholding"
           },
           "debug": {
             "$ref": "#/components/schemas/ChatConversationMessageDebug"
@@ -17872,6 +17816,9 @@
           },
           "speech": {
             "$ref": "#/components/schemas/OperatorReplySpeech"
+          },
+          "withheld": {
+            "$ref": "#/components/schemas/MessageWithholding"
           }
         },
         "required": [
@@ -24401,6 +24348,184 @@
         "required": [
           "items",
           "nextCursor"
+        ]
+      },
+      "ConversationConsent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "routineId": {
+            "type": "string",
+            "description": "The routine that asked the consent."
+          },
+          "consentKey": {
+            "type": "string",
+            "description": "The consent's `key` within the routine."
+          },
+          "slotKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The sensitive fields the consent covered when it was decided: the values a withdrawal erases."
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "granted",
+              "declined"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "button",
+              "reply"
+            ],
+            "description": "`button`: a click on one of the two choices. `reply`: an answer read from the visitor's message."
+          },
+          "defaulted": {
+            "type": "boolean",
+            "description": "True for a decline recorded because the visitor's replies stayed unclear after the consent was asked twice."
+          },
+          "locale": {
+            "type": "string",
+            "description": "The language of the wording the visitor was shown."
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The conversation's channel, such as `website_embed` or `email`."
+          },
+          "wordingVersionId": {
+            "type": "string",
+            "description": "The immutable version of the wording shown: a hash of exactly what the visitor saw."
+          },
+          "wording": {
+            "type": "object",
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "agreeLabel": {
+                "type": "string"
+              },
+              "declineLabel": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "body",
+              "agreeLabel",
+              "declineLabel"
+            ],
+            "description": "The wording exactly as the visitor was shown it."
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "withdrawnAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When an operator withdrew the consent; null while it stands."
+          }
+        },
+        "required": [
+          "id",
+          "routineId",
+          "consentKey",
+          "slotKeys",
+          "decision",
+          "method",
+          "defaulted",
+          "locale",
+          "channel",
+          "wordingVersionId",
+          "wording",
+          "decidedAt",
+          "withdrawnAt"
+        ],
+        "description": "One consent decision a visitor gave in a conversation (#1544): the proof, with no reply text and no field values. A record outlives its conversation."
+      },
+      "ConsentNotWithdrawableError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "consent_not_withdrawable"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "declined",
+                      "already_withdrawn"
+                    ],
+                    "description": "`declined`: the visitor never granted it, so nothing was collected under it. `already_withdrawn`: it was withdrawn before."
+                  },
+                  "consent": {
+                    "$ref": "#/components/schemas/ConversationConsent"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "consent"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "details"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ConversationConsentList": {
+        "type": "object",
+        "properties": {
+          "consents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationConsent"
+            }
+          }
+        },
+        "required": [
+          "consents"
+        ]
+      },
+      "ConversationConsentWithdrawal": {
+        "type": "object",
+        "properties": {
+          "consent": {
+            "$ref": "#/components/schemas/ConversationConsent"
+          }
+        },
+        "required": [
+          "consent"
         ]
       },
       "DataSubjectIdentity": {
@@ -55323,6 +55448,171 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/chat/{conversationId}/consents": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "List a conversation's consent records",
+        "description": "Every consent decision a visitor gave in the conversation, oldest first, each with the exact wording they were shown. Records outlive their conversation, so a conversation that was erased still lists its records; one with no routine consent lists none. Requires workspace.history.read.",
+        "operationId": "listHistoryConversationConsents",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The conversation's consent records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationConsentList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.history.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/chat/{conversationId}/consents/{recordId}/withdraw": {
+      "post": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Withdraw a visitor's consent",
+        "description": "Withdraws a granted consent on the visitor's request, in one transaction. The values of the fields it covered are erased from the conversation's routine state, a finished run's included. Each message that carried one, marked by a routine turn or stating a value the routine held (four characters or longer, ignoring case and spacing), keeps `[redacted]` as its text and is marked `withheld`, and so are the copies Radioso keeps of it: the inbound email's body and raw copy, the turn's content audit, its coverage text and any photo it carried. The conversation's summary and title are cleared and written again from the transcript. The record keeps its proof and gains `withdrawnAt` and the acting member. A routine still running in the conversation goes on without those fields and doesn't ask the consent again. Text already delivered to Slack or WhatsApp stays with those providers. Records one `routine_consent.withdrawn` audit event with ids only. Requires workspace.history.delete.",
+        "operationId": "withdrawHistoryConversationConsent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "recordId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The consent, withdrawn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationConsentWithdrawal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.history.delete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The conversation has no such consent record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`consent_not_withdrawable`: the consent was declined or is already withdrawn, so nothing changed. `details.reason` says which, and `details.consent` is the record as it stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentNotWithdrawableError"
                 }
               }
             }

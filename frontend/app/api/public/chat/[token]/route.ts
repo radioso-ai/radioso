@@ -1,5 +1,5 @@
-import type { components } from '../../../../../../typescript-sdk/src/generated/types'
 import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
+import { buildPublicChatMessageBody } from '../../../../../lib/server/public-chat-message-body'
 import {
   PUBLIC_CHAT_RELAY_UNAVAILABLE_CODE,
   forwardingHeaders,
@@ -15,14 +15,6 @@ export const dynamic = 'force-dynamic'
 
 const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
 
-type PublicChatRequest = components['schemas']['PublicChatRequest']
-
-type PublicChatProxyRequestBody = Partial<PublicChatRequest> & {
-  query?: string
-  bootstrapGreeting?: boolean
-  clientContextCapabilities?: unknown
-}
-
 export async function OPTIONS(request: Request) {
   return publicChatPreflight(request)
 }
@@ -34,19 +26,7 @@ export async function POST(
   const { token } = await context.params
   const requestOrigin = resolveRequestOrigin(request.headers.get('origin'))
   const rawBody = await request.text()
-  const parsedBody = rawBody ? JSON.parse(rawBody) as PublicChatProxyRequestBody : {}
-  const body = JSON.stringify({
-    conversationId: parsedBody.conversationId,
-    bootstrapGreetingId: parsedBody.bootstrapGreetingId,
-    message: parsedBody.message ?? parsedBody.query,
-    startConversation: parsedBody.startConversation ?? parsedBody.bootstrapGreeting,
-    stream: parsedBody.stream,
-    userExpectedLocale: parsedBody.userExpectedLocale,
-    inputMetadata: parsedBody.inputMetadata,
-    imageIds: parsedBody.imageIds,
-    pageContext: parsedBody.pageContext,
-    clientContextCapabilities: parsedBody.clientContextCapabilities,
-  })
+  const body = JSON.stringify(buildPublicChatMessageBody(rawBody ? JSON.parse(rawBody) : {}))
 
   const upstreamMethod = 'POST'
   const upstreamPath = `/api/v1/public/chat/${encodeURIComponent(token)}`

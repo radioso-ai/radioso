@@ -1,6 +1,6 @@
 ---
 title: "Show picture cards in replies"
-description: "How an agent shows the pictures from your documents as cards beside an answer: the reply cards setting, which pictures Radioso keeps from crawled pages and WordPress posts, the rules it applies, and what to check when a picture is missing."
+description: "How an agent shows the pictures from your documents, and the records a skill returns, as cards beside a reply: the reply cards setting, which pictures Radioso keeps from crawled pages and WordPress posts, the rules it applies, and what to check when a picture is missing."
 ---
 
 # Show picture cards in replies
@@ -20,7 +20,7 @@ curl -sS -X PUT https://api.radioso.ai/api/v1/agents/$AGENT_ID \
   -d '{"replyCardsEnabled":true}'
 ```
 
-The setting is off on every agent until you turn it on, and it applies as soon as you change it. It is the one switch for every kind of card a reply can carry; today those are the pictures of an answer's documents. Cards appear where a client draws them: the website widget, the public chat link, and any client of the [chat API](/api/public-chat-and-embed#reply-blocks) that declares `reply.blocks`. Test Chat and channels that carry text alone get the answer as text.
+The setting is off on every agent until you turn it on, and it applies as soon as you change it. It is the one switch for every kind of card a reply can carry: the pictures of an answer's documents, and the records a skill returns, such as the listings of a property search ([Cards from a skill's records](/api/agents-and-skills#cards-from-a-skills-records)). Cards appear where a client draws them: the website widget, the public chat link, Test Chat, and any client of the [chat API](/api/public-chat-and-embed#reply-blocks) that declares `reply.blocks`. Channels that carry text alone, such as voice, WhatsApp and email, get the answer as text.
 
 ## What the agent shows
 
@@ -70,5 +70,6 @@ Pictures belong to their document. Deleting a document, or a source with its doc
 ## Read next
 
 - [Reply blocks](/api/public-chat-and-embed#reply-blocks) for the cards' shape and the image address.
+- [Cards from a skill's records](/api/agents-and-skills#cards-from-a-skills-records) for cards built from what an MCP tool returns.
 - [Document processing](/operators/document-processing) for the worker that fetches pictures.
 - [WordPress connector](/operators/wordpress-connector) for featured images.

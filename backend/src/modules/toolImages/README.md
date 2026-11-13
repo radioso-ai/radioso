@@ -71,7 +71,7 @@ lookup, so the route serves both by image id without knowing which is which.
 
 ## Rows and deletion
 
-`conversation_tool_images` (migration 259) keeps one row per picture.
+`conversation_tool_images` (migration 260) keeps one row per picture.
 `ToolImageEraser` (`infra/toolImagePrivacy.ts`) deletes a conversation's rows in
 its erasure and hands their renditions to the `tool_images.object_deletion` job
 in the same transaction; `UnboundToolImageRetention` deletes the rows no message

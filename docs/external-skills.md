@@ -134,15 +134,17 @@ claims the turn, and the agent writes the reply from what the tool returned (see
 tool returns structured content, each object of an array in it is a record, such
 as one listing, one product or one office.
 
-When the visitor's chat renders reply blocks (the web chat, the embed and Test
-Chat all do), the reply is written from those records and can show them as
-cards: a short lead in the text, and up to ten cards beside it, each with a
+When the agent's **Show cards in replies** switch is on (`replyCardsEnabled`,
+the same switch that shows the pictures of an answer's documents) and the
+visitor's chat renders reply blocks (the web chat, the embed and Test Chat all
+do), the reply is written from those records and can show them as cards: a short lead in the text, and up to ten cards beside it, each with a
 title, a line under it, a picture and a link. For a property search that returns
 fifteen flats, a visitor who asks for flats in Mitte under 2,000 a month gets a
 sentence and a carousel of the four that fit. A tool that returns records and no
-text is answered from its records there. On a channel that shows no cards, such
-as voice, WhatsApp or email, the reply is written from the tool's text alone,
-and a tool that returns no text leaves the turn to the agent's usual answer.
+text is answered from its records there. With the switch off, or on a channel
+that shows no cards, such as voice, WhatsApp or email, the reply is written from
+the tool's text alone, and a tool that returns no text leaves the turn to the
+agent's usual answer.
 
 The model decides which records to show and where in each record the card's
 title, subtitle, picture and link are; Radioso reads every value from the

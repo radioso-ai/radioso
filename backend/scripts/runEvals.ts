@@ -590,7 +590,9 @@ const runToolCardCases = async (
   const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
     workspaceId: target.workspaceId,
     agentId: target.agentId,
-    baselineAgentConfig: projectInternalAgentConfig(agent),
+    // On so the tool-card cases can show cards, as the reply-block agent's fixture is; a case whose
+    // client declares no reply blocks is offered none.
+    baselineAgentConfig: { ...projectInternalAgentConfig(agent), replyCardsEnabled: true },
   });
   return runConversationQualitySuiteSampled(cases, port, {
     workspaceId: target.workspaceId,

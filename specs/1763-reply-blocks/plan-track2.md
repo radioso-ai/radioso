@@ -34,7 +34,7 @@
   - the consent stack (#1758 onwards) holds `254_routine_consents.sql` and must renumber.
 
   2a.1 and 2b take the next two free numbers at merge time. Today that means 259 or higher, and 260 or higher once consent renumbers. Recheck with `git ls-tree origin/main backend/src/db/migrations` before pushing. Each migration runs `pnpm run db:types` **and** `pnpm run db:schema`.
-- **One flag** (not taken in 2a.1, see §3). `replyCardsEnabled` gates evidence images (1c) and skill-result cards (2a.1). Whichever PR lands first adds it, using the nine files listed in the 1a plan ("Moved to 1c"), bumping the agent config version once, and adding the Ray agent-settings descriptor. `agents/domain.ts` is at exactly **1000** lines, so its defaults block (`:63-75`) moves to `agentDefaults.ts` first. A routine binding needs no flag: authoring it is the opt-in.
+- **One flag** (added by #1782; 2a.1 gates on it). `replyCardsEnabled` gates evidence images (1c) and skill-result cards (2a.1). Whichever PR lands first adds it, using the nine files listed in the 1a plan ("Moved to 1c"), bumping the agent config version once, and adding the Ray agent-settings descriptor. `agents/domain.ts` is at exactly **1000** lines, so its defaults block (`:63-75`) moves to `agentDefaults.ts` first. A routine binding needs no flag: authoring it is the opt-in.
 - **Head shape.** One field name, `present`, with a schema per source.
   - Evidence keeps `{images, caption}` (`(1a) presentHead.ts:16-45`).
   - Tool records use D8's `{records, fields, caption, selection}`. A routine step's schema omits `selection`.
@@ -64,7 +64,7 @@
 
 | Draft | Built | Why |
 |---|---|---|
-| One flag, `replyCardsEnabled`, gates evidence images and skill-result cards (§1). | No flag. Cards are offered on the client's `reply.blocks` capability and the presence of records. | Slice 1 shipped evidence pictures on the capability alone (#1772); a flag for half of the same feature would split one behaviour across two gates. No agent config version bump and no Ray descriptor follow. |
+| One flag, `replyCardsEnabled`, gates evidence images and skill-result cards (§1). | Taken as drafted, from #1782, which added the switch for content-image cards: `skillResultCardsFor` reads it beside the client's capability. | #1782 landed the switch, its config version and its Ray descriptor first; this PR adds no setting of its own. |
 | `present` carries `selection` (D8). | It does not; every block is `selection: "none"`. | Nothing acts on a selection before 2a.2, which adds it with the Select action. |
 | "No Test Chat cards" (non-goal, 1a R2). | Test Chat declares `reply.blocks`, its completion carries the blocks, and its address pictures are copied as unbound rows (`conversation_id` null, swept after a day). | Decided for this PR: operators try cards where they test the agent. |
 | The model's view cuts every address to origin and last segment. | A short address with no query is shown whole; a long or signed one is cut, and the section says a cut one is incomplete. | The first live run showed mini linking the cut addresses in the reply text. |
@@ -92,7 +92,7 @@
 
 ### Seams
 
-1. **The outcome stays renderable where cards are shown.** `hasRenderableResult(outcome, session)` (`chat/services/agentSkillTurnSkillProvider.ts`): text, or records (a structural `hasToolRecords` check) where `skillResultCardsFor(session)` opens. Otherwise `empty_answer`, as on main. `skillResultCardsFor` (`replyBlocks/skillResultCardsGate.ts`) is the one gate; `replyCardsEnabled` (#1782) joins it as one line.
+1. **The outcome stays renderable where cards are shown.** `hasRenderableResult(outcome, session)` (`chat/services/agentSkillTurnSkillProvider.ts`): text, or records (a structural `hasToolRecords` check) where `skillResultCardsFor(session)` opens. Otherwise `empty_answer`, as on main. `skillResultCardsFor` (`replyBlocks/skillResultCardsGate.ts`) is the one gate, and reads `replyCardsEnabled` (#1782) beside the client's capability.
 2. **Findings.** Without an offer: the skill's text exactly as before. With an offer: the records section with handles (≤ 3,000 tokens) first, then the text capped to what is left of 4,800, unless it only repeats the structured content as JSON. A non-streamed reply whose named cards could not be built is written again from the records without handles or cards.
 3. **The envelope.** With an offer, the composer appends `skill-result-present-records.md` to the prompt and asks for `presentReplyResponseFormat(extension)`; `tryComposeAnswer` reads the whole envelope, `streamAnswer` streams `answer` through `StructuredAnswerFieldReader`. Without one, the request is byte-identical (golden).
 4. **The block** goes on `ChatPresentedAnswer.replyBlocks`, so persistence, the wire and history need no new code; `presentReplyBlocks` drops the server-only `origin`.
@@ -104,7 +104,7 @@
 10. **Erasure and retention.** `ToolImageEraser` joins `defaultConversationDataErasers`; `UnboundToolImageRetention` joins the retention rules. The coverage test states `conversation_tool_images.message_id` (SET NULL); the export coverage test excludes the table with its reason, stated beside the exporters in `dataSubjectAccess.ts`.
 11. **Test Chat.** `TrustedTestExecutionRunnerAdapter` declares `reply.blocks` (all layouts) on the replay, records the replay's `toolImages` through `ToolImagePreviewRecorder` before returning, and returns `blocks`; `TestExecutionService` puts them on `side_completed`. OpenAPI and the SDK carry `TestExecutionEvent.side_completed.blocks`.
 
-### Migration `259_conversation_tool_images.sql`
+### Migration `260_conversation_tool_images.sql`
 
 As drafted (below), with `conversation_id` nullable (Test Chat previews), `source_object` jsonb, and checks: stored ⇒ dimensions, sha256, renditions and `stored_at`; a `url` row keeps `source_url` exactly while pending or capturing; an `inline` row has a conversation and no URL; a message implies a conversation; `capturing` ⇔ `claimed_at`. Indexes: workspace; conversation (partial); message (partial); `created_at` where unbound.
 
@@ -146,7 +146,7 @@ The table follows the 256 pattern: `SET LOCAL lock_timeout = '3s'`; the foreign 
 - **Observability:** `reply_blocks_emitted_total{layout, channel, source}` (the evidence path now labels `source="evidence"`), `reply_block_items_dropped_total{reason}` with the record reasons, `tool_image_capture_total{trigger, outcome}`, `tool_image_capture_duration_seconds{trigger}`, the `tool_images.capture` span, `chat.reply_blocks.record_count`, and the `chat.skill_result.cards_lost` warning. Logs carry ids and error classes only.
 - **Docs:** `docs/external-skills.md`, `docs-portal/content/api/agents-and-skills.mdx`, `operators/data-retention.mdx`, `operators/deleting-conversation-data.mdx`, `modules/toolImages/README.md`, the chat brief and the code map.
 - **OpenAPI and SDK:** `TestExecutionEvent.side_completed.blocks`; `generate:openapi`, the SDK sync and the MCP server's `sync:openapi`.
-- **Ray:** no new operation and no operator setting, so no descriptor; the image route is already `endUserSurface` (1a). Ray's `send_test_chat_message` reports the answer text, not the cards.
+- **Ray:** no new operation and no setting of its own: the switch and its Ray descriptor come from #1782, and the image route is already `endUserSurface` (1a). Ray's `send_test_chat_message` reports the answer text, not the cards.
 - **Message-queue review:** two `background_jobs` kinds; no AMQP or document-worker change, and no skill-outcome contract change.
 
 ## 4. PR 2a.2: selection on the web

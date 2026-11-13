@@ -205,7 +205,8 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `presentReplyEnvelope.ts`): the skill-result renderer
   (`skillResultTurnRenderer.ts`) asks `SkillResultReplyBlocks.offerFor` for an
   offer, which opens only where `skillResultCardsFor` (`skillResultCardsGate.ts`,
-  the one gate for skill-result cards) does and the outputs hold records
+  the one gate for skill-result cards: the agent's `replyCardsEnabled` switch and
+  the client's declared capability) does and the outputs hold records
   (`ToolRecordLedger`: every array of objects, or the outputs themselves). The
   offer carries the records as findings under handles `r1..rN`, a `present` head
   of handles and JSON Pointers, and the composer asks for the `{present, answer}`

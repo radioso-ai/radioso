@@ -27,7 +27,7 @@ export const hasAnswerText = (answer: string | undefined): boolean =>
  */
 export const hasRenderableResult = (
   outcome: Pick<SkillOutcome, "answer" | "outputs">,
-  session: Pick<PreparedSession, "replyBlocks">,
+  session: Pick<PreparedSession, "replyBlocks" | "agent">,
 ): boolean => hasAnswerText(outcome.answer) || (skillResultCardsFor(session) !== null && hasToolRecords(outcome.outputs));
 
 /**

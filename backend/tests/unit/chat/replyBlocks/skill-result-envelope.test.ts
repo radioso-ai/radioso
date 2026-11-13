@@ -19,7 +19,7 @@ const LEAD = "Two flats in Mitte fit your budget.";
 const PRESENT = { records: ["r2", "r1"], fields: { title: "/name", subtitle: null, image: "/photo", link: "/url" }, caption: "Flats in Mitte" };
 
 const session = (replyBlocks: ReplyBlocksCapability | null = { item_list: { layouts: ["carousel", "list"] } }): PreparedSession => ({
-  agent: { id: "agent-1", workspaceId: "workspace-1", name: "Nico", chatModelOverride: null },
+  agent: { id: "agent-1", workspaceId: "workspace-1", name: "Nico", chatModelOverride: null, replyCardsEnabled: true },
   conversation: { id: "conversation-1", workspaceId: "workspace-1", sourceChannel: "website_embed" },
   userMessage: { id: "message-1", content: QUERY },
   effectiveQuery: QUERY,

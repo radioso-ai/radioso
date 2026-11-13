@@ -39,8 +39,8 @@ const LISTINGS = [
   { name: "Altbau Prenzlauer Berg", rent: 1990, url: "https://homes.example/listings/altbau-pb" },
 ];
 
-const session = (replyBlocks: ReplyBlocksCapability | null): PreparedSession => ({
-  agent: { id: "agent-1", workspaceId: "workspace-1", name: "Nico", chatModelOverride: null },
+const session = (replyBlocks: ReplyBlocksCapability | null, replyCardsEnabled = true): PreparedSession => ({
+  agent: { id: "agent-1", workspaceId: "workspace-1", name: "Nico", chatModelOverride: null, replyCardsEnabled },
   conversation: { id: "conversation-1", workspaceId: "workspace-1", sourceChannel: "widget" },
   userMessage: { id: "message-1", content: QUERY },
   effectiveQuery: QUERY,
@@ -87,7 +87,7 @@ const drain = async (generator: AsyncGenerator<string, TurnStreamResult>): Promi
   return step.value;
 };
 
-const recordCalls = async (turn: TurnOutcome, replyBlocks: ReplyBlocksCapability | null): Promise<GoldenCalls> => {
+const recordCalls = async (turn: TurnOutcome, replyBlocks: ReplyBlocksCapability | null, replyCardsEnabled = true): Promise<GoldenCalls> => {
   const calls: Partial<GoldenCalls> = {};
   const runtime = buildChatTurnRuntime({
     chatGateway: recordingGateway(calls),
@@ -97,7 +97,7 @@ const recordCalls = async (turn: TurnOutcome, replyBlocks: ReplyBlocksCapability
       imageUrls: { forImage: (imageId) => ({ src: `https://api.example/${imageId}`, srcSet: "" }) },
     }),
   });
-  const ctx = { session: session(replyBlocks), query: QUERY };
+  const ctx = { session: session(replyBlocks, replyCardsEnabled), query: QUERY };
   await runtime.skillResultRenderer.render(turn, ctx);
   await drain(runtime.skillResultRenderer.stream!(turn, ctx));
   return calls as GoldenCalls;
@@ -125,6 +125,10 @@ describe("skill result reply gating", () => {
 
   it("sends the recorded prompt and options when the client renders no item list", async () => {
     expectGolden(await recordCalls(outcome({ outputs: { structuredContent: LISTINGS } }), {}));
+  });
+
+  it("sends the recorded prompt and options when the agent's reply cards switch is off, whatever the client renders and the skill returned", async () => {
+    expectGolden(await recordCalls(outcome({ outputs: { structuredContent: LISTINGS } }), { item_list: { layouts: ["carousel", "list"] } }, false));
   });
 
   it("sends the recorded prompt and options when the skill returned no records", async () => {

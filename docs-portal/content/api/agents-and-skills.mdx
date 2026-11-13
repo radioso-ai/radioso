@@ -264,10 +264,13 @@ routine flow bypasses terminal turn selection.
 
 ### Cards from a skill's records
 
-When the client renders reply blocks (it sends `clientContextCapabilities["reply.blocks"]`,
-as the web chat, the embed and Test Chat do), a reply written from records can
-carry an `item_list` block: a short lead in the text and up to ten cards beside
-it. The model picks which records to show and where in each record its title,
+When the agent's **Show cards in replies** switch is on (`replyCardsEnabled`,
+the one switch for every kind of card; see
+[Show picture cards in replies](/guides/reply-cards)) and the client renders
+reply blocks (it sends `clientContextCapabilities["reply.blocks"]`, as the web
+chat, the embed and Test Chat do), a reply written from records can carry an
+`item_list` block: a short lead in the text and up to ten cards beside it. With
+the switch off, a skill's reply is written from its text alone. The model picks which records to show and where in each record its title,
 subtitle, picture and link are; every value on a card is read from the record
 itself, and a picture or link must be a public `http` or `https` address. Cards
 with pictures come as a `carousel`, cards without as a `list`. When the model

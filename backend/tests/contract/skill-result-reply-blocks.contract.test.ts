@@ -59,11 +59,12 @@ const sseEvents = (body: string): Array<{ event: string; data: Record<string, un
   });
 
 /** A workspace whose agent answers every turn from a bound listing search that returns records and no text. */
-const listingAgent = async () => {
+const listingAgent = async (replyCardsEnabled = true) => {
   const calls: ChatGatewayInput[] = [];
   const { app, dependencies, repositories } = createTestApp({ chatGateway: scriptedGateway(calls), skillExecutorRegistry: listingsSkill });
   const session = await issueTestSession(app, `skill-result-cards-${Math.random().toString(36).slice(2)}@example.com`);
   const agent = await dependencies.agentService.resolve(session.workspaceId);
+  await request(app).put(`/api/v1/agents/${agent.id}`).set(adminSessionHeaders(session)).send({ replyCardsEnabled }).expect(200);
   await repositories.agentSkillRepository.create({
     workspaceId: session.workspaceId,
     agentId: agent.id,
@@ -139,5 +140,18 @@ describe("cards from a skill's result over authenticated chat", () => {
     // No reply is written from the skill's records, so no record or handle reaches any prompt.
     expect(calls.some((call) => call.usageContext.attemptKey === "skill_result")).toBe(false);
     expect(calls.some((call) => /\[r\d+\]|Garden flat on Linienstrasse/.test(call.prompt))).toBe(false);
+  });
+  it("shows no cards and leaves a records-only result unanswered by the skill while the agent's reply cards switch is off", async () => {
+    const { app, session, calls } = await listingAgent(false);
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set(adminSessionHeaders(session))
+      .send({ message: "Flats in Mitte under 2,000?", stream: false, clientContextCapabilities: REPLY_BLOCKS });
+
+    expect(response.status).toBe(200);
+    expect(response.body).not.toHaveProperty("blocks");
+    expect(calls.some((call) => call.usageContext.attemptKey === "skill_result")).toBe(false);
+    expect(calls.some((call) => call.generation?.responseFormat?.name === "assistant_reply_with_present")).toBe(false);
   });
 });

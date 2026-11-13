@@ -53,7 +53,7 @@ const runCase = async (
     }),
   });
   const session = {
-    agent: { id: "agent-1", workspaceId: "cq-workspace", name: "Homes", chatModelOverride: null },
+    agent: { id: "agent-1", workspaceId: "cq-workspace", name: "Homes", chatModelOverride: null, replyCardsEnabled: true },
     conversation: { id: "cq-replay", workspaceId: "cq-workspace", sourceChannel: "authenticated_chat" },
     userMessage: { id: "message-1", content: query },
     effectiveQuery: query,

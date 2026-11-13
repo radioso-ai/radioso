@@ -1228,7 +1228,7 @@ Public surfaces and key files:
   `ImageSourceType`), `guardedDecode.ts` (`decodeGuarded`, `DecodeGuard`),
   `normalizationSlots.ts`, `encodeJpegUnder.ts`, `encodeWebpRenditions.ts`
 - `backend/src/shared/infra/http/publicBytesFetch.ts` (`fetchPublicBytes`)
-- Codec callers: `backend/src/modules/visitorImages/services/imageNormalizer.ts` (visitor images)
+- Codec callers: `backend/src/modules/visitorImages/services/imageNormalizer.ts` (visitor images) and `backend/src/modules/toolImages/services/toolImageCapture.ts` (copies of the pictures a skill's cards show, fetched through `fetchPublicBytes`)
 
 Focused checks:
 
@@ -2023,7 +2023,17 @@ Primary internals:
   (#1763: the turn's image ledger, the `present` field ahead of `answer`, building a
   reply block from the picked handles, and presenting stored image ids as URLs),
   wired by `backend/src/app/composition/replyBlocks.ts`; the golden prompt and
-  schema of a turn without them are in `backend/tests/fixtures/reply-blocks/`
+  schema of a turn without them are in `backend/tests/fixtures/reply-blocks/`.
+  Cards from a skill's result: `toolRecords.ts` (records and JSON Pointers),
+  `recordPresentHead.ts`, `recordBlockBuilder.ts`, `skillResultReplyBlocks.ts`
+  (the offer) and `presentReplyEnvelope.ts` (the `{present, answer}` envelope
+  `assistantReplyComposer.ts` asks for); their pictures are copied by
+  `backend/src/modules/toolImages/` (module brief in its `README.md`; rows,
+  intake, capture job, on-demand lookup, eraser and sweep), wired by
+  `backend/src/app/composition/toolImages.ts`. Focused checks:
+  `cd backend && pnpm exec vitest run tests/unit/chat/replyBlocks tests/unit/toolImages tests/unit/externalSkills/mcp-tool-images.test.ts tests/unit/eval-suite/tool-card-cases.test.ts`,
+  and `tests/integration/tool-result-cards.integration.test.ts` on the disposable
+  integration database
 - `backend/src/modules/chat/services/answerLinkGuard.ts` and
   `streamedAnswerText.ts` (#1751: a grounded answer's link to an address its
   model was not sent becomes its text, streamed and finished alike), over the

@@ -323,3 +323,158 @@ The visitor taps **Select** on a card. Their message appears as the item's title
 
 1. **Sequencing with visitor image input.** That backend PR is being built and adds `sharp`, magic-byte sniffing and the eraser pattern. Slice 1's image capture should extract the shared codec after it merges, not build a second one. Everything else in slice 1 can start now.
 2. **The default for `answerImagesEnabled`.** Off protects live agents from a visible change. On shows the feature to new agents.
+
+---
+
+# Amendment, Track 2: cards from tool results, selection, routine binding
+
+**Created**: 2026-11-12 · **Status**: 2a.1 built (cards from a skill's result, this section as edited); 2a.2 and 2b drafted
+**Replaces**: slice 2 (selection) and the "live tool results" half of slice 4. **Plan**: `plan-track2.md`.
+
+## Why this exists
+
+- **A skill's reply was plain text written from `outcome.answer`.** The renderer passed only `answer` as findings, and the composer generated text with no response format.
+- **Data without text failed the turn.** A completed outcome without answer text settled as `empty_answer`.
+- **MCP kept structured data and dropped images.** `structuredContent` became `outputs` (an array wrapped as `{structuredContent}`); only `text` blocks were read.
+- **A routine step's reply never sees a tool's result.** The runner stages a skill's `outputs` and drops its `answer`; both step renderers read only the `retrieval.context` skill.
+- **Slot values are scalars.** An object renders as `[object Object]` in step text and in ending notices.
+- **The engine already has the right shape for a structured choice.** An approval decision is checked against the step's options, written to `captureKey`, and resumed with `decisionTurn: true`.
+
+## Decisions
+
+### D8. Cards from tool results need no operator mapping (built in 2a.1)
+
+- **Records.** The host walks a skill's `outputs` structurally (`ToolRecordLedger`, `chat/services/replyBlocks/toolRecords.ts`). Every array whose items are all objects, at depth 4 or less, becomes records with handles `r1..rN` in document order; the walk does not go inside a record, so a listing's own `photos` never become records beside it. If there is none, the outputs themselves become `r1`. Each MCP `image` content block the skill returned becomes a record `{ "image": "tool-image:<n>" }`.
+- **The model's view is compact and capped:**
+  - at most 20 records;
+  - per record: three levels of containers expanded, 12 keys, arrays cut to 3 items plus `"+N"`, strings cut to 120 characters;
+  - an address with no query, fragment or credentials and at most 80 characters is shown whole, so a reply can link to it; a longer or signed one is shown as its origin and last path segment, and the section's heading says such an address is incomplete and is never written in the reply;
+  - the whole section is at most **3,000 input tokens** by the pre-call estimate (`CHAT_BEHAVIOR.skillResult.maxRecordInputTokens`), trimmed from the end. The answer text gets the rest of the 4,800-token findings cap.
+- **The `present` head** sits before `answer`:
+
+  ```ts
+  { records: string[];  // 0..10 handles, in display order
+    fields: { title: string; subtitle: string | null; image: string | null; link: string | null }; // JSON Pointers relative to a record
+    caption: string }    // 1..120 characters
+  ```
+
+  `selection` joins the head in 2a.2, where something acts on it; 2a.1 builds every block with `selection: "none"`.
+- **The host resolves the values; the model writes none of them.** Pointers (RFC 6901, no `-`; a pointer written without its leading slash is read as if it had one) are resolved against the full, untruncated record.
+  - The title must resolve to a string or a finite number, cut to 160 characters, or the item is dropped (`title_unresolved`).
+  - The subtitle is cut to 400 characters.
+  - `image` and `link` must be public `http(s)` URLs: a host the public internet reaches by its literal form, no credentials, at most 2,048 characters. `image` may also be the token of an MCP image this turn returned.
+  - Any other value is left off that card (`field_unresolved`), never invented.
+  - The item key is the record's JSON Pointer within `outputs` (`/` for the outputs themselves, `media/<n>` for an MCP image), hashed when it is over 128 characters.
+  - The layout is `carousel` when any card has a picture and the client draws carousels, otherwise `list`. A tool image's size is unknown until it is copied, so the stored item frames it as 640×480 and the client fits the picture inside.
+- **The offer rule.** `present` is offered only when the client declares `reply.blocks.item_list` and the outcome has at least one record. There is no agent flag: slice 1 offers evidence pictures on the capability alone, and skill-result cards follow it. A routine step's binding is the opt-in for routines (D10). Otherwise the prompt and the options are byte-identical to the reply without cards (golden: `backend/tests/fixtures/reply-blocks/skill-result-without-present.json`).
+- **Records make data-only outcomes renderable.** An outcome with records and no text no longer fails (`hasRenderableResult`). Without the capability, the findings are the skill's text, exactly as before, and the records only when there is no text. With it, the findings are the records first and then the text, unless the text only repeats the structured content as JSON (parsed and compared deeply).
+- **Cards are built only for a real answer.** A blank reply's fallback, a failed or suppressed skill, and an envelope whose `present` is missing or malformed build none.
+
+### D9. Tool images are copied per conversation and deleted with it (built in 2a.1)
+
+- **Rows.** `conversation_tool_images` (migration 258) holds one row per picture; the block stores only the row's id.
+  - An address picture's row is written in the reply's own transaction, with the assistant message, by the `toolImages` module's `ToolImageRowWriter`. `source_url` is kept only until the picture is stored or fails, then cleared, because third-party links are often signed.
+  - An MCP image's bytes are uploaded untouched while the tool call runs (`<id>-source`), and an unbound row records them (`source_object`); the reply that shows it binds it to its message. A conversation that is not stored (a replay, Test Chat) keeps no bytes; the drop is counted.
+  - A Test Chat reply's address pictures are written with no conversation and no message (`ToolImagePreviewRecorder`), so Test Chat shows them, and the unbound sweep deletes them a day later.
+- **Capture.** A `tool_images.capture` job is written in the same transaction and first runs five seconds after the commit. It fetches through `fetchPublicBytes` (10-second budget, 8 MB cap, `Accept: image/*`), sniffs, decodes and re-encodes with the shared codec (in a slot pool of its own) to WebP at 320 and 640 wide, stores the copies in the `tool-images` folder, and marks the row `stored`. A timeout, a network or server error and a busy decoder hand the row back and the job retries (4 attempts over about 15 minutes, then `retries_exhausted`); a private address, an expired link, a page, an SVG, a picture under 32 pixels or bytes that do not decode fail it for good.
+- **On demand.** The image route is unchanged. Composition puts a tool-image lookup behind the documents' image lookup; it captures a waiting row on demand within a 6-second budget, one capture of a row at a time per process, and a request that finds another capture holding the row waits for it. A failed row is a plain 404.
+- **Lifetime is the conversation's.** The row cascades with the conversation. `ToolImageEraser` deletes a conversation's rows in its erasure and hands their objects to the `tool_images.object_deletion` job in the same transaction, as `VisitorImageEraser` does. A row no message carries is swept after 24 hours. The data-subject export leaves the copies out: each is a third party's picture, and the card's title and link go out with the message.
+
+### D10. Routines bind explicitly (PR 2b)
+
+- **The binding.** A `chat` step may declare `present: { fromStep, selection }` in its typed step metadata. A `single` selection names the slot that receives the choice in `captureKey`. Today only approval steps take a `captureKey`.
+- **What the model and the step decide.** The model picks the records and the fields. The step decides `selection`, so the head omits it.
+- **When cards appear.** Cards show only on the turn the source step ran, while its result is staged. On a later turn at the same step, the reply is text.
+- **Slot type `item`.** The value is `{ key, title, subtitle?, link?, imageId? }`, copied from the stored block item. It is filled only by a validated selection, never extracted from text, and renders as its title.
+
+### D11. Selection is a structured fact (PR 2a.2)
+
+- **The request.** `inputMetadata = { method: "item_select", selection: { messageId, blockId, itemKey } }`.
+- **Validation.** The server loads the block from that assistant message's `metadata_json.blocks` in the same conversation. It requires `selection: "single"` and an existing key. Anything else is a `400`, and no turn runs.
+- **What is stored.** The user message keeps the metadata. Its text is a structural tag holding the stored item, never the client's text. UIs show the title from the metadata.
+- **Inside a routine.** When the block came from a routine step and the routine is still at that step, the engine writes the item into `captureKey` and resumes with `decisionTurn: true`. Otherwise the agent continues with the item as the subject.
+
+### D12. Free tool choice stays out of scope
+
+A model calling any skill mid-turn, without a directive or a routine, is an open question.
+
+## Contract additions
+
+- `StoredReplyBlock.origin?: { kind: "skill_result"; skillName }` (2a.1). Server-only: it is stored on the message and never presented. 2b adds `{ kind: "routine_step"; routineId; stepId; captureKey? }`.
+- `SkillOutcome.media?: { kind: "image"; imageId: string }[]` in `@radioso/conversation-contract`. This is a reference, never bytes.
+- `TestExecutionEvent` `side_completed.blocks?: ReplyBlock[]` (2a.1): Test Chat declares `reply.blocks` with every layout and gets a turn's cards on its completion.
+- Later: `RoutineStep.present?` in the engine contract; `routineSlotTypes` gains `"item"`; embed copy keys `replyCardSelectLabel`, `replyCardSelectedLabel`.
+
+## Boundaries
+
+| Part | Knows | Must not know |
+|---|---|---|
+| `chat/services/replyBlocks/toolRecords.ts`, `recordPresentHead.ts`, `recordBlockBuilder.ts` (pure) | Walking outputs, handles, the compact view, pointer resolution, building items | Transports, storage, routines |
+| `chat` skill-result renderer, `SkillResultReplyBlocks`, `AssistantReplyComposer` | Offering `present`, the `{present, answer}` envelope, building blocks with their origin | MCP, third-party formats, bytes |
+| `chat` item selection (2a.2) | Validating against the stored block; the turn tag | Routine internals beyond the origin |
+| `modules/toolImages` | Rows, intake, capture, on-demand lookup, eraser, sweep | Blocks, chat, MCP |
+| `shared/infra/images`, `shared/infra/http` | Codec; bounded public fetch | Who owns an image |
+| `externalSkills` | Turning an MCP image into a `ToolImageIntake` reference, bound to the calling conversation | Rows, cards |
+| `routine-definition`, `routine-document` (2b) | The `present` binding, slot type `item`, validation codes | Records, blocks |
+| `conversation-engine` (2b) | Applying an item selection; checking an `item` value | Where items come from |
+| Frontend `ItemListBlock` | The Select action (2a.2) and the selected state | Where records came from |
+
+## User scenarios
+
+### US5: A visitor sees cards from a skill's result (P1, PR 2a.1)
+
+The visitor asks "flats in Mitte under 2,000?". A directive-bound MCP skill returns invented `homes.example` listings. The reply is a short lead and a carousel of the matching listings, each with a photo, a name, an area and a link.
+
+1. **Given** records with `photos[0].url` and `url` fields, **When** the model presents 4, **Then** each card's title, image and link come from the data, the block persists, and history replays it.
+2. **Given** a handle that is not in the turn, or a title pointer that resolves to an object, **When** the block is built, **Then** that item is dropped and counted, and the turn succeeds.
+3. **Given** an `image` pointer to a page URL, an SVG, a private address or an expired link, **When** it is captured, **Then** the card shows without a picture, and `tool_image_capture_total{outcome}` records why.
+4. **Given** structured content only, with no text, and no capability, **When** the skill runs, **Then** the reply is text written from the records, not `empty_answer`.
+5. **Given** the conversation is erased, **When** an image URL is requested, **Then** it returns `404`, and the objects are deleted by the job.
+6. **Given** the operator tries the agent in Test Chat, **When** the skill returns listings, **Then** the completion carries the cards and their pictures load.
+
+### US6: A visitor picks a card (P1, PR 2a.2)
+
+1. **Given** a `single` block, **When** the visitor taps Select, **Then** their message shows the title, the turn carries the stored item, and a reload shows the card as selected.
+2. **Given** a forged `itemKey`, a block from another conversation, or a `none` block, **When** the request arrives, **Then** it is rejected with `400` and nothing is stored.
+
+### US7: The property flow (P1, PR 2b)
+
+The steps are brief (`area`, `budget`, `rooms`) → tool step `search` with input bindings → chat step `choose` with `present: { fromStep: "search", selection: "single" }` and `captureKey: "property"` (type `item`) → hand-off on `slot_filled(property)`.
+
+1. **Given** the brief is complete, **When** the turn runs `search` and lands on `choose`, **Then** that reply shows up to 10 cards with Select. The block's origin is `routine_step/choose`.
+2. **Given** a tap, **When** the next turn arrives, **Then** `property` holds the item, the routine hands off, and the operator notice shows the title and the link.
+3. **Given** the visitor types "the second one", **When** the turn arrives, **Then** `property` stays empty, and the step asks again.
+4. **Given** `search` failed, **When** the routine reaches `choose`, **Then** the reply is text, and no block is built.
+5. **Given** a tap on an older block after the routine moved on, **When** it arrives, **Then** no slot changes, and the agent treats it as an item-selection fact.
+6. **Given** a binding to a step that is not a tool step, does not come before it, or has a non-`item` capture slot, **When** the routine is saved, **Then** the validator reports it.
+
+## Observability
+
+- **Metrics (2a.1):**
+  - `reply_blocks_emitted_total{layout, channel, source}`, where `source` is `evidence` or `skill_result` (`routine_step` in 2b);
+  - `reply_block_items_dropped_total{reason}`, with the record reasons `unknown_record`, `duplicate_record`, `over_limit`, `title_unresolved` and `field_unresolved`;
+  - `tool_image_capture_total{trigger, outcome}` and `tool_image_capture_duration_seconds{trigger}`, where `trigger` is `job | on_demand`;
+  - `tool_image_intake_dropped_total{reason}`.
+- **Metrics (later):** `reply_item_selection_total{outcome}`, `routine_present_total{outcome}`.
+- **Spans, traces, analytics:** a `tool_images.capture` span with its outcome; `chat.reply_blocks.record_count` on the turn; routine trace events `presented` and `item_selected` and analytics `reply_item_selected {channel, source}` later.
+- **Logs** carry ids and error classes only. Never record values, titles, source URLs or bytes.
+
+## Non-goals
+
+- WhatsApp rendering (slice 3).
+- Facts on cards; multi-select.
+- Re-showing cards on a later turn of the step.
+- Resolving typed references ("the second one") into a selection.
+- Keeping an MCP tool's picture bytes for a Test Chat turn.
+
+## Later
+
+- **API sources:** turn an operator's OpenAPI document into tools through `conversation-tools`' OpenAPI adapter. Not designed here.
+- **Provider plugins:** a `connector-api` capability that contributes tools. Not designed here.
+
+## Open questions
+
+1. Free tool choice (D12).
+2. Typed references to presented items: let the slot extractor return a key from the latest block, validated by the host?
+3. Should an `item` slot also keep a bounded copy of the record's scalars, so a later skill step can bind its upstream id?
+4. Measure the on-demand capture's p95 under a burst of ten cards before a large rollout (`plan-track2.md` §6, risk 1).

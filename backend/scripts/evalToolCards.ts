@@ -5,10 +5,12 @@ import type { ApplicationModule } from "../src/app/composition/applicationModule
 import { McpConnectionRepository } from "../src/db/repositories/mcpConnectionRepository.js";
 import { AgentSkillRepository } from "../src/modules/agentSkills/public.js";
 import type { AuthoredDirectiveService } from "../src/modules/agents/public.js";
+import type { RoutineDefinitionService } from "../src/modules/routines/public.js";
 import { McpSkillExecutor } from "../src/modules/externalSkills/executor/mcpSkillExecutor.js";
 import { EXTERNAL_SKILLS_ADAPTER } from "../src/modules/externalSkills/public.js";
 import { SdkMcpToolService } from "../src/modules/externalSkills/toolService/sdkMcpToolService.js";
 import type { DB } from "../src/shared/infra/kysely/types.js";
+import { propertyFlowRoutine } from "../tests/fixtures/conversation-quality/routineCardCases.js";
 import { TOOL_CARD_SKILL_NAME, toolCardDirective, toolCardStubTool } from "../tests/fixtures/conversation-quality/toolCardCases.js";
 import { connectMockMcpServer } from "../tests/support/mockMcpServer.js";
 
@@ -56,6 +58,45 @@ export const toolCardStubModule = (): ApplicationModule => ({
   },
 });
 
+/** The stub catalog search as one of the agent's skills, and the MCP connection it targets. Idempotent. */
+const seedStubSearchSkill = async (
+  db: Kysely<DB>,
+  target: { workspaceId: string; agentId: string },
+  invocationMode: "agent_selectable" | "routine_named",
+): Promise<void> => {
+  const connections = new McpConnectionRepository(db);
+  const connection = (await connections.listByWorkspace(target.workspaceId)).find((row) => row.displayName === STUB_CONNECTION.displayName)
+    ?? await connections.create({ workspaceId: target.workspaceId, ...STUB_CONNECTION, authMethod: "access_token", status: "authorized" });
+  const skills = new AgentSkillRepository(db);
+  if (!await skills.findByName(target.workspaceId, target.agentId, TOOL_CARD_SKILL_NAME)) {
+    await skills.create({
+      workspaceId: target.workspaceId,
+      agentId: target.agentId,
+      skillName: TOOL_CARD_SKILL_NAME,
+      kind: "external_mcp",
+      invocationMode,
+      targetType: "mcp_connection",
+      targetId: connection.id,
+    });
+  }
+};
+
+/**
+ * Gives the routine-card agent the stub search as a routine's skill and the viewing routine whose
+ * step shows its results (#1763), with no directive, so the routine claims the turn. Returns the
+ * fixture routine id mapped to the live one. Idempotent: a repeat run finds them.
+ */
+export const seedRoutineCardAgent = async (
+  deps: { db: Kysely<DB>; routines: Pick<RoutineDefinitionService, "createDraft" | "list"> },
+  target: { workspaceId: string; agentId: string },
+): Promise<Map<string, string>> => {
+  await seedStubSearchSkill(deps.db, target, "routine_named");
+  const { id: fixtureId, ...draft } = propertyFlowRoutine;
+  const existing = (await deps.routines.list(target.workspaceId, target.agentId)).find((routine) => routine.name === draft.name && routine.enabled);
+  const liveId = existing?.id ?? (await deps.routines.createDraft(target.workspaceId, target.agentId, draft)).routine.id;
+  return new Map([[fixtureId, liveId]]);
+};
+
 /**
  * Binds the tool-card agent's turns to the stub search: the MCP connection its skill targets, the
  * agent-selectable skill, and a directive that always applies. Idempotent: a repeat run finds them.
@@ -64,21 +105,7 @@ export const seedToolCardAgent = async (
   deps: { db: Kysely<DB>; authoredDirectives: Pick<AuthoredDirectiveService, "create"> },
   target: { workspaceId: string; agentId: string },
 ): Promise<void> => {
-  const connections = new McpConnectionRepository(deps.db);
-  const connection = (await connections.listByWorkspace(target.workspaceId)).find((row) => row.displayName === STUB_CONNECTION.displayName)
-    ?? await connections.create({ workspaceId: target.workspaceId, ...STUB_CONNECTION, authMethod: "access_token", status: "authorized" });
-  const skills = new AgentSkillRepository(deps.db);
-  if (!await skills.findByName(target.workspaceId, target.agentId, TOOL_CARD_SKILL_NAME)) {
-    await skills.create({
-      workspaceId: target.workspaceId,
-      agentId: target.agentId,
-      skillName: TOOL_CARD_SKILL_NAME,
-      kind: "external_mcp",
-      invocationMode: "agent_selectable",
-      targetType: "mcp_connection",
-      targetId: connection.id,
-    });
-  }
+  await seedStubSearchSkill(deps.db, target, "agent_selectable");
   try {
     await deps.authoredDirectives.create(target.workspaceId, target.agentId, toolCardDirective);
   } catch (error) {

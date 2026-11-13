@@ -37,6 +37,7 @@ import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js"
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 import { createRoutineTurnReporter } from "./routineTurnReporter.js";
+import { itemPickTelemetry } from "./itemPickTelemetry.js";
 import { selectorCompletionTelemetry } from "./selectorCompletionTelemetry.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { setTraceAttributes } from "../../shared/observability/tracing/operations.js";
@@ -500,6 +501,7 @@ export const createRoutineTurnProvider = (
         slotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-slots.md"),
         filledSlotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-filled-slots.md"),
         dateRulePromptTemplate: loadPromptTemplate("chat/routine-next-step-date-rule.md"),
+        itemRulePromptTemplate: loadPromptTemplate("chat/routine-next-step-item-rule.md"),
         earlierSlotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-earlier-slots.md"),
         slotFallbackPromptTemplate: loadPromptTemplate("chat/routine-next-step-slot-fallback.md"),
         onCompletion: selectorCompletionTelemetry({
@@ -563,6 +565,7 @@ export const createRoutineTurnProvider = (
       {
         contextRenderer: routineContextRenderer,
         includeSlotValues,
+        onItemPick: itemPickTelemetry({ logger: dependencies.logger, metricsRegistry: dependencies.metricsRegistry ?? null, agentId, workspaceId }),
         ...(consent && consentStore
           ? {
               consent: createRoutineConsentTurnPort({

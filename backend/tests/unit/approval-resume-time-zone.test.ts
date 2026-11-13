@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PendingDecisionRecord } from "../../src/db/repositories/pendingDecisionRepository.js";
 import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { ApprovalResumeTurn } from "../../src/modules/chat/services/approvalResumeTurn.js";
+import type { ChatRoutineProvider } from "../../src/modules/chat/contracts/routineProvider.js";
+import type { RoutinePresentingSteps } from "../../src/modules/chat/services/routines/routinePresentingStepRenderer.js";
 import { visitorTimeZoneTurnMetadata } from "../../src/modules/chat/services/turnReferenceTimeZone.js";
 import { formatIsoDate } from "../../src/shared/domain/clock.js";
 import {
@@ -32,6 +34,7 @@ const setup = async (input: {
   laterMessageMetadata?: Record<string, unknown>;
   /** Another conversation of the workspace, whose visitor message is newer than this one's. */
   otherConversationMetadata?: Record<string, unknown>;
+  presentingSteps?: RoutinePresentingSteps;
 }) => {
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
@@ -93,6 +96,7 @@ const setup = async (input: {
     cancelAfterDisconnect: () => undefined,
   };
   const readWorkspaceTimeZone = vi.fn(async () => input.workspaceTimeZone);
+  const forTurn = vi.fn<ChatRoutineProvider["forTurn"]>(async () => ({ activator: { activate: async () => null }, runner: {} as never }));
   const turn = new ApprovalResumeTurn({
     conversationRepository,
     messageRepository,
@@ -110,7 +114,8 @@ const setup = async (input: {
     conversationEngine: { resumeAwaitingDecision } as unknown as ConversationEngine,
     chatTurnLifecycle: { completeAssistantTurn } as never,
     conversationTurnRegistry: { start: () => lease },
-    routineProvider: { forTurn: vi.fn(async () => ({ activator: { activate: async () => null }, runner: {} as never })) },
+    routineProvider: { forTurn },
+    ...(input.presentingSteps ? { presentingSteps: input.presentingSteps } : {}),
     suspendedRoutineReader: { loadSuspended: async () => null },
     detectResponseLanguage: async () => undefined,
     workspaceTimeZones: { readWorkspaceTimeZone },
@@ -144,8 +149,33 @@ const setup = async (input: {
     const engineTrace = (completeAssistantTurn.mock.calls[0] as unknown as [{ engineTrace: { stages: Stage[] } }])[0].engineTrace;
     return { engineTurn, engineTrace, readWorkspaceTimeZone };
   };
-  return { resume };
+  return { resume, forTurn };
 };
+
+// #1763: an approval that leads to a search and a step that shows its results writes that step
+// from the results, as a live turn does.
+describe("an approval resume's routine steps that show a skill step's results", () => {
+  it("writes the step from the staged results with the skill-result renderer", async () => {
+    const render = vi.fn(async () => ({ answer: "Two homes match.", skillName: "search_homes", skillOutcome: "completed", skillStatus: "completed" as const }));
+    const { resume, forTurn } = await setup({ workspaceTimeZone: null, presentingSteps: { skillResultRenderer: { supports: () => true, render } } });
+    const { engineTurn } = await resume();
+
+    const grounded = forTurn.mock.calls[0][0].groundedAnswerRenderer!;
+    const pending = grounded.prepare!({
+      step: { id: "choose", kind: "chat", action: "Show the homes.", present: { from: "search", selection: "single", slot: "chosen_home" } },
+      steering: [],
+      turn: {
+        ...engineTurn,
+        activeRoutineId: "booking",
+        stagedContext: [{ kind: "skill_result", source: "search_homes", data: { results: [{ name: "Villa Rosa" }] }, metadata: { stepId: "search", status: "completed" } }],
+      },
+    });
+    const reply = await pending!.render();
+
+    expect(render).toHaveBeenCalledOnce();
+    expect(reply.answer).toBe("Two homes match.");
+  });
+});
 
 describe("an approval resume's reference time zone", () => {
   beforeEach(() => {

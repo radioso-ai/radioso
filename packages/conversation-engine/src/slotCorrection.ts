@@ -27,7 +27,8 @@ export type SlotCorrectionResult =
  * covered by none of the routine's `consents` (#1544), and holding a value in `held`. The one
  * statement of the rule: a host offers only these, and the engine claims a correction only to
  * one of them, so a correction the host offers is never declined for its slot. A covered slot
- * takes a value only while the routine runs, past its consent.
+ * takes a value only while the routine runs, past its consent. An `item` slot takes one only
+ * from a pick on its presenting step (#1763), never from a correction.
  */
 export const correctableSlots = (
   slots: readonly RoutineSlotSchema[],
@@ -36,8 +37,10 @@ export const correctableSlots = (
 ): RoutineSlotSchema[] => {
   const covered = new Set(consents.flatMap((consent) => consent.slotKeys));
   return slots.filter((slot) =>
-    slot.mutable === true && !covered.has(slot.key) && Object.prototype.hasOwnProperty.call(held, slot.key));
+    isCorrectable(slot) && !covered.has(slot.key) && Object.prototype.hasOwnProperty.call(held, slot.key));
 };
+
+const isCorrectable = (slot: RoutineSlotSchema): boolean => slot.mutable === true && slot.type !== "item";
 
 export const verifySlotCorrection = (input: {
   slots: readonly RoutineSlotSchema[];
@@ -48,11 +51,11 @@ export const verifySlotCorrection = (input: {
   if (!slot) {
     return { ok: false, reason: "unknown_slot" };
   }
-  if (!slot.mutable) {
+  if (!isCorrectable(slot)) {
     return { ok: false, reason: "immutable" };
   }
   const coerced = checkSlotValue(slot.type, input.rawValue);
-  if (!coerced.ok) {
+  if (!coerced.ok || typeof coerced.value === "object") {
     return { ok: false, reason: "invalid_value" };
   }
   return { ok: true, key: slot.key, value: coerced.value };

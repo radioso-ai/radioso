@@ -7,6 +7,7 @@ import {
   ItemSelectionTurns,
   type ItemSelectionTurnDependencies,
 } from "../../../../src/modules/chat/services/replyBlocks/itemSelectionTurn.js";
+import { routineItemSelectionOf } from "../../../../src/modules/chat/services/replyBlocks/itemSelection.js";
 import { renderSelectedItem } from "../../../../src/modules/chat/services/replyBlocks/selectedItemText.js";
 import { AppError } from "../../../../src/shared/domain/errors.js";
 
@@ -139,6 +140,54 @@ describe("a card the visitor picked", () => {
 
     expect(error.statusCode).toBe(400);
     expect(outcomes(metrics)).toEqual(["rejected_not_selectable"]);
+  });
+
+  // #1763 (2b): a routine step that binds a slot lets the visitor pick its cards.
+  const homesBlock: StoredReplyBlock = {
+    ...flatsBlock,
+    items: [{ ...flatsBlock.items[0], fields: { id: "h-2", rooms: 2 } }],
+    origin: { kind: "routine_step", skillName: "search_listings", routineId: "routine-homes", stepId: "choose", executionId: "run-1", slot: "chosen_home" },
+  };
+
+  it("takes a pick of a routine step's card, with the step, the slot and the record's scalars", async () => {
+    const { turns, metrics } = setup({ stored: message({ metadata: { blocks: [homesBlock] } }) });
+
+    const turn = await turns.claim(pick({ itemKey: "/listings/1" }));
+
+    expect(turn?.query).toBe("Flat 2");
+    expect(turn?.item).toEqual({
+      messageId: CARDS_MESSAGE_ID,
+      blockId: "b1",
+      key: "/listings/1",
+      title: "Flat 2",
+      description: "Two rooms by the river",
+      link: "https://homes.example/flat-2",
+      routineStep: { routineId: "routine-homes", stepId: "choose", executionId: "run-1", slot: "chosen_home" },
+      fields: { id: "h-2", rooms: 2 },
+    });
+    expect(routineItemSelectionOf(turn?.item)).toEqual({
+      routineId: "routine-homes",
+      stepId: "choose",
+      executionId: "run-1",
+      messageId: CARDS_MESSAGE_ID,
+      slot: "chosen_home",
+      item: { key: "/listings/1", title: "Flat 2", link: "https://homes.example/flat-2", fields: { id: "h-2", rooms: 2 } },
+    });
+    expect(outcomes(metrics)).toEqual(["accepted"]);
+  });
+
+  it("refuses a routine step's card when the step binds no slot: its cards are only shown", async () => {
+    const showOnly: StoredReplyBlock = { ...homesBlock, origin: { kind: "routine_step", skillName: "search_listings", routineId: "routine-homes", stepId: "show" } };
+    const { turns, metrics } = setup({ stored: message({ metadata: { blocks: [showOnly] } }) });
+
+    const error = await rejection(turns.claim(pick({ itemKey: "/listings/1" })));
+
+    expect(error.statusCode).toBe(400);
+    expect(outcomes(metrics)).toEqual(["rejected_not_selectable"]);
+  });
+
+  it("carries no routine pick for a card from the answer's documents", () => {
+    expect(routineItemSelectionOf({ messageId: CARDS_MESSAGE_ID, blockId: "b1", key: "image-garden", title: "Garden room" })).toBeUndefined();
   });
 
   it("names a card without a title by its picture, then by its key, as the chat that sends it does", async () => {

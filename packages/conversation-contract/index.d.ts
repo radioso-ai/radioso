@@ -9,6 +9,9 @@ import type {
   Routine,
   RoutineHandoffTerminalKind,
   RoutineInputBinding,
+  RoutineItemSelection,
+  RoutineShownItems,
+  RoutineStepReask,
   RoutineOperatorNoticeTemplate,
   RoutineSlotSchema,
   RoutineStep,
@@ -149,6 +152,10 @@ export interface ConversationInputEvent {
   content: string;
   locale?: string | null;
   metadata?: Record<string, unknown>;
+  /** A card the visitor picked from a routine step's reply; the host validated it against the stored block. */
+  itemSelection?: RoutineItemSelection;
+  /** The items a routine step showed on its latest presentation, which a typed answer may name. */
+  shownItems?: RoutineShownItems;
 }
 
 export type ConversationChannelContext =
@@ -511,6 +518,8 @@ export interface TurnContext {
   steering: SteeringRule[];
   activeRoutineId?: string;
   activeStepId?: string;
+  /** The {@link RoutineState.executionId} of the run the turn's routine step belongs to. */
+  activeRoutineExecutionId?: string;
   /** The zone every "today" on this turn reads; a consumer reads UTC when it is absent. */
   referenceTimeZone?: ReferenceTimeZone;
   metadata?: Record<string, unknown>;
@@ -927,27 +936,16 @@ export interface RoutineState {
   metadata?: Record<string, unknown>;
 }
 
-export type {
-  DecisionOption,
-  Routine,
-  RoutineActivation,
-  RoutineAuthoredTerminalKind,
-  RoutineCompletionExport,
-  RoutineFieldGuardOp,
-  RoutineFieldGuardUnit,
-  RoutineFieldGuardValue,
-  RoutineGuard,
-  RoutineHandoffTerminalKind,
-  RoutineInputBinding,
-  RoutineOperatorNoticeTemplate,
-  RoutineReentryMode,
-  RoutineSlotSchema,
-  RoutineSlotType,
-  RoutineStep,
-  RoutineStepMode,
-  RoutineTerminalKind,
-  RoutineTransition,
-} from "./routineGraph.js";
+export type * from "./routineGraph.js";
+
+/**
+ * A slot value as a reader that expects a scalar reads it: an `item` value reads as its title,
+ * any other value as it is. The one reading rule every copy of a routine's values shares.
+ */
+export declare function readableSlotValue(value: unknown): unknown;
+
+/** The bounds of a {@link RoutineItemValue}, the stored card's own: its host copies within them and the engine checks them. */
+export declare const ROUTINE_ITEM_VALUE_LIMITS: Readonly<{ key: 128; title: 160; link: 2048; fields: 12; fieldKey: 64; fieldValue: 200 }>;
 
 export interface RoutineAwaitingDecision {
   stepId: string;
@@ -1131,30 +1129,6 @@ export interface RoutineStepReplyInput {
   stuckHandoff?: boolean;
   /** {@link RoutineContextRenderer.evidence} of the context variables the step references; absent when none carries any. */
   contextEvidence?: readonly string[];
-}
-
-/**
- * Present when the turn renders the same chat step the user was answering, because
- * their reply did not satisfy it. Absent on a step's first rendering, including the
- * routine's activation turn.
- */
-export interface RoutineStepReask {
-  /**
-   * The step's collected slots that are still unfilled, plus any whose value this turn was
-   * rejected for not fitting its declared type. Schema only, never values.
-   */
-  missingSlots: RoutineSlotSchema[];
-  /**
-   * True once the step has been asked again more times in a row than the runner's re-ask
-   * limit allows (#1376): the reply should ask differently rather than repeat the question.
-   */
-  exhausted?: boolean;
-  /**
-   * True when the routine could not read the visitor's reply at all (#1715): the next-step
-   * selector's output was unreadable and no slot-only reading recovered it. The reply may have
-   * answered the step, so the re-ask must not suggest it fell short.
-   */
-  replyUnreadable?: boolean;
 }
 
 /**

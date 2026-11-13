@@ -31,7 +31,7 @@ export interface AgentToolDescriptor {
   routineLineageId: string;
 }
 
-const propertyFor = (slotType: RoutineSlotType): Pick<AgentToolInputProperty, "type" | "format"> => {
+const propertyFor = (slotType: Exclude<RoutineSlotType, "item">): Pick<AgentToolInputProperty, "type" | "format"> => {
   switch (slotType) {
     case "number":
       return { type: "number" };
@@ -58,12 +58,13 @@ type DescriptorSource = Pick<RoutineDefinition, "lineageId" | "slots" | "consent
  *
  * A slot a consent covers is left out (#1544): only the visitor can consent to it, a
  * calling agent's channel never asks, and the engine refuses its value from a call, so
- * offering it would only invite input that is dropped.
+ * offering it would only invite input that is dropped. An `item` slot is left out too: only the
+ * visitor's pick of a card the routine showed fills it (#1763).
  */
 export const buildAgentToolDescriptor = (definition: DescriptorSource): AgentToolDescriptor => {
   const covered = new Set((definition.consents ?? []).flatMap((consent) => consent.slotKeys));
   const slots = [...definition.slots]
-    .filter((slot) => !covered.has(slot.key))
+    .filter((slot): slot is typeof slot & { type: Exclude<RoutineSlotType, "item"> } => !covered.has(slot.key) && slot.type !== "item")
     .sort((left, right) => left.ordinal - right.ordinal);
   const properties: Record<string, AgentToolInputProperty> = {};
   for (const slot of slots) {

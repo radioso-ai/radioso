@@ -14,3 +14,11 @@ export const redactSensitiveValues = (values, sensitiveKeys) => {
     Object.entries(values).map(([key, value]) => [key, sensitive.has(key) ? REDACTED_VALUE : value]),
   );
 };
+
+export const ROUTINE_ITEM_VALUE_LIMITS = Object.freeze({ key: 128, title: 160, link: 2048, fields: 12, fieldKey: 64, fieldValue: 200 });
+
+export const readableSlotValue = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value) &&
+  typeof value.key === "string" && typeof value.title === "string"
+    ? value.title
+    : value;

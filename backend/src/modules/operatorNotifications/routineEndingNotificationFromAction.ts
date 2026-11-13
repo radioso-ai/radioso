@@ -1,3 +1,5 @@
+import { readableSlotValue } from "@radioso/conversation-contract";
+
 import type {
   HandoffCollectedValue,
   OperatorNoticeConversationFacts,
@@ -13,15 +15,24 @@ import {
 export const asString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 
-const boundedCollectedValue = (value: unknown): HandoffCollectedValue | null => {
-  if (typeof value === "string") return boundedVisitorText(value, NOTICE_SLOT_VALUE_MAX_LENGTH);
-  return typeof value === "number" || typeof value === "boolean" ? value : null;
-};
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** Keeps only the slot values a notice can print; structured slot values are left out. */
+/** A picked card (#1763) reads as its title, and its link beside it, so the operator can open it. */
+const itemText = (value: unknown): string | null => {
+  const title = readableSlotValue(value);
+  if (title === value || typeof title !== "string") return null;
+  const link = isRecord(value) && typeof value.link === "string" ? value.link : null;
+  return link ? `${title} (${link})` : title;
+};
+
+const boundedCollectedValue = (value: unknown): HandoffCollectedValue | null => {
+  const text = typeof value === "string" ? value : itemText(value);
+  if (text !== null) return boundedVisitorText(text, NOTICE_SLOT_VALUE_MAX_LENGTH);
+  return typeof value === "number" || typeof value === "boolean" ? value : null;
+};
+
+/** Keeps only the slot values a notice can print, a picked card as its title; other structured values are left out. */
 const collectedFromPayload = (value: unknown): Record<string, HandoffCollectedValue> | null => {
   if (!isRecord(value)) {
     return null;

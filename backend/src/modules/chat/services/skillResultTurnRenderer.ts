@@ -160,8 +160,10 @@ export const createSkillResultTurnRenderer = (
     return `${records}\n\n${cappedSkillFindings(own, ids, options.logger, remaining)}`;
   };
 
+  // A routine step that shows the results (#1763) is offered them whether or not its cards are
+  // drawn: without cards, the reply lists them in text and the message keeps what it listed.
   const prepare = (outcome: TurnOutcome, ctx: TurnRenderContext): SkillResultReplyInput => {
-    const offer = options.replyBlocks?.offerFor(ctx.session, outcome.skillName, outcome.outcome.outputs) ?? null;
+    const offer = options.replyBlocks?.offerFor(ctx.session, outcome.skillName, outcome.outcome.outputs, ctx.presentBinding) ?? null;
     return { findings: findingsWith(outcome, ctx, offer?.records.withHandles ?? ""), offer };
   };
 

@@ -75,6 +75,22 @@ describe("RoutineEndingNotifyActionHandler", () => {
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ aiSummary: "Visitor requested a late arrival and vegetarian meals." }), expect.any(Object));
   });
 
+  it("hands the summary a picked card as its title, never as an object (#1763)", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue({ disposition: "dispatched" });
+    const generate = vi.fn(async () => "The visitor wants to view a home.");
+    const handler = new RoutineEndingNotifyActionHandler({
+      ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff,
+      dispatcher: { dispatch },
+      subjects: { resolve: async () => ({ agentId: "agent_1", agentName: null, routineName: null }) },
+      summaryGenerator: { generate },
+    });
+    const chosen = { key: "/results/1", title: "Villa Rosa", fields: { id: "h-2" } };
+
+    await handler.handle({ payload: { userMessageId: "message_1", reason: "routine_handoff", notice: { includeAiSummary: true }, collected: { chosen_home: chosen } }, context });
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ collected: { chosen_home: "Villa Rosa" } }));
+  });
+
   it("leaves the notice unchanged and never calls the generator when the ending did not opt in", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>().mockResolvedValue({ disposition: "dispatched" });
     const generate = vi.fn(async () => "Should never be used.");

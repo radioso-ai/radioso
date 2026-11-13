@@ -4309,6 +4309,7 @@ components:
                   - boolean
                   - email
                   - date
+                  - item
               required:
                 type: boolean
               description:
@@ -4438,6 +4439,28 @@ components:
                     enum:
                       - typed
                       - untyped
+                  present:
+                    type: object
+                    properties:
+                      from:
+                        type: string
+                        minLength: 1
+                        maxLength: 120
+                        pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                      selection:
+                        type: string
+                        enum:
+                          - none
+                          - single
+                      slot:
+                        type: string
+                        minLength: 1
+                        maxLength: 120
+                        pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                    required:
+                      - from
+                      - selection
+                    additionalProperties: false
                 default: {}
               instruction:
                 type: string
@@ -4821,6 +4844,7 @@ components:
                       - boolean
                       - email
                       - date
+                      - item
                   required:
                     type: boolean
                   description:
@@ -4950,6 +4974,28 @@ components:
                         enum:
                           - typed
                           - untyped
+                      present:
+                        type: object
+                        properties:
+                          from:
+                            type: string
+                            minLength: 1
+                            maxLength: 120
+                            pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                          selection:
+                            type: string
+                            enum:
+                              - none
+                              - single
+                          slot:
+                            type: string
+                            minLength: 1
+                            maxLength: 120
+                            pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                        required:
+                          - from
+                          - selection
+                        additionalProperties: false
                     default: {}
                   instruction:
                     type: string
@@ -5308,6 +5354,12 @@ components:
                   - sensitive_slot_without_consent
                   - consent_step_mixes_fields
                   - consent_step_needs_default_exit
+                  - present_step_not_chat
+                  - present_source_not_earlier_tool
+                  - present_source_unreachable
+                  - present_slot_not_item
+                  - present_selection_mismatch
+                  - item_slot_without_presenting_step
               location:
                 type: string
               message:
@@ -5405,6 +5457,7 @@ components:
                   - boolean
                   - email
                   - date
+                  - item
               required:
                 type: boolean
               description:
@@ -5534,6 +5587,28 @@ components:
                     enum:
                       - typed
                       - untyped
+                  present:
+                    type: object
+                    properties:
+                      from:
+                        type: string
+                        minLength: 1
+                        maxLength: 120
+                        pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                      selection:
+                        type: string
+                        enum:
+                          - none
+                          - single
+                      slot:
+                        type: string
+                        minLength: 1
+                        maxLength: 120
+                        pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                    required:
+                      - from
+                      - selection
+                    additionalProperties: false
                 default: {}
               instruction:
                 type: string
@@ -5971,6 +6046,7 @@ components:
                       - boolean
                       - email
                       - date
+                      - item
                   required:
                     type: boolean
                   description:
@@ -6100,6 +6176,28 @@ components:
                         enum:
                           - typed
                           - untyped
+                      present:
+                        type: object
+                        properties:
+                          from:
+                            type: string
+                            minLength: 1
+                            maxLength: 120
+                            pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                          selection:
+                            type: string
+                            enum:
+                              - none
+                              - single
+                          slot:
+                            type: string
+                            minLength: 1
+                            maxLength: 120
+                            pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                        required:
+                          - from
+                          - selection
+                        additionalProperties: false
                     default: {}
                   instruction:
                     type: string
@@ -7499,6 +7597,7 @@ components:
                       - boolean
                       - email
                       - date
+                      - item
                   required:
                     type: boolean
                   description:
@@ -7628,6 +7727,28 @@ components:
                         enum:
                           - typed
                           - untyped
+                      present:
+                        type: object
+                        properties:
+                          from:
+                            type: string
+                            minLength: 1
+                            maxLength: 120
+                            pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                          selection:
+                            type: string
+                            enum:
+                              - none
+                              - single
+                          slot:
+                            type: string
+                            minLength: 1
+                            maxLength: 120
+                            pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                        required:
+                          - from
+                          - selection
+                        additionalProperties: false
                     default: {}
                   instruction:
                     type: string
@@ -13501,6 +13622,7 @@ components:
             - boolean
             - email
             - date
+            - item
         required:
           type: boolean
         description:

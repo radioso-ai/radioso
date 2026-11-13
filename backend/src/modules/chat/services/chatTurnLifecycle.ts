@@ -428,7 +428,7 @@ export const buildTurnTraceForPresentation = (
       modelId: input.session.agent.chatModelOverride?.model,
       citations: input.presentation.citations ?? [],
       answerSegments: input.presentation.answerSegments,
-      ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.stored } : {}),
+      ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.stored } : {}), ...(input.presentation.listedItems ? { listedItems: [input.presentation.listedItems] } : {}),
       ...(hasContextVariablesSnapshot
         ? { contextVariables: contextVariablesSnapshot }
         : {}),

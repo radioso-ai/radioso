@@ -23,6 +23,7 @@ import {
   DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_EARLIER_SLOTS_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
+  DEFAULT_ROUTINE_NEXT_STEP_ITEM_RULE_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_SLOT_FALLBACK_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
@@ -75,11 +76,27 @@ const slotLine = (slot: RoutineSlotSchema): string => {
   return `- ${slot.key} (${slot.type})${description ? `: ${description}` : ""}`;
 };
 
+/**
+ * The items the current step showed on its latest presentation, numbered in the order shown, when
+ * the step binds an item slot (#1763); empty otherwise. The selector returns a number, and the
+ * runner takes the stored item it names. Each title is quoted: it is a search's data, never an
+ * instruction.
+ */
+const shownItemLines = (routine: Routine, step: RoutineStep, turn: TurnContext): string => {
+  const shown = turn.inputEvent.shownItems;
+  if (!shown || !step.present?.slot || shown.routineId !== routine.id || shown.stepId !== step.id) {
+    return "";
+  }
+  return shown.items.map((item, index) => `${index + 1}. ${JSON.stringify(item.title.replace(/\s+/gu, " ").trim())}`).join("\n");
+};
+
 /** The templates the selector's slot rules are written from (`chat/routine-next-step-*.md`). */
 interface SlotRuleTemplates {
   slots: string;
   filledSlots: string;
   dateRule: string;
+  /** How an `item` slot is read from text (#1763): only an item the assistant listed by name. */
+  itemRule: string;
   earlierSlots: string;
 }
 
@@ -123,6 +140,8 @@ const slotSchemaBlock = (
   templates: SlotRuleTemplates,
   /** Slots that may take their value from the user's earlier messages (#1544). */
   earlierMessageSlotKeys: readonly string[],
+  /** The items the current step showed, numbered, when it binds an item slot (#1763). */
+  shownItems: string,
 ): string => {
   if (!routine.slots || routine.slots.length === 0) {
     return "";
@@ -136,6 +155,7 @@ const slotSchemaBlock = (
       })}`
       : "",
     date_rule: routine.slots.some((slot) => slot.type === "date") ? `\n${dateRule(today, templates.dateRule)}` : "",
+    item_rule: shownItems ? `\n${renderPromptTemplate("chat/routine-next-step-item-rule.md", templates.itemRule, { items: shownItems })}` : "",
     earlier_slots: earlierMessageSlotKeys.length > 0
       ? `\n${renderPromptTemplate("chat/routine-next-step-earlier-slots.md", templates.earlierSlots, {
         slot_keys: earlierMessageSlotKeys.join(", "),
@@ -406,6 +426,8 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       filledSlotsPromptTemplate?: string;
       /** How a date slot's value is read and recorded (`{{today}}`, `{{time_zone}}`). */
       dateRulePromptTemplate?: string;
+      /** How an item slot is read from text (#1763). */
+      itemRulePromptTemplate?: string;
       /** The slots that may take their value from the user's earlier messages (`{{slot_keys}}`). */
       earlierSlotsPromptTemplate?: string;
       clock?: () => Date;
@@ -418,6 +440,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       slots: options.slotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
       filledSlots: options.filledSlotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
       dateRule: options.dateRulePromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
+      itemRule: options.itemRulePromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_ITEM_RULE_PROMPT,
       earlierSlots: options.earlierSlotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_EARLIER_SLOTS_PROMPT,
     };
     this.clock = options.clock ?? (() => new Date());
@@ -449,6 +472,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       this.slotRuleTemplates,
       // A structured call states no values, so no earlier message is read for one either.
       input.messageStatesSlotValues === false ? [] : input.earlierMessageSlotKeys ?? [],
+      shownItemLines(input.routine, input.currentStep, input.turn),
     );
     const systemPrompt = renderPromptTemplate("chat/routine-next-step.md", this.promptTemplate, {
       currentStep: currentStepBlock(input.currentStep, input.skillResult),

@@ -6125,7 +6125,8 @@
                     "number",
                     "boolean",
                     "email",
-                    "date"
+                    "date",
+                    "item"
                   ]
                 },
                 "required": {
@@ -6312,6 +6313,35 @@
                         "typed",
                         "untyped"
                       ]
+                    },
+                    "present": {
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                        },
+                        "selection": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "single"
+                          ]
+                        },
+                        "slot": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                        }
+                      },
+                      "required": [
+                        "from",
+                        "selection"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "default": {}
@@ -6833,7 +6863,8 @@
                         "number",
                         "boolean",
                         "email",
-                        "date"
+                        "date",
+                        "item"
                       ]
                     },
                     "required": {
@@ -7020,6 +7051,35 @@
                             "typed",
                             "untyped"
                           ]
+                        },
+                        "present": {
+                          "type": "object",
+                          "properties": {
+                            "from": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                            },
+                            "selection": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "single"
+                              ]
+                            },
+                            "slot": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "selection"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "default": {}
@@ -7495,7 +7555,13 @@
                     "consent_text_invalid",
                     "sensitive_slot_without_consent",
                     "consent_step_mixes_fields",
-                    "consent_step_needs_default_exit"
+                    "consent_step_needs_default_exit",
+                    "present_step_not_chat",
+                    "present_source_not_earlier_tool",
+                    "present_source_unreachable",
+                    "present_slot_not_item",
+                    "present_selection_mismatch",
+                    "item_slot_without_presenting_step"
                   ]
                 },
                 "location": {
@@ -7625,7 +7691,8 @@
                     "number",
                     "boolean",
                     "email",
-                    "date"
+                    "date",
+                    "item"
                   ]
                 },
                 "required": {
@@ -7812,6 +7879,35 @@
                         "typed",
                         "untyped"
                       ]
+                    },
+                    "present": {
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                        },
+                        "selection": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "single"
+                          ]
+                        },
+                        "slot": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                        }
+                      },
+                      "required": [
+                        "from",
+                        "selection"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "default": {}
@@ -8405,7 +8501,8 @@
                         "number",
                         "boolean",
                         "email",
-                        "date"
+                        "date",
+                        "item"
                       ]
                     },
                     "required": {
@@ -8592,6 +8689,35 @@
                             "typed",
                             "untyped"
                           ]
+                        },
+                        "present": {
+                          "type": "object",
+                          "properties": {
+                            "from": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                            },
+                            "selection": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "single"
+                              ]
+                            },
+                            "slot": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "selection"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "default": {}
@@ -10508,7 +10634,8 @@
                         "number",
                         "boolean",
                         "email",
-                        "date"
+                        "date",
+                        "item"
                       ]
                     },
                     "required": {
@@ -10695,6 +10822,35 @@
                             "typed",
                             "untyped"
                           ]
+                        },
+                        "present": {
+                          "type": "object",
+                          "properties": {
+                            "from": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                            },
+                            "selection": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "single"
+                              ]
+                            },
+                            "slot": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "selection"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "default": {}
@@ -18997,7 +19153,8 @@
               "number",
               "boolean",
               "email",
-              "date"
+              "date",
+              "item"
             ]
           },
           "required": {

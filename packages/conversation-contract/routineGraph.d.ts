@@ -49,7 +49,64 @@ export interface RoutineStep {
   outputAssignments?: Record<string, string>;
   /** Skill-step mode. Absence is treated as typed by routine authoring. */
   mode?: RoutineStepMode;
+  /** A `chat` step that shows a skill step's results as cards (#1763). */
+  present?: RoutineStepPresent;
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Where a presenting step's cards come from and where a pick goes. `from` is the skill step whose
+ * staged result the cards are drawn from; the host draws them only on the turn that step ran.
+ * `slot` is the `item` slot the visitor's pick fills, and a step that names one has `single`.
+ */
+export interface RoutineStepPresent {
+  from: string;
+  selection: "none" | "single";
+  slot?: string;
+}
+
+/**
+ * The value an `item` slot holds: the card the visitor picked, copied by the host from the block
+ * that showed it. `fields` is a bounded copy of the record's own top-level scalars. An item the
+ * visitor named in text, where no card was picked, holds its name as key and title, and no fields.
+ * Every reader that expects a scalar reads its title ({@link readableSlotValue}).
+ */
+export interface RoutineItemValue {
+  key: string;
+  title: string;
+  link?: string;
+  fields: Record<string, string | number | boolean>;
+}
+
+/**
+ * A card the visitor picked from a routine step's reply, as the host read it from the stored block:
+ * the run and step that showed it, the reply it showed on, the slot the step binds, and the item.
+ * The engine fills the slot only while that run waits on that step and the reply is the step's
+ * latest presentation ({@link RoutineShownItems}).
+ */
+export interface RoutineItemSelection {
+  routineId: string;
+  stepId: string;
+  /** The run that showed the card, when the host keeps one. */
+  executionId?: string;
+  messageId: string;
+  slot: string;
+  item: RoutineItemValue;
+}
+
+/**
+ * The items a routine step showed on its latest presentation, as the host stored them: cards, or
+ * the records a reply listed in text where no cards are drawn. A typed answer on that step names
+ * one by its position or its title, and the engine takes the stored item, as a pick would.
+ */
+export interface RoutineShownItems {
+  routineId: string;
+  stepId: string;
+  executionId?: string;
+  /** The reply that showed them. */
+  messageId: string;
+  /** In the order shown. */
+  items: RoutineItemValue[];
 }
 
 /**
@@ -142,7 +199,7 @@ export type RoutineGuard =
   | { kind: "default" }
   | { kind: "llm" };
 
-export type RoutineSlotType = "text" | "number" | "boolean" | "email" | "date";
+export type RoutineSlotType = "text" | "number" | "boolean" | "email" | "date" | "item";
 
 export interface RoutineSlotSchema {
   id: string;
@@ -200,4 +257,28 @@ export interface Routine {
   /** The consents the routine asks before it collects the slots each covers (#1544). */
   consents?: RoutineConsent[];
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Present when the turn renders the same chat step the user was answering, because
+ * their reply did not satisfy it. Absent on a step's first rendering, including the
+ * routine's activation turn.
+ */
+export interface RoutineStepReask {
+  /**
+   * The step's collected slots that are still unfilled, plus any whose value this turn was
+   * rejected for not fitting its declared type. Schema only, never values.
+   */
+  missingSlots: RoutineSlotSchema[];
+  /**
+   * True once the step has been asked again more times in a row than the runner's re-ask
+   * limit allows (#1376): the reply should ask differently rather than repeat the question.
+   */
+  exhausted?: boolean;
+  /**
+   * True when the routine could not read the visitor's reply at all (#1715): the next-step
+   * selector's output was unreadable and no slot-only reading recovered it. The reply may have
+   * answered the step, so the re-ask must not suggest it fell short.
+   */
+  replyUnreadable?: boolean;
 }

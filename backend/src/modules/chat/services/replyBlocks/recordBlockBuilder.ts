@@ -1,4 +1,5 @@
 import type { ReplyBlockLayout } from "@radioso/conversation-contract";
+import { ROUTINE_ITEM_VALUE_LIMITS } from "@radioso/conversation-contract";
 
 import { isPubliclyReachableHostname } from "../../../../shared/domain/publicNetwork.js";
 import type { ToolImageSource } from "../../../toolImages/contracts/index.js";
@@ -6,7 +7,9 @@ import {
   REPLY_BLOCK_LIMITS,
   storedReplyBlockSchema,
   type StoredReplyBlock,
+  type StoredReplyBlockOrigin,
   type StoredReplyItem,
+  type StoredReplyItemFields,
 } from "../../contracts/replyBlocks.js";
 import type { RecordPresentHead } from "./recordPresentHead.js";
 import { itemActions } from "./replyBlockBuilder.js";
@@ -20,6 +23,16 @@ export type RecordBlockDropReason =
   | "title_unresolved"
   | "field_unresolved"
   | "block_invalid";
+
+/**
+ * A routine step's binding of the cards it shows (#1763): whether the visitor picks one, and the
+ * origin the block is stored with, which names the slot a pick fills. Without one, a skill's cards
+ * are only shown.
+ */
+export interface RecordBlockBinding {
+  selection: "none" | "single";
+  origin: Extract<StoredReplyBlockOrigin, { kind: "routine_step" }>;
+}
 
 interface RecordBlockBuild {
   block: StoredReplyBlock | null;
@@ -83,6 +96,22 @@ const publicAddress = (value: unknown): string | null => {
 };
 
 /**
+ * A record's own top-level scalars, within an item value's bounds: what an item slot keeps of the
+ * record beside its title. A nested value, a long key and anything past the twelfth are left out.
+ */
+const recordFields = (value: unknown): StoredReplyItemFields => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const fields: StoredReplyItemFields = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (Object.keys(fields).length >= ROUTINE_ITEM_VALUE_LIMITS.fields) break;
+    if (key.length === 0 || key.length > ROUTINE_ITEM_VALUE_LIMITS.fieldKey) continue;
+    if (typeof entry === "string") fields[key] = truncateUtf16(entry, ROUTINE_ITEM_VALUE_LIMITS.fieldValue);
+    else if ((typeof entry === "number" && Number.isFinite(entry)) || typeof entry === "boolean") fields[key] = entry;
+  }
+  return fields;
+};
+
+/**
  * Builds the cards the model's `present` head asks for from a skill's records. Every value on a
  * card comes from the record the model named, at the pointer it named: a handle the turn did not
  * offer is dropped, a title that is not text drops its card, and a field that is not what it must
@@ -97,7 +126,11 @@ export const buildRecordBlock = (input: {
   layouts: readonly ReplyBlockLayout[];
   skillName: string;
   newImageId: () => string;
+  binding?: RecordBlockBinding;
 }): RecordBlockBuild => {
+  const selection = input.binding?.selection ?? "none";
+  // A card a pick fills a slot with keeps the record's scalars for the slot.
+  const keepsFields = input.binding?.origin.slot !== undefined;
   const dropped: RecordBlockDropReason[] = [];
   const picked: ToolRecord[] = [];
   for (const value of input.head.records) {
@@ -150,7 +183,8 @@ export const buildRecordBlock = (input: {
       title: shownTitle,
       ...(description ? { description: truncateUtf16(description, REPLY_BLOCK_LIMITS.descriptionLength) } : {}),
       ...(imageId ? { image: { imageId, ...TOOL_IMAGE_FRAME, alt: shownTitle } } : {}),
-      actions: itemActions(link, "none"),
+      actions: itemActions(link, selection),
+      ...(keepsFields ? { fields: recordFields(record.value) } : {}),
     });
   }
 
@@ -167,10 +201,10 @@ export const buildRecordBlock = (input: {
     layout,
     // A skill's cards are only shown: a pick in free conversation would reach retrieval, not the
     // skill. Picking a record belongs to a routine step that fills a slot with it.
-    selection: "none",
+    selection,
     caption: truncateUtf16(input.head.caption.trim(), REPLY_BLOCK_LIMITS.captionLength),
     items,
-    origin: { kind: "skill_result", skillName: input.skillName },
+    origin: input.binding?.origin ?? { kind: "skill_result", skillName: input.skillName },
   };
   if (!storedReplyBlockSchema.safeParse(block).success) {
     return { block: null, dropped: [...dropped, "block_invalid"], toolImages: [] };

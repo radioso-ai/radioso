@@ -26,6 +26,7 @@ import {
   type ImplicitCitationDiagnostics,
 } from "./implicitCitationDiagnostics.js";
 import type { PresentedReplyBlocks } from "./replyBlocks/replyBlockTurn.js";
+import type { StoredReplyBlock } from "../contracts/replyBlocks.js";
 
 export interface ChatGroundingDiagnostics extends ImplicitCitationDiagnostics {
   parseStatus: GroundingSummary["parseStatus"];
@@ -67,6 +68,11 @@ export interface ChatPresentedAnswer {
   metadata?: Record<string, unknown>;
   /** The reply blocks the answer presents, such as picture cards; absent when it presents none. */
   replyBlocks?: PresentedReplyBlocks;
+  /**
+   * What a routine step's reply listed in text where no cards are drawn (#1763): kept on the
+   * message, never presented, so a typed answer to the step resolves to one of these records.
+   */
+  listedItems?: StoredReplyBlock;
   /**
    * Set when a coverage verdict sink yielded this turn before any answer text was
    * composed (#1260): `answer` is empty and must not be shown — the host presents

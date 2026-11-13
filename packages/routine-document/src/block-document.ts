@@ -7,6 +7,7 @@ import {
   type RoutineGuardProvenance,
   type RoutineInputBinding,
   type RoutineStepMode,
+  type RoutineStepPresent,
 } from '@radioso/routine-definition'
 import { SLOT_REFERENCE } from './document.js'
 import type { RoutineDefinitionDraftAuthored } from './types.js'
@@ -63,6 +64,8 @@ export type RoutineBlockStep = Omit<DraftStep, 'instruction' | 'ordinal' | 'meta
   inputBindings?: Record<string, RoutineInputBinding>
   outputAssignments?: Record<string, string>
   mode?: RoutineStepMode
+  // A presenting step shows a tool step's results as cards and binds the pick (#1763).
+  present?: RoutineStepPresent
   additionalMetadata: Record<string, unknown>
   branches: RoutineBlockBranch[]
 }
@@ -126,8 +129,8 @@ export function blockSegmentsToInstruction(segments: RoutineBlockInstructionSegm
 }
 
 const metadataForBlock = (metadata: DraftStep['metadata']) => {
-  const { inputBindings, outputAssignments, mode, ...additionalMetadata } = metadata
-  return { inputBindings, outputAssignments, mode, additionalMetadata }
+  const { inputBindings, outputAssignments, mode, present, ...additionalMetadata } = metadata
+  return { inputBindings, outputAssignments, mode, present, additionalMetadata }
 }
 
 type RoutineBlockStructuralDiagnosticCode = Exclude<RoutineBlockDiagnostic['code'], 'schema_validation'>
@@ -270,7 +273,7 @@ export function draftFromBlockDoc(doc: RoutineBlockDoc): RoutineDefinitionDraftA
     enabled: doc.enabled,
     activation: doc.activation,
     slots: doc.information.map((slot, ordinal) => ({ ...slot, ordinal })),
-    steps: doc.steps.map(({ instruction, inputBindings, outputAssignments, mode, additionalMetadata, branches: _branches, ...step }, ordinal) => ({
+    steps: doc.steps.map(({ instruction, inputBindings, outputAssignments, mode, present, additionalMetadata, branches: _branches, ...step }, ordinal) => ({
       ...step,
       instruction: blockSegmentsToInstruction(instruction),
       ordinal,
@@ -279,6 +282,7 @@ export function draftFromBlockDoc(doc: RoutineBlockDoc): RoutineDefinitionDraftA
         ...(inputBindings === undefined ? {} : { inputBindings }),
         ...(outputAssignments === undefined ? {} : { outputAssignments }),
         ...(mode === undefined ? {} : { mode }),
+        ...(present === undefined ? {} : { present }),
       },
     })),
     transitions: doc.steps.flatMap((step) => step.branches.map((branch) => {

@@ -45,6 +45,8 @@ import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { visitorMatchContext } from "./visitorMatchContext.js";
 import { steeringDirectivesFromAuthored } from "../../agents/public.js";
 import { planAwareDirectiveClassifications } from "./turnPlanCoordinator.js";
+import { routineItemSelectionOf } from "./replyBlocks/itemSelection.js";
+import { latestRoutinePresentation } from "./replyBlocks/routinePresentation.js";
 
 const missingModelGateway: ConversationModelGateway = {
   async complete(): Promise<{ text: string }> {
@@ -112,10 +114,18 @@ const directivesForSession = (session: PreparedSession): Directive[] =>
 const authoredDirectivesForSession = (session: PreparedSession): Directive[] =>
   steeringDirectivesFromAuthored(session.agent.authoredDirectives);
 
-const effectiveInputEventForSession = (session: PreparedSession) => ({
-  ...toConversationInputEvent(session.userMessage),
-  content: session.effectiveQuery ?? session.userMessage.content,
-});
+const effectiveInputEventForSession = (session: PreparedSession) => {
+  // A pick of a routine step's card reaches the routine engine as a structured fact, beside the
+  // items the latest routine-step presentation showed, which a typed answer may name (#1763).
+  const itemSelection = routineItemSelectionOf(session.itemSelection);
+  const shownItems = latestRoutinePresentation(session.history);
+  return {
+    ...toConversationInputEvent(session.userMessage),
+    content: session.effectiveQuery ?? session.userMessage.content,
+    ...(itemSelection ? { itemSelection } : {}),
+    ...(shownItems ? { shownItems } : {}),
+  };
+};
 
 /**
  * The turn's resolved visitor context, bounded for matching. Always sent: it carries the caller

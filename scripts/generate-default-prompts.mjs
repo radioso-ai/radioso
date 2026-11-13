@@ -96,6 +96,10 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT",
   },
   {
+    source: "routine-next-step-item-rule.md",
+    exportName: "DEFAULT_ROUTINE_NEXT_STEP_ITEM_RULE_PROMPT",
+  },
+  {
     source: "routine-next-step-slot-fallback.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_SLOT_FALLBACK_PROMPT",
   },

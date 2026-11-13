@@ -26,6 +26,7 @@ import {
 import type { RetrievalSkillSettingsOverride, RetrievalStrategy } from '@/lib/retrieval-skill-settings'
 import type { EvalRunRoutineStartStateInput } from '@/lib/api-eval'
 import type { RoutineDefinition } from '@/lib/api-types'
+import { formatSlotValue } from '@/lib/routine-slot-value'
 import type {
   WorkbenchOverrideAction,
   WorkbenchOverrideState,
@@ -33,20 +34,6 @@ import type {
 } from './use-workbench-state'
 
 const retrievalStrategies: RetrievalStrategy[] = ['auto', 'fixed', 'reasoning']
-
-// Slot values are `unknown` (a routine can collect strings, numbers, booleans, or
-// structured values). Coercing an object/array straight through `String()` would
-// render "[object Object]" into the editable input, so serialize non-primitives as
-// JSON instead of relying on default stringification.
-const formatSlotValue = (raw: unknown): string => {
-  if (raw === undefined || raw === null) return ''
-  if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') return String(raw)
-  try {
-    return JSON.stringify(raw)
-  } catch {
-    return ''
-  }
-}
 
 const stepLabel = (step: RoutineDefinition['steps'][number]): string => {
   const outline = step.metadata?.outlineLabel

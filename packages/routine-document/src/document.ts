@@ -19,6 +19,7 @@ import {
   type RoutineStepMode,
 } from './types.js'
 
+// The types the prose editor offers. An `item` slot is made beside the presenting step that fills it (#1763).
 export const ROUTINE_SLOT_TYPES: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 export const ROUTINE_FIELD_GUARD_UNITS: RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
 

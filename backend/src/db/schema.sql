@@ -3826,7 +3826,7 @@ CREATE TABLE public.routine_slot (
     CONSTRAINT routine_slot_ordinal_check CHECK ((ordinal >= 0)),
     CONSTRAINT routine_slot_sensitivity_check CHECK ((sensitivity = ANY (ARRAY['normal'::text, 'sensitive'::text]))),
     CONSTRAINT routine_slot_stable_slot_id_check CHECK ((NULLIF(btrim(stable_slot_id), ''::text) IS NOT NULL)),
-    CONSTRAINT routine_slot_type_check CHECK ((type = ANY (ARRAY['text'::text, 'number'::text, 'boolean'::text, 'email'::text, 'date'::text])))
+    CONSTRAINT routine_slot_type_check CHECK ((type = ANY (ARRAY['text'::text, 'number'::text, 'boolean'::text, 'email'::text, 'date'::text, 'item'::text])))
 );
 
 

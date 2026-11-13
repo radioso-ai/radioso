@@ -4,14 +4,16 @@ import type {
   RoutineGroundedAnswerInput,
   RoutineGroundedAnswerRenderer,
   StagedContext,
+  TurnOutcome,
 } from "@radioso/conversation-contract";
+import { z } from "zod";
 
 import { CHAT_TURN_ROUTE } from "../../../../shared/domain/chatTurnRoute.js";
 import { directiveAdherenceMetadataOf } from "../../../../shared/domain/directiveAdherence.js";
 import { readRetrievalResult, type RetrievalPipelineResult } from "../../../retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "../../contracts/answerTypes.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
-import { storedReplyBlockSchema } from "../../contracts/replyBlocks.js";
+import { storedReplyBlockSchema, type StoredReplyBlock } from "../../contracts/replyBlocks.js";
 import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
@@ -25,15 +27,19 @@ import {
 import {
   getUnstreamedFinalAnswerRemainder,
   TurnOutcomeRendererRegistry,
+  type TurnOutcomeRenderer,
   type TurnRenderContext,
   type TurnSkill,
   type TurnStreamResult,
 } from "../turnOutcome.js";
 import type { ChatSuggestion } from "../../types/chatResponses.js";
+import { routinePresentingStepReply, type RoutinePresentingSteps } from "./routinePresentingStepRenderer.js";
 
 interface RoutineGroundedAnswerRendererOptions {
   session: PreparedSession;
   turnSkills: readonly TurnSkill[];
+  /** Writes a step that shows a skill step's results (#1763); without it, such a step gets its own reply. */
+  presentingSteps?: RoutinePresentingSteps;
   /** Expands a streamed answer's planned suggestions the way a whole answer's are expanded. */
   chatAnswerPresenter: Pick<ChatAnswerPresenter, "applyAssistantSuggestions" | "applyActionSuggestions">;
   accountId?: string;
@@ -82,7 +88,8 @@ const withRoutineGrounding = (input: {
 
 /**
  * The turn carries its reply blocks as a client receives them; the stored form the message row
- * keeps rides the metadata, so `presentRoutineRenderableAnswer` restores both.
+ * keeps rides the metadata, so `presentRoutineRenderableAnswer` restores both, with the pictures a
+ * skill's cards show (#1763), which the reply's transaction records.
  */
 const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => ({
   answer: presentation.answer,
@@ -100,6 +107,8 @@ const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => 
     ...directiveAdherenceMetadataOf(presentation.metadata),
     effectiveRetrieval: presentation.effectiveRetrieval,
     ...(presentation.replyBlocks ? { storedReplyBlocks: presentation.replyBlocks.stored } : {}),
+    ...(presentation.replyBlocks?.toolImages?.length ? { storedToolImages: presentation.replyBlocks.toolImages } : {}),
+    ...(presentation.listedItems ? { storedListedItems: presentation.listedItems } : {}),
   },
 });
 
@@ -146,6 +155,15 @@ interface RoutineRenderableAnswerRestore {
 }
 
 const storedReplyBlocksSchema = storedReplyBlockSchema.array();
+const storedToolImagesSchema = z.array(z.object({ imageId: z.string().min(1), url: z.string().url() }));
+
+/** The pictures the stored cards show, read back from metadata; any other entry is dropped. */
+const restoredToolImages = (stored: readonly StoredReplyBlock[], toolImages: unknown): PresentedReplyBlocks["toolImages"] => {
+  const shown = new Set(stored.flatMap((block) => block.items.flatMap((item) => (item.image ? [item.image.imageId] : []))));
+  const parsed = storedToolImagesSchema.safeParse(toolImages ?? []);
+  const kept = parsed.success ? parsed.data.filter((source) => shown.has(source.imageId)) : [];
+  return kept.length > 0 ? kept : undefined;
+};
 
 /**
  * The turn's reply blocks in both forms. The stored form rides untyped metadata, so it is read
@@ -156,12 +174,14 @@ const storedReplyBlocksSchema = storedReplyBlockSchema.array();
 const restoredReplyBlocks = (
   blocks: RenderableTurn["blocks"],
   stored: unknown,
+  toolImages: unknown,
   restore: RoutineRenderableAnswerRestore | undefined,
 ): PresentedReplyBlocks | undefined => {
   const presented = blocks ?? [];
   const parsed = storedReplyBlocksSchema.safeParse(stored ?? []);
   if (parsed.success && parsed.data.length === presented.length) {
-    return presented.length > 0 ? { stored: parsed.data, presented } : undefined;
+    const images = restoredToolImages(parsed.data, toolImages);
+    return presented.length > 0 ? { stored: parsed.data, presented, ...(images ? { toolImages: images } : {}) } : undefined;
   }
   restore?.logger?.warn(
     {
@@ -187,7 +207,8 @@ const presentationFromRenderableTurn = (
   if (!skillName || !skillOutcome || !skillStatus) {
     return null;
   }
-  const replyBlocks = restoredReplyBlocks(response.blocks, response.metadata.storedReplyBlocks, restore);
+  const replyBlocks = restoredReplyBlocks(response.blocks, response.metadata.storedReplyBlocks, response.metadata.storedToolImages, restore);
+  const listedItems = storedReplyBlockSchema.safeParse(response.metadata.storedListedItems);
   return {
     answer: response.answer,
     ...(optionalChatCitations(response.citations) ? { citations: optionalChatCitations(response.citations) } : {}),
@@ -209,6 +230,7 @@ const presentationFromRenderableTurn = (
       ? { effectiveRetrieval: optionalEffectiveRetrieval(response.metadata.effectiveRetrieval) }
       : {}),
     ...(replyBlocks ? { replyBlocks } : {}),
+    ...(listedItems.success ? { listedItems: listedItems.data } : {}),
   };
 };
 
@@ -270,31 +292,49 @@ export const createRoutineGroundedAnswerRenderer = (
     return presenter.applyActionSuggestions(session, withQuestions);
   };
 
-  // Whether the step is groundable is read off the staged context alone; the answer is
-  // generated only when the reply is rendered or streamed.
+  /** A step's reply from a skill's own renderer, whole or streamed, settled as a whole answer is. */
+  const reply = (
+    build: () => Promise<{ session: PreparedSession; outcome: TurnOutcome; renderer: TurnOutcomeRenderer; context: TurnRenderContext }>,
+    settle: (session: PreparedSession, presentation: ChatPresentedAnswer) => RenderableTurn,
+  ): PendingRenderableTurn => ({
+    async render() {
+      const { session, outcome, renderer, context } = await build();
+      return settle(session, await renderer.render(outcome, context));
+    },
+    // The renderer's own stream, so a retrieval answer's coverage head reader and citation gate
+    // decide what reaches the visitor; no coverage sink rides along, as on the whole path.
+    async *stream() {
+      const { session, outcome, renderer, context } = await build();
+      const result = yield* new TurnOutcomeRendererRegistry([renderer]).stream(outcome, context);
+      // A bounded decline or a zero-evidence answer arrives only on the settled presentation.
+      const remainder = getUnstreamedFinalAnswerRemainder(result);
+      if (remainder) {
+        yield remainder;
+      }
+      return settle(session, await withSuggestions(session, result));
+    },
+  });
+
+  // Which reply the step gets is read off the staged context alone; the answer is generated
+  // only when the reply is rendered or streamed. A step that shows a skill step's results
+  // (#1763) is written from them on the turn they are staged; otherwise a step grounds on a
+  // staged retrieval.
   const prepare = (input: RoutineGroundedAnswerInput): PendingRenderableTurn | null => {
+    const presenting = routinePresentingStepReply(options, input);
+    if (presenting) {
+      return reply(async () => {
+        const context = await presenting.context();
+        return { session: context.session, outcome: presenting.outcome, renderer: presenting.renderer, context };
+      }, (_session, presentation) => {
+        presenting.settled(presentation);
+        return toRenderableTurn(presentation);
+      });
+    }
     const retrieval = retrievalResultFromStagedContext(input.turn.stagedContext);
     if (!retrieval) {
       return null;
     }
-    return {
-      async render() {
-        const { session, outcome, renderer, context } = await grounded(input, retrieval);
-        return finish(session, await renderer.render(outcome, context));
-      },
-      // The retrieval renderer's own stream, so its coverage head reader and citation gate
-      // decide what reaches the visitor; no coverage sink rides along, as on the whole path.
-      async *stream() {
-        const { session, outcome, renderer, context } = await grounded(input, retrieval);
-        const result = yield* new TurnOutcomeRendererRegistry([renderer]).stream(outcome, context);
-        // A bounded decline or a zero-evidence answer arrives only on the settled presentation.
-        const remainder = getUnstreamedFinalAnswerRemainder(result);
-        if (remainder) {
-          yield remainder;
-        }
-        return finish(session, await withSuggestions(session, result));
-      },
-    };
+    return reply(() => grounded(input, retrieval), finish);
   };
   return {
     prepare,

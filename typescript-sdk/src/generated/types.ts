@@ -6848,7 +6848,7 @@ export interface components {
                 stableSlotId: string;
                 key: string;
                 /** @enum {string} */
-                type: "text" | "number" | "boolean" | "email" | "date";
+                type: "text" | "number" | "boolean" | "email" | "date" | "item";
                 required: boolean;
                 description?: string | null;
                 ordinal: number;
@@ -6886,6 +6886,12 @@ export interface components {
                     };
                     /** @enum {string} */
                     mode?: "typed" | "untyped";
+                    present?: {
+                        from: string;
+                        /** @enum {string} */
+                        selection: "none" | "single";
+                        slot?: string;
+                    };
                 };
                 instruction: string;
                 options?: {
@@ -6973,7 +6979,7 @@ export interface components {
                 stableSlotId: string;
                 key: string;
                 /** @enum {string} */
-                type: "text" | "number" | "boolean" | "email" | "date";
+                type: "text" | "number" | "boolean" | "email" | "date" | "item";
                 required: boolean;
                 description?: string | null;
                 ordinal: number;
@@ -7011,6 +7017,12 @@ export interface components {
                     };
                     /** @enum {string} */
                     mode?: "typed" | "untyped";
+                    present?: {
+                        from: string;
+                        /** @enum {string} */
+                        selection: "none" | "single";
+                        slot?: string;
+                    };
                 };
                 instruction: string;
                 options?: {
@@ -7081,7 +7093,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit" | "present_step_not_chat" | "present_source_not_earlier_tool" | "present_source_unreachable" | "present_slot_not_item" | "present_selection_mismatch" | "item_slot_without_presenting_step";
                 location: string;
                 message: string;
             }[];
@@ -7109,7 +7121,7 @@ export interface components {
                 stableSlotId: string;
                 key: string;
                 /** @enum {string} */
-                type: "text" | "number" | "boolean" | "email" | "date";
+                type: "text" | "number" | "boolean" | "email" | "date" | "item";
                 required: boolean;
                 description?: string | null;
                 ordinal: number;
@@ -7147,6 +7159,12 @@ export interface components {
                     };
                     /** @enum {string} */
                     mode?: "typed" | "untyped";
+                    present?: {
+                        from: string;
+                        /** @enum {string} */
+                        selection: "none" | "single";
+                        slot?: string;
+                    };
                 };
                 instruction: string;
                 options?: {
@@ -7261,7 +7279,7 @@ export interface components {
                     stableSlotId: string;
                     key: string;
                     /** @enum {string} */
-                    type: "text" | "number" | "boolean" | "email" | "date";
+                    type: "text" | "number" | "boolean" | "email" | "date" | "item";
                     required: boolean;
                     description?: string | null;
                     ordinal: number;
@@ -7299,6 +7317,12 @@ export interface components {
                         };
                         /** @enum {string} */
                         mode?: "typed" | "untyped";
+                        present?: {
+                            from: string;
+                            /** @enum {string} */
+                            selection: "none" | "single";
+                            slot?: string;
+                        };
                     };
                     instruction: string;
                     options?: {
@@ -7738,7 +7762,7 @@ export interface components {
                     stableSlotId: string;
                     key: string;
                     /** @enum {string} */
-                    type: "text" | "number" | "boolean" | "email" | "date";
+                    type: "text" | "number" | "boolean" | "email" | "date" | "item";
                     required: boolean;
                     description?: string | null;
                     ordinal: number;
@@ -7776,6 +7800,12 @@ export interface components {
                         };
                         /** @enum {string} */
                         mode?: "typed" | "untyped";
+                        present?: {
+                            from: string;
+                            /** @enum {string} */
+                            selection: "none" | "single";
+                            slot?: string;
+                        };
                     };
                     instruction: string;
                     options?: {
@@ -9955,7 +9985,7 @@ export interface components {
         RoutinePendingInput: {
             key: string;
             /** @enum {string} */
-            type: "text" | "number" | "boolean" | "email" | "date";
+            type: "text" | "number" | "boolean" | "email" | "date" | "item";
             required: boolean;
             description?: string;
         };

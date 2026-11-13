@@ -70,8 +70,11 @@ export interface RoutineTraceStepEntry {
    *   and the conversation goes to a person (#1384).
    * - `consent_asked`, `consent_decided`, `consent_reused`, `consent_skipped`: what a `consent`
    *   step did with its consent this turn; see {@link RoutineTraceConsent}.
+   * - `item_selected`: the visitor picked a card the step showed, which filled the slot in
+   *   `capturedSlotKeys` (#1763).
    */
   event:
+    | "item_selected"
     | "resumed"
     | "advanced"
     | "reasked"

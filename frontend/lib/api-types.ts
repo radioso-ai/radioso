@@ -71,7 +71,7 @@ export type AgentContextVariableEnablementRequest = ApiSchemas['AgentContextVari
 export type AgentContextVariableEnablementResponse = ApiSchemas['AgentContextVariableEnablementResponse']
 export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContextVariableEnablementListResponse']
 
-export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
+export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date' | 'item'
 export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
 export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'

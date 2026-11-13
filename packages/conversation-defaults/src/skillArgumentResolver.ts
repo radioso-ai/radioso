@@ -1,5 +1,5 @@
 import type { RoutineInputBinding, SkillArgumentOrigin } from "@radioso/conversation-contract";
-import { redactSensitiveValues } from "@radioso/conversation-contract";
+import { readableSlotValue, redactSensitiveValues } from "@radioso/conversation-contract";
 
 /** A routine skill step's arguments, and where each one came from, keyed alike. */
 export interface ResolvedSkillArguments {
@@ -47,7 +47,8 @@ export const resolveSkillArguments = (
  * The arguments of a skill step that authors no input bindings: the routine's variables,
  * passed through wholesale, each one a `slot`. No binding named any of them, so a sensitive
  * slot's value reads as the redaction marker; a skill receives it only through a binding that
- * names the slot ({@link resolveSkillArguments}).
+ * names the slot ({@link resolveSkillArguments}). A picked card (an `item` slot, #1763) is passed
+ * as its title, the name a skill can look up; a typed binding never names an item slot.
  */
 export const resolveUntypedSkillArguments = (
   variables: Record<string, unknown>,
@@ -57,5 +58,6 @@ export const resolveUntypedSkillArguments = (
   for (const key of Object.keys(variables)) {
     origins[key] = "slot";
   }
-  return { values: redactSensitiveValues(variables, sensitiveSlotKeys), origins };
+  const readable = Object.fromEntries(Object.entries(variables).map(([key, value]) => [key, readableSlotValue(value)]));
+  return { values: redactSensitiveValues(readable, sensitiveSlotKeys), origins };
 };

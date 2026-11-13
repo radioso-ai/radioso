@@ -19,6 +19,7 @@ const ROUTINE_EVENT_LABELS: Record<string, string> = {
   consent_decided: 'Consent answered',
   consent_reused: 'Consent on file',
   consent_skipped: 'Consent not asked',
+  item_selected: 'Card picked',
 }
 
 const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
@@ -31,6 +32,7 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
   rendered: 'The reply you saw was generated from this step.',
   reask_limit_reached: 'Asked too many times in a row, so the reply asked differently.',
   reask_limit_handoff: 'Still unanswered after asking differently, so the routine ended and a person takes over.',
+  item_selected: 'The visitor picked one of the cards this step showed, which filled its item field.',
 }
 
 const CONSENT_SKIP_DESCRIPTIONS: Record<string, string> = {
@@ -104,6 +106,7 @@ const ROUTINE_EVENT_TONE: Record<string, string> = {
   consent_decided: 'bg-emerald-500/10 text-emerald-600',
   consent_reused: 'bg-muted text-muted-foreground',
   consent_skipped: 'bg-amber-500/10 text-amber-600',
+  item_selected: 'bg-emerald-500/10 text-emerald-600',
 }
 
 export const routineEventTone = (step: Pick<RoutineTraceStepView, 'event'>): string =>

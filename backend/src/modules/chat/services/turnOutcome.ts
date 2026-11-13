@@ -4,6 +4,7 @@ import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
 import type { RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
+import type { RecordBlockBinding } from "./replyBlocks/recordBlockBuilder.js";
 
 /**
  * The generic, per-turn result the assistant composes its reply from — the
@@ -32,6 +33,11 @@ export interface TurnRenderContext {
    * has; only a retrieval-style skill's render context carries it.
    */
   coverageVerdict?: RetrievalCoverageVerdictSink;
+  /**
+   * A routine step that shows a skill step's results (#1763): how its cards are picked and stored.
+   * The skill-result renderer then writes from the records whether or not cards are shown.
+   */
+  presentBinding?: RecordBlockBinding;
 }
 
 /**

@@ -83,7 +83,7 @@ const typedStepMetadata = (metadata: RoutineStepMetadata): TypedStepMetadata => 
 });
 
 const authoredMetadata = (metadata: RoutineStepMetadata): Record<string, unknown> => {
-  const { inputBindings: _inputBindings, outputAssignments: _outputAssignments, mode: _mode, ...authorMetadata } = metadata;
+  const { inputBindings: _inputBindings, outputAssignments: _outputAssignments, mode: _mode, present: _present, ...authorMetadata } = metadata;
   return authorMetadata;
 };
 
@@ -214,6 +214,8 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
         id: step.stableStepId,
         kind: "chat",
         action: step.instruction,
+        // A presenting step (#1763): the host draws its cards from `present.from`'s staged result.
+        ...(step.metadata.present ? { present: step.metadata.present } : {}),
         metadata,
       };
     }),

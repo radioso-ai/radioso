@@ -26,7 +26,7 @@ import type {
 } from './types.js'
 import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF } from './types.js'
 import type { RoutineReentryMode } from '@radioso/routine-definition'
-import { ROUTINE_DEFINITION_LIMITS, routineIdentifierPattern } from '@radioso/routine-definition'
+import { ROUTINE_DEFINITION_LIMITS, routineIdentifierPattern, routineSlotTypes } from '@radioso/routine-definition'
 
 
 export type ParsedProseDoc = {
@@ -74,7 +74,7 @@ type ChipTokenInput = {
 // The frontmatter fence and the readable comparison operators. The operator tokens are
 // matched longest-first on parse so `>=` wins over `>` and `is true` over `is`.
 const FENCE = '---'
-const SLOT_TYPES: readonly RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
+const SLOT_TYPES: readonly RoutineSlotType[] = routineSlotTypes
 const GUARD_UNITS: readonly RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
 const SLOT_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u
 const SKILL_SECTION_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u

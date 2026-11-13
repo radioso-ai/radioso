@@ -1,6 +1,7 @@
 import { ZERO_TOLERANCE_JUDGE_TAG, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { seedDirectiveConfigWith } from "./agent.js";
 import { replyBlockCases } from "./replyBlockCases.js";
+import { routineCardCases } from "./routineCardCases.js";
 import { toolCardCases } from "./toolCardCases.js";
 import {
   BREATH_COURSE_DOC_ID,
@@ -1273,4 +1274,5 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   },
   ...replyBlockCases,
   ...toolCardCases,
+  ...routineCardCases,
 ];

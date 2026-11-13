@@ -825,6 +825,29 @@ describe("createAttemptRoutineInput", () => {
     expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toEqual(routineYield);
   });
 
+  it("hands the routine a pick of one of its step's cards as a structured fact, and no other pick (#1763)", () => {
+    const session = preparedSession();
+    session.itemSelection = {
+      messageId: "msg_cards",
+      blockId: "b1",
+      key: "/results/1",
+      title: "Villa Rosa",
+      link: "https://homes.example/villa-rosa",
+      routineStep: { routineId: "homes", stepId: "choose", slot: "chosen_home" },
+      fields: { id: "h-2" },
+    };
+
+    expect(createAttemptRoutineInput({ session }).inputEvent.itemSelection).toEqual({
+      routineId: "homes",
+      stepId: "choose",
+      slot: "chosen_home",
+      item: { key: "/results/1", title: "Villa Rosa", link: "https://homes.example/villa-rosa", fields: { id: "h-2" } },
+    });
+
+    session.itemSelection = { messageId: "msg_cards", blockId: "b1", key: "image-1", title: "Garden room" };
+    expect(createAttemptRoutineInput({ session }).inputEvent).not.toHaveProperty("itemSelection");
+  });
+
   it("hands the routine attempt the zone the chat turn resolved", () => {
     const session = preparedSession();
     session.referenceTimeZone = { timeZone: "America/Los_Angeles", source: "visitor" };

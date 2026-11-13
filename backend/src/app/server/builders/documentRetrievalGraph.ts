@@ -230,6 +230,7 @@ export const buildDocumentRetrievalGraph = (input: {
     },
     workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
     workspaceTimeZones,
+    metricsRegistry: infrastructure.metricsRegistry,
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const skillSettingsResolver = createRetrievalSkillSettingsResolver();

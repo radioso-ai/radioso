@@ -73,6 +73,10 @@ export const createConnectorIngestionPort = (deps: {
       metadata: input.metadata,
       ...(input.indexedFields ? { indexedFields: input.indexedFields } : {}),
       ...(input.source ? { source: toResolverInput(input.source) } : {}),
+      // A connector's pictures are of the item itself, so each is a document's primary image.
+      ...(input.images
+        ? { images: input.images.map((image) => ({ sourceUrl: image.url, role: "primary" as const, alt: image.alt ?? "" })) }
+        : {}),
     });
   },
 

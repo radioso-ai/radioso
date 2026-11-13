@@ -25,11 +25,15 @@ const REST_BASE_BY_POST_TYPE: Record<string, string> = {
 const restBaseFor = (postType: string): string => REST_BASE_BY_POST_TYPE[postType] ?? postType;
 
 // `_embedded.author` carries the author's display name (the post object only has
-// a numeric id). `_links.author` must survive `_fields` for `_embed` to resolve.
-const POST_FIELDS =
-  "id,type,status,slug,link,modified_gmt,date_gmt,title,content,excerpt,author,_links.author,_embedded.author";
+// a numeric id), and `_embedded.wp:featuredmedia` the featured image's address and
+// alt text. Each relation's `_links` entry must survive `_fields` for `_embed` to resolve it.
+const POST_FIELDS = [
+  "id,type,status,slug,link,modified_gmt,date_gmt,title,content,excerpt,author,featured_media",
+  "_links.author,_embedded.author,_links.wp:featuredmedia,_embedded.wp:featuredmedia",
+].join(",");
+const POST_EMBEDS = "author,wp:featuredmedia";
 
-export interface WordpressClientConfig {
+interface WordpressClientConfig {
   siteUrl: string;
   username?: string;
   applicationPassword?: string;
@@ -60,17 +64,31 @@ export interface WordpressRestPost {
    */
   _embedded?: {
     author?: Array<{ id?: number; name?: string }>;
+    /** The featured image's attachment, when the post has one and the site lets it be read. */
+    "wp:featuredmedia"?: Array<WordpressRestMedia>;
+  };
+  /** The featured image's attachment id; 0 when the post has none. */
+  featured_media?: number;
+}
+
+/** An attachment as `_embed` returns it; a private one comes back as an error object without these fields. */
+export interface WordpressRestMedia {
+  source_url?: string;
+  alt_text?: string;
+  media_details?: {
+    width?: number;
+    sizes?: Record<string, { source_url?: string; width?: number }>;
   };
 }
 
-export interface FetchPostsOptions {
+interface FetchPostsOptions {
   type: string;
   page: number;
   perPage: number;
   modifiedAfter?: string;
 }
 
-export interface FetchPostsResult {
+interface FetchPostsResult {
   posts: WordpressRestPost[];
   totalPages: number;
 }
@@ -101,7 +119,7 @@ export class WordpressClient {
       order: "asc",
       status: "publish",
       _fields: POST_FIELDS,
-      _embed: "author",
+      _embed: POST_EMBEDS,
     });
     if (options.modifiedAfter) {
       params.set("modified_after", options.modifiedAfter);
@@ -134,7 +152,7 @@ export class WordpressClient {
   }
 
   async fetchPostById(type: string, postId: number): Promise<WordpressRestPost | null> {
-    const url = `${this.baseUrl}/wp-json/wp/v2/${encodeURIComponent(restBaseFor(type))}/${postId}?_fields=${encodeURIComponent(POST_FIELDS)}&_embed=author`;
+    const url = `${this.baseUrl}/wp-json/wp/v2/${encodeURIComponent(restBaseFor(type))}/${postId}?_fields=${encodeURIComponent(POST_FIELDS)}&_embed=${encodeURIComponent(POST_EMBEDS)}`;
     const { response, finalUrl } = await this.request(url);
     if (response.status === 404) return null;
     if (!response.ok) {

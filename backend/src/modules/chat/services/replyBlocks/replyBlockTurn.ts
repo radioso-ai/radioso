@@ -45,16 +45,16 @@ const channelLabel = (sourceChannel: string | null | undefined): string =>
 
 /**
  * Decides, per grounded answer, whether to offer the model the `present` head. It is offered only
- * when the client declared it renders item lists and the evidence carries at least one stored
- * image; otherwise the answer's prompt and schema are exactly what they would be without reply
- * blocks. A turn without the capability reads nothing.
+ * when the agent has reply cards on, the client declared it renders item lists, and the
+ * evidence carries at least one stored image; otherwise the answer's prompt and schema are exactly
+ * what they would be without reply blocks. A turn without the switch or the capability reads nothing.
  */
 export class ReplyBlockTurnFactory {
   constructor(private readonly deps: ReplyBlockTurnFactoryDependencies) {}
 
   async forTurn(session: PreparedSession): Promise<ReplyBlockTurn | null> {
     const itemList = session.replyBlocks?.item_list;
-    if (!itemList || session.retrieval.contexts.length === 0) {
+    if (session.agent.replyCardsEnabled !== true || !itemList || session.retrieval.contexts.length === 0) {
       return null;
     }
     const ledger = await this.readLedger(session);

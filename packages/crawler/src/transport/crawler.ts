@@ -7,6 +7,7 @@ import {
   log
 } from "crawlee";
 import type { CrawlCandidateDecision } from "./candidateDecision.js";
+import type { PageImage } from "./htmlImageExtraction.js";
 import { matchesUrlPattern } from "./urlPatterns.js";
 import {
   buildAcceptedCandidateDecision,
@@ -53,6 +54,8 @@ export type FetchedPage = {
   skipReason?: string | null;
   extractedContainer?: string | null;
   normalizedContentHash?: string | null;
+  /** The page's metadata picture and the images inside its main content, by address only. */
+  images?: PageImage[];
 };
 
 export type ValidateNavigationUrl = (url: string) => Promise<void> | void;
@@ -369,7 +372,8 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             qualityScore: page.qualityScore ?? null,
             skipReason: discoveryOnlySkipReason ?? page.skipReason ?? null,
             extractedContainer: page.extractedContainer ?? null,
-            normalizedContentHash: page.normalizedContentHash ?? null
+            normalizedContentHash: page.normalizedContentHash ?? null,
+            images: page.images ?? []
           };
           processed += 1;
           if (onResult) {

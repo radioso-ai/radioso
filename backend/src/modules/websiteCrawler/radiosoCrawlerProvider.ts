@@ -231,11 +231,18 @@ const getSeedPendingUrls = (request: WebsiteCrawlRequest): string[] => {
   return pendingUrls.filter((url) => !processedUrls.has(normalizeCheckpointUrl(url)));
 };
 
-const toWebsiteCrawlPage = (page: CrawledPageResult): WebsiteCrawlPage => ({
+export const toWebsiteCrawlPage = (page: CrawledPageResult): WebsiteCrawlPage => ({
   sourceUrl: page.url,
   canonicalUrl: page.url,
   title: page.title,
   content: page.status === "success" || page.status === "unchanged" ? page.text : "",
+  images: (page.images ?? []).map((image) => ({
+    sourceUrl: image.url,
+    role: image.role,
+    alt: image.alt,
+    caption: image.caption,
+    textOffset: image.textOffset,
+  })),
   metadata: {
     frontierUrl: page.frontierUrl,
     crawlerStatus: page.status,

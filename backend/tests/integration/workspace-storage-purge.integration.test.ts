@@ -194,6 +194,36 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
     ]);
   });
 
+  it("deletes the workspace's document image rows with it, released ones included, and leaves another workspace's", async () => {
+    const { accountId, workspaceIds: [deleted, kept] } = await seedAccount(2);
+    const insertImage = async (workspaceId: string, documentId: string | null, sourceUrl: string) => {
+      await database.query(
+        `INSERT INTO document_images (workspace_id, document_id, role, position, source_url, alt, caption)
+         VALUES ($1, $2, 'primary', 0, $3, 'The cover', 'A caption')`,
+        [workspaceId, documentId, sourceUrl],
+      );
+    };
+    const documentOf = async (workspaceId: string) => {
+      const id = randomUUID();
+      await database.query(
+        `INSERT INTO documents (id, title, source_content, markdown_content, status, workspace_id) VALUES ($1, 'Page', '', '', 'ready', $2)`,
+        [id, workspaceId],
+      );
+      return id;
+    };
+    await insertImage(deleted, await documentOf(deleted), "https://shop.example/cover.jpg");
+    await insertImage(deleted, null, "https://shop.example/released.jpg");
+    await insertImage(kept, await documentOf(kept), "https://shop.example/kept.jpg");
+
+    expect(await lifecycle.deleteWorkspace({ accountId, workspaceId: deleted, auditEvent: workspaceDeletedEvent(accountId) }))
+      .toBe(true);
+
+    const imagesOf = (workspaceId: string) =>
+      database.query<{ source_url: string }>("SELECT source_url FROM document_images WHERE workspace_id = $1", [workspaceId]);
+    expect(await imagesOf(deleted)).toEqual([]);
+    expect(await imagesOf(kept)).toEqual([{ source_url: "https://shop.example/kept.jpg" }]);
+  });
+
   it("hands nothing off when the deletion rolls back, so every file stays with its workspace", async () => {
     const { accountId, workspaceIds: [workspaceId] } = await seedAccount(2);
     await uploadDocument(workspaceId);

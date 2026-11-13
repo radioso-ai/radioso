@@ -568,6 +568,7 @@ describe("website crawler service", () => {
         title: "A",
         content: "alpha",
         metadata: {},
+        images: [{ sourceUrl: "https://cdn.example.com/a.jpg", role: "primary" }],
       }]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
       auditService: { record: vi.fn() },
@@ -583,7 +584,10 @@ describe("website crawler service", () => {
 
     expect(resolveSource).toHaveBeenCalledOnce();
     expect(resolveSource).toHaveBeenCalledWith({ workspaceId: "workspace-1", source: { id: sourceId } });
-    expect(ingest).toHaveBeenCalledWith(expect.objectContaining({ source: { id: sourceId } }));
+    expect(ingest).toHaveBeenCalledWith(expect.objectContaining({
+      source: { id: sourceId },
+      images: [{ sourceUrl: "https://cdn.example.com/a.jpg", role: "primary" }],
+    }));
     expect(updateSourceSyncState).toHaveBeenCalledWith(expect.objectContaining({ sourceId }));
     expect(reapMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId }));
   });

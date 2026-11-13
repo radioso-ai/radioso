@@ -29,6 +29,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   // stored agent carries them too.
   handoffOnRetrievalMiss: true,
   visitorImagesEnabled: true,
+  replyCardsEnabled: true,
   suggestedQuestionsEnabled: false,
   assistantLinkUtmEnabled: false,
   citationDisplayEnabled: false,
@@ -252,11 +253,12 @@ describe("serializeAgentConfig", () => {
     // Pinned to a literal on purpose: the field set changed (internalName,
     // handoffOnRetrievalMiss), so bumping it is a conscious edit rather than a
     // constant that quietly follows along.
-    expect(config.schemaVersion).toBe(4);
+    expect(config.schemaVersion).toBe(5);
     expect(config.name).toBe("Support Bot");
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
     expect(config.contactRequestsEnabled).toBe(true);
     expect(config.visitorImagesEnabled).toBe(true);
+    expect(config.replyCardsEnabled).toBe(true);
     expect(config.webhookExportsEnabled).toBe(true);
     // Redacted in the portable projection: an imported agent that kept these would
     // deliver contact requests to the source workspace's people, from elsewhere.

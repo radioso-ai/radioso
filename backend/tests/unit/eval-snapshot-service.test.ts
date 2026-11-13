@@ -864,7 +864,7 @@ describe("EvalSnapshotService.capture", () => {
 
     expect(snapshot.sourceAgentId).toBe(originalAgent.id);
     expect(snapshot.originalAgent).toBeNull();
-    expect(snapshot.originalAgentConfig?.schemaVersion).toBe(4);
+    expect(snapshot.originalAgentConfig?.schemaVersion).toBe(5);
     expect(snapshot.originalAgentConfig?.name).toBe("Snapshot Bot");
     expect(snapshot.originalAgentConfig?.externalSkills).toEqual({
       connections: [

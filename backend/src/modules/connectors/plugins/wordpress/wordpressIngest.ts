@@ -11,9 +11,10 @@
 import type {
   ConnectorIndexedFieldValue,
   ConnectorIngestContentFormat,
+  ConnectorIngestImage,
 } from "@radioso/connector-api";
 
-import type { WordpressRestPost } from "./wordpressClient.js";
+import type { WordpressRestMedia, WordpressRestPost } from "./wordpressClient.js";
 
 export interface WebhookPostPayload {
   id: number;
@@ -34,6 +35,9 @@ export interface WebhookPostPayload {
   // price, its stock status. The site owns this vocabulary; nothing here knows
   // what a WooCommerce product is.
   fields?: Record<string, ConnectorIndexedFieldValue>;
+  // The post's featured image. Null when it has none; absent from plugins older
+  // than 0.8.0, which never send it.
+  featured_image?: { url: string; alt?: string } | null;
 }
 
 interface IngestInput {
@@ -44,7 +48,36 @@ interface IngestInput {
   externalDocumentId: string;
   metadata: Record<string, unknown>;
   indexedFields?: Record<string, ConnectorIndexedFieldValue>;
+  images?: ConnectorIngestImage[];
 }
+
+/** The widest copy Radioso keeps of an image; a smaller WordPress size than this would be enlarged. */
+const STORED_IMAGE_WIDTH = 640;
+
+/**
+ * The featured image's address: the smallest generated size at least as wide as the widest stored
+ * copy, so the fetch stays small, else the original upload.
+ */
+const featuredMediaUrl = (media: WordpressRestMedia | undefined): string | null => {
+  const wideEnough = Object.values(media?.media_details?.sizes ?? {})
+    .filter((size): size is { source_url: string; width: number } =>
+      typeof size.source_url === "string" && typeof size.width === "number" && size.width >= STORED_IMAGE_WIDTH)
+    .sort((left, right) => left.width - right.width)[0];
+  return wideEnough?.source_url ?? (typeof media?.source_url === "string" ? media.source_url : null);
+};
+
+// A post with no featured image, or one the site keeps private, has no picture of its own.
+const restFeaturedImages = (post: WordpressRestPost): ConnectorIngestImage[] => {
+  if (!post.featured_media) return [];
+  const media = post._embedded?.["wp:featuredmedia"]?.[0];
+  const url = featuredMediaUrl(media);
+  return url ? [{ url, alt: media?.alt_text?.trim() ?? "" }] : [];
+};
+
+const webhookFeaturedImages = (post: WebhookPostPayload): Pick<IngestInput, "images"> => {
+  if (post.featured_image === undefined) return {};
+  return { images: post.featured_image ? [{ url: post.featured_image.url, alt: post.featured_image.alt?.trim() ?? "" }] : [] };
+};
 
 export const externalIdFor = (postId: number): string => `wp_post_${postId}`;
 
@@ -127,6 +160,7 @@ export const mapWebhookPostToIngestInput = (
       ...(post.author?.name ? { author: post.author.name } : {}),
     },
     ...(hasIndexedFields ? { indexedFields: post.fields } : {}),
+    ...webhookFeaturedImages(post),
   };
 };
 
@@ -152,5 +186,6 @@ export const mapRestPostToIngestInput = (
       ...buildPublishDateMetadata(post.type, post.date_gmt),
       ...(authorName ? { author: authorName } : {}),
     },
+    images: restFeaturedImages(post),
   };
 };

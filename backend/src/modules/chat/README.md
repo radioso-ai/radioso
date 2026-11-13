@@ -183,13 +183,15 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   structured parts of a reply a client renders beside its text (the types are
   `ReplyBlock` in `@radioso/conversation-contract`). A client declares the kinds it
   renders in `clientContextCapabilities["reply.blocks"]`; the preparer keeps that
-  on the session as `replyBlocks`. On a grounded answer whose evidence carries a
-  stored image, `ReplyBlockTurnFactory.forTurn` gives the turn a ledger of the
+  on the session as `replyBlocks`. On a grounded answer of an agent with
+  `replyCardsEnabled` on, whose evidence carries a stored image (never a site
+  banner: retrieval's `evidenceImages.ts` leaves out a primary more than five
+  documents share), `ReplyBlockTurnFactory.forTurn` gives the turn a ledger of the
   images under per-turn handles (`turnImageLedger.ts`), the Result images section
   of the prompt, and the `present` field (`presentHead.ts`), which the composer
   merges ahead of `answer` with `mergeAnswerSchemaExtensions`, so the model picks
-  the pictures before it writes a short lead around them. Without the
-  capability, or without a stored image, nothing is read and the prompt and schema
+  the pictures before it writes a short lead around them. Without the setting,
+  the capability, or a stored image, nothing is read and the prompt and schema
   are what they would be without reply blocks (`tests/fixtures/reply-blocks/`
   holds the golden). `replyBlockBuilder.ts` builds the block from the handles the
   model picked and nothing else it wrote: an unknown handle is dropped, titles and

@@ -264,6 +264,13 @@ export type ConnectorIngestContentFormat = "text" | "html";
  */
 export type ConnectorIndexedFieldValue = string | number | boolean;
 
+/** A picture of an ingested item, by its absolute http(s) address. */
+export interface ConnectorIngestImage {
+  url: string;
+  /** What the picture shows, as the source describes it; empty when it does not. */
+  alt?: string;
+}
+
 /**
  * Document ingestion port exposed to connectors. Encapsulates the full ingest
  * pipeline (sanitization, externalDocumentId upsert, queueing, audit, analytics,
@@ -295,6 +302,14 @@ export interface ConnectorIngestionPort {
      * only into a source that still exists and rejects otherwise.
      */
     source?: ConnectorSourceDescriptor | ConnectorSourceReference;
+    /**
+     * Pictures of the item itself, such as a post's featured image, by
+     * address. Radioso fetches each through its public-network policy and
+     * keeps a re-encoded copy an agent can show with an answer about the item.
+     * Absent leaves the document's images as they are; an empty list says the
+     * item has none.
+     */
+    images?: ConnectorIngestImage[];
   }): Promise<{ documentId: string; status: string }>;
 
   /**

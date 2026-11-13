@@ -90,6 +90,14 @@ Dates on a document a connector syncs are the connector's defaults: WordPress, f
 
 The document API publishes the keys extraction owns as `generatedKeys`, dates included.
 
+### Capture the pictures the content names
+
+A crawled page and a WordPress post hand ingestion the pictures they name, by address: a page's `og:image`, `twitter:image` or JSON-LD `image` as its main picture, the `<img>` elements in its main content with their alt text, caption and place in the text, and a post's featured image. Ingestion records each one as a `document_images` row, placed in the stored text; uploaded files and text added by hand name none.
+
+After a vectorize job publishes a revision of a document that names any picture, the worker queues an `images` job at the same low priority as `enrich`. It fetches each picture through the public-network policy (8 seconds, 15 MB, every redirect checked), conditionally with the entity tag of a copy it already holds, decodes it under a pixel cap, keeps JPEG, PNG, WebP, GIF and AVIF at least 200 pixels on the short side, and stores WebP copies 320 and 640 pixels wide. Each picture in the text is tied to the published chunk whose offsets hold it, so an answer offers it only with that passage. A document keeps at most 12 pictures. A picture capture will not keep is marked skipped; one whose fetch timed out, or that the job had no time left for, stays pending and is captured on the next sync. The job itself never fails the document, and the document's status never waits on it.
+
+A page whose text did not change, but which names a new picture or still has one pending, queues capture for its current revision directly. A picture the content stops naming, and every picture of a deleted document, is released at once and stops being served; once a minute, on its tick, the worker deletes a batch of released pictures' copies, then each row whose copies are all gone, and tries the rest again later. Deleting a workspace deletes its picture rows with it, and its storage purge takes their copies.
+
 ## Why revisions matter
 
 Document processing is revision-aware. If a document is updated while an older job is still running, the older job is treated as stale and does not publish outdated chunks over the newer revision.
@@ -107,7 +115,7 @@ Document processing is revision-aware. If a document is updated while an older j
 
 Document processing jobs are durable PostgreSQL rows. Queue dispatch, including AMQP and Cloud Tasks, sends only the job identity needed to wake a worker. The worker reads the row to learn what to do, so the queue message shape does not change.
 
-Each job row carries a `kind`: `vectorize` for the indexing pass that makes a document searchable, and `enrich` for the follow-up metadata extraction. The worker claims `vectorize` jobs before `enrich` jobs, so a large import indexes everything first and extraction drains afterward at lower priority.
+Each job row carries a `kind`: `vectorize` for the indexing pass that makes a document searchable, `enrich` for the follow-up metadata extraction, and `images` for the follow-up picture capture. The worker claims `vectorize` jobs before the follow-ups, so a large import indexes everything first and extraction and capture drain afterward at lower priority. A finished `images` job is queued again when its revision names new pictures.
 
 Reprocess options such as `documentEnrichmentOverride` live on the processing job row and are copied onto the enrich job. Retries and reschedules preserve the same row options.
 

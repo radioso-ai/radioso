@@ -19,6 +19,7 @@ import {
   defaultAgentMechanicsReplies,
   type AgentMechanicsReplies,
 } from "./mechanicsReplies.js";
+import { AGENT_SWITCH_DEFAULTS } from "./agentDefaults.js";
 import { normalizePrivacyNotices, type AgentPrivacyNotices } from "./privacyNotice.js";
 
 const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
@@ -57,16 +58,6 @@ interface ValidateAgentInputOptions {
 export const agentSurfacePositions = ["bottom-right", "bottom-left"] as const;
 export type AgentSurfacePosition = (typeof agentSurfacePositions)[number];
 
-const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
-const DEFAULT_ASSISTANT_LINK_UTM_ENABLED = true;
-const DEFAULT_CITATION_DISPLAY_ENABLED = true;
-// Contact requests are opt-in per assistant — off until an operator enables the
-// capability in the assistant's Skills settings.
-const DEFAULT_CONTACT_REQUESTS_ENABLED = false;
-const DEFAULT_WEBHOOK_EXPORTS_ENABLED = false;
-const DEFAULT_HANDOFF_ON_RETRIEVAL_MISS = false;
-// Photos are opt-in per assistant: each one is read by the agent's chat model and kept with the conversation.
-const DEFAULT_VISITOR_IMAGES_ENABLED = false;
 const MAX_CONTACT_REQUEST_RECIPIENT_EMAILS = 5;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
 const MAX_EMBED_COPY_LOCALES = 10;
@@ -177,6 +168,8 @@ export interface AgentBehaviorSettings {
   // Whether visitors and API callers may attach photos to a message, which the agent's chat model
   // reads at upload. Takes effect only when that model reads images.
   visitorImagesEnabled?: boolean;
+  // Whether the agent's replies may carry cards (reply blocks), such as the pictures of the documents an answer draws on.
+  replyCardsEnabled?: boolean;
   contactRequestDelivery: AgentContactRequestDelivery;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
@@ -913,13 +906,14 @@ export const validateAgentInput = (
     name: normalizeText(input.name ?? "Agent", "name", 200),
     internalName: normalizeText(input.internalName ?? "", "internalName", 200),
     customInstruction: normalizeLongText(input.customInstruction, "customInstruction", 2000),
-    suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
-    assistantLinkUtmEnabled: input.assistantLinkUtmEnabled ?? DEFAULT_ASSISTANT_LINK_UTM_ENABLED,
-    citationDisplayEnabled: input.citationDisplayEnabled ?? DEFAULT_CITATION_DISPLAY_ENABLED,
-    contactRequestsEnabled: input.contactRequestsEnabled ?? DEFAULT_CONTACT_REQUESTS_ENABLED,
-    webhookExportsEnabled: input.webhookExportsEnabled ?? DEFAULT_WEBHOOK_EXPORTS_ENABLED,
-    handoffOnRetrievalMiss: input.handoffOnRetrievalMiss ?? DEFAULT_HANDOFF_ON_RETRIEVAL_MISS,
-    visitorImagesEnabled: input.visitorImagesEnabled ?? DEFAULT_VISITOR_IMAGES_ENABLED,
+    suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? AGENT_SWITCH_DEFAULTS.suggestedQuestionsEnabled,
+    assistantLinkUtmEnabled: input.assistantLinkUtmEnabled ?? AGENT_SWITCH_DEFAULTS.assistantLinkUtmEnabled,
+    citationDisplayEnabled: input.citationDisplayEnabled ?? AGENT_SWITCH_DEFAULTS.citationDisplayEnabled,
+    contactRequestsEnabled: input.contactRequestsEnabled ?? AGENT_SWITCH_DEFAULTS.contactRequestsEnabled,
+    webhookExportsEnabled: input.webhookExportsEnabled ?? AGENT_SWITCH_DEFAULTS.webhookExportsEnabled,
+    handoffOnRetrievalMiss: input.handoffOnRetrievalMiss ?? AGENT_SWITCH_DEFAULTS.handoffOnRetrievalMiss,
+    visitorImagesEnabled: input.visitorImagesEnabled ?? AGENT_SWITCH_DEFAULTS.visitorImagesEnabled,
+    replyCardsEnabled: input.replyCardsEnabled ?? AGENT_SWITCH_DEFAULTS.replyCardsEnabled,
     contactRequestDelivery: normalizeContactRequestDelivery(input.contactRequestDelivery),
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),

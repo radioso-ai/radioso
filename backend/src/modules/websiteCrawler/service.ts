@@ -39,6 +39,7 @@ export interface WebsiteCrawlerDocumentIngestionPort {
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
     source?: { id: string } | { kind: "website"; url: string; config?: Record<string, unknown>; metadata?: Record<string, unknown> };
+    images?: WebsiteCrawlPage["images"];
   }): Promise<{ documentId: string; status: string }>;
   resolveSource?(input: {
     workspaceId: string;
@@ -413,6 +414,8 @@ export class WebsiteCrawlerService {
             sourceUrl: safeSourceUrl,
             canonicalUrl: safeCanonicalUrl,
           }),
+          // Offsets index `content`, which is the page text trimmed; the crawler's text is already trimmed.
+          images: page.images ?? [],
         });
         result.accepted += 1;
         checkpoint.accepted += 1;
@@ -956,6 +959,7 @@ const normalizeProviderPage = (value: unknown): WebsiteCrawlPage | null => {
     title?: unknown;
     content?: unknown;
     metadata?: unknown;
+    images?: unknown;
   };
   if (typeof typed.sourceUrl !== "string" || typeof typed.content !== "string") {
     return null;
@@ -968,5 +972,7 @@ const normalizeProviderPage = (value: unknown): WebsiteCrawlPage | null => {
     metadata: typed.metadata && typeof typed.metadata === "object" && !Array.isArray(typed.metadata)
       ? typed.metadata as Record<string, unknown>
       : {},
+    // Ingestion validates every image address and bound; a provider's malformed entry is dropped there.
+    images: Array.isArray(typed.images) ? typed.images as WebsiteCrawlPage["images"] : [],
   };
 };

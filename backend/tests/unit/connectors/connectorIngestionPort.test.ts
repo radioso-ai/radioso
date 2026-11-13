@@ -59,6 +59,26 @@ describe("createConnectorIngestionPort", () => {
     });
   });
 
+  it("hands a connector's pictures of the item to ingestion as the document's primary images", async () => {
+    const ingest = vi.fn(async () => ({ documentId: "doc-1", status: "queued" }));
+    const { port } = buildPort({ ingest });
+
+    await port.ingest({
+      workspaceId: "ws-1",
+      title: "T",
+      content: "C",
+      externalDocumentId: "wp_post_1",
+      images: [{ url: "https://shop.example/uploads/cover.jpg", alt: "The cover" }, { url: "https://shop.example/uploads/back.jpg" }],
+    });
+
+    expect(ingest).toHaveBeenCalledWith(expect.objectContaining({
+      images: [
+        { sourceUrl: "https://shop.example/uploads/cover.jpg", role: "primary", alt: "The cover" },
+        { sourceUrl: "https://shop.example/uploads/back.jpg", role: "primary", alt: "" },
+      ],
+    }));
+  });
+
   it("runs HTML content through the normalizer before handing it to the ingestion service", async () => {
     const ingest = vi.fn(async () => ({ documentId: "doc-1", status: "queued" }));
     const extractTextFromHtml = vi.fn<HtmlContentNormalizer["extractTextFromHtml"]>(async () => "clean text");

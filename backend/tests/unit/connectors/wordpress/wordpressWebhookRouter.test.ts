@@ -205,6 +205,39 @@ describe("wordpressWebhookRouter", () => {
     });
   });
 
+  it("forwards the pushed featured image as the post's picture", async () => {
+    const { app, ingest } = setupApp();
+    const body = JSON.stringify({
+      event: "published",
+      post: { ...validPost, featured_image: { url: "https://example.com/uploads/cover.jpg", alt: "The cover" } },
+    });
+    const res = await request(app)
+      .post("/api/connectors/wordpress/ws-1/webhook")
+      .set("content-type", "application/json")
+      .set("x-radioso-signature", signBody(body, "topsecret"))
+      .send(body);
+
+    expect(res.status).toBe(204);
+    const firstCallArgs = ingest.mock.calls[0] as unknown as [{ images?: unknown }];
+    expect(firstCallArgs[0].images).toEqual([{ url: "https://example.com/uploads/cover.jpg", alt: "The cover" }]);
+  });
+
+  it("rejects a featured image that is not an http(s) address", async () => {
+    const { app, ingest } = setupApp();
+    const body = JSON.stringify({
+      event: "published",
+      post: { ...validPost, featured_image: { url: "file:///etc/passwd" } },
+    });
+    const res = await request(app)
+      .post("/api/connectors/wordpress/ws-1/webhook")
+      .set("content-type", "application/json")
+      .set("x-radioso-signature", signBody(body, "topsecret"))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
   it("rejects a field key that a metadata rule could not address", async () => {
     // Rule fields are resolved by splitting the path on ".", so a dotted key
     // would silently never match. Reject it at the edge instead.

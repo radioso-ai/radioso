@@ -14,6 +14,7 @@ export type {
   ConnectorImageAllowance,
   ConnectorIndexedFieldValue,
   ConnectorIngestContentFormat,
+  ConnectorIngestImage,
   ConnectorIngestInput,
   ConnectorIngestionPort,
   ConnectorIngestResult,

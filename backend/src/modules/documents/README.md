@@ -88,11 +88,12 @@ imports from `services/` or `infra/`.
   the `document_images` rows, the pictures a document's content carries. A
   `primary` image is the one its metadata names; an `inline` one sits in its text,
   anchored to a chunk. A row is `pending` until its renditions, re-encoded at each
-  of `DOCUMENT_IMAGE_RENDITION_WIDTHS`, are written, then `stored`; only stored
-  rows are read. `listStoredForEvidence` gives
-  retrieval the stored images of an answer's documents and chunks, never where the
-  bytes live; `findServable` gives the public image route the stored rendition at
-  a width. Rows cascade with their document, and they own their objects' paths.
+  of `DOCUMENT_IMAGE_RENDITION_WIDTHS`, are written, then `stored`; `skipped` is
+  one capture will not keep. Only stored rows of a live document are read.
+  `listStoredForEvidence` gives retrieval the stored images of an answer's
+  documents and chunks, with how many documents in the workspace share each
+  primary, never where the bytes live; `findServable` gives the public image
+  route the stored rendition at a width. Rows own their objects' paths.
 - `services/documentJobMessage.ts`: durable job message shape.
 - `services/documentJobDispatcher.ts` and `services/documentJobConsumer.ts`:
   dispatch and consume ports.
@@ -106,6 +107,59 @@ the job table and `available_at`.
 
 When changing worker payloads or dispatch behavior, review message queue docs,
 contract tests, and worker recovery tests.
+
+Job kinds: `vectorize` makes a revision queryable; `enrich` and `images` are
+its follow-ups, claimed after vectorize and embedding-profile work and never
+touching the document's status. A follow-up is created through
+`ensureFollowUpJob`, once per revision and kind; an `images` job that finished
+is queued again when the content names new images. The message payload stays
+`{ jobId }`: the worker reads the kind from the row.
+
+## Document Images
+
+Ingestion records the images a document's content names; the worker captures them.
+
+- `DocumentIngestionPort.ingest({ images })` takes candidates by address: a
+  website page's metadata picture and the images in its main content, a
+  WordPress featured image. `domain/documentImageCandidates.ts` keeps valid
+  http(s) addresses once each, at most 3 primary and 24 inline, and moves each
+  inline image's offset from the ingested text into the stored text the chunks
+  index. `images` absent leaves a document's images alone; an empty list says
+  the content names none.
+- `services/documentImageCaptureQueue.ts` records them through the
+  `DocumentImageCandidateWriter`: a new address becomes a `pending` row, a kept
+  one takes its new place, and one the content no longer names is released.
+  It queues the `images` job after a vectorize job publishes a revision of a
+  document that names any image, and at once when an unchanged page names a new
+  one or still has one it keeps pending (`hasPendingKeptImage`: the first
+  `MAX_STORED_IMAGES_PER_DOCUMENT` that are not skipped), so a timeout, a busy
+  codec or a spent budget is retried on the next sync.
+- `services/documentImageCaptureService.ts` runs the `images` job: it fetches
+  each image through `fetchPublicBytes` (public addresses only, every redirect
+  re-checked, 8 seconds, 15 MB), conditionally with the stored entity tag,
+  re-encodes it through `shared/infra/images` (`infra/documentImageCodec.ts`),
+  stores the WebP copies as `document-image-<id>-w<width>` under the
+  workspace's documents folder, and anchors an inline image to the chunk whose
+  offsets hold it. Images under 200 px on the short side, unreadable types and
+  refused addresses are `skipped`; a timeout leaves the row `pending`. A
+  document keeps at most 12 images. A failed image never fails the job.
+- A deleted document releases its images (`document_id` turns NULL), so they
+  stop being served at once, and `markStored` and `reanchor` leave a released
+  row alone (capture then deletes the copies it wrote). Once a minute, on the
+  worker's tick, idle or not, the sweep deletes a batch of released rows'
+  copies, then each row whose copies are all gone; a row with a copy left goes
+  to the back of the queue. Every way a document goes (one at a time, with its
+  source, reaped by a crawl) cleans up the same way; deleting a workspace
+  deletes its image rows in the deletion (`deleteForWorkspaces`, from
+  `app/composition/workspaceDeletion.ts`), and its storage purge takes the
+  copies.
+- The answer side asks `listStoredForEvidence` to count the documents sharing
+  a primary only up to `primaryDocumentCountLimit` (retrieval's banner rule
+  passes one past its threshold); the partial index covers `document_id`.
+- Observability: `document_image_capture_total{source, outcome}`,
+  `document_image_capture_duration_seconds`, and the `document.images.capture`
+  span under `document.worker.job`. Logs carry ids only, never addresses, alt
+  text or bytes.
 
 ## Stored Files Of Deleted Workspaces
 
@@ -171,7 +225,9 @@ Focused starting points:
   `tests/integration/workspace-storage-purge.integration.test.ts` for the
   hand-off committing with the deletion.
 - `cd backend && pnpm run test:integration` for processing and import flows.
-- `cd backend && pnpm exec vitest run tests/integration/document-image-repository.integration.test.ts`
-  for document image reads.
+- `cd backend && pnpm exec vitest run tests/unit/documents/document-image-candidates.test.ts tests/unit/documents/document-image-capture.test.ts tests/unit/documents/document-image-capture-queue.test.ts tests/unit/documents/document-worker-images.test.ts`
+  for placing, recording, capturing and sweeping document images.
+- `cd backend && pnpm exec vitest run tests/integration/document-image-repository.integration.test.ts tests/integration/document-image-capture.integration.test.ts`
+  for the image rows, and a crawled page through the worker to an answer's offer.
 
 Use contract tests when document API response shape changes.

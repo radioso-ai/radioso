@@ -172,6 +172,7 @@ const declarations: readonly PolicyDeclaration[] = [
     ["GET", "/api/v1/agents/:agentId/test-executions/:executionId", "workspace.agents.manage"],
     ["POST", "/api/v1/agents/:agentId/test-executions", "workspace.agents.manage"],
     ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/messages", "workspace.agents.manage"],
+    ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/images", "workspace.agents.manage"],
     ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retain", "workspace.agents.manage"],
     ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/eval-snapshots/:messageId", "workspace.agents.manage"],
     ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retry", "workspace.agents.manage"],
@@ -266,6 +267,9 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("DELETE", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
   // Test Chat's Talk hands the page the vendor's signed URL, which opens sessions on the workspace's vendor account.
   sessionOnly("POST", "/api/v1/agents/:agentId/test-executions/:executionId/voice-sessions", "workspace.agents.manage"),
+  // A photo in a Test Chat transcript is a teammate's to see in Test Chat; a visitor's, copied in with a conversation, is audited.
+  sessionOnly("GET", "/api/v1/agents/:agentId/test-executions/:executionId/images/:imageId", "workspace.agents.manage"),
+
 
   // Credential-management and operator surfaces intentionally have an explicit
   // session-only policy rather than relying on default denial. This makes new

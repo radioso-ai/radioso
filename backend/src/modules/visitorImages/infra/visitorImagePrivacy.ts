@@ -77,8 +77,9 @@ export class VisitorImageWithholder implements MessageCopyWithholder {
 }
 
 /**
- * Photos no message carries, 24 hours after their upload: one a visitor attached and never sent,
- * one whose turn stored no message, or one whose message a newer input replaced. Each batch
+ * Photos no message and no test carries, 24 hours after their upload: one a visitor attached and
+ * never sent, one whose turn stored no message, one whose message a newer input replaced, or one
+ * whose Test Chat test was deleted (its column set to NULL). Each batch
  * deletes its rows and hands their objects to the deletion job in one transaction. A photo a send
  * claimed within the window is left for that send to bind.
  */
@@ -99,6 +100,7 @@ export class UnboundVisitorImageRetention implements ConversationDataRetentionRu
           .selectFrom("visitor_images as image")
           .select("image.id")
           .where("image.message_id", "is", null)
+          .where("image.test_execution_id", "is", null)
           .where("image.created_at", "<", cutoff)
           .where(({ or, eb: cmp }) => or([cmp("image.claimed_at", "is", null), cmp("image.claimed_at", "<", cutoff)]))
           .orderBy("image.created_at")

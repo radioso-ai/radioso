@@ -8,7 +8,7 @@ import { reviewedConfirmationSchema } from "../reviewedOperation.js";
 import { agentSettingWholeBlockNote } from "./shared.js";
 
 const NAME = "prepare_agent_settings";
-const DESCRIPTION = `Prepare several settings for one agent as one digest-bound operation. customInstruction is an agent draft and needs prepare_agent_publication before customers see it; other settings are live at execution. ${agentSettingWholeBlockNote}`;
+const DESCRIPTION = `Prepare several settings for one agent as one digest-bound operation. customInstruction and visitorImagesEnabled are agent drafts and need prepare_agent_publication before customers see them (Test Chat tests the draft first); other settings are live at execution. ${agentSettingWholeBlockNote}`;
 const inputSchema = z.object({ agentId: z.string().uuid(), patch: agentReviewedSettingsPatchSchema, rationale: z.string().min(1).max(1_000).optional() }).strict();
 const outputSchema = z.object({
   proposalId: z.string().uuid(), reviewDigest: z.string().min(1).max(200), expiresAt: z.string().datetime(),

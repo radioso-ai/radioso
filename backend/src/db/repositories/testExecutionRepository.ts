@@ -1,6 +1,7 @@
 import type { AgentRevision } from "../../modules/agents/public.js";
 import { sql, type Transaction } from "kysely";
 import { parseAgentRevisionSnapshot } from "../../modules/agents/public.js";
+import type { VisitorImageClaim } from "../../modules/visitorImages/public.js";
 import type { TestExecution, TestExecutionAttempt, TestExecutionAttemptRecord, TestExecutionClaim, TestExecutionHistoryItem, TestExecutionHistorySide, TestExecutionRepositoryPort, TestExecutionRunnerResult, TestExecutionSide, TestExecutionState } from "../../modules/test-execution/testExecution.js";
 import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
@@ -24,7 +25,16 @@ const isLatestTurn = (history: TestExecutionSide["history"], turnId: string): bo
   history.filter((entry) => entry.role === "user").at(-1)?.turnId === turnId;
 /** A spoken turn's entries say so; a typed turn's carry no marker at all. */
 const spokenMark = (input: { spoken?: true }) => (input.spoken ? { spoken: true as const } : {});
-const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now, ...spokenMark(input) }];
+const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now, ...spokenMark(input), ...(input.photos ? { imageInput: input.photos.imageInput } : {}) }];
+/** What a turn is listed by: the operator's message, or, for one with photos, what they typed, never the readings the turn text carries. */
+const listedMessage = (input: ClaimInput): string => input.photos ? input.photos.imageInput.typedText : input.message;
+
+/**
+ * Binds a new turn's photos to its test in the transaction that stores the turn, so a stored turn
+ * never names photos the test does not hold, and a failed bind stores no turn. Composition
+ * supplies it over the photo store.
+ */
+export type TestExecutionPhotoBinder = (trx: TransactionDb, input: { workspaceId: string; testExecutionId: string; claim: VisitorImageClaim }) => Promise<void>;
 const appendAssistant = (history: TestExecutionSide["history"], input: CompleteInput) => [...history, {
   turnId: input.turnId,
   attemptId: input.attemptId,
@@ -40,7 +50,7 @@ const testExecutionStartLockKey = (workspaceId: string, agentId: string, idempot
 
 /** Postgres system of record for private test execution state and side-level fencing. */
 export class TestExecutionRepository implements TestExecutionRepositoryPort {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly bindPhotos?: TestExecutionPhotoBinder) {}
 
   async findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null> {
     const row = await this.db.selectFrom("agent_revisions").selectAll().where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("id", "=", input.revisionId).executeTakeFirst();
@@ -221,6 +231,34 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
     return new Map(rows.map((row) => [row.execution_id, { turnCount: Number(row.turn_count), firstMessage: row.first_message }]));
   }
 
+  async historyNamesImage(input: Parameters<TestExecutionRepositoryPort["historyNamesImage"]>[0]): Promise<boolean | null> {
+    // Containment is decided in Postgres, so the test's transcripts and traces never leave it.
+    const named = JSON.stringify([{ role: "user", imageInput: { images: [{ id: input.imageId }] } }]);
+    const row = await this.db.selectFrom("agent_test_executions as execution")
+      .select((eb) => eb.exists(eb.selectFrom("agent_test_execution_sides as side")
+        .select(sql.lit(1).as("named"))
+        .whereRef("side.execution_id", "=", "execution.id")
+        .where(sql<boolean>`side.history @> ${named}::jsonb`)).as("names"))
+      .where("execution.id", "=", input.executionId)
+      .where("execution.workspace_id", "=", input.workspaceId)
+      .where("execution.agent_id", "=", input.agentId)
+      .executeTakeFirst();
+    return row ? Boolean(row.names) : null;
+  }
+
+  async revisionPhotoSwitches(input: Parameters<TestExecutionRepositoryPort["revisionPhotoSwitches"]>[0]): Promise<ReadonlyArray<{ visitorImagesEnabled?: boolean }> | null> {
+    const rows = await this.db.selectFrom("agent_test_executions as execution")
+      .innerJoin("agent_test_execution_sides as side", "side.execution_id", "execution.id")
+      .innerJoin("agent_revisions as revision", "revision.id", "side.revision_id")
+      .select(sql<boolean | null>`(revision.snapshot ->> 'visitorImagesEnabled')::boolean`.as("enabled"))
+      .where("execution.id", "=", input.executionId)
+      .where("execution.workspace_id", "=", input.workspaceId)
+      .where("execution.agent_id", "=", input.agentId)
+      .orderBy("side.side_ordinal")
+      .execute();
+    return rows.length > 0 ? rows.map((row) => (row.enabled === null ? {} : { visitorImagesEnabled: row.enabled })) : null;
+  }
+
   async listAttempts(input: { workspaceId: string; agentId: string; executionId: string }): Promise<readonly TestExecutionAttemptRecord[]> {
     const rows = await this.db.selectFrom("agent_test_execution_attempts as attempt")
       .innerJoin("agent_test_executions as execution", "execution.id", "attempt.execution_id")
@@ -261,8 +299,13 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
         // instead of a failure that repeats on retry locking the session for good.
         const running = await trx.selectFrom("agent_test_execution_turns").select("turn_id").where("execution_id", "=", input.executionId).where("state", "=", "running").executeTakeFirst();
         if (running || sides.some((side) => side.active_attempt_id !== null)) return "turn_in_progress";
-        await trx.insertInto("agent_test_execution_turns").values({ execution_id: input.executionId, turn_id: input.turnId, message: input.message, input_fingerprint: input.inputFingerprint, state: "running" }).execute();
-        return this.startClaims(trx, sides, input, 1);
+        await trx.insertInto("agent_test_execution_turns").values({ execution_id: input.executionId, turn_id: input.turnId, message: listedMessage(input), input_fingerprint: input.inputFingerprint, state: "running" }).execute();
+        const started = await this.startClaims(trx, sides, input, 1);
+        if (input.photos) {
+          if (!this.bindPhotos) throw new Error("test_execution_photo_binder_missing");
+          await this.bindPhotos(trx, { workspaceId: input.workspaceId, testExecutionId: input.executionId, claim: input.photos.claim });
+        }
+        return started;
       }
       if (turn.input_fingerprint !== input.inputFingerprint) return "turn_conflict";
       if (!input.retry) return await this.replayCompletedClaims(trx, sides, input) ?? "turn_conflict";

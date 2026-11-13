@@ -32,7 +32,7 @@ const harness = (options: { messageIds?: { conversationId: string; messageId: st
     store,
     objects: new InMemoryVisitorImageObjects(),
     reader,
-    audit: { viewed: vi.fn(async () => undefined) },
+    audit: { viewed: vi.fn(async () => undefined), viewedInTest: vi.fn(async () => undefined) },
     availability,
     usage: { reserveAnswer: vi.fn(async () => reservation) },
     logger: { info: vi.fn(), warn: vi.fn() },

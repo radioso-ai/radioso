@@ -1,4 +1,4 @@
-export { PostgresVisitorImageStore } from "./infra/visitorImageRepository.js";
+export { PostgresVisitorImageStore, bindVisitorImageClaimIn } from "./infra/visitorImageRepository.js";
 export { UnboundVisitorImageRetention, VisitorImageEraser, VisitorImageExporter, VisitorImageWithholder } from "./infra/visitorImagePrivacy.js";
 export { ModelVisitorImageReader, type VisitorImageReadingModel } from "./services/modelVisitorImageReader.js";
 export { visitorImageObjectDeletionHandler } from "./services/visitorImageObjectDeletion.js";

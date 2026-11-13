@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseEvents } from '@/components/dashboard/agent-revision-test-chat'
+import { parseEvents } from '@/lib/test-execution-events'
 import { beginTestExecutionRetry, beginTestExecutionTurn, initializeTestExecutionState, reduceTestExecutionEvent, type TestExecutionState } from '@/lib/agent-test-execution-state'
 import type { TestExecutionEvent } from '@/lib/api-agent-revisions'
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { AppError } from "../../../shared/domain/errors.js";
-import type { UsageLimitPolicy, UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
+import type { AnswerUsageKind, UsageLimitPolicy, UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { VisitorImageClaim, VisitorImageTurnInput } from "../contracts/turnInput.js";
 import {
@@ -75,6 +75,10 @@ export class VisitorImageService implements VisitorImageTurnInput {
     locale: string | null;
     /** The channel the photo came through, for usage attribution. */
     surface: string;
+    /** The kind of answer the reading counts as: a Test Chat photo as a test run, any other as a reply in a conversation. */
+    usage?: Extract<AnswerUsageKind, "conversation_reply" | "test_run">;
+    /** The account a test run is charged to, as a test turn is. */
+    accountId?: string | null;
   }): Promise<VisitorImageUploadResult> {
     const normalized = await normalizeVisitorImage(input.bytes);
     if (normalized.kind === "rejected") {
@@ -83,7 +87,12 @@ export class VisitorImageService implements VisitorImageTurnInput {
       return normalized;
     }
     // Refused over plan with the error a chat turn gets, before anything is stored or read.
-    const reservation = await this.deps.usage.reserveAnswer({ workspaceId: input.workspaceId, surface: input.surface, usage: "conversation_reply" });
+    const reservation = await this.deps.usage.reserveAnswer({
+      workspaceId: input.workspaceId,
+      ...(input.accountId ? { accountId: input.accountId } : {}),
+      surface: input.surface,
+      usage: input.usage ?? "conversation_reply",
+    });
     const id = this.newId();
     try {
       await this.store({ ...input, id, normalized });
@@ -163,11 +172,12 @@ export class VisitorImageService implements VisitorImageTurnInput {
     if (input.imageIds.length === 0 || input.imageIds.length > VISITOR_IMAGE_LIMITS.maxImagesPerMessage || unique.size !== input.imageIds.length) {
       throw visitorImageUnavailable();
     }
-    if (await this.deps.availability.forAgent({ workspaceId: input.workspaceId, agentId: input.agentId }) !== "available") {
+    const { revision, ...photos } = input;
+    if (await this.deps.availability.forAgent({ workspaceId: input.workspaceId, agentId: input.agentId, ...(revision ? { revision } : {}) }) !== "available") {
       throw visitorImageUnavailable();
     }
     const claimId = this.newId();
-    const claimed = await this.deps.store.claim({ ...input, claimId, claimedAt: this.clock() });
+    const claimed = await this.deps.store.claim({ ...photos, claimId, claimedAt: this.clock() });
     if (!claimed) throw visitorImageUnavailable();
     const byId = new Map(claimed.map((row) => [row.id, row]));
     return {
@@ -180,16 +190,11 @@ export class VisitorImageService implements VisitorImageTurnInput {
   }
 
   async bind(input: Parameters<VisitorImageTurnInput["bind"]>[0]): Promise<void> {
-    const bound = await this.deps.store.bindClaim({
-      workspaceId: input.workspaceId,
-      claimId: input.claim.claimId,
-      conversationId: input.conversationId,
-      messageId: input.messageId,
-      boundAt: this.clock(),
-    });
-    if (bound < input.claim.images.length) {
+    const { workspaceId, claim, ...holder } = input;
+    const bound = await this.deps.store.bindClaim({ workspaceId, claimId: claim.claimId, boundAt: this.clock(), ...holder });
+    if (bound < claim.images.length) {
       // Only a deletion between the claim and the message (the workspace's) leaves fewer to bind.
-      this.deps.logger.warn({ workspaceId: input.workspaceId, conversationId: input.conversationId, claimId: input.claim.claimId, bound }, "visitor_image_bind_short");
+      this.deps.logger.warn({ workspaceId, ...holder, claimId: claim.claimId, bound }, "visitor_image_bind_short");
     }
   }
 
@@ -207,6 +212,40 @@ export class VisitorImageService implements VisitorImageTurnInput {
   async readForOwner(input: { workspaceId: string; owner: VisitorImageOwner; imageId: string }): Promise<Buffer | null> {
     const image = await this.deps.store.findForOwner({ workspaceId: input.workspaceId, owner: input.owner, id: input.imageId });
     return image ? this.deps.objects.get(image.object) : null;
+  }
+
+  /**
+   * A photo for a Test Chat transcript, found the cheapest way first: one bound to this test; one
+   * its transcript names (`transcriptNamesImage`, asked only then), carried by the comparison it
+   * continues or by the conversation it started from; or, before the turn that sends it is stored,
+   * the caller's own upload. Every view is audited, since every teammate can open a test: a
+   * visitor's photo against its conversation, any other against this test.
+   */
+  async readForTestChat(input: {
+    workspaceId: string;
+    agentId: string;
+    testExecutionId: string;
+    imageId: string;
+    caller: VisitorImageOwner | null;
+    actorUserId: string | null;
+    transcriptNamesImage: () => Promise<boolean>;
+  }): Promise<Buffer | null> {
+    const { workspaceId, agentId, testExecutionId, imageId, actorUserId } = input;
+    const image = await this.deps.store.findInTest({ workspaceId, agentId, testExecutionId, id: imageId })
+      ?? (await input.transcriptNamesImage() ? await this.deps.store.findCarried({ workspaceId, agentId, id: imageId }) : null)
+      ?? await this.unsentUploadOf(input);
+    if (!image) return null;
+    const bytes = await this.deps.objects.get(image.object);
+    if (image.conversationId) await this.deps.audit.viewed({ workspaceId, conversationId: image.conversationId, imageId, actorUserId });
+    else await this.deps.audit.viewedInTest({ workspaceId, testExecutionId, imageId, actorUserId });
+    return bytes;
+  }
+
+  /** The caller's own photo for the agent that nothing carries yet: the one their message shows before its turn is stored. */
+  private async unsentUploadOf(input: { workspaceId: string; agentId: string; imageId: string; caller: VisitorImageOwner | null }) {
+    if (!input.caller) return null;
+    const image = await this.deps.store.findForOwner({ workspaceId: input.workspaceId, owner: input.caller, id: input.imageId });
+    return image && image.agentId === input.agentId && !image.messageId && !image.testExecutionId ? image : null;
   }
 
   /** A conversation's photo for a teammate reading it; every view that sends bytes is audited. */

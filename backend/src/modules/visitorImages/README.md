@@ -25,8 +25,9 @@ web chat's photos it does with these.
 It knows the photo lifecycle and nothing about chat turns or messages. The chat
 door (`modules/chat/services/assistantChatService.ts`) depends on one narrow
 port, `VisitorImageTurnInput` (`contracts/turnInput.ts`): `claim` the ids for an
-owner and get the readings back, `bind` them to the conversation and message id
-the turn stored, and `release` them when the turn stored none. The door renders
+owner and get the readings back, `bind` them to what holds the turn the caller
+stored (`VisitorImageHolder`: a conversation and message id, or a Test Chat
+test), and `release` them when the turn stored none. The door renders
 the readings into the turn text with `renderVisitorImageTurn` and stores the
 structured form as the user message's `inputMetadata.imageInput`, whose shape
 the shared input-metadata vocabulary owns (`shared/domain/chatInputMetadata.ts`). This
@@ -35,13 +36,42 @@ module never reads `messages`.
 It does not know which model reads a photo or how storage is reached:
 `VisitorImageReader` and `VisitorImageObjectStore` (over document storage's
 `locate`, `upload`, `read` and `delete`) are ports, and
-`VisitorImageAvailability` (whether an agent takes photos now) and
+`VisitorImageAvailability` (whether an agent takes photos now: by the switch
+its published revision holds on every live channel, so an agent never published
+takes none, or by the `revision` a Test Chat test names; the one rule is
+`revisionTakesPhotos` in `contracts/revisionSwitch.ts`, where a revision without
+a switch takes none) and
 `ChatModelImageReading` (whether the agent's resolved chat model reads images,
 which the agent settings read reports as `chatModelReadsImages` and the
 availability check builds on) are implemented in composition. The one change in `packages/` is the connector contract: `connector-api`
 gains `ConnectorChatPort.imageAllowance`, `ConnectorInboundImage`,
 `ConnectorImageAllowance` and `ConnectorStoredImage`, for a connector that takes
 photos (WhatsApp).
+
+Test Chat sends photos through the same claim. A test keeps its transcript in
+its own store, never in `conversations` and `messages`, so its photos are bound
+to the test (`test_execution_id`, migration `258_visitor_images_test_chat.sql`)
+rather than to a message. `modules/chat/services/testChatPhotoTurns.ts`
+implements the test-execution module's `TestExecutionPhotoTurnsPort` over the
+door's `claimVisitorImageTurn`: the same owner check (the credential or
+signed-in user who uploaded through the test's own
+`POST /api/v1/agents/:agentId/test-executions/:executionId/images`, whose reading
+is charged as a test run),
+the same turn text and `imageInput`, with the photo switch of the test's
+revisions deciding instead of the published one. The test's store binds the claim to the test in the
+transaction that stores the turn (`bindVisitorImageClaimIn`, wired in
+`app/composition/testExecution.ts`), so a stored turn always names photos the
+test holds; when no turn was stored the photos are let go. The photo switch is part of an agent
+revision (`visitorImagesEnabled` on the snapshot): the agent's setting is the
+draft's value and publishing freezes it, so a draft can take photos in Test Chat
+before visitors get them. A test takes photos when every revision it runs does
+(`TestExecutionService.photoSwitch`). `readForTestChat` serves a photo bound to the test,
+then one its transcript names (from the comparison it continues or the
+conversation it started from), then the caller's own upload before its turn is
+stored, each read narrowly. Every view is audited, since every teammate can open
+a test: a visitor's photo as `conversation.image_viewed`, any other as
+`agent.test_execution.image_viewed`. Its route is
+`app/http/routes/testChatImageRoutes.ts`.
 
 ## Public Surfaces
 
@@ -74,14 +104,15 @@ photos (WhatsApp).
   agent's chat model through the inference pipeline (`visitor_image.read`), with
   a timeout and fail-open to `unread`. Prompt:
   `backend/prompts/chat/visitor-image-reading.md`.
-- `infra/visitorImageRepository.ts`: `visitor_images` (migration
-  `256_visitor_images.sql`). A claim is one transaction, so of two concurrent
-  sends of one photo exactly one claims it; binding sets the conversation and
-  message ids the door names.
+- `infra/visitorImageRepository.ts`: `visitor_images` (migrations
+  `256_visitor_images.sql` and `258_visitor_images_test_chat.sql`). A claim is
+  one transaction, so of two concurrent sends of one photo exactly one claims
+  it; binding sets the conversation and message ids the door names, or the
+  test a Test Chat turn names, never both.
 - `infra/visitorImagePrivacy.ts`: the conversation eraser, the 24-hour unbound
-  sweep (a conversation retention rule), the data subject export section, and
-  the withholder that deletes the photos a withheld message carried (a consent
-  withdrawal, #1544).
+  sweep (a conversation retention rule) of photos no message and no test
+  carries, the data subject export section, and the withholder that deletes
+  the photos a withheld message carried (a consent withdrawal, #1544).
 - `services/visitorImageObjectDeletion.ts`: the `visitor_images.object_deletion`
   background job. The eraser, the withholder and the sweep write it in the same transaction as
   the rows they delete; the job deletes the objects after commit and refuses any
@@ -111,10 +142,13 @@ photos (WhatsApp).
    one that ends before storing it (refused, superseded while waiting, a stream
    abandoned early) releases the claim so the caller can send them again.
 4. Delete: a conversation's erasure removes its photos and queues their objects;
-   photos no message carries are swept 24 hours after upload; a message deleted
-   on its own leaves its photo unbound (`message_id` is `SET NULL`) for the
-   sweep; a workspace's deletion cascades the rows and its storage purge removes
-   the objects.
+   photos no message and no test carries are swept 24 hours after upload; a
+   message deleted on its own leaves its photo unbound (`message_id` is
+   `SET NULL`) for the sweep, and so does a Test Chat test deleted by Test
+   Chat's retention (`test_execution_id` is `SET NULL`); a workspace's deletion
+   cascades the rows and its storage purge removes the objects. A test that
+   continues a comparison side shows that comparison's photos while the
+   comparison is kept.
 
 ## Observability
 
@@ -127,5 +161,5 @@ and error classes; never bytes, base64 or readings.
 
 ## Tests
 
-- `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/shared/images tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/contract/visitor-images.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/visitorImages tests/unit/shared/images tests/unit/chat/assistant-chat-visitor-images.test.ts tests/unit/chat/test-chat-photo-turns.test.ts tests/unit/test-execution-photo-turns.test.ts tests/unit/http/visitor-image-upload-rate-limiter.test.ts tests/contract/visitor-images.contract.test.ts tests/contract/test-chat-images.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/visitor-images.integration.test.ts tests/integration/conversation-erasure-coverage.integration.test.ts tests/integration/data-subject-export-coverage.integration.test.ts --no-file-parallelism`

@@ -4,6 +4,7 @@ export * from "./realtimePublisherComposition.js";
 export * from "./skillSettingsResolver.js";
 export * from "./agentRetrievalScope.js";
 export * from "./liveAgentConfigReader.js";
+export * from "./testExecution.js";
 export * from "./retrievalDefaultsProvider.js";
 export * from "./workspaceEmbeddingBindingResolver.js";
 export * from "./modelEmbeddingSpaceMaterializer.js";

@@ -3929,9 +3929,29 @@ export interface paths {
         put?: never;
         /**
          * Upload an image for a chat message
-         * @description The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts.
+         * @description The image belongs to the API credential (or the signed-in user) that uploads it, and only it can send the image, in `POST /api/v1/assistant/chat` with the same `agentId`. Whether the agent takes images is decided by its published revision. To test a draft's images first, upload for the test with `POST /api/v1/agents/{agentId}/test-executions/{executionId}/images`. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend their own budgets, per credential and per workspace, before the agent is checked or the body read, so a refused upload still counts.
          */
         post: operations["uploadAssistantChatImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an image for a Test Chat message
+         * @description Whether the agent takes images is decided by the revisions the test runs, so a draft that turns images on can be tested before visitors get them; in a comparison, both versions must take them. The test must be this workspace's and agent's. The image belongs to the caller who uploads it, the API credential or the signed-in user, and only it can send the image, once, as `imageIds` in `POST /api/v1/agents/{agentId}/test-executions/{executionId}/messages`. Its reading counts against the plan as a test run, as a test turn does. Send one image as the multipart field `image`: JPEG, PNG or WebP, at most 10 MiB, its type read from its bytes. Radioso stores it re-encoded as a JPEG at most 1,600 pixels on its long side and at most 512 KB, with its metadata (EXIF, GPS) dropped, and the agent's chat model reads it before the response, in `locale` when given, else in the agent's default locale. Send the returned `id` in the next message's `imageIds`, at most three per message; an image is sent once, and one never sent is deleted 24 hours after upload. Each image read counts as one answer against the workspace's plan; one the model could not read costs nothing. Uploads spend the same per-caller and per-workspace budgets as `POST /api/v1/assistant/images`.
+         */
+        post: operations["uploadAgentTestExecutionImage"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3970,6 +3990,26 @@ export interface paths {
          * @description The image ids are in the user message's `inputMetadata.imageInput`. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<img>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`. Every response that carries the image records a `conversation.image_viewed` audit event with the teammate's user id.
          */
         get: operations["getConversationImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/images/{imageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * View an image in a Test Chat transcript
+         * @description A test keeps its transcript apart from conversations, so its images are read here. The image ids are in a user entry's `imageInput` in the test's history. It serves an image sent in the test, or one the test's history names from the comparison it continues or the conversation it started from. Before the message that sends it is stored, it serves an image only to the caller who uploaded it. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<img>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. The response is the stored JPEG with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and a sandbox `Content-Security-Policy`. Every response that carries an image records an audit event with the teammate's user id: `conversation.image_viewed` for a visitor's image copied in with a conversation, and `agent.test_execution.image_viewed`, naming the test, for any other.
+         */
+        get: operations["getAgentTestExecutionImage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6274,7 +6314,7 @@ export interface components {
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
             handoffOnRetrievalMiss: boolean;
-            /** @description Whether visitors and API callers may attach photos to a message. The agent's chat model reads each photo at upload, so this takes effect only when that model reads images. */
+            /** @description Whether visitors and API callers may attach photos to a message. This is the draft's value: visitors and API callers get it when the agent is published, and Test Chat tests it before then. The agent's chat model reads each photo at upload, so it takes effect only when that model reads images. */
             visitorImagesEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
             theme: {
@@ -6324,7 +6364,7 @@ export interface components {
             surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
         };
         AgentDetail: components["schemas"]["ConversationAgent"] & {
-            /** @description Computed, read-only: whether the model the agent answers with reads images. It is decided from the agent's `chatModelOverride`, the workspace's chat model and the plan, as a turn is, and without touching keys. Photos reach visitors only when this is true and `visitorImagesEnabled` is on; it is true or false whatever `visitorImagesEnabled` says, and a model Radioso cannot vet (an `openai-compatible` endpoint, or one outside the catalogue) reads as false. A request cannot set it. */
+            /** @description Computed, read-only: whether the model the agent answers with reads images. It is decided from the agent's `chatModelOverride`, the workspace's chat model and the plan, as a turn is, and without touching keys. Photos reach visitors only when this is true and the published revision has `visitorImagesEnabled` on; it is true or false whatever `visitorImagesEnabled` says, and a model Radioso cannot vet (an `openai-compatible` endpoint, or one outside the catalogue) reads as false. A request cannot set it. */
             chatModelReadsImages: boolean;
             voiceCallReadiness?: components["schemas"]["VoiceCallReadiness"] & unknown;
         };
@@ -6537,6 +6577,12 @@ export interface components {
                     greeting: {
                         before: components["schemas"]["AgentGreetingDraft"];
                         after: components["schemas"]["AgentGreetingDraft"];
+                        changed: boolean;
+                    };
+                    /** @description Whether the base release and this revision take photos. A release that holds no switch takes none. */
+                    visitorImagesEnabled: {
+                        before: boolean;
+                        after: boolean;
                         changed: boolean;
                     };
                 };
@@ -7359,7 +7405,7 @@ export interface components {
             resumeToken: string;
             assistantBootstrapActive: boolean;
             assistantAvatarUrl?: string | null;
-            /** @description Whether the visitor may attach photos to a message: the agent has `visitorImagesEnabled` on and its chat model reads images. Upload with `POST /api/v1/public/chat/{token}/images`. */
+            /** @description Whether the visitor may attach photos to a message: the agent's published revision has `visitorImagesEnabled` on and its chat model reads images. Upload with `POST /api/v1/public/chat/{token}/images`. */
             acceptsImages: boolean;
             theme?: {
                 brand: string;
@@ -9820,7 +9866,7 @@ export interface components {
         PublicConversationListResponse: {
             workspaceName: string;
             assistantBootstrapActive: boolean;
-            /** @description Whether the visitor may attach photos to a message, computed as the session response computes it: the agent has `visitorImagesEnabled` on and its chat model reads images. A chat that reloads reads it here, so it needs no new session to know. */
+            /** @description Whether the visitor may attach photos to a message, computed as the session response computes it: the agent's published revision has `visitorImagesEnabled` on and its chat model reads images. A chat that reloads reads it here, so it needs no new session to know. */
             acceptsImages: boolean;
             conversations: components["schemas"]["PublicConversationSummary"][];
             total: number;
@@ -11991,6 +12037,20 @@ export interface components {
             /** Format: uuid */
             attemptId: string;
         };
+        /** @description The photos a user message carries. `content` is the turn text the agent ran on: the typed text followed by one `<attached_photo>` block per photo. Show `typedText` and the photos; the readings are the agent's. */
+        TestExecutionImageInput: {
+            /** @description What was typed with the photos, without their readings. Empty for photos sent alone. */
+            typedText: string;
+            images: {
+                /**
+                 * Format: uuid
+                 * @description The image id; read the photo from the test's image route.
+                 */
+                id: string;
+                /** @description What the agent's chat model read in the photo; null when it could not read it. */
+                reading: string | null;
+            }[];
+        };
         TestExecutionSide: {
             /** Format: uuid */
             id: string;
@@ -12029,6 +12089,7 @@ export interface components {
                  * @enum {boolean}
                  */
                 spoken?: true;
+                imageInput?: components["schemas"]["TestExecutionImageInput"];
             }[];
         };
         StartTestExecutionRequest: {
@@ -12058,7 +12119,6 @@ export interface components {
             sides: components["schemas"]["TestExecutionSide"][];
         };
         TestExecutionMessageRequest: {
-            message: string;
             executionGeneration: number;
             /** Format: uuid */
             turnId: string;
@@ -12066,6 +12126,10 @@ export interface components {
             attemptId: string;
             /** @description The operator's IANA time zone, such as America/Los_Angeles, which Test Chat sends from the browser with every message and retry. The turn reads today, tomorrow and this weekend in it; without it, or with an unknown zone, the workspace's time zone applies, then UTC. */
             userTimeZone?: string;
+            /** @description What the operator typed. Required unless `imageIds` is present. */
+            message?: string;
+            /** @description Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo. */
+            imageIds?: string[];
         };
         TestExecutionRetryRequest: {
             executionGeneration: number;
@@ -12169,6 +12233,7 @@ export interface components {
                      * @enum {boolean}
                      */
                     spoken?: true;
+                    imageInput?: components["schemas"]["TestExecutionImageInput"];
                 }[];
             }[];
             /** @description User messages copied in from the real conversation this test continues; 0 when it started fresh. */
@@ -29030,6 +29095,105 @@ export interface operations {
             };
         };
     };
+    uploadAgentTestExecutionImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["VisitorImageUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Image stored and read */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitorImageUploadResponse"];
+                };
+            };
+            /** @description No `image` field, more than one file, or an invalid `locale` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent management permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The test is not this workspace's and agent's; or `visitor_images_unavailable`: a revision the test runs has images off, or the agent's chat model cannot read images */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `image_too_large`: over 10 MiB; or `image_too_many_pixels`: too many pixels to decode */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `unsupported_image_type`: not a JPEG, PNG or WebP image */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The upload budget is spent (`rate_limit_exceeded`), or the plan has no answers left for the reading (`usage_limit_exceeded`, the refusal a chat message gets; without `details` on the public route). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"] | components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `visitor_image_busy`: the server is decoding as many images as it takes at once and none freed within a few seconds; try again */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     uploadAgentChannelImage: {
         parameters: {
             query?: never;
@@ -29170,6 +29334,68 @@ export interface operations {
                 };
             };
             /** @description The conversation carries no such image */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentTestExecutionImage: {
+        parameters: {
+            query?: {
+                workspaceId?: string;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                imageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stored image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                };
+            };
+            /** @description Invalid agent, test or image id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent management and history read permissions required, the caller is not a dashboard session, or another site started the request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The test is gone, or it carries no such image */
             404: {
                 headers: {
                     [name: string]: unknown;

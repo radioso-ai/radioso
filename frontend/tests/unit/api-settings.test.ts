@@ -88,20 +88,35 @@ describe('agentsApi.updateBehaviorSettings', () => {
     )
   })
 
-  it('sends the photo setting in the agent update payload, as a live change', async () => {
+  it('saves the photo setting with the private draft, since visitors get it when the agent is published', async () => {
     const saved = behaviorSettings(false)
     const next = { ...saved, visitorImagesEnabled: true, customInstruction: 'Private draft only' }
     requestMock.mockResolvedValueOnce(responseAgent(next))
 
     const { agentsApi } = await import('@/lib/api-settings')
-    const updated = await agentsApi.updateBehaviorSettings('agent-1', next, saved, 'live')
+    const updated = await agentsApi.updateBehaviorSettings('agent-1', next, saved, 'draft')
 
     expect(requestMock).toHaveBeenCalledWith(
       '/agents/agent-1',
-      { method: 'PUT', body: JSON.stringify({ visitorImagesEnabled: true }) },
+      { method: 'PUT', body: JSON.stringify({ customInstruction: 'Private draft only', visitorImagesEnabled: true }) },
       { withSession: true },
     )
     expect(updated.visitorImagesEnabled).toBe(true)
+  })
+
+  it('leaves the photo setting out of a live save', async () => {
+    const saved = behaviorSettings(false)
+    const next = { ...saved, visitorImagesEnabled: true, handoffOnRetrievalMiss: true }
+    requestMock.mockResolvedValueOnce(responseAgent(next))
+
+    const { agentsApi } = await import('@/lib/api-settings')
+    await agentsApi.updateBehaviorSettings('agent-1', next, saved, 'live')
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/agents/agent-1',
+      { method: 'PUT', body: JSON.stringify({ handoffOnRetrievalMiss: true }) },
+      { withSession: true },
+    )
   })
 
   it('reads whether the chat model reads images from the saved agent, and never sends it back', async () => {

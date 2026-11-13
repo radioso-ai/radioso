@@ -2085,6 +2085,7 @@ export interface VisitorImages {
   storage_bucket: string;
   storage_generation: string | null;
   storage_object_path: string;
+  test_execution_id: string | null;
   width: number;
   workspace_id: string;
 }

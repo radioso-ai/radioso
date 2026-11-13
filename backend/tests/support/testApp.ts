@@ -567,6 +567,8 @@ class PublishedTestAgentRevisionReader implements AgentRevisionRuntimeReaderPort
         contextVariableEnablements: this.contextVariables
           ? await this.contextVariables.listByAgent(agent.workspaceId, agent.id)
           : [],
+        // Publishing freezes the agent's photo switch, the draft's value, as a candidate does.
+        visitorImagesEnabled: agent.visitorImagesEnabled ?? false,
       },
       sourceDraftGeneration: (previous?.sourceDraftGeneration ?? 0) + 1,
       sourceBasePublishedRevisionId: previous?.id ?? null,
@@ -2371,7 +2373,7 @@ export const createTestDependencies = (overrides: {
     resolver: { resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input) },
     logger,
   });
-  const visitorImageAvailability = createVisitorImageAvailability({ agents: agentRepository, modelReading: chatModelImageReading });
+  const visitorImageAvailability = createVisitorImageAvailability({ agents: agentRepository, publishedRevisions: publishedAgentRevisions, modelReading: chatModelImageReading });
   const visitorImages = new VisitorImageService({
     store: new InMemoryVisitorImageStore(),
     objects: visitorImageObjectStore(documentStorage),

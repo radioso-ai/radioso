@@ -57,6 +57,8 @@ export interface AgentRevisionDetail extends AgentRevisionSummary {
     routines: Array<{ definitionId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     contextVariableEnablements: Array<{ contextVariableId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     greeting: { before: AgentGreetingDraft; after: AgentGreetingDraft; changed: boolean }
+    /** Whether the base release and this revision take photos; a release that holds no switch takes none. */
+    visitorImagesEnabled?: { before: boolean; after: boolean; changed: boolean }
   }
 }
 
@@ -82,6 +84,8 @@ export interface TestExecution {
       createdAt: string
       /** The operator spoke this turn on a call from Test Chat. */
       spoken?: true
+      /** The photos a user message carried, and what was typed with them. */
+      imageInput?: components['schemas']['TestExecutionImageInput']
     }>
   }>
 }
@@ -119,6 +123,8 @@ export type TestExecutionHistoryDetail = Omit<TestExecutionHistoryItem, 'sides'>
       createdAt: string
       /** The operator spoke this turn on a call from Test Chat. */
       spoken?: true
+      /** The photos a user message carried, and what was typed with them. */
+      imageInput?: components['schemas']['TestExecutionImageInput']
     }>
   }>
   attempts: Array<{
@@ -245,7 +251,25 @@ export const agentRevisionsApi = {
     return response
   },
 
-  async sendTestMessage(agentId: string, executionId: string, input: { message: string; executionGeneration: number; turnId: string; attemptId: string }, signal?: AbortSignal): Promise<Response> {
+  /**
+   * A photo for the next message to a test, read by the agent's chat model before it answers. The
+   * test's own revisions decide whether it takes photos, so a draft can before visitors can; only
+   * this operator can send it.
+   */
+  async uploadTestChatImage(agentId: string, executionId: string, file: Blob & { name?: string }, options: { locale?: string; signal?: AbortSignal } = {}): Promise<{ id: string }> {
+    const form = new FormData()
+    form.append('image', file, file.name ?? 'photo.jpg')
+    if (options.locale) form.append('locale', options.locale)
+    const headers = new Headers({ 'X-Forwarded-Prefix': '/backend' })
+    const workspaceId = getStoredActiveWorkspaceId()
+    if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
+    // No Content-Type: the browser writes the multipart boundary.
+    const response = await fetch(`${API_BASE}/agents/${encodeURIComponent(agentId)}/test-executions/${encodeURIComponent(executionId)}/images`, { method: 'POST', headers, credentials: 'include', body: form, signal: options.signal })
+    if (!response.ok) throw await buildError(response)
+    return response.json() as Promise<{ id: string }>
+  },
+
+  async sendTestMessage(agentId: string, executionId: string, input: { message?: string; imageIds?: string[]; executionGeneration: number; turnId: string; attemptId: string }, signal?: AbortSignal): Promise<Response> {
     const headers = new Headers({ 'Content-Type': 'application/json', 'X-Forwarded-Prefix': '/backend' })
     const workspaceId = getStoredActiveWorkspaceId()
     if (workspaceId) headers.set('X-Workspace-Id', workspaceId)

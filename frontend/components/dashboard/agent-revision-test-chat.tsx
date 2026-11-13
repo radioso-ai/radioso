@@ -24,6 +24,10 @@ import { buildAssistantIdentity, PrivacyNoticeLine } from "@/components/chat/ass
 import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestChatComposer } from "@/components/dashboard/test-chat-composer";
+import { parseEvents } from "@/lib/test-execution-events";
+import { evidenceLabel, executionStateLabel, failureLabel, outcomeLabel, revisionDisplayLabel } from "@/lib/agent-revision-test-chat-labels";
+import { useTestChatPhotos } from "@/lib/use-test-chat-photos";
+import { testChatVisitorImages } from "@/components/chat/visitor-image-thumbnails";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
 import { TurnFlowOverlay } from "@/components/dashboard/turn-flow-overlay";
 import {
@@ -76,9 +80,7 @@ import {
   type AgentRevisionDetail,
   type AgentRevisionState,
   type AgentRevisionSummary,
-  type ExecutionState,
   type RevisionEvalRun,
-  type TestExecutionEvent,
   type TestExecutionHistoryDetail,
 } from "@/lib/api-agent-revisions";
 import {
@@ -88,7 +90,9 @@ import {
   hydrateTestExecutionState,
   initializeTestExecutionState,
   reduceTestExecutionEvent,
+  pendingReadingImageIds,
   sideHasSentMessage,
+  withStoredImageInputs,
   type TestExecutionState,
 } from "@/lib/agent-test-execution-state";
 import { evalsApi, type EvalCaseListItem } from "@/lib/api-eval";
@@ -116,52 +120,8 @@ import type { ContextVariable, TurnTraceEnvelope } from "@/lib/api-types";
 
 type Mode = "single" | "compare";
 
-const revisionDisplayLabel = (revision: AgentRevisionSummary): string => {
-  if (revision.kind === "published" && revision.versionNumber !== null)
-    return `v${revision.versionNumber}`;
-  if (revision.kind === "candidate")
-    return `Draft · ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(revision.createdAt))}`;
-  return "Legacy revision";
-};
-
 const errorMessage = (cause: unknown, fallback: string): string =>
   cause instanceof Error ? cause.message : fallback;
-
-const executionStateLabel: Record<ExecutionState, string> = {
-  missing: "Not run",
-  running: "Running",
-  partial: "Partial",
-  failed: "Failed",
-  completed: "Completed",
-};
-
-const outcomeLabel: Record<
-  RevisionEvalRun["sides"][number]["cases"][number]["outcome"],
-  string
-> = {
-  pass: "Passed",
-  fail: "Failed",
-  partial: "Partial",
-  unavailable: "Unavailable",
-};
-
-const evidenceLabel: Record<
-  RevisionEvalRun["sides"][number]["evidenceState"],
-  string
-> = {
-  current: "Current",
-  configuration_changed: "Configuration changed since run",
-  environment_changed: "Environment changed since run",
-  comparability_unknown: "Comparability unknown (live dependencies)",
-};
-
-const failureLabel = (code: string) =>
-  ({
-    provider_unavailable: "The provider was unavailable.",
-    stream_transport_failed: "The response stream was interrupted.",
-    stream_ended_before_terminal_event: "The response ended before completion.",
-    retry_transport_failed: "The retry response stream was interrupted.",
-  })[code] ?? "This test side failed.";
 
 // A side's usage-limit rejection arrives mid-stream as this bare `code` (no `details`), so it
 // gets the same plan notice as every other usage-limit dead end; every other code keeps its
@@ -169,47 +129,6 @@ const failureLabel = (code: string) =>
 const sideFailureContent = (code: string, usageHref: string): ReactNode => {
   const notice = getUsageLimitNoticeForCode(code);
   return notice ? <UsageLimitNotice notice={notice} href={usageHref} /> : failureLabel(code);
-};
-
-export const parseEvents = async (
-  response: Response,
-  onEvent: (event: TestExecutionEvent) => void,
-): Promise<boolean> => {
-  const reader = response.body?.getReader();
-  if (!reader) return false;
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let sawExecutionTerminal = false;
-  const parseFrame = (frame: string) => {
-    const data = frame
-      .split("\n")
-      .find((line) => line.startsWith("data:"))
-      ?.slice(5)
-      .trim();
-    if (!data) return;
-    try {
-      const event = JSON.parse(data) as TestExecutionEvent;
-      if (
-        event.type === "execution_completed" ||
-        event.type === "execution_partial"
-      )
-        sawExecutionTerminal = true;
-      onEvent(event);
-    } catch {
-      /* malformed event is ignored; server completion remains authoritative */
-    }
-  };
-  for (;;) {
-    const result = await reader.read();
-    if (result.done) {
-      if (buffer.trim()) parseFrame(buffer);
-      return sawExecutionTerminal;
-    }
-    buffer += decoder.decode(result.value, { stream: true });
-    const frames = buffer.split("\n\n");
-    buffer = frames.pop() ?? "";
-    for (const frame of frames) parseFrame(frame);
-  }
 };
 
 export function AgentRevisionTestChat({
@@ -413,6 +332,9 @@ export function AgentRevisionTestChat({
     writeAgentRevisionTestChatSession(sessionKey, { execution: resolved });
     setExecution(resolved);
   }, [sessionKey]);
+  // A photo turn's readings come from the test as stored; the bubble shows the photos until then.
+  const showStoredReadings = useCallback((stored: TestExecutionHistoryDetail) => setExecutionState((current) => current && withStoredImageInputs(current, stored)), [setExecutionState]);
+  const photos = useTestChatPhotos(agentId, showStoredReadings, async () => (await prepareExecution())?.executionId ?? null);
   const setEvalRunState = useCallback((next: SetStateAction<RevisionEvalRun | null>) => {
     const current = readAgentRevisionTestChatSession(sessionKey)?.evalRun ?? evalRunRef.current;
     const resolved = typeof next === "function" ? next(current) : next;
@@ -926,7 +848,7 @@ export function AgentRevisionTestChat({
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!message.trim() || isSending || isStarting) return;
+    if (!photos.canSend(message) || isSending || isStarting) return;
     setLinkOpenFailure(null);
     setUsageLimitNotice(null);
     const text = message.trim();
@@ -950,8 +872,12 @@ export function AgentRevisionTestChat({
         readAgentRevisionTestChatSession(sessionKey)?.executionEpoch === executionEpoch
       );
     };
+    const imageIds = photos.take();
+    const photoSend = { executionId: active.executionId, imageIds };
+    // Once the test answers, the message and its photos are the test's, whatever the stream does next.
+    let reached = false;
     setMessage("");
-    setExecutionState(beginTestExecutionTurn(active, text, turnId, attemptId));
+    setExecutionState(beginTestExecutionTurn(active, text, turnId, attemptId, imageIds));
     setSendingState(true);
     const abortController = new AbortController();
     messageAbort.current = abortController;
@@ -968,13 +894,16 @@ export function AgentRevisionTestChat({
         agentId,
         active.executionId,
         {
-          message: text,
+          ...(text ? { message: text } : {}),
+          ...(imageIds.length > 0 ? { imageIds } : {}),
           executionGeneration: active.generation,
           turnId,
           attemptId,
         },
         abortController.signal,
       );
+      reached = true;
+      photos.settle(photoSend, { taken: true });
       const sawTerminal = await parseEvents(response, (incoming) => {
         if (matchesAttempt())
           setExecutionState((current) =>
@@ -991,16 +920,18 @@ export function AgentRevisionTestChat({
             : null,
         );
     } catch (cause) {
+      // A send that never reached the test gives back its words and photos, and leaves no bubble.
+      const withdrawn = !reached && photos.settle(photoSend, { taken: false, error: cause }) !== "taken";
+      if (withdrawn && matchesAttempt()) {
+        setExecutionState((current) => (current?.executionId === active.executionId ? active : current));
+        setMessage((current) => current || text);
+      }
       if (
         matchesAttempt() &&
         !(cause instanceof DOMException && cause.name === "AbortError")
       ) {
         applyActionFailure(cause, "Test message failed.");
-        setExecutionState((current) =>
-          current
-            ? finalizeTestExecutionStream(current, "stream_transport_failed")
-            : null,
-        );
+        if (!withdrawn) setExecutionState((current) => current ? finalizeTestExecutionStream(current, "stream_transport_failed") : null);
       }
     } finally {
       if (matchesAttempt()) {
@@ -1779,6 +1710,7 @@ export function AgentRevisionTestChat({
                         content: item.content,
                         persistedAssistantMessageId: item.persistedAssistantMessageId,
                         ...(item.spoken ? { spokenLabel: DEFAULT_WEBSITE_EMBED_COPY.publicChatSpokenLabel } : {}),
+                        ...(item.imageInput ? { inputMetadata: { method: "typed" as const, imageInput: item.imageInput } } : {}),
                         status:
                           item.state === "streaming"
                             ? "streaming"
@@ -1802,6 +1734,7 @@ export function AgentRevisionTestChat({
                         >
                           {messages.length ? <ChatMessageThread
                             messages={messages}
+                            visitorImages={execution ? testChatVisitorImages(workspaceId, agentId, execution.executionId, pendingReadingImageIds(side)) : undefined}
                             onOpenDocument={async () => "unavailable"}
                             assistantAvatarLabel={assistantName}
                             assistantIdentity={assistantIdentity}
@@ -1891,6 +1824,9 @@ export function AgentRevisionTestChat({
               onMessageChange={setMessage}
               onSubmit={submit}
               canSend={canSend}
+              sendReady={photos.canSend(message)}
+              images={photos.composerImages}
+              photosUnreadable={photos.availability === "model_cannot_read"}
               sendLabel={sendLabel}
               isStarting={isStarting}
               talk={mode === "single" ? {

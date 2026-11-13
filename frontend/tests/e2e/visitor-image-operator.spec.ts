@@ -208,9 +208,9 @@ test("a photo far down a long conversation is not asked for, and so not audited 
   expect(imageRequests).toHaveLength(1);
 });
 
-// The setting that lets visitors send photos lives with the agent's live answer settings.
+// The setting that lets visitors send photos is part of the agent's draft, with its answer settings.
 
-test("an operator turns on photos for an agent from its Answers settings", async ({ page }) => {
+test("an operator turns on photos for an agent's draft from its Answers settings", async ({ page }) => {
   await seedDashboardStorage(page);
   const agentUpdates: unknown[] = [];
   await installDashboardApiMocks(page, { agentUpdates });
@@ -222,6 +222,8 @@ test("an operator turns on photos for an agent from its Answers settings", async
   await expect(page.getByText("can’t read photos")).toHaveCount(0);
 
   await toggle.click();
+  // The switch is part of the draft: it is saved with the draft, and visitors get it once published.
+  await page.getByRole("button", { name: "Save draft" }).click();
 
   await expect.poll(() => agentUpdates).toEqual(expect.arrayContaining([expect.objectContaining({ visitorImagesEnabled: true })]));
   await expect(toggle).toBeChecked();

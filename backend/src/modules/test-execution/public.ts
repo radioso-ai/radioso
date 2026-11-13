@@ -31,6 +31,7 @@ export {
   TEST_EXECUTION_LABEL_CHARS,
   type TestExecution,
   type TestExecutionHistoryEntry,
+  type TestExecutionPhotoTurnsPort,
   type TestExecutionService,
   type TestExecutionSeed,
   type TestExecutionSeedMessage,

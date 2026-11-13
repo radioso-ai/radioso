@@ -86,9 +86,10 @@ import {
   seededRoutineSkillNames,
   seedReplyBlockImages,
   seedVoiceSettings,
+  ROUTINE_CARD_EVAL_WORKSPACE_NAME,
   TOOL_CARD_EVAL_WORKSPACE_NAME,
 } from "./evalRunnerSupport.js";
-import { seedToolCardAgent, toolCardStubModule } from "./evalToolCards.js";
+import { seedRoutineCardAgent, seedToolCardAgent, toolCardStubModule } from "./evalToolCards.js";
 
 const BASELINE_PATH = fileURLToPath(
   new URL("../tests/fixtures/conversation-quality/baseline.json", import.meta.url),
@@ -570,6 +571,40 @@ const runReplyBlockCases = async (
  * Runs the tool-card cases on an agent of their own beside the target, whose every turn is bound
  * to the stub catalog search (`evalToolCards.ts`): the reply is written from the search's records.
  */
+/**
+ * The routine-card cases (#1763): an agent of their own, whose viewing routine runs the stub catalog
+ * search as a tool step and shows its results as cards.
+ */
+const runRoutineCardCases = async (
+  deps: Deps,
+  flags: Flags,
+  cases: ConversationQualityCase[],
+  judge: SuiteJudge | undefined,
+): Promise<SuiteResult> => {
+  const target = await ensureReplyBlockTarget(
+    { workspaces: deps.workspaceRepository, workspaceService: deps.workspaceService, agentService: deps.agentService },
+    flags.workspaceId,
+    ROUTINE_CARD_EVAL_WORKSPACE_NAME,
+  );
+  console.log(`Giving the routine-card agent ${target.agentId} in workspace ${target.workspaceId} the viewing routine…`);
+  const routineIds = await seedRoutineCardAgent({ db: deps.connectorDb.kysely, routines: deps.routineDefinitionService }, target);
+  const agent = await deps.agentRepository.findByIdAndWorkspaceId(target.agentId, target.workspaceId);
+  if (!agent) {
+    throw new Error(`Agent ${target.agentId} not found in workspace ${target.workspaceId}.`);
+  }
+  const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
+    workspaceId: target.workspaceId,
+    agentId: target.agentId,
+    baselineAgentConfig: { ...projectInternalAgentConfig(agent), replyCardsEnabled: true },
+  });
+  return runConversationQualitySuiteSampled(remapIds(cases, new Map(), routineIds), port, {
+    workspaceId: target.workspaceId,
+    samples: flags.samples,
+    passThreshold: flags.passThreshold,
+    ...(judge ? { judge } : {}),
+  });
+};
+
 const runToolCardCases = async (
   deps: Deps,
   flags: Flags,
@@ -614,7 +649,7 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
   if (flags.samples > 1) {
     console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
   }
-  const { shared, replyBlocks, toolCards } = partitionCasesByCorpus(run.cases);
+  const { shared, replyBlocks, toolCards, routineCards } = partitionCasesByCorpus(run.cases);
   const parts: SuiteResult[] = [];
   if (shared.length > 0) {
     parts.push(await runSharedCases(deps, flags, { ...run, cases: shared }, suiteJudge?.judge));
@@ -624,6 +659,9 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
   }
   if (toolCards.length > 0) {
     parts.push(await runToolCardCases(deps, flags, toolCards, suiteJudge?.judge));
+  }
+  if (routineCards.length > 0) {
+    parts.push(await runRoutineCardCases(deps, flags, routineCards, suiteJudge?.judge));
   }
   const reports = parts.flatMap((part) => part.reports);
   const outcomes = parts.flatMap((part) => part.outcomes);

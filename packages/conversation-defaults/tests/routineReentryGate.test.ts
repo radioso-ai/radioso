@@ -62,6 +62,15 @@ describe("RoutineReentryGate", () => {
     expect(prompt).toContain("budget: 10k");
   });
 
+  it("names a picked card by its title, never as an object (#1763)", async () => {
+    const gw = gateway(JSON.stringify({ decision: "suppress" }));
+    const withItem = { ...completedState, variables: { chosen_home: { key: "/results/1", title: "Villa Rosa", fields: {} } } };
+    await new RoutineReentryGate([routine("semantic")], gw).decide({ turn, completedState: withItem });
+    const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain("chosen_home: Villa Rosa");
+    expect(prompt).not.toContain("[object Object]");
+  });
+
   it("defaults to suppress on malformed model output", async () => {
     const gw = gateway("not json");
     const decision = await new RoutineReentryGate([routine("semantic")], gw).decide({ turn, completedState });

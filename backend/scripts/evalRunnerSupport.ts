@@ -20,6 +20,7 @@ import {
 import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
 import { replyBlockCases, replyBlockImages } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
+import { routineCardCases } from "../tests/fixtures/conversation-quality/routineCardCases.js";
 import { toolCardCases } from "../tests/fixtures/conversation-quality/toolCardCases.js";
 import { DOCUMENT_IMAGE_RENDITION_WIDTHS } from "../src/modules/documents/contracts/documentImages.js";
 import { workspaceStoragePrefix } from "../src/modules/documents/contracts/storage.js";
@@ -289,14 +290,24 @@ export const runThenClose = async <T>(
  */
 export const partitionCasesByCorpus = (
   cases: readonly ConversationQualityCase[],
-): { shared: ConversationQualityCase[]; replyBlocks: ConversationQualityCase[]; toolCards: ConversationQualityCase[] } => {
+): {
+  shared: ConversationQualityCase[];
+  replyBlocks: ConversationQualityCase[];
+  toolCards: ConversationQualityCase[];
+  routineCards: ConversationQualityCase[];
+} => {
   const replyBlockIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
   // The tool-card cases bind every turn of their agent to a search, so they need an agent of their own.
   const toolCardIds = new Set(toolCardCases.map((evalCase) => evalCase.id));
+  // The routine-card cases need the search as a routine's tool step, with no directive claiming the turn.
+  const routineCardIds = new Set(routineCardCases.map((evalCase) => evalCase.id));
+  const apart = (evalCase: ConversationQualityCase) =>
+    replyBlockIds.has(evalCase.id) || toolCardIds.has(evalCase.id) || routineCardIds.has(evalCase.id);
   return {
-    shared: cases.filter((evalCase) => !replyBlockIds.has(evalCase.id) && !toolCardIds.has(evalCase.id)),
+    shared: cases.filter((evalCase) => !apart(evalCase)),
     replyBlocks: cases.filter((evalCase) => replyBlockIds.has(evalCase.id)),
     toolCards: cases.filter((evalCase) => toolCardIds.has(evalCase.id)),
+    routineCards: cases.filter((evalCase) => routineCardIds.has(evalCase.id)),
   };
 };
 
@@ -305,6 +316,9 @@ export const REPLY_BLOCK_EVAL_WORKSPACE_NAME = "Conversation-quality reply block
 
 /** The name of the workspace the tool-card cases run in. */
 export const TOOL_CARD_EVAL_WORKSPACE_NAME = "Conversation-quality tool cards";
+
+/** The name of the workspace the routine-card cases run in. */
+export const ROUTINE_CARD_EVAL_WORKSPACE_NAME = "Conversation-quality routine cards";
 
 /** The workspace reads and writes `ensureReplyBlockTarget` makes, narrowed so a test can hand it fakes. */
 interface ReplyBlockTargetPorts {

@@ -33,13 +33,13 @@ import {
   type TurnStreamResult,
 } from "../turnOutcome.js";
 import type { ChatSuggestion } from "../../types/chatResponses.js";
-import { routinePresentingStepReply } from "./routinePresentingStepRenderer.js";
+import { routinePresentingStepReply, type RoutinePresentingSteps } from "./routinePresentingStepRenderer.js";
 
 interface RoutineGroundedAnswerRendererOptions {
   session: PreparedSession;
   turnSkills: readonly TurnSkill[];
   /** Writes a step that shows a skill step's results (#1763); without it, such a step gets its own reply. */
-  skillResultRenderer?: TurnOutcomeRenderer;
+  presentingSteps?: RoutinePresentingSteps;
   /** Expands a streamed answer's planned suggestions the way a whole answer's are expanded. */
   chatAnswerPresenter: Pick<ChatAnswerPresenter, "applyAssistantSuggestions" | "applyActionSuggestions">;
   accountId?: string;
@@ -108,6 +108,7 @@ const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => 
     effectiveRetrieval: presentation.effectiveRetrieval,
     ...(presentation.replyBlocks ? { storedReplyBlocks: presentation.replyBlocks.stored } : {}),
     ...(presentation.replyBlocks?.toolImages?.length ? { storedToolImages: presentation.replyBlocks.toolImages } : {}),
+    ...(presentation.listedItems ? { storedListedItems: presentation.listedItems } : {}),
   },
 });
 
@@ -207,6 +208,7 @@ const presentationFromRenderableTurn = (
     return null;
   }
   const replyBlocks = restoredReplyBlocks(response.blocks, response.metadata.storedReplyBlocks, response.metadata.storedToolImages, restore);
+  const listedItems = storedReplyBlockSchema.safeParse(response.metadata.storedListedItems);
   return {
     answer: response.answer,
     ...(optionalChatCitations(response.citations) ? { citations: optionalChatCitations(response.citations) } : {}),
@@ -228,6 +230,7 @@ const presentationFromRenderableTurn = (
       ? { effectiveRetrieval: optionalEffectiveRetrieval(response.metadata.effectiveRetrieval) }
       : {}),
     ...(replyBlocks ? { replyBlocks } : {}),
+    ...(listedItems.success ? { listedItems: listedItems.data } : {}),
   };
 };
 
@@ -322,7 +325,10 @@ export const createRoutineGroundedAnswerRenderer = (
       return reply(async () => {
         const context = await presenting.context();
         return { session: context.session, outcome: presenting.outcome, renderer: presenting.renderer, context };
-      }, (_session, presentation) => toRenderableTurn(presentation));
+      }, (_session, presentation) => {
+        presenting.settled(presentation);
+        return toRenderableTurn(presentation);
+      });
     }
     const retrieval = retrievalResultFromStagedContext(input.turn.stagedContext);
     if (!retrieval) {

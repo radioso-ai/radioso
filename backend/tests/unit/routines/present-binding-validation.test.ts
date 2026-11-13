@@ -63,6 +63,16 @@ describe("present binding validation (#1763)", () => {
     expect(codes(later)).toEqual([["present_source_not_earlier_tool", "step:choose.present.from"]]);
   });
 
+  it("reports a source a waiting step separates from the step, since its result is gone by then", () => {
+    const definition = homes();
+    definition.steps[2] = { ...definition.steps[2], ordinal: 3 };
+    definition.steps.push({ stableStepId: "confirm", kind: "chat", instruction: "Confirm the area {{slot.area}}.", toolRef: null, ordinal: 2, metadata: {} });
+    definition.transitions = [edge("brief", "search", 0), edge("search", "confirm", 1), edge("confirm", "choose", 2), edge("choose", "handoff", 3)];
+    expect(codes(definition)).toEqual([["present_source_unreachable", "step:choose.present.from"]]);
+    expect(toSafeRoutineValidationDiagnostic({ code: "present_source_unreachable", location: "step:choose.present.from" }).message)
+      .toBe("A step that shows results as cards must follow its tool step with no message or approval step in between.");
+  });
+
   it("reports a slot that is not a declared item slot", () => {
     expect(codes(homes({ choose: { metadata: { present: { from: "search", selection: "single", slot: "area" } } } })))
       .toEqual([
@@ -101,7 +111,7 @@ describe("present binding validation (#1763)", () => {
   });
 
   it("gives every code an operator-facing message", () => {
-    for (const code of ["present_step_not_chat", "present_source_not_earlier_tool", "present_slot_not_item", "present_selection_mismatch", "item_slot_without_presenting_step"]) {
+    for (const code of ["present_step_not_chat", "present_source_not_earlier_tool", "present_source_unreachable", "present_slot_not_item", "present_selection_mismatch", "item_slot_without_presenting_step"]) {
       expect(toSafeRoutineValidationDiagnostic({ code, location: "step:x" }).message).not.toBe("The routine structure is not valid for serving.");
     }
   });

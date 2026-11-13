@@ -10,3 +10,5 @@ export type { RoutineSelectorCompletionObserver } from "@radioso/conversation-de
 // When a slot-collection step has nothing left to ask is the runner's rule; status
 // reporting reads it here so "waiting for input" and the runner's skip never disagree.
 export { collectedSlotsForStep, isSlotCollectionStepSatisfied, sensitiveSlotKeys } from "@radioso/conversation-engine";
+// What a routine pick did on a turn (#1763); the routine telemetry observer is written against it.
+export type { RoutineItemPickObserver } from "@radioso/conversation-engine";

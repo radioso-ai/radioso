@@ -7,6 +7,7 @@ import type {
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
+import { readableSlotValue } from "@radioso/conversation-contract";
 
 import { DEFAULT_ROUTINE_REENTRY_GATE_PROMPT } from "./generated/defaultPrompts.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
@@ -26,7 +27,8 @@ const variablesBlock = (variables: Record<string, unknown>): string => {
   if (entries.length === 0) {
     return "(nothing was collected)";
   }
-  return entries.map(([key, value]) => `- ${key}: ${String(value)}`).join("\n");
+  // A picked card (an item slot, #1763) reads as its title.
+  return entries.map(([key, value]) => `- ${key}: ${String(readableSlotValue(value))}`).join("\n");
 };
 
 const parseDecision = (raw: string): RoutineReentryDecision => {

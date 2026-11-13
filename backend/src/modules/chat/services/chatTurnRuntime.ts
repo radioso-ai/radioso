@@ -17,6 +17,7 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ReplyBlockTurnFactory } from "./replyBlocks/replyBlockTurn.js";
 import type { SkillResultReplyBlocks } from "./replyBlocks/skillResultReplyBlocks.js";
+import type { RoutinePresentingSteps } from "./routines/routinePresentingStepRenderer.js";
 import {
   createDirectiveAdherenceSideChannel,
   type DirectiveAdherenceTally,
@@ -54,6 +55,8 @@ export interface ChatTurnRuntime {
    * through it.
    */
   skillResultRenderer: TurnOutcomeRenderer;
+  /** Writes a routine step that shows a skill step's results, and counts how each came out (#1763). */
+  presentingSteps: RoutinePresentingSteps;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
 }
 
@@ -152,6 +155,7 @@ export const buildChatTurnRuntime = (
     chatAnswerPresenter,
     turnSkills,
     skillResultRenderer,
+    presentingSteps: { skillResultRenderer, metrics: deps.metrics },
     metrics: deps.metrics,
   };
 };

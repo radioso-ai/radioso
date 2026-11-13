@@ -840,12 +840,39 @@ describe("createAttemptRoutineInput", () => {
     expect(createAttemptRoutineInput({ session }).inputEvent.itemSelection).toEqual({
       routineId: "homes",
       stepId: "choose",
+      messageId: "msg_cards",
       slot: "chosen_home",
       item: { key: "/results/1", title: "Villa Rosa", link: "https://homes.example/villa-rosa", fields: { id: "h-2" } },
     });
 
     session.itemSelection = { messageId: "msg_cards", blockId: "b1", key: "image-1", title: "Garden room" };
     expect(createAttemptRoutineInput({ session }).inputEvent).not.toHaveProperty("itemSelection");
+  });
+
+  it("hands the routine the items its latest presentation showed, as cards or listed in text (#1763)", () => {
+    const session = preparedSession();
+    const block = (origin: Record<string, unknown>, selection: "single" | "none") => ({
+      type: "item_list", id: "b1", layout: "list", selection, caption: "Homes",
+      items: [{ key: "/results/1", title: "Villa Rosa", actions: [{ type: "open", url: "https://homes.example/villa-rosa" }], fields: { id: "h-2" } }],
+      origin: { kind: "routine_step", skillName: "search_homes", routineId: "homes", ...origin },
+    });
+    const message = (id: string, metadata: Record<string, unknown>) =>
+      ({ id, conversationId: "conv_1", workspaceId: "ws_1", role: "assistant", content: "Homes", metadata, createdAt: new Date() }) as never;
+    session.history = [
+      message("msg_old", { blocks: [block({ stepId: "choose", executionId: "run-1", slot: "chosen_home" }, "single")] }),
+      message("msg_listed", { listedItems: [block({ stepId: "choose", executionId: "run-1", slot: "chosen_home" }, "none")] }),
+      message("msg_plain", {}),
+    ];
+
+    expect(createAttemptRoutineInput({ session }).inputEvent.shownItems).toEqual({
+      routineId: "homes",
+      stepId: "choose",
+      executionId: "run-1",
+      messageId: "msg_listed",
+      items: [{ key: "/results/1", title: "Villa Rosa", link: "https://homes.example/villa-rosa", fields: { id: "h-2" } }],
+    });
+    session.history = [message("msg_plain", {})];
+    expect(createAttemptRoutineInput({ session }).inputEvent).not.toHaveProperty("shownItems");
   });
 
   it("hands the routine attempt the zone the chat turn resolved", () => {

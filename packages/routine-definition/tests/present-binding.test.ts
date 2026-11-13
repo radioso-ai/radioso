@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectedSlotsByStep,
   presentBindingOf,
+  presentSourceCandidates,
   routineSlotSchema,
   routineStepMetadataSchema,
   routineStepSchema,
@@ -55,6 +56,29 @@ describe("a step's present binding (#1763)", () => {
       description: null,
       ordinal: 0,
     }).success).toBe(true);
+  });
+});
+
+describe("presentSourceCandidates", () => {
+  const steps = [
+    { stableStepId: "brief", kind: "chat" },
+    { stableStepId: "lookup", kind: "tool" },
+    { stableStepId: "log", kind: "action" },
+    { stableStepId: "search", kind: "tool" },
+    { stableStepId: "confirm", kind: "chat" },
+    { stableStepId: "choose", kind: "chat" },
+  ];
+  const edge = (fromStep: string, toRef: string) => ({ fromStep, toRef });
+
+  it("offers the tool steps that reach the step through tool and action steps only", () => {
+    expect(presentSourceCandidates(steps, [edge("brief", "lookup"), edge("lookup", "log"), edge("log", "search"), edge("search", "choose")], "choose"))
+      .toEqual(["lookup", "search"]);
+  });
+
+  it("stops at a waiting step: its turn ends, and the staged result with it", () => {
+    expect(presentSourceCandidates(steps, [edge("lookup", "confirm"), edge("confirm", "search"), edge("search", "choose")], "choose"))
+      .toEqual(["search"]);
+    expect(presentSourceCandidates(steps, [edge("search", "confirm"), edge("confirm", "choose")], "choose")).toEqual([]);
   });
 });
 

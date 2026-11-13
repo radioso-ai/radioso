@@ -5,7 +5,7 @@ import { renderPromptTemplate } from "../../../../shared/infra/prompts/promptLoa
 import type { AppLogger } from "../../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { setTraceAttributes } from "../../../../shared/observability/tracing/operations.js";
-import type { ReplyImageUrls } from "../../contracts/replyBlocks.js";
+import type { ReplyImageUrls, StoredReplyBlock } from "../../contracts/replyBlocks.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
 import { buildRecordBlock, type RecordBlockBinding, type RecordBlockDropReason } from "./recordBlockBuilder.js";
 import { readRecordPresentHead, recordPresentHeadSchemaExtension } from "./recordPresentHead.js";
@@ -25,6 +25,8 @@ export interface ReplyPresentOffer {
   readonly promptSection: string;
   /** The blocks the model's `present` field asks for, or undefined when it asks for none. */
   build(extras: Record<string, unknown> | undefined): PresentedReplyBlocks | undefined;
+  /** The records the reply's text lists, kept unpresented, when it draws no cards (#1763). */
+  listed?(extras: Record<string, unknown> | undefined): StoredReplyBlock | undefined;
 }
 
 /**
@@ -65,13 +67,16 @@ export class SkillResultReplyBlocks {
     binding?: RecordBlockBinding,
   ): SkillResultCardsOffer | null {
     const itemList = skillResultCardsFor(session);
-    if (!itemList) {
+    if (!itemList && !binding) {
       return null;
     }
     const ledger = ToolRecordLedger.fromOutputs(outputs);
     setTraceAttributes({ "chat.reply_blocks.record_count": ledger.size });
     if (ledger.size === 0) {
       return null;
+    }
+    if (!itemList) {
+      return binding ? this.listingOffer(skillName, ledger, binding) : null;
     }
     const channel = channelLabel(session.conversation.sourceChannel);
     let lost = false;
@@ -121,6 +126,37 @@ export class SkillResultReplyBlocks {
           presented: presentReplyBlocks([block], this.deps.imageUrls),
           ...(toolImages.length > 0 ? { toolImages } : {}),
         };
+      },
+    };
+  }
+
+  /**
+   * A routine step's offer where no cards are drawn (#1763): the reply lists the records it presents
+   * in its text, and the head names them, so the message keeps what it listed, unpresented, for a
+   * typed answer to resolve against. Nothing is picked from it and no picture is kept.
+   */
+  private listingOffer(skillName: string, ledger: ToolRecordLedger, binding: RecordBlockBinding): SkillResultCardsOffer {
+    return {
+      schemaExtension: recordPresentHeadSchemaExtension(),
+      promptSection: renderPromptTemplate("chat/skill-result-list-records.md", {}),
+      records: { withHandles: ledger.promptSection({ handles: true }), plain: ledger.promptSection({ handles: false }) },
+      cardsLost: () => false,
+      build: () => undefined,
+      listed: (extras) => {
+        const head = readRecordPresentHead(extras);
+        if (!head) {
+          return undefined;
+        }
+        const { block, dropped } = buildRecordBlock({
+          head: { ...head, fields: { ...head.fields, image: null } },
+          ledger,
+          layouts: ["list"],
+          skillName,
+          newImageId: this.deps.newImageId ?? randomUUID,
+          binding: { selection: "none", origin: binding.origin },
+        });
+        this.countDropped(dropped);
+        return block ?? undefined;
       },
     };
   }

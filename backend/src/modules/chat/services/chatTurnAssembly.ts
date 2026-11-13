@@ -45,10 +45,10 @@ import {
 import type { RouteScopedDirectiveRuntime } from "./routeScopedDirectiveSteering.js";
 import type { DirectiveStateStore } from "../../directives/public.js";
 import {
-  type TurnOutcomeRenderer,
   type TurnSkill,
   type TurnStreamSuggestions,
 } from "./turnOutcome.js";
+import type { RoutinePresentingSteps } from "./routines/routinePresentingStepRenderer.js";
 import type { TurnSelectionStrategy } from "./turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type { AgentSkillTurnRuntime, AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
@@ -295,7 +295,7 @@ export interface ChatTurnAssemblyOptions {
   conversationEngine: ConversationEngine;
   turnSkills: TurnSkill[];
   /** Writes a routine step that shows a skill step's results (#1763). */
-  skillResultRenderer?: TurnOutcomeRenderer;
+  presentingSteps?: RoutinePresentingSteps;
   selectionStrategy: TurnSelectionStrategy;
   directiveRuntime: RouteScopedDirectiveRuntime;
   directiveStateStore: DirectiveStateStore;
@@ -1383,8 +1383,8 @@ export class ChatTurnAssembly {
 
   /** The host's replies for a routine step: grounded on a staged retrieval, or from a skill step's results. */
   private routineAnswerRenderer(session: PreparedSession, input: Pick<ChatTurnAssemblyRoutineTurnInput, "accountId" | "responseLanguage">, signal?: AbortSignal) {
-    const { turnSkills, skillResultRenderer, chatAnswerPresenter } = this.options;
-    return createRoutineGroundedAnswerRenderer({ session, accountId: input.accountId, responseLanguage: input.responseLanguage, turnSkills, skillResultRenderer, chatAnswerPresenter, signal });
+    const { turnSkills, presentingSteps, chatAnswerPresenter } = this.options;
+    return createRoutineGroundedAnswerRenderer({ session, accountId: input.accountId, responseLanguage: input.responseLanguage, turnSkills, presentingSteps, chatAnswerPresenter, signal });
   }
 
   private async routineCatalogPinIds(

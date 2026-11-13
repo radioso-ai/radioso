@@ -684,6 +684,7 @@ export {
 } from "./slotCorrection.js";
 export { completedRunSentValues } from "./routineEnding.js";
 export { checkSlotValue } from "./slotValue.js";
+export type { RoutineItemPickEvent, RoutineItemPickObserver } from "./itemSelection.js";
 export {
   clarificationStage,
   decideClarification,

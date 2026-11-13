@@ -57,6 +57,14 @@ describe("resolveUntypedSkillArguments", () => {
     });
   });
 
+  it("passes a picked card as its title, and an approval decision as it is (#1763)", () => {
+    const decision = { id: "approve" };
+    expect(resolveUntypedSkillArguments({
+      chosen_home: { key: "/results/1", title: "Villa Rosa", link: "https://homes.example/villa-rosa", fields: { id: "h-2" } },
+      decision,
+    }).values).toEqual({ chosen_home: "Villa Rosa", decision });
+  });
+
   it("masks a sensitive slot, since no binding named it", () => {
     expect(resolveUntypedSkillArguments({ email: "sam@example.com", injury: "torn ligament" }, ["injury"])).toEqual({
       values: { email: "sam@example.com", injury: "[redacted]" },

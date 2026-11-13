@@ -7,10 +7,13 @@
  * and its cards, and the pick read from the stored block. The search is the invented letting
  * agency's stub tool (`tests/fixtures/conversation-quality/toolCardCases.ts`, `.example` records).
  *
- * Two cases, three samples each:
- * - cards: the client draws cards; the pick is a tap on the second card. A typed "the second one"
- *   from the same point is recorded beside it (US7 scenario 3: it should leave the slot empty).
- * - text: the agent's cards switch is off; the step lists the homes in text and the visitor names one.
+ * Four cases, three samples each, all aiming at the second item the step showed:
+ * - tap: the client draws cards, and the visitor taps the second card.
+ * - typed_title: the visitor types the second card's exact title.
+ * - typed_second: the visitor types "the second one" after the cards.
+ * - cards_off: the agent's cards switch is off; the step lists the homes in text, and the visitor
+ *   types "the second one".
+ * Each must fill the slot with the stored item, link included, and the next step must name it.
  *
  * Run with:
  *   cd backend && pnpm exec vitest run tests/live/routine-present-pick.verify.test.ts --disableConsoleIntercept
@@ -33,6 +36,7 @@ import type { ChatGateway, ChatGatewayInput } from "../../src/modules/chat/contr
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { readItemSelection, routineItemSelectionOf } from "../../src/modules/chat/services/replyBlocks/itemSelection.js";
+import { latestRoutinePresentation } from "../../src/modules/chat/services/replyBlocks/routinePresentation.js";
 import { SkillResultReplyBlocks } from "../../src/modules/chat/services/replyBlocks/skillResultReplyBlocks.js";
 import { RoutineChatModelGateway } from "../../src/modules/chat/services/routines/routineChatModelGateway.js";
 import {
@@ -189,7 +193,7 @@ const runner = (cards: boolean, content: string) => new DefaultRoutineRunner(
     groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
       session: session(cards, content),
       turnSkills: runtime.turnSkills,
-      skillResultRenderer: runtime.skillResultRenderer,
+      presentingSteps: runtime.presentingSteps,
       chatAnswerPresenter: runtime.chatAnswerPresenter,
     }),
   }),
@@ -201,110 +205,96 @@ const runner = (cards: boolean, content: string) => new DefaultRoutineRunner(
   },
 );
 
-const turn = (content: string, history: ConversationMessage[], itemSelection?: TurnContext["inputEvent"]["itemSelection"]): TurnContext => ({
+const EXECUTION_ID = "run-1";
+
+const turn = (
+  content: string,
+  history: ConversationMessage[],
+  events: Pick<TurnContext["inputEvent"], "itemSelection" | "shownItems"> = {},
+): TurnContext => ({
   agent: { id: "agent-1", name: "Nico" },
   sessionId: CONVERSATION_ID,
-  inputEvent: { id: `message-${history.length + 1}`, kind: "message", content, ...(itemSelection ? { itemSelection } : {}) },
+  inputEvent: { id: `message-${history.length + 1}`, kind: "message", content, ...events },
   history,
   stagedContext: [],
   steering: [],
-  // As the engine's routine claim sets it on every turn a routine runs.
+  // As the engine's routine claim sets them on every turn a routine runs.
   activeRoutineId: routine.id,
+  activeRoutineExecutionId: EXECUTION_ID,
 });
 
 const BRIEF = "I'm looking for a flat in Mitte, up to 2,000 a month.";
-const opening: RoutineState = { sessionId: CONVERSATION_ID, routineId: routine.id, path: [], variables: {}, status: "active" };
+const opening: RoutineState = { sessionId: CONVERSATION_ID, routineId: routine.id, executionId: EXECUTION_ID, path: [], variables: {}, status: "active" };
 
-/** The first turn: the brief is read, the search runs, and the presenting step replies. */
+/**
+ * The first turn: the brief is read, the search runs, and the presenting step replies. The reply's
+ * message is stored the way the chat stores it, so the next turn reads its items as production does.
+ */
 const briefTurn = async (cards: boolean) => {
   const result = await runner(cards, BRIEF).resume({ turn: turn(BRIEF, []), state: opening, activationTurn: true });
   const presentation = presentRoutineRenderableAnswer(runtime.chatAnswerPresenter, result.response);
+  const message = {
+    id: "assistant-1", conversationId: CONVERSATION_ID, workspaceId: "workspace-1", role: "assistant",
+    content: result.response.answer, createdAt: new Date(),
+    metadata: {
+      ...(presentation.replyBlocks ? { blocks: presentation.replyBlocks.stored } : {}),
+      ...(presentation.listedItems ? { listedItems: [presentation.listedItems] } : {}),
+    },
+  } as unknown as MessageRecord;
   const history: ConversationMessage[] = [{ role: "user", content: BRIEF }, { role: "assistant", content: result.response.answer }];
-  return { result, block: presentation.replyBlocks?.stored[0], history };
+  return { result, presentation, message, history, shownItems: latestRoutinePresentation([message]) };
 };
 
 const named = (answer: string, title: string | undefined): boolean => Boolean(title) && answer.toLowerCase().includes(title!.toLowerCase());
 
-/** One sample with cards: tap the second card; separately, type "the second one" from the same point. */
-const cardsSample = async () => {
-  const first = await briefTurn(true);
-  const block = first.block;
-  const pickedKey = block?.items[1]?.key ?? block?.items[0]?.key;
-  const message = { id: "assistant-1", conversationId: CONVERSATION_ID, workspaceId: "workspace-1", role: "assistant", content: first.result.response.answer, metadata: { blocks: block ? [block] : [] }, createdAt: new Date() } as unknown as MessageRecord;
-  const reading = pickedKey && block ? readItemSelection(message, CONVERSATION_ID, { messageId: "assistant-1", blockId: block.id, itemKey: pickedKey }) : null;
-  const picked = reading?.ok ? reading.item : undefined;
-  const afterPick = picked && first.result.nextState
-    ? await runner(true, picked.title).resume({ turn: turn(picked.title, first.history, routineItemSelectionOf(picked)), state: first.result.nextState })
+type Case = "tap" | "typed_title" | "typed_second" | "cards_off";
+
+/**
+ * One sample of one case. Every case aims at the second item the step showed: a tap on its card, its
+ * exact title typed, "the second one" typed after the cards, or, with cards off, "the second one"
+ * after the step listed the homes in text. The slot must then hold that stored item, link and all.
+ */
+const sample = async (which: Case) => {
+  const first = await briefTurn(which !== "cards_off");
+  const target = first.shownItems?.items[1];
+  const block = first.presentation.replyBlocks?.stored[0];
+  const message = which === "tap" ? target?.title ?? "" : which === "typed_title" ? `I'd like to see the ${target?.title ?? ""}.` : "the second one";
+  const reading = which === "tap" && block && target
+    ? readItemSelection(first.message, CONVERSATION_ID, { messageId: first.message.id, blockId: block.id, itemKey: target.key })
+    : null;
+  const itemSelection = reading?.ok ? routineItemSelectionOf(reading.item) : undefined;
+  const next = first.result.nextState && target
+    ? await runner(which !== "cards_off", message).resume({
+      turn: turn(message, first.history, { ...(itemSelection ? { itemSelection } : {}), ...(first.shownItems ? { shownItems: first.shownItems } : {}) }),
+      state: first.result.nextState,
+    })
     : undefined;
-  const typed = first.result.nextState
-    ? await runner(true, "the second one").resume({ turn: turn("the second one", first.history), state: first.result.nextState })
-    : undefined;
+  const slot = next?.nextState?.variables.chosen_home as { key?: string; title?: string; link?: string } | undefined;
   return {
+    case: which,
     landedOn: first.result.nextState?.path.at(-1) ?? null,
-    brief: { area: first.result.nextState?.variables.area ?? null, budget: first.result.nextState?.variables.budget ?? null },
-    cards: block ? { selection: block.selection, origin: block.origin?.kind ?? null, titles: block.items.map((item) => item.title) } : null,
+    shown: first.shownItems ? { from: first.presentation.replyBlocks ? "cards" : "listed", titles: first.shownItems.items.map((item) => item.title) } : null,
     lead: first.result.response.answer,
-    picked: picked?.title ?? null,
-    slotAfterPick: (afterPick?.nextState?.variables.chosen_home as { title?: string } | undefined)?.title ?? null,
-    stepAfterPick: afterPick?.nextState?.path.at(-1) ?? null,
-    replyAfterPick: afterPick?.response.answer ?? null,
-    namesPick: named(afterPick?.response.answer ?? "", picked?.title),
-    typedLeavesSlotEmpty: typed ? typed.nextState?.variables.chosen_home === undefined : null,
-    typedStep: typed?.nextState?.path.at(-1) ?? null,
+    target: target?.title ?? null,
+    slot: slot?.title ?? null,
+    slotKeepsStoredItem: Boolean(slot && target && slot.key === target.key && slot.link === target.link),
+    stepAfter: next?.nextState?.path.at(-1) ?? null,
+    replyAfter: next?.response.answer ?? null,
+    namesItem: named(next?.response.answer ?? "", target?.title),
   };
 };
 
-/** One sample without cards: the step lists the homes in text, and the visitor names the first one listed there. */
-const textSample = async () => {
-  const first = await briefTurn(false);
-  const listed = toolCardStubTool.respond({ message: TOOL_CARD_LISTINGS_QUERY }).structuredContent.listings as Array<{ name: string }>;
-  const choice = listed.map((home) => home.name).find((name) => first.result.response.answer.includes(name));
-  const reply = choice ? `I'd like to see the ${choice}.` : "";
-  const afterNaming = choice && first.result.nextState
-    ? await runner(false, reply).resume({ turn: turn(reply, first.history), state: first.result.nextState })
-    : undefined;
-  return {
-    landedOn: first.result.nextState?.path.at(-1) ?? null,
-    blocks: first.result.response.blocks?.length ?? 0,
-    listing: first.result.response.answer,
-    named: choice ?? null,
-    slotAfterNaming: (afterNaming?.nextState?.variables.chosen_home as { title?: string } | undefined)?.title ?? null,
-    stepAfterNaming: afterNaming?.nextState?.path.at(-1) ?? null,
-    replyAfterNaming: afterNaming?.response.answer ?? null,
-    namesChoice: named(afterNaming?.response.answer ?? "", choice),
-  };
-};
+const passed = (result: Awaited<ReturnType<typeof sample>>): boolean =>
+  result.landedOn === "choose" && result.slotKeepsStoredItem && result.stepAfter === "contact" && result.namesItem;
 
-describe.skipIf(!apiKey)("live: a routine step shows a search's results as cards, and the pick fills its slot", () => {
-  it(`shows cards, fills the slot from a tap, and the next step names the home (${SAMPLES} samples)`, async () => {
-    const samples = [];
-    for (let sample = 0; sample < SAMPLES; sample += 1) {
-      samples.push(await cardsSample());
+describe.skipIf(!apiKey)("live: a routine step shows a search's results, and the visitor's choice fills its slot", () => {
+  it.each(["tap", "typed_title", "typed_second", "cards_off"] as const)(`%s fills the slot with the stored item, and the next step names it (${SAMPLES} samples)`, async (which) => {
+    const results = [];
+    for (let index = 0; index < SAMPLES; index += 1) {
+      results.push(await sample(which));
     }
-    console.log(JSON.stringify(samples, null, 2));
+    console.log(JSON.stringify({ case: which, passed: results.filter(passed).length, of: SAMPLES, results }, null, 2));
 
-    expect(samples.every((sample) =>
-      sample.landedOn === "choose" &&
-      sample.cards?.selection === "single" &&
-      sample.cards.origin === "routine_step" &&
-      sample.slotAfterPick === sample.picked &&
-      sample.stepAfterPick === "contact" &&
-      sample.namesPick)).toBe(true);
-  }, 600_000);
-
-  it(`lists the homes in text without cards, and a home the visitor names fills the slot (${SAMPLES} samples)`, async () => {
-    const samples = [];
-    for (let sample = 0; sample < SAMPLES; sample += 1) {
-      samples.push(await textSample());
-    }
-    console.log(JSON.stringify(samples, null, 2));
-
-    expect(samples.every((sample) =>
-      sample.landedOn === "choose" &&
-      sample.blocks === 0 &&
-      sample.named !== null &&
-      sample.slotAfterNaming === sample.named &&
-      sample.stepAfterNaming === "contact" &&
-      sample.namesChoice)).toBe(true);
+    expect(results.every(passed)).toBe(true);
   }, 600_000);
 });

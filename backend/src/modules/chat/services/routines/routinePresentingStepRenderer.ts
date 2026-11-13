@@ -1,29 +1,42 @@
 import type { RoutineGroundedAnswerInput, StagedContext, TurnOutcome } from "@radioso/conversation-contract";
 
+import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { setTraceAttributes } from "../../../../shared/observability/tracing/operations.js";
 import { AGENT_SKILL_OUTCOME_KIND } from "../agentSkillTurnSkillProvider.js";
+import type { ChatPresentedAnswer } from "../chatAnswerPresenter.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
 import type { RecordBlockBinding } from "../replyBlocks/recordBlockBuilder.js";
 import { hasToolRecords } from "../replyBlocks/toolRecords.js";
 import type { TurnOutcomeRenderer, TurnRenderContext } from "../turnOutcome.js";
 
-/** How a presenting step's turn went: written from its source's records, or without them, and why. Bounded. */
-type RoutinePresentOutcome = "presented" | "no_stage" | "source_failed" | "empty";
+/**
+ * How a presenting step's turn went, reported once it is known: shown as cards, written as text
+ * (no cards drawn, or none could be built), or left to the step's own reply, and why. Bounded.
+ */
+type RoutinePresentOutcome = "cards" | "text" | "no_stage" | "source_failed" | "empty";
+
+/** What writes a routine step that shows a skill step's results (#1763), and where its outcomes are counted. */
+export interface RoutinePresentingSteps {
+  skillResultRenderer: TurnOutcomeRenderer;
+  metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
+}
 
 interface RoutinePresentingStepOptions {
   session: PreparedSession;
-  /** Writes a skill's result as the agent's reply; without it, a presenting step gets its own step reply. */
-  skillResultRenderer?: TurnOutcomeRenderer;
+  /** Without it, a presenting step gets its own step reply. */
+  presentingSteps?: RoutinePresentingSteps;
   accountId?: string;
   responseLanguage?: string | Promise<string | undefined>;
   signal?: AbortSignal;
 }
 
-/** What writes a presenting step's reply: the skill-result outcome, its renderer, and the context it renders in. */
+/** What writes a presenting step's reply: the skill-result outcome, its renderer, the context it renders in, and where its outcome goes. */
 interface RoutinePresentingStepReply {
   outcome: TurnOutcome;
   renderer: TurnOutcomeRenderer;
   context(): Promise<TurnRenderContext>;
+  /** Reports the reply once written: cards when it carries any, text otherwise. */
+  settled(presentation: ChatPresentedAnswer): void;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -47,8 +60,12 @@ const withStepSteering = (
   };
 };
 
-const report = (outcome: RoutinePresentOutcome): void => {
+const report = (steps: RoutinePresentingSteps, outcome: RoutinePresentOutcome): void => {
   setTraceAttributes({ "chat.routine.present_outcome": outcome });
+  steps.metrics?.incrementCounter("routine_present_total", {
+    help: "Routine steps that show a skill step's results, by how the turn's reply came out",
+    labels: { outcome },
+  });
 };
 
 /**
@@ -57,8 +74,9 @@ const report = (outcome: RoutinePresentOutcome): void => {
  * only on the turn the source step ran, while its completed result with records is staged; on any
  * other turn the step's own reply is written (null here). The skill-result renderer writes it from
  * the records: where the cards gate opens, the model picks the records and their fields and the
- * step's binding decides the selection and the stored origin; where the gate is shut (the agent's
- * cards switch off, WhatsApp, voice) the reply lists the records in text.
+ * step's binding decides the selection and the stored origin, stamped with the run; where it is
+ * shut (the agent's cards switch off, WhatsApp, voice) the reply lists the records in text, and
+ * the message keeps what it listed.
  */
 export const routinePresentingStepReply = (
   options: RoutinePresentingStepOptions,
@@ -66,21 +84,21 @@ export const routinePresentingStepReply = (
 ): RoutinePresentingStepReply | null => {
   const present = input.step.present;
   const routineId = input.turn.activeRoutineId;
-  const renderer = options.skillResultRenderer;
-  if (!present || !routineId || !renderer) {
+  const steps = options.presentingSteps;
+  if (!present || !routineId || !steps) {
     return null;
   }
   const staged = sourceStage(input.turn.stagedContext, present.from);
   if (!staged) {
-    report("no_stage");
+    report(steps, "no_stage");
     return null;
   }
   if (!isRecord(staged.metadata) || staged.metadata.status !== "completed" || !isRecord(staged.data)) {
-    report("source_failed");
+    report(steps, "source_failed");
     return null;
   }
   if (!hasToolRecords(staged.data)) {
-    report("empty");
+    report(steps, "empty");
     return null;
   }
   const skillName = staged.source ?? present.from;
@@ -92,9 +110,11 @@ export const routinePresentingStepReply = (
     steering: input.steering,
     trace: options.session.turnTrace,
   };
+  const renderer = steps.skillResultRenderer;
   if (!renderer.supports(outcome)) {
     return null;
   }
+  const executionId = input.turn.activeRoutineExecutionId;
   const presentBinding: RecordBlockBinding = {
     selection: present.selection,
     origin: {
@@ -102,10 +122,10 @@ export const routinePresentingStepReply = (
       skillName,
       routineId,
       stepId: input.step.id,
+      ...(executionId ? { executionId } : {}),
       ...(present.slot ? { slot: present.slot } : {}),
     },
   };
-  report("presented");
   return {
     outcome,
     renderer,
@@ -119,5 +139,6 @@ export const routinePresentingStepReply = (
         ...(options.signal ? { signal: options.signal } : {}),
       };
     },
+    settled: (presentation) => report(steps, presentation.replyBlocks ? "cards" : "text"),
   };
 };

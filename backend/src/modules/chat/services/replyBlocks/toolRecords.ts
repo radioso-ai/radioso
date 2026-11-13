@@ -117,10 +117,18 @@ const ellipsis = (value: string, maxLength: number): string => {
 /** Structural: a string that is an http(s) address. */
 const HTTP_URL = /^https?:\/\//i;
 
-/** An address as the model sees it: its origin and last path segment, enough to tell a photo from a page. */
+/**
+ * An address as the model sees it. A short one with no query is shown whole, so a reply can link
+ * to it. A long one, or one with a query, such as a signed link whose query is its credential, is
+ * cut to its origin and last path segment: enough to tell a photo from a page, and never the
+ * secret. The card itself reads the whole address from the record.
+ */
 const compactUrl = (value: string): string => {
   try {
     const url = new URL(value);
+    if (!url.search && !url.hash && !url.username && !url.password && value.length <= TOOL_RECORD_LIMITS.urlLength) {
+      return value;
+    }
     const last = url.pathname.split("/").filter(Boolean).pop();
     return ellipsis(last ? `${url.origin}/…/${last}` : url.origin, TOOL_RECORD_LIMITS.urlLength);
   } catch {
@@ -154,7 +162,7 @@ const compactValue = (value: unknown, depth: number): unknown => {
 
 const recordLine = (record: ToolRecord): string => `[${record.handle}] ${JSON.stringify(compactValue(record.value, 0))}`;
 
-const SECTION_HEADING = "Records the tool returned, each under a handle such as [r1]:";
+const SECTION_HEADING = "Records the tool returned, each under a handle such as [r1]. An address shortened with … is incomplete: never write one in the reply.";
 
 const sectionText = (lines: readonly string[], hidden: number): string => [
   SECTION_HEADING,

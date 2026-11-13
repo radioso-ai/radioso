@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-12T21:36:41.967Z",
+  "generatedAt": "2026-11-13T00:20:11.250Z",
   "passThreshold": 1,
   "cases": {
     "directive-refund-empathy": {
@@ -338,6 +338,21 @@
       "samples": 3
     },
     "reply-blocks-unanswered-no-pictures": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "tool-cards-listings-carousel": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "tool-cards-no-match-no-cards": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "tool-cards-records-without-pictures": {
       "status": "pass",
       "passRate": 1,
       "samples": 3

@@ -95,6 +95,9 @@ export const toolCardDirective = {
   binding: { kind: "skill" as const, skillName: TOOL_CARD_SKILL_NAME },
 };
 
+/** The model reads long or signed addresses shortened (`https://host/…/last`); a reply never carries one. */
+const noShortenedAddress = { type: "answer_does_not_contain" as const, pattern: "/…/", matchMode: "substring" as const };
+
 export const toolCardCases: ConversationQualityCase[] = [
   {
     id: "tool-cards-listings-carousel",
@@ -106,6 +109,7 @@ export const toolCardCases: ConversationQualityCase[] = [
     assertions: [
       { type: "reply_block", layout: "carousel", minItems: 2, itemsFromRecords: listingRecords },
       { type: "answer_excludes_image_url" },
+      noShortenedAddress,
     ],
   },
   {
@@ -118,6 +122,7 @@ export const toolCardCases: ConversationQualityCase[] = [
     assertions: [
       { type: "reply_block_without_pictures" },
       { type: "answer_excludes_image_url" },
+      noShortenedAddress,
     ],
   },
   {
@@ -130,6 +135,7 @@ export const toolCardCases: ConversationQualityCase[] = [
     assertions: [
       { type: "no_reply_block" },
       { type: "answer_excludes_image_url" },
+      noShortenedAddress,
     ],
   },
 ];

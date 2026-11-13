@@ -143,7 +143,7 @@ describe("skill result reply with the present head", () => {
 
     await renderer.render(outcome({ answer: JSON.stringify(LISTINGS) }), { session: session(), query: QUERY });
 
-    expect(calls[0]?.prompt).not.toContain('"photo":"https://img.homes.example/loft.jpg"');
+    expect(calls[0]?.prompt).not.toContain(JSON.stringify(LISTINGS));
     expect(calls[0]?.prompt).toContain("[r2]");
   });
 

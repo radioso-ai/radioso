@@ -198,6 +198,23 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `ReplyImageUrls`, which composition builds on the public backend address, turns
   them into `src` and `srcSet` whenever the block is presented: the reply, the
   `block` SSE events before `done`, and history (`historyMessageFields.ts`).
+- Cards from a skill's result (`services/replyBlocks/toolRecords.ts`,
+  `recordPresentHead.ts`, `recordBlockBuilder.ts`, `skillResultReplyBlocks.ts`,
+  `presentReplyEnvelope.ts`): the skill-result renderer
+  (`skillResultTurnRenderer.ts`) walks the skill's `outputs` into records
+  `r1..rN` (`ToolRecordLedger`: every array of objects, or the outputs
+  themselves, plus each picture the skill returned as bytes) and shows them as
+  findings within their own token budget. When the client renders item lists,
+  `SkillResultReplyBlocks.offerFor` gives the reply a `present` head of handles
+  and JSON Pointers, and `AssistantReplyComposer` asks for the
+  `{present, answer}` envelope, streaming `answer` alone. The block builder
+  reads every card value from the record the model named, keeps a server-only
+  `origin` on the stored block, and lists the pictures to copy as
+  `toolImages`, which the turn's persistence hands to the `toolImages` module.
+  Without the capability, or without records, the prompt and options are what
+  they would be without cards (`tests/fixtures/reply-blocks/skill-result-without-present.json`).
+  `hasRenderableResult` (`agentSkillTurnSkillProvider.ts`) makes an outcome with
+  records and no text renderable.
   A routine step that answers from evidence crosses the engine as a
   `RenderableTurn`: `routineGroundedAnswerRenderer.ts` sends the presented blocks
   as `blocks` and the stored form as `metadata.storedReplyBlocks`, and

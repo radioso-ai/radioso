@@ -77,9 +77,9 @@ describe("tool-card cases on the deterministic harness", () => {
     const listings = caseById("tool-cards-listings-carousel");
 
     expect(await statuses(listings, { present: { records: ["r1", "r2", "r3", "r4"], fields, caption: "Flats in Mitte" }, answer: "Four flats in Mitte fit your budget." }))
-      .toEqual(["pass", "pass"]);
+      .toEqual(["pass", "pass", "pass"]);
     expect(await statuses(listings, { present: { records: [], fields, caption: "Flats" }, answer: "Four flats fit." }))
-      .toEqual(["fail", "pass"]);
+      .toEqual(["fail", "pass", "pass"]);
   });
 
   it("fails the listings case on a card whose link is not its own record's", async () => {
@@ -87,7 +87,7 @@ describe("tool-card cases on the deterministic harness", () => {
     const mixed = { ...fields, link: "/photos/1/url" };
 
     expect(await statuses(listings, { present: { records: ["r1", "r2"], fields: mixed, caption: "Flats" }, answer: "Two flats fit." }))
-      .toEqual(["fail", "pass"]);
+      .toEqual(["fail", "pass", "pass"]);
   });
 
   it("passes the offices case on a list or no cards, and fails it when a page address is shown as a picture", async () => {
@@ -95,20 +95,20 @@ describe("tool-card cases on the deterministic harness", () => {
     const officeFields = { title: "/name", subtitle: "/address", image: null, link: "/url" };
 
     expect(await statuses(offices, { present: { records: ["r1", "r2", "r3"], fields: officeFields, caption: "Our offices" }, answer: "We have three offices." }))
-      .toEqual(["pass", "pass"]);
+      .toEqual(["pass", "pass", "pass"]);
     expect(await statuses(offices, { present: { records: [], fields: officeFields, caption: "Offices" }, answer: "We have three offices." }))
-      .toEqual(["pass", "pass"]);
+      .toEqual(["pass", "pass", "pass"]);
     expect(await statuses(offices, { present: { records: ["r1"], fields: { ...officeFields, image: "/url" }, caption: "Offices" }, answer: "Our Mitte office." }))
-      .toEqual(["fail", "pass"]);
+      .toEqual(["fail", "pass", "pass"]);
   });
 
   it("passes the no-match case when the model shows no flat for a houseboat, and fails it when it shows flats", async () => {
     const noMatch = caseById("tool-cards-no-match-no-cards");
 
     expect(await statuses(noMatch, { present: { records: [], fields, caption: "Houseboats" }, answer: "We have no houseboats, only flats." }))
-      .toEqual(["pass", "pass"]);
+      .toEqual(["pass", "pass", "pass"]);
     expect(await statuses(noMatch, { present: { records: ["r1"], fields, caption: "Flats" }, answer: "No houseboats, but this flat." }))
-      .toEqual(["fail", "pass"]);
+      .toEqual(["fail", "pass", "pass"]);
   });
 });
 

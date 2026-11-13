@@ -106,11 +106,25 @@ describe("tool record ledger", () => {
     expect(section).not.toContain("sig=secret");
   });
 
-  it("cuts a long address to its origin and last segment", () => {
+  it("cuts a long address to its origin and last segment, and says a cut one is incomplete", () => {
     const url = `https://homes.example/${"segment/".repeat(30)}photo.jpg`;
     const section = ToolRecordLedger.fromOutcome({ items: [{ url }] }, undefined).promptSection();
 
     expect(section).toContain('"url":"https://homes.example/…/photo.jpg"');
+    expect(section.split("\n")[0]).toContain("An address shortened with … is incomplete");
+  });
+
+  it("shows a short address with no query whole, so a reply can link to it", () => {
+    const section = ToolRecordLedger.fromOutcome({ offices: [{ name: "Mitte office", url: "https://homes.example/offices/mitte" }] }, undefined).promptSection();
+
+    expect(section).toContain('"url":"https://homes.example/offices/mitte"');
+  });
+
+  it("shortens an address that carries a query, such as a signed link, whatever its length", () => {
+    const section = ToolRecordLedger.fromOutcome({ photos: [{ url: "https://img.homes.example/a.jpg?sig=secret" }] }, undefined).promptSection();
+
+    expect(section).toContain('"url":"https://img.homes.example/…/a.jpg"');
+    expect(section).not.toContain("secret");
   });
 
   it("trims records from the end until the section fits its token budget", () => {

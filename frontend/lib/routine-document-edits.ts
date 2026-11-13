@@ -3,6 +3,7 @@ import { blockSegmentsToInstruction, instructionToBlockSegments, slugifyVariable
 import type { RoutineGuardKind, RoutineStepKind, RoutineTerminalKind } from '@/lib/api-types'
 import { approvalCaptureFieldRef } from '@/lib/routine-approval'
 import { consentsCoveringField, dropFieldFromConsents, renameFieldInConsents } from '@/lib/routine-consent-editor'
+import { renameInPresent } from '@/lib/routine-present-edits'
 
 const copy = <T>(value: T): T => structuredClone(value)
 
@@ -351,6 +352,7 @@ export const renameSlot = (doc: RoutineBlockDoc, stableSlotId: string, key: stri
     ])),
     outputAssignments: Object.fromEntries(Object.entries(step.outputAssignments ?? {}).map(([output, assignment]) => [output, assignment === previous.key ? nextKey : assignment])),
     branches: step.branches.map((branch) => ({ ...branch, guard: renameGuardRef(branch.guard, previous.key, nextKey) })),
+    ...(step.present ? { present: renameInPresent(step.present, { slot: { from: previous.key, to: nextKey } }) } : {}),
   }))
   return endingsOf(next).filter((ending) => ending.operatorNotice).reduce(
     (renamed, ending) => mapEnding(renamed, ending.stableStepId, (current) => current.operatorNotice
@@ -403,6 +405,7 @@ export const renameStep = (doc: RoutineBlockDoc, stepIndex: number, name: string
   next.steps = next.steps.map((step, index) => ({
     ...step,
     stableStepId: index === stepIndex ? nextId : step.stableStepId,
+    ...(step.present && !isDuplicated ? { present: renameInPresent(step.present, { step: { from: stableStepId, to: nextId } }) } : {}),
     // A branch that named the old id follows the rename — unless the name was shared, in
     // which case it never resolved to this row and must not be silently pointed at it.
     branches: step.branches.map((branch) => isDuplicated
@@ -497,6 +500,7 @@ export const slotRemovalBlockers = (doc: RoutineBlockDoc, key: string): string[]
     if (Object.values(step.inputBindings ?? {}).some((binding) => binding.kind === 'variableRef' && binding.ref === key)) references.push(`binding in ${step.stableStepId}`)
     if (Object.values(step.outputAssignments ?? {}).includes(key)) references.push(`output in ${step.stableStepId}`)
     if (step.branches.some((branch) => branch.guard.kind === 'slot_filled' ? branch.guard.slotKeys.includes(key) : branch.guard.kind === 'field' && branch.guard.fieldRef === key)) references.push(`guard in ${step.stableStepId}`)
+    if (step.present?.slot === key) references.push(`cards in ${step.stableStepId}`)
   }
   const noticeEndings = new Set(endingsOf(doc).filter((ending) => noticeReferencesSlot(ending.operatorNotice, key)).map((ending) => ending.stableStepId))
   for (const endingId of noticeEndings) references.push(`notice in ${endingId}`)
@@ -597,6 +601,8 @@ export const changeStepKind = (doc: RoutineBlockDoc, stepId: string, kind: Routi
   const previousCaptureKey = step.captureKey ?? null
 
   step.kind = kind
+  // Only a chat step shows results as cards (#1763).
+  if (kind !== 'chat') delete step.present
   step.toolRef = kind === 'tool' ? step.toolRef ?? '' : null
   step.actionType = kind === 'action' ? step.actionType ?? '' : null
 

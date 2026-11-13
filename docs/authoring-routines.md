@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-11-12
+last_updated: 2026-11-13
 ---
 
 # Authoring Routines
@@ -163,7 +163,8 @@ of sentences on their own lines; the breaks are part of what the agent reads.
 Write a step instruction in plain language and type `@` when the agent needs a
 value, such as `@order_number` or `@email`. The value appears in
 **Information**, where you choose its type: `text`, `number`, `boolean`,
-`email`, or `date`.
+`email`, or `date`, or `item` for a card the visitor picks from a skill's
+results (see [Show a skill's results as cards](#show-a-skills-results-as-cards)).
 
 When a step asks for a value, the routine waits for the visitor's reply, stores
 it under that name, then continues. A type controls the comparisons available
@@ -554,6 +555,46 @@ store the result as `@refund_id` for its final message.
 
 A skill name with no matching capability on the agent appears as **unknown
 skill**. Choose the intended skill, then validate the routine.
+
+#### Show a skill's results as cards
+
+A chat step after a skill step can show what the skill found as cards and let
+the visitor pick one. For a letting agency: a step asks for `@area` and
+`@budget`, a skill step `search` looks up homes, and the next chat step says
+"Show the homes within their budget and ask which one they would like to view."
+Click that step's **Chat** badge, set **Show results as cards** to
+`from @search`, and set **Pick fills** to **New item field**, which adds
+`@chosen_search` of type `item`. The row reads "Shows cards from @search →
+@chosen_search", and a later step can say "Confirm they chose @chosen_search".
+
+On the turn the search runs, the host writes the step's reply from the records
+the skill returned, the way a skill-result reply is written
+([Cards from a skill's records](../docs-portal/content/api/agents-and-skills.mdx)):
+the model picks up to ten records and the fields for each card's title,
+subtitle, picture and link, and the step's binding decides that the cards carry
+**Select** and that the block is stored with the step, and the routine's run, as
+its origin. A tap fills the `item` value with the card's key, title, link and up
+to twelve of the record's own plain fields, and the routine leaves the step by
+its structure, with no model reading the message. Only the step's latest cards
+in the current run count; a tap on any other routine card changes no value.
+Wherever a value is shown as text, an `item` reads as its title; an operator
+notice adds its link. A skill step without input bindings receives the title.
+
+A typed answer, "the second one" or a card's title, fills the value with the
+same stored card: the selector sees the cards the step showed, numbered, and
+returns a number, which the runner maps back to the stored card. With **Show
+cards in replies** off, or on a channel that draws no cards, the step lists the
+results as a numbered list in text and the message keeps the list, unpresented,
+so a typed answer resolves the same way. Cards appear only on the turn the search
+ran.
+
+The binding is the step's `metadata.present`, `{ from, selection, slot? }`.
+Validation reports `present_step_not_chat`, `present_source_not_earlier_tool`,
+`present_source_unreachable` (a step that waits for the visitor sits between the
+skill step and the step), `present_slot_not_item`, `present_selection_mismatch`
+and `item_slot_without_presenting_step`. A branch on an `item` value tests
+`is_present` or `is_absent`, a skill input binding cannot name it, and an exposed
+routine's tool leaves it out.
 
 ### Shape branches with condition rows
 

@@ -2123,7 +2123,20 @@ Primary internals:
   `backend/src/app/composition/toolImages.ts`. Focused checks:
   `cd backend && pnpm exec vitest run tests/unit/chat/replyBlocks tests/unit/toolImages tests/unit/eval-suite/tool-card-cases.test.ts tests/contract/skill-result-reply-blocks.contract.test.ts`,
   and `tests/integration/tool-result-cards.integration.test.ts` on the disposable
-  integration database
+  integration database. A routine step that shows a skill step's results
+  (`present`, slot type `item`): `services/routines/routinePresentingStepRenderer.ts`
+  (chosen ahead of the grounded step renderer), the binding's selection and origin
+  in `recordBlockBuilder.ts`, the pick read in `itemSelection.ts`
+  (`routineItemSelectionOf`), the binding's rules in
+  `backend/src/modules/routines/presentBindingValidation.ts`, and the engine's side
+  in `packages/conversation-engine/src/itemSelection.ts`. Focused checks:
+  `tests/unit/chat/replyBlocks/routine-presenting-step.test.ts`,
+  `tests/unit/routines/present-binding-validation.test.ts`,
+  `tests/contract/routine-present-binding.contract.test.ts`,
+  `tests/integration/routine-present-select.integration.test.ts` (host, engine and
+  Postgres), the `routine-property-flow` eval case
+  (`tests/fixtures/conversation-quality/routineCardCases.ts`, run on an agent of its
+  own), and the live `tests/live/routine-present-pick.verify.test.ts`
 - `backend/src/modules/chat/services/answerLinkGuard.ts` and
   `streamedAnswerText.ts` (#1751: a grounded answer's link to an address its
   model was not sent becomes its text, streamed and finished alike), over the
@@ -2817,7 +2830,12 @@ Reply blocks in the chat (#1763) entry points:
 - `frontend/components/chat/item-list-block.tsx` — carousel, grid and list, rendered
   by `frontend/components/dashboard/chat-message-thread.tsx`
 - `cd frontend && pnpm exec vitest run tests/unit/reply-blocks.test.ts tests/unit/anonymous-chat-reply-blocks.test.tsx tests/unit/api-chat-stream.test.ts`
-- `cd frontend && pnpm run test:e2e -- reply-blocks.spec.ts`
+- `cd frontend && pnpm run test:e2e -- reply-blocks.spec.ts reply-card-selection.spec.ts`
+- A routine step's cards in the Document tab:
+  `frontend/components/dashboard/settings/routine-present-editor.tsx` (the step
+  panel's **Show results as cards** and **Pick fills**) over
+  `frontend/lib/routine-present-edits.ts`; checked by
+  `tests/unit/routine-present-edits.test.ts` and `routine-document-editor.spec.ts`
 
 Turn debug view entry points:
 

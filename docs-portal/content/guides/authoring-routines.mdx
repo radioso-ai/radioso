@@ -139,7 +139,8 @@ The routine waits at a step that asks for a value, stores the visitor's reply,
 then continues through the flow.
 
 Choose a type — `text`, `number`, `boolean`, `email`, or `date` — in
-**Information**. Open a value's row there to switch **Required** off when the
+**Information**, or `item` for a card the visitor picks (see [Show a skill's
+results as cards](#show-a-skills-results-as-cards)). Open a value's row there to switch **Required** off when the
 flow may reach an ending while the value remains empty, turn on **Editable after
 completion** when a visitor may correct it after the routine ends (see [Changes
 after a routine ends](#changes-after-a-routine-ends)), or turn on **Sensitive**
@@ -191,6 +192,65 @@ of stating the course's. A visitor's own dates, such as "I'm free between the
 17th and 27th", reach it as the visitor's words, not as a source. Put a fact
 every visitor needs in the instruction itself, or in a page or document the
 step reads.
+
+### Show a skill's results as cards
+
+When a skill step searches for something — homes to rent, rooms, products — the
+chat step after it can show what it found as cards and let the visitor pick one.
+Take a letting agency's routine: a step asks for `@area` and `@budget`, a skill
+step `search` looks up homes with them, and the next chat step says "Show the
+homes within their budget and ask which one they would like to view." Click that
+step's **Chat** badge, set **Show results as cards** to `from @search`, and set
+**Pick fills** to **New item field**. The routine gets a value
+`@chosen_search` of type `item`, and the step row reads "Shows cards from
+@search → @chosen_search". A later step can name the home: "Confirm they chose
+@chosen_search and ask for their email @email".
+
+On the turn the search runs, the step's reply is written from the records the
+skill returned. The agent picks which records become cards, at most ten, and
+which of their fields give each card its title, subtitle, picture and link; it
+never writes a value onto a card itself. Each card has a **Select** button.
+Tapping one fills the `item` value and the routine moves on, the same way an
+answered step does. Only the cards the step showed most recently in this run of
+the routine count: a tap on cards from an earlier reply, an earlier run, or a
+step the routine has already left changes nothing the routine holds, and the
+step the routine is on replies. The cards appear only on the turn the search ran:
+when the step is asked again later, its reply is text.
+
+An `item` value holds the card the visitor picked: its key, its title, its link,
+and up to twelve of the record's own plain fields. Wherever a value is shown as
+text — `@chosen_search` in an instruction, an operator notice, the AI summary,
+the Test Chat trace — it reads as the card's title, and an operator notice adds
+the link. A completion export and the data export carry the whole value. A skill
+step without input bindings receives the card's title; a skill input binding
+cannot name an `item` value.
+
+A visitor may also answer in words. "The second one", "Villa Rosa" or "the
+Altbau flat" fills the value with the same stored card a tap would, link and
+fields included, because the routine reads the answer against the cards the step
+showed, in the order it showed them. An answer that names none of them fills
+nothing, and the step asks again. With **Show cards in replies** off, or on a
+channel that draws no cards, such as WhatsApp, voice or email, the step lists the
+results in its text as a numbered list, Radioso keeps the list with the reply,
+and the visitor's answer is read against it the same way.
+
+Validation checks the binding:
+
+- Only a chat step shows results, from a skill step the routine passes through
+  before it (`present_step_not_chat`, `present_source_not_earlier_tool`), with no
+  step that waits for the visitor in between, since its results are gone by the
+  next turn (`present_source_unreachable`). **Show results as cards** offers only
+  the skill steps that qualify.
+- A pick fills a value of type `item` (`present_slot_not_item`), and a step lets
+  the visitor pick exactly when it names that value (`present_selection_mismatch`).
+  With **Nothing, only show**, the cards are shown and nothing is filled.
+- An `item` value needs a step that fills it (`item_slot_without_presenting_step`).
+  A condition on it tests whether it is present or absent, a skill input binding
+  cannot name it, and an exposed routine's tool leaves it out.
+
+Over the API, the binding is the step's `metadata.present`:
+`{ "from": "search", "selection": "single", "slot": "chosen_search" }`.
+Ray's `prepare_routine_structure` carries it the same way.
 
 ### Sensitive values
 
@@ -669,6 +729,10 @@ from a test that kept skills off.
 - A coverage condition does not activate: inspect the originating turn. A
   failed or unavailable assessment is recorded as not assessed and never
   activates a coverage condition.
+- A step that shows results as cards replies in plain text: the agent's **Show
+  cards in replies** is off, the channel draws no cards, the skill failed or
+  returned nothing, or the search ran on an earlier turn. Cards appear on the
+  turn the search runs.
 - A step skips value collection: add the value with `@` in the instruction so the
   step refers to the stored information.
 - A step's reply carries text from a directive: directives shape every routine

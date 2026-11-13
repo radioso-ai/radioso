@@ -227,19 +227,43 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   as `blocks` and the stored form as `metadata.storedReplyBlocks`, and
   `presentRoutineRenderableAnswer` restores both: the stored form reads back
   through `storedReplyBlockSchema` and pairs with `blocks` by position, and a
-  mismatch drops both forms with a warning that carries ids only.
+  mismatch drops both forms with a warning that carries ids only. The cards'
+  pictures ride as `metadata.storedToolImages`, kept only for images the stored
+  cards show.
+- A routine step that shows a skill step's results (#1763,
+  `services/routines/routinePresentingStepRenderer.ts`): a `chat` step with
+  `present: {from, selection, slot?}` is written host-side, ahead of the grounded
+  renderer, on the turn the source step staged a completed result with records
+  (the staged `skill_result` whose `metadata.stepId` is `from`). It runs the
+  skill-result renderer (`RoutinePresentingSteps`, wired from the turn
+  runtime into the assembly and the approval resume) with
+  `TurnRenderContext.presentBinding`: the offer opens through the same gate, the
+  block takes the step's `selection` and the `routine_step` origin (`{skillName,
+  routineId, stepId, executionId?, slot?}`), and a card a pick fills a slot with
+  keeps the record's top-level scalars as server-only `fields`. With the gate shut,
+  the offer is a listing (`chat/skill-result-list-records.md`): the reply lists the
+  records it presents as a numbered list, and the head's block is kept, unpresented,
+  as `metadata.listedItems` (`selection: "none"`). Otherwise it returns null and the
+  step's own reply is written. Each turn counts `routine_present_total{outcome}`
+  (`cards`, `text`, `no_stage`, `source_failed`, `empty`), reported once the reply
+  is known, and the span attribute `chat.routine.present_outcome`.
+- What a routine step showed (`services/replyBlocks/routinePresentation.ts`): the
+  newest assistant message with a routine-step block, cards or listed records, is
+  the step's latest presentation; `conversationProcessTurnInput.ts` hands it to the
+  engine as `inputEvent.shownItems`, which picks and typed answers resolve against.
 - A visitor picking a card (`services/replyBlocks/itemSelection.ts`,
   `itemSelectionTurn.ts`, `selectedItemText.ts`): the evidence `present` head
   carries a `selection` enum (`none` unless the model says `single`), and a
-  `single` block gives each item a `select` action. A skill's cards are always
-  `none`: a pick in conversation reaches retrieval, never the skill, so picking
-  records belongs to routines. A pick arrives as
+  `single` block gives each item a `select` action. A skill's cards outside a
+  routine are always `none`: a pick in conversation reaches retrieval, never the
+  skill, so picking records belongs to routines. A pick arrives as
   `inputMetadata.method = "item_select"` with `selection: {messageId, blockId,
   itemKey}`. `AssistantChatService` hands it to `ItemSelectionTurns.claim` before
   anything else: it reaches the conversation as the turn would
   (`turnConversation.ts`, shared with the preparer), reads the item from the
   block stored on that assistant message (an evidence item keeps its server-only
-  `document`; a block with an `origin` is never picked), refuses anything else
+  `document`; a block with an `origin` is picked only when it is a routine
+  step's that binds a slot), refuses anything else
   with `400 item_selection_invalid` and another card from a message already
   picked from with `409 item_already_selected`
   (`MessageRepository.hasOtherItemSelectionFrom`; the same card again is a
@@ -248,7 +272,10 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `ChatAnswerSupport.buildContextBlock` renders it as one `<selected_item>` block
   (`prompts/chat/selected-item.md`). A pick turn bypasses the fused planner
   (`item_selection`), and `responseLanguageEvidence.ts` judges its reply language
-  on the visitor's last written message, never the title. Metrics:
+  on the visitor's last written message, never the title. A routine step's pick
+  also reaches the engine as `inputEvent.itemSelection` (`routineItemSelectionOf`,
+  added in `conversationProcessTurnInput.ts`), which fills the step's `item` slot
+  while the run waits on it. Metrics:
   `reply_item_selection_total{outcome}`; analytics: `chat.item_selected` with ids
   only, once the visitor's message is stored. Tests:
   `tests/unit/chat/replyBlocks/item-selection.test.ts`,

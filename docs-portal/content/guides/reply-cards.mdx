@@ -37,7 +37,7 @@ Cards from your documents can be picked. When a reply asks the visitor to choose
 
 The agent decides when a reply is a choice, the same way it decides which cards to show. Radioso reads the picked item from the reply it stored, never from what the browser sends, so a visitor can pick only a card the agent showed them. Each pick records a `chat.item_selected` analytics event with the conversation, the reply, the block and the item's key.
 
-A skill's cards are shown, never picked: a pick in conversation is answered from your documents, so it would never reach the skill. To let a visitor choose one of a skill's records and act on it, use a routine.
+A skill's cards in an open conversation are shown, never picked: a pick there is answered from your documents, so it would never reach the skill. To let a visitor choose one of a skill's records and act on it, show them from a routine step. A routine's skill step searches, the chat step after it shows the results as cards with **Select** buttons, and the pick fills one of the routine's values, which later steps, the operator notice and the hand-off name by the card's title ([Show a skill's results as cards](/guides/authoring-routines#show-a-skills-results-as-cards)). Where cards are off or the channel draws none, that step lists the results in text and the visitor names the one they want.
 
 Many sites name the same picture on every page, a banner or a logo. A picture that more than five documents in the workspace name as their main picture is treated as the site's, never as any one document's: the document's next main picture stands in, or it shows none.
 
@@ -79,5 +79,6 @@ Pictures belong to their document. Deleting a document, or a source with its doc
 
 - [Reply blocks](/api/public-chat-and-embed#reply-blocks) for the cards' shape and the image address.
 - [Cards from a skill's records](/api/agents-and-skills#cards-from-a-skills-records) for cards built from what an MCP tool returns.
+- [Show a skill's results as cards](/guides/authoring-routines#show-a-skills-results-as-cards) for a routine step whose cards the visitor picks.
 - [Document processing](/operators/document-processing) for the worker that fetches pictures.
 - [WordPress connector](/operators/wordpress-connector) for featured images.

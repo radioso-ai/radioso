@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-11-11
+last_updated: 2026-11-13
 ---
 
 # Conversational Routines
@@ -267,8 +267,9 @@ from the opening message — so the check holds for any selector a host plugs in
 | `boolean` | `true` or `false`, or that text in any letter case | A boolean |
 | `email` | Text shaped like `name@example.com` | Trimmed text |
 | `date` | A `YYYY-MM-DD` day that exists on the calendar | The same text |
+| `item` | A picked card `{ key, title, link?, fields }` within the stored card's bounds, or a name given in text | The card, or `{ key: name, title: name, fields: {} }` |
 
-An object or a list fits no type. So an `email` slot never holds
+An object or a list fits no other type. So an `email` slot never holds
 `<script>alert(1)</script>`, a `date` slot never holds `2026-02-31` or
 `mid-November`, and a `number` slot never holds `{"count": 2}`. A correction to a
 completed routine's slot goes through the same rules
@@ -295,6 +296,35 @@ from any of them never reaches routine state, an action step's payload, or an
 unbound tool-step input. A routine with no declared slot schema has no list to
 check a key against, so every key it is given reaches state untouched — the
 built-in contact routine, authored with no typed slots, keeps capture this way.
+
+### An item slot and a presenting step
+
+A `chat` step may carry `present: { from, selection, slot? }` (#1763): it shows
+the staged result of the skill step `from` as cards, and a pick fills the `item`
+slot `slot`. The host renders it (`routinePresentingStepRenderer.ts`, chosen
+ahead of the grounded renderer) on the turn `from` ran, reading the staged
+`skill_result` whose `metadata.stepId` is `from`; on any other turn the step's
+own reply is written. The step collects its bound slot
+(`collectedSlotsByStep`), so it waits until the slot holds a value.
+
+An `item` slot holds only an item a presentation stored. The host hands the
+engine the latest routine-step presentation in the conversation as
+`inputEvent.shownItems { routineId, stepId, executionId, messageId, items }`,
+read from the reply's stored cards or, where no cards were drawn, from the
+records it listed (`metadata.listedItems`). A pick arrives as
+`inputEvent.itemSelection { routineId, stepId, executionId, messageId, slot, item }`.
+The runner (`packages/conversation-engine/src/itemSelection.ts`) writes a pick
+into the slot only when the run waits on that step, the pick names that run and
+the latest presentation, and no consent blocks or waives the slot; it then
+records an `item_selected` trace entry with the slot key. Any routine pick,
+applied or not, states no other value, and the host counts each as
+`routine_item_pick_total{outcome}`. On the presenting step the selector sees the
+shown items numbered and returns a number, a key or a title, and the runner
+keeps the stored item it names; a value the selector writes itself is dropped.
+Every other path drops an `item` value: the opening message, a reply to another
+step, and a correction after the routine ends. Every reader that expects a
+scalar reads an item as its title (`readableSlotValue` in the contract), and an
+untyped skill step's arguments carry the title.
 
 ### A sensitive slot's value
 

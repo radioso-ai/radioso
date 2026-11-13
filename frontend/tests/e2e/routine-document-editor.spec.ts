@@ -446,6 +446,60 @@ const addChatStep = async (page: Page, documentEditor: Locator, text: string) =>
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 };
 
+// #1763: a chat step after a tool step shows the tool's results as cards, and the visitor's pick
+// fills an item field the author makes beside it.
+test("shows a tool step's results as cards on the next step, saves the pick's field, and reads it back after a reload", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routineSkillCatalog: [{
+      skillName: "search_homes",
+      displayName: "Search homes",
+      category: "external_mcp",
+      inputs: [],
+      outcomes: [{ name: "completed", displayName: "Completed", status: "completed" }],
+      hasDataOutputs: true,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Find a home");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor is looking for a home to rent.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Search homes" }).first().click();
+  const searchStep = documentEditor.getByRole("button", { name: "Search homes", exact: true }).locator("xpath=ancestor::li[1]");
+  await searchStep.getByRole("button", { name: "Search homes", exact: true }).click();
+  const searchInstruction = documentEditor.getByLabel("Step 1 instruction");
+  await searchInstruction.click();
+  await searchInstruction.pressSequentially("Search the homes to rent.");
+  await searchStep.getByRole("button", { name: "Done", exact: true }).click();
+  await addChatStep(page, documentEditor, "Show the homes that match and ask which one they would like to view.");
+
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).last().click();
+  const cardsFrom = documentEditor.getByLabel("Step 2 cards from");
+  await cardsFrom.selectOption({ index: 1 });
+  await documentEditor.getByLabel("Step 2 pick fills").selectOption("New item field");
+  const source = await cardsFrom.inputValue();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(documentEditor.getByText(`Shows cards from @${source} → @chosen_${source}`)).toBeVisible();
+  const saved = () => routineUpdates.filter((update) => update.method === "POST" || update.method === "PATCH").at(-1)?.body;
+  await expect.poll(() => saved()?.steps?.find((step) => step.kind === "chat")?.metadata, { timeout: 15_000 })
+    .toEqual({ present: { from: source, selection: "single", slot: `chosen_${source}` } });
+  expect(saved()?.slots?.find((slot) => slot.key === `chosen_${source}`)?.type).toBe("item");
+
+  await page.reload();
+  await expect(page.getByRole("article", { name: "Routine document editor" }).getByText(`Shows cards from @${source} → @chosen_${source}`)).toBeVisible();
+});
+
 test("reorders a step from its collapsed row, with no editor panel open", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

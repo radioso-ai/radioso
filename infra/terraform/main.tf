@@ -70,6 +70,12 @@ locals {
     var.voice_recording_erasure_recovery_schedule,
     "*/15 * * * *",
   )
+  # Every 15 minutes, matching IDENTITY_NONCE_PRUNE_INTERVAL_MS in identityNoncePrune.ts: a nonce only
+  # matters for the few minutes its token is accepted, so the table stays small at any cadence.
+  identity_nonce_prune_schedule = coalesce(
+    var.identity_nonce_prune_schedule,
+    "*/15 * * * *",
+  )
   agent_bundle_import_cleanup_schedule = coalesce(
     var.agent_bundle_import_cleanup_schedule,
     "*/5 * * * *",

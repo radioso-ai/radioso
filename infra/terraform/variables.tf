@@ -453,6 +453,12 @@ variable "voice_recording_erasure_recovery_schedule" {
   default     = null
 }
 
+variable "identity_nonce_prune_schedule" {
+  description = "Optional cron schedule for the visitor identity nonce prune, which deletes the single-use nonces of verified visitor identities once their window has passed. Defaults to every 15 minutes, the worker poll loop's own cadence."
+  type        = string
+  default     = null
+}
+
 variable "slack_inbound_event_retention_schedule" {
   description = "Optional cron schedule for the Slack inbound-event dedup ledger sweep. The worker deletes event ids older than SLACK_INBOUND_EVENT_RETENTION_DAYS only when this sweep runs, so a deployment without it keeps the ledger forever."
   type        = string

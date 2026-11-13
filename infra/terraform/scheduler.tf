@@ -29,6 +29,7 @@ locals {
   # Built-in periodic task (`CONVERSATION_RETENTION_TASK_ID`), registered in every edition.
   conversation_retention_url           = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/conversation-retention/run" : null
   voice_recording_erasure_recovery_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/voice-recording-erasure-recovery/run" : null
+  identity_nonce_prune_url             = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/identity-nonce-prune/run" : null
 }
 
 resource "google_cloud_scheduler_job" "document_worker_recovery" {
@@ -316,6 +317,32 @@ resource "google_cloud_scheduler_job" "voice_recording_erasure_recovery" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.voice_recording_erasure_recovery_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Deletes the single-use nonces of verified visitor identities once their window has passed. Each
+# run deletes a bounded number of rows, and a backlog drains over the next runs.
+resource "google_cloud_scheduler_job" "identity_nonce_prune" {
+  count            = var.deploy_services ? 1 : 0
+  name             = "${local.resource_name_prefix}-identity-nonce-prune"
+  region           = var.region
+  schedule         = local.identity_nonce_prune_schedule
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = local.identity_nonce_prune_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.identity_nonce_prune_url
     }
   }
 

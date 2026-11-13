@@ -54,7 +54,9 @@ export const anonymousChatSchema = z.object({
   userExpectedLocale: localeHintSchema.optional(),
   pageContext: pageContextSchema,
   clientContextCapabilities: clientContextCapabilitiesSchema,
-  signedIdentity: z.string().max(8192).optional(),
+  // Not length-bounded here: the request body cap bounds it, and a token the verifier cannot
+  // accept (too long included) leaves the turn anonymous instead of failing the message.
+  signedIdentity: z.string().optional(),
   /**
    * The `version` of the `branding.privacyNotice` entry the page showed before this first message.
    * Recorded on the conversation the message starts when the agent's notices carry it now.

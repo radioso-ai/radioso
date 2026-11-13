@@ -11784,7 +11784,6 @@ components:
                     - layouts
         signedIdentity:
           type: string
-          maxLength: 8192
         privacyNoticeVersion:
           type: string
           minLength: 1
@@ -43053,7 +43052,6 @@ paths:
                   additionalProperties: false
                 signedIdentity:
                   type: string
-                  maxLength: 8192
                 stream:
                   type: boolean
                   enum:

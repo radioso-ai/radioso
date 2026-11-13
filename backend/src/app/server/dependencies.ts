@@ -148,6 +148,7 @@ import { createPostgresConversationErasureUnitOfWork } from "../composition/conv
 import { createConsentWithdrawal } from "../composition/consentWithdrawal.js";
 import { ConversationErasureService, PrivacySettingsService } from "../../modules/privacy/public.js";
 import { conversationRetentionPeriodicTask, createConversationRetentionSweep } from "../composition/conversationRetention.js";
+import { identityNoncePrunePeriodicTask } from "../composition/identityNoncePrune.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
 import { createPostgresDataSubjectAccess } from "../composition/dataSubjectAccess.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
@@ -1168,14 +1169,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const periodicTaskEntries = [
     // Built in: every deployment enforces the retention its workspaces set, through the erasure.
     conversationRetentionPeriodicTask(createConversationRetentionSweep({
-      db: infrastructure.database.kysely,
-      erasure: conversationErasure,
-      audit: infrastructure.auditService,
-      logger,
-      metrics: infrastructure.metricsRegistry,
+      db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService,
+      logger, metrics: infrastructure.metricsRegistry,
     })),
     // Built in: recordings a deletion left pending with no job working on them are queued again.
     voiceRecordings.erasureRecoveryTask,
+    // Built in: single-use nonces of verified visitor identities are deleted once their window has passed.
+    identityNoncePrunePeriodicTask({ nonces: repositories.identityNonceRepository, logger }),
     ...composition.periodicTaskRegistrations.map((registration) => ({
       id: registration.id,
       intervalMs: registration.intervalMs,

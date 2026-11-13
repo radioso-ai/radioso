@@ -235,15 +235,22 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `present: {from, selection, slot?}` is written host-side, ahead of the grounded
   renderer, on the turn the source step staged a completed result with records
   (the staged `skill_result` whose `metadata.stepId` is `from`). It runs the
-  skill-result renderer with `TurnRenderContext.presentBinding`: the offer opens
-  through the same gate, the block takes the step's `selection` and the
-  `routine_step` origin (`{skillName, routineId, stepId, slot?}`), and a card a
-  pick fills a slot with keeps the record's top-level scalars as server-only
-  `fields`. With the gate shut, the reply is written from the records without
-  handles, so it lists them in text. Otherwise it returns null and the step's
-  own reply is written. The outcome is the span attribute
-  `chat.routine.present_outcome` (`presented`, `no_stage`, `source_failed`,
-  `empty`); emitted blocks count under `reply_blocks_emitted_total{source=routine_step}`.
+  skill-result renderer (`RoutinePresentingSteps`, wired from the turn
+  runtime into the assembly and the approval resume) with
+  `TurnRenderContext.presentBinding`: the offer opens through the same gate, the
+  block takes the step's `selection` and the `routine_step` origin (`{skillName,
+  routineId, stepId, executionId?, slot?}`), and a card a pick fills a slot with
+  keeps the record's top-level scalars as server-only `fields`. With the gate shut,
+  the offer is a listing (`chat/skill-result-list-records.md`): the reply lists the
+  records it presents as a numbered list, and the head's block is kept, unpresented,
+  as `metadata.listedItems` (`selection: "none"`). Otherwise it returns null and the
+  step's own reply is written. Each turn counts `routine_present_total{outcome}`
+  (`cards`, `text`, `no_stage`, `source_failed`, `empty`), reported once the reply
+  is known, and the span attribute `chat.routine.present_outcome`.
+- What a routine step showed (`services/replyBlocks/routinePresentation.ts`): the
+  newest assistant message with a routine-step block, cards or listed records, is
+  the step's latest presentation; `conversationProcessTurnInput.ts` hands it to the
+  engine as `inputEvent.shownItems`, which picks and typed answers resolve against.
 - A visitor picking a card (`services/replyBlocks/itemSelection.ts`,
   `itemSelectionTurn.ts`, `selectedItemText.ts`): the evidence `present` head
   carries a `selection` enum (`none` unless the model says `single`), and a

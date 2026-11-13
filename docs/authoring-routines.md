@@ -572,22 +572,28 @@ the skill returned, the way a skill-result reply is written
 ([Cards from a skill's records](../docs-portal/content/api/agents-and-skills.mdx)):
 the model picks up to ten records and the fields for each card's title,
 subtitle, picture and link, and the step's binding decides that the cards carry
-**Select** and that the block is stored with the step as its origin. A tap fills
-the `item` value with the card's key, title, link and up to twelve of the
-record's own plain fields, and the routine leaves the step by its structure,
-with no model reading the message. Wherever a value is shown as text, an `item`
-reads as its title; an operator notice adds its link.
+**Select** and that the block is stored with the step, and the routine's run, as
+its origin. A tap fills the `item` value with the card's key, title, link and up
+to twelve of the record's own plain fields, and the routine leaves the step by
+its structure, with no model reading the message. Only the step's latest cards
+in the current run count; a tap on any other routine card changes no value.
+Wherever a value is shown as text, an `item` reads as its title; an operator
+notice adds its link. A skill step without input bindings receives the title.
 
-A typed answer is read like any reply, and it fills the value only when it names
-one of the items the agent's latest message listed by name. With **Show cards in
-replies** off, or on a channel that draws no cards, the step lists the results in
-text, and the visitor names one. Cards appear only on the turn the search ran.
+A typed answer, "the second one" or a card's title, fills the value with the
+same stored card: the selector sees the cards the step showed, numbered, and
+returns a number, which the runner maps back to the stored card. With **Show
+cards in replies** off, or on a channel that draws no cards, the step lists the
+results as a numbered list in text and the message keeps the list, unpresented,
+so a typed answer resolves the same way. Cards appear only on the turn the search
+ran.
 
 The binding is the step's `metadata.present`, `{ from, selection, slot? }`.
 Validation reports `present_step_not_chat`, `present_source_not_earlier_tool`,
-`present_slot_not_item`, `present_selection_mismatch` and
-`item_slot_without_presenting_step`. A branch on an `item` value tests
-`is_present` or `is_absent`, a skill does not take it as an input, and an exposed
+`present_source_unreachable` (a step that waits for the visitor sits between the
+skill step and the step), `present_slot_not_item`, `present_selection_mismatch`
+and `item_slot_without_presenting_step`. A branch on an `item` value tests
+`is_present` or `is_absent`, a skill input binding cannot name it, and an exposed
 routine's tool leaves it out.
 
 ### Shape branches with condition rows

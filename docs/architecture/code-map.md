@@ -2132,8 +2132,11 @@ Primary internals:
   in `packages/conversation-engine/src/itemSelection.ts`. Focused checks:
   `tests/unit/chat/replyBlocks/routine-presenting-step.test.ts`,
   `tests/unit/routines/present-binding-validation.test.ts`,
-  `tests/contract/routine-present-binding.contract.test.ts`, and the live
-  `tests/live/routine-present-pick.verify.test.ts`
+  `tests/contract/routine-present-binding.contract.test.ts`,
+  `tests/integration/routine-present-select.integration.test.ts` (host, engine and
+  Postgres), the `routine-property-flow` eval case
+  (`tests/fixtures/conversation-quality/routineCardCases.ts`, run on an agent of its
+  own), and the live `tests/live/routine-present-pick.verify.test.ts`
 - `backend/src/modules/chat/services/answerLinkGuard.ts` and
   `streamedAnswerText.ts` (#1751: a grounded answer's link to an address its
   model was not sent becomes its text, streamed and finished alike), over the

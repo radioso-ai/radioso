@@ -1,4 +1,5 @@
-import { slugifyVariableKey, type RoutineBlockDoc, type RoutineBlockStep } from '@/lib/routine-prose'
+import { presentSourceCandidates } from '@radioso/routine-definition'
+import { draftFromBlockDoc, slugifyVariableKey, type RoutineBlockDoc, type RoutineBlockStep } from '@/lib/routine-prose'
 
 /**
  * A chat step that shows a tool step's results as cards (#1763): which tool step's results, and
@@ -20,10 +21,13 @@ const withoutPresent = (step: RoutineBlockStep): RoutineBlockStep => {
   return rest
 }
 
-/** The tool steps that come before `stepId`: the results a step can show. */
+/**
+ * The tool steps whose results a step can show: those that lead to it through tool and action steps
+ * only, so their result is still there on the turn the step replies. The rule validation applies.
+ */
 export const presentSourceOptions = (doc: RoutineBlockDoc, stepId: string): string[] => {
-  const index = doc.steps.findIndex((step) => step.stableStepId === stepId)
-  return doc.steps.slice(0, Math.max(index, 0)).filter((step) => step.kind === 'tool').map((step) => step.stableStepId)
+  const draft = draftFromBlockDoc(doc)
+  return presentSourceCandidates(draft.steps, draft.transitions, stepId)
 }
 
 /** The item fields a pick can fill. */

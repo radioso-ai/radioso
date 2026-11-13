@@ -307,17 +307,24 @@ ahead of the grounded renderer) on the turn `from` ran, reading the staged
 own reply is written. The step collects its bound slot
 (`collectedSlotsByStep`), so it waits until the slot holds a value.
 
-An `item` slot takes a value in two ways only. A pick arrives on the input event
-as `itemSelection { routineId, stepId, slot, item }`, read by the host from the
-stored block; the runner writes it into the slot when the run waits on that step
-(`packages/conversation-engine/src/itemSelection.ts`), treats the message as one
-that states no other value, and records an `item_selected` trace entry with the
-slot key. The selector may read a name from the visitor's reply on the
-presenting step itself, and the runner keeps it only when that name appears in
-the assistant's latest message, so a position after cards names nothing. Every
-other path drops an `item` value: the opening message, a reply to another step,
-and a correction after the routine ends. Every reader that expects a scalar
-reads an item as its title (`readableSlotValue` in the contract).
+An `item` slot holds only an item a presentation stored. The host hands the
+engine the latest routine-step presentation in the conversation as
+`inputEvent.shownItems { routineId, stepId, executionId, messageId, items }`,
+read from the reply's stored cards or, where no cards were drawn, from the
+records it listed (`metadata.listedItems`). A pick arrives as
+`inputEvent.itemSelection { routineId, stepId, executionId, messageId, slot, item }`.
+The runner (`packages/conversation-engine/src/itemSelection.ts`) writes a pick
+into the slot only when the run waits on that step, the pick names that run and
+the latest presentation, and no consent blocks or waives the slot; it then
+records an `item_selected` trace entry with the slot key. Any routine pick,
+applied or not, states no other value, and the host counts each as
+`routine_item_pick_total{outcome}`. On the presenting step the selector sees the
+shown items numbered and returns a number, a key or a title, and the runner
+keeps the stored item it names; a value the selector writes itself is dropped.
+Every other path drops an `item` value: the opening message, a reply to another
+step, and a correction after the routine ends. Every reader that expects a
+scalar reads an item as its title (`readableSlotValue` in the contract), and an
+untyped skill step's arguments carry the title.
 
 ### A sensitive slot's value
 

@@ -211,32 +211,42 @@ skill returned. The agent picks which records become cards, at most ten, and
 which of their fields give each card its title, subtitle, picture and link; it
 never writes a value onto a card itself. Each card has a **Select** button.
 Tapping one fills the `item` value and the routine moves on, the same way an
-answered step does. The cards appear only on the turn the search ran: when the
-step is asked again later, its reply is text.
+answered step does. Only the cards the step showed most recently in this run of
+the routine count: a tap on cards from an earlier reply, an earlier run, or a
+step the routine has already left changes nothing the routine holds, and the
+step the routine is on replies. The cards appear only on the turn the search ran:
+when the step is asked again later, its reply is text.
 
 An `item` value holds the card the visitor picked: its key, its title, its link,
 and up to twelve of the record's own plain fields. Wherever a value is shown as
 text — `@chosen_search` in an instruction, an operator notice, the AI summary,
 the Test Chat trace — it reads as the card's title, and an operator notice adds
-the link. A completion export and the data export carry the whole value.
+the link. A completion export and the data export carry the whole value. A skill
+step without input bindings receives the card's title; a skill input binding
+cannot name an `item` value.
 
-A typed answer is read like any reply. It fills the value only when it names one
-of the items the agent's last message listed by name, so "the second one" after
-a row of cards fills nothing and the step asks again. With **Show cards in
-replies** off, or on a channel that draws no cards, such as WhatsApp, voice or
-email, the step lists the results in its text and the visitor names the one they
-want.
+A visitor may also answer in words. "The second one", "Villa Rosa" or "the
+Altbau flat" fills the value with the same stored card a tap would, link and
+fields included, because the routine reads the answer against the cards the step
+showed, in the order it showed them. An answer that names none of them fills
+nothing, and the step asks again. With **Show cards in replies** off, or on a
+channel that draws no cards, such as WhatsApp, voice or email, the step lists the
+results in its text as a numbered list, Radioso keeps the list with the reply,
+and the visitor's answer is read against it the same way.
 
 Validation checks the binding:
 
 - Only a chat step shows results, from a skill step the routine passes through
-  before it (`present_step_not_chat`, `present_source_not_earlier_tool`).
+  before it (`present_step_not_chat`, `present_source_not_earlier_tool`), with no
+  step that waits for the visitor in between, since its results are gone by the
+  next turn (`present_source_unreachable`). **Show results as cards** offers only
+  the skill steps that qualify.
 - A pick fills a value of type `item` (`present_slot_not_item`), and a step lets
   the visitor pick exactly when it names that value (`present_selection_mismatch`).
   With **Nothing, only show**, the cards are shown and nothing is filled.
 - An `item` value needs a step that fills it (`item_slot_without_presenting_step`).
-  A condition on it tests whether it is present or absent, a skill does not take
-  it as an input, and an exposed routine's tool leaves it out.
+  A condition on it tests whether it is present or absent, a skill input binding
+  cannot name it, and an exposed routine's tool leaves it out.
 
 Over the API, the binding is the step's `metadata.present`:
 `{ "from": "search", "selection": "single", "slot": "chosen_search" }`.

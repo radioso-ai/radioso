@@ -191,6 +191,12 @@ const DOCUMENT_DIAGNOSTIC_COPY: Partial<Record<RoutineValidationDiagnostic['code
   operator_notice_skill_unavailable: 'This notify skill is not available to the agent. Pick another or send with the default.',
   operator_notice_reply_to_slot_invalid: 'Replies can only go to an email field. Pick one or choose No reply-to.',
   outcome_guard_on_non_tool_step: 'An outcome rule only works after a skill step.',
+  present_step_not_chat: 'Only a message step can show results as cards.',
+  present_source_not_earlier_tool: 'Show cards from a skill step that comes before this one.',
+  present_source_unreachable: 'A step that waits for the visitor sits between this step and its skill step.',
+  present_slot_not_item: 'A pick can only fill an item field.',
+  present_selection_mismatch: 'Choose the item field the pick fills, or show the cards without a pick.',
+  item_slot_without_presenting_step: 'No step fills this item field. Pick it in a step that shows cards.',
 }
 
 export function documentDiagnosticText(diagnostic: RoutineValidationDiagnostic): string {

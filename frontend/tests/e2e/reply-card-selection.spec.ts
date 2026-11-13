@@ -176,9 +176,10 @@ test("a visitor picks a card, the agent answers about it, and the pick is still 
   await expect(reloaded.getByRole("button", { name: "Select Harbour Sunrise" })).toBeDisabled();
 });
 
-// Picking inside a routine (#1763, US7): a routine step shows a search's results as cards, the
-// pick fills the step's field, and the routine's next step names the home before it hands off.
-// The backend runs the routine; the mocks stand in with an invented letting agency's flats.
+// The chat's side of picking inside a routine (#1763, US7): the replies are mocked, so this checks
+// what the chat sends and keeps, not the routine. A routine step's card is sent as a pick naming
+// the reply that showed it, a typed answer after it carries no pick, and the cards keep the pick
+// after a reload. The routine itself is covered by tests/integration/routine-present-select.
 const choiceMessageId = "9d2e3f4a-5b6c-4d7e-8f90-a1b2c3d4e5f6";
 const flats: ReplyBlock = {
   type: "item_list",
@@ -205,7 +206,7 @@ const routineReplies: ScriptedReply[] = [
   { id: "assistant-message-3", answer: "Thanks! An agent will email you about viewing the Altbau flat on Auguststrasse." },
 ];
 
-test("inside a routine, a visitor picks one of the step's cards and the next step names it", async ({ page }) => {
+test("a routine step's card is sent as a pick, a typed answer after it as a plain message, and the cards keep the pick after a reload", async ({ page }) => {
   const { sentBodies } = await mockPublicChat(page, routineReplies);
 
   await page.goto(`/chat/${publicToken}`);

@@ -14,7 +14,10 @@ import { draftFromBlockDoc, routineToBlockDoc, type RoutineBlockDoc } from '@/li
 // A chat step that shows a tool step's results as cards (#1763): the author picks the source and
 // the item field a visitor's pick fills, and every other edit keeps the binding pointing right.
 
-const homes = (): RoutineBlockDoc => {
+const edge = (fromStep: string, toRef: string, ordinal: number) =>
+  ({ fromStep, toRef, guardKind: 'default' as const, guardText: null, outcomeStatus: null, counterLimit: null, ordinal })
+
+const homes = (transitions = [edge('brief', 'search', 0), edge('search', 'choose', 1), edge('choose', 'complete', 2)]): RoutineBlockDoc => {
   const result = routineToBlockDoc({
     name: 'Find a home',
     activation: { triggerDescription: 'A visitor looks for a home', priority: 0 },
@@ -24,7 +27,7 @@ const homes = (): RoutineBlockDoc => {
       { stableStepId: 'search', kind: 'tool', instruction: 'Search.', toolRef: 'search_homes', actionType: null, ordinal: 1, metadata: {} },
       { stableStepId: 'choose', kind: 'chat', instruction: 'Show the matches.', toolRef: null, actionType: null, ordinal: 2, metadata: {} },
     ],
-    transitions: [],
+    transitions,
     terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Done.', ordinal: 0 }],
   })
   if (!result.ok) throw new Error(result.diagnostics.map((item) => item.message).join(', '))
@@ -34,9 +37,11 @@ const homes = (): RoutineBlockDoc => {
 const choose = (doc: RoutineBlockDoc) => doc.steps.find((step) => step.stableStepId === 'choose')
 
 describe('routine present edits', () => {
-  it('offers the tool steps before the step as sources', () => {
+  it('offers the tool steps that lead to the step with no waiting step between', () => {
     expect(presentSourceOptions(homes(), 'choose')).toEqual(['search'])
     expect(presentSourceOptions(homes(), 'brief')).toEqual([])
+    // A message step between them ends the turn, and the search's result with it.
+    expect(presentSourceOptions(homes([edge('search', 'brief', 0), edge('brief', 'choose', 1), edge('choose', 'complete', 2)]), 'choose')).toEqual([])
   })
 
   it('shows cards from a source, then lets a new item field take the pick, and saves both', () => {

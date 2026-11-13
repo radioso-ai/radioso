@@ -2,6 +2,7 @@ import type {
   DocumentProcessingJobRecord,
   DocumentProcessingJobRepositoryPort,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
+import { errorSummaryOf } from "../../../shared/errors/errorReportShape.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type {
   DocumentImageCandidateWriter,
@@ -56,7 +57,7 @@ export class DocumentImageCaptureQueue implements DocumentImageCandidatesPort {
       }
     } catch (error) {
       this.deps.logger?.warn(
-        { err: error, workspaceId: input.workspaceId, documentId: input.documentId },
+        { error: errorSummaryOf(error), workspaceId: input.workspaceId, documentId: input.documentId },
         "Document images could not be recorded; the document goes on without them",
       );
     }
@@ -70,7 +71,7 @@ export class DocumentImageCaptureQueue implements DocumentImageCandidatesPort {
       }
     } catch (error) {
       this.deps.logger?.warn(
-        { err: error, workspaceId: job.workspaceId, documentId: job.documentId },
+        { error: errorSummaryOf(error), workspaceId: job.workspaceId, documentId: job.documentId },
         "Document image capture could not be queued; the next sync queues it again",
       );
     }

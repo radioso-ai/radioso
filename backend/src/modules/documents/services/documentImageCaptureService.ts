@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { DocumentProcessingJobRecord } from "../../../db/repositories/documentProcessingJobRepository.js";
 import type { PublicBytesFetchResult } from "../../../shared/infra/http/publicBytesFetch.js";
+import { errorSummaryOf } from "../../../shared/errors/errorReportShape.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
@@ -128,7 +129,7 @@ export class DocumentImageCaptureService {
       }
       await this.deps.images.deleteReleased(released.map((image) => image.id));
     } catch (error) {
-      this.deps.logger?.warn({ err: error }, "Released document images could not be swept; the next job retries");
+      this.deps.logger?.warn({ error: errorSummaryOf(error) }, "Released document images could not be swept; the next job retries");
     }
   }
 

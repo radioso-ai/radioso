@@ -1,7 +1,7 @@
 ---
 title: "Ops Event Feed"
 description: "Push Radioso product events and errors to an HTTP endpoint as signed JSON: configuration, the envelope shape, signature verification, and what arrives."
-last_updated: 2026-11-08
+last_updated: 2026-11-13
 ---
 
 # Ops Event Feed
@@ -78,6 +78,7 @@ Product events always arrive at `severity: "info"`. Whether `chat.failed` deserv
 | `chat.started` | a conversation begins |
 | `chat.completed` | a turn answers successfully |
 | `chat.failed` | a turn fails |
+| `chat.item_selected` | a visitor picks a card from a reply; `properties` carries the reply's `messageId`, the `blockId`, the `itemKey`, the conversation's `channel`, and `source` (`document` or `skill_result`) |
 | `document.ingest_queued` | an upload is accepted for processing |
 | `document.ingest_failed` | an upload is rejected |
 

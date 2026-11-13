@@ -55,7 +55,11 @@ services.
   and prose rejoining a cited line, and list items merging into one list.
   `frontend/components/chat/item-list-block.tsx` draws an assistant message's reply
   blocks (#1763) under its text in `chat-message-thread.tsx`, so the public chat, the
-  embed, the conversation drawer and the Inbox show the same picture cards.
+  embed, the conversation drawer and the Inbox show the same picture cards. A block
+  whose `selection` is `single` gets a Select button per card; the thread reads what
+  was picked from later visitor messages (`replyPicks` in `lib/reply-blocks.ts`), and
+  only a thread given `onItemSelect` (the public chat shell) can pick. The skill chip
+  and receipt card live in `frontend/components/chat/skill-cards.tsx`.
 - Turn diagnostics (both surfaces): `turn-inspector/turn-diagnostics-panel.tsx`.
 - Test history: Test Chat's **History** view lists durable immutable executions
   (`test-execution-history-view.tsx`, reopened through `reopenExecution`) above

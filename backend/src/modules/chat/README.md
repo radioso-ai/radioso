@@ -228,6 +228,26 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `presentRoutineRenderableAnswer` restores both: the stored form reads back
   through `storedReplyBlockSchema` and pairs with `blocks` by position, and a
   mismatch drops both forms with a warning that carries ids only.
+- A visitor picking a card (`services/replyBlocks/itemSelection.ts`,
+  `itemSelectionTurn.ts`, `selectedItemText.ts`): both `present` heads carry a
+  `selection` enum (`none` unless the model says `single`), and a `single` block
+  gives each item a `select` action. A pick arrives as
+  `inputMetadata.method = "item_select"` with `selection: {messageId, blockId,
+  itemKey}`. `AssistantChatService` hands it to `ItemSelectionTurns.claim` before
+  anything else: it reaches the conversation as the turn would
+  (`turnConversation.ts`, shared with the preparer), reads the item from the
+  block stored on that assistant message (an evidence item keeps its server-only
+  `document`, a skill card its block's `origin`), refuses anything else with
+  `400 item_selection_invalid` and a second pick from the same message with
+  `409 item_already_selected` (`MessageRepository.hasItemSelectionFrom`), and runs
+  the turn on the item's stored title. The item rides the session as
+  `itemSelection`, and `ChatAnswerSupport.buildContextBlock` renders it as one
+  `<selected_item>` block (`prompts/chat/selected-item.md`), so grounded, direct
+  and skill-result replies read it as their subject. Metrics:
+  `reply_item_selection_total{outcome}`; analytics: `chat.item_selected` with ids
+  only, once the visitor's message is stored. Tests:
+  `tests/unit/chat/replyBlocks/item-selection.test.ts`,
+  `tests/contract/chat-item-selection.contract.test.ts`.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides

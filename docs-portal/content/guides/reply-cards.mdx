@@ -31,6 +31,12 @@ The agent decides whether pictures help the answer and which ones to show, from 
 
 An answer shows at most ten cards, and each document offers at most three of its pictures to one answer. An answer that says the content does not cover the question shows none.
 
+## Let visitors pick a card
+
+When a reply asks the visitor to choose, such as which of three tours to book or which flat to visit, the agent lets them pick: each card gets a **Select** button. Picking one sends the card's title as the visitor's message, and the agent's next reply is about that item. A card from your documents brings its document with it, so the agent answers from that page; a card from a skill's records brings its title, subtitle and link. A reply is picked from once: after the pick, its other cards stay on screen and can no longer be picked. The pick comes back with the conversation's history, for the visitor and in the Inbox.
+
+The agent decides when a reply is a choice, the same way it decides which cards to show. Radioso reads the picked item from the reply it stored, never from what the browser sends, so a visitor can pick only a card the agent showed them. Each pick records a `chat.item_selected` analytics event with the conversation, the reply, the block and the item's key.
+
 Many sites name the same picture on every page, a banner or a logo. A picture that more than five documents in the workspace name as their main picture is treated as the site's, never as any one document's: the document's next main picture stands in, or it shows none.
 
 ## Which pictures Radioso keeps

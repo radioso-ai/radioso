@@ -1,6 +1,6 @@
 # Implementation plan: Track 2, cards from tool results, selection, routine binding (#1763)
 
-**Status**: 2a.0 merged (#1778). 2a.1 built: §3 describes it as built, with its deviations from the draft. 2a.2 and 2b are drafts.
+**Status**: 2a.0 merged (#1778). 2a.1 merged (#1780): §3 describes it as built, with its deviations from the draft. 2a.2 built: §4 opens with its deviations from the draft below them. 2b is a draft.
 
 **Spec**: `specs/1763-reply-blocks/spec.md`, including its Track 2 amendment (D8–D12).
 **PRs**: 2a.0 substrate → 2a.1 cards from skill results → 2a.2 selection on the web → 2b routine binding and the `item` slot. API sources and provider plugins are out of this plan (spec amendment, "Later").
@@ -150,6 +150,15 @@ The table follows the 256 pattern: `SET LOCAL lock_timeout = '3s'`; the foreign 
 - **Message-queue review:** two `background_jobs` kinds; no AMQP or document-worker change, and no skill-outcome contract change.
 
 ## 4. PR 2a.2: selection on the web
+
+### Deviations of the build from the draft below
+
+- **The message is the item's title, and the item rides the session.** The draft put a `<selected_item>` tag into the turn text. Built: the visitor's message (and the turn's query) is the item's stored title; the item is `PreparedSession.itemSelection`, and `ChatAnswerSupport.buildContextBlock` renders it as one `<selected_item>` block (`prompts/chat/selected-item.md`) for grounded, direct and skill-result replies. A routine that claims the turn does not read it (2b).
+- **The pick is resolved before `ChatService`, in `AssistantChatService`** (`ItemSelectionTurns.claim`), not in the session preparer: `ChatService` reads `input.query` for the turn plan, the response language and retrieval before the preparer stores the message, so the title must replace the client's text first. The conversation is reached as the turn reaches it (`turnConversation.ts`, extracted from the preparer).
+- **A second pick from one reply is `409 item_already_selected`**, checked with `MessageRepository.hasItemSelectionFrom` before the turn; two concurrent first picks are not serialized against each other (the turn lease starts later).
+- **Evidence items keep a server-only `document {id, title}`**, so a content card's pick carries its document. Retrieval does not favour it: the only document seam is `documentScope`, a hard filter applied only on a grounded route, and the title query already ranks the document.
+- **The probe needs no `fieldParity` exclusion:** the parity gate compares top-level fields, and `inputMetadata` is on both; `strictChatInputMetadataSchema` keeps the probe's three methods.
+- **The live check** is `tests/live/item-selection-reply.verify.test.ts` (3 samples, typed judge), and no integration test was added.
 
 ### Design answers
 

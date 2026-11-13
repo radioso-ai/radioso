@@ -6276,6 +6276,8 @@ export interface components {
             handoffOnRetrievalMiss: boolean;
             /** @description Whether visitors and API callers may attach photos to a message. This is the draft's value: visitors and API callers get it when the agent is published, and Test Chat tests it before then. The agent's chat model reads each photo at upload, so it takes effect only when that model reads images. */
             visitorImagesEnabled: boolean;
+            /** @description Whether the agent's replies may carry cards (reply blocks), such as the pictures captured from the documents an answer draws on, on clients that declare `reply.blocks`. Off until an operator turns it on. */
+            replyCardsEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
             theme: {
                 brand: string;
@@ -6342,6 +6344,7 @@ export interface components {
             webhookExportsEnabled?: boolean;
             handoffOnRetrievalMiss?: boolean;
             visitorImagesEnabled?: boolean;
+            replyCardsEnabled?: boolean;
             contactRequestDelivery?: components["schemas"]["AgentContactRequestDeliveryRequest"];
             theme?: {
                 brand?: string;
@@ -7579,7 +7582,7 @@ export interface components {
                 enabled: boolean;
             }[];
         };
-        /** @description The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on. */
+        /** @description The agent configuration projection (AgentConfig) at schemaVersion 5. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on. */
         AgentBundleAgentConfig: {
             schemaVersion: number;
             /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
@@ -7592,6 +7595,8 @@ export interface components {
             handoffOnRetrievalMiss: boolean;
             /** @description Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off. */
             visitorImagesEnabled?: boolean;
+            /** @description Whether the agent's replies may carry cards (reply blocks). An import of a bundle exported before the field existed reads it as off. */
+            replyCardsEnabled: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
@@ -7878,6 +7883,8 @@ export interface components {
             handoffOnRetrievalMiss?: boolean;
             /** @description Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off. */
             visitorImagesEnabled?: boolean;
+            /** @description Whether the agent's replies may carry cards (reply blocks). An import of a bundle exported before the field existed reads it as off. */
+            replyCardsEnabled?: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];

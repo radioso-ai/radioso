@@ -131,7 +131,9 @@ Ingestion records the images a document's content names; the worker captures the
   one takes its new place, and one the content no longer names is released.
   It queues the `images` job after a vectorize job publishes a revision of a
   document that names any image, and at once when an unchanged page names a new
-  one.
+  one or still has one it keeps pending (`hasPendingKeptImage`: the first
+  `MAX_STORED_IMAGES_PER_DOCUMENT` that are not skipped), so a timeout, a busy
+  codec or a spent budget is retried on the next sync.
 - `services/documentImageCaptureService.ts` runs the `images` job: it fetches
   each image through `fetchPublicBytes` (public addresses only, every redirect
   re-checked, 8 seconds, 15 MB), conditionally with the stored entity tag,
@@ -142,10 +144,18 @@ Ingestion records the images a document's content names; the worker captures the
   refused addresses are `skipped`; a timeout leaves the row `pending`. A
   document keeps at most 12 images. A failed image never fails the job.
 - A deleted document releases its images (`document_id` turns NULL), so they
-  stop being served at once; after every job the worker deletes a batch of
-  released rows' copies, then the rows. Every way a document goes (one at a
-  time, with its source, reaped by a crawl, with its workspace) cleans up the
-  same way.
+  stop being served at once, and `markStored` and `reanchor` leave a released
+  row alone (capture then deletes the copies it wrote). Once a minute, on the
+  worker's tick, idle or not, the sweep deletes a batch of released rows'
+  copies, then each row whose copies are all gone; a row with a copy left goes
+  to the back of the queue. Every way a document goes (one at a time, with its
+  source, reaped by a crawl) cleans up the same way; deleting a workspace
+  deletes its image rows in the deletion (`deleteForWorkspaces`, from
+  `app/composition/workspaceDeletion.ts`), and its storage purge takes the
+  copies.
+- The answer side asks `listStoredForEvidence` to count the documents sharing
+  a primary only up to `primaryDocumentCountLimit` (retrieval's banner rule
+  passes one past its threshold); the partial index covers `document_id`.
 - Observability: `document_image_capture_total{source, outcome}`,
   `document_image_capture_duration_seconds`, and the `document.images.capture`
   span under `document.worker.job`. Logs carry ids only, never addresses, alt

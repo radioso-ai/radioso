@@ -197,6 +197,14 @@ const observedOutputFromReviewResult = (
   };
 };
 
+/**
+ * The workspace's own agent has no settings row here, so it stands in for the conversation-quality
+ * agent, which has pictures in answers on: a case that gives documents' images can be offered them.
+ */
+const withPicturesInAnswers = (factory: Pick<ReplyBlockTurnFactory, "forTurn">): Pick<ReplyBlockTurnFactory, "forTurn"> => ({
+  forTurn: (session) => factory.forTurn({ ...session, agent: { ...session.agent, answerImagesEnabled: true } }),
+});
+
 export interface ConversationQualityChatHarnessOptions {
   /** The model's raw reply to the answer call: a canonical answer envelope for a grounded turn. */
   reply: string;
@@ -256,13 +264,11 @@ export const conversationQualityChatHarness = (options: ConversationQualityChatH
       skillOutcomeCapabilities: { supportsGroundedAnswer: () => true },
       metrics,
       ...(options.documentImages
-        ? {
-            replyBlocks: new ReplyBlockTurnFactory({
-              evidenceImages: new EvidenceImageAttacher(options.documentImages),
-              imageUrls: createReplyImageUrls("https://app.example/backend"),
-              metrics,
-            }),
-          }
+        ? { replyBlocks: withPicturesInAnswers(new ReplyBlockTurnFactory({
+            evidenceImages: new EvidenceImageAttacher(options.documentImages),
+            imageUrls: createReplyImageUrls("https://app.example/backend"),
+            metrics,
+          })) }
         : {}),
     }),
     agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),

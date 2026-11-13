@@ -104,6 +104,17 @@ The `documents.list` API joins `document_sources` so each `DocumentSummary` expo
 
 The source response also exposes `documentEnrichmentOverride`, so operators can enable enrichment for an events source without changing unrelated uploads or crawled sites.
 
+### Page pictures
+
+Each page also hands ingestion the pictures it names, by address, never by bytes:
+
+| Picture | Where the crawler finds it | Role |
+|---------|----------------------------|------|
+| The page's own picture | `og:image` (and its `:url` and `:secure_url` forms), then `twitter:image`, then the JSON-LD `image` of the page's entity or its `primaryImageOfPage` | `primary`, up to 3 distinct addresses |
+| Pictures in the content | Each `<img>` the text extraction keeps as main content: its `srcset` source at least 640 pixels wide (else the widest), a lazy loader's `data-src`, or `src`; its `alt`; its `<figure>`'s `<figcaption>`; and its offset in the page text | `inline`, up to 24 |
+
+`data:` addresses, SVG files, and anything that is not absolute http(s) are left out. The offset places the picture in the stored text, so the worker ties it to the chunk it sits in. The documents worker fetches, filters and stores the pictures after the page is processed ([Show pictures in answers](../docs-portal/content/guides/answer-images.mdx)); a page whose text did not change still records new pictures on a re-crawl, and a picture the page no longer names is deleted.
+
 ### Listing recent crawl jobs
 
 ```text
@@ -273,6 +284,8 @@ interface WebsiteCrawlerProvider {
   ): Promise<Omit<WebsiteCrawlResult, "pages">>;
 }
 ```
+
+A `WebsiteCrawlPage` carries `sourceUrl`, `canonicalUrl`, `title`, `content`, `metadata`, and `images`: the page's pictures as document image candidates (`sourceUrl`, `role`, `alt`, `caption`, and for an inline picture `textOffset`, an offset into `content`). Ingestion validates every candidate and drops one that does not read as one.
 
 When `crawlStream` is implemented, the service calls it instead of `crawl`, ingesting each page as soon as the crawler discovers it rather than waiting for the entire crawl to finish. The batch `crawl` method is used as a fallback for providers that do not support streaming.
 

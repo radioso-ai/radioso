@@ -38,7 +38,9 @@ Three things travel alongside the body as document metadata:
 - **The publish date**, as the raw GMT timestamp under `published_at`. On the `post` type its day is also the post's date, under `dateFrom` — [publish dates and content dates](#publish-dates-and-content-dates) explains why only there.
 - **A facts block** appended to the content: every public taxonomy term on the post, labelled with the taxonomy's own singular name. Categories, tags, and site-specific taxonomies all come through, in the language the site is authored in.
 
-Existing documents pick up the author, publish date, and facts block on their next sync.
+The post's **featured image** becomes the document's main picture, which an agent with [pictures in answers](/guides/answer-images) shows as a card when it answers about the post. The REST sync reads it from `featured_media`, at the smallest generated size at least 640 pixels wide; the plugin sends it from version 0.8.0 as `featured_image`, its address and alt text, or `null` when the post has none. Radioso keeps a re-encoded copy and drops it when the post loses its featured image.
+
+Existing documents pick up the author, publish date, facts block, and featured image on their next sync.
 
 ### Publish dates and content dates
 
@@ -154,6 +156,7 @@ Changing the WordPress site URL rotates the webhook secret. Paste the new secret
 - **A backfill stops advancing.** Keep the settings page open, because it runs a batch that is overdue or missing. If the page stops with a message, check the resync status and activity log for cron, scheduling, or dispatch errors, then use **Run next batch now**. WordPress's **Tools → Site Health** reports loopback and scheduled-event failures behind an overdue or missing batch, and a bot-protection rule on `wp-cron.php` is a common cause.
 - **A manual sync fails while pushes work.** The site is blocking Radioso's REST calls. Use **Resync all content** in the plugin instead — it goes out from WordPress.
 - **A date rule skips pages and products.** A rule on `dateFrom` matches them only by the dates their content names. Write it against `published_at` to match on when they went up.
+- **A post's featured image never shows in answers.** Pushes from a plugin before 0.8.0 carry no picture; update the plugin or run a manual sync. Open the document in **Knowledge** to see whether the picture was kept: one smaller than 200 pixels, or at an address that is not public, is not.
 - **A product's own field never shows up in the rules editor.** It fell outside the 32-field, key-pattern, or 256-character bounds and the plugin dropped it before sending.
 - **Prices in answers lag the shop.** Read the document's metadata: if `price` matches the shop and the answer does not, the agent is reading a stale facts block from a document that has not re-synced.
 - **The shop page shows a discount the agent never mentions.** Check the product in WooCommerce: if its price and sale fields hold the list price, the discount comes from a pricing plugin that computes it at render time. Supply it through `radioso_sync_product_pricing`.

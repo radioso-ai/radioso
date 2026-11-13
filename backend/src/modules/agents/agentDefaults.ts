@@ -13,4 +13,6 @@ export const AGENT_SWITCH_DEFAULTS = {
   handoffOnRetrievalMiss: false,
   // Photos are opt-in per assistant: each one is read by the agent's chat model and kept with the conversation.
   visitorImagesEnabled: false,
+  // Pictures in answers are opt-in per assistant: a live agent's answers look the same until an operator asks for cards.
+  answerImagesEnabled: false,
 } as const;

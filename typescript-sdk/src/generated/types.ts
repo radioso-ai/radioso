@@ -6276,6 +6276,8 @@ export interface components {
             handoffOnRetrievalMiss: boolean;
             /** @description Whether visitors and API callers may attach photos to a message. This is the draft's value: visitors and API callers get it when the agent is published, and Test Chat tests it before then. The agent's chat model reads each photo at upload, so it takes effect only when that model reads images. */
             visitorImagesEnabled: boolean;
+            /** @description Whether a grounded answer may show the pictures captured from its documents as reply block cards, on clients that declare `reply.blocks`. Off until an operator turns it on. */
+            answerImagesEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
             theme: {
                 brand: string;
@@ -6342,6 +6344,7 @@ export interface components {
             webhookExportsEnabled?: boolean;
             handoffOnRetrievalMiss?: boolean;
             visitorImagesEnabled?: boolean;
+            answerImagesEnabled?: boolean;
             contactRequestDelivery?: components["schemas"]["AgentContactRequestDeliveryRequest"];
             theme?: {
                 brand?: string;
@@ -7579,7 +7582,7 @@ export interface components {
                 enabled: boolean;
             }[];
         };
-        /** @description The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on. */
+        /** @description The agent configuration projection (AgentConfig) at schemaVersion 5. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on. */
         AgentBundleAgentConfig: {
             schemaVersion: number;
             /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
@@ -7592,6 +7595,8 @@ export interface components {
             handoffOnRetrievalMiss: boolean;
             /** @description Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off. */
             visitorImagesEnabled?: boolean;
+            /** @description Whether answers may show the pictures captured from their documents as cards. An import of a bundle exported before the field existed reads it as off. */
+            answerImagesEnabled: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
@@ -7878,6 +7883,8 @@ export interface components {
             handoffOnRetrievalMiss?: boolean;
             /** @description Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off. */
             visitorImagesEnabled?: boolean;
+            /** @description Whether answers may show the pictures captured from their documents as cards. An import of a bundle exported before the field existed reads it as off. */
+            answerImagesEnabled?: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
@@ -8214,8 +8221,35 @@ export interface components {
                 [key: string]: string | number | boolean | null;
             };
         };
+        DocumentImage: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `primary` is the picture the document's metadata names for itself (a page's `og:image`, a post's featured image); `inline` sits in its text.
+             * @enum {string}
+             */
+            role: "primary" | "inline";
+            /**
+             * @description `stored` once Radioso keeps a copy; `pending` until the worker fetches it; `skipped` when it was refused (smaller than 200 px on its short side, a type Radioso does not read, too large, or at an address it may not fetch).
+             * @enum {string}
+             */
+            status: "pending" | "stored" | "skipped";
+            alt: string;
+            caption: string | null;
+            /** @description The source's upright width in pixels; null until stored. */
+            width: number | null;
+            height: number | null;
+            /** @description The address the content names the picture by. */
+            sourceUrl: string;
+            /** @description The stored copy at its widest width, served by `GET /api/v1/public/reply-images/{imageId}/{width}`; present once stored. */
+            src?: string;
+            /** @description Every stored width as an `srcset`; present once stored. */
+            srcSet?: string;
+        };
         DocumentDetails: components["schemas"]["DocumentSummary"] & {
             content: string;
+            /** @description The pictures the document's content names, in document order, with whether Radioso kept each one. An agent with `answerImagesEnabled` shows stored ones as cards in its answers. */
+            images?: components["schemas"]["DocumentImage"][];
         };
         DocumentChunkSummary: {
             /** Format: uuid */

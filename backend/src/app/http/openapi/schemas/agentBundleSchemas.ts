@@ -186,6 +186,9 @@ export const registerAgentBundleSchemas = (registry: OpenAPIRegistry, dependenci
       visitorImagesEnabled: z.boolean().optional().openapi({
         description: "Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off.",
       }),
+      answerImagesEnabled: z.boolean().openapi({
+        description: "Whether answers may show the pictures captured from their documents as cards. An import of a bundle exported before the field existed reads it as off.",
+      }),
       contactRequestsEnabled: z.boolean(),
       webhookExportsEnabled: z.boolean(),
       // Bare reference, no inline `.openapi()`: wrapping a $ref emits
@@ -363,6 +366,7 @@ export const registerAgentBundleSchemas = (registry: OpenAPIRegistry, dependenci
   const AGENT_CONFIG_FIELDS_ADDED_SINCE_OLDEST_SUPPORTED = {
     internalName: true,
     handoffOnRetrievalMiss: true,
+    answerImagesEnabled: true,
   } as const;
 
   const AgentBundleImportAgentConfigSchema = registry.register(

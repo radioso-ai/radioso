@@ -857,7 +857,7 @@ export function DocumentsView({
     setMetadataSaveError(null)
     try {
       const updated = await documentsApi.updateDocumentMetadata(documentId, formValues.metadata)
-      setActiveDocument((current) => (current && current.id === documentId ? updated : current))
+      setActiveDocument((current) => (current && current.id === documentId ? { ...current, ...updated } : current))
       patchCurrentDocuments((document) => document.id === documentId
         ? { ...document, metadata: updated.metadata, updatedAt: updated.updatedAt }
         : document)
@@ -880,7 +880,7 @@ export function DocumentsView({
       const updated = await documentsApi.updateDocumentRetrieval(documentId, patch)
       // Keep the open document and the list row in sync so the toggle, expiry,
       // and status badge reflect the new eligibility immediately.
-      setActiveDocument((current) => (current && current.id === documentId ? updated : current))
+      setActiveDocument((current) => (current && current.id === documentId ? { ...current, ...updated } : current))
       patchCurrentDocuments((document) => document.id === documentId
         ? {
             ...document,

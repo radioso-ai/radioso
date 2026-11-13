@@ -1815,6 +1815,9 @@ Primary internals:
   `document_images` rows (a document's stored pictures, primary or anchored to a
   chunk): recorded by ingestion, filled by capture, read for an answer's evidence
   (with how many documents share each primary) and for the public image route
+- A document's detail lists its images (`DocumentImageListing`, each stored one with
+  the public image route's address, wired by `addressedDocumentImageListing`); the
+  dashboard shows them in `frontend/components/dashboard/documents/document-images-list.tsx`
 - Document images (brief under "Document Images" in the module README):
   `domain/documentImageCandidates.ts` (which candidates a document keeps, placed
   in its stored text), `services/documentImageCaptureQueue.ts` (records them and
@@ -2044,8 +2047,9 @@ Primary internals:
   (when the direct answer is the planner's own quick reply)
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
 - `backend/src/modules/chat/services/replyBlocks/` and `contracts/replyBlocks.ts`
-  (#1763: the turn's image ledger, the `present` field ahead of `answer`, building a
-  reply block from the picked handles, and presenting stored image ids as URLs),
+  (#1763: offered only to an agent with `answerImagesEnabled`; the turn's image ledger,
+  the `present` field ahead of `answer`, building a reply block from the picked handles,
+  and presenting stored image ids as URLs),
   wired by `backend/src/app/composition/replyBlocks.ts`; the golden prompt and
   schema of a turn without them are in `backend/tests/fixtures/reply-blocks/`
 - `backend/src/modules/chat/services/answerLinkGuard.ts` and

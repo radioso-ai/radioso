@@ -4,7 +4,9 @@ import type {
   CapturableDocumentImage,
   DocumentImageCandidateWriter,
   DocumentImageCaptureStore,
+  DocumentImageListing,
   DocumentImageRendition,
+  DocumentImageSummary,
   PlacedDocumentImage,
   ReleasedDocumentImageStore,
 } from "../../src/modules/documents/contracts/index.js";
@@ -20,7 +22,7 @@ interface Row extends CapturableDocumentImage {
 }
 
 /** `document_images` rows held in memory, with the writer, capture and sweep semantics of the repository. */
-export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, DocumentImageCaptureStore, ReleasedDocumentImageStore {
+export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, DocumentImageCaptureStore, DocumentImageListing, ReleasedDocumentImageStore {
   readonly rows = new Map<string, Row>();
 
   seed(row: Partial<Row> & Pick<Row, "workspaceId" | "documentId" | "sourceUrl" | "role">): Row {
@@ -69,6 +71,12 @@ export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, 
       Object.assign(kept, { role: image.role, position: image.position, textOffset: image.textOffset, alt: image.alt, caption: image.caption });
     }
     return { captureNeeded };
+  }
+
+  async listForDocument(input: { workspaceId: string; documentId: string }): Promise<DocumentImageSummary[]> {
+    return this.forDocument(input.documentId)
+      .filter((row) => row.workspaceId === input.workspaceId)
+      .map(({ id, role, status, alt, caption, width, height, sourceUrl }) => ({ id, role, status, alt, caption, width, height, sourceUrl }));
   }
 
   async hasImages(documentId: string): Promise<boolean> {

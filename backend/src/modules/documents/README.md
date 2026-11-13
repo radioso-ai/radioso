@@ -146,6 +146,9 @@ Ingestion records the images a document's content names; the worker captures the
   released rows' copies, then the rows. Every way a document goes (one at a
   time, with its source, reaped by a crawl, with its workspace) cleans up the
   same way.
+- `getDocument` lists the document's images (`DocumentImageListing`) with
+  their role and status, and the public image route's address of each stored
+  copy, which composition adds.
 - Observability: `document_image_capture_total{source, outcome}`,
   `document_image_capture_duration_seconds`, and the `document.images.capture`
   span under `document.worker.job`. Logs carry ids only, never addresses, alt

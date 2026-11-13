@@ -518,11 +518,12 @@ const untrackedImports: AgentBundleImportRepositoryPort = {
  *
  * An older version stays on this list only while every field it lacks has a default
  * that reads as the behaviour that version actually had: v3 predates `internalName`
- * and `handoffOnRetrievalMiss`, and both default to the stored column defaults, so a
- * v3 bundle imports as the agent it described. A version whose absent fields would
- * change behaviour must be dropped from this list, not defaulted.
+ * and `handoffOnRetrievalMiss`, and v4 predates `visitorImagesEnabled` and
+ * `answerImagesEnabled`; each defaults to the stored default, off, so an older bundle
+ * imports as the agent it described. A version whose absent fields would change
+ * behaviour must be dropped from this list, not defaulted.
  */
-const SUPPORTED_AGENT_CONFIG_VERSIONS: readonly number[] = [3, AGENT_CONFIG_SCHEMA_VERSION];
+const SUPPORTED_AGENT_CONFIG_VERSIONS: readonly number[] = [3, 4, AGENT_CONFIG_SCHEMA_VERSION];
 
 /**
  * Versions are declared and checked, never guessed. A bundle written against a

@@ -186,6 +186,8 @@ export type AssistantBehaviorSettings = Pick<
   contactRequestsEnabled?: boolean
   webhookExportsEnabled?: boolean
   handoffOnRetrievalMiss?: boolean
+  // Per-agent "answers may show pictures from the documents" as reply block cards.
+  answerImagesEnabled?: boolean
   // Per-agent "visitors may attach photos". It takes effect only when the agent's chat model reads images.
   visitorImagesEnabled?: boolean
   // Computed by the server from the agent's resolved chat model; read-only, never part of an update.
@@ -760,6 +762,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings & Pick<Age
   contactRequestsEnabled: agent.contactRequestsEnabled,
   webhookExportsEnabled: agent.webhookExportsEnabled,
   handoffOnRetrievalMiss: agent.handoffOnRetrievalMiss,
+  answerImagesEnabled: agent.answerImagesEnabled,
   visitorImagesEnabled: agent.visitorImagesEnabled,
   chatModelReadsImages: agent.chatModelReadsImages,
   contactRequestDelivery: agent.contactRequestDelivery,

@@ -521,6 +521,7 @@ const mapAgent = (
     webhookExportsEnabled: readBoolean(behavior, "webhookExportsEnabled") ?? false,
     handoffOnRetrievalMiss: readBoolean(behavior, "handoffOnRetrievalMiss") ?? false,
     visitorImagesEnabled: readBoolean(behavior, "visitorImagesEnabled") ?? false,
+    answerImagesEnabled: readBoolean(behavior, "answerImagesEnabled") ?? false,
     contactRequestDelivery: readContactRequestDelivery(behavior),
     retrievalEnabled: hasDefaultRetrieveSkill ? row.default_retrieve_enabled ?? true : row.retrieval_enabled,
     sourceScope,

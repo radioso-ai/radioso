@@ -389,6 +389,28 @@ export function AssistantProfileSection({
                 }
               />
             </div>
+            {assistantBehaviorSettings.answerImagesEnabled !== undefined ? (
+              <div className="flex items-start justify-between gap-4 p-3">
+                <div className="min-w-0">
+                  <Label htmlFor="answerImagesEnabled" className="text-foreground">
+                    Show pictures in answers
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Answers can show pictures from your documents as cards in the web chat.
+                  </p>
+                </div>
+                <Switch
+                  id="answerImagesEnabled"
+                  checked={assistantBehaviorSettings.answerImagesEnabled}
+                  onCheckedChange={(checked) =>
+                    onAssistantBehaviorDraft((current) => ({
+                      ...current,
+                      answerImagesEnabled: checked,
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
             {assistantBehaviorSettings.visitorImagesEnabled !== undefined ? (
               <VisitorImagesSetting
                 enabled={assistantBehaviorSettings.visitorImagesEnabled}

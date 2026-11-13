@@ -36,7 +36,7 @@ import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./doc
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { describeIndexedContent, mergeIndexedFields } from "./indexedDocumentContent.js";
 import type { DocumentImageCandidatesPort } from "./documentImageCaptureQueue.js";
-import type { DocumentImageCandidate } from "../contracts/documentImages.js";
+import type { DocumentImageCandidate, DocumentImageListing } from "../contracts/documentImages.js";
 import { placeDocumentImages } from "../domain/documentImageCandidates.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 import { resolveRetrievalEligibility } from "../domain/retrievalEligibility.js";
@@ -133,6 +133,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
     private readonly imageCandidates?: DocumentImageCandidatesPort,
+    private readonly imageListing?: DocumentImageListing,
   ) {}
 
   async ingest(input: {
@@ -723,11 +724,10 @@ export class DocumentIngestionService implements DocumentInventoryPort {
 
   async getDocument(workspaceId: string, documentId: string): Promise<DocumentDetails> {
     const document = await this.documentRepository.findByIdAndWorkspaceId(documentId, workspaceId);
-    if (!document) {
-      throw notFound("Document not found");
-    }
+    if (!document) throw notFound("Document not found");
+    const images = this.imageListing ? { images: await this.imageListing.listForDocument({ workspaceId, documentId }) } : {};
 
-    return this.toDetails(document);
+    return { ...this.toDetails(document), ...images };
   }
 
   async listForWorkspace(

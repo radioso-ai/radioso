@@ -27,6 +27,8 @@ export const conversationQualityAgent: ConversationAgent = {
   citationDisplayEnabled: true,
   contactRequestsEnabled: true,
   webhookExportsEnabled: false,
+  // On so the reply-block cases can show pictures; a case whose client declares no reply blocks is offered none.
+  answerImagesEnabled: true,
   contactRequestDelivery: { recipientEmails: ["support@acme.example"], webhook: null },
   retrievalEnabled: true,
   sourceScope: { mode: "all" },

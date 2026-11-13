@@ -7,10 +7,12 @@ import type {
   DocumentImageCandidateWriter,
   DocumentImageCaptureStore,
   DocumentImageEvidenceReader,
+  DocumentImageListing,
   DocumentImageObjectLookup,
   DocumentImageRendition,
   DocumentImageRole,
   DocumentImageStatus,
+  DocumentImageSummary,
   PlacedDocumentImage,
   ReleasedDocumentImageStore,
   StoredDocumentImageRef,
@@ -53,6 +55,7 @@ export class DocumentImageRepository implements
   DocumentImageObjectLookup,
   DocumentImageCandidateWriter,
   DocumentImageCaptureStore,
+  DocumentImageListing,
   ReleasedDocumentImageStore {
   constructor(private readonly db: Db) {}
 
@@ -184,6 +187,28 @@ export class DocumentImageRepository implements
       }
       return { captureNeeded };
     });
+  }
+
+  async listForDocument(input: { workspaceId: string; documentId: string }): Promise<DocumentImageSummary[]> {
+    const rows = await this.db
+      .selectFrom("document_images")
+      .select(["id", "role", "status", "alt", "caption", "width", "height", "source_url"])
+      .where("workspace_id", "=", input.workspaceId)
+      .where("document_id", "=", input.documentId)
+      .orderBy("position")
+      .execute();
+    return rows.flatMap((row) => !isRole(row.role) || !isStatus(row.status)
+      ? []
+      : [{
+          id: row.id,
+          role: row.role,
+          status: row.status,
+          alt: row.alt,
+          caption: row.caption,
+          width: row.width,
+          height: row.height,
+          sourceUrl: row.source_url,
+        }]);
   }
 
   async hasImages(documentId: string): Promise<boolean> {

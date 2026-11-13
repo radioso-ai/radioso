@@ -24,7 +24,7 @@ const context = (index: number) => ({
 });
 
 const session = (): PreparedSession => ({
-  agent: { id: "agent-1", workspaceId: "workspace-1", chatModelOverride: null } as never,
+  agent: { id: "agent-1", workspaceId: "workspace-1", chatModelOverride: null, answerImagesEnabled: true } as never,
   conversation: { id: "conversation-1", workspaceId: "workspace-1", sourceChannel: "website_embed" } as never,
   history: [],
   userMessage: { id: "message-1", content: "Which hiking guides do you have?" } as never,

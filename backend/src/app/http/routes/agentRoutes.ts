@@ -98,6 +98,7 @@ export const agentBodySchema = z.object({
   webhookExportsEnabled: agentInputFieldSchemas.webhookExportsEnabled.optional(),
   handoffOnRetrievalMiss: agentInputFieldSchemas.handoffOnRetrievalMiss.optional(),
   visitorImagesEnabled: agentInputFieldSchemas.visitorImagesEnabled.optional(),
+  answerImagesEnabled: agentInputFieldSchemas.answerImagesEnabled.optional(),
   contactRequestDelivery: agentInputFieldSchemas.contactRequestDelivery.optional(),
   theme: agentInputFieldSchemas.theme.optional(),
   branding: agentInputFieldSchemas.branding.optional(),

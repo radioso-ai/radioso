@@ -1,4 +1,5 @@
 import type { EmbeddingSpaceRef } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
+import type { DocumentImageSummary } from "./documentImages.js";
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import type {
   DocumentReviewedImportPlan,
@@ -510,6 +511,8 @@ export interface EmbeddingCoverageReconciliationPort {
 
 export interface DocumentDetails extends DocumentSummary {
   content: string;
+  /** The pictures the content names, in document order. */
+  images?: DocumentImageSummary[];
 }
 
 export interface DocumentSummaryRecord extends DocumentSourceRecord {

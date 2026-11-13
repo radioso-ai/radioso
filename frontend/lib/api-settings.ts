@@ -398,6 +398,7 @@ export const agentsApi = {
       if (data.contactRequestsEnabled !== saved.contactRequestsEnabled) update.contactRequestsEnabled = data.contactRequestsEnabled
       if (data.webhookExportsEnabled !== saved.webhookExportsEnabled) update.webhookExportsEnabled = data.webhookExportsEnabled
       if (data.handoffOnRetrievalMiss !== saved.handoffOnRetrievalMiss) update.handoffOnRetrievalMiss = data.handoffOnRetrievalMiss
+      if (data.answerImagesEnabled !== saved.answerImagesEnabled) update.answerImagesEnabled = data.answerImagesEnabled
       if (hasChanged(data.contactRequestDelivery, saved.contactRequestDelivery)) update.contactRequestDelivery = data.contactRequestDelivery
       if (data.retrievalEnabled !== saved.retrievalEnabled) update.retrievalEnabled = data.retrievalEnabled
       if (hasChanged(data.theme, saved.theme)) update.theme = data.theme

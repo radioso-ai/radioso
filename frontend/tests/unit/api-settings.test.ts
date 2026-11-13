@@ -17,6 +17,7 @@ const behaviorSettings = (handoffOnRetrievalMiss: boolean): AssistantBehaviorSet
   webhookExportsEnabled: false,
   handoffOnRetrievalMiss,
   visitorImagesEnabled: false,
+  answerImagesEnabled: false,
   contactRequestDelivery: { recipientEmails: [], webhook: null },
   theme: {
     brand: '#0f172a',
@@ -117,6 +118,22 @@ describe('agentsApi.updateBehaviorSettings', () => {
       { method: 'PUT', body: JSON.stringify({ handoffOnRetrievalMiss: true }) },
       { withSession: true },
     )
+  })
+
+  it('sends the pictures-in-answers setting in the agent update payload, as a live change', async () => {
+    const saved = behaviorSettings(false)
+    const next = { ...saved, answerImagesEnabled: true, customInstruction: 'Private draft only' }
+    requestMock.mockResolvedValueOnce(responseAgent(next))
+
+    const { agentsApi } = await import('@/lib/api-settings')
+    const updated = await agentsApi.updateBehaviorSettings('agent-1', next, saved, 'live')
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/agents/agent-1',
+      { method: 'PUT', body: JSON.stringify({ answerImagesEnabled: true }) },
+      { withSession: true },
+    )
+    expect(updated.answerImagesEnabled).toBe(true)
   })
 
   it('reads whether the chat model reads images from the saved agent, and never sends it back', async () => {

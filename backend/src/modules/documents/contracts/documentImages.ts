@@ -141,6 +141,30 @@ export interface DocumentImageCaptureStore {
   resetToPending(id: string): Promise<DocumentImageRendition[]>;
 }
 
+/**
+ * A document's image as its detail lists it: what the content names and whether capture kept it,
+ * with the address of its stored copy once it did.
+ */
+export interface DocumentImageSummary {
+  id: string;
+  role: DocumentImageRole;
+  status: DocumentImageStatus;
+  alt: string;
+  caption: string | null;
+  /** The source's upright size; null until the image is stored. */
+  width: number | null;
+  height: number | null;
+  sourceUrl: string;
+  /** The stored copy's address at its widest width, and every width as a `srcset`; present once stored. */
+  src?: string;
+  srcSet?: string;
+}
+
+/** Lists a document's images, in document order, for its detail. */
+export interface DocumentImageListing {
+  listForDocument(input: { workspaceId: string; documentId: string }): Promise<DocumentImageSummary[]>;
+}
+
 /** The rows a deleted document, or a re-sync, released: their stored copies are deleted, then the rows. */
 export interface ReleasedDocumentImageStore {
   listReleased(limit: number): Promise<Array<{ id: string; renditions: DocumentImageRendition[] }>>;

@@ -169,6 +169,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       visitorImagesEnabled: z.boolean().openapi({
         description: "Whether visitors and API callers may attach photos to a message. This is the draft's value: visitors and API callers get it when the agent is published, and Test Chat tests it before then. The agent's chat model reads each photo at upload, so it takes effect only when that model reads images.",
       }),
+      answerImagesEnabled: z.boolean().openapi({
+        description: "Whether a grounded answer may show the pictures captured from its documents as reply block cards, on clients that declare `reply.blocks`. Off until an operator turns it on.",
+      }),
       contactRequestDelivery: AgentContactRequestDeliverySchema,
       theme: z.object({
         brand: z.string(),
@@ -244,6 +247,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       webhookExportsEnabled: z.boolean().optional(),
       handoffOnRetrievalMiss: z.boolean().optional(),
       visitorImagesEnabled: z.boolean().optional(),
+      answerImagesEnabled: z.boolean().optional(),
       contactRequestDelivery: AgentContactRequestDeliveryRequestSchema.optional(),
       theme: z.object({
         brand: z.string().optional(),

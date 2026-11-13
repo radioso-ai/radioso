@@ -168,6 +168,8 @@ export interface AgentBehaviorSettings {
   // Whether visitors and API callers may attach photos to a message, which the agent's chat model
   // reads at upload. Takes effect only when that model reads images.
   visitorImagesEnabled?: boolean;
+  // Whether a grounded answer may show the pictures captured from its documents as reply block cards.
+  answerImagesEnabled?: boolean;
   contactRequestDelivery: AgentContactRequestDelivery;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
@@ -911,6 +913,7 @@ export const validateAgentInput = (
     webhookExportsEnabled: input.webhookExportsEnabled ?? AGENT_SWITCH_DEFAULTS.webhookExportsEnabled,
     handoffOnRetrievalMiss: input.handoffOnRetrievalMiss ?? AGENT_SWITCH_DEFAULTS.handoffOnRetrievalMiss,
     visitorImagesEnabled: input.visitorImagesEnabled ?? AGENT_SWITCH_DEFAULTS.visitorImagesEnabled,
+    answerImagesEnabled: input.answerImagesEnabled ?? AGENT_SWITCH_DEFAULTS.answerImagesEnabled,
     contactRequestDelivery: normalizeContactRequestDelivery(input.contactRequestDelivery),
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),

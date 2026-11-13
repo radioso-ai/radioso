@@ -57,7 +57,7 @@ const retrievalResult = (): RetrievalPipelineResult =>
 
 const session = (): PreparedSession =>
   ({
-    agent: { id: "agent_1", workspaceId: "workspace_1", name: "Support", chatModelOverride: null },
+    agent: { id: "agent_1", workspaceId: "workspace_1", name: "Support", chatModelOverride: null, answerImagesEnabled: true },
     conversation: { id: "conv_1", workspaceId: "workspace_1" },
     history: [],
     userMessage: { id: "msg_1", content: "Where is Valmora introduced?" },

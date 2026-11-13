@@ -188,23 +188,22 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
   it("records what the content names: new addresses pending, kept ones re-placed, the rest released", async () => {
     const place = (sourceUrl: string, position: number, role: "primary" | "inline" = "primary", textOffset: number | null = null) =>
       ({ sourceUrl, role, alt: "", caption: null, position, textOffset });
-    const first = await repository.recordCandidates({
-      workspaceId, documentId,
-      images: [place("https://shop.example/cover.jpg", 0), place("https://shop.example/ridge.jpg", 1, "inline", 40)],
-    });
-    const unchanged = await repository.recordCandidates({
-      workspaceId, documentId,
-      images: [place("https://shop.example/cover.jpg", 0), place("https://shop.example/ridge.jpg", 1, "inline", 40)],
-    });
+    const named = [place("https://shop.example/cover.jpg", 0), place("https://shop.example/ridge.jpg", 1, "inline", 40)];
+    const first = await repository.recordCandidates({ workspaceId, documentId, images: named });
+    const stillPending = await repository.recordCandidates({ workspaceId, documentId, images: named });
+    for (const row of await repository.listForCapture({ workspaceId, documentId })) {
+      await repository.markStored({ id: row.id, chunkId, width: 800, height: 600, sha256: `sha-${row.id}`, sourceEtag: null, renditions: [rendition(320)] });
+    }
+    const unchanged = await repository.recordCandidates({ workspaceId, documentId, images: named });
     const moved = await repository.recordCandidates({
       workspaceId, documentId,
       images: [place("https://shop.example/ridge.jpg", 0, "inline", 90)],
     });
 
-    expect([first.captureNeeded, unchanged.captureNeeded, moved.captureNeeded]).toEqual([true, false, true]);
+    expect([first.captureNeeded, stillPending.captureNeeded, unchanged.captureNeeded, moved.captureNeeded]).toEqual([true, true, false, true]);
     const rows = await repository.listForCapture({ workspaceId, documentId });
     expect(rows.map((row) => [row.sourceUrl, row.status, row.position, row.textOffset])).toEqual([
-      ["https://shop.example/ridge.jpg", "pending", 0, 90],
+      ["https://shop.example/ridge.jpg", "stored", 0, 90],
     ]);
     expect((await repository.listReleased(500)).length).toBeGreaterThan(0);
     await expect(repository.hasImages(documentId)).resolves.toBe(true);
@@ -230,5 +229,23 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
     expect(skipped).toMatchObject({ status: "skipped", renditions: [], sha256: null });
     await expect(repository.markStored({ id: randomUUID(), chunkId: null, width: 1, height: 1, sha256: "x", sourceEtag: null, renditions: [rendition(320)] }))
       .resolves.toBe(false);
+  });
+
+  it("never stores or re-anchors an image its document released, and sends a released one it could not sweep to the back", async () => {
+    const released = await insertImage({ documentId, workspaceId, role: "inline", status: "pending", position: 0, sourceUrl: "https://shop.example/a.jpg" });
+    const later = await insertImage({ documentId, workspaceId, role: "inline", status: "pending", position: 1, sourceUrl: "https://shop.example/b.jpg" });
+    await database.query("UPDATE document_images SET document_id = NULL, updated_at = now() - interval '1 hour' WHERE id = $1", [released]);
+    await database.query("UPDATE document_images SET document_id = NULL, updated_at = now() - interval '30 minutes' WHERE id = $1", [later]);
+
+    await expect(repository.markStored({
+      id: released, chunkId, width: 800, height: 600, sha256: "sha-a", sourceEtag: null, renditions: [rendition(320)],
+    })).resolves.toBe(false);
+    await repository.reanchor({ id: released, chunkId });
+    const [row] = await database.query<{ status: string; chunk_id: string | null }>("SELECT status, chunk_id FROM document_images WHERE id = $1", [released]);
+    expect(row).toEqual({ status: "pending", chunk_id: null });
+
+    await repository.touchReleased([released]);
+    const order = (await repository.listReleased(500)).map((image) => image.id).filter((id) => id === released || id === later);
+    expect(order).toEqual([later, released]);
   });
 });

@@ -1,4 +1,9 @@
-import type { DocumentImageCandidate, PlacedDocumentImage } from "../contracts/documentImages.js";
+import {
+  MAX_STORED_IMAGES_PER_DOCUMENT,
+  type DocumentImageCandidate,
+  type DocumentImageStatus,
+  type PlacedDocumentImage,
+} from "../contracts/documentImages.js";
 
 /** A document names one picture for itself; a few addresses leave room for one being a site banner. */
 const MAX_PRIMARY_IMAGES = 3;
@@ -108,3 +113,15 @@ export const placeDocumentImages = (input: {
     };
   });
 };
+
+/**
+ * Whether capture still has work among a document's images: one it keeps (within the first
+ * `MAX_STORED_IMAGES_PER_DOCUMENT` in document order that are not skipped) that is pending, because
+ * it is new, its last fetch timed out, the codec was busy, or the job's budget ran out first.
+ */
+export const hasPendingKeptImage = (images: readonly { position: number; status: DocumentImageStatus }[]): boolean =>
+  [...images]
+    .sort((left, right) => left.position - right.position)
+    .filter((image) => image.status !== "skipped")
+    .slice(0, MAX_STORED_IMAGES_PER_DOCUMENT)
+    .some((image) => image.status === "pending");

@@ -252,4 +252,46 @@ describe("DocumentImageCaptureService", () => {
     expect(rows.rows.has(released.id)).toBe(false);
     expect(rows.rows.has(live.id)).toBe(true);
   });
+
+  it("keeps a released image whose copies did not all go, at the back of the queue, so the next sweep tries again", async () => {
+    const { service, rows, storage } = setup({ responses: {} });
+    const releasedWith = async (name: string) => {
+      const copy = await storage.upload({ workspaceId: WORKSPACE_ID, documentId: `document-image-${name}-w640`, filename: "image.webp", mimeType: "image/webp", buffer: Buffer.from("x") });
+      const row = rows.seed({
+        workspaceId: WORKSPACE_ID, documentId: null, sourceUrl: `https://cdn.shop.example/${name}.jpg`, role: "primary", status: "stored",
+        renditions: [{ width: 640, height: 480, bucket: copy.bucket, objectPath: copy.objectPath, generation: copy.generation ?? null, sizeBytes: 1 }],
+      });
+      return { row, copy };
+    };
+    const stuck = await releasedWith("stuck");
+    const gone = await releasedWith("gone");
+    storage.deleteFailures.add(stuck.copy.objectPath);
+
+    await service.sweepReleased();
+
+    expect(rows.rows.has(gone.row.id)).toBe(false);
+    expect(rows.rows.get(stuck.row.id)?.renditions.map((rendition) => rendition.objectPath)).toEqual([stuck.copy.objectPath]);
+    expect((await rows.listReleased(10)).map((image) => image.id)).toEqual([stuck.row.id]);
+
+    storage.deleteFailures.clear();
+    await service.sweepReleased();
+
+    expect(rows.rows.has(stuck.row.id)).toBe(false);
+    expect(storage.objects.has(stuck.copy.objectPath)).toBe(false);
+  });
+
+  it("deletes the copies it wrote when the document released the image while it worked", async () => {
+    const { service, rows, storage, seed } = setup({ responses: { "https://cdn.shop.example/cover.jpg": fetched(cover) } });
+    const row = seed("https://cdn.shop.example/cover.jpg", "primary");
+    const markStored = rows.markStored.bind(rows);
+    rows.markStored = async (input) => {
+      row.documentId = null;
+      return markStored(input);
+    };
+
+    await service.capture(job());
+
+    expect(storage.objects.size).toBe(0);
+    expect(rows.rows.get(row.id)).toMatchObject({ status: "pending", renditions: [], documentId: null });
+  });
 });

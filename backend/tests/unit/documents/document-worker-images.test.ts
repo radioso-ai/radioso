@@ -86,12 +86,23 @@ describe("the document worker's image stage", () => {
     expect(enrich.imageCapture.afterRevisionPublished).not.toHaveBeenCalled();
   });
 
-  it("sweeps released images after every job, a failed one included", async () => {
+  it("does not queue capture when the vectorize job fails", async () => {
     const { worker, job, imageCapture } = await setup("vectorize", new Error("provider unavailable"));
 
     await worker.runJobById(job.id);
 
     expect(imageCapture.afterRevisionPublished).not.toHaveBeenCalled();
-    expect(imageCapture.sweepReleased).toHaveBeenCalledTimes(1);
+  });
+
+  it("sweeps released images on its tick, with or without a job to claim, at most once a minute", async () => {
+    const { worker, jobRepository, imageCapture } = await setup("enrich");
+    for (const job of jobRepository.items.values()) job.status = "completed";
+    const start = new Date("2026-11-13T10:00:00.000Z");
+
+    await worker.runOnce(start);
+    await worker.runOnce(new Date(start.getTime() + 30_000));
+    await worker.runOnce(new Date(start.getTime() + 61_000));
+
+    expect(imageCapture.sweepReleased).toHaveBeenCalledTimes(2);
   });
 });

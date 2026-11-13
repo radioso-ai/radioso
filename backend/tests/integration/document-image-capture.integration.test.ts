@@ -226,6 +226,8 @@ describeIntegration("document image capture, from a crawled page to an answer's 
       images: page.images,
     });
     await drainJobs();
+    // The worker sweeps released images on its tick; this is that tick.
+    await capture.sweepReleased();
 
     await expect(database.query("SELECT id FROM document_images WHERE id = $1", [before[0]?.id])).resolves.toEqual([]);
     expect([...storage.objects.keys()].some((path) => path.includes(before[0]?.id ?? "missing"))).toBe(false);

@@ -7,16 +7,15 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { ChunkRepositoryPort, ChunkSummary } from "../contracts/documentContracts.js";
-import type {
-  CapturableDocumentImage,
-  DocumentImageCaptureStore,
-  DocumentImageRendition,
-  ReleasedDocumentImageStore,
+import {
+  MAX_STORED_IMAGES_PER_DOCUMENT,
+  type CapturableDocumentImage,
+  type DocumentImageCaptureStore,
+  type DocumentImageRendition,
+  type ReleasedDocumentImageStore,
 } from "../contracts/documentImages.js";
 import type { DocumentStoragePort } from "../contracts/storage.js";
 
-/** A document keeps at most this many images; the rest of what its content names waits, unfetched. */
-const MAX_IMAGES_PER_DOCUMENT = 12;
 /** Icons, spacers and tracking pixels are smaller than this on their short side. */
 const MIN_SHORT_SIDE_PX = 200;
 /** One job's share of the worker's lease: images not reached by then wait for the next capture. */
@@ -124,10 +123,14 @@ export class DocumentImageCaptureService {
     try {
       const released = await this.deps.images.listReleased(SWEEP_BATCH);
       if (released.length === 0) return;
+      const swept: string[] = [];
+      const kept: string[] = [];
       for (const image of released) {
-        await this.deleteCopies(image.renditions);
+        // A row goes only with every copy it lists, so no copy is ever left without a row naming it.
+        (await this.deleteCopies(image.renditions) ? swept : kept).push(image.id);
       }
-      await this.deps.images.deleteReleased(released.map((image) => image.id));
+      await this.deps.images.deleteReleased(swept);
+      if (kept.length > 0) await this.deps.images.touchReleased(kept);
     } catch (error) {
       this.deps.logger?.warn({ error: errorSummaryOf(error) }, "Released document images could not be swept; the next job retries");
     }
@@ -146,7 +149,7 @@ export class DocumentImageCaptureService {
     let kept = 0;
     for (const image of images) {
       if (image.status === "skipped") continue;
-      if (kept >= MAX_IMAGES_PER_DOCUMENT) {
+      if (kept >= MAX_STORED_IMAGES_PER_DOCUMENT) {
         if (image.status === "stored") await this.deleteCopies(await this.deps.images.resetToPending(image.id));
         continue;
       }
@@ -219,12 +222,13 @@ export class DocumentImageCaptureService {
     return outcome;
   }
 
-  /** Best effort: a copy left behind is swept with its workspace. */
-  private async deleteCopies(renditions: readonly DocumentImageRendition[]): Promise<void> {
-    await Promise.allSettled(renditions.map((rendition) => this.deps.storage.delete({
+  /** True when every copy is gone. Elsewhere best effort: a copy left behind is swept with its workspace. */
+  private async deleteCopies(renditions: readonly DocumentImageRendition[]): Promise<boolean> {
+    const deletions = await Promise.allSettled(renditions.map((rendition) => this.deps.storage.delete({
       bucket: rendition.bucket,
       objectPath: rendition.objectPath,
       generation: rendition.generation,
     })));
+    return deletions.every((deletion) => deletion.status === "fulfilled");
   }
 }

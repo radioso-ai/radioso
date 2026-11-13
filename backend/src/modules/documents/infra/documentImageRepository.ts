@@ -16,6 +16,7 @@ import type {
   StoredDocumentImageRef,
 } from "../contracts/documentImages.js";
 import type { StoredDocumentObject } from "../contracts/storage.js";
+import { hasPendingKeptImage } from "../domain/documentImageCandidates.js";
 
 const isRendition = (value: unknown): value is Record<string, unknown> & { width: number; bucket: string; objectPath: string; sizeBytes: number } => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -132,11 +133,17 @@ export class DocumentImageRepository implements
     return this.db.transaction().execute(async (trx) => {
       const existing = await trx
         .selectFrom("document_images")
-        .select(["id", "source_url", "role", "text_offset"])
+        .select(["id", "source_url", "role", "text_offset", "status"])
         .where("document_id", "=", input.documentId)
         .forUpdate()
         .execute();
       const byUrl = new Map(existing.map((row) => [row.source_url, row]));
+      // An image the document keeps that is still pending (its fetch timed out, the codec was busy, the
+      // job ran out of time, or its row was written after the job ran) is captured on this sync too.
+      const keptStatuses = input.images.map((image) => {
+        const status = byUrl.get(image.sourceUrl)?.status;
+        return { position: image.position, status: status !== undefined && isStatus(status) ? status : "pending" as const };
+      });
       const named = new Set(input.images.map((image) => image.sourceUrl));
       const released = existing.filter((row) => !named.has(row.source_url)).map((row) => row.id);
       if (released.length > 0) {
@@ -146,7 +153,7 @@ export class DocumentImageRepository implements
           .where("id", "in", released)
           .execute();
       }
-      let captureNeeded = false;
+      let captureNeeded = hasPendingKeptImage(keptStatuses);
       for (const image of input.images) {
         const kept = byUrl.get(image.sourceUrl);
         if (!kept) {
@@ -242,6 +249,8 @@ export class DocumentImageRepository implements
         updated_at: currentTimestamp(),
       })
       .where("id", "=", input.id)
+      // A row its document released while capture worked stays released: the caller deletes what it wrote.
+      .where("document_id", "is not", null)
       .executeTakeFirst();
     return Number(result.numUpdatedRows) > 0;
   }
@@ -251,6 +260,7 @@ export class DocumentImageRepository implements
       .updateTable("document_images")
       .set({ chunk_id: input.chunkId, updated_at: currentTimestamp() })
       .where("id", "=", input.id)
+      .where("document_id", "is not", null)
       .execute();
   }
 
@@ -271,6 +281,18 @@ export class DocumentImageRepository implements
       .limit(limit)
       .execute();
     return rows.map((row) => ({ id: row.id, renditions: readRenditions(row.renditions) }));
+  }
+
+  async touchReleased(ids: readonly string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    await this.db
+      .updateTable("document_images")
+      .set({ updated_at: currentTimestamp() })
+      .where("id", "in", [...ids])
+      .where("document_id", "is", null)
+      .execute();
   }
 
   async deleteReleased(ids: readonly string[]): Promise<void> {

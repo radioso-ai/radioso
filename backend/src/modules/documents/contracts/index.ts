@@ -65,7 +65,6 @@ export {
   type ListedDocumentImage,
   type DocumentImageRendition,
   type DocumentImageRole,
-  type DocumentImageSummary,
   type PlacedDocumentImage,
   type ReleasedDocumentImageStore,
   type StoredDocumentImageRef,

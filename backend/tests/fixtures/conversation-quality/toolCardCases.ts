@@ -81,7 +81,8 @@ export const toolCardStubTool = {
   name: TOOL_CARD_SKILL_NAME,
   description: "Searches the letting agency's catalog of homes to rent and its offices.",
   inputSchema: { type: "object", properties: { message: { type: "string" } }, required: ["message"] },
-  respond: (args: Record<string, unknown>): StubResult => resultsByMessage.get(String(args.message ?? "")) ?? listingsResult,
+  respond: (args: Record<string, unknown>): StubResult =>
+    resultsByMessage.get(typeof args.message === "string" ? args.message : "") ?? listingsResult,
 };
 
 /** The records a card may come from: its title, and the link of the record that title names. */

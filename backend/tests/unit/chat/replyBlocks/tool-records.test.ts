@@ -90,7 +90,7 @@ describe("tool record ledger", () => {
       nested: { one: { two: { three: { four: "deep" } } } },
     };
     const section = ToolRecordLedger.fromOutcome({ items: [record] }, undefined).promptSection();
-    const shown = JSON.parse(section.split("\n")[1]!.replace(/^\[r1\] /, "")) as Record<string, unknown>;
+    const shown = JSON.parse(section.split("\n")[1].replace(/^\[r1\] /, "")) as Record<string, unknown>;
 
     expect(Array.from(shown.title as string)).toHaveLength(TOOL_RECORD_LIMITS.stringLength);
     expect(shown.tags).toEqual(["a", "b", "c", "+2"]);

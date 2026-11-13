@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ReplyBlocksCapability } from "../../../src/modules/chat/contracts/replyBlocks.js";
 import { AGENT_SKILL_OUTCOME_KIND } from "../../../src/modules/chat/composition.js";
 import { buildChatTurnRuntime } from "../../../src/modules/chat/services/chatTurnRuntime.js";
 import type { PreparedSession } from "../../../src/modules/chat/services/chatSessionPreparer.js";
@@ -49,7 +48,7 @@ const runCase = async (evalCase: ConversationQualityCase, envelope: unknown): Pr
     retrieval: { responseIdentity: null, responseSettings: {} },
     resolvedContext: { snapshot: {}, fragments: [], renderFragments: [], staged: [] },
     directiveSteering: { rules: [], omissions: [], matches: [] },
-    replyBlocks: evalCase.clientContextCapabilities?.["reply.blocks"] as ReplyBlocksCapability | undefined,
+    replyBlocks: evalCase.clientContextCapabilities?.["reply.blocks"],
   } as unknown as PreparedSession;
   const presentation = await runtime.skillResultRenderer.render({
     kind: AGENT_SKILL_OUTCOME_KIND,

@@ -516,7 +516,7 @@ describe("TestExecutionService", () => {
       ];
       let call = 0;
       const stream = async function* (_input: RunnerInput) {
-        return results[call++]!;
+        return results[call++];
       };
       const { service, repository } = setup(undefined, undefined, { stream });
       const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });

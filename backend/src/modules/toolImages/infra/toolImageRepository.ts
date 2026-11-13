@@ -18,7 +18,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
 /** An object as a row's jsonb keeps it, or null when the value is not one. */
-export const toolImageObjectFrom = (value: unknown): ToolImageObject | null => {
+const toolImageObjectFrom = (value: unknown): ToolImageObject | null => {
   if (!isRecord(value) || typeof value.bucket !== "string" || typeof value.objectPath !== "string") return null;
   return { bucket: value.bucket, objectPath: value.objectPath, generation: typeof value.generation === "string" ? value.generation : null };
 };

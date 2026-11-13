@@ -145,7 +145,7 @@ export class ToolImageCapture {
     }
     const renditions: ToolImageRendition[] = [];
     for (const [index, rendition] of decoded.value.renditions.entries()) {
-      const requested = this.deps.renditionWidths[index]!;
+      const requested = this.deps.renditionWidths[index];
       const suffix = `w${requested}` as const;
       const { sizeBytes } = await this.deps.objects.put({ workspaceId: image.workspaceId, imageId: image.id, suffix, bytes: rendition.webp, mimeType: "image/webp" });
       renditions.push({ ...this.deps.objects.locate({ workspaceId: image.workspaceId, imageId: image.id, suffix }), width: requested, height: rendition.height, sizeBytes });

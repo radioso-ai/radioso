@@ -270,7 +270,7 @@ Images are served by `GET /api/v1/public/reply-images/{imageId}/{width}` as WebP
 
 ### Let the visitor pick a card
 
-When the reply asks the visitor to choose, such as one of three tours to book, the agent sends the block with `"selection": "single"`, and each item carries a `select` action after its `open` link. Draw a **Select** button on those cards. When the visitor picks one, send it as the next message of the conversation, with the card's title as `message`:
+Selection applies to cards from the agent's documents. When the reply asks the visitor to choose, such as one of three tours to hear more about, the agent sends the block with `"selection": "single"`, and each item carries a `select` action after its `open` link. A block of a skill's records always comes with `"selection": "none"`. Draw a **Select** button on the cards that carry `select`. When the visitor picks one, send it as the next message of the conversation, with the card's title as `message` (or its picture's `alt` when the title is empty, else its `key`):
 
 ```json
 {
@@ -288,11 +288,11 @@ When the reply asks the visitor to choose, such as one of three tours to book, t
 }
 ```
 
-`messageId` is the `assistantMessageId` of the reply that showed the card, `blockId` the block's `id`, and `itemKey` the item's `key`. Radioso reads the item from the block it stored on that reply, in this conversation, and stores the visitor's message as the item's own title, whatever `message` says. The agent answers with that item as its subject: a card from your documents brings its document, and a card from a skill's records brings its title, subtitle and link.
+`messageId` is the `assistantMessageId` of the reply that showed the card, `blockId` the block's `id`, and `itemKey` the item's `key`. Radioso reads the item from the block it stored on that reply, in this conversation, and stores the visitor's message as the card's own title, in the same order of fallbacks, whatever `message` says. The pick names the card's page as the subject of the next reply, which answers in the language of what the visitor wrote before, whatever language the title is in.
 
-A reply is picked from once. A pick that names a reply, block or key the conversation does not have, or a block whose `selection` is `none`, answers `400 item_selection_invalid`; a second pick from the same reply answers `409 item_already_selected`. Both store nothing and run no turn. `POST /api/v1/assistant/chat` takes the same pick.
+A reply is picked from once. A pick that names a reply, block or key the conversation does not have, or a block whose `selection` is `none`, answers `400 item_selection_invalid`; a pick of another card from a reply already picked from answers `409 item_already_selected`. Both store nothing and run no turn. The same card sent again runs as a retry, so a pick whose reply failed can be sent once more. Two picks of different cards sent at the same moment can both go through; the website embed and the hosted chat page send one at a time. `POST /api/v1/assistant/chat` takes the same pick.
 
-In history, the visitor's message carries `inputMetadata.selection`. Mark the card it names as picked and settle the rest of that reply's cards, so a reload shows the pick. The website embed and the hosted chat page do this: the picked card's button shows pressed, and the others are disabled. Its label is the `publicChatSelectItemLabel` copy key, translated in every built-in language pack, and the card's title follows it for screen readers.
+In history, the visitor's message carries `inputMetadata.selection`. Mark the card it names as picked and settle the rest of that reply's cards, so a reload shows the pick. The website embed and the hosted chat page do this: the picked card's button shows pressed, and the others are disabled. When a pick is refused, they take back the message they drew for it, and after a `409` they read history again to show the card that was picked. Its label is the `publicChatSelectItemLabel` copy key, translated in every built-in language pack, and the card's title follows it for screen readers.
 
 ## History in the anonymous flow
 
@@ -334,7 +334,7 @@ Once the vendor's client has opened the session, `POST /api/v1/public/chat/{toke
 - `404` usually means the public token is unknown or not active.
 - `409` with `chat_turn_superseded` means a newer message replaced this turn before its reply started.
 - `400` with `item_selection_invalid` means a pick names a card the conversation's stored replies do not have; send the ids from the block as history returns it.
-- `409` with `item_already_selected` means a card was already picked from that reply; history shows which.
+- `409` with `item_already_selected` means another card was already picked from that reply; history shows which.
 - `409` with `visitor_image_unavailable` means a photo id is unknown, belongs to another session, or a message already carried it, so upload the photo again; or the agent stopped taking photos after the upload, so send the message without them.
 - `404` with `visitor_images_unavailable` on a photo upload means the agent does not take photos; `acceptsImages` on the session and on the conversation list says so before the visitor tries.
 - `503` on a public chat message means Radioso accepted the public session but could not produce a response body.

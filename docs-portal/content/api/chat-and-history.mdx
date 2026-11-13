@@ -242,7 +242,7 @@ GET  /api/v1/history/search/{searchId}
 ## Common failure modes
 
 - `400` usually means the request body is invalid. `400 item_selection_invalid` means a card pick names a reply, block or item the conversation does not have.
-- `409 item_already_selected` means a card was already picked from that reply; nothing was stored.
+- `409 item_already_selected` means another card was already picked from that reply; nothing was stored.
 - `401` from agent chat means its REST-audience credential is missing, invalid, expired, or bound to a different agent.
 - `403` from a history `DELETE`, a consent withdrawal or a data subject route means the caller lacks `workspace.history.delete`.
 - `409 consent_not_withdrawable` from a consent withdrawal means the visitor declined that consent, or someone already withdrew it; nothing changed.

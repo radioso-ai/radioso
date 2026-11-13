@@ -481,10 +481,11 @@ and history returns them on the assistant message. A turn that declares no
 `reply.blocks` gets the answer as text alone. A layout your client leaves out of
 `layouts` reaches it as `list`.
 
-A block with `selection: "single"` lets the user pick one of its cards. Send the
-pick as the next message of the conversation, naming the reply, the block and the
-item; Radioso reads the item from the reply it stored, and the agent answers
-about it:
+A block with `selection: "single"`, which only cards from the agent's documents
+carry, lets the user pick one of its cards. Send the pick as the next message of
+the conversation, naming the reply, the block and the item; Radioso reads the
+item from the reply it stored, and the pick names the card's page as the subject
+of the next reply:
 
 ```ts
 const answer = await client.chat.create({
@@ -497,9 +498,9 @@ const answer = await client.chat.create({
 });
 ```
 
-A reply is picked from once: a second pick answers `409 item_already_selected`,
-and a pick naming a card the conversation does not have answers
-`400 item_selection_invalid`.
+A reply is picked from once: a pick of another card from it answers
+`409 item_already_selected`, the same card sent again runs as a retry, and a pick
+naming a card the conversation does not have answers `400 item_selection_invalid`.
 
 List chat history:
 

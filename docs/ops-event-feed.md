@@ -78,7 +78,7 @@ Product events always arrive at `severity: "info"`. Whether `chat.failed` deserv
 | `chat.started` | a conversation begins |
 | `chat.completed` | a turn answers successfully |
 | `chat.failed` | a turn fails |
-| `chat.item_selected` | a visitor picks a card from a reply; `properties` carries the reply's `messageId`, the `blockId`, the `itemKey`, the conversation's `channel`, and `source` (`document` or `skill_result`) |
+| `chat.item_selected` | a visitor picks a card from a reply; `properties` carries the reply's `messageId`, the `blockId`, the `itemKey` and the conversation's `channel` |
 | `document.ingest_queued` | an upload is accepted for processing |
 | `document.ingest_failed` | an upload is rejected |
 

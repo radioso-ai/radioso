@@ -113,6 +113,7 @@ import {
 } from "./clarification/pendingClarificationResolver.js";
 import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseResolutionInput.js";
 import type { SelectedItem } from "./replyBlocks/itemSelection.js";
+import { responseLanguageEvidence } from "./responseLanguageEvidence.js";
 import { createTurnLanguageReport, withTurnLanguageReport, type TurnLanguageReport } from "./turnLanguageReport.js";
 import {
   type RetrievalSenseDetectorPort,
@@ -769,8 +770,7 @@ export class ChatService {
     return detectTurnResponseLanguage({
       detector: this.responseLanguageDetector,
       request: {
-        query: input.query,
-        history: session.history,
+        ...responseLanguageEvidence(input.query, session),
         workspaceContext: { workspaceId: input.workspaceId },
         usageContext: {
           accountId: input.accountId,
@@ -862,7 +862,7 @@ export class ChatService {
   ): void {
     const handle = startTurnPlan({
       coordinator: this.turnPlanCoordinator,
-      bypass,
+      bypass: { ...bypass, itemSelection: Boolean(session.itemSelection) },
       plan: () => ({
         query: input.query,
         history: session.history,

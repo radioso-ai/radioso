@@ -72,6 +72,15 @@ const WordpressEventSchema = z.object({
         message: `At most ${MAX_INDEXED_FIELDS} fields per post`,
       })
       .optional(),
+    // The post's featured image, null when it has none. An http(s) address within the image
+    // row's bound; ingestion fetches it through the public-network policy, never the site.
+    featured_image: z
+      .object({
+        url: z.string().url().max(2048).refine((url) => /^https?:\/\//i.test(url), { message: "featured_image.url must be http(s)" }),
+        alt: z.string().max(300).optional(),
+      })
+      .nullable()
+      .optional(),
   }),
 });
 

@@ -37,6 +37,14 @@ export const registerReplyImagePaths = (registry: OpenAPIRegistry, schemas: Open
           },
         },
       },
+      429: {
+        description: "The calling source has used its budget of public reads for the window",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
     },
   });
 };

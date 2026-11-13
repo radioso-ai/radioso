@@ -302,10 +302,11 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
     expect(enrichJob.kind).toBe("enrich");
   });
 
-  it("ensureEnrichJob is idempotent for a revision and never violates the unique constraint", async () => {
+  it("ensureFollowUpJob is idempotent for a revision and never violates the unique constraint", async () => {
     const documentId = await insertDocument();
 
-    const first = await repository.ensureEnrichJob({
+    const first = await repository.ensureFollowUpJob({
+      kind: "enrich",
       documentId,
       workspaceId,
       documentRevision: 1,
@@ -313,24 +314,42 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
     });
     // A vectorize retry re-runs the follow-up creation; it must return the same
     // row rather than throwing on (document_id, document_revision, kind='enrich').
-    const second = await repository.ensureEnrichJob({ documentId, workspaceId, documentRevision: 1 });
+    const second = await repository.ensureFollowUpJob({ kind: "enrich", documentId, workspaceId, documentRevision: 1 });
 
     expect(first.kind).toBe("enrich");
     expect(second.id).toBe(first.id);
     expect(second.options).toEqual({ documentEnrichmentOverride: "on" });
   });
 
+  it("queues a finished image capture again when asked, and leaves a queued or running one alone", async () => {
+    const documentId = await insertDocument();
+    const capture = { kind: "images" as const, documentId, workspaceId, documentRevision: 1, requeueFinished: true };
+
+    const first = await repository.ensureFollowUpJob(capture);
+    const claimed = await repository.claimById(first.id);
+    expect(claimed?.status).toBe("processing");
+    const whileRunning = await repository.ensureFollowUpJob(capture);
+    await repository.markCompleted(first.id);
+    const again = await repository.ensureFollowUpJob(capture);
+
+    expect(first.kind).toBe("images");
+    expect(whileRunning).toMatchObject({ id: first.id, status: "processing" });
+    expect(again).toMatchObject({ id: first.id, status: "queued", attemptCount: 0, completedAt: null });
+  });
+
   it("carries a fresh-extraction request to the enrich job, and reads its absence as none", async () => {
     const documentId = await insertDocument();
     const otherDocumentId = await insertDocument();
 
-    const refreshing = await repository.ensureEnrichJob({
+    const refreshing = await repository.ensureFollowUpJob({
+      kind: "enrich",
       documentId,
       workspaceId,
       documentRevision: 1,
       options: { documentEnrichmentOverride: "on", refreshDocumentEnrichment: true },
     });
-    const plain = await repository.ensureEnrichJob({
+    const plain = await repository.ensureFollowUpJob({
+      kind: "enrich",
       documentId: otherDocumentId,
       workspaceId,
       documentRevision: 1,

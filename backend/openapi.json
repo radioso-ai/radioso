@@ -65277,6 +65277,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "The calling source has used its budget of public reads for the window",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

@@ -4,7 +4,7 @@
  * Description: Pushes published, updated, and deleted content of any post type
  *              — including WooCommerce products — to a Radioso workspace via
  *              signed webhook (HMAC-SHA256).
- * Version:     0.7.0
+ * Version:     0.8.0
  * Requires at least: 5.7
  * Author:      Radioso
  * License:     MIT
@@ -1177,6 +1177,42 @@ function radioso_facts_html($post, $pricing = null) {
     return '<ul class="radioso-facts">' . $items . '</ul>';
 }
 
+/**
+ * The post's featured image as Radioso reads it: an address and its alt text,
+ * or null when the post has none. Radioso keeps a copy at most 640 px wide, so
+ * the smallest size WordPress made at that width or wider travels rather than
+ * the original upload. The webhook accepts an http(s) address of at most 2,048
+ * characters and alt text of at most 300 UTF-16 code units; a longer address is
+ * dropped and longer alt text shortened here, so the push is never refused.
+ */
+function radioso_featured_image_payload($post) {
+    if (!function_exists('get_post_thumbnail_id')) {
+        return null;
+    }
+    $attachment_id = (int) get_post_thumbnail_id($post);
+    if ($attachment_id <= 0) {
+        return null;
+    }
+
+    $url = null;
+    foreach (['medium_large', 'large', 'full'] as $size) {
+        $source = wp_get_attachment_image_src($attachment_id, $size);
+        if (is_array($source) && isset($source[0]) && ($size === 'full' || (int) ($source[1] ?? 0) >= 640)) {
+            $url = (string) $source[0];
+            break;
+        }
+    }
+    if ($url === null || strlen($url) > 2048 || !preg_match('#^https?://#i', $url)) {
+        return null;
+    }
+
+    $alt = trim((string) get_post_meta($attachment_id, '_wp_attachment_image_alt', true));
+    // 150 code points are at most 300 UTF-16 code units, however many sit outside the basic plane.
+    $alt = function_exists('mb_substr') ? mb_substr($alt, 0, 150) : substr($alt, 0, 150);
+
+    return ['url' => $url, 'alt' => $alt];
+}
+
 function radioso_rendered_content($post, $pricing = null) {
     return apply_filters('the_content', $post->post_content) . radioso_facts_html($post, $pricing);
 }
@@ -1215,6 +1251,10 @@ function radioso_dispatch($event, $post) {
     if ($fields) {
         $post_payload['fields'] = $fields;
     }
+
+    // Always stated, null when there is none: Radioso drops a picture it kept
+    // for a post that no longer has one.
+    $post_payload['featured_image'] = radioso_featured_image_payload($post);
 
     $payload = wp_json_encode([
         'event'    => $event,

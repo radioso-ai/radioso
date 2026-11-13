@@ -35,6 +35,9 @@ import {
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { describeIndexedContent, mergeIndexedFields } from "./indexedDocumentContent.js";
+import type { DocumentImageCandidatesPort } from "./documentImageCaptureQueue.js";
+import type { DocumentImageCandidate } from "../contracts/documentImages.js";
+import { placeDocumentImages } from "../domain/documentImageCandidates.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 import { resolveRetrievalEligibility } from "../domain/retrievalEligibility.js";
 import { isUnchangedPage } from "../domain/unchangedPage.js";
@@ -129,6 +132,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     private readonly embeddingCoverage?: EmbeddingCoverageReconciliationPort,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
+    private readonly imageCandidates?: DocumentImageCandidatesPort,
   ) {}
 
   async ingest(input: {
@@ -142,6 +146,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     reviewedWriteGuard?: DocumentReviewedWriteGuard;
     source?: DocumentSourceResolverInput;
     documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+    images?: readonly DocumentImageCandidate[];
   }): Promise<{ documentId: string; status: string }> {
     const metadata = mergeIndexedFields(input.metadata, input.indexedFields);
     const sanitizedContent = sanitizeInlineDocumentContent({
@@ -165,7 +170,16 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         })
       : null;
 
+    const recordImages = (documentId: string, revision: number, published: boolean): Promise<void> =>
+      this.imageCandidates && input.images
+        ? this.imageCandidates.recordCandidates({
+            workspaceId: input.workspaceId, documentId, revision, published,
+            images: placeDocumentImages({ candidates: input.images, content: input.content, storedText: indexedContent.markdownContent }),
+          })
+        : Promise.resolve();
+
     if (existingPage && isUnchangedPage(existingPage, { contentHash: indexedContent.contentHash, title: input.title })) {
+      await recordImages(existingPage.documentId, existingPage.revision, true);
       return { documentId: existingPage.documentId, status: "ready" };
     }
 
@@ -260,6 +274,8 @@ export class DocumentIngestionService implements DocumentInventoryPort {
       throw error;
     }
 
+    // Before the job is dispatched, so the vectorize job that publishes this revision finds the images.
+    await recordImages(document.id, document.revision, false);
     this.publishDocumentStatusChanged(input.workspaceId);
     await this.auditService.record({
       workspaceId: input.workspaceId,

@@ -207,4 +207,56 @@ describe("mapRestPostToIngestInput", () => {
     });
     expect(result.metadata).not.toHaveProperty("author");
   });
+
+  describe("the featured image", () => {
+    const withMedia = (media: NonNullable<WordpressRestPost["_embedded"]>["wp:featuredmedia"]): WordpressRestPost => ({
+      ...restPost,
+      featured_media: 91,
+      _embedded: { "wp:featuredmedia": media },
+    });
+
+    it("is the post's picture, at the smallest size still wide enough for the widest stored copy", () => {
+      const result = mapRestPostToIngestInput("ws-1", withMedia([{
+        source_url: "https://example.com/uploads/cover.jpg",
+        alt_text: "The cover",
+        media_details: {
+          width: 2400,
+          sizes: {
+            thumbnail: { source_url: "https://example.com/uploads/cover-150.jpg", width: 150 },
+            medium_large: { source_url: "https://example.com/uploads/cover-768.jpg", width: 768 },
+            large: { source_url: "https://example.com/uploads/cover-1024.jpg", width: 1024 },
+          },
+        },
+      }]));
+
+      expect(result.images).toEqual([{ url: "https://example.com/uploads/cover-768.jpg", alt: "The cover" }]);
+    });
+
+    it("falls back to the original when no size is wide enough", () => {
+      const result = mapRestPostToIngestInput("ws-1", withMedia([{ source_url: "https://example.com/uploads/small.png", media_details: { sizes: {} } }]));
+
+      expect(result.images).toEqual([{ url: "https://example.com/uploads/small.png", alt: "" }]);
+    });
+
+    it("says the post has none when it has no featured image, or the site does not let it be read", () => {
+      expect(mapRestPostToIngestInput("ws-1", { ...restPost, featured_media: 0 }).images).toEqual([]);
+      expect(mapRestPostToIngestInput("ws-1", withMedia([{}])).images).toEqual([]);
+    });
+  });
+});
+
+describe("mapWebhookPostToIngestInput featured image", () => {
+  it("carries the pushed featured image as the post's picture", () => {
+    const result = mapWebhookPostToIngestInput("ws-1", {
+      ...baseWebhookPost,
+      featured_image: { url: "https://example.com/uploads/cover.jpg", alt: "The cover" },
+    });
+
+    expect(result.images).toEqual([{ url: "https://example.com/uploads/cover.jpg", alt: "The cover" }]);
+  });
+
+  it("says the post has none when the plugin pushes none, and says nothing when an older plugin does not know the field", () => {
+    expect(mapWebhookPostToIngestInput("ws-1", { ...baseWebhookPost, featured_image: null }).images).toEqual([]);
+    expect(mapWebhookPostToIngestInput("ws-1", baseWebhookPost)).not.toHaveProperty("images");
+  });
 });

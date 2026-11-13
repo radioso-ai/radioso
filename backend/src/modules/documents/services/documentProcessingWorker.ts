@@ -29,6 +29,17 @@ import {
   type EmbeddingProfileCleanupService,
 } from "../../embeddingProfiles/public.js";
 
+/**
+ * The image stage of the worker: it captures a revision's images as their own `images` job, queues
+ * that job once a vectorize job has published the chunks the images anchor to, and sweeps the
+ * stored copies of images whose document is gone. Queueing and sweeping never throw.
+ */
+export interface DocumentImageCaptureStage {
+  capture(job: DocumentProcessingJobRecord): Promise<"completed" | "stale" | "deleted">;
+  afterRevisionPublished(job: DocumentProcessingJobRecord): Promise<void>;
+  sweepReleased(): Promise<void>;
+}
+
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_JOB_LEASE_MS = 300_000;
 const EMBEDDING_CLEANUP_INTERVAL_MS = 60_000;
@@ -97,6 +108,7 @@ export class DocumentProcessingWorker {
     private readonly embeddingProfileTerminalFailures?: EmbeddingProfileTerminalFailurePort,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
+    private readonly imageCapture?: DocumentImageCaptureStage,
   ) {}
 
   async runPostJobMaintenance(
@@ -410,9 +422,13 @@ export class DocumentProcessingWorker {
           ? await this.requireEmbeddingProfileJobService().process(job)
           : job.kind === "enrich"
             ? await this.processingService.processEnrichment(job)
-            : await this.processingService.process(job);
+            : job.kind === "images"
+              ? await this.requireImageCapture().capture(job)
+              : await this.processingService.process(job);
         if (outcome === "completed") {
           await this.jobRepository.markCompleted(job.id);
+          // After completion, so a failure to queue capture can never send the vectorize job round again.
+          if (job.kind === "vectorize") await this.imageCapture?.afterRevisionPublished(job);
           await this.runPostJobMaintenance(10, job.workspaceId);
           await this.emitJobTelemetry("document.worker.job_completed", job, {
             durationMs: Date.now() - startedAt,
@@ -433,6 +449,8 @@ export class DocumentProcessingWorker {
       } catch (error) {
         await this.handleFailure(job, error, Date.now() - startedAt);
       }
+      // Images a deleted document or a re-sync released: their copies go a batch at a time, whatever the job was.
+      await this.imageCapture?.sweepReleased();
     });
   }
 
@@ -690,6 +708,13 @@ export class DocumentProcessingWorker {
       // processing time. The lease length is a believable proxy instead.
       durationMs: this.jobLeaseMs,
     });
+  }
+
+  private requireImageCapture(): DocumentImageCaptureStage {
+    if (!this.imageCapture) {
+      throw new Error("Document image capture is not configured");
+    }
+    return this.imageCapture;
   }
 
   private requireEmbeddingProfileJobService(): Pick<EmbeddingProfileJobService, "process"> {

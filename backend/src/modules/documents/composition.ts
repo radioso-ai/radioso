@@ -4,6 +4,9 @@ export {
 } from "./infra/amqpDocumentJobQueue.js";
 export { ChunkRepository } from "./infra/chunkRepository.js";
 export { DocumentImageRepository } from "./infra/documentImageRepository.js";
+export { encodeDocumentImage, fetchDocumentImage } from "./infra/documentImageCodec.js";
+export { DocumentImageCaptureQueue, type DocumentImageCandidatesPort } from "./services/documentImageCaptureQueue.js";
+export { DocumentImageCaptureService } from "./services/documentImageCaptureService.js";
 export { CloudTasksDocumentJobDispatcher } from "./infra/cloudTasksDocumentJobDispatcher.js";
 export {
   type DocumentJobDispatcherPort,
@@ -37,7 +40,7 @@ export {
   EmbeddingProfileJobService,
   type EmbeddingProfileTerminalFailurePort,
 } from "./services/embeddingProfileJobService.js";
-export { DocumentProcessingWorker } from "./services/documentProcessingWorker.js";
+export { DocumentProcessingWorker, type DocumentImageCaptureStage } from "./services/documentProcessingWorker.js";
 export { DocumentSearchHistoryService } from "./services/documentSearchHistoryService.js";
 export { DocumentSearchService } from "./services/documentSearchService.js";
 export { DocumentSourceReprocessService } from "./services/documentSourceReprocessService.js";

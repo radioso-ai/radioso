@@ -377,6 +377,51 @@ assert_true(
     'a post with nothing to index omits the field map entirely'
 );
 
+// ── Featured image ──────────────────────────────────────────────────────────
+
+assert_true(
+    array_key_exists('featured_image', $page_body['post']) && $page_body['post']['featured_image'] === null,
+    'a post without a featured image says so, so Radioso drops one it had'
+);
+
+$GLOBALS['post_thumbnails'][901] = 77;
+$GLOBALS['attachments'][77] = [
+    'alt' => '  The meditation hall  ',
+    'sizes' => [
+        'medium_large' => ['https://example.com/uploads/hall-768x512.jpg', 768, 512],
+        'large' => ['https://example.com/uploads/hall-1024x683.jpg', 1024, 683],
+        'full' => ['https://example.com/uploads/hall.jpg', 3000, 2000],
+    ],
+];
+radioso_dispatch('updated', $page_post);
+$pictured = json_decode($GLOBALS['last_webhook_body'], true);
+assert_true(
+    $pictured['post']['featured_image']['url'] === 'https://example.com/uploads/hall-768x512.jpg',
+    'the featured image travels at the smallest size still wide enough for the copy Radioso keeps'
+);
+assert_true($pictured['post']['featured_image']['alt'] === 'The meditation hall', 'the featured image carries its alt text');
+
+$GLOBALS['attachments'][77] = [
+    'alt' => str_repeat('é', 400),
+    'sizes' => ['full' => ['https://example.com/uploads/small.jpg', 300, 200]],
+];
+radioso_dispatch('updated', $page_post);
+$small = json_decode($GLOBALS['last_webhook_body'], true);
+assert_true(
+    $small['post']['featured_image']['url'] === 'https://example.com/uploads/small.jpg',
+    'a featured image with no wide size travels as the original'
+);
+assert_true(
+    radioso_field_value_length($small['post']['featured_image']['alt']) <= 300,
+    'the alt text stays within the length the webhook accepts'
+);
+
+$GLOBALS['attachments'][77]['sizes']['full'] = ['ftp://example.com/uploads/odd.jpg', 900, 600];
+radioso_dispatch('updated', $page_post);
+$odd = json_decode($GLOBALS['last_webhook_body'], true);
+assert_true($odd['post']['featured_image'] === null, 'an address that is not http(s) is never pushed');
+unset($GLOBALS['post_thumbnails'][901], $GLOBALS['attachments'][77]);
+
 $GLOBALS['wp_options'][RADIOSO_OPT_AUTHOR_TAXONOMY] = '';
 radioso_dispatch('updated', $catalogue_post);
 $unattributed = json_decode($GLOBALS['last_webhook_body'], true);

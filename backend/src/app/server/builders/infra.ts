@@ -48,7 +48,7 @@ import { DocumentStorageOwnerRepository } from "../../../db/repositories/documen
 import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 import type { VendorHeldConversationDataEraser } from "../../../shared/domain/conversationDataErasure.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
-import { ChunkRepository } from "../../../modules/documents/composition.js";
+import { ChunkRepository, DocumentImageRepository } from "../../../modules/documents/composition.js";
 import { AbuseControlRepository } from "../../../db/repositories/abuseControlRepository.js";
 import {
   WorkspaceProviderCredentialsRepository,
@@ -220,6 +220,7 @@ export const buildRepositories = (
   agentBundleImportRepository: new AgentBundleImportRepository(database.kysely),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database),
+  documentImageRepository: new DocumentImageRepository(database.kysely),
   conversationRepository: new ConversationRepository(database.kysely),
   conversationActivityRepository: new ConversationActivityRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),

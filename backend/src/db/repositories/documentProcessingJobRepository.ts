@@ -10,17 +10,22 @@ import type {
 import {
   documentProcessingJobColumns,
   mapJob,
-  type DocumentProcessingJobKind,
   type DocumentProcessingJobRecord,
   type DocumentProcessingJobRow,
+  type FollowUpJobKind,
   type RevisionProcessingJobKind,
 } from "./documentProcessingJobRows.js";
 
-export type {
-  DocumentProcessingJobKind,
-  DocumentProcessingJobRecord,
-  DocumentProcessingJobStatus,
-} from "./documentProcessingJobRows.js";
+export type { DocumentProcessingJobRecord } from "./documentProcessingJobRows.js";
+
+export interface FollowUpJobInput {
+  kind: FollowUpJobKind;
+  documentId: string;
+  workspaceId: string;
+  documentRevision: number;
+  options?: DocumentProcessingJobOptions | null;
+  requeueFinished?: boolean;
+}
 import type {
   WorkspaceCanonicalEmbeddingCoverage,
 } from "../../modules/embeddingProfiles/contracts/embeddingCoverage.js";
@@ -41,11 +46,12 @@ export type EnqueuedEmbeddingProfileJob = Pick<
 
 export interface DocumentProcessingJobRepositoryPort {
   enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; kind?: RevisionProcessingJobKind; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord>;
-  // Idempotently create the follow-up enrich job for a revision. Safe to call on
-  // a vectorize retry: if the (document_id, document_revision, kind='enrich') row
-  // already exists it is returned rather than inserted, so a re-run never fails on
-  // the unique constraint.
-  ensureEnrichJob(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord>;
+  // Idempotently create a follow-up job for a revision. Safe to call on a vectorize
+  // retry: if the (document_id, document_revision, kind) row already exists it is
+  // returned rather than inserted, so a re-run never fails on the unique constraint.
+  // `requeueFinished` queues a finished one again, for work the revision can need
+  // more than once (an image capture after the content names new images).
+  ensureFollowUpJob(input: FollowUpJobInput): Promise<DocumentProcessingJobRecord>;
   findById(jobId: string): Promise<DocumentProcessingJobRecord | null>;
   findByDocumentRevision(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord | null>;
   claimNext(now?: Date): Promise<DocumentProcessingJobRecord | null>;
@@ -341,7 +347,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     return mapJob(row as DocumentProcessingJobRow);
   }
 
-  async ensureEnrichJob(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord> {
+  async ensureFollowUpJob(input: FollowUpJobInput): Promise<DocumentProcessingJobRecord> {
     const inserted = await this.db
       .insertInto("document_processing_jobs")
       .values({
@@ -349,29 +355,26 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         document_id: input.documentId,
         workspace_id: input.workspaceId,
         document_revision: input.documentRevision,
-        kind: "enrich",
+        kind: input.kind,
         status: "queued",
         options: input.options ? toJsonb(input.options) : null,
       })
-      .onConflict((oc) =>
-        oc
-          .columns(["document_id", "document_revision", "kind"])
-          .where("kind", "!=", sql.lit("embedding_profile"))
-          .doNothing(),
-      )
+      .onConflict((oc) => {
+        const revisionJob = oc.columns(["document_id", "document_revision", "kind"]).where("kind", "!=", sql.lit("embedding_profile"));
+        return input.requeueFinished
+          ? revisionJob.doUpdateSet({ status: "queued", attempt_count: 0, last_error: null, last_error_code: null, available_at: currentTimestamp(), claimed_at: null, completed_at: null, updated_at: currentTimestamp() })
+            .where("document_processing_jobs.status", "in", ["completed", "failed", "skipped"])
+          : revisionJob.doNothing();
+      })
       .returning(documentProcessingJobColumns)
       .executeTakeFirst();
-
-    if (inserted) {
-      return mapJob(inserted as DocumentProcessingJobRow);
-    }
-
+    if (inserted) return mapJob(inserted as DocumentProcessingJobRow);
     const existing = await this.db
       .selectFrom("document_processing_jobs")
       .select(documentProcessingJobColumns)
       .where("document_id", "=", input.documentId)
       .where("document_revision", "=", input.documentRevision)
-      .where("kind", "=", "enrich")
+      .where("kind", "=", input.kind)
       .executeTakeFirstOrThrow();
 
     return mapJob(existing as DocumentProcessingJobRow);

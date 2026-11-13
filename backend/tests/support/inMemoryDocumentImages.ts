@@ -12,11 +12,14 @@ interface StoredRendition {
   sizeBytes: number;
 }
 
+/** A stored image as a test seeds it: the share count is derived, as the database derives it. */
+type SeededImage = Omit<StoredDocumentImageRef, "primaryDocumentCount">;
+
 /** Stored document images held in memory: what an answer's evidence reads, and what the image route serves. */
 export class InMemoryDocumentImages implements DocumentImageEvidenceReader, DocumentImageObjectLookup {
-  private readonly images = new Map<string, { workspaceId: string; ref: StoredDocumentImageRef; renditions: StoredRendition[] }>();
+  private readonly images = new Map<string, { workspaceId: string; ref: SeededImage; renditions: StoredRendition[] }>();
 
-  add(workspaceId: string, ref: StoredDocumentImageRef, renditions: StoredRendition[] = []): void {
+  add(workspaceId: string, ref: SeededImage, renditions: StoredRendition[] = []): void {
     this.images.set(ref.id, { workspaceId, ref, renditions });
   }
 
@@ -29,11 +32,17 @@ export class InMemoryDocumentImages implements DocumentImageEvidenceReader, Docu
     documentIds: readonly string[];
     chunkIds: readonly string[];
   }): Promise<StoredDocumentImageRef[]> {
-    return [...this.images.values()]
-      .filter(({ workspaceId, ref }) => workspaceId === input.workspaceId && (
+    const inWorkspace = [...this.images.values()].filter(({ workspaceId }) => workspaceId === input.workspaceId);
+    const primaryDocumentCount = (ref: SeededImage): number => ref.role === "primary"
+      ? new Set(inWorkspace
+        .filter((entry) => entry.ref.role === "primary" && entry.ref.sha256 === ref.sha256)
+        .map((entry) => entry.ref.documentId)).size
+      : 0;
+    return inWorkspace
+      .filter(({ ref }) =>
         (ref.role === "primary" && input.documentIds.includes(ref.documentId))
-        || (ref.role === "inline" && ref.chunkId !== null && input.chunkIds.includes(ref.chunkId))))
-      .map(({ ref }) => ref);
+        || (ref.role === "inline" && ref.chunkId !== null && input.chunkIds.includes(ref.chunkId)))
+      .map(({ ref }) => ({ ...ref, primaryDocumentCount: primaryDocumentCount(ref) }));
   }
 
   async findServable(input: { imageId: string; width: number }) {

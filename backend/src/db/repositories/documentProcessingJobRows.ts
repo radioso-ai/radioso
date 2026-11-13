@@ -2,15 +2,19 @@ import type { DocumentProcessingJobOptions } from "../../modules/documents/contr
 
 export type DocumentProcessingJobStatus = "queued" | "processing" | "completed" | "failed" | "skipped";
 // Vectorize jobs make a document queryable (chunk + embed + publish). Enrich jobs
-// run the metadata-extraction LLM afterward at lower priority.
+// run the metadata-extraction LLM afterward at lower priority, and images jobs
+// capture the pictures the content names, anchored to the published chunks.
 export type DocumentProcessingJobKind =
   | "vectorize"
   | "enrich"
+  | "images"
   | "embedding_profile";
 export type RevisionProcessingJobKind = Exclude<
   DocumentProcessingJobKind,
   "embedding_profile"
 >;
+/** The jobs a published revision queues after itself. */
+export type FollowUpJobKind = Extract<DocumentProcessingJobKind, "enrich" | "images">;
 export interface DocumentProcessingJobRecord {
   id: string;
   documentId: string;
@@ -74,7 +78,7 @@ export const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobReco
 });
 
 const normalizeJobKind = (value: unknown): DocumentProcessingJobKind =>
-  value === "enrich" || value === "embedding_profile" ? value : "vectorize";
+  value === "enrich" || value === "images" || value === "embedding_profile" ? value : "vectorize";
 
 // Rows written before a key existed simply lack it: an absent key is the
 // default, never an error, so in-flight jobs keep running unchanged.

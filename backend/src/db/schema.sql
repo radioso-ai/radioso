@@ -2365,7 +2365,7 @@ CREATE TABLE public.directive_states (
 CREATE TABLE public.document_images (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
-    document_id uuid NOT NULL,
+    document_id uuid,
     chunk_id uuid,
     role text NOT NULL,
     status text DEFAULT 'pending'::text NOT NULL,
@@ -2386,7 +2386,7 @@ CREATE TABLE public.document_images (
     CONSTRAINT document_images_renditions_check CHECK ((jsonb_typeof(renditions) = 'array'::text)),
     CONSTRAINT document_images_role_check CHECK ((role = ANY (ARRAY['primary'::text, 'inline'::text]))),
     CONSTRAINT document_images_source_url_check CHECK (((length(source_url) >= 1) AND (length(source_url) <= 2048))),
-    CONSTRAINT document_images_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'stored'::text]))),
+    CONSTRAINT document_images_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'stored'::text, 'skipped'::text]))),
     CONSTRAINT document_images_stored_complete CHECK (((status <> 'stored'::text) OR ((width IS NOT NULL) AND (height IS NOT NULL) AND (sha256 IS NOT NULL) AND (renditions <> '[]'::jsonb)))),
     CONSTRAINT document_images_text_offset_check CHECK ((text_offset >= 0)),
     CONSTRAINT document_images_width_check CHECK ((width > 0))
@@ -7897,6 +7897,13 @@ CREATE INDEX copilot_replay_evidence_operator_mcp_invocation_idx ON public.copil
 
 
 --
+-- Name: document_images_released_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX document_images_released_idx ON public.document_images USING btree (updated_at) WHERE (document_id IS NULL);
+
+
+--
 -- Name: document_images_stored_inline_chunk_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7908,6 +7915,13 @@ CREATE INDEX document_images_stored_inline_chunk_idx ON public.document_images U
 --
 
 CREATE INDEX document_images_stored_primary_idx ON public.document_images USING btree (document_id, "position") WHERE ((status = 'stored'::text) AND (role = 'primary'::text));
+
+
+--
+-- Name: document_images_stored_primary_sha256_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX document_images_stored_primary_sha256_idx ON public.document_images USING btree (workspace_id, sha256) WHERE ((status = 'stored'::text) AND (role = 'primary'::text) AND (document_id IS NOT NULL));
 
 
 --
@@ -11710,7 +11724,7 @@ ALTER TABLE ONLY public.directive_states
 --
 
 ALTER TABLE ONLY public.document_images
-    ADD CONSTRAINT document_images_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+    ADD CONSTRAINT document_images_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE SET NULL;
 
 
 --

@@ -100,7 +100,8 @@ Primary paths:
 - `backend/src/app/http/openapi/`
 - `backend/src/app/http/routes/replyImageRoutes.ts` — the unauthenticated
   `GET /api/v1/public/reply-images/{imageId}/{width}`, serving a reply block's
-  stored image by its capability id through `AppDependencies.replyImageObjectLookup`;
+  stored image by its capability id through `AppDependencies.replyImageObjectLookup`,
+  within each calling source's budget of public reads (`public.reply_image`);
   `replyImageAddress.ts` beside it owns the path, the served widths (spelled from
   the documents contract's `DOCUMENT_IMAGE_RENDITION_WIDTHS`), the URL builder and
   the lookup port, which has the documents lookup's shape under the route's name
@@ -1219,8 +1220,9 @@ opt-in bounded form of `fetchPublicUrl` for third-party bytes. It sets one
 timeout for every hop and the body, and a byte cap on the declared length and
 on the stream. It can check a content-type prefix and send an `Accept` header.
 It follows redirects one at a time, re-checking each target before requesting
-it. Failures come back as typed reasons. Callers that need no bounds use
-`fetchPublicUrl` directly.
+it. Given an entity tag, it asks conditionally and answers `not_modified` for an
+unchanged body; a fetched body carries the response's tag. Failures come back as
+typed reasons. Callers that need no bounds use `fetchPublicUrl` directly.
 
 Public surfaces and key files:
 
@@ -1228,7 +1230,9 @@ Public surfaces and key files:
   `ImageSourceType`), `guardedDecode.ts` (`decodeGuarded`, `DecodeGuard`),
   `normalizationSlots.ts`, `encodeJpegUnder.ts`, `encodeWebpRenditions.ts`
 - `backend/src/shared/infra/http/publicBytesFetch.ts` (`fetchPublicBytes`)
-- Codec callers: `backend/src/modules/visitorImages/services/imageNormalizer.ts` (visitor images)
+- Codec callers: `backend/src/modules/visitorImages/services/imageNormalizer.ts` (visitor images),
+  `backend/src/modules/documents/infra/documentImageCodec.ts` (document images: every
+  raster type, WebP at 320 and 640, one process slot, and the bounded fetch)
 
 Focused checks:
 
@@ -1809,7 +1813,17 @@ Primary internals:
 - `backend/src/modules/documents/infra/`
 - `backend/src/modules/documents/infra/documentImageRepository.ts` — the
   `document_images` rows (a document's stored pictures, primary or anchored to a
-  chunk), read for an answer's evidence and for the public image route
+  chunk): recorded by ingestion, filled by capture, read for an answer's evidence
+  (with how many documents share each primary) and for the public image route
+- Document images (brief under "Document Images" in the module README):
+  `domain/documentImageCandidates.ts` (which candidates a document keeps, placed
+  in its stored text), `services/documentImageCaptureQueue.ts` (records them and
+  queues the `images` follow-up job), `services/documentImageCaptureService.ts`
+  (the job: fetch, re-encode, store, anchor, and the sweep of released images),
+  `infra/documentImageCodec.ts`; wired by `backend/src/app/composition/documentImageCapture.ts`
+- `backend/src/db/repositories/documentProcessingJobRepository.ts`
+  (`ensureFollowUpJob` for the `enrich` and `images` follow-ups) and
+  `documentProcessingJobRows.ts` (job kinds, row mapping)
 
 Useful searches:
 
@@ -1820,6 +1834,7 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/document-ingestion.test.ts tests/unit/document-processing-worker-runtime.test.ts tests/unit/document-import-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/documents tests/unit/retrieval/evidenceImageAttacher.test.ts` for document images and the site-banner rule
 - `cd backend && pnpm run test:integration`
 
 Related docs and specs:
@@ -1856,17 +1871,26 @@ port a crawled page is published through. The crawl implementation itself
 lives in `@radioso/crawler`; this module provides the Radioso-specific
 provider, job lifecycle, and copilot-facing crawl proposals.
 
+A crawled page also names its images by address
+(`packages/crawler/src/transport/htmlImageExtraction.ts`): the page's own
+picture from `og:image`, `twitter:image` or JSON-LD, and every `<img>` that the
+text extraction keeps as main content, with its alt text, its figure's caption
+and its offset in the page text. The provider passes them to ingestion as
+document image candidates; the documents module fetches and stores them.
+
 Public surfaces and key files:
 
 - `backend/src/modules/websiteCrawler/public.ts`
 - `backend/src/modules/websiteCrawler/service.ts`
 - `backend/src/modules/websiteCrawler/jobService.ts`, `jobDispatcher.ts`, `jobQueue.ts`
-- `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts`
+- `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts` (`toWebsiteCrawlPage`)
 - `backend/src/modules/websiteCrawler/routes.ts`
+- `packages/crawler/src/transport/htmlImageExtraction.ts`
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/website-crawler-ingestion-port.test.ts tests/unit/amqp-website-crawl-job-queue.test.ts`
+- `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts`
 
 Related docs:

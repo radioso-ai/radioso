@@ -72,9 +72,9 @@ interface ChunkingStrategyRegistryPort {
 type DocumentProcessingOutcome = "completed" | "stale" | "deleted";
 
 // The processing service only needs to create the follow-up enrich job; it never
-// claims or fails jobs (the worker owns that lifecycle). ensureEnrichJob is
+// claims or fails jobs (the worker owns that lifecycle). ensureFollowUpJob is
 // idempotent so a vectorize retry cannot double-insert.
-type EnrichJobEnqueuePort = Pick<DocumentProcessingJobRepositoryPort, "ensureEnrichJob">;
+type EnrichJobEnqueuePort = Pick<DocumentProcessingJobRepositoryPort, "ensureFollowUpJob">;
 
 interface DocumentSourceContentServicePort {
   materialize(document: {
@@ -678,7 +678,8 @@ export class DocumentProcessingService {
     if (!this.jobRepository) {
       return "skipped";
     }
-    const enrichJob = await this.jobRepository.ensureEnrichJob({
+    const enrichJob = await this.jobRepository.ensureFollowUpJob({
+      kind: "enrich",
       documentId: job.documentId,
       workspaceId: job.workspaceId,
       documentRevision: job.documentRevision,

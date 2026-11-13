@@ -86,6 +86,8 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
 
   beforeEach(async () => {
     await database.query("DELETE FROM documents WHERE workspace_id = ANY($1)", [[workspaceId, otherWorkspaceId]]);
+    // Deleted documents release their images; the sweep is not under test here.
+    await database.query("DELETE FROM document_images WHERE workspace_id = ANY($1)", [[workspaceId, otherWorkspaceId]]);
     documentId = randomUUID();
     otherDocumentId = randomUUID();
     await insertDocument(documentId, workspaceId);
@@ -94,6 +96,8 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
 
   afterAll(async () => {
     await database.query("DELETE FROM documents WHERE workspace_id = ANY($1)", [[workspaceId, otherWorkspaceId]])
+      .catch(() => undefined);
+    await database.query("DELETE FROM document_images WHERE workspace_id = ANY($1)", [[workspaceId, otherWorkspaceId]])
       .catch(() => undefined);
     await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
     await database.close().catch(() => undefined);
@@ -119,6 +123,7 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
       width: 1280,
       height: 960,
       sha256: "sha-https://shop.example/cover.jpg",
+      primaryDocumentCount: 1,
     });
     expect(rows.find((row) => row.id === inline)?.chunkId).toBe(chunkId);
   });
@@ -150,12 +155,80 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
     await expect(repository.findServable({ imageId: randomUUID(), width: 640 })).resolves.toBeNull();
   });
 
-  it("deletes a document's images with the document", async () => {
+  it("releases a deleted document's images: no longer served, listed for the sweep until it deletes them", async () => {
     const stored = await insertImage({ documentId, workspaceId, role: "primary", status: "stored", position: 0, sourceUrl: "https://shop.example/cover.jpg" });
 
     await database.query("DELETE FROM documents WHERE id = $1", [documentId]);
 
     await expect(repository.findServable({ imageId: stored, width: 640 })).resolves.toBeNull();
+    const released = await repository.listReleased(500);
+    expect(released.find((image) => image.id === stored)?.renditions.map((entry) => entry.objectPath)).toEqual([
+      "workspaces/w/document-image-320",
+      "workspaces/w/document-image-640",
+    ]);
+    await repository.deleteReleased([stored]);
     await expect(database.query("SELECT id FROM document_images WHERE id = $1", [stored])).resolves.toEqual([]);
+  });
+
+  it("counts, for each primary, the documents in the workspace that name the same picture as theirs", async () => {
+    const shared = "https://shop.example/banner.jpg";
+    const documents = [documentId, randomUUID(), randomUUID()];
+    for (const id of documents.slice(1)) await insertDocument(id, workspaceId);
+    for (const id of documents) {
+      await insertImage({ documentId: id, workspaceId, role: "primary", status: "stored", position: 0, sourceUrl: shared });
+    }
+    await insertImage({ documentId: otherDocumentId, workspaceId: otherWorkspaceId, role: "primary", status: "stored", position: 0, sourceUrl: shared });
+    await insertImage({ documentId, workspaceId, role: "inline", status: "stored", position: 1, chunkId, sourceUrl: `${shared}?inline` });
+
+    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [chunkId] });
+
+    expect(rows.map((row) => [row.role, row.primaryDocumentCount])).toEqual([["primary", 3], ["inline", 0]]);
+  });
+
+  it("records what the content names: new addresses pending, kept ones re-placed, the rest released", async () => {
+    const place = (sourceUrl: string, position: number, role: "primary" | "inline" = "primary", textOffset: number | null = null) =>
+      ({ sourceUrl, role, alt: "", caption: null, position, textOffset });
+    const first = await repository.recordCandidates({
+      workspaceId, documentId,
+      images: [place("https://shop.example/cover.jpg", 0), place("https://shop.example/ridge.jpg", 1, "inline", 40)],
+    });
+    const unchanged = await repository.recordCandidates({
+      workspaceId, documentId,
+      images: [place("https://shop.example/cover.jpg", 0), place("https://shop.example/ridge.jpg", 1, "inline", 40)],
+    });
+    const moved = await repository.recordCandidates({
+      workspaceId, documentId,
+      images: [place("https://shop.example/ridge.jpg", 0, "inline", 90)],
+    });
+
+    expect([first.captureNeeded, unchanged.captureNeeded, moved.captureNeeded]).toEqual([true, false, true]);
+    const rows = await repository.listForCapture({ workspaceId, documentId });
+    expect(rows.map((row) => [row.sourceUrl, row.status, row.position, row.textOffset])).toEqual([
+      ["https://shop.example/ridge.jpg", "pending", 0, 90],
+    ]);
+    expect((await repository.listReleased(500)).length).toBeGreaterThan(0);
+    await expect(repository.hasImages(documentId)).resolves.toBe(true);
+    await expect(repository.hasImages(otherDocumentId)).resolves.toBe(false);
+  });
+
+  it("stores, re-anchors, skips and resets an image as capture decides", async () => {
+    const id = await insertImage({ documentId, workspaceId, role: "inline", status: "pending", position: 0, sourceUrl: "https://shop.example/ridge.jpg" });
+
+    await expect(repository.markStored({
+      id, chunkId, width: 800, height: 600, sha256: "sha-ridge", sourceEtag: '"r1"', renditions: [rendition(320), rendition(640)],
+    })).resolves.toBe(true);
+    const otherChunk = randomUUID();
+    await repository.reanchor({ id, chunkId: otherChunk });
+    const [stored] = await repository.listForCapture({ workspaceId, documentId });
+    expect(stored).toMatchObject({ status: "stored", chunkId: otherChunk, sourceEtag: '"r1"', sha256: "sha-ridge" });
+    await expect(repository.findServable({ imageId: id, width: 320 })).resolves.not.toBeNull();
+
+    const cleared = await repository.markSkipped(id);
+    expect(cleared.map((entry) => entry.width)).toEqual([320, 640]);
+    await expect(repository.findServable({ imageId: id, width: 320 })).resolves.toBeNull();
+    const [skipped] = await repository.listForCapture({ workspaceId, documentId });
+    expect(skipped).toMatchObject({ status: "skipped", renditions: [], sha256: null });
+    await expect(repository.markStored({ id: randomUUID(), chunkId: null, width: 1, height: 1, sha256: "x", sourceEtag: null, renditions: [rendition(320)] }))
+      .resolves.toBe(false);
   });
 });

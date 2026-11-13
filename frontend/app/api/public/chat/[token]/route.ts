@@ -26,7 +26,16 @@ export async function POST(
   const { token } = await context.params
   const requestOrigin = resolveRequestOrigin(request.headers.get('origin'))
   const rawBody = await request.text()
-  const body = JSON.stringify(buildPublicChatMessageBody(rawBody ? JSON.parse(rawBody) : {}))
+  let pageBody: unknown
+  try {
+    pageBody = rawBody ? JSON.parse(rawBody) : {}
+  } catch {
+    return Response.json(
+      { error: { code: 'bad_request', message: 'The request body is not valid JSON.' } },
+      { status: 400, headers: withPublicChatCorsHeaders(undefined, requestOrigin) },
+    )
+  }
+  const body = JSON.stringify(buildPublicChatMessageBody(pageBody))
 
   const upstreamMethod = 'POST'
   const upstreamPath = `/api/v1/public/chat/${encodeURIComponent(token)}`

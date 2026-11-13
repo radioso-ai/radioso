@@ -26,6 +26,23 @@ const relay = async (body: unknown) => {
   return { url, headers: init.headers, upstream: JSON.parse(init.body as string) as Record<string, unknown> }
 }
 
+const relayRaw = async (rawBody: string, origin = 'https://shop.example') => {
+  vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+  const fetchMock = vi.fn()
+  vi.stubGlobal('fetch', fetchMock)
+
+  const { POST } = await import('@/app/api/public/chat/[token]/route')
+  const response = await POST(
+    new Request('https://frontend.example.com/api/public/chat/token-1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: origin },
+      body: rawBody,
+    }),
+    { params: Promise.resolve({ token: 'token-1' }) },
+  )
+  return { response, fetchMock }
+}
+
 describe('public chat relay route', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
@@ -92,14 +109,13 @@ describe('public chat relay route', () => {
   })
 
   it('forwards every field the backend accepts, unchanged', async () => {
-    // Typed as the full request so a field the backend gains fails this file's typecheck until it is listed here.
-    const everyField: Required<PublicChatRequest> = {
+    // Three requests the backend takes: it refuses a conversationId beside a bootstrapGreetingId or
+    // startConversation, and a startConversation beside photos, so no one request carries every field.
+    const firstMessage = {
       message: 'Is this in stock?',
       imageIds: [IMAGE_ID],
       stream: true,
-      conversationId: '0d6b1c0e-7f3a-4e55-9a49-6a1f4cbd2a10',
       bootstrapGreetingId: '5f2f8a52-3b1c-4f0e-8c46-2f9d3c7b1e44',
-      startConversation: false,
       userExpectedLocale: 'it',
       pageContext: { pageUrl: 'https://example.test/', pageTitle: 'Shop', browserTimeZone: 'Europe/Rome' },
       clientContextCapabilities: {
@@ -108,19 +124,31 @@ describe('public chat relay route', () => {
       },
       signedIdentity: 'signed-identity-token',
       privacyNoticeVersion: 'a1b2c3d4',
+      inputMetadata: { method: 'typed' },
+    } satisfies PublicChatRequest
+    const laterMessage = {
+      message: 'Show me the red one',
+      stream: true,
+      conversationId: '0d6b1c0e-7f3a-4e55-9a49-6a1f4cbd2a10',
       inputMetadata: {
         method: 'item_select',
-        selection: {
-          messageId: '9a3c1d52-6e0b-4b7e-8d3a-1c5f2e7a9b01',
-          blockId: 'block-1',
-          itemKey: 'item-1',
-        },
+        selection: { messageId: '9a3c1d52-6e0b-4b7e-8d3a-1c5f2e7a9b01', blockId: 'block-1', itemKey: 'item-1' },
       },
+    } satisfies PublicChatRequest
+    const greeting = { startConversation: true, stream: true } satisfies PublicChatRequest
+
+    // A field the backend gains and none of the three carries fails this file's typecheck.
+    type Uncovered = Exclude<
+      keyof PublicChatRequest,
+      keyof typeof firstMessage | keyof typeof laterMessage | keyof typeof greeting
+    >
+    const everyFieldIsCovered: [Uncovered] extends [never] ? true : never = true
+    expect(everyFieldIsCovered).toBe(true)
+
+    for (const body of [firstMessage, laterMessage, greeting]) {
+      const { upstream } = await relay(body)
+      expect(upstream).toEqual(body)
     }
-
-    const { upstream } = await relay(everyField)
-
-    expect(upstream).toEqual(everyField)
   })
 
   it('maps the older query and bootstrapGreeting names onto message and startConversation', async () => {
@@ -137,6 +165,12 @@ describe('public chat relay route', () => {
     expect(upstream).toMatchObject({ message: 'Current', startConversation: false })
   })
 
+  it('reads query when message is null, as when it is absent', async () => {
+    const { upstream } = await relay({ message: null, query: 'Older name', stream: true })
+
+    expect(upstream).toEqual({ message: 'Older name', stream: true })
+  })
+
   it('leaves out a field the page sends as null, since the backend takes an absent field', async () => {
     // The embed frame sends `signedIdentity: null` for a visitor the site has not identified.
     const { upstream } = await relay({ message: 'Hi', stream: true, signedIdentity: null, pageContext: null })
@@ -148,6 +182,16 @@ describe('public chat relay route', () => {
     const { upstream } = await relay({ message: 'Hi', stream: true, workspaceId: 'workspace-1', verifiedCustomerId: 'customer-1' })
 
     expect(upstream).toEqual({ message: 'Hi', stream: true })
+  })
+
+  it('answers a body that is not JSON with a 400 the page can read, and calls nothing', async () => {
+    const { response, fetchMock } = await relayRaw('{"message": "Hi", ')
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: { code: 'bad_request', message: expect.any(String) } })
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://shop.example')
+    expect(response.headers.get('Access-Control-Allow-Headers')).toContain('X-Radioso-Public-Session')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('answers a body that is not an object with an empty request for the backend to refuse', async () => {

@@ -93,6 +93,25 @@ describe('agent test execution state', () => {
     expect(partial).toMatchObject({ state: 'partial', activeTurnId: null, activeAttemptId: null })
   })
 
+  it('keeps the cards a completion carries on its reply, and none when it carries none', () => {
+    const active = beginTestExecutionTurn(state(), 'Flats in Mitte?', 'turn-1', 'attempt-1')
+    const block = {
+      type: 'item_list' as const, id: 'b1', layout: 'carousel' as const, selection: 'none' as const, caption: 'Flats in Mitte',
+      items: [{ key: '/structuredContent/0', title: 'Loft on Torstrasse', actions: [{ type: 'open' as const, url: 'https://homes.example/listings/loft' }] }],
+    }
+    const withCards = reduceTestExecutionEvent(active, {
+      type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'left', messageId: 'message-left',
+      answer: 'One loft fits.', turnId: 'turn-1', attemptId: 'attempt-1', blocks: [block],
+    })
+    const withoutCards = reduceTestExecutionEvent(withCards, {
+      type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'right', messageId: 'message-right',
+      answer: 'One loft fits.', turnId: 'turn-1', attemptId: 'attempt-1', blocks: [],
+    })
+
+    expect(withoutCards.sides.left.messages.at(-1)?.blocks).toEqual([block])
+    expect(withoutCards.sides.right.messages.at(-1)).not.toHaveProperty('blocks')
+  })
+
   it('keeps the completed response identity and trace for eval capture and turn debug', () => {
     const active = beginTestExecutionTurn(state(), 'First', 'turn-1', 'attempt-1')
     const trace = { version: 1, spine: { stages: [] } } as never

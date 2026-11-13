@@ -372,7 +372,7 @@ The visitor taps **Select** on a card. Their message appears as the item's title
 
 ### D9. Tool images are copied per conversation and deleted with it (built in 2a.1)
 
-- **Rows.** `conversation_tool_images` (migration 258) holds one row per picture; the block stores only the row's id.
+- **Rows.** `conversation_tool_images` (migration 259) holds one row per picture; the block stores only the row's id.
   - An address picture's row is written in the reply's own transaction, with the assistant message, by the `toolImages` module's `ToolImageRowWriter`. `source_url` is kept only until the picture is stored or fails, then cleared, because third-party links are often signed.
   - An MCP image's bytes are uploaded untouched while the tool call runs (`<id>-source`), and an unbound row records them (`source_object`); the reply that shows it binds it to its message. A conversation that is not stored (a replay, Test Chat) keeps no bytes; the drop is counted.
   - A Test Chat reply's address pictures are written with no conversation and no message (`ToolImagePreviewRecorder`), so Test Chat shows them, and the unbound sweep deletes them a day later.

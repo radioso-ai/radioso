@@ -101,7 +101,7 @@
 10. **Erasure and retention.** `ToolImageEraser` joins `defaultConversationDataErasers`; `UnboundToolImageRetention` joins the retention rules. The coverage test states `conversation_tool_images.message_id` (SET NULL); the export coverage test excludes the table with its reason, stated beside the exporters in `dataSubjectAccess.ts`.
 11. **Test Chat.** `TrustedTestExecutionRunnerAdapter` declares `reply.blocks` (all layouts) on the replay, records the replay's `toolImages` through `ToolImagePreviewRecorder` before returning, and returns `blocks`; `TestExecutionService` puts them on `side_completed`. OpenAPI and the SDK carry `TestExecutionEvent.side_completed.blocks`.
 
-### Migration `258_conversation_tool_images.sql`
+### Migration `259_conversation_tool_images.sql`
 
 As drafted (below), with `conversation_id` nullable (Test Chat previews), `source_object` jsonb, and checks: stored ⇒ dimensions, sha256, renditions and `stored_at`; a `url` row keeps `source_url` exactly while pending or capturing; an `inline` row has a conversation and no URL; a message implies a conversation; `capturing` ⇔ `claimed_at`. Indexes: workspace; conversation (partial); message (partial); `created_at` where unbound.
 

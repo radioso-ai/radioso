@@ -1,5 +1,5 @@
 import type { ExecutionState, TestExecution, TestExecutionEvent, TestExecutionHistoryDetail } from './api-agent-revisions'
-import type { TurnTraceEnvelope, VisitorImageInput } from './api-types'
+import type { ReplyBlock, TurnTraceEnvelope, VisitorImageInput } from './api-types'
 
 export interface TestExecutionSideState {
   id: string
@@ -21,6 +21,8 @@ interface TestExecutionMessage {
   attemptId: string
   persistedAssistantMessageId?: string
   turnTrace?: TurnTraceEnvelope
+  /** The reply's blocks, such as cards built from a skill's results, as the turn's completion carried them. */
+  blocks?: ReplyBlock[]
   /** Said on a call from Test Chat rather than typed. */
   spoken?: true
   /** The photos a message carried and what was typed with them; `content` is the turn text with the readings. */
@@ -348,6 +350,7 @@ export const reduceTestExecutionEvent = (
             state: 'completed',
             persistedAssistantMessageId: event.messageId,
             turnTrace: event.turnTrace,
+            ...(event.blocks?.length ? { blocks: event.blocks } : {}),
           }),
         }
       : event.type === 'side_failed'

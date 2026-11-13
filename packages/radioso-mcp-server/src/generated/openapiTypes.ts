@@ -9532,7 +9532,7 @@ export interface components {
             /** Format: date-time */
             spokenAt?: string;
         };
-        /** @description Present on a message withheld after the consent that covered what it carried was withdrawn: `content` is `[redacted]`, and the message carries no answer segments, suggestions or photos. `at` is when the consent was withdrawn. */
+        /** @description Present on a message withheld after the consent that covered what it carried was withdrawn: `content` is `[redacted]`, and the message carries no answer segments, suggestions, reply blocks or photos. `at` is when the consent was withdrawn. */
         MessageWithholding: {
             /** @enum {string} */
             reason: "consent_withdrawn";

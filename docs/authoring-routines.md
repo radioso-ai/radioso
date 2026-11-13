@@ -432,9 +432,9 @@ and **Wording** shows the exact text the visitor saw. Owners and admins see
   reads **Withheld after consent was withdrawn** in the conversation, for you
   and for the visitor. Radioso's copies of that message are withheld with it:
   the body and raw copy of the email it came in as, the turn's debug record, the
-  coverage assessment's restatement of the question, and any photo the visitor
-  attached. The conversation's summary and title are cleared and written again
-  from what the transcript now reads.
+  coverage assessment's restatement of the question, the picture cards a reply
+  showed, and any photo the visitor attached. The conversation's summary and
+  title are cleared and written again from what the transcript now reads.
 - The record keeps its proof and gains the withdrawal time and the teammate who
   withdrew it. It shows as withdrawn in the panel and in the data subject's
   export.

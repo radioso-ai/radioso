@@ -32,10 +32,11 @@ export interface MessageWithholding {
 
 /**
  * The metadata fields that repeat a message's text or carry what it attached: a reply's answer
- * segments and chips, the prompt it was composed from, the photos a visitor's message carried. A
- * withheld message drops them with its text.
+ * segments, chips and reply blocks (the picture cards it showed), the prompt it was composed from,
+ * the photos a visitor's message carried. A withheld message drops them with its text, so no
+ * history read presents them.
  */
-export const WITHHELD_MESSAGE_COPY_FIELDS = ["answerSegments", "composedInstructions", "suggestions", "imageInput"] as const;
+export const WITHHELD_MESSAGE_COPY_FIELDS = ["answerSegments", "composedInstructions", "suggestions", "blocks", "imageInput"] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

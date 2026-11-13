@@ -48,7 +48,7 @@ export const registerChatConversationMessageSchemas = (
       reason: z.enum(["consent_withdrawn"]),
       at: z.string().datetime(),
     }).openapi({
-      description: "Present on a message withheld after the consent that covered what it carried was withdrawn: `content` is `[redacted]`, and the message carries no answer segments, suggestions or photos. `at` is when the consent was withdrawn.",
+      description: "Present on a message withheld after the consent that covered what it carried was withdrawn: `content` is `[redacted]`, and the message carries no answer segments, suggestions, reply blocks or photos. `at` is when the consent was withdrawn.",
     }),
   );
 

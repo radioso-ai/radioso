@@ -129,7 +129,26 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
 
     // Retrieval answered these before any routine ran, so no turn marked them.
     const beforeRoutineMessageId = await insertMessage(base, { role: "user", content: "Do you run classes for a SORE\n knee?", metadata: {} });
-    const beforeRoutineReplyId = await insertMessage(base, { role: "assistant", content: "Yes, we adapt classes for a sore knee.", metadata: {} });
+    // The reply showed a picture card from the class guide beside its text.
+    const beforeRoutineReplyId = await insertMessage(base, {
+      role: "assistant",
+      content: "Yes, we adapt classes for a sore knee.",
+      metadata: {
+        blocks: [{
+          type: "item_list",
+          id: "b1",
+          layout: "carousel",
+          selection: "none",
+          caption: "Classes for a sore knee",
+          items: [{
+            key: "image-1",
+            title: "Gentle mobility class",
+            image: { imageId: "image-1", width: 1280, height: 960, alt: "A knee brace on a mat" },
+            actions: [],
+          }],
+        }],
+      },
+    });
     const plainMessageId = await insertMessage(base, { role: "user", content: "I want to book a class", metadata: {} });
     const carryingImageId = randomUUID();
     const carryingUserMessageId = await insertMessage(base, {
@@ -312,7 +331,7 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       expect((await message(seeded.afterRoutineQuestionId)).content).toBe("What did I tell you?");
     });
 
-    it("withholds the messages that state an erased value though no turn marked them, before the routine and after it", async () => {
+    it("withholds the messages that state an erased value though no turn marked them, before the routine and after it, picture cards included", async () => {
       const at = withdrawnAt!.toISOString();
       for (const id of [seeded.beforeRoutineMessageId, seeded.beforeRoutineReplyId]) {
         expect(await message(id)).toEqual({ content: "[redacted]", metadata_json: { withheld: { reason: "consent_withdrawn", at } } });

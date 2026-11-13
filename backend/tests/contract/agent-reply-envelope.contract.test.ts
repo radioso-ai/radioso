@@ -105,7 +105,7 @@ describe("agent reply envelope contract (SC-004)", () => {
     });
     expect(schemas.RoutinePendingInput.required).toEqual(expect.arrayContaining(["key", "type", "required"]));
     expect(schemas.RoutinePendingInput.properties?.type).toMatchObject({
-      enum: ["text", "number", "boolean", "email", "date"],
+      enum: ["text", "number", "boolean", "email", "date", "item"],
     });
   });
 

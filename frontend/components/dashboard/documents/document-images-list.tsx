@@ -9,13 +9,16 @@ const ROLE_LABEL: Record<DocumentImage['role'], string> = {
   inline: 'In the text',
 }
 
+/** A main picture many documents share is the site's, not this document's: answers never show it as its own. */
+const roleLabel = (image: DocumentImage): string => (image.siteWide ? 'Site-wide, not shown' : ROLE_LABEL[image.role])
+
 const WAITING_LABEL: Record<Exclude<DocumentImage['status'], 'stored'>, string> = {
   pending: 'Not fetched yet',
   skipped: 'Not kept',
 }
 
 /**
- * The pictures captured from a document's content, the ones an agent with pictures on can show
+ * The pictures captured from a document's content, the ones an agent with reply cards on can show
  * beside an answer. A stored image shows its thumbnail; one that is waiting or was not kept says so.
  */
 export function DocumentImagesList({ images }: { images: DocumentImage[] }) {
@@ -33,7 +36,7 @@ export function DocumentImagesList({ images }: { images: DocumentImage[] }) {
               // eslint-disable-next-line @next/next/no-img-element -- a stored copy served by the backend's image route
               <img
                 src={image.src}
-                alt={image.alt || image.caption || ROLE_LABEL[image.role]}
+                alt={image.alt || image.caption || roleLabel(image)}
                 loading="lazy"
                 className="h-24 w-32 rounded-md border border-border object-cover"
               />
@@ -43,7 +46,7 @@ export function DocumentImagesList({ images }: { images: DocumentImage[] }) {
               </div>
             )}
             <p className="mt-1 truncate text-xs text-muted-foreground" title={image.caption ?? image.alt}>
-              {ROLE_LABEL[image.role]}
+              {roleLabel(image)}
             </p>
           </li>
         ))}

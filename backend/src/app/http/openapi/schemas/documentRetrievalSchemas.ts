@@ -238,6 +238,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       width: z.number().int().positive().nullable().openapi({ description: "The source's upright width in pixels; null until stored." }),
       height: z.number().int().positive().nullable(),
       sourceUrl: z.string().openapi({ description: "The address the content names the picture by." }),
+      siteWide: z.boolean().openapi({
+        description: "A stored main picture that more than five documents in the workspace name as theirs, such as a site banner: answers never show it as this document's own.",
+      }),
       src: z.string().optional().openapi({ description: "The stored copy at its widest width, served by `GET /api/v1/public/reply-images/{imageId}/{width}`; present once stored." }),
       srcSet: z.string().optional().openapi({ description: "Every stored width as an `srcset`; present once stored." }),
     }),
@@ -248,7 +251,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     DocumentSummarySchema.extend({
       content: z.string(),
       images: z.array(DocumentImageSchema).optional().openapi({
-        description: "The pictures the document's content names, in document order, with whether Radioso kept each one. An agent with `answerImagesEnabled` shows stored ones as cards in its answers.",
+        description: "The pictures the document's content names, in document order, with whether Radioso kept each one. An agent with `replyCardsEnabled` shows stored ones as cards in its replies.",
       }),
     }),
   );

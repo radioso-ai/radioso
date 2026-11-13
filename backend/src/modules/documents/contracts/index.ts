@@ -61,6 +61,8 @@ export {
   type DocumentImageEvidenceReader,
   type DocumentImageListing,
   type DocumentImageObjectLookup,
+  type DocumentImageRows,
+  type ListedDocumentImage,
   type DocumentImageRendition,
   type DocumentImageRole,
   type DocumentImageSummary,

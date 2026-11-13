@@ -10,7 +10,7 @@ const meta = {
   'authoring-routines': 'Author a routine',
   'exact-words': 'Exact words',
   'image-input': 'Let visitors send photos',
-  'answer-images': 'Show pictures in answers',
+  'reply-cards': 'Show picture cards in replies',
   workbench: 'Test in the workbench',
   evals: 'Evaluate answer quality',
 }

@@ -1,26 +1,26 @@
 ---
-title: "Show pictures in answers"
-description: "How an agent shows the pictures from your documents as cards beside an answer: the setting, which pictures Radioso keeps from crawled pages and WordPress posts, the rules it applies, and what to check when a picture is missing."
+title: "Show picture cards in replies"
+description: "How an agent shows the pictures from your documents as cards beside an answer: the reply cards setting, which pictures Radioso keeps from crawled pages and WordPress posts, the rules it applies, and what to check when a picture is missing."
 ---
 
-# Show pictures in answers
+# Show picture cards in replies
 
-Some answers are better seen than read. A visitor asking for hiking books wants to see the covers; one asking what the guest house looks like wants the rooms. Turn on pictures for an agent and, when an answer draws on pages that have pictures, the agent can show them as cards beside its text: the cover of each book with its title and a link to its page, or a small gallery of the photos on the page it quoted.
+Some answers are better seen than read. A visitor asking for hiking books wants to see the covers; one asking what the guest house looks like wants the rooms. Turn on reply cards for an agent and, when an answer draws on pages that have pictures, the agent can show them as cards beside its text: the cover of each book with its title and a link to its page, or a small gallery of the photos on the page it quoted.
 
 The pictures come from your own content. Radioso keeps a copy of the images your website pages and WordPress posts name while it processes them, for every document whether or not an agent shows them, so turning the setting on takes effect on the next answer with no re-sync.
 
-## Turn pictures on
+## Turn reply cards on
 
-Open the agent's **Profile**, find **Answers**, and turn on **Show pictures in answers**. You can also ask Ray to turn it on and apply the card it drafts, or set `answerImagesEnabled` over the API:
+Open the agent's **Profile**, find **Answers**, and turn on **Show cards in replies**. You can also ask Ray to turn it on and apply the card it drafts, or set `replyCardsEnabled` over the API:
 
 ```bash
 curl -sS -X PUT https://api.radioso.ai/api/v1/agents/$AGENT_ID \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"answerImagesEnabled":true}'
+  -d '{"replyCardsEnabled":true}'
 ```
 
-The setting is off on every agent until you turn it on. Cards appear where a client draws them: the website widget, the public chat link, and any client of the [chat API](/api/public-chat-and-embed#reply-blocks) that declares `reply.blocks`. Test Chat and channels that carry text alone get the answer as text.
+The setting is off on every agent until you turn it on, and it applies as soon as you change it. It is the one switch for every kind of card a reply can carry; today those are the pictures of an answer's documents. Cards appear where a client draws them: the website widget, the public chat link, and any client of the [chat API](/api/public-chat-and-embed#reply-blocks) that declares `reply.blocks`. Test Chat and channels that carry text alone get the answer as text.
 
 ## What the agent shows
 
@@ -52,13 +52,13 @@ Pictures are fetched after the document's text is processed, by the same worker,
 
 ## Check what a document kept
 
-Open the document from **Knowledge**. **Images** lists every picture its content names: a thumbnail of each one kept, and whether it is the document's main picture or sits in its text. A picture that is still waiting reads **Not fetched yet**; one that was refused (too small, not a picture Radioso reads, too large, or at an address it may not fetch) reads **Not kept**.
+Open the document from **Knowledge**. **Images** lists every picture its content names: a thumbnail of each one kept, and whether it is the document's main picture or sits in its text. A picture that is still waiting reads **Not fetched yet**; one that was refused (too small, not a picture Radioso reads, too large, or at an address it may not fetch) reads **Not kept**. A main picture more than five documents share reads **Site-wide, not shown**: answers never show it as this document's own.
 
 ## When content changes
 
 A re-crawl or a re-sync checks each picture again. One whose address and content did not change keeps its copy, asked about with the entity tag the site sent; one the content no longer names is deleted, copy and all; a new one is fetched. A page crawled before Radioso kept pictures gets its pictures on its next crawl, even when its text did not change.
 
-Pictures belong to their document. Deleting a document, or a source with its documents, deletes their pictures. A conversation that showed a card keeps the card's title and link, and its picture stops loading.
+Pictures belong to their document. Deleting a document, or a source with its documents, stops its pictures from being served at once, and the worker deletes their stored copies within a few minutes. Deleting the workspace deletes them with it. A conversation that showed a card keeps the card's title and link, and its picture stops loading.
 
 ## Common failure modes
 

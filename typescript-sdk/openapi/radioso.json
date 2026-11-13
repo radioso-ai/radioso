@@ -12663,6 +12663,83 @@
         },
         "additionalProperties": false
       },
+      "DocumentImage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "inline"
+            ],
+            "description": "`primary` is the picture the document's metadata names for itself (a page's `og:image`, a post's featured image); `inline` sits in its text."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "stored",
+              "skipped"
+            ],
+            "description": "`stored` once Radioso keeps a copy; `pending` until the worker fetches it; `skipped` when it was refused (smaller than 200 px on its short side, a type Radioso does not read, too large, or at an address it may not fetch)."
+          },
+          "alt": {
+            "type": "string"
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "The source's upright width in pixels; null until stored."
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "sourceUrl": {
+            "type": "string",
+            "description": "The address the content names the picture by."
+          },
+          "siteWide": {
+            "type": "boolean",
+            "description": "A stored main picture that more than five documents in the workspace name as theirs, such as a site banner: answers never show it as this document's own."
+          },
+          "src": {
+            "type": "string",
+            "description": "The stored copy at its widest width, served by `GET /api/v1/public/reply-images/{imageId}/{width}`; present once stored."
+          },
+          "srcSet": {
+            "type": "string",
+            "description": "Every stored width as an `srcset`; present once stored."
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "status",
+          "alt",
+          "caption",
+          "width",
+          "height",
+          "sourceUrl",
+          "siteWide"
+        ]
+      },
       "DocumentDetails": {
         "allOf": [
           {
@@ -12673,6 +12750,13 @@
             "properties": {
               "content": {
                 "type": "string"
+              },
+              "images": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DocumentImage"
+                },
+                "description": "The pictures the document's content names, in document order, with whether Radioso kept each one. An agent with `replyCardsEnabled` shows stored ones as cards in its replies."
               }
             },
             "required": [

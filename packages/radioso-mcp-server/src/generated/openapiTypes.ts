@@ -8256,8 +8256,37 @@ export interface components {
                 [key: string]: string | number | boolean | null;
             };
         };
+        DocumentImage: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `primary` is the picture the document's metadata names for itself (a page's `og:image`, a post's featured image); `inline` sits in its text.
+             * @enum {string}
+             */
+            role: "primary" | "inline";
+            /**
+             * @description `stored` once Radioso keeps a copy; `pending` until the worker fetches it; `skipped` when it was refused (smaller than 200 px on its short side, a type Radioso does not read, too large, or at an address it may not fetch).
+             * @enum {string}
+             */
+            status: "pending" | "stored" | "skipped";
+            alt: string;
+            caption: string | null;
+            /** @description The source's upright width in pixels; null until stored. */
+            width: number | null;
+            height: number | null;
+            /** @description The address the content names the picture by. */
+            sourceUrl: string;
+            /** @description A stored main picture that more than five documents in the workspace name as theirs, such as a site banner: answers never show it as this document's own. */
+            siteWide: boolean;
+            /** @description The stored copy at its widest width, served by `GET /api/v1/public/reply-images/{imageId}/{width}`; present once stored. */
+            src?: string;
+            /** @description Every stored width as an `srcset`; present once stored. */
+            srcSet?: string;
+        };
         DocumentDetails: components["schemas"]["DocumentSummary"] & {
             content: string;
+            /** @description The pictures the document's content names, in document order, with whether Radioso kept each one. An agent with `replyCardsEnabled` shows stored ones as cards in its replies. */
+            images?: components["schemas"]["DocumentImage"][];
         };
         DocumentChunkSummary: {
             /** Format: uuid */

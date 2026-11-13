@@ -10,7 +10,8 @@ import {
   type DocumentJobDispatcherPort,
   type DocumentStoragePort,
 } from "../../modules/documents/composition.js";
-import type { ChunkRepositoryPort, DocumentImageListing } from "../../modules/documents/contracts/index.js";
+import type { ChunkRepositoryPort, DocumentImageListing, DocumentImageRows } from "../../modules/documents/contracts/index.js";
+import { isSiteBanner, PRIMARY_DOCUMENT_COUNT_LIMIT } from "../../modules/retrieval/public.js";
 import type { ReplyImageUrls } from "../../modules/chat/contracts/index.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
@@ -61,11 +62,20 @@ export const createDocumentImageCapture = (input: {
   };
 };
 
-/** A document's images, each stored one with the address the public image route serves its copy at. */
+/**
+ * A document's images, each stored one with the address the public image route serves its copy at,
+ * and each main picture judged by retrieval's site-banner rule, as an answer would judge it.
+ */
 export const addressedDocumentImageListing = (
-  images: DocumentImageListing,
+  rows: DocumentImageRows,
   imageUrls: ReplyImageUrls,
 ): DocumentImageListing => ({
-  listForDocument: async (document) => (await images.listForDocument(document)).map((image) =>
-    image.status === "stored" ? { ...image, ...imageUrls.forImage(image.id) } : image),
+  listForDocument: async (document) => {
+    const images = await rows.listForDocument({ ...document, primaryDocumentCountLimit: PRIMARY_DOCUMENT_COUNT_LIMIT });
+    return images.map(({ primaryDocumentCount, ...image }) => ({
+      ...image,
+      siteWide: image.status === "stored" && isSiteBanner({ role: image.role, primaryDocumentCount }),
+      ...(image.status === "stored" ? imageUrls.forImage(image.id) : {}),
+    }));
+  },
 });

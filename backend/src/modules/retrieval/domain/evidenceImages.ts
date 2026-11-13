@@ -17,7 +17,7 @@ const SITE_BANNER_PRIMARY_DOCUMENTS = 5;
 export const PRIMARY_DOCUMENT_COUNT_LIMIT = SITE_BANNER_PRIMARY_DOCUMENTS + 1;
 
 /** Whether a stored image is a site banner rather than its document's own main picture. */
-const isSiteBanner = (image: Pick<StoredDocumentImageRef, "role" | "primaryDocumentCount">): boolean =>
+export const isSiteBanner = (image: Pick<StoredDocumentImageRef, "role" | "primaryDocumentCount">): boolean =>
   image.role === "primary" && image.primaryDocumentCount > SITE_BANNER_PRIMARY_DOCUMENTS;
 
 /** The part of an evidence item that decides which images it carries. */

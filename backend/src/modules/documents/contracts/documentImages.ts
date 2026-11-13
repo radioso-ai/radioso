@@ -165,6 +165,11 @@ export interface DocumentImageSummary {
   width: number | null;
   height: number | null;
   sourceUrl: string;
+  /**
+   * A stored main picture that so many documents in the workspace name as theirs that it is the
+   * site's (a banner, a logo): answers never show it as this document's own.
+   */
+  siteWide: boolean;
   /** The stored copy's address at its widest width, and every width as a `srcset`; present once stored. */
   src?: string;
   srcSet?: string;
@@ -173,6 +178,17 @@ export interface DocumentImageSummary {
 /** Lists a document's images, in document order, for its detail. */
 export interface DocumentImageListing {
   listForDocument(input: { workspaceId: string; documentId: string }): Promise<DocumentImageSummary[]>;
+}
+
+/** A document's image row as its detail is built from: its share count in place of the verdicts. */
+export type ListedDocumentImage = Omit<DocumentImageSummary, "siteWide" | "src" | "srcSet"> & {
+  /** As on {@link StoredDocumentImageRef}: zero for an inline or unstored image. */
+  primaryDocumentCount: number;
+};
+
+/** Reads a document's image rows, counting shared primaries no higher than asked. */
+export interface DocumentImageRows {
+  listForDocument(input: { workspaceId: string; documentId: string; primaryDocumentCountLimit: number }): Promise<ListedDocumentImage[]>;
 }
 
 /** The rows a deleted document, or a re-sync, released: their stored copies are deleted, then the rows. */

@@ -469,7 +469,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
   visitorImagesEnabled: false,
-  answerImagesEnabled: false,
+  replyCardsEnabled: false,
   webhookExportsEnabled: false,
   handoffOnRetrievalMiss: false,
   contactRequestDelivery: {

@@ -230,7 +230,7 @@ A reply block is a structured part of a reply that your client renders itself, b
 }
 ```
 
-A client that sends no `reply.blocks` gets the answer as text alone. `POST /api/v1/assistant/chat` takes the same declaration. Cards come only from an agent with `replyCardsEnabled` on, and only when the answer draws on documents Radioso kept pictures of.
+A client that sends no `reply.blocks` gets the answer as text alone. `POST /api/v1/assistant/chat` takes the same declaration. Cards come only from an agent with `replyCardsEnabled` on, and only when the answer draws on documents Radioso kept pictures of; [Show picture cards in replies](/guides/reply-cards) covers the setting and which pictures are kept.
 
 A reply that carries blocks returns them in `blocks`. Each block is an `item_list` with a `caption` (its accessible label, written by the agent) and up to ten `items`. An item has a `title` and an `image` taken from the document it came from, and an `open` action with the document's address when the document has one:
 

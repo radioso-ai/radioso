@@ -1874,6 +1874,10 @@ Primary internals:
   `document_images` rows (a document's stored pictures, primary or anchored to a
   chunk): recorded by ingestion, filled by capture, read for an answer's evidence
   (with how many documents share each primary) and for the public image route
+- A document's detail lists its images (`DocumentImageListing`, each stored one with
+  the public image route's address and whether the banner rule makes it site-wide,
+  wired by `addressedDocumentImageListing`); the dashboard shows them in
+  `frontend/components/dashboard/documents/document-images-list.tsx`
 - Document images (brief under "Document Images" in the module README):
   `domain/documentImageCandidates.ts` (which candidates a document keeps, placed
   in its stored text), `services/documentImageCaptureQueue.ts` (records them and

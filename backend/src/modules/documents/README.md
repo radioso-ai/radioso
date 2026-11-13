@@ -153,6 +153,11 @@ Ingestion records the images a document's content names; the worker captures the
   deletes its image rows in the deletion (`deleteForWorkspaces`, from
   `app/composition/workspaceDeletion.ts`), and its storage purge takes the
   copies.
+- `getDocument` lists the document's images (`DocumentImageListing`) with
+  their role, status and `siteWide` (retrieval's banner rule, as an answer
+  applies it), and the public image route's address of each stored copy,
+  which composition adds (`addressedDocumentImageListing` over
+  `DocumentImageRows`).
 - The answer side asks `listStoredForEvidence` to count the documents sharing
   a primary only up to `primaryDocumentCountLimit` (retrieval's banner rule
   passes one past its threshold); the partial index covers `document_id`.

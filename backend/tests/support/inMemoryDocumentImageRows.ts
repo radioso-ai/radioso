@@ -5,9 +5,9 @@ import type {
   CapturableDocumentImage,
   DocumentImageCandidateWriter,
   DocumentImageCaptureStore,
-  DocumentImageListing,
   DocumentImageRendition,
-  DocumentImageSummary,
+  DocumentImageRows,
+  ListedDocumentImage,
   PlacedDocumentImage,
   ReleasedDocumentImageStore,
 } from "../../src/modules/documents/contracts/index.js";
@@ -23,7 +23,7 @@ interface Row extends CapturableDocumentImage {
 }
 
 /** `document_images` rows held in memory, with the writer, capture and sweep semantics of the repository. */
-export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, DocumentImageCaptureStore, DocumentImageListing, ReleasedDocumentImageStore {
+export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, DocumentImageCaptureStore, DocumentImageRows, ReleasedDocumentImageStore {
   readonly rows = new Map<string, Row>();
 
   seed(row: Partial<Row> & Pick<Row, "workspaceId" | "documentId" | "sourceUrl" | "role">): Row {
@@ -77,10 +77,19 @@ export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, 
     return { captureNeeded };
   }
 
-  async listForDocument(input: { workspaceId: string; documentId: string }): Promise<DocumentImageSummary[]> {
+  async listForDocument(input: { workspaceId: string; documentId: string; primaryDocumentCountLimit: number }): Promise<ListedDocumentImage[]> {
+    const sharing = (row: Row): number => row.role === "primary" && row.status === "stored"
+      ? Math.min(input.primaryDocumentCountLimit, new Set([...this.rows.values()]
+        .filter((other) => other.workspaceId === row.workspaceId && other.documentId !== null && other.role === "primary"
+          && other.status === "stored" && other.sha256 === row.sha256)
+        .map((other) => other.documentId)).size)
+      : 0;
     return this.forDocument(input.documentId)
       .filter((row) => row.workspaceId === input.workspaceId)
-      .map(({ id, role, status, alt, caption, width, height, sourceUrl }) => ({ id, role, status, alt, caption, width, height, sourceUrl }));
+      .map((row) => ({
+        id: row.id, role: row.role, status: row.status, alt: row.alt, caption: row.caption, width: row.width, height: row.height,
+        sourceUrl: row.sourceUrl, primaryDocumentCount: sharing(row),
+      }));
   }
 
   async hasImages(documentId: string): Promise<boolean> {

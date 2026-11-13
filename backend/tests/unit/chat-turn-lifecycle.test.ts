@@ -17,8 +17,8 @@ import {
   ChatTurnLifecycle,
   type AssistantTurnPersistencePort,
   type ChatActionOutboxPort,
-  type CutReplyStore,
 } from "../../src/modules/chat/services/chatTurnLifecycle.js";
+import type { CutReplyStore } from "../../src/modules/chat/services/cutReplyMessage.js";
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";

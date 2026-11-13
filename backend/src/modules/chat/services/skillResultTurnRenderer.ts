@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { AGENT_SKILL_OUTCOME_KIND, hasAnswerText } from "./agentSkillTurnSkillProvider.js";
 import type { AssistantReplyComposer, AssistantReplyConfig } from "./assistantReplyComposer.js";
 import { buildSkillResultReplyPrompt } from "./assistantReplyPromptBuilder.js";
@@ -6,6 +8,8 @@ import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { estimateTextGenerationInputTokens } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TurnOutcome, TurnOutcomeRenderer, TurnRenderContext, TurnStreamResult } from "./turnOutcome.js";
+import type { SkillResultCardsOffer, SkillResultReplyBlocks } from "./replyBlocks/skillResultReplyBlocks.js";
+import { hasToolRecords } from "./replyBlocks/toolRecords.js";
 
 /**
  * A reply the agent writes from a directive-bound skill's result. The outcome kind seeds
@@ -35,6 +39,8 @@ const presentedAsBoundSkill = (outcome: TurnOutcome, presentation: ChatPresented
 
 interface SkillResultTurnRendererOptions {
   logger?: Pick<AppLogger, "warn">;
+  /** Offers the `present` head over a skill's records; without it, records reach the reply as text only. */
+  replyBlocks?: Pick<SkillResultReplyBlocks, "offerFor">;
 }
 
 interface SkillResultFindingsIds {
@@ -54,8 +60,8 @@ export const cappedSkillFindings = (
   findings: string,
   ids: SkillResultFindingsIds,
   logger?: Pick<AppLogger, "warn">,
+  maxInputTokens: number = CHAT_BEHAVIOR.skillResult.maxFindingsInputTokens,
 ): string => {
-  const maxInputTokens = CHAT_BEHAVIOR.skillResult.maxFindingsInputTokens;
   if (findings.length <= maxInputTokens) {
     return findings;
   }
@@ -94,44 +100,96 @@ export const cappedSkillFindings = (
 };
 
 /**
+ * Whether the skill's text is only the JSON form of its structured content, as an MCP tool often
+ * returns beside it. Structural: the text is parsed and compared deeply, never matched as words.
+ */
+const duplicatesStructuredContent = (text: string, outputs: Record<string, unknown> | undefined): boolean => {
+  if (!outputs) {
+    return false;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  const keys = Object.keys(outputs);
+  const structured = keys.length === 1 && keys[0] === "structuredContent" ? outputs.structuredContent : outputs;
+  return isDeepStrictEqual(parsed, structured);
+};
+
+/** What one skill-result reply is written from: its findings, and the `present` offer when there is one. */
+interface SkillResultReplyInput {
+  findings: string;
+  offer: SkillResultCardsOffer | null;
+}
+
+/**
  * Renders a completed agent-skill outcome as the agent's own reply. The agent's model
- * writes it from the text the skill returned, read as findings (data, never instructions),
+ * writes it from what the skill returned, read as findings (data, never instructions),
  * in the agent's voice with its answer instructions and directives applied, so a tool's
  * raw output stays out of the visitor's reply. Selected by outcome kind, never by skill
  * name. A failed, suppressed, or empty outcome is left to the generic renderer.
+ *
+ * The findings are the skill's text. Where the reply may show cards and the skill returned
+ * records, they are the records first, under their handles and within their own budget, then
+ * the text unless it only repeats the records, and the reply is offered the `present` head.
+ * When the model named cards none of which could be built, a whole reply is written again from
+ * the records without handles or cards, so its lead never promises a list that is not there; a
+ * streamed reply has already gone out, so the loss is only logged and counted.
  */
 export const createSkillResultTurnRenderer = (
   composer: AssistantReplyComposer,
   options: SkillResultTurnRendererOptions = {},
 ): TurnOutcomeRenderer => {
-  const findingsFor = (outcome: TurnOutcome, ctx: TurnRenderContext): string =>
-    cappedSkillFindings(
-      outcome.outcome.answer ?? "",
-      {
-        skillName: outcome.skillName,
-        workspaceId: ctx.session.agent.workspaceId,
-        conversationId: ctx.session.conversation.id,
-      },
-      options.logger,
-    );
+  const findingsWith = (outcome: TurnOutcome, ctx: TurnRenderContext, records: string): string => {
+    const ids = {
+      skillName: outcome.skillName,
+      workspaceId: ctx.session.agent.workspaceId,
+      conversationId: ctx.session.conversation.id,
+    };
+    const text = outcome.outcome.answer ?? "";
+    if (!records) {
+      return cappedSkillFindings(text, ids, options.logger);
+    }
+    const own = duplicatesStructuredContent(text, outcome.outcome.outputs) ? "" : text.trim();
+    if (!own) {
+      return records;
+    }
+    const remaining = CHAT_BEHAVIOR.skillResult.maxFindingsInputTokens - estimateTextGenerationInputTokens({ prompt: records });
+    return `${records}\n\n${cappedSkillFindings(own, ids, options.logger, remaining)}`;
+  };
+
+  const prepare = (outcome: TurnOutcome, ctx: TurnRenderContext): SkillResultReplyInput => {
+    const offer = options.replyBlocks?.offerFor(ctx.session, outcome.skillName, outcome.outcome.outputs) ?? null;
+    return { findings: findingsWith(outcome, ctx, offer?.records.withHandles ?? ""), offer };
+  };
 
   return {
     supports: (outcome) =>
       outcome.kind === AGENT_SKILL_OUTCOME_KIND
       && outcome.outcome.status === "completed"
-      && hasAnswerText(outcome.outcome.answer),
-    render: async (outcome, ctx) => presentedAsBoundSkill(
-      outcome,
-      await composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, findingsFor(outcome, ctx)),
-    ),
+      && (hasAnswerText(outcome.outcome.answer) || hasToolRecords(outcome.outcome.outputs)),
+    render: async (outcome, ctx) => {
+      const { findings, offer } = prepare(outcome, ctx);
+      const compose = (text: string, withOffer: SkillResultCardsOffer | null) =>
+        composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, text, withOffer);
+      const presentation = await compose(findings, offer);
+      return presentedAsBoundSkill(
+        outcome,
+        offer?.cardsLost() ? await compose(findingsWith(outcome, ctx, offer.records.plain), null) : presentation,
+      );
+    },
     async *stream(outcome, ctx): AsyncGenerator<string, TurnStreamResult> {
+      const { findings, offer } = prepare(outcome, ctx);
       const result = yield* composer.streamAnswer(
         ctx.session,
         ctx.query,
         ctx.userExpectedLocale,
         ctx.accountId,
         ctx.signal,
-        findingsFor(outcome, ctx),
+        findings,
+        offer,
       );
       return { ...result, finalPresentation: presentedAsBoundSkill(outcome, result.finalPresentation) };
     },

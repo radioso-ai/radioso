@@ -203,6 +203,40 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     expect(replay.stream.mock.calls[1]?.[0].visitorTimeZone).toBeUndefined();
   });
 
+  it("declares the cards Test Chat renders, returns the turn's blocks, and copies their pictures before it answers", async () => {
+    const block = { type: "item_list", id: "b1", layout: "carousel", selection: "none", caption: "Flats", items: [{ key: "/0", title: "Loft", actions: [] }] };
+    const toolImages = [{ imageId: "image-1", url: "https://img.homes.example/loft.jpg" }];
+    const order: string[] = [];
+    const replay = {
+      stream: vi.fn(async function* () {
+        order.push("replayed");
+        return { answer: "One loft fits.", messageId: "ephemeral-message", continuation, blocks: [block], toolImages };
+      }),
+    };
+    const recordPreview = vi.fn(async () => {
+      order.push("pictures recorded");
+    });
+    const adapter = new TrustedTestExecutionRunnerAdapter({
+      replay: replay as unknown as Pick<WorkbenchReplayRunner, "stream">,
+      liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
+      revisions: { findRevision: async () => revision },
+      toolImagePreviews: { recordPreview },
+    });
+
+    const { result } = await collect(adapter.stream({
+      workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
+      conversationId: "private-side-1", message: "Flats in Mitte?", history: [], continuation, testValues: [],
+      executionMode: "safe_test", skillEffects: "suppressed",
+    }));
+
+    expect(replay.stream).toHaveBeenCalledWith(expect.objectContaining({
+      clientContextCapabilities: { "reply.blocks": { item_list: { layouts: ["carousel", "grid", "list"] } } },
+    }));
+    expect(result.blocks).toEqual([block]);
+    expect(recordPreview).toHaveBeenCalledWith({ workspaceId: "ws-1", sources: toolImages });
+    expect(order).toEqual(["replayed", "pictures recorded"]);
+  });
+
   it("rejects corrupt and version-mismatched continuations before replay", async () => {
     const replay = { stream: vi.fn() };
     const adapter = new TrustedTestExecutionRunnerAdapter({

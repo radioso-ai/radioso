@@ -160,6 +160,17 @@ describe("fetchPublicBytes", () => {
     expect(Date.now() - startedAt).toBeLessThan(2_000);
   });
 
+  it("gives up as soon as the caller's own signal aborts, well inside its time budget", async () => {
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    setTimeout(() => controller.abort(), 100);
+
+    const result = await fetchPublicBytes(`${server.origin}/slow-headers`, { ...LIMITS, timeoutMs: 10_000, signal: controller.signal }, transport());
+
+    expect(result).toEqual({ kind: "failed", reason: "timeout" });
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+  });
+
   it("gives up when the body stalls past the same budget", async () => {
     const result = await fetchPublicBytes(`${server.origin}/slow-body`, { ...LIMITS, timeoutMs: 150 }, transport());
 

@@ -508,6 +508,27 @@ describe("TestExecutionService", () => {
       expect(repository.execution?.sides[0]?.history.at(-1)).toMatchObject({ role: "assistant", content: "Refunds take five days." });
     });
 
+    it("carries the turn's reply blocks on its completion, and none when it presents none", async () => {
+      const block = { type: "item_list" as const, id: "b1", layout: "carousel" as const, selection: "none" as const, caption: "Flats", items: [{ key: "/0", title: "Loft", actions: [] }] };
+      const results = [
+        { answer: "One loft fits.", messageId: ids[8], continuation: null, blocks: [block] },
+        { answer: "Nothing else fits.", messageId: ids[8], continuation: null },
+      ];
+      let call = 0;
+      const stream = async function* (_input: RunnerInput) {
+        return results[call++];
+      };
+      const { service, repository } = setup(undefined, undefined, { stream });
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+      const first = await drain(send(service, execution.id));
+      expect(first.find((event) => event.type === "side_completed")).toMatchObject({ answer: "One loft fits.", blocks: [block] });
+
+      repository.execution!.state = "completed";
+      const second = await drain(service.streamMessage({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "Any more?", generation: 1, turnId: ids[9], attemptId: "70000000-0000-4000-8000-000000000001" }));
+      expect(second.find((event) => event.type === "side_completed")).not.toHaveProperty("blocks");
+    });
+
     it("sends only what the stored answer adds past the streamed text, and nothing when it diverges", async () => {
       const answers = ["Refunds take five days.", "Refunds take five days."];
       const streamed = [["Refunds take five days"], ["  Refunds take [[1]] five days.\n"]];

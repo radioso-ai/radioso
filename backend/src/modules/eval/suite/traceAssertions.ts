@@ -2,7 +2,7 @@ import type { RoutineRunTrace } from "@radioso/conversation-contract";
 
 import type { AssertionVerdictStatus, EvalRunObservedOutput } from "../domain/types.js";
 import type { ConversationQualityObservedOutput } from "./observedOutput.js";
-import { answerNamesImage, judgeReplyBlock, type ReplyBlockExpectation } from "./replyBlockAssertions.js";
+import { answerNamesImage, judgeNoPictures, judgeReplyBlock, type ReplyBlockExpectation } from "./replyBlockAssertions.js";
 
 /**
  * Trace assertions read structured signal out of a turn's {@link EvalRunObservedOutput}
@@ -75,6 +75,8 @@ export type SuiteTraceAssertion =
   | ({ type: "reply_block" } & ReplyBlockExpectation)
   /** The reply carried no block: the answer had nothing to show as pictures. */
   | { type: "no_reply_block" }
+  /** The reply carried no block, or one whose items show no picture: there was none to show. */
+  | { type: "reply_block_without_pictures" }
   /** The answer text names no picture by address or handle: pictures belong in the block. */
   | { type: "answer_excludes_image_url" };
 
@@ -121,6 +123,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "voice_turn_outcome",
   "reply_block",
   "no_reply_block",
+  "reply_block_without_pictures",
   "answer_excludes_image_url",
 ]);
 
@@ -575,6 +578,10 @@ export const evaluateTraceAssertion = (
       return count === 0
         ? pass(assertion, "The reply carried no block.")
         : fail(assertion, `The reply carried ${count} block(s); expected none.`);
+    }
+    case "reply_block_without_pictures": {
+      const verdict = judgeNoPictures(output.replyBlocks);
+      return verdict.passed ? pass(assertion, verdict.reason) : fail(assertion, verdict.reason);
     }
     case "answer_excludes_image_url": {
       const named = answerNamesImage(output.answer, output.replyBlocks);

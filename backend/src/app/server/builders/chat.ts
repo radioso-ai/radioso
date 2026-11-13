@@ -151,6 +151,8 @@ import { buildInfrastructure } from "./infra.js";
 import { RoutineChatModelGateway } from "../../../modules/chat/services/routines/routineChatModelGateway.js";
 import { DocumentImageRepository } from "../../../modules/documents/composition.js";
 import { createReplyBlocksComposition } from "../../composition/replyBlocks.js";
+import { composeReplyImageLookup, wireToolImages } from "../../composition/toolImages.js";
+import type { DocumentStorageLocator, DocumentStoragePort } from "../../../modules/documents/contracts/storage.js";
 
 export const buildChatServices = (input: {
   abuseControlService: AbuseControlService;
@@ -169,6 +171,8 @@ export const buildChatServices = (input: {
   conversationRepository: ConversationRepository;
   clusteringEmbeddings: ClusteringEmbeddingPort;
   database: Database;
+  /** Where the pictures a reply's cards show from a skill's result are copied. */
+  documentStorage: DocumentStoragePort & DocumentStorageLocator;
   env: Env;
   historyItemsRepository: HistoryItemsRepository;
   llmRegistry: LlmProviderRegistry;
@@ -296,6 +300,15 @@ export const buildChatServices = (input: {
       executor: new RetrievalAnswerSkillExecutor(input.retrievalPipeline),
     });
   }
+  // The pictures a reply's cards show from a skill's result: recorded with the reply, copied by a
+  // job or on demand, and served at the reply image route.
+  const toolImages = wireToolImages({
+    database: input.database,
+    storage: input.documentStorage,
+    jobs: input.backgroundJobs,
+    metrics: input.metricsRegistry,
+    logger: input.logger,
+  });
   // Register the external-skills (MCP) executor here, where the database + encryption
   // key are available (spec 087). Guarded for repeated dependency builds; skipped when
   // no encryption key is configured, since stored credentials cannot be decrypted then
@@ -467,6 +480,7 @@ export const buildChatServices = (input: {
     logger: input.logger,
     quickReplyLaneEnabled,
     replyBlocks: replyBlocks.turnFactory,
+    skillResultReplyBlocks: replyBlocks.skillResults,
   });
   // Behavioral steering comes from application composition. Chat and direct
   // retrieval answer surfaces share this port so extracted answer directives
@@ -498,6 +512,7 @@ export const buildChatServices = (input: {
     createRoutineConsentTelemetry({ logger: input.logger, metricsRegistry: input.metricsRegistry ?? null }),
     // A turn that raced a consent withdrawal withholds what it wrote, as the withdrawal would have.
     bindConsentMessageWithholding,
+    toolImages.rows,
   );
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({
@@ -906,18 +921,22 @@ export const buildChatServices = (input: {
     agentStarterPromptReader,
     chatGateway,
     chatHistoryService,
-    replyImageObjectLookup: documentImages,
+    replyImageObjectLookup: composeReplyImageLookup(documentImages, toolImages.lookup),
     testExecutionSeedSource,
     chatService,
     contextVariableResolutionReader: contextVariableResolver,
     workbenchReplayRunner,
+    toolImagePreviews: toolImages.previews,
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchJobRuntime,
     actionOutboxQueueDepthReporter,
     reportActionOutboxQueueState,
     // The chat-owned kinds the worker's background job runtime runs.
-    backgroundJobHandlers: [conversationSummaryRefreshHandler(conversationSummaryService, input.conversationRepository)],
+    backgroundJobHandlers: [
+      conversationSummaryRefreshHandler(conversationSummaryService, input.conversationRepository),
+      ...toolImages.jobHandlers,
+    ],
     // For producers outside the turn that write the outbox in their own transaction (a
     // conversation transfer and its notice) and push a drain once it commits.
     actionDrainDispatcher,

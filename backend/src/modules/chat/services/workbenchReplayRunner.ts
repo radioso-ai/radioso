@@ -1,5 +1,6 @@
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { ReplyBlock } from "../contracts/replyBlocks.js";
+import type { ToolImageSource } from "../../toolImages/contracts/index.js";
 import type {
   ClarificationPolicy,
   ConversationClarifier,
@@ -163,6 +164,8 @@ export interface WorkbenchReplayResult {
   suggestions?: ChatSuggestion[];
   /** The reply blocks the replayed turn would present, for a request that declared it renders them. */
   blocks?: ReplyBlock[];
+  /** The pictures those blocks show from a skill's result; server-only, for a caller that copies them. */
+  toolImages?: ToolImageSource[];
   groundingSummary?: GroundingSummary;
   turnTrace?: TurnTraceEnvelope;
   actions?: RoutineActionRequest[];
@@ -893,6 +896,7 @@ export class WorkbenchReplayRunner {
       // the follow-up question generator, which leaves the answer untouched.
       suggestions: input.presentation.suggestions,
       ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.presented } : {}),
+      ...(input.presentation.replyBlocks?.toolImages ? { toolImages: input.presentation.replyBlocks.toolImages } : {}),
       groundingSummary: input.presentation.groundingSummary,
       turnTrace: handoffPreview && tracePresentation.turnTrace
         ? { ...tracePresentation.turnTrace, handoffPreview }

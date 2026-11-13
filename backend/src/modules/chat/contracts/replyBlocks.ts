@@ -41,8 +41,14 @@ export interface StoredReplyImage {
 
 export type StoredReplyItem = Omit<ReplyItem, "image" | "facts"> & { image?: StoredReplyImage };
 
+/**
+ * Where a stored block's items came from, when not from the answer's evidence. Server-only: it is
+ * kept on the message for whatever acts on a block later, and presenting a block never sends it.
+ */
+export type StoredReplyBlockOrigin = { kind: "skill_result"; skillName: string };
+
 /** A reply block as `messages.metadata_json.blocks` keeps it. */
-export type StoredReplyBlock = Omit<ItemListBlock, "items"> & { items: StoredReplyItem[] };
+export type StoredReplyBlock = Omit<ItemListBlock, "items"> & { items: StoredReplyItem[]; origin?: StoredReplyBlockOrigin };
 
 /** Builds the served addresses of a stored image: `src` at the larger width, `srcSet` at both. */
 export interface ReplyImageUrls {
@@ -88,7 +94,9 @@ const storedReplyImageSchema = z.object({
 export const replyBlockSchema = itemListBlockSchemaWith(replyImageSchema) satisfies z.ZodType<ReplyBlock>;
 
 /** A reply block as the message row stores it; history reads it back through this. */
-export const storedReplyBlockSchema = itemListBlockSchemaWith(storedReplyImageSchema) satisfies z.ZodType<StoredReplyBlock>;
+export const storedReplyBlockSchema = itemListBlockSchemaWith(storedReplyImageSchema).extend({
+  origin: z.object({ kind: z.literal("skill_result"), skillName: z.string().min(1).max(200) }).optional(),
+}) satisfies z.ZodType<StoredReplyBlock>;
 
 /**
  * The capability as the server keeps it for a turn, or null when the client declared none. Only
@@ -102,4 +110,38 @@ export const replyBlocksCapabilityFromRequest = (
     return null;
   }
   return { item_list: { layouts: REPLY_BLOCK_LAYOUTS.filter((layout) => itemList.layouts.includes(layout)) } };
+};
+
+/** One card of a reply as a data-subject export carries it. */
+interface ExportedReplyItem {
+  title: string;
+  description: string | null;
+  link: string | null;
+  imageId: string | null;
+}
+
+/**
+ * The blocks an assistant message stored, as a data-subject export carries them: each card the
+ * subject was shown, with its title, subtitle, link and picture's id. The server's own `origin`
+ * stays out. Null when the message stored none that read back.
+ */
+export const replyBlocksForExport = (
+  metadata: unknown,
+): Array<{ id: string; layout: ReplyBlockLayout; caption: string; items: ExportedReplyItem[] }> | null => {
+  const blocks = metadata && typeof metadata === "object" ? (metadata as { blocks?: unknown }).blocks : undefined;
+  const parsed = storedReplyBlockSchema.array().min(1).safeParse(blocks);
+  if (!parsed.success) {
+    return null;
+  }
+  return parsed.data.map((block) => ({
+    id: block.id,
+    layout: block.layout,
+    caption: block.caption,
+    items: block.items.map((item) => ({
+      title: item.title,
+      description: item.description ?? null,
+      link: item.actions.find((action) => action.type === "open")?.url ?? null,
+      imageId: item.image?.imageId ?? null,
+    })),
+  }));
 };

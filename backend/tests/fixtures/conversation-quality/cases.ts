@@ -1,6 +1,7 @@
 import { ZERO_TOLERANCE_JUDGE_TAG, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { seedDirectiveConfigWith } from "./agent.js";
 import { replyBlockCases } from "./replyBlockCases.js";
+import { toolCardCases } from "./toolCardCases.js";
 import {
   BREATH_COURSE_DOC_ID,
   PRICING_DOC_ID,
@@ -1271,4 +1272,5 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     assertions: [{ type: "turn_persists_no_reply" }],
   },
   ...replyBlockCases,
+  ...toolCardCases,
 ];

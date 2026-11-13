@@ -18,6 +18,17 @@ import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
+
+/** A reply block an assistant message stored: the export carries what it showed. */
+const CLINIC_CARDS = {
+  type: "item_list",
+  id: "b1",
+  layout: "list",
+  selection: "none",
+  caption: "Open slots",
+  origin: { kind: "skill_result", skillName: "find_slots" },
+  items: [{ key: "/slots/0", title: "Tuesday 10:00", description: "Physiotherapy", actions: [{ type: "open", url: "https://clinic.example/slots/tue-10" }] }],
+};
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 /** The address Jane writes from, which is also the customer id the host verifies her by on the website. */
@@ -129,10 +140,10 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       await database.query("UPDATE visitors SET conversation_count = conversation_count + 1 WHERE id = $1", [input.visitorId]);
     }
     await database.query(
-      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, created_at) VALUES
-         ($1, $3, $4, 'user', $5, now() - interval '1 minute'),
-         ($2, $3, $4, 'assistant', 'Let me check that for you.', now())`,
-      [randomUUID(), randomUUID(), conversationId, t.workspaceId, input.text],
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, created_at) VALUES
+         ($1, $3, $4, 'user', $5, '{}'::jsonb, now() - interval '1 minute'),
+         ($2, $3, $4, 'assistant', 'Let me check that for you.', $6::jsonb, now())`,
+      [randomUUID(), randomUUID(), conversationId, t.workspaceId, input.text, JSON.stringify({ blocks: [CLINIC_CARDS] })],
     );
     return conversationId;
   };
@@ -383,7 +394,17 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
         channel: "web",
         messages: [
           expect.objectContaining({ role: "user", content: `I hurt my knee, can I still book? (${JANE})` }),
-          expect.objectContaining({ role: "assistant", content: "Let me check that for you." }),
+          expect.objectContaining({
+            role: "assistant",
+            content: "Let me check that for you.",
+            // The cards the reply showed, as the subject saw them, without the server's origin.
+            blocks: [{
+              id: "b1",
+              layout: "list",
+              caption: "Open slots",
+              items: [{ title: "Tuesday 10:00", description: "Physiotherapy", link: "https://clinic.example/slots/tue-10", imageId: null }],
+            }],
+          }),
         ],
       });
       expect(sections.visitors).toEqual([expect.objectContaining({ id: jane.visitorId, verifiedCustomerId: JANE, lastCountry: "EE" })]);

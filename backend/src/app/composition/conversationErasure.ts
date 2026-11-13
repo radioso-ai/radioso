@@ -9,6 +9,7 @@ import { EmailSkillActivityEraser } from "../../db/repositories/emailSkillActivi
 import { WhatsAppMessageLogEraser } from "../../modules/connectors/plugins/index.js";
 import { EmailInboundEraser } from "../../modules/emailChannel/public.js";
 import { EvalConversationEraser } from "../../modules/eval/composition.js";
+import { ToolImageEraser } from "../../modules/toolImages/composition.js";
 import { VisitorImageEraser } from "../../modules/visitorImages/composition.js";
 import { VoiceSessionEraser } from "../../modules/voiceChannel/public.js";
 import type { ConversationErasureUnitOfWork } from "../../modules/privacy/public.js";
@@ -46,6 +47,8 @@ export const defaultConversationDataErasers: readonly ConversationDataEraserBind
   (trx) => new VoiceSessionEraser(trx),
   // A conversation's photos: their objects go to the deletion job in the erasure's transaction.
   (trx) => new VisitorImageEraser(trx, new BackgroundJobRepository(trx)),
+  // The copies of pictures a skill's cards showed: their objects go to the deletion job the same way.
+  (trx) => new ToolImageEraser(trx, new BackgroundJobRepository(trx)),
 ];
 
 /** Every module's eraser for the rows it keys by an erased visitor's verified customer id. */

@@ -29,7 +29,7 @@ export { ChatTurnAssemblyFactory } from "./services/chatTurnAssembly.js";
 export type { PreparedSession } from "./services/chatSessionPreparer.js";
 export {
   AGENT_SKILL_OUTCOME_KIND,
-  hasAnswerText,
+  hasRenderableResult,
   type AgentSkillTurnRuntime,
   type AgentSkillTurnSkillProvider,
 } from "./services/agentSkillTurnSkillProvider.js";
@@ -86,6 +86,7 @@ export {
 } from "./services/routines/contactRoutine.js";
 export { buildChatTurnRuntime } from "./services/chatTurnRuntime.js";
 export { ReplyBlockTurnFactory } from "./services/replyBlocks/replyBlockTurn.js";
+export { SkillResultReplyBlocks } from "./services/replyBlocks/skillResultReplyBlocks.js";
 export type {
   TurnOutcome,
   TurnOutcomeRenderer,

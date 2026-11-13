@@ -23,7 +23,13 @@ export const buildTestExecutionService = (deps: {
   agentRevisions: Pick<AgentRevisionService, "resolveDefaultTestRevision">;
   contextCatalog: ServiceOptions["contextCatalog"];
   agentRepository: Parameters<typeof createLiveAgentConfigReader>[0]["agentRepository"];
-  chat: { workbenchReplayRunner: RunnerOptions["replay"]; chatBootstrapService: RunnerOptions["bootstrap"]; testExecutionSeedSource: ServiceOptions["seedSource"] };
+  chat: {
+    workbenchReplayRunner: RunnerOptions["replay"];
+    chatBootstrapService: RunnerOptions["bootstrap"];
+    testExecutionSeedSource: ServiceOptions["seedSource"];
+    /** Copies the pictures a test turn's cards show. */
+    toolImagePreviews: RunnerOptions["toolImagePreviews"];
+  };
   visitorImages: VisitorImageTurnInput;
   usageLimitPolicy: ServiceOptions["usageLimitPolicy"];
   audit: ServiceOptions["audit"];
@@ -41,6 +47,7 @@ export const buildTestExecutionService = (deps: {
       liveAgentConfig: createLiveAgentConfigReader({ agentRepository: deps.agentRepository }),
       revisions: store,
       bootstrap: deps.chat.chatBootstrapService,
+      toolImagePreviews: deps.chat.toolImagePreviews,
     }),
     seedSource: deps.chat.testExecutionSeedSource,
     photos: createTestChatPhotoTurns(deps.visitorImages),

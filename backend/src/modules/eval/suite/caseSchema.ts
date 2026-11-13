@@ -171,8 +171,10 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
     layout: z.enum(["carousel", "grid", "list"]).optional(),
     minItems: z.number().int().positive().optional(),
     itemsFromEvidence: z.boolean().optional(),
+    itemsFromRecords: z.array(z.object({ title: z.string().min(1), link: z.string().url().optional() })).min(1).optional(),
   }),
   z.object({ type: z.literal("no_reply_block") }),
+  z.object({ type: z.literal("reply_block_without_pictures") }),
   z.object({ type: z.literal("answer_excludes_image_url") }),
 ]);
 

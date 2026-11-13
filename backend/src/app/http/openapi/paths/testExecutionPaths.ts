@@ -2,10 +2,11 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { registerTestExecutionSchemas } from "../schemas/testExecutionSchemas.js";
 
-/** The voice session answer of Test Chat's Talk, and the error envelope. */
+/** The voice session answer of Test Chat's Talk, the error envelope, and the reply block a turn's completion carries. */
 interface TestChatVoiceSchemas {
   TestChatVoiceSessionResponseSchema: z.ZodTypeAny;
   ErrorResponseSchema: z.ZodTypeAny;
+  ReplyBlockSchema?: z.ZodTypeAny;
 }
 
 /** Separate registration avoids coupling the test-execution slice to authoring schemas. */
@@ -15,7 +16,7 @@ export const registerTestExecutionPaths = (
   evalSnapshotSchema: z.ZodTypeAny = z.unknown(),
   voice?: TestChatVoiceSchemas,
 ) => {
-  const schemas = registerTestExecutionSchemas(registry);
+  const schemas = registerTestExecutionSchemas(registry, voice?.ReplyBlockSchema);
   const authenticated = [{ [security.bearerAuthScheme.name]: [] }];
   registry.registerPath({ method: "get", path: "/api/v1/agents/{agentId}/test-executions", tags: ["Agents"], summary: "List private immutable revision tests", operationId: "listAgentTestExecutions", security: authenticated, request: { params: z.object({ agentId: z.string().uuid() }), query: z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), cursor: z.string().min(1).optional() }) }, responses: { 200: { description: "Private test history returned", content: { "application/json": { schema: schemas.TestExecutionHistoryListResponseSchema } } } } });
   registry.registerPath({ method: "get", path: "/api/v1/agents/{agentId}/test-executions/{executionId}", tags: ["Agents"], summary: "Get private immutable revision test evidence", operationId: "getAgentTestExecution", security: authenticated, request: { params: schemas.TestExecutionParamsSchema }, responses: { 200: { description: "Private test evidence returned", content: { "application/json": { schema: schemas.TestExecutionHistoryDetailResponseSchema } } } } });

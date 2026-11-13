@@ -174,7 +174,7 @@ describe("reply blocks on the grounded answer", () => {
 
     await composer.composeAnswer(session(), "Which hiking guides do you have?", "en", undefined);
 
-    expect(metricWrites).toContainEqual({ name: "reply_blocks_emitted_total", labels: { layout: "carousel", channel: "website_embed" } });
+    expect(metricWrites).toContainEqual({ name: "reply_blocks_emitted_total", labels: { layout: "carousel", channel: "website_embed", source: "evidence" } });
     expect(metricWrites).toContainEqual({ name: "reply_block_items_dropped_total", labels: { reason: "unknown_handle" } });
   });
 

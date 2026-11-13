@@ -1,7 +1,7 @@
 import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api-client'
 import { withUserTimeZone } from './browser-time-zone'
 import { createClientId } from './client-id'
-import type { AgentGreetingDraft, TurnTraceEnvelope } from './api-types'
+import type { AgentGreetingDraft, ReplyBlock, TurnTraceEnvelope } from './api-types'
 import type { EvalSnapshot } from './api-eval'
 import type { components } from '../../typescript-sdk/src/generated/types'
 
@@ -144,7 +144,7 @@ export type TestExecutionEvent =
   | { type: 'side_started'; executionId: string; generation: number; sideId: string; turnId: string; attemptId: string }
   | { type: 'message_delta'; executionId: string; generation: number; sideId: string; delta: string; turnId: string; attemptId: string }
   /** `answer` is the stored answer, which replaces the streamed text; only a backend that predates it omits it. */
-  | { type: 'side_completed'; executionId: string; generation: number; sideId: string; messageId: string; answer?: string; turnId: string; attemptId: string; turnTrace?: TurnTraceEnvelope }
+  | { type: 'side_completed'; executionId: string; generation: number; sideId: string; messageId: string; answer?: string; turnId: string; attemptId: string; blocks?: ReplyBlock[]; turnTrace?: TurnTraceEnvelope }
   | { type: 'side_failed'; executionId: string; generation: number; sideId: string; code: string; retryable: boolean; turnId: string; attemptId: string }
   | { type: 'execution_partial'; executionId: string; generation: number; turnId: string; attemptId: string }
   | { type: 'execution_completed'; executionId: string; generation: number; turnId: string; attemptId: string }

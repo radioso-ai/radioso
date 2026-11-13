@@ -86,7 +86,9 @@ import {
   seededRoutineSkillNames,
   seedReplyBlockImages,
   seedVoiceSettings,
+  TOOL_CARD_EVAL_WORKSPACE_NAME,
 } from "./evalRunnerSupport.js";
+import { seedToolCardAgent, toolCardStubModule } from "./evalToolCards.js";
 
 const BASELINE_PATH = fileURLToPath(
   new URL("../tests/fixtures/conversation-quality/baseline.json", import.meta.url),
@@ -565,6 +567,42 @@ const runReplyBlockCases = async (
 };
 
 /**
+ * Runs the tool-card cases on an agent of their own beside the target, whose every turn is bound
+ * to the stub catalog search (`evalToolCards.ts`): the reply is written from the search's records.
+ */
+const runToolCardCases = async (
+  deps: Deps,
+  flags: Flags,
+  cases: ConversationQualityCase[],
+  judge: SuiteJudge | undefined,
+): Promise<SuiteResult> => {
+  const target = await ensureReplyBlockTarget(
+    { workspaces: deps.workspaceRepository, workspaceService: deps.workspaceService, agentService: deps.agentService },
+    flags.workspaceId,
+    TOOL_CARD_EVAL_WORKSPACE_NAME,
+  );
+  console.log(`Binding the tool-card agent ${target.agentId} in workspace ${target.workspaceId} to the stub catalog search…`);
+  await seedToolCardAgent({ db: deps.connectorDb.kysely, authoredDirectives: deps.authoredDirectiveService }, target);
+  const agent = await deps.agentRepository.findByIdAndWorkspaceId(target.agentId, target.workspaceId);
+  if (!agent) {
+    throw new Error(`Agent ${target.agentId} not found in workspace ${target.workspaceId}.`);
+  }
+  const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
+    workspaceId: target.workspaceId,
+    agentId: target.agentId,
+    // On so the tool-card cases can show cards, as the reply-block agent's fixture is; a case whose
+    // client declares no reply blocks is offered none.
+    baselineAgentConfig: { ...projectInternalAgentConfig(agent), replyCardsEnabled: true },
+  });
+  return runConversationQualitySuiteSampled(cases, port, {
+    workspaceId: target.workspaceId,
+    samples: flags.samples,
+    passThreshold: flags.passThreshold,
+    ...(judge ? { judge } : {}),
+  });
+};
+
+/**
  * Runs the selected cases, each part on the corpus it grounds against
  * (`partitionCasesByCorpus`), and records or gates on the baseline over all of them.
  */
@@ -576,13 +614,16 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
   if (flags.samples > 1) {
     console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
   }
-  const { shared, replyBlocks } = partitionCasesByCorpus(run.cases);
+  const { shared, replyBlocks, toolCards } = partitionCasesByCorpus(run.cases);
   const parts: SuiteResult[] = [];
   if (shared.length > 0) {
     parts.push(await runSharedCases(deps, flags, { ...run, cases: shared }, suiteJudge?.judge));
   }
   if (replyBlocks.length > 0) {
     parts.push(await runReplyBlockCases(deps, flags, replyBlocks, suiteJudge?.judge));
+  }
+  if (toolCards.length > 0) {
+    parts.push(await runToolCardCases(deps, flags, toolCards, suiteJudge?.judge));
   }
   const reports = parts.flatMap((part) => part.reports);
   const outcomes = parts.flatMap((part) => part.outcomes);
@@ -659,8 +700,9 @@ const main = async (): Promise<void> => {
     console.log("Applying migrations…");
     await runMigrations(env.DATABASE_URL, createLogger("silent"));
   }
-  // The routine skills' destination is a loopback address, which a default stack refuses.
-  const deps = buildDependencies({ ...env, WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: true });
+  // The routine skills' destination is a loopback address, which a default stack refuses. External
+  // skills are the in-process stub catalog search, so no MCP server is ever dialled.
+  const deps = buildDependencies({ ...env, WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: true }, { modules: [toolCardStubModule()] });
 
   await runThenClose(async () => {
     const target = await ensureTarget(deps, flags);

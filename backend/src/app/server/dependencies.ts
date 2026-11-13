@@ -306,9 +306,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceModelAvailability,
     workspaceTimeZones,
   } = documentRetrievalGraph;
-  // Field suggestions for metadata rules are the catalog's declarations unioned
-  // with the keys already observed on document metadata; the advisory reference
-  // list is the same rules read the other way round.
+  // Field suggestions for metadata rules are the catalog's declarations unioned with the keys
+  // already observed on document metadata; the advisory reference list is the same rules read the other way round.
   const metadataFieldSuggestionProvider = new MetadataFieldSuggestionService(
     settings.documentTypeCatalogService,
     repositories.documentRepository,
@@ -329,9 +328,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     notificationRecipientPolicy,
     workspaceModelAvailability,
   );
-  // Shared by routine publishing (write-time trigger embedding) and the chat
-  // activation prefilter (lazy self-heal of unembedded/stale rows) so both
-  // paths dedup concurrent embedding work through one instance.
+  // Shared by routine publishing (write-time trigger embedding) and the chat activation prefilter
+  // (lazy self-heal of unembedded/stale rows) so both paths dedup concurrent embedding work through one instance.
   const routineTriggerEmbeddingGateway = llmRegistry.createEmbeddingGateway(
     infrastructure.usageEventRecorder,
   );
@@ -373,6 +371,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationRepository: repositories.conversationRepository,
     clusteringEmbeddings: embeddingPorts,
     database: infrastructure.database,
+    documentStorage: documents.documentStorage,
     env,
     historyItemsRepository: repositories.historyItemsRepository,
     llmRegistry,

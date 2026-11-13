@@ -167,6 +167,7 @@ describe("default erasers", () => {
       "audience-pulse",
       "voice-channel",
       "visitor-images",
+      "tool-images",
     ]);
     expect(defaultVerifiedCustomerDataErasers.map((bind) => bind(db).owner)).toEqual(["context-variables"]);
     expect(defaultVisitorKeyDataErasers.map((bind) => bind(db).owner)).toEqual(["voice-channel"]);

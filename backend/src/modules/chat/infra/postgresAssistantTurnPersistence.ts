@@ -16,9 +16,8 @@ import {
   actionIdempotencyKey,
   type AssistantTurnPersistenceReceipt,
   type AssistantTurnPersistencePort,
-  type CutReplyStore,
-  type CutReplyStoreInput,
 } from "../services/chatTurnLifecycle.js";
+import type { CutReplyStore, CutReplyStoreInput } from "../services/cutReplyMessage.js";
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
@@ -26,7 +25,8 @@ import { withholdMessagesWithCopies, type MessageWithholdingScope } from "../../
 import { matchableValueTexts, SENSITIVE_SLOT_KEYS_METADATA_KEY, sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
 import type { RoutineConsentCommitted, RoutineConsentWritten } from "../../../shared/domain/routineConsentTurn.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
-import type { BackgroundJobQueue, BackgroundJobWakePort } from "../../../shared/background-jobs/index.js";
+import type { BackgroundJobQueue, BackgroundJobRequest, BackgroundJobWakePort } from "../../../shared/background-jobs/index.js";
+import type { ToolImageRowWriter } from "../../toolImages/contracts/index.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -359,6 +359,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     private readonly routineConsentObserver?: RoutineConsentCommitObserver,
     // Withholds what the turn wrote once a consent of its conversation was withdrawn (#1544).
     private readonly consentMessageWithholding?: MessageWithholdingBinding,
+    // Records the pictures a reply's cards show from a skill's result, with the reply.
+    private readonly toolImageRows?: ToolImageRowWriter,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
@@ -418,6 +420,15 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       const message = result.rows[0];
       if (!message) {
         throw new Error("Expected inserted assistant message");
+      }
+      if (input.toolImages?.length && this.toolImageRows) {
+        const captures = await this.toolImageRows.record(db, {
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId,
+          messageId,
+          sources: input.toolImages,
+        });
+        insertedBackgroundJobs += await this.enqueueJobs(db, captures, input.conversationId);
       }
       if (input.routineConsent) {
         consentWritten = await new RoutineConsentRepository(db).writeTurnEvents({
@@ -569,18 +580,22 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
   }
 
   private async enqueueBackgroundJobs(db: Db, input: CompleteAssistantTurnInput): Promise<number> {
-    if (!input.backgroundJobs?.length) {
+    return this.enqueueJobs(db, input.backgroundJobs ?? [], input.conversationId);
+  }
+
+  private async enqueueJobs(db: Db, jobs: readonly BackgroundJobRequest[], conversationId: string): Promise<number> {
+    if (jobs.length === 0) {
       return 0;
     }
     if (!this.backgroundJobs) {
       this.logger?.warn(
-        { conversationId: input.conversationId, kinds: input.backgroundJobs.map((job) => job.kind) },
+        { conversationId, kinds: jobs.map((job) => job.kind) },
         "Turn requested background jobs but no background job queue is wired; skipped",
       );
       return 0;
     }
     let inserted = 0;
-    for (const job of input.backgroundJobs) {
+    for (const job of jobs) {
       const receipt = await this.backgroundJobs.enqueueInTransaction(db, job);
       if (receipt.inserted) {
         inserted += 1;

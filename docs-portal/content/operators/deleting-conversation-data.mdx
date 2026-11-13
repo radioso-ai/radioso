@@ -1,7 +1,7 @@
 ---
 title: "Deleting conversation data"
 description: "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps."
-last_updated: 2026-11-12
+last_updated: 2026-11-13
 ---
 
 # Deleting conversation data
@@ -50,6 +50,7 @@ Deleting a conversation removes:
 
 - its messages, summary and title, and the version of the privacy notice its visitor was shown;
 - the photos its visitor sent, with what the agent read in each: the stored image goes once the deletion has gone through (see below);
+- the copies Radioso kept of the pictures on cards built from a skill's results, which go the same way;
 - routine state, including the values a routine collected, pending approvals, clarifications, and directive memory;
 - held replies, ownership, activity, and delivery failures;
 - answer feedback and triage, coverage assessments, facets and topic memberships;
@@ -105,11 +106,13 @@ A recording still there after its eighth ask, or a week after its deletion, stay
 
 Once the organization itself is deleted, nobody in it can call that endpoint. Only the deployment's operators see what its deletion left at ElevenLabs, in their error tracking and in the database ([Self-hosting operations](/operators/self-hosting-operations)). Once the workspace's ElevenLabs key is removed, or replaced with one for another ElevenLabs account, Radioso cannot delete the old account's recordings at all.
 
-A photo a visitor sent is stored as a file in the workspace's storage. The deletion removes its record and hands the file to the worker in the same database transaction, and the worker deletes it as soon as it picks the job up, usually within seconds. A delete that storage refuses is tried again, with growing waits, for about two hours; a file that is already gone counts as deleted.
+A photo a visitor sent is stored as a file in the workspace's storage. The deletion removes its record and hands the file to the worker in the same database transaction, and the worker deletes it as soon as it picks the job up, usually within seconds. A delete that storage refuses is tried again, with growing waits, for about two hours; a file that is already gone counts as deleted. The copies of a card's picture are files in the same storage, and go the same way.
+
+A data subject export carries every card a reply showed, in that reply's message under `conversations`: its title, the line under it, its link and the picture's id. The copies of the pictures themselves stay out of it: each is a copy of a third party's picture.
 
 ## Deleting everything at once
 
-Deleting a workspace deletes every conversation and visitor in it, with the same cleanup, voice call recordings included: the list of recordings to delete and the key copy outlive the workspace, and the organization, until the job is done. It also deletes the files the workspace stored: the original of every uploaded document, every agent logo, and every photo a visitor sent. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has, files included.
+Deleting a workspace deletes every conversation and visitor in it, with the same cleanup, voice call recordings included: the list of recordings to delete and the key copy outlive the workspace, and the organization, until the job is done. It also deletes the files the workspace stored: the original of every uploaded document, every agent logo, every photo a visitor sent, and every copy of a card's picture. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has, files included.
 
 The files go once the deletion has gone through. The deletion hands them to the worker in the same database transaction, so the workspace and the hand-off commit together or not at all, and the worker deletes the files in batches as soon as it picks the job up. A delete that storage refuses is tried again, with growing waits, for about a day; a file that is already gone counts as deleted. Each run of that job records one `workspace.stored_files.deleted` audit event with the deleted workspace's id and how many files went, never their names; a workspace with more than 1,000 files takes more than one run.
 

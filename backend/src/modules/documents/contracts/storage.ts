@@ -5,8 +5,8 @@ export interface StoredDocumentObject {
   sizeBytes: number;
 }
 
-/** The folders an object may go to under its workspace: a document's source file, or a photo a visitor sent. */
-export type DocumentStorageFolder = "documents" | "visitor-images";
+/** The folders an object may go to under its workspace: a document's source file, a photo a visitor sent, or a copy of a picture a skill's card showed. */
+export type DocumentStorageFolder = "documents" | "visitor-images" | "tool-images";
 
 export interface DocumentStorageUploadInput {
   workspaceId: string;

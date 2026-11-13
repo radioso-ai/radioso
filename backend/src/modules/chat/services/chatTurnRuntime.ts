@@ -16,6 +16,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ReplyBlockTurnFactory } from "./replyBlocks/replyBlockTurn.js";
+import type { SkillResultReplyBlocks } from "./replyBlocks/skillResultReplyBlocks.js";
 import {
   createDirectiveAdherenceSideChannel,
   type DirectiveAdherenceTally,
@@ -32,6 +33,8 @@ export interface ChatTurnRuntimeDependencies {
   quickReplyLaneEnabled?: boolean;
   /** Offers grounded answers the `present` head; without it, answers carry no reply blocks. */
   replyBlocks?: Pick<ReplyBlockTurnFactory, "forTurn">;
+  /** Offers a skill's records the `present` head; without it, skill-result replies carry no reply blocks. */
+  skillResultReplyBlocks?: Pick<SkillResultReplyBlocks, "offerFor">;
 }
 
 /**
@@ -143,7 +146,7 @@ export const buildChatTurnRuntime = (
       deps.fallbackReplyComposer,
       SKILL_RESULT_REPLY_CONFIG,
     ),
-    { logger: deps.logger },
+    { logger: deps.logger, replyBlocks: deps.skillResultReplyBlocks },
   );
   return {
     chatAnswerPresenter,

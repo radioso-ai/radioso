@@ -28,7 +28,7 @@ import type { Db } from "../../../shared/infra/kysely/types.js";
 import { groundingDiagnosticFromSummary } from "./groundingDiagnostic.js";
 import type { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
 import type { DeliveredReplyPart, DeliveredReplyReader } from "../contracts/interruption.js";
-import { cutReplyContent, cutReplyMessage } from "./cutReplyMessage.js";
+import { cutReplyContent, cutReplyMessage, type CutReplyStore } from "./cutReplyMessage.js";
 import type {
   ConversationOwnershipRequestHandoffInput,
   ConversationOwnershipRequestHandoffResult,
@@ -79,6 +79,7 @@ import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
 import { conversationSummaryRefreshRequest } from "./summary/conversationSummaryRefreshJob.js";
 import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../shared/background-jobs/index.js";
+import type { ToolImageSource } from "../../toolImages/contracts/index.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import {
@@ -210,6 +211,8 @@ export interface AssistantTurnPersistencePort {
     additionalAuditEvent?: AuditEventInput | null;
     /** Background jobs the turn hands to the worker, written in the turn's own transaction. */
     backgroundJobs?: readonly BackgroundJobRequest[];
+    /** The pictures the reply's cards show from a skill's result, recorded with the reply (#1763). */
+    toolImages?: readonly ToolImageSource[];
     transaction?: Db;
     /** Runs as the transaction's last step; a throw rolls the whole turn back. */
     commitFence?: () => void;
@@ -225,24 +228,6 @@ export interface AssistantTurnPersistencePort {
     messageId: string;
     auditEvent: AuditEventInput;
   }): Promise<boolean>;
-}
-
-/** The heard part of a reply a newer input cut off mid-stream, and the records of the cut. */
-export interface CutReplyStoreInput {
-  workspaceId: string;
-  conversationId: string;
-  /** Already marked cut short. */
-  assistantMessage: MessageCreateInput & { id: string };
-  /** The turn's cancelled `chat.answer` event naming the message, then the channel's own record of the cut. */
-  auditEvents: readonly AuditEventInput[];
-}
-
-/**
- * Where the heard part of a cut-off reply is kept: the message, the conversation's touch and the
- * audit events in one transaction, so the part is never stored without its records.
- */
-export interface CutReplyStore {
-  storeCutReply(input: CutReplyStoreInput): Promise<void>;
 }
 
 interface PendingDecisionWriterPort {
@@ -818,6 +803,7 @@ export class ChatTurnLifecycle {
         ownershipAuditEvent,
         additionalAuditEvent,
         backgroundJobs,
+        toolImages: input.presentation.replyBlocks?.toolImages,
         transaction: input.transaction,
         commitFence: input.commitFence,
       });

@@ -236,6 +236,9 @@ export const CHAT_BEHAVIOR = {
     // (RETRIEVAL_BEHAVIOR.promptContextTokenBudget) and leaves 32,000 - 4,096 output - 4,800
     // = 23,104 tokens for the rest of the prompt.
     maxFindingsInputTokens: 4_800,
+    // The share of that cap the records a skill returned may take when they are shown as records
+    // (#1763); the skill's text gets the rest.
+    maxRecordInputTokens: 3_000,
   },
 } as const;
 

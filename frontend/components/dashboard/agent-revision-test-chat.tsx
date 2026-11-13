@@ -120,6 +120,9 @@ import type { ContextVariable, TurnTraceEnvelope } from "@/lib/api-types";
 
 type Mode = "single" | "compare";
 
+/** A Test Chat message's state as the shared thread shows it. */
+const THREAD_STATUS = { streaming: "streaming", completed: "complete", failed: "error" } as const satisfies Record<string, ChatThreadMessage["status"]>;
+
 const errorMessage = (cause: unknown, fallback: string): string =>
   cause instanceof Error ? cause.message : fallback;
 
@@ -1711,12 +1714,8 @@ export function AgentRevisionTestChat({
                         persistedAssistantMessageId: item.persistedAssistantMessageId,
                         ...(item.spoken ? { spokenLabel: DEFAULT_WEBSITE_EMBED_COPY.publicChatSpokenLabel } : {}),
                         ...(item.imageInput ? { inputMetadata: { method: "typed" as const, imageInput: item.imageInput } } : {}),
-                        status:
-                          item.state === "streaming"
-                            ? "streaming"
-                            : item.state === "completed"
-                              ? "complete"
-                              : "error",
+                        ...(item.blocks ? { blocks: item.blocks } : {}),
+                        status: THREAD_STATUS[item.state],
                       })) ?? [];
                     return (
                       <>

@@ -1,3 +1,4 @@
+import { replyBlocksForExport } from "../../modules/chat/contracts/replyBlocks.js";
 import type { DataSubjectConversation, DataSubjectConversationDirectory } from "../../modules/privacy/public.js";
 import {
   exportJson,
@@ -11,8 +12,9 @@ import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
  * A data subject's conversations: the directory an operator reviews before exporting or erasing,
- * and the export's `conversations` section, each conversation with its transcript. Run it inside
- * the data subject read's transaction.
+ * and the export's `conversations` section, each conversation with its transcript. An assistant
+ * message that showed cards carries them as `blocks`: each card's title, subtitle, link and
+ * picture id. Run it inside the data subject read's transaction.
  */
 export class DataSubjectConversationRepository implements DataSubjectConversationDirectory, DataSubjectDataExporter {
   readonly section = "conversations";
@@ -67,7 +69,7 @@ export class DataSubjectConversationRepository implements DataSubjectConversatio
       .execute();
     const messages = await this.db
       .selectFrom("messages")
-      .select(["id", "conversation_id", "role", "content", "created_at"])
+      .select(["id", "conversation_id", "role", "content", "metadata_json", "created_at"])
       .where("workspace_id", "=", scope.workspaceId)
       .where((eb) => anyOf(eb.ref("conversation_id"), scope.conversationIds, "uuid[]"))
       .orderBy("created_at")
@@ -76,7 +78,14 @@ export class DataSubjectConversationRepository implements DataSubjectConversatio
     const transcripts = new Map<string, DataSubjectExportRecord[]>();
     for (const message of messages) {
       const transcript = transcripts.get(message.conversation_id) ?? [];
-      transcript.push({ id: message.id, role: message.role, content: message.content, createdAt: exportTimestamp(message.created_at) });
+      const blocks = message.role === "assistant" ? replyBlocksForExport(message.metadata_json) : null;
+      transcript.push({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: exportTimestamp(message.created_at),
+        ...(blocks ? { blocks: exportJson(blocks) } : {}),
+      });
       transcripts.set(message.conversation_id, transcript);
     }
     return conversations.map((conversation) => ({

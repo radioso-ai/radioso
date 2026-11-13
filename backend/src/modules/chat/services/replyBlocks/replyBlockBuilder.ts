@@ -108,9 +108,9 @@ export const buildReplyBlock = (input: {
   };
 };
 
-/** The blocks as a client receives them: each stored image id becomes the URLs it is served at. */
+/** The blocks as a client receives them: each stored image id becomes the URLs it is served at, and the origin stays behind. */
 export const presentReplyBlocks = (blocks: readonly StoredReplyBlock[], urls: ReplyImageUrls): ReplyBlock[] =>
-  blocks.map((block) => ({
+  blocks.map(({ origin: _origin, ...block }) => ({
     ...block,
     items: block.items.map(({ image, ...item }) => ({
       ...item,

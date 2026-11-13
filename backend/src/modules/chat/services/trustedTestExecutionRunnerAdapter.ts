@@ -13,6 +13,8 @@ import {
 } from "./testExecutionContinuation.js";
 import type { WorkbenchReplayInput, WorkbenchReplayRunner } from "./workbenchReplayRunner.js";
 import type { ChatBootstrapService } from "./chatBootstrapService.js";
+import type { ToolImagePreviewRecorder } from "../../toolImages/contracts/index.js";
+import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
 
 type TestExecutionRunInput = Parameters<TrustedTestExecutionRunnerPort["stream"]>[0];
 
@@ -31,7 +33,17 @@ interface TrustedTestExecutionRunnerAdapterOptions {
   liveAgentConfig: TestExecutionLiveAgentConfigReaderPort;
   revisions: TestExecutionCandidateRevisionReaderPort;
   bootstrap?: Pick<ChatBootstrapService, "startConversation">;
+  /** Copies the pictures a turn's cards show; without it, Test Chat's cards show none. */
+  toolImagePreviews?: ToolImagePreviewRecorder;
 }
+
+/**
+ * What Test Chat renders beside an answer: item lists, in every layout the dashboard draws. A
+ * test turn's cards are the ones a visitor whose client declares the same would see.
+ */
+const TEST_CHAT_CLIENT_CAPABILITIES: AssistantClientContextCapabilities = {
+  "reply.blocks": { item_list: { layouts: ["carousel", "grid", "list"] } },
+};
 
 const historyMessage = (entry: TestExecutionHistoryEntry, conversationId: string, workspaceId: string): MessageRecord => ({
   id: entry.messageId ?? `${entry.turnId}:${entry.role}:${entry.attemptId}`,
@@ -105,11 +117,16 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
     if (!replayed.messageId) {
       throw new Error("test_execution_message_id_missing");
     }
+    // Written before the answer is returned, so the pictures exist when Test Chat asks for them.
+    if (replayed.toolImages?.length) {
+      await this.options.toolImagePreviews?.recordPreview({ workspaceId: input.workspaceId, sources: replayed.toolImages });
+    }
     return {
       answer: replayed.answer,
       messageId: replayed.messageId,
       turnTrace: replayed.turnTrace,
       continuation: replayed.continuation,
+      ...(replayed.blocks?.length ? { blocks: replayed.blocks } : {}),
     };
   }
 
@@ -137,6 +154,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       candidateRevision: revision,
       baselineAgentConfig: agentConfig,
       query: input.message,
+      clientContextCapabilities: TEST_CHAT_CLIENT_CAPABILITIES,
       // The operator chatting in Test Chat is the visitor of this turn, so their browser's zone
       // decides today the way a visitor's does, then the workspace's.
       visitorTimeZone: input.userTimeZone,

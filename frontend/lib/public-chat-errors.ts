@@ -39,6 +39,16 @@ export const isUsageLimitExceededError = (error: unknown): boolean =>
   getErrorResponse(error)?.code === 'usage_limit_exceeded'
 
 /**
+ * Why the server refused a card pick before it stored anything: the card is not one the reply
+ * showed (`invalid`), or another card of that reply was picked already (`already_picked`). Null
+ * for any other failure.
+ */
+export const refusedPickOf = (error: unknown): 'invalid' | 'already_picked' | null => {
+  const code = getErrorResponse(error)?.code
+  return code === 'item_selection_invalid' ? 'invalid' : code === 'item_already_selected' ? 'already_picked' : null
+}
+
+/**
  * What happened to a send with photos that did not reach the point where the server takes them:
  * it refused the photos, held the request back, never started (another send was still going), or
  * failed some other way.

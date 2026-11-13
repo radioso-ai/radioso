@@ -16,8 +16,9 @@ export {
   deriveVisitorIdentitySigningKey,
   signVisitorIdentity,
   verifySignedIdentity,
+  verifySignedIdentityOutcome,
 } from "./identitySigning.js";
-export type { SignedVisitorIdentityPayload } from "./identitySigning.js";
+export type { SignedIdentityOutcome, SignedVisitorIdentityPayload } from "./identitySigning.js";
 export { ContextVariableResolverService } from "./contextVariableResolverService.js";
 export type {
   ResolvedTurnContext,

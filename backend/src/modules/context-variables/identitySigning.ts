@@ -92,45 +92,86 @@ const signatureMatches = (
     return safelyEqual(providedSignature, expectedSignature);
   });
 
-export const verifySignedIdentity = async (
+/**
+ * The longest token the verifier reads. A longer one is refused before anything is split, decoded
+ * or signed over, so a caller cannot make the check do work in proportion to what it sends; the
+ * request that carries it still answers normally, as an unidentified turn.
+ */
+const SIGNED_IDENTITY_MAX_TOKEN_LENGTH = 8192;
+
+/** Why a token did not verify, as a closed set a counter can label with. */
+export type SignedIdentityRejection =
+  | "too_long"
+  | "not_configured"
+  | "malformed"
+  | "invalid_signature"
+  | "invalid_payload"
+  | "expired"
+  | "wrong_session"
+  | "wrong_origin"
+  | "replayed"
+  | "error";
+
+export type SignedIdentityOutcome =
+  | { outcome: "verified"; identity: VerifiedVisitorIdentity }
+  | { outcome: SignedIdentityRejection };
+
+/** Verifies a token and says which check refused it. It never throws and never echoes the token. */
+export const verifySignedIdentityOutcome = async (
   input: VerifySignedIdentityInput,
-): Promise<VerifiedVisitorIdentity | null> => {
+): Promise<SignedIdentityOutcome> => {
   try {
+    if (input.token.length > SIGNED_IDENTITY_MAX_TOKEN_LENGTH) {
+      return { outcome: "too_long" };
+    }
+    if (!input.secrets.some(Boolean)) {
+      return { outcome: "not_configured" };
+    }
     const [encodedPayload, providedSignature, extra] = input.token.split(".");
-    if (!encodedPayload || !providedSignature || extra !== undefined || input.secrets.length === 0) {
-      return null;
+    if (!encodedPayload || !providedSignature || extra !== undefined) {
+      return { outcome: "malformed" };
     }
 
     if (!signatureMatches(input, encodedPayload, providedSignature)) {
-      return null;
+      return { outcome: "invalid_signature" };
     }
 
     const parsed = signedIdentityPayloadSchema.safeParse(JSON.parse(fromBase64Url(encodedPayload)));
     if (!parsed.success) {
-      return null;
+      return { outcome: "invalid_payload" };
     }
     const payload = parsed.data;
     const acceptanceWindowMs = input.acceptanceWindowMs ?? DEFAULT_ACCEPTANCE_WINDOW_MS;
 
     if (Math.abs(input.now - payload.issuedAt) > acceptanceWindowMs) {
-      return null;
+      return { outcome: "expired" };
     }
     if (payload.sessionId !== input.boundSessionId) {
-      return null;
+      return { outcome: "wrong_session" };
     }
     if (input.boundOrigin != null && payload.origin !== input.boundOrigin) {
-      return null;
+      return { outcome: "wrong_origin" };
     }
     if (await input.isNonceUsed(payload.nonce)) {
-      return null;
+      return { outcome: "replayed" };
     }
 
     await input.markNonceUsed(payload.nonce, payload.issuedAt + acceptanceWindowMs);
     return {
-      customerId: payload.customerId,
-      attributes: payload.attributes ?? {},
+      outcome: "verified",
+      identity: {
+        customerId: payload.customerId,
+        attributes: payload.attributes ?? {},
+      },
     };
   } catch {
-    return null;
+    return { outcome: "error" };
   }
+};
+
+export const verifySignedIdentity = async (
+  input: VerifySignedIdentityInput,
+): Promise<VerifiedVisitorIdentity | null> => {
+  const result = await verifySignedIdentityOutcome(input);
+  return result.outcome === "verified" ? result.identity : null;
 };

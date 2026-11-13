@@ -224,10 +224,20 @@ Radioso verifies the token on each message. Verification is strict:
 - `sessionId` must match the established public chat session
 - `origin` must match the approved embed origin
 - `nonce` must not have been used before inside the acceptance window
+- the token is at most 8,192 characters
 
 If any check fails, the identity is treated as absent. The visitor turn still
 continues as anonymous. Radioso does not expose token, payload, or secret values
 in logs.
+
+To see why a token was refused, read the `outcome` label on
+`radioso_public_chat_identity_verifications_total`. It counts every token a
+visitor message carried, under `verified`, `too_long`, `not_configured`,
+`malformed`, `invalid_signature`, `invalid_payload`, `expired`, `wrong_session`,
+`wrong_origin`, `replayed`, `no_origin` or `error`. `wrong_origin` and
+`wrong_session` are the usual signs of a site signing for the wrong page or
+session, and `expired` of a clock that has drifted. Each refusal is also
+logged with the workspace id, the agent id and the outcome.
 
 When verification succeeds, Radioso adds the `customer` scope to context
 resolution:

@@ -61,9 +61,10 @@ export const mcpConverseAskRequestSchema = z.object({
   routine: routineInvocationRequestSchema.optional(),
   /**
    * The same HMAC visitor token the website embed sends, bound to this session's
-   * `conversationId` instead of a browser origin.
+   * `conversationId` instead of a browser origin. Not length-bounded here: the request body cap
+   * bounds it, and a token the verifier cannot accept leaves the turn anonymous.
    */
-  signedIdentity: z.string().max(8192).optional(),
+  signedIdentity: z.string().optional(),
   stream: z.literal(false).optional(),
 }).superRefine((value, ctx) => {
   // An object with a refine, not a union: a union would silently match the first

@@ -16567,8 +16567,7 @@
             }
           },
           "signedIdentity": {
-            "type": "string",
-            "maxLength": 8192
+            "type": "string"
           },
           "privacyNoticeVersion": {
             "type": "string",
@@ -64869,8 +64868,7 @@
                     "additionalProperties": false
                   },
                   "signedIdentity": {
-                    "type": "string",
-                    "maxLength": 8192
+                    "type": "string"
                   },
                   "stream": {
                     "type": "boolean",

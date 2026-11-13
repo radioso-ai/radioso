@@ -532,6 +532,57 @@ describe("public chat contract", () => {
     ]);
   });
 
+  it("answers a turn carrying a token too long to verify as an unidentified one, and counts each outcome", async () => {
+    const { app, dependencies } = createTestApp({ envOverrides: { METRICS_ENABLED: true, METRICS_AUTH_TOKEN: "metrics-test-token" } });
+    const session = await issueTestSession(app, "public-chat-oversized-identity@example.com");
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({ websiteEmbedEnabled: true, websiteEmbedAllowedOrigins: ["https://example.com"] });
+    expect(settings.status).toBe(200);
+    const embedToken = settings.body.websiteEmbedToken as string;
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    const publicSession = await request(app)
+      .post(`/api/v1/public/chat/${embedToken}/sessions`)
+      .set("Origin", "https://example.com")
+      .send({ channel: "website_embed" });
+    expect(publicSession.status).toBe(200);
+    const identity = (nonce: string, attributes: Record<string, unknown> = {}) => signVisitorIdentity(
+      dependencies.env.WORKSPACE_TOKEN_SECRET!,
+      session.workspaceId,
+      agent.id,
+      {
+        customerId: "customer-123",
+        sessionId: publicSession.body.publicSessionId,
+        origin: "https://example.com",
+        issuedAt: Date.now(),
+        nonce,
+        attributes,
+      },
+    );
+    const send = (signedIdentity: string) => request(app)
+      .post(`/api/v1/public/chat/${embedToken}`)
+      .set("Origin", "https://example.com")
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .send({ message: "Where is my order?", stream: false, signedIdentity });
+
+    const oversized = await send(identity("nonce-too-long", { note: "x".repeat(9_000) }));
+    const hugeButInsideTheBodyCap = await send("a".repeat(200_000));
+    const verified = await send(identity("nonce-verified"));
+    const tampered = await send(`${identity("nonce-tampered")}x`);
+
+    expect([oversized.status, hugeButInsideTheBodyCap.status, verified.status, tampered.status]).toEqual([200, 200, 200, 200]);
+    const outcomes = (dependencies.metricsRegistry?.renderPrometheus() ?? "")
+      .split("\n")
+      .filter((line) => line.startsWith("radioso_public_chat_identity_verifications_total{"));
+    expect(outcomes).toEqual(expect.arrayContaining([
+      expect.stringMatching(/outcome="too_long"\} 2$/),
+      expect.stringMatching(/outcome="verified"\} 1$/),
+      expect.stringMatching(/outcome="invalid_signature"\} 1$/),
+    ]));
+    expect(outcomes.join("\n")).not.toContain("customer-123");
+  });
+
   it("subsequent requests with cookie reuse the same session", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-session@example.com");

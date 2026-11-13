@@ -3,7 +3,8 @@ import type { Db } from "../../shared/infra/kysely/types.js";
 export interface IdentityNonceRepositoryPort {
   isUsed(nonce: string): Promise<boolean>;
   markUsed(nonce: string, workspaceId: string, expiresAt: Date): Promise<void>;
-  deleteExpired?(now: Date): Promise<number>;
+  /** Deletes at most `limit` nonces whose `expires_at` is at or before `now`, and returns how many. */
+  deleteExpired(now: Date, limit: number): Promise<number>;
 }
 
 export class IdentityNonceRepository implements IdentityNonceRepositoryPort {
@@ -35,10 +36,18 @@ export class IdentityNonceRepository implements IdentityNonceRepositoryPort {
     }
   }
 
-  async deleteExpired(now: Date): Promise<number> {
+  async deleteExpired(now: Date, limit: number): Promise<number> {
+    if (!Number.isInteger(limit) || limit < 1) throw new Error("nonce prune limit must be a positive integer");
+    // The cutoff is repeated on the outer delete: the subquery picks the batch, the predicate is the policy.
     const result = await this.db
       .deleteFrom("context_identity_nonces")
       .where("expires_at", "<=", now)
+      .where("nonce", "in", (eb) => eb
+        .selectFrom("context_identity_nonces")
+        .select("nonce")
+        .where("expires_at", "<=", now)
+        .orderBy("expires_at", "asc")
+        .limit(limit))
       .executeTakeFirst();
     return Number(result.numDeletedRows);
   }

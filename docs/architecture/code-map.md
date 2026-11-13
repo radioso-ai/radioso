@@ -1083,6 +1083,8 @@ Public surfaces and key files:
 - `backend/src/modules/context-variables/contextVariableResolverService.ts`
 - `backend/src/modules/context-variables/copilotPrimitiveRegistry.ts`
 - `backend/src/modules/context-variables/visitorRequestFacts.ts` (the `visitor_request` built-in: narrowing and language parsing)
+- `backend/src/modules/context-variables/identitySigning.ts` (`verifySignedIdentityOutcome` names why a visitor identity token did not verify, from a closed set; `verifySignedIdentity` is its null-or-identity form) and `backend/src/app/http/shared/publicChatIdentity.ts` (the public chat message's use of it: `radioso_public_chat_identity_verifications_total{outcome}`, one log line per refusal with ids and the outcome)
+- `backend/src/app/composition/identityNoncePrune.ts` and `backend/src/db/repositories/identityNonceRepository.ts` (the built-in `identity-nonce-prune` periodic task, every 15 minutes, deletes spent nonces in bounded batches; `identity_nonce_prune_schedule` in `infra/terraform/scheduler.tf` calls its `/internal/tasks/periodic-tasks/:taskId/run` route)
 - `backend/src/db/repositories/contextVariableRepository.ts`
 - `backend/src/app/http/routes/contextVariableRoutes.ts`
 - `backend/src/modules/operatorCopilot/proposalAdapters.ts`
@@ -1090,6 +1092,7 @@ Public surfaces and key files:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/identity-signing.test.ts tests/unit/identity-nonce-prune.test.ts tests/integration/identity-nonce-repository.integration.test.ts` and the signed-identity case in `tests/contract/public-chat.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/visitor-request-facts.test.ts tests/unit/context-resolution-service.test.ts tests/unit/chat-session-preparer-visitor-request.test.ts tests/integration/chat/postgres-assistant-turn-persistence.integration.test.ts` (the `visitor_request` built-in: narrowing, snapshot wiring, and the metadata_json persistence guarantee)
 

@@ -74,7 +74,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
       images: dependencies.visitorImages,
       // A turn with photos goes through the chat door, which claims, renders and binds them.
       door: dependencies.assistantChatService,
-    })),
+    }), dependencies.assistantChatService), // A picked card goes through the chat door, which reads it from the stored reply.
     ingestion: dependencies.connectorIngestionPort,
     sourceDirectory: dependencies.connectorSourceDirectory,
     approvalDecisionService: dependencies.approvalDecisionService,

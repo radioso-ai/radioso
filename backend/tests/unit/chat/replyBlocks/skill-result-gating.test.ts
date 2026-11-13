@@ -131,6 +131,10 @@ describe("skill result reply gating", () => {
     expectGolden(await recordCalls(outcome({ outputs: { structuredContent: LISTINGS } }), { item_list: { layouts: ["carousel", "list"] } }, false));
   });
 
+  it("sends the recorded prompt and options to a WhatsApp turn, which asks for button labels, when the agent's reply cards switch is off", async () => {
+    expectGolden(await recordCalls(outcome({ outputs: { structuredContent: LISTINGS } }), { item_list: { layouts: ["carousel", "grid", "list"], buttonLabels: true } }, false));
+  });
+
   it("sends the recorded prompt and options when the skill returned no records", async () => {
     expectGolden(await recordCalls(outcome({}), { item_list: { layouts: ["carousel", "list"] } }));
   });

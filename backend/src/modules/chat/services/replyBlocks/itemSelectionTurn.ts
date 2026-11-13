@@ -35,11 +35,19 @@ export interface ItemSelectionTurn {
 
 type ItemSelectionOutcome = "accepted" | `rejected_${ItemSelectionRejection | "already_selected"}`;
 
+/**
+ * The codes of a pick refused before any message is stored or turn runs: it names no card this
+ * conversation can pick (400), or another card from a reply already picked from (409). A channel
+ * whose pick can be stale, such as a WhatsApp button tapped on an old reply, reads them to send the
+ * card's words as a typed message instead.
+ */
+export const ITEM_SELECTION_REFUSAL_CODES = { invalid: "item_selection_invalid", alreadySelected: "item_already_selected" } as const;
+
 const invalidSelection = (): AppError =>
-  new AppError(400, "item_selection_invalid", "The selection names no card that can be picked in this conversation.");
+  new AppError(400, ITEM_SELECTION_REFUSAL_CODES.invalid, "The selection names no card that can be picked in this conversation.");
 
 const repeatedSelection = (): AppError =>
-  new AppError(409, "item_already_selected", "A card was already picked from this reply.");
+  new AppError(409, ITEM_SELECTION_REFUSAL_CODES.alreadySelected, "A card was already picked from this reply.");
 
 /**
  * Turns a visitor's pick (`inputMetadata.method: "item_select"`) into its turn. The item is read

@@ -1,11 +1,14 @@
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ConversationChannelContext, ReplyBlock, ReplyBlockLayout } from "@radioso/conversation-contract";
 import type {
   ConnectorChatOutcome,
   ConnectorChatPort,
   ConnectorImageAllowance,
   ConnectorInboundImage,
+  ConnectorItemSelection,
+  ConnectorReplyBlocks,
+  ConnectorReplyBlocksCapability,
   ConnectorIngestInput,
   ConnectorStoredImage,
   ConnectorIngestResult,
@@ -65,12 +68,23 @@ describe("ConnectorChatPort contract", () => {
         channelContext?: ConversationChannelContext | null;
         images?: readonly ConnectorInboundImage[];
         onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
+        replyBlocks?: ConnectorReplyBlocksCapability;
+        selection?: ConnectorItemSelection;
       }>();
       expectTypeOf<Awaited<ReturnType<ConnectorChatPort["answer"]>>>().toEqualTypeOf<{
         conversationId: string;
         answer: string;
+        replyBlocks?: ConnectorReplyBlocks;
         outcome: ConnectorChatOutcome;
       }>();
+    });
+
+    it("keeps the shapes a channel that shows cards declares, receives and picks by", () => {
+      expectTypeOf<ConnectorReplyBlocksCapability>().toEqualTypeOf<{
+        item_list?: { layouts: readonly ReplyBlockLayout[]; buttonLabels?: boolean };
+      }>();
+      expectTypeOf<ConnectorReplyBlocks>().toEqualTypeOf<{ messageId: string; blocks: readonly ReplyBlock[] }>();
+      expectTypeOf<ConnectorItemSelection>().toEqualTypeOf<{ messageId: string; blockId: string; itemKey: string }>();
     });
 
     it("keeps the shape a connector asks about photos in", async () => {

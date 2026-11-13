@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectorIngestInput, ConnectorRespondInput } from "@radioso/connector-api";
+import type { ReplyBlock } from "@radioso/conversation-contract";
 
-import type {
-  ChatAnswerPort,
-  ChatReviewResult,
-  ConversationIngestPort,
+import {
+  ITEM_SELECTION_REFUSAL_CODES,
+  type ChatAnswerPort,
+  type ChatDoorPickTurnPort,
+  type ChatReviewResult,
+  type ConversationIngestPort,
 } from "../../../src/modules/chat/contracts/index.js";
+import { AppError } from "../../../src/shared/domain/errors.js";
 import { createConnectorChatPort } from "../../../src/modules/connectors/services/connectorChatPort.js";
 import {
   CONNECTOR_IMAGES_UNUSABLE_CODE,
@@ -208,6 +212,99 @@ describe("createConnectorChatPort", () => {
       await connectorChat.answer({ workspaceId: "workspace-1", query: "Hello", images: [] });
 
       expect(imageTurns.answer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("reply blocks and picks", () => {
+    const BLOCK: ReplyBlock = {
+      type: "item_list",
+      id: "b1",
+      layout: "carousel",
+      selection: "single",
+      caption: "Homes",
+      items: [{ key: "/results/0", title: "Casa Blu", actions: [{ type: "select" }] }],
+      buttonLabels: { select: "Scegli" },
+    };
+    const WHATSAPP_BLOCKS = { item_list: { layouts: ["carousel", "grid", "list"] as const, buttonLabels: true } };
+    const SELECTION = { messageId: "11111111-1111-4111-8111-111111111111", blockId: "b1", itemKey: "/results/0" };
+    const reply = { conversationId: "conversation-1", answer: "Two homes fit.", skillOutcome: "grounded", assistantMessageId: "message-9", blocks: [BLOCK] };
+
+    it("declares the channel's blocks to the turn and hands back the blocks with the message that stored them", async () => {
+      const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest);
+
+      const response = await connectorChat.answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Homes?", sourceChannel: "whatsapp", replyBlocks: WHATSAPP_BLOCKS });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({
+        clientContextCapabilities: { "reply.blocks": { item_list: { layouts: ["carousel", "grid", "list"], buttonLabels: true } } },
+      }));
+      expect(response).toEqual({
+        conversationId: "conversation-1",
+        answer: "Two homes fit.",
+        outcome: "answered",
+        replyBlocks: { messageId: "message-9", blocks: [BLOCK] },
+      });
+    });
+
+    it("runs a pick through the chat door, which reads the card from the stored reply", async () => {
+      const chatService = { answer: vi.fn() } as unknown as ChatAnswerPort;
+      const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => ({ ...reply, blocks: undefined, answer: "Casa Blu it is." })) };
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, null, picks);
+
+      const response = await connectorChat.answer({
+        workspaceId: "workspace-1",
+        conversationId: "conversation-1",
+        query: "Casa Blu",
+        sourceChannel: "whatsapp",
+        replyBlocks: WHATSAPP_BLOCKS,
+        selection: SELECTION,
+      });
+
+      expect(picks.answer).toHaveBeenCalledWith({
+        workspaceId: "workspace-1",
+        agentId: undefined,
+        conversationId: "conversation-1",
+        message: "Casa Blu",
+        stream: false,
+        inputMetadata: { method: "item_select", selection: SELECTION },
+        sourceChannel: "whatsapp",
+        channelContext: undefined,
+        clientContextCapabilities: { "reply.blocks": { item_list: { layouts: ["carousel", "grid", "list"], buttonLabels: true } } },
+      });
+      expect(chatService.answer).not.toHaveBeenCalled();
+      expect(response).toEqual({ conversationId: "conversation-1", answer: "Casa Blu it is.", outcome: "answered" });
+    });
+
+    it.each([
+      ["names no card the conversation can pick", new AppError(400, ITEM_SELECTION_REFUSAL_CODES.invalid, "no card")],
+      ["picks another card of a reply already picked from", new AppError(409, ITEM_SELECTION_REFUSAL_CODES.alreadySelected, "picked")],
+    ])("runs the turn on the card's words as typed text when the pick %s", async (_case, refusal) => {
+      const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
+      const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => { throw refusal; }) };
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, null, picks);
+
+      await connectorChat.answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Casa Blu", selection: SELECTION });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({ query: "Casa Blu", conversationId: "conversation-1" }));
+    });
+
+    it("passes any other failure of a pick on, for the connector to retry", async () => {
+      const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => { throw new AppError(503, "busy", "busy"); }) };
+      const connectorChat = createConnectorChatPort({ answer: vi.fn() } as unknown as ChatAnswerPort, unusedIngest, null, picks);
+
+      await expect(connectorChat.answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Casa Blu", selection: SELECTION }))
+        .rejects.toMatchObject({ statusCode: 503 });
+    });
+
+    it("runs a pick as typed text on a port without the chat door, or with no conversation to pick in", async () => {
+      const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
+      const picks: ChatDoorPickTurnPort = { answer: vi.fn() };
+
+      await createConnectorChatPort(chatService, unusedIngest).answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Casa Blu", selection: SELECTION });
+      await createConnectorChatPort(chatService, unusedIngest, null, picks).answer({ workspaceId: "workspace-1", query: "Casa Blu", selection: SELECTION });
+
+      expect(chatService.answer).toHaveBeenCalledTimes(2);
+      expect(picks.answer).not.toHaveBeenCalled();
     });
   });
 

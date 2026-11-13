@@ -129,6 +129,17 @@ describe("createConnectorImageTurns", () => {
       expect(answered).toEqual({ conversationId: "conversation-new", answer: "Looks lovely.", skillOutcome: "grounded" });
     });
 
+    it("declares the channel's reply blocks to the door and hands back the cards the reply carries", async () => {
+      const block = { type: "item_list" as const, id: "b1", layout: "carousel" as const, selection: "none" as const, caption: "Rooms", items: [{ key: "k", title: "Suite", actions: [] }] };
+      const { turns, door } = setup({ door: { conversationId: "conversation-new", answer: "Like these.", skillOutcome: "grounded", assistantMessageId: "message-2", blocks: [block] } });
+      const clientContextCapabilities = { "reply.blocks": { item_list: { layouts: ["carousel" as const], buttonLabels: true } } };
+
+      const answered = await turns.answer(turnInput({ clientContextCapabilities }));
+
+      expect(door.answer).toHaveBeenCalledWith(expect.objectContaining({ clientContextCapabilities }));
+      expect(answered).toMatchObject({ assistantMessageId: "message-2", blocks: [block] });
+    });
+
     it("runs a photo with no caption on the photo alone", async () => {
       const { turns, door } = setup({ uploads: [accepted(IMAGE_A)] });
 

@@ -25,7 +25,12 @@ export const REPLY_BLOCK_LIMITS = {
  * `list`. Without the declaration, a reply carries no blocks.
  */
 export interface ReplyBlocksCapability {
-  item_list?: { layouts: ReplyBlockLayout[] };
+  /**
+   * `buttonLabels`: the client draws the buttons with the reply's own words rather than copy of
+   * its own, so the reply writes them (`ReplyBlock.buttonLabels`). Declared in process by a
+   * channel adapter, such as WhatsApp; the request schemas do not take it.
+   */
+  item_list?: { layouts: ReplyBlockLayout[]; buttonLabels?: boolean };
 }
 
 /**
@@ -72,8 +77,8 @@ export type StoredReplyBlockOrigin =
   | { kind: "skill_result"; skillName: string }
   | { kind: "routine_step"; skillName: string; routineId: string; stepId: string; executionId?: string; slot?: string };
 
-/** A reply block as `messages.metadata_json.blocks` keeps it. */
-export type StoredReplyBlock = Omit<ItemListBlock, "items"> & { items: StoredReplyItem[]; origin?: StoredReplyBlockOrigin };
+/** A reply block as `messages.metadata_json.blocks` keeps it, without the button labels a channel was sent. */
+export type StoredReplyBlock = Omit<ItemListBlock, "items" | "buttonLabels"> & { items: StoredReplyItem[]; origin?: StoredReplyBlockOrigin };
 
 /** Builds the served addresses of a stored image: `src` at the larger width, `srcSet` at both. */
 export interface ReplyImageUrls {
@@ -148,13 +153,18 @@ export const storedReplyBlockSchema = itemListBlockSchemaWith(storedReplyImageSc
  * the layouts the server knows survive, in its own order.
  */
 export const replyBlocksCapabilityFromRequest = (
-  declared: { item_list?: { layouts: readonly string[] } } | undefined,
+  declared: { item_list?: { layouts: readonly string[]; buttonLabels?: boolean } } | undefined,
 ): ReplyBlocksCapability | null => {
   const itemList = declared?.item_list;
   if (!itemList) {
     return null;
   }
-  return { item_list: { layouts: REPLY_BLOCK_LAYOUTS.filter((layout) => itemList.layouts.includes(layout)) } };
+  return {
+    item_list: {
+      layouts: REPLY_BLOCK_LAYOUTS.filter((layout) => itemList.layouts.includes(layout)),
+      ...(itemList.buttonLabels === true ? { buttonLabels: true } : {}),
+    },
+  };
 };
 
 /** One card of a reply as a data-subject export carries it. */

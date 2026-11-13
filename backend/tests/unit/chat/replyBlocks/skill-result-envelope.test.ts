@@ -110,6 +110,28 @@ describe("skill result reply with the present head", () => {
     expect(metrics).toContainEqual({ name: "reply_blocks_emitted_total", labels: { layout: "carousel", channel: "website_embed", source: "skill_result" } });
   });
 
+  it("asks a channel that draws its buttons from the reply for their labels, and sends them on the cards", async () => {
+    const { calls, renderer } = harness(envelope({ ...PRESENT, selectLabel: "Auswählen", openLabel: "Ansehen" }));
+    const whatsapp = session({ item_list: { layouts: ["carousel", "grid", "list"], buttonLabels: true } });
+
+    const presentation = await renderer.render(outcome(), { session: whatsapp, query: QUERY });
+
+    expect(presentation.replyBlocks?.presented[0]?.buttonLabels).toEqual({ select: "Auswählen", open: "Ansehen" });
+    expect(presentation.replyBlocks?.stored[0]).not.toHaveProperty("buttonLabels");
+    expect(calls[0]?.prompt).toContain("Button labels");
+    const present = (calls[0]?.generation?.responseFormat?.schema as { properties: Record<string, { required: string[] }> }).properties.present;
+    expect(present?.required).toEqual(["records", "fields", "caption", "selectLabel", "openLabel"]);
+  });
+
+  it("offers a web client the head without labels", async () => {
+    const { calls, renderer } = harness(envelope(PRESENT));
+
+    const presentation = await renderer.render(outcome(), { session: session(), query: QUERY });
+
+    expect(presentation.replyBlocks?.presented[0]).not.toHaveProperty("buttonLabels");
+    expect(calls[0]?.prompt).not.toContain("Button labels");
+  });
+
   it("streams only the answer's text, and builds the same cards once the reply is whole", async () => {
     const { renderer } = harness(envelope(PRESENT));
 

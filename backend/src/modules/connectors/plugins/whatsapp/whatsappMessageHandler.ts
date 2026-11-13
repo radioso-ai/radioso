@@ -2,13 +2,17 @@ import type {
   ConnectorChatPort,
   ConnectorDatabasePort,
   ConnectorInboundImage,
+  ConnectorItemSelection,
   ConnectorLogger,
+  ConnectorReplyBlocks,
+  ConnectorReplyBlocksCapability,
   ConnectorStatePort,
   ConnectorStoredImage,
 } from "@radioso/connector-api";
 
 import { isStructuredAppError } from "../../../../shared/domain/errors.js";
 import { errorClassOf } from "../../../../shared/observability/errorClass.js";
+import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { WhatsAppClient, WhatsAppClientError } from "./whatsappClient.js";
 import {
   CONNECTOR_IMAGES_STALE_CODE,
@@ -17,18 +21,30 @@ import {
 } from "../../services/connectorImageTurns.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresWhatsAppPersistence, photoReceiptOf, type WhatsAppPersistencePort } from "./whatsappPersistence.js";
+import { WhatsAppReplyDelivery } from "./whatsappReplyDelivery.js";
+import { isCardTap, REPLY_CARDS_KEY, replyCardsOf, WhatsAppReplyTaps, type WhatsAppTap } from "./whatsappReplyTaps.js";
 
 interface WhatsAppMessageHandlerOptions {
   db: ConnectorDatabasePort;
   logger: ConnectorLogger;
   chat: Pick<ConnectorChatPort, "answer" | "imageAllowance">;
   state: Pick<ConnectorStatePort, "getConfig" | "setErrorStatus">;
-  client: Pick<WhatsAppClient, "sendTextMessage" | "downloadImage">;
+  client: Pick<WhatsAppClient, "sendTextMessage" | "sendMessage" | "downloadImage">;
   persistence?: WhatsAppPersistencePort;
+  metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
   debounceMs?: number;
   retryBaseDelayMs?: number;
   maxRetryAttempts?: number;
 }
+
+/**
+ * What WhatsApp draws of a reply's blocks: item lists in every layout, as carousels, image,
+ * reply-button and list messages, with button labels the reply writes, since WhatsApp has no copy
+ * of its own. Cards still show only for an agent that has them on.
+ */
+const WHATSAPP_REPLY_BLOCKS: ConnectorReplyBlocksCapability = {
+  item_list: { layouts: ["carousel", "grid", "list"], buttonLabels: true },
+};
 
 export interface WhatsAppInboundMessage {
   workspaceId: string;
@@ -42,6 +58,8 @@ export interface WhatsAppInboundMessage {
   textBody?: string;
   /** The photo of an image message, by the media id Graph resolves to its bytes. */
   image?: { mediaId: string };
+  /** A tap on a reply's card button or list row; `textBody` is the words on it. */
+  tap?: WhatsAppTap;
   payload: Record<string, unknown>;
 }
 
@@ -53,6 +71,8 @@ interface PendingBatch {
 interface PreparedWhatsAppReply {
   outboundWamid: string;
   responseText: string;
+  /** The reply's cards, as the turn returned them; null for a text reply. */
+  cards: ConnectorReplyBlocks | null;
 }
 
 /**
@@ -93,12 +113,28 @@ export class WhatsAppMessageHandler {
   private readonly pending = new Map<string, PendingBatch>();
   private readonly retryAttempts = new Map<string, number>();
   private readonly retryTimers = new Set<NodeJS.Timeout>();
+  private readonly delivery: WhatsAppReplyDelivery;
+  private readonly taps: WhatsAppReplyTaps;
 
   constructor(private readonly options: WhatsAppMessageHandlerOptions) {
     this.persistence = options.persistence ?? new PostgresWhatsAppPersistence(connectorKyselyDb(options.db));
     this.debounceMs = options.debounceMs ?? 3000;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.maxRetryAttempts = options.maxRetryAttempts ?? DEFAULT_MAX_RETRY_ATTEMPTS;
+    this.delivery = new WhatsAppReplyDelivery({ client: options.client, persistence: this.persistence, logger: options.logger, metrics: options.metrics });
+    this.taps = new WhatsAppReplyTaps({ persistence: this.persistence, logger: options.logger });
+  }
+
+  /** Graph reported a message it could not deliver; a reply's cards fall back to a numbered list. */
+  async handleFailedStatus(input: { workspaceId: string; wamid: string; errorCode: number | null }): Promise<void> {
+    const configRecord = await this.options.state.getConfig(input.workspaceId);
+    if (!configRecord?.enabled) {
+      return;
+    }
+    await this.delivery.handleFailedStatus({
+      ...input,
+      config: { phoneNumberId: configRecord.config.phone_number_id, accessToken: configRecord.config.access_token },
+    });
   }
 
   async handleInboundMessage(message: WhatsAppInboundMessage): Promise<void> {
@@ -192,6 +228,7 @@ export class WhatsAppMessageHandler {
   ): Promise<void> {
     const turnMessages = messages.filter((message) =>
       this.isProcessableTextMessage(message)
+      || this.isTapMessage(message)
       || photoMessages.includes(message)
       || (captionsAsText && this.isPhotoMessage(message) && this.hasCaption(message)));
     unsupportedMessages.push(...messages.filter((message) => !turnMessages.includes(message)));
@@ -262,9 +299,8 @@ export class WhatsAppMessageHandler {
       await this.sendReply({
         workspaceId: messages[0].workspaceId,
         waId: messages[0].waId,
-        outboundWamid: prepared.outboundWamid,
         inboundWamids: this.inboundWamids(messages),
-        responseText: prepared.responseText,
+        prepared,
         config,
       });
     });
@@ -281,9 +317,8 @@ export class WhatsAppMessageHandler {
     await this.sendReply({
       workspaceId: messages[0].workspaceId,
       waId: messages[0].waId,
-      outboundWamid: prepared.outboundWamid,
       inboundWamids: this.inboundWamids(messages),
-      responseText: prepared.responseText,
+      prepared,
       config,
     });
   }
@@ -304,6 +339,7 @@ export class WhatsAppMessageHandler {
       return {
         outboundWamid: pendingOutbound.wamid,
         responseText: pendingText,
+        cards: null,
       };
     }
 
@@ -324,6 +360,7 @@ export class WhatsAppMessageHandler {
     return {
       outboundWamid,
       responseText,
+      cards: null,
     };
   }
 
@@ -345,11 +382,20 @@ export class WhatsAppMessageHandler {
       return {
         outboundWamid: pendingOutbound.wamid,
         responseText: pendingText,
+        cards: replyCardsOf(pendingOutbound),
       };
     }
 
     const { conversationId, latestTimestamp } = await this.continuingConversation(messages, config);
-    const response = await this.answerOnChat({ workspaceId: first.workspaceId, conversationId, query, photoMessages, config });
+    const pick = conversationId ? await this.resolvePick(messages) : null;
+    const response = await this.answerOnChat({
+      workspaceId: first.workspaceId,
+      conversationId,
+      query: pick?.words ?? query,
+      photoMessages,
+      config,
+      ...(pick ? { selection: pick.selection } : {}),
+    });
 
     await this.persistence.upsertContact({
       workspaceId: first.workspaceId,
@@ -359,16 +405,20 @@ export class WhatsAppMessageHandler {
       lastMessageAt: latestTimestamp,
     });
 
+    // A reply with cards keeps them on its row: a retry sends the same messages, and a tap on one
+    // resolves through the row to the card the host stored.
+    const cards = response.replyBlocks ?? null;
     const outboundWamid = this.persistence.nextLocalOutboundWamid();
     await this.persistence.createMessageLog({
       wamid: outboundWamid,
       direction: "outbound",
       workspaceId: first.workspaceId,
       waId: first.waId,
-      messageType: "text",
+      messageType: cards ? "interactive" : "text",
       payload: {
         text: response.answer,
         inbound_wamids: inboundWamids,
+        ...(cards ? { [REPLY_CARDS_KEY]: cards } : {}),
       },
       status: "processing",
     });
@@ -376,7 +426,20 @@ export class WhatsAppMessageHandler {
     return {
       outboundWamid,
       responseText: response.answer,
+      cards,
     };
+  }
+
+  /**
+   * The card a lone tap picks, resolved through the reply that showed it. A tap sent with other
+   * messages, or one that names no card, is answered as the words on its button.
+   */
+  private async resolvePick(messages: WhatsAppInboundMessage[]): Promise<{ selection: ConnectorItemSelection; words: string } | null> {
+    const [only] = messages;
+    if (messages.length !== 1 || !only?.tap) {
+      return null;
+    }
+    return this.taps.resolve({ workspaceId: only.workspaceId, waId: only.waId, wamid: only.wamid, tap: only.tap });
   }
 
   /**
@@ -398,6 +461,14 @@ export class WhatsAppMessageHandler {
 
   private isProcessableTextMessage(message: WhatsAppInboundMessage): boolean {
     return message.type === "text" && Boolean(message.textBody?.trim());
+  }
+
+  /**
+   * A tap on a card this connector sent: a turn whether or not the card can still be picked, since
+   * its button carries words. A tap on any other button stays unsupported, as it always was.
+   */
+  private isTapMessage(message: WhatsAppInboundMessage): boolean {
+    return isCardTap(message.tap);
   }
 
   private isPhotoMessage(message: WhatsAppInboundMessage): message is WhatsAppInboundMessage & { image: { mediaId: string } } {
@@ -477,6 +548,7 @@ export class WhatsAppMessageHandler {
     query: string;
     photoMessages: WhatsAppInboundMessage[];
     config: Record<string, string>;
+    selection?: ConnectorItemSelection;
   }): Promise<Awaited<ReturnType<ConnectorChatPort["answer"]>>> {
     let useReceipts = true;
     for (;;) {
@@ -490,6 +562,8 @@ export class WhatsAppMessageHandler {
           conversationId: input.conversationId,
           query: input.query,
           sourceChannel: "whatsapp",
+          replyBlocks: WHATSAPP_REPLY_BLOCKS,
+          ...(input.selection ? { selection: input.selection } : {}),
           ...(images.length > 0 ? { images, onImagesStored: (stored) => this.keepPhotoReceipts(stored) } : {}),
         });
       } catch (error) {
@@ -636,30 +710,27 @@ export class WhatsAppMessageHandler {
   private async sendReply(input: {
     workspaceId: string;
     waId: string;
-    outboundWamid: string;
     inboundWamids: string[];
-    responseText: string;
+    prepared: PreparedWhatsAppReply;
     config: Record<string, string>;
   }): Promise<void> {
+    const { outboundWamid } = input.prepared;
     try {
-      const outbound = await this.options.client.sendTextMessage(
-        {
-          phoneNumberId: input.config.phone_number_id,
-          accessToken: input.config.access_token,
-        },
-        {
-          to: input.waId,
-          text: input.responseText,
-          outboundWamid: input.outboundWamid,
-        },
-      );
+      const outbound = await this.delivery.deliver({
+        config: { phoneNumberId: input.config.phone_number_id, accessToken: input.config.access_token },
+        workspaceId: input.workspaceId,
+        waId: input.waId,
+        outboundWamid,
+        text: input.prepared.responseText,
+        cards: input.prepared.cards,
+      });
 
       await this.persistence.markOutboundReplyDelivered({
-        outboundWamid: input.outboundWamid,
+        outboundWamid,
         inboundWamids: input.inboundWamids,
       });
       this.options.logger.info(
-        { workspaceId: input.workspaceId, localWamid: input.outboundWamid, providerWamid: outbound.wamid },
+        { workspaceId: input.workspaceId, localWamid: outboundWamid, providerWamid: outbound.wamid },
         "WhatsApp outbound delivery completed",
       );
     } catch (error) {
@@ -668,7 +739,7 @@ export class WhatsAppMessageHandler {
         await this.options.state.setErrorStatus(input.workspaceId, detail);
       }
       await this.persistence.updateMessageLogStatus(
-        input.outboundWamid,
+        outboundWamid,
         this.isRetryableError(error) ? "retryable_failed" : "failed",
         detail,
       );

@@ -1,11 +1,15 @@
+import type { ReplyButtonLabels } from "@radioso/conversation-contract";
+
 import type { AnswerSchemaExtension } from "../../../../shared/domain/answerSideChannel.js";
 import { REPLY_BLOCK_LIMITS } from "../../contracts/replyBlocks.js";
+import { readButtonLabels, withButtonLabelFields } from "./presentButtonLabels.js";
 import { PRESENT_FIELD } from "./presentHead.js";
 
 /**
  * What the model returned in `present` for a skill's records: the handles to show, in order, and
  * where in each record its card's fields are, as JSON Pointers. The model points; it never writes
- * a title, an address or any other value a card shows.
+ * a title, an address or any other value a card shows. The button labels, where the turn asked
+ * for them, are the only words it writes for the cards.
  */
 export interface RecordPresentHead {
   records: string[];
@@ -16,6 +20,7 @@ export interface RecordPresentHead {
     link: string | null;
   };
   caption: string;
+  buttonLabels?: ReplyButtonLabels;
 }
 
 const pointer = (description: string, nullable: boolean) => ({
@@ -66,8 +71,11 @@ const RECORD_PRESENT_HEAD_EXTENSION: AnswerSchemaExtension = {
   },
 };
 
-/** The `present` field for a skill's records, written ahead of `answer`. */
-export const recordPresentHeadSchemaExtension = (): AnswerSchemaExtension => RECORD_PRESENT_HEAD_EXTENSION;
+const RECORD_PRESENT_HEAD_EXTENSION_WITH_LABELS = withButtonLabelFields(RECORD_PRESENT_HEAD_EXTENSION, PRESENT_FIELD);
+
+/** The `present` field for a skill's records, written ahead of `answer`; `buttonLabels` adds the labels. */
+export const recordPresentHeadSchemaExtension = (options: { buttonLabels?: boolean } = {}): AnswerSchemaExtension =>
+  options.buttonLabels ? RECORD_PRESENT_HEAD_EXTENSION_WITH_LABELS : RECORD_PRESENT_HEAD_EXTENSION;
 
 const nullableString = (value: unknown): value is string | null => value === null || typeof value === "string";
 
@@ -88,5 +96,6 @@ export const readRecordPresentHead = (extras: Record<string, unknown> | undefine
   if (typeof title !== "string" || !nullableString(subtitle) || !nullableString(image) || !nullableString(link)) {
     return null;
   }
-  return { records, fields: { title, subtitle, image, link }, caption: caption.trim() };
+  const buttonLabels = readButtonLabels(value as Record<string, unknown>);
+  return { records, fields: { title, subtitle, image, link }, caption: caption.trim(), ...(buttonLabels ? { buttonLabels } : {}) };
 };

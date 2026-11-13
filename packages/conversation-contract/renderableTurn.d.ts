@@ -2,7 +2,7 @@
 
 import type { ReplyBlock } from "./replyBlocks.js";
 
-export type { ItemListBlock, ReplyAction, ReplyBlock, ReplyBlockLayout, ReplyFact, ReplyImage, ReplyItem } from "./replyBlocks.js";
+export type { ItemListBlock, ReplyAction, ReplyBlock, ReplyBlockLayout, ReplyButtonLabels, ReplyFact, ReplyImage, ReplyItem } from "./replyBlocks.js";
 
 export interface RenderableTurn {
   answer: string;

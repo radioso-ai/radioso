@@ -8,6 +8,7 @@ import {
   downloadWhatsAppMedia,
   type WhatsAppMediaDownload,
 } from "./whatsappMedia.js";
+import type { WhatsAppOutboundMessage } from "./whatsappReplyCards.js";
 
 export { WhatsAppClientError };
 
@@ -95,12 +96,30 @@ export class WhatsAppClient {
       outboundWamid: string;
     },
   ): Promise<{ wamid: string }> {
+    return this.sendMessage(config, { to: input.to, message: { type: "text", text: { body: input.text } }, outboundWamid: input.outboundWamid });
+  }
+
+  /**
+   * Sends one message of a reply: text, an image or an interactive message. Retries a rate limit
+   * twice; any other refusal throws a `WhatsAppClientError` with Graph's status.
+   */
+  async sendMessage(
+    config: {
+      phoneNumberId: string;
+      accessToken: string;
+    },
+    input: {
+      to: string;
+      message: WhatsAppOutboundMessage;
+      /** The caller's own local message id, which names the attempt in every log line (see `sendTextMessage`). */
+      outboundWamid: string;
+    },
+  ): Promise<{ wamid: string }> {
     const url = `${WHATSAPP_GRAPH_BASE_URL}/${config.phoneNumberId}/messages`;
     const body = {
       messaging_product: "whatsapp",
       to: input.to,
-      type: "text",
-      text: { body: input.text },
+      ...input.message,
     };
 
     let attempt = 0;
@@ -126,7 +145,7 @@ export class WhatsAppClient {
         }
 
         this.options.logger.info(
-          { phoneNumberId: config.phoneNumberId, outboundWamid: input.outboundWamid, wamid },
+          { phoneNumberId: config.phoneNumberId, outboundWamid: input.outboundWamid, wamid, messageType: body.type },
           "WhatsApp reply sent",
         );
         return { wamid };

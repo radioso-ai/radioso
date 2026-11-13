@@ -160,6 +160,33 @@ describe("reply blocks on the grounded answer", () => {
     expect(input?.systemPrompt).toContain("A main picture is the Result's own picture");
   });
 
+  it("asks a channel that draws its buttons from the reply for the labels, and sends them on the block it presents", async () => {
+    const { composer, inputs } = buildComposer(envelope({
+      present: { images: ["m2", "m1"], caption: "Two hiking guides", selection: "single", selectLabel: "Scegli", openLabel: "Apri" },
+    }));
+    const whatsapp = (): PreparedSession => ({ ...session(), replyBlocks: { item_list: { layouts: ["carousel", "grid", "list"], buttonLabels: true } } });
+
+    const presented = await composer.composeAnswer(whatsapp(), "Which hiking guides do you have?", "en", undefined);
+
+    expect(presented.replyBlocks?.presented[0]?.buttonLabels).toEqual({ select: "Scegli", open: "Apri" });
+    expect(presented.replyBlocks?.stored[0]).not.toHaveProperty("buttonLabels");
+    const present = (inputs[0]?.generation?.responseFormat?.schema as { properties: Record<string, { properties: Record<string, unknown> }> })
+      .properties.present;
+    expect(Object.keys(present?.properties ?? {})).toEqual(["images", "caption", "selection", "selectLabel", "openLabel"]);
+    expect(inputs[0]?.prompt).toContain("Button labels");
+  });
+
+  it("asks a web client for no labels, and sends none, even when the model writes them", async () => {
+    const { composer, inputs } = buildComposer(envelope({
+      present: { images: ["m2", "m1"], caption: "Two hiking guides", selectLabel: "Scegli", openLabel: "Apri" },
+    }));
+
+    const presented = await composer.composeAnswer(session(), "Which hiking guides do you have?", "en", undefined);
+
+    expect(presented.replyBlocks?.presented[0]).not.toHaveProperty("buttonLabels");
+    expect(inputs[0]?.prompt).not.toContain("Button labels");
+  });
+
   it("returns the same block when streaming", async () => {
     const { composer } = buildComposer(envelope());
 

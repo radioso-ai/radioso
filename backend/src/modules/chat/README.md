@@ -281,7 +281,20 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `tests/unit/chat/replyBlocks/item-selection.test.ts`,
   `tests/unit/chat/response-language-evidence.test.ts`,
   `tests/contract/chat-item-selection.contract.test.ts`,
-  `tests/integration/item-selection.integration.test.ts`.
+  `tests/integration/item-selection.integration.test.ts`. A channel adapter
+  reaches the same claim through `ChatDoorPickTurnPort` (contracts), which
+  `AssistantChatService` implements; the connector host runs a WhatsApp tap
+  through it and reads `ITEM_SELECTION_REFUSAL_CODES` to answer a refused pick as
+  the card's words.
+- Button labels (`services/replyBlocks/presentButtonLabels.ts`): a client with no
+  copy of its own for buttons declares `reply.blocks.item_list.buttonLabels`, in
+  process only (the request schemas drop it; the WhatsApp connector declares it).
+  Both `present` heads then also ask for `selectLabel` and `openLabel` (1 to 20
+  characters, `prompts/chat/present-button-labels.md` appended to the head's
+  prompt section), and the presented block carries the usable ones as
+  `buttonLabels`; the stored block never does. Without the declaration the heads,
+  their prompts and the presented blocks are unchanged. Tests:
+  `tests/unit/chat/replyBlocks/present-button-labels.test.ts`.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides

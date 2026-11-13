@@ -23,6 +23,21 @@ export interface ItemListBlock {
   caption: string;
   /** One to ten items, in display order. */
   items: ReplyItem[];
+  /**
+   * The words on the block's buttons, written with the reply in its language. Sent only to a
+   * client that declared it draws its buttons from the reply (`buttonLabels` in its capability),
+   * such as a messaging channel with no copy of its own; a label the model left out or wrote
+   * badly is absent. Never stored with the message.
+   */
+  buttonLabels?: ReplyButtonLabels;
+}
+
+/** The labels of a block's buttons, each at most 20 characters. */
+export interface ReplyButtonLabels {
+  /** The button that picks an item. */
+  select?: string;
+  /** The button that opens an item's page. */
+  open?: string;
 }
 
 /** One item of a block. An item is any source with a title and a picture, not only a product. */

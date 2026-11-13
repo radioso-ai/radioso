@@ -1,6 +1,6 @@
 ---
 title: "Show picture cards in replies"
-description: "How an agent shows the pictures from your documents, and the records a skill returns, as cards beside a reply: the reply cards setting, which pictures Radioso keeps from crawled pages and WordPress posts, the rules it applies, and what to check when a picture is missing."
+description: "How an agent shows the pictures from your documents, and the records a skill returns, as cards beside a reply on the web and on WhatsApp: the reply cards setting, which pictures Radioso keeps from crawled pages and WordPress posts, the rules it applies, and what to check when a picture is missing."
 ---
 
 # Show picture cards in replies
@@ -20,7 +20,7 @@ curl -sS -X PUT https://api.radioso.ai/api/v1/agents/$AGENT_ID \
   -d '{"replyCardsEnabled":true}'
 ```
 
-The setting is off on every agent until you turn it on, and it applies as soon as you change it. It is the one switch for every kind of card a reply can carry: the pictures of an answer's documents, and the records a skill returns, such as the listings of a property search ([Cards from a skill's records](/api/agents-and-skills#cards-from-a-skills-records)). Cards appear where a client draws them: the website widget, the public chat link, Test Chat, and any client of the [chat API](/api/public-chat-and-embed#reply-blocks) that declares `reply.blocks`. Channels that carry text alone, such as voice, WhatsApp and email, get the answer as text.
+The setting is off on every agent until you turn it on, and it applies as soon as you change it. It is the one switch for every kind of card a reply can carry: the pictures of an answer's documents, and the records a skill returns, such as the listings of a property search ([Cards from a skill's records](/api/agents-and-skills#cards-from-a-skills-records)). Cards appear where a client draws them: the website widget, the public chat link, Test Chat, WhatsApp ([Cards on WhatsApp](#cards-on-whatsapp)), and any client of the [chat API](/api/public-chat-and-embed#reply-blocks) that declares `reply.blocks`. Channels that carry text alone, such as voice and email, get the answer as text.
 
 ## What the agent shows
 
@@ -40,6 +40,27 @@ The agent decides when a reply is a choice, the same way it decides which cards 
 A skill's cards in an open conversation are shown, never picked: a pick there is answered from your documents, so it would never reach the skill. To let a visitor choose one of a skill's records and act on it, show them from a routine step. A routine's skill step searches, the chat step after it shows the results as cards with **Select** buttons, and the pick fills one of the routine's values, which later steps, the operator notice and the hand-off name by the card's title ([Show a skill's results as cards](/guides/authoring-routines#show-a-skills-results-as-cards)). Where cards are off or the channel draws none, that step lists the results in text and the visitor names the one they want.
 
 Many sites name the same picture on every page, a banner or a logo. A picture that more than five documents in the workspace name as their main picture is treated as the site's, never as any one document's: the document's next main picture stands in, or it shows none.
+
+## Cards on WhatsApp
+
+On a number connected through the [WhatsApp connector](/api/connectors-and-webhooks#built-in-connectors), the same cards go out as WhatsApp messages. Say a routine searches homes for a customer who writes in Italian and asks them to choose: they get a carousel of homes, each with its photo, its name and a **Scegli** button, and tapping one fills the routine's value just as **Select** does in the widget.
+
+| The cards | What the customer gets |
+|---|---|
+| 2 to 10 to pick from, all with a picture | A carousel, one button per card that picks it |
+| 2 to 10 shown, all with a picture and a page | A carousel, one button per card that opens its page |
+| Shown, all with a picture, some without a page (a gallery) | The reply's text, then up to 4 pictures, each captioned with its title |
+| 1 with a picture | The reply's text, then the picture; when it can be picked, one message with the picture and a button that picks it |
+| To pick from, some without a picture | A list the customer opens to pick a row, each row the card's title |
+| Anything else, such as cards without pictures that are only shown | The reply's text |
+
+The reply's text is the carousel's or the button message's own text when it fits in 1,024 characters. A longer reply goes first as a message of its own, and the cards follow under the caption the agent wrote for them. A card's text is its title and subtitle, cut to WhatsApp's 160 characters, and a list row's title is cut to 24 characters with the whole title beneath it.
+
+WhatsApp has no words of its own for buttons, so the agent writes them with the reply, in the language the customer writes in and at most 20 characters each: one label for the button that picks a card and one for the button that opens a card's page. When the reply leaves out the label its message needs, the customer gets the reply's text followed by the cards as a numbered list, each with its page, and they can answer with a number or a name where a routine step showed the cards.
+
+Meta fetches each picture from Radioso's own copy, at the address the widget loads it from. When WhatsApp refuses the cards, or reports afterwards that it could not deliver them (a picture it could not fetch, say), the customer gets the reply's text, unless it already went, and the numbered list, once per reply. These are all replies to a message the customer sent, inside WhatsApp's 24-hour window: Radioso never sends cards on its own, and a failure reported after the window passes sends nothing more. Each card message sent, refused or replaced by its list is counted in `whatsapp_block_send_total`.
+
+A tap carries a short id that names the reply and the card, and Radioso reads the card from the reply it stored, as it does for a pick in the widget. A tap on a card that can no longer be picked, such as a second card of a reply already picked from, is answered as if the customer had typed the card's title. A tap on a reply whose log Radioso no longer holds is answered as the words on the button.
 
 ## Which pictures Radioso keeps
 
@@ -74,11 +95,13 @@ Pictures belong to their document. Deleting a document, or a source with its doc
 - **A picture from the page never appears in answers.** Pictures in the text are offered only with their passage. Ask about what the passage says, or give the page an `og:image`.
 - **Every answer shows the site logo.** It is in the page's main content, larger than 200 pixels. The banner rule covers main pictures only; move the logo out of `<main>` or `<article>`.
 - **WordPress pushes carry no picture.** The plugin sends the featured image from version 0.8.0. A post without a featured image has no main picture.
+- **WhatsApp customers get a numbered list instead of cards.** Meta could not fetch the pictures, or the reply left out a button label. Meta fetches pictures from the backend's public address, so a stack that Meta cannot reach from the internet always falls back to the list.
 
 ## Read next
 
 - [Reply blocks](/api/public-chat-and-embed#reply-blocks) for the cards' shape and the image address.
 - [Cards from a skill's records](/api/agents-and-skills#cards-from-a-skills-records) for cards built from what an MCP tool returns.
 - [Show a skill's results as cards](/guides/authoring-routines#show-a-skills-results-as-cards) for a routine step whose cards the visitor picks.
+- [Connectors and webhooks](/api/connectors-and-webhooks#built-in-connectors) for connecting a WhatsApp number.
 - [Document processing](/operators/document-processing) for the worker that fetches pictures.
 - [WordPress connector](/operators/wordpress-connector) for featured images.

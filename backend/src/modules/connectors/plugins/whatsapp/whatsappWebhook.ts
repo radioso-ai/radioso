@@ -4,14 +4,16 @@ import { Router, type Request } from "express";
 
 import type { ConnectorLogger, ConnectorStatePort } from "@radioso/connector-api";
 
+import { errorClassOf } from "../../../../shared/observability/errorClass.js";
 import type { WhatsAppInboundMessage, WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
 import type { WhatsAppPersistencePort } from "./whatsappPersistence.js";
+import { readTap } from "./whatsappReplyTaps.js";
 
 interface WhatsAppWebhookRouterOptions {
   logger: ConnectorLogger;
   state: Pick<ConnectorStatePort, "getConfig">;
   persistence: Pick<WhatsAppPersistencePort, "createInboundMessageLog">;
-  messageHandler: Pick<WhatsAppMessageHandler, "handleInboundMessage">;
+  messageHandler: Pick<WhatsAppMessageHandler, "handleInboundMessage" | "handleFailedStatus">;
 }
 
 interface WebhookRequest extends Request {
@@ -82,13 +84,14 @@ const extractInboundMessages = (
           : new Date();
         const type = typeof message.type === "string" ? message.type : "unknown";
         const image = type === "image" ? readImage(message.image) : undefined;
+        const tap = readTap(message);
         const textBody =
           type === "text" &&
           message.text &&
           typeof message.text === "object" &&
           typeof (message.text as { body?: unknown }).body === "string"
             ? (message.text as { body: string }).body
-            : image?.caption;
+            : image?.caption ?? tap?.title;
 
         if (!wamid || !from) {
           continue;
@@ -104,6 +107,7 @@ const extractInboundMessages = (
           type,
           textBody,
           ...(image ? { image: { mediaId: image.mediaId } } : {}),
+          ...(tap ? { tap } : {}),
           payload,
         });
       }
@@ -111,6 +115,39 @@ const extractInboundMessages = (
   }
 
   return results;
+};
+
+/** A message Graph reports it could not deliver: its id, the number it went from, and Graph's error code. */
+interface FailedDelivery {
+  wamid: string;
+  phoneNumberId: string | null;
+  errorCode: number | null;
+}
+
+/** The `failed` delivery statuses of a webhook body; every other status is not acted on. */
+const extractFailedDeliveries = (payload: Record<string, unknown>): FailedDelivery[] => {
+  if (payload.object !== "whatsapp_business_account" || !Array.isArray(payload.entry)) {
+    return [];
+  }
+  const values = payload.entry.flatMap((entry: unknown) => {
+    const changes = entry && typeof entry === "object" ? (entry as { changes?: unknown }).changes : undefined;
+    return Array.isArray(changes) ? changes.map((change: unknown) => (change as { value?: unknown } | null)?.value) : [];
+  });
+  return values.flatMap((value) => {
+    if (!value || typeof value !== "object" || !Array.isArray((value as { statuses?: unknown }).statuses)) {
+      return [];
+    }
+    const metadata = (value as { metadata?: { phone_number_id?: unknown } }).metadata;
+    const phoneNumberId = typeof metadata?.phone_number_id === "string" ? metadata.phone_number_id : null;
+    return ((value as { statuses: unknown[] }).statuses).flatMap((status): FailedDelivery[] => {
+      const { id, status: state, errors } = (status ?? {}) as { id?: unknown; status?: unknown; errors?: unknown };
+      if (state !== "failed" || typeof id !== "string" || id.length === 0) {
+        return [];
+      }
+      const code = Array.isArray(errors) ? (errors[0] as { code?: unknown } | undefined)?.code : undefined;
+      return [{ wamid: id, phoneNumberId, errorCode: typeof code === "number" ? code : null }];
+    });
+  });
 };
 
 export const findInboundMessageInPayload = (
@@ -238,6 +275,17 @@ export const createWhatsAppWebhookRouter = ({
               },
               "WhatsApp inbound message processing failed",
             );
+          });
+        });
+      }
+
+      for (const failed of extractFailedDeliveries(req.body as Record<string, unknown>)) {
+        if (failed.phoneNumberId && failed.phoneNumberId !== config.config.phone_number_id) {
+          continue;
+        }
+        queueMicrotask(() => {
+          void messageHandler.handleFailedStatus({ workspaceId, wamid: failed.wamid, errorCode: failed.errorCode }).catch((error) => {
+            logger.error({ workspaceId, wamid: failed.wamid, errorClass: errorClassOf(error) }, "WhatsApp failed delivery status processing failed");
           });
         });
       }

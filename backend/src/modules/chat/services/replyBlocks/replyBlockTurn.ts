@@ -10,6 +10,7 @@ import type { ToolImageSource } from "../../../toolImages/contracts/index.js";
 import type { ReplyImageUrls, StoredReplyBlock } from "../../contracts/replyBlocks.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
 import type { GroundedAnswerEnvelope } from "../groundedAnswerEnvelope.js";
+import { buttonLabelsPromptSection, withButtonLabels } from "./presentButtonLabels.js";
 import { presentHeadSchemaExtension, readPresentHead } from "./presentHead.js";
 import { buildReplyBlock, presentReplyBlocks, type ReplyBlockDropReason } from "./replyBlockBuilder.js";
 import { TurnImageLedger } from "./turnImageLedger.js";
@@ -69,11 +70,13 @@ export class ReplyBlockTurnFactory {
       return null;
     }
     const channel = channelLabel(session.conversation.sourceChannel);
+    const buttonLabels = itemList.buttonLabels === true;
+    const imagesSection = renderPromptTemplate("chat/answer-present-images.md", {
+      image_lines: ledger.promptLines().join("\n"),
+    });
     return {
-      schemaExtension: presentHeadSchemaExtension(),
-      promptSection: renderPromptTemplate("chat/answer-present-images.md", {
-        image_lines: ledger.promptLines().join("\n"),
-      }),
+      schemaExtension: presentHeadSchemaExtension({ buttonLabels }),
+      promptSection: buttonLabels ? `${imagesSection}\n\n${buttonLabelsPromptSection()}` : imagesSection,
       build: ({ outcome, extras }) => {
         const head = outcome === "answer" ? readPresentHead(extras) : null;
         if (!head) {
@@ -88,7 +91,10 @@ export class ReplyBlockTurnFactory {
           help: "Reply blocks built for replies, by layout, conversation channel and where the items came from",
           labels: { layout: block.layout, channel, source: "evidence" },
         });
-        return { stored: [block], presented: presentReplyBlocks([block], this.deps.imageUrls) };
+        return {
+          stored: [block],
+          presented: withButtonLabels(presentReplyBlocks([block], this.deps.imageUrls), buttonLabels ? head.buttonLabels : undefined),
+        };
       },
     };
   }

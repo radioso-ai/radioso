@@ -1,3 +1,5 @@
+import type { VisitorImageRevisionSwitch } from "./revisionSwitch.js";
+
 /**
  * Who may send a photo in a turn, recorded at upload and checked at send. Every channel hands the
  * module bytes plus one of these: the website embed and the public link their public chat session,
@@ -10,6 +12,14 @@ export interface VisitorImageOwner {
   readonly kind: VisitorImageOwnerKind;
   readonly id: string;
 }
+
+/**
+ * What carries a send's photos once its turn stored them: the user message a conversation stored,
+ * or a Test Chat test, which keeps its transcript in its own store rather than in conversations.
+ */
+export type VisitorImageHolder =
+  | { readonly conversationId: string; readonly messageId: string }
+  | { readonly testExecutionId: string };
 
 /** The photos one send claimed, in the order the caller named them. */
 export interface VisitorImageClaim {
@@ -25,20 +35,21 @@ export interface VisitorImageClaim {
 export interface VisitorImageTurnInput {
   /**
    * Claims the photos for one message. Throws `visitor_image_unavailable` (409) when the agent no
-   * longer takes photos, or any id is not this workspace's, agent's and owner's, or another send
-   * already holds it.
+   * longer takes photos (in `revision`, a Test Chat test's, or else in its published revision),
+   * or any id is not this workspace's, agent's and owner's, or another send already holds it.
    */
   claim(input: {
     workspaceId: string;
     agentId: string;
     owner: VisitorImageOwner;
     imageIds: readonly string[];
+    revision?: VisitorImageRevisionSwitch;
   }): Promise<VisitorImageClaim>;
-  /** Binds the claimed photos to the user message that carries them. A failure is the turn's failure. */
-  bind(input: { workspaceId: string; claim: VisitorImageClaim; conversationId: string; messageId: string }): Promise<void>;
+  /** Binds the claimed photos to what carries them, the turn's stored message or test. A failure is the turn's failure. */
+  bind(input: { workspaceId: string; claim: VisitorImageClaim } & VisitorImageHolder): Promise<void>;
   /**
-   * Lets go of claimed photos no message took, so the caller can send them again; a bound photo
-   * stays bound. Never throws: a photo it cannot let go of is deleted with the unsent ones.
+   * Lets go of claimed photos nothing took, so the caller can send them again; a bound photo stays
+   * bound. Never throws: a photo it cannot let go of is deleted with the unsent ones.
    */
   release(input: { workspaceId: string; claim: VisitorImageClaim }): Promise<void>;
 }

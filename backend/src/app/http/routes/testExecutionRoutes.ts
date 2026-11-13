@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 
+import type { AuthenticatedPrincipal } from "../../../modules/account/services/accountAccessService.js";
 import type { TestExecutionService, TestExecution, TestExecutionAttemptRecord, TestExecutionHistoryItem, TestExecutionSummary } from "../../../modules/test-execution/testExecution.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 import type { EvalSnapshotService } from "../../../modules/eval/services/evalSnapshotService.js";
 import type { WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
@@ -10,6 +12,7 @@ import { validateBody } from "../middleware/validate.js";
 import { presentRevisionSummary } from "./agentRevisionPresenters.js";
 import { retryTestExecutionSideSchema, sendTestExecutionMessageSchema, startTestExecutionSchema } from "./agentRevisionRequestSchemas.js";
 import { sendTestExecutionSse } from "../presenters/testExecutionPresenter.js";
+import { authenticatedVisitorImageOwner } from "../shared/visitorImageUpload.js";
 
 const agentParams = z.object({ agentId: z.string().uuid() });
 const executionParams = agentParams.extend({ executionId: z.string().uuid() });
@@ -22,6 +25,14 @@ interface TestExecutionRouteDependencies extends WorkspaceSessionDependencies {
   testExecutionService: TestExecutionService;
   evalSnapshotService: Pick<EvalSnapshotService, "captureTestExecutionTurn">;
 }
+
+/** A message's photos and who uploaded them, the caller: only the caller who uploaded a photo can send it. */
+const photosOf = (imageIds: readonly string[] | undefined, principal: AuthenticatedPrincipal | undefined) => {
+  if (!imageIds) return {};
+  const owner = authenticatedVisitorImageOwner(principal);
+  if (!owner) throw badRequest("Photos are sent by the caller who uploaded them");
+  return { photos: { ids: imageIds, owner } };
+};
 
 const presentSides = (sides: readonly (TestExecution["sides"][number] | TestExecutionHistoryItem["sides"][number])[]) =>
   sides.map((side) => ({
@@ -117,12 +128,13 @@ export const createTestExecutionRoutes = (dependencies: TestExecutionRouteDepend
 
   router.post("/:agentId/test-executions/:executionId/messages", session, manage, validateBody(sendTestExecutionMessageSchema), async (req, res, next) => {
     try {
-      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string | null };
+      const { workspaceId, accountId, authPrincipal } = res.locals as { workspaceId: string; accountId?: string | null; authPrincipal?: AuthenticatedPrincipal };
       const { agentId, executionId } = executionParams.parse(req.params);
+      const photos = photosOf(req.body.imageIds, authPrincipal);
       const disconnectAbort = new AbortController();
       await sendTestExecutionSse(
         res,
-        dependencies.testExecutionService.streamMessage({ workspaceId, agentId, accountId: accountId ?? null, executionId, message: req.body.message, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, userTimeZone: req.body.userTimeZone, signal: disconnectAbort.signal }),
+        dependencies.testExecutionService.streamMessage({ workspaceId, agentId, accountId: accountId ?? null, executionId, message: req.body.message ?? "", ...photos, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, userTimeZone: req.body.userTimeZone, signal: disconnectAbort.signal }),
         { onDisconnectCeilingExceeded: () => disconnectAbort.abort() },
       );
     } catch (error) { if (!res.headersSent) next(error); else res.end(); }

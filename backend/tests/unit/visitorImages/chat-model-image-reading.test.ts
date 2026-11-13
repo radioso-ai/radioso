@@ -55,30 +55,57 @@ describe("whether an agent's chat model reads images", () => {
 });
 
 describe("whether an agent takes photos", () => {
-  const availability = (stored: { visitorImagesEnabled: boolean } | null, readsImages: boolean) => {
+  /**
+   * An agent whose own setting is `agentSetting`, published with `published` (a snapshot's switch,
+   * `undefined` for one frozen before the switch was part of a revision, `null` for an agent never
+   * published), whose chat model reads images or not.
+   */
+  const availability = (agentSetting: boolean | null, readsImages: boolean, published: boolean | undefined | null = undefined) => {
     const modelReading = { readsImages: vi.fn(async () => readsImages) };
+    const findCurrentPublished = vi.fn(async () => (published === null ? null : {
+      id: "revision-1",
+      snapshot: { customInstruction: null, directives: [], routines: [], contextVariableEnablements: [], ...(published === undefined ? {} : { visitorImagesEnabled: published }) },
+      sourceDraftGeneration: 1, sourceBasePublishedRevisionId: null, createdAt: new Date(0), publishedAt: new Date(0), publishedVersion: 1,
+    }));
+    const port = createVisitorImageAvailability({
+      agents: { findByIdAndWorkspaceId: async () => (agentSetting === null ? null : { id: AGENT_ID, workspaceId: WORKSPACE_ID, chatModelOverride: null, visitorImagesEnabled: agentSetting } as never) },
+      publishedRevisions: { findCurrentPublished },
+      modelReading,
+    });
     return {
       modelReading,
-      forAgent: () => createVisitorImageAvailability({
-        agents: { findByIdAndWorkspaceId: async () => (stored ? { id: AGENT_ID, workspaceId: WORKSPACE_ID, chatModelOverride: null, ...stored } as never : null) },
-        modelReading,
-      }).forAgent({ workspaceId: WORKSPACE_ID, agentId: AGENT_ID }),
+      findCurrentPublished,
+      forAgent: (revision?: { visitorImagesEnabled?: boolean }) => port.forAgent({ workspaceId: WORKSPACE_ID, agentId: AGENT_ID, ...(revision ? { revision } : {}) }),
     };
   };
 
-  it("takes them when the operator turned them on and the model reads images", async () => {
-    expect(await availability({ visitorImagesEnabled: true }, true).forAgent()).toBe("available");
+  it("takes them on every live channel when the published revision has them on and the model reads images", async () => {
+    expect(await availability(false, true, true).forAgent()).toBe("available");
   });
 
-  it("says the model cannot read when it is on and the model does not read images", async () => {
-    expect(await availability({ visitorImagesEnabled: true }, false).forAgent()).toBe("model_cannot_read");
+  it("takes none on a live channel while only the draft has them on, until it is published", async () => {
+    const draftOnly = availability(true, true, false);
+
+    expect(await draftOnly.forAgent()).toBe("disabled");
+    expect(draftOnly.modelReading.readsImages).not.toHaveBeenCalled();
   });
 
-  it("is off whatever the model, without resolving it", async () => {
-    const off = availability({ visitorImagesEnabled: false }, true);
+  it("decides by the revision under test when one is named, without reading the published revision", async () => {
+    const tested = availability(false, true, false);
 
-    expect(await off.forAgent()).toBe("disabled");
-    expect(off.modelReading.readsImages).not.toHaveBeenCalled();
+    expect(await tested.forAgent({ visitorImagesEnabled: true })).toBe("available");
+    expect(await tested.forAgent({ visitorImagesEnabled: false })).toBe("disabled");
+    expect(tested.findCurrentPublished).not.toHaveBeenCalled();
+  });
+
+  it("takes none from a revision that holds no switch, or for an agent never published, whatever the agent's setting", async () => {
+    expect(await availability(true, true, undefined).forAgent()).toBe("disabled");
+    expect(await availability(true, true, null).forAgent()).toBe("disabled");
+    expect(await availability(true, true).forAgent({})).toBe("disabled");
+  });
+
+  it("says the model cannot read when photos are on and the model does not read images", async () => {
+    expect(await availability(true, false, true).forAgent()).toBe("model_cannot_read");
   });
 
   it("does not know an agent that is not there", async () => {

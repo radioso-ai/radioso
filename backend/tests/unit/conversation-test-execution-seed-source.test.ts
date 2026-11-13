@@ -175,6 +175,32 @@ describe("ConversationTestExecutionSeedSource", () => {
     expect(JSON.stringify(seed)).not.toContain("ACL");
   });
 
+  it("seeds a visitor's photos with their message, so the copy shows what they typed and their photos", async () => {
+    const imageInput = { typedText: "Something like this", images: [{ id: randomUUID(), reading: "A stone farmhouse." }] };
+    listRecentByConversationId.mockResolvedValue([
+      buildMessage({ id: "m-1", role: "user", content: "Something like this\n<attached_photo index=\"1\">A stone farmhouse.</attached_photo>", inputMetadata: { method: "typed", imageInput }, createdAt: new Date(1) }),
+      buildMessage({ id: "m-2", role: "user", content: "Me too", inputMetadata: { method: "typed" }, createdAt: new Date(2) }),
+    ]);
+
+    const seed = await source.loadSeed({ workspaceId, agentId, conversationId });
+
+    expect(seed?.messages[0]).toMatchObject({ messageId: "m-1", imageInput });
+    expect(seed?.messages[1]).not.toHaveProperty("imageInput");
+  });
+
+  it("seeds a withheld message without its photos' readings (#1543)", async () => {
+    const imageInput = { typedText: "My knee", images: [{ id: randomUUID(), reading: "A swollen knee with a brace." }] };
+    listRecentByConversationId.mockResolvedValue([
+      buildMessage({ id: "m-1", role: "user", content: "My knee\n<attached_photo index=\"1\">A swollen knee with a brace.</attached_photo>", inputMetadata: { method: "typed", imageInput }, metadata: { sensitiveSlotKeys: ["injury"] }, createdAt: new Date(1) }),
+    ]);
+    listSensitiveSlotKeys.mockResolvedValue(["injury"]);
+
+    const seed = await source.loadSeed({ workspaceId, agentId, conversationId });
+
+    expect(seed?.messages[0]).not.toHaveProperty("imageInput");
+    expect(JSON.stringify(seed)).not.toContain("knee");
+  });
+
   it("seeds a pending clarification without the question it holds when that visitor message is marked (#1543)", async () => {
     const pending = (originalQuery: string) => ({
       sessionId: conversationId, source: "routine", originalQuery, mode: "ask" as const, status: "pending" as const,

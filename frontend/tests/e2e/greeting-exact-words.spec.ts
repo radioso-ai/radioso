@@ -104,7 +104,7 @@ test("configures Exact words with two languages and three chips, saves with the 
   // The review lists the wording that will go live, not just "Unchanged".
   await page.getByRole("button", { name: "Review & publish", exact: true }).click();
   const review = page.getByRole("dialog", { name: "Review draft publication" });
-  await expect(review.getByText("Only saved draft instructions, greeting wording, directives, routines, and context enablements are included.")).toBeVisible();
+  await expect(review.getByText("Only saved draft instructions, the photo switch, greeting wording, directives, routines, and context enablements are included.")).toBeVisible();
   const greetingSection = review.locator("section").filter({ has: page.getByText("Greeting", { exact: true }) });
   await expect(greetingSection).toContainText("Exact words");
   await expect(greetingSection).toContainText("en-US: Welcome to Acme! How can we help today?");

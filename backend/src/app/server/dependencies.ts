@@ -24,8 +24,8 @@ import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
   createDefaultEmailChannelDrainDispatcher,
+  buildTestExecutionService,
   createDefaultFacetExtractionDrainDispatcher,
-  createLiveAgentConfigReader,
   createRealtimePublisherComposition,
 } from "../composition/index.js";
 import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/config.js";
@@ -36,9 +36,7 @@ import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public
 import {
   ConversationIngestService,
   InMemoryPublicConversationEventBus,
-  TrustedTestExecutionRunnerAdapter,
 } from "../../modules/chat/composition.js";
-import { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import {
   createFacetExtractionBackgroundJobRuntime,
   createFacetExtractionWorkspaceDrainWorker,
@@ -570,23 +568,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     // check instead of once per routine (item 8 of the routine-lifecycle-collapse review).
     validateManyForServing: routineDefinitionService.validateManyForServing.bind(routineDefinitionService),
   }, logger);
-  const testExecutionService = new TestExecutionService({
-    revisions: repositories.testExecutionRepository,
-    // The agents module owns which revision a test runs when the caller names none.
-    defaultRevision: { resolveDefault: ({ workspaceId, agentId }) => agentRevisionService.resolveDefaultTestRevision(workspaceId, agentId) },
+  const testExecutionService = buildTestExecutionService({
+    db: infrastructure.database.kysely,
+    agentRevisions: agentRevisionService,
     contextCatalog: contextVariableRepository,
-    repository: repositories.testExecutionRepository,
-    runner: new TrustedTestExecutionRunnerAdapter({
-      replay: chat.workbenchReplayRunner,
-      liveAgentConfig: createLiveAgentConfigReader({ agentRepository: repositories.agentRepository }),
-      revisions: repositories.testExecutionRepository,
-      bootstrap: chat.chatBootstrapService,
-    }),
-    seedSource: chat.testExecutionSeedSource,
+    agentRepository: repositories.agentRepository,
+    chat,
+    visitorImages: visitorImages.service,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     audit: infrastructure.auditService,
     logger,
-    createId: randomUUID,
   });
   const operatorIdentityResolver = new OperatorIdentityResolver({
     users: repositories.userRepository,

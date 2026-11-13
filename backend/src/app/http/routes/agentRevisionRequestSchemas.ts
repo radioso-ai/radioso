@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { userTimeZoneSchema } from "../schemas/timeZoneSchemas.js";
+import { visitorImageIdsSchema } from "../schemas/visitorImageSchemas.js";
 
 const testValueSchema = z.object({ contextVariableId: z.string().uuid(), value: z.unknown().optional() }).strict();
 
@@ -30,16 +31,25 @@ export const startTestExecutionSchema = z.object({
     });
   }
 });
-export const sendTestExecutionMessageSchema = z.object({
-  message: z.string().min(1).max(20_000),
+const testExecutionTurnSchema = z.object({
   executionGeneration: z.number().int().positive(),
   turnId: z.string().uuid(),
   attemptId: z.string().uuid(),
   userTimeZone: userTimeZoneSchema.optional().describe(
     "The operator's IANA time zone, such as America/Los_Angeles, which Test Chat sends from the browser with every message and retry. The turn reads today, tomorrow and this weekend in it; without it, or with an unknown zone, the workspace's time zone applies, then UTC.",
   ),
-}).strict();
-export const retryTestExecutionSideSchema = sendTestExecutionMessageSchema.omit({ message: true });
+});
+export const sendTestExecutionMessageSchema = testExecutionTurnSchema.extend({
+  message: z.string().min(1).max(20_000).optional().describe("What the operator typed. Required unless `imageIds` is present."),
+  imageIds: visitorImageIdsSchema.optional().describe(
+    "Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo.",
+  ),
+}).strict().superRefine((body, context) => {
+  if (body.message === undefined && body.imageIds === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "message is required unless imageIds is present" });
+  }
+});
+export const retryTestExecutionSideSchema = testExecutionTurnSchema.strict();
 export const startRevisionEvalRunSchema = z.object({
   revisionIds: z.array(z.string().uuid()).min(1).max(2),
   caseIds: z.array(z.string().uuid()).min(1).max(500),

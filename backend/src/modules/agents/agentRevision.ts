@@ -10,6 +10,7 @@ import { routineDefinitionSchema, toSafeRoutineValidationDiagnostic, validateExp
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
+import { sameVisitorImagesSwitch } from "./agentRevisionVisitorImages.js";
 import { canonicalContentHash } from "../../shared/domain/canonicalContentHash.js";
 import { DEFAULT_AGENT_LOCALE_FALLBACK } from "../../shared/domain/locale.js";
 import { errorClassOf } from "../../shared/observability/errorClass.js";
@@ -124,8 +125,13 @@ export const agentRevisionSnapshotSchema = z.object({
   // reader with an absent value must fall back to the live agent_skills table rather than
   // treat it as an empty list.
   agentSkills: z.array(agentSkillSnapshotSchema).optional(),
+  // Whether visitors may attach photos in this release. The agent's own setting is the draft's
+  // value; publishing freezes it here. Optional: a release that holds none takes no photos
+  // (`revisionTakesPhotos`).
+  visitorImagesEnabled: z.boolean().optional(),
 }).strict();
 export type AgentRevisionSnapshot = z.infer<typeof agentRevisionSnapshotSchema>;
+export { visitorImagesSwitchChanged } from "./agentRevisionVisitorImages.js";
 export type AgentGreetingSnapshot = z.infer<typeof agentGreetingSnapshotSchema>;
 export const parseAgentRevisionSnapshot = (value: unknown): AgentRevisionSnapshot => agentRevisionSnapshotSchema.parse(value);
 
@@ -150,7 +156,8 @@ const projectScopedAuthoringSnapshot = (snapshot: AgentRevisionSnapshot) => ({
 export const equalScopedAuthoringSnapshots = (
   left: AgentRevisionSnapshot,
   right: AgentRevisionSnapshot,
-): boolean => JSON.stringify(projectScopedAuthoringSnapshot(left)) === JSON.stringify(projectScopedAuthoringSnapshot(right));
+): boolean => JSON.stringify(projectScopedAuthoringSnapshot(left)) === JSON.stringify(projectScopedAuthoringSnapshot(right))
+  && sameVisitorImagesSwitch(left, right);
 
 /** Candidate/release validation happens after draft saves: incomplete graphs can
  * be authored, but cannot become a runnable immutable revision.

@@ -20,11 +20,25 @@ export const operatorVisitorImages = (workspaceId: string, conversationId: strin
   readings: { label: 'What the agent read', unreadLabel: 'The agent could not read this photo.' },
 })
 
+/** Test Chat's photos: loaded from the test, with the agent's readings under the operator's bubble. */
+export const testChatVisitorImages = (workspaceId: string, agentId: string, executionId: string, pendingIds: ReadonlySet<string>): VisitorImageThreadConfig => ({
+  source: { kind: 'test_chat', workspaceId, agentId, executionId },
+  altLabel: 'Photo sent in this test',
+  unavailableLabel: 'Photo unavailable',
+  readings: { label: 'What the agent read', unreadLabel: 'The agent could not read this photo.', pendingLabel: 'Loading what the agent read…', pendingIds },
+})
+
 const THUMBNAIL_CLASS = 'size-24 shrink-0 overflow-hidden rounded-lg'
 const PLACEHOLDER_STYLE = { background: 'color-mix(in srgb, currentColor 14%, transparent)' } as const
 
-const operatorImageUrl = (source: Extract<VisitorImageSource, { kind: 'operator' }>, imageId: string): string =>
-  `${API_BASE}/conversations/${encodeURIComponent(source.conversationId)}/images/${encodeURIComponent(imageId)}?workspaceId=${encodeURIComponent(source.workspaceId)}`
+type TeammateImageSource = Exclude<VisitorImageSource, { kind: 'public' }>
+
+const operatorImageUrl = (source: TeammateImageSource, imageId: string): string => {
+  const path = source.kind === 'operator'
+    ? `conversations/${encodeURIComponent(source.conversationId)}`
+    : `agents/${encodeURIComponent(source.agentId)}/test-executions/${encodeURIComponent(source.executionId)}`
+  return `${API_BASE}/${path}/images/${encodeURIComponent(imageId)}?workspaceId=${encodeURIComponent(source.workspaceId)}`
+}
 
 type LoadedImage = { status: 'loading' } | { status: 'ready'; url: string } | { status: 'error' }
 
@@ -75,7 +89,7 @@ function PublicThumbnail({ publicChatToken, image, config }: { publicChatToken: 
  * A teammate's view of a photo is recorded each time its bytes are sent, so the photo is asked for
  * only once it is on screen, never because it sits somewhere down a long thread.
  */
-function OperatorThumbnail({ source, image, config }: { source: Extract<VisitorImageSource, { kind: 'operator' }>; image: VisitorImage; config: VisitorImageThreadConfig }) {
+function OperatorThumbnail({ source, image, config }: { source: TeammateImageSource; image: VisitorImage; config: VisitorImageThreadConfig }) {
   const [failed, setFailed] = useState(false)
   const [frame, seen] = useOnceIntersecting<HTMLDivElement>()
   return (
@@ -106,7 +120,7 @@ export function VisitorImageThumbnails({ images, config }: { images: readonly Vi
  * What the agent read in each photo, under the visitor's bubble where a teammate can open it. The
  * reading is the agent's, so it never sits inside the visitor's own words.
  */
-export function VisitorImageReadings({ images, label, unreadLabel }: { images: readonly VisitorImage[] } & NonNullable<VisitorImageThreadConfig['readings']>) {
+export function VisitorImageReadings({ images, label, unreadLabel, pendingLabel, pendingIds }: { images: readonly VisitorImage[] } & NonNullable<VisitorImageThreadConfig['readings']>) {
   if (images.length === 0) return null
   return (
     <Collapsible className="max-w-full self-end text-xs text-muted-foreground">
@@ -119,7 +133,7 @@ export function VisitorImageReadings({ images, label, unreadLabel }: { images: r
           {images.map((image, index) => (
             <li key={image.id} className="select-text whitespace-pre-wrap">
               <span className="font-medium text-foreground">{index + 1}. </span>
-              {image.reading ?? unreadLabel}
+              {pendingIds?.has(image.id) ? pendingLabel : image.reading ?? unreadLabel}
             </li>
           ))}
         </ol>

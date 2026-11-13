@@ -63,3 +63,32 @@ describe("test execution turn requests", () => {
     expect(sendTestExecutionMessageSchema.safeParse({ ...turn, message: "Hi", userTimeZone: "A".repeat(65) }).success).toBe(false);
   });
 });
+
+describe("test execution messages with photos", () => {
+  const turn = {
+    executionGeneration: 1,
+    turnId: "80000000-0000-4000-8000-000000000001",
+    attemptId: "80000000-0000-4000-8000-000000000002",
+  };
+  const photo = (index: number) => `90000000-0000-4000-8000-00000000000${index}`;
+
+  it("takes up to three photos, with or without typed text", () => {
+    const withText = sendTestExecutionMessageSchema.safeParse({ ...turn, message: "Something like this", imageIds: [photo(1), photo(2), photo(3)] });
+    const photosOnly = sendTestExecutionMessageSchema.safeParse({ ...turn, imageIds: [photo(1)] });
+
+    expect(withText.success && withText.data.imageIds).toEqual([photo(1), photo(2), photo(3)]);
+    expect(photosOnly.success && photosOnly.data).toMatchObject({ imageIds: [photo(1)] });
+  });
+
+  it("refuses a fourth photo, a photo named twice, an empty list, and a message with neither text nor photos", () => {
+    expect(sendTestExecutionMessageSchema.safeParse({ ...turn, message: "Hi", imageIds: [photo(1), photo(2), photo(3), photo(4)] }).success).toBe(false);
+    expect(sendTestExecutionMessageSchema.safeParse({ ...turn, message: "Hi", imageIds: [photo(1), photo(1)] }).success).toBe(false);
+    expect(sendTestExecutionMessageSchema.safeParse({ ...turn, message: "Hi", imageIds: [] }).success).toBe(false);
+    expect(sendTestExecutionMessageSchema.safeParse({ ...turn }).success).toBe(false);
+    expect(sendTestExecutionMessageSchema.safeParse({ ...turn, message: "" }).success).toBe(false);
+  });
+
+  it("takes no photos on a retry, which reruns the turn's own text", () => {
+    expect(retryTestExecutionSideSchema.safeParse({ ...turn, imageIds: [photo(1)] }).success).toBe(false);
+  });
+});

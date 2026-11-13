@@ -48,11 +48,20 @@ interface ConversationTestExecutionSeedSourceOptions {
 
 // System messages are runtime scaffolding, not part of the human-visible thread an operator
 // continues in a private test. A message of a turn whose routine held a sensitive value (#1543)
-// is copied withheld: the test execution is a stored copy of the conversation.
-const seedMessage = (message: MessageRecord): TestExecutionSeedMessage | null =>
-  message.role === "user" || message.role === "assistant"
-    ? { role: message.role, content: transcriptCopyContent(message), messageId: message.id, createdAt: message.createdAt }
-    : null;
+// is copied withheld: the test execution is a stored copy of the conversation. A visitor's photos
+// come with their message, so the copy shows what they typed and their photos; a withheld message
+// leaves them out, since what the visitor typed and the readings are what it withholds.
+const seedMessage = (message: MessageRecord): TestExecutionSeedMessage | null => {
+  if (message.role !== "user" && message.role !== "assistant") return null;
+  const imageInput = carriesSensitiveValue(message.metadata) ? undefined : message.inputMetadata?.imageInput;
+  return {
+    role: message.role,
+    content: transcriptCopyContent(message),
+    messageId: message.id,
+    createdAt: message.createdAt,
+    ...(imageInput ? { imageInput } : {}),
+  };
+};
 
 // A seeded side is replayed in full on every test turn (there is no rolling summary behind
 // it), so the seed is the same recent-message window a live turn reads. One extra row is

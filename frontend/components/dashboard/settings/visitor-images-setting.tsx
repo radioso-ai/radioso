@@ -1,5 +1,6 @@
 'use client'
 
+import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 
@@ -22,17 +23,20 @@ export function VisitorImagesSetting({
   return (
     <div className="flex items-start justify-between gap-4 p-3">
       <div className="min-w-0">
-        <Label htmlFor="visitorImagesEnabled" className="text-foreground">
-          Let visitors send photos
-        </Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <Label htmlFor="visitorImagesEnabled" className="text-foreground">
+            Let visitors send photos
+          </Label>
+          <Badge variant="outline">Goes live on publish</Badge>
+        </div>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Visitors attach up to three photos to a message in the web chat and on your site. The agent reads each one
-          and answers from what it sees.
+          Visitors attach up to three photos to a message in the web chat and on your site, and the agent answers from
+          what it reads in each. Test Chat tries it once the draft is saved; visitors get it when you publish.
         </p>
         {cannotRead ? (
           <p className="mt-1 text-sm text-amber-700 dark:text-amber-400" role="note">
             {enabled
-              ? 'Not working: this agent’s chat model can’t read photos, so visitors see no attach button.'
+              ? 'Not working: this agent’s chat model can’t read photos, so Test Chat and visitors get no attach button.'
               : 'This agent’s chat model can’t read photos. Pick another model to turn this on.'}
           </p>
         ) : null}

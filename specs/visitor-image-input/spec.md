@@ -188,6 +188,12 @@ a connector that takes photos (WhatsApp).
    - Docs.
 4. **`feat(whatsapp): read the images visitors send`.** Media download, the caption as typed text, and the same module
    and door. This includes how several photos sent in a row become turns.
+5. **`feat(chat): attach photos in Test Chat`.** The Test Chat composer takes photos through the assistant upload route,
+   and a test message's `imageIds` go through the door's claim and rendering. A test keeps its transcript apart from
+   `conversations`, so its photos bind to the test (`test_execution_id`, migration 258, `ON DELETE SET NULL` so the
+   unbound sweep removes them with the test). The photo switch is part of an agent revision (missing = off): the draft
+   holds the agent's setting, publishing freezes it, live channels follow the published revision and Test Chat the
+   revisions under test. Ray's `send_test_chat_message` stays text-only; Talk sends no photos.
 
 ## Matching recipe (docs, no new code)
 
@@ -204,7 +210,6 @@ need a text answer from the tool.
 ## Out of scope (follow-ups)
 
 - Images on Slack, email, voice, MCP converse and A2A.
-- Test Chat parity.
 - Image cards in agent replies, for example showing matched properties.
 - Reading images inside the document corpus.
 - Typed attribute extraction against an operator field catalog and matching by metadata filter (decision 2).

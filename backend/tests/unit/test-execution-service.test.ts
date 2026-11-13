@@ -50,6 +50,14 @@ class MemoryRepository implements TestExecutionRepositoryPort {
     return this.byIdempotencyKey.get(input.idempotencyKey) ?? null;
   }
   async find(): Promise<TestExecution | null> { return this.execution; }
+  async historyNamesImage(): Promise<boolean | null> {
+    return this.execution ? false : null;
+  }
+
+  async revisionPhotoSwitches(): Promise<ReadonlyArray<{ visitorImagesEnabled?: boolean }> | null> {
+    return this.execution ? this.execution.sides.map((side) => side.revision.snapshot) : null;
+  }
+
   async findAgentId(input: Parameters<TestExecutionRepositoryPort["findAgentId"]>[0]): Promise<string | null> {
     return this.execution && this.execution.id === input.executionId && this.execution.workspaceId === input.workspaceId
       ? this.execution.agentId

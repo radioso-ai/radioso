@@ -83,6 +83,24 @@ through composition (`createTestChatVoiceTurns` in
 `app/composition/voiceChannel.ts`) and the session-start route; this module
 knows nothing of sessions, vendors or speech.
 
+A typed message can carry photos (`photos` on `streamMessage`: the uploaded
+ids and their uploader). A repeat of a turn the test already stored replays its
+answer, or is refused when it differs, and claims nothing: a photo turn is
+recognised by what was typed and which photos it named, never by the readings.
+A new turn's photos are claimed through `TestExecutionPhotoTurnsPort`, which
+chat implements over the chat door's own claim and composition wires: every
+side runs on the turn text with the readings, the user entry keeps `content` as
+that text and `imageInput` as what was typed and each photo's id and reading,
+and the store binds the claim to the test in the transaction that stores the
+turn. When no turn was stored (`test_turn_in_progress`, a failed write), the
+photos are let go so the operator can send them again. A turn with photos, and
+a seed's message with photos, is listed by what was typed, never the readings.
+A retry reruns the stored turn text and claims nothing. A seed copies a
+visitor's `imageInput` with its message, except on a withheld message.
+`namesImage` says whether the test's history names a photo, decided in the
+store, for the Test Chat image route. This module knows nothing about how
+photos are stored or read.
+
 Operator Copilot reads and drives Test Chat through `summaries`, `transcript`,
 `turn`, `start`, and `send`, from
 `operatorCopilot/services/testChatService.ts`, which adds its spend guard,
@@ -102,5 +120,5 @@ revision does not make a private test conversation resumable by a visitor.
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/test-execution-service.test.ts tests/unit/test-execution-spoken-turns.test.ts tests/unit/trusted-test-execution-runner-adapter.test.ts tests/unit/conversation-test-execution-seed-source.test.ts tests/unit/test-execution-request-schema.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/test-execution-service.test.ts tests/unit/test-execution-spoken-turns.test.ts tests/unit/test-execution-photo-turns.test.ts tests/unit/trusted-test-execution-runner-adapter.test.ts tests/unit/conversation-test-execution-seed-source.test.ts tests/unit/test-execution-request-schema.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/test-execution-repository.integration.test.ts tests/integration/test-execution-routes.integration.test.ts tests/integration/conversation-test-execution-seed-source.integration.test.ts --no-file-parallelism`

@@ -1,16 +1,17 @@
 import { badRequest } from "../../../shared/domain/errors.js";
-import { renderVisitorImageTurn, type VisitorImageTurnInput } from "../../visitorImages/public.js";
+import { renderVisitorImageTurn, type VisitorImageClaim, type VisitorImageRevisionSwitch, type VisitorImageTurnInput } from "../../visitorImages/public.js";
 import type { AssistantChatRequest, UserMessageStoredListener } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 
 /**
- * A send's photos, claimed: the turn text it runs on, the metadata its message stores, the
- * listener that binds the photos to that message the moment the turn stores it, and `finish`,
+ * A send's photos, claimed: the turn text it runs on, the metadata its message stores, the claim,
+ * the listener that binds the photos to that message the moment the turn stores it, and `finish`,
  * which lets them go once the turn is over if no message took them.
  */
 interface VisitorImageTurn {
   readonly query: string;
-  readonly inputMetadata: UserMessageInputMetadata;
+  readonly inputMetadata: UserMessageInputMetadata & { imageInput: NonNullable<UserMessageInputMetadata["imageInput"]> };
+  readonly claim: VisitorImageClaim;
   readonly onUserMessageStored: UserMessageStoredListener;
   finish(): Promise<void>;
 }
@@ -22,14 +23,19 @@ interface VisitorImageTurn {
  */
 export const claimVisitorImageTurn = async (
   visitorImages: VisitorImageTurnInput | null,
-  input: Pick<AssistantChatRequest, "workspaceId" | "agentId" | "message" | "inputMetadata" | "imageIds" | "imageOwner" | "routineInvocation">,
+  input: Pick<AssistantChatRequest, "workspaceId" | "agentId" | "message" | "inputMetadata" | "imageIds" | "imageOwner" | "routineInvocation">
+    & { imageRevision?: VisitorImageRevisionSwitch },
 ): Promise<VisitorImageTurn | null> => {
   if (!input.imageIds || input.imageIds.length === 0) return null;
   if (!visitorImages || !input.imageOwner || !input.agentId || input.routineInvocation) {
     throw badRequest("Images are not accepted on this request");
   }
   const { workspaceId } = input;
-  const claim = await visitorImages.claim({ workspaceId, agentId: input.agentId, owner: input.imageOwner, imageIds: input.imageIds });
+  const claim = await visitorImages.claim({
+    workspaceId, agentId: input.agentId, owner: input.imageOwner, imageIds: input.imageIds,
+    // A Test Chat turn's photos follow the revision under test; every other turn's, the published one.
+    ...(input.imageRevision ? { revision: input.imageRevision } : {}),
+  });
   const typedText = input.message?.trim() ?? "";
   let bound = false;
   return {
@@ -38,6 +44,7 @@ export const claimVisitorImageTurn = async (
       ...(input.inputMetadata ?? { method: "typed" }),
       imageInput: { typedText, images: claim.images.map((image) => ({ id: image.id, reading: image.reading })) },
     },
+    claim,
     onUserMessageStored: async ({ conversationId, messageId }) => {
       await visitorImages.bind({ workspaceId, claim, conversationId, messageId });
       bound = true;

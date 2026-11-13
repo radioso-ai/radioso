@@ -105,8 +105,8 @@ const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, 
 })
 
 const liveAssistantBehaviorSettings = (settings: AssistantBehaviorSettings) => {
-  const { customInstruction, chatModelReadsImages, ...liveSettings } = settings
-  void [customInstruction, chatModelReadsImages]
+  const { customInstruction, chatModelReadsImages, visitorImagesEnabled, ...liveSettings } = settings
+  void [customInstruction, chatModelReadsImages, visitorImagesEnabled]
   return liveSettings
 }
 
@@ -542,7 +542,7 @@ export function WorkspaceAssistantChannelsTab({
   const hasPrivateInstructionChanges = Boolean(
     assistantBehaviorSettings
     && savedAssistantBehaviorSettings
-    && assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction,
+    && (assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction || assistantBehaviorSettings.visitorImagesEnabled !== savedAssistantBehaviorSettings.visitorImagesEnabled),
   )
   const greetingDraft = useGreetingDraft({
     agentId: mode === 'assistant' ? agentId : undefined,
@@ -558,8 +558,8 @@ export function WorkspaceAssistantChannelsTab({
   )
 
   useEffect(() => {
-    // Only the private instruction and the greeting wording participate in the agent revision.
-    // Names and all other profile settings apply immediately and must never enable Save Draft.
+    // Only the private instruction, the photo switch and the greeting wording are part of the agent
+    // revision. Names and all other profile settings apply immediately and never enable Save Draft.
     onDraftDirtyChange?.(hasDraftChanges)
   }, [hasDraftChanges, onDraftDirtyChange])
 
@@ -745,7 +745,7 @@ export function WorkspaceAssistantChannelsTab({
           // saved-looking value when the endpoint returns the whole agent.
           setSavedAssistantBehaviorSettings((current) => current ? {
             ...updated,
-            customInstruction: current.customInstruction,
+            customInstruction: current.customInstruction, visitorImagesEnabled: current.visitorImagesEnabled,
           } : updated)
           setAssistantSettingsError(null)
           // The server computes whether the chat model reads images from the model just saved.

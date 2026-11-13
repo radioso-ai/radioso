@@ -7,7 +7,7 @@ import { VISITOR_IMAGE_LIMITS } from "../../src/modules/visitorImages/public.js"
 import type { VisitorImageReader } from "../../src/modules/visitorImages/domain.js";
 import { AppError } from "../../src/shared/domain/errors.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession, publishTestAgentBaseline } from "../support/testApp.js";
 
 const photo = (format: "jpeg" | "png" | "webp" = "png"): Promise<Buffer> =>
   sharp({ create: { width: 2000, height: 1500, channels: 3, background: "#a0522d" } })[format]().toBuffer();
@@ -33,9 +33,12 @@ const imageWorkspace = async (options: { visitorImagesEnabled?: boolean; reader?
   const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
   const agents = await request(app).get("/api/v1/agents").set(dashboard).expect(200);
   const agentId = (agents.body.agents as Array<{ id: string; isDefault: boolean }>).find((agent) => agent.isDefault)!.id;
-  if (options.visitorImagesEnabled !== false) {
-    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ visitorImagesEnabled: true }).expect(200);
-  }
+  /** Saves the photo switch (and any other setting) on the draft, then publishes it: visitors get photos once published. */
+  const publishPhotos = async (body: Record<string, unknown>) => {
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send(body).expect(200);
+    await publishTestAgentBaseline(app, { workspaceId: operator.workspaceId, agentId });
+  };
+  if (options.visitorImagesEnabled !== false) await publishPhotos({ visitorImagesEnabled: true });
   const visitor = async () => {
     const session = await request(app).post(`/api/v1/public/chat/${chatToken}/sessions`).send({ channel: "anonymous_link" }).expect(200);
     const headers = { "x-radioso-public-session": session.body.publicSessionToken as string };
@@ -73,7 +76,7 @@ const imageWorkspace = async (options: { visitorImagesEnabled?: boolean; reader?
   const auditEvents = (eventType: string) => (created.dependencies.auditService as unknown as {
     events: Array<{ eventType: string; workspaceId?: string | null; metadata?: Record<string, unknown> }>;
   }).events.filter((event) => event.eventType === eventType);
-  return { ...created, operator, dashboard, agentId, chatToken, visitor, reader, credential, restCredential, auditEvents };
+  return { ...created, operator, dashboard, agentId, chatToken, visitor, reader, credential, restCredential, auditEvents, publishPhotos };
 };
 
 describe("visitor image contract", () => {
@@ -90,19 +93,18 @@ describe("visitor image contract", () => {
   });
 
   it("tells a returning visitor whether the agent takes photos, as the session start does", async () => {
-    const { visitor, app, agentId, dashboard } = await imageWorkspace();
+    const { visitor, publishPhotos } = await imageWorkspace();
     const first = await visitor();
     expect(first.session.acceptsImages).toBe(true);
     expect((await first.list().expect(200)).body.acceptsImages).toBe(true);
 
     // The operator turns photos off, then back on with a model that cannot read them.
-    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ visitorImagesEnabled: false }).expect(200);
+    await publishPhotos({ visitorImagesEnabled: false });
     const off = await visitor();
     expect(off.session.acceptsImages).toBe(false);
     expect((await first.list().expect(200)).body.acceptsImages).toBe(false);
 
-    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard)
-      .send({ visitorImagesEnabled: true, chatModelOverride: { provider: "openai-compatible", model: "llava" } }).expect(200);
+    await publishPhotos({ visitorImagesEnabled: true, chatModelOverride: { provider: "openai-compatible", model: "llava" } });
     const blind = await visitor();
     expect(blind.session.acceptsImages).toBe(false);
     expect((await first.list().expect(200)).body.acceptsImages).toBe(false);
@@ -316,11 +318,11 @@ describe("visitor image contract", () => {
     expect(response.body.error.code).toBe("visitor_image_unavailable");
   });
 
-  it("refuses to send a photo uploaded before the operator turned photos off", async () => {
-    const { visitor, app, agentId, dashboard } = await imageWorkspace();
+  it("refuses to send a photo uploaded before the operator published photos off", async () => {
+    const { visitor, publishPhotos } = await imageWorkspace();
     const { upload, send } = await visitor();
     const uploaded = await upload(await photo()).expect(201);
-    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ visitorImagesEnabled: false }).expect(200);
+    await publishPhotos({ visitorImagesEnabled: false });
 
     const refused = await send({ message: "Something like this", imageIds: [uploaded.body.id] }).expect(409);
 

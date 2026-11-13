@@ -16,7 +16,14 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
     z.object({ type: z.literal("execution_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid }),
   ]));
   const RevisionSummarySchema = z.object({ id: uuid, label: z.string(), kind: z.enum(["candidate", "published"]), versionNumber: z.number().int().positive().nullable(), createdAt: z.string().datetime(), publishedAt: z.string().datetime().optional() });
-  const TestExecutionHistoryEntrySchema = z.object({ turnId: uuid, role: z.enum(["user", "assistant"]), content: z.string(), messageId: uuid.optional(), turnTrace: z.unknown().optional(), attemptId: uuid, createdAt: z.string().datetime(), spoken: z.literal(true).optional().describe("The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn.") });
+  const TestExecutionImageInputSchema = registry.register("TestExecutionImageInput", z.object({
+    typedText: z.string().describe("What was typed with the photos, without their readings. Empty for photos sent alone."),
+    images: z.array(z.object({
+      id: uuid.describe("The image id; read the photo from the test's image route."),
+      reading: z.string().nullable().describe("What the agent's chat model read in the photo; null when it could not read it."),
+    })).min(1).max(3),
+  }).describe("The photos a user message carries. `content` is the turn text the agent ran on: the typed text followed by one `<attached_photo>` block per photo. Show `typedText` and the photos; the readings are the agent's."));
+  const TestExecutionHistoryEntrySchema = z.object({ turnId: uuid, role: z.enum(["user", "assistant"]), content: z.string(), messageId: uuid.optional(), turnTrace: z.unknown().optional(), attemptId: uuid, createdAt: z.string().datetime(), spoken: z.literal(true).optional().describe("The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn."), imageInput: TestExecutionImageInputSchema.optional() });
   const TestExecutionSideSchema = registry.register("TestExecutionSide", z.object({
     id: uuid, revision: RevisionSummarySchema,
     conversationId: uuid, state: z.enum(["running", "partial", "failed", "completed"]), retryable: z.boolean(), history: z.array(TestExecutionHistoryEntrySchema),

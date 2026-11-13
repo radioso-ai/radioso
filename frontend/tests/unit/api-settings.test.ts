@@ -35,6 +35,7 @@ const behaviorSettings = (handoffOnRetrievalMiss: boolean): AssistantBehaviorSet
 
 const responseAgent = (behavior: AssistantBehaviorSettings): AgentSettings => ({
   ...behavior,
+  replyCardsEnabled: false,
   id: 'agent-1',
   workspaceId: 'workspace-1',
   name: 'Support',

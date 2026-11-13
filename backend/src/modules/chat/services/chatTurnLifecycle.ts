@@ -71,7 +71,7 @@ import {
 import { attachRetrievalActivityTrace, getChatTurnRoute } from "./turnRouteTrace.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { describeRoutineTurn } from "./routines/routineTurnDescription.js";
-import { sensitiveSlotKeysForTurn, withSensitiveTurnMarker } from "./routines/sensitiveTurnMarker.js";
+import { sensitiveMessageMarks, sensitiveSlotKeysForTurn, withSensitiveTurnMarker, type SensitiveMessageMarks } from "./routines/sensitiveTurnMarker.js";
 import { notRecordedAnswerCoverage } from "./answerCoverage/notRecordedAnswerCoverage.js";
 import { routineConsentTurnEvents } from "./routines/routineConsentTurn.js";
 import type { RoutineConsentTurnEvents } from "../../../shared/domain/routineConsentTurn.js";
@@ -191,7 +191,7 @@ class RoutineActionAuthorizationError extends Error {
 }
 
 export interface AssistantTurnPersistencePort {
-  completeAssistantTurn(input: {
+  completeAssistantTurn(input: SensitiveMessageMarks & {
     workspaceId: string;
     accountId?: string | null;
     conversationId: string;
@@ -201,11 +201,6 @@ export interface AssistantTurnPersistencePort {
     clarificationTransition?: CapturedClarificationTransition | null;
     /** Exact request whose provisional coverage assessment this reply commits. */
     answerCoverageRequestMessageId?: string;
-    /**
-     * The visitor message of a turn whose routine holds a sensitive slot value (#1543): marked with
-     * those slots' keys in the turn's transaction, and any facet already extracted from it removed.
-     */
-    sensitiveVisitorMessage?: { id: string; sensitiveSlotKeys: readonly string[] };
     /** What the turn's routine did with its consents (#1544), recorded in the turn's transaction. */
     routineConsent?: RoutineConsentTurnEvents;
     assistantMessage: MessageCreateInput;
@@ -815,9 +810,7 @@ export class ChatTurnLifecycle {
         pendingDecisionTransition: input.pendingDecisionTransition,
         clarificationTransition: input.clarificationTransition,
         answerCoverageRequestMessageId: input.session.userMessage.id,
-        ...(sensitiveSlotKeys.length > 0
-          ? { sensitiveVisitorMessage: { id: input.session.userMessage.id, sensitiveSlotKeys } }
-          : {}),
+        ...sensitiveMessageMarks({ ...input, sensitiveSlotKeys }),
         routineConsent: routineConsentTurnEvents(input.session, input.consentEvents),
         assistantMessage: presentation.assistantMessage,
         auditEvent,

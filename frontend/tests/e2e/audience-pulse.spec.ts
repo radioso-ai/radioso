@@ -508,6 +508,10 @@ test.describe("Audience Pulse dashboard", () => {
     const evidenceAnchorBodies: unknown[] = [];
     await page.route(`**/backend/api/v1/history/chat/${conversationOne}**`, async (route) => {
       const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/consents")) {
+        await route.fallback();
+        return;
+      }
       if (url.pathname.endsWith("/tail")) {
         historyTailRequests.push(url.pathname);
         await route.fulfill({
@@ -659,6 +663,10 @@ test.describe("Audience Pulse dashboard", () => {
     const evidenceAnchorRequests: unknown[] = [];
     await page.route(`**/backend/api/v1/history/chat/${conversationOne}**`, async (route) => {
       const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/consents")) {
+        await route.fallback();
+        return;
+      }
       if (url.pathname.endsWith("/tail")) {
         await route.fulfill({
           status: 200,

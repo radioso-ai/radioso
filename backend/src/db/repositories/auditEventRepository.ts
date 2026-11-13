@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
-import { anyOf, castText, isForeignKeyViolation, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, isForeignKeyViolation, jsonbKeyText, jsonbSet, jsonbStringContainsAnyValueText, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { ConversationDataEraser, ConversationErasureScope } from "../../shared/domain/conversationDataErasure.js";
 import type { ConversationDataRetentionRule, RetentionAuditRecorder } from "../../shared/domain/conversationDataRetention.js";
+import type { MessageCopyWithholder, WithheldMessages } from "../../shared/domain/messageWithholding.js";
 
 export interface AuditEventRecord {
   id: string;
@@ -427,6 +428,37 @@ export class ConversationAuditEraser implements ConversationDataEraser {
       erased += Number(result.numDeletedRows);
     }
     return erased;
+  }
+}
+
+/**
+ * Withholds the turn events that copy a withheld message's content: each content event naming the
+ * message as the turn's visitor message or its reply goes, as a conversation's erasure removes them
+ * all, and so does each of the conversation's content events whose own text states a withheld
+ * value, as a query rewritten from an earlier turn. The events that record ids and outcome codes stay.
+ */
+export class ConversationAuditWithholder implements MessageCopyWithholder {
+  readonly owner = "audit";
+
+  constructor(private readonly db: Db) {}
+
+  async withhold(messages: WithheldMessages): Promise<number> {
+    let removed = 0;
+    for (const eventType of CONVERSATION_CONTENT_EVENT_TYPES) {
+      const result = await this.db
+        .deleteFrom("audit_events")
+        .where("workspace_id", "=", messages.workspaceId)
+        .where("event_type", "=", eventType)
+        .where((eb) => eb(jsonbKeyText(eb.ref("metadata_json"), "conversationId"), "=", messages.conversationId))
+        .where((eb) => eb.or([
+          anyOf(jsonbKeyText(eb.ref("metadata_json"), "userMessageId"), messages.messageIds, "text[]"),
+          anyOf(jsonbKeyText(eb.ref("metadata_json"), "assistantMessageId"), messages.messageIds, "text[]"),
+          jsonbStringContainsAnyValueText(eb.ref("metadata_json"), messages.valueTexts),
+        ]))
+        .executeTakeFirst();
+      removed += Number(result.numDeletedRows);
+    }
+    return removed;
   }
 }
 

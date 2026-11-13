@@ -1,4 +1,5 @@
 import type {
+  ConversationConsents,
   ConversationErasure,
   DataSubjectAccess,
   PrivacySettingsService,
@@ -423,6 +424,8 @@ export interface AppDependencies {
   assistantHistoryService: AssistantHistoryService;
   /** Permanent erasure of a conversation, or of a visitor and their conversations. */
   conversationErasure: ConversationErasure;
+  /** A conversation's routine consent records, and an operator's withdrawal of one on the visitor's request. */
+  conversationConsents: ConversationConsents;
   /** How long the workspace keeps conversations; the retention sweep enforces it. */
   privacySettingsService: PrivacySettingsService;
   /** The zone the workspace reads "today" in when a visitor's client reports none. */

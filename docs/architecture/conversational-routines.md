@@ -771,7 +771,11 @@ the turn. A returned key in neither list either restated the value the slot alre
 held, or failed the slot's declared type and landed in `rejectedSlots` instead.
 An `off_topic` outcome captures nothing
 that turn, even when `returnedSlotKeys` is non-empty — those keys show what the
-model read from the message, not what the routine kept.
+model read from the message, not what the routine kept. The turn's
+`earlierMessageSlotKeys` names the consent-covered slots it filled while the
+selector could read them from the visitor's earlier messages, granted before the
+turn and still empty (#1544); the host marks those earlier messages as carrying
+the slot.
 
 ### When the visitor asks something else
 

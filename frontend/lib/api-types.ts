@@ -469,6 +469,7 @@ export type RecentlyClosedInboxItemsResponse = ApiSchemas['RecentlyClosedInboxIt
 export type ConversationRequestContext = ApiSchemas['ConversationRequestContext']
 export type ConversationVisitorProfile = ApiSchemas['ConversationVisitorProfile']
 export type ChatConversationMessage = ApiSchemas['ChatConversationMessage']
+export type ConversationConsent = ApiSchemas['ConversationConsent']
 export type ChatConversationTail = ApiSchemas['ChatConversationTail']
 export type PublicChatConversationTail = ApiSchemas['PublicChatConversationTail']
 

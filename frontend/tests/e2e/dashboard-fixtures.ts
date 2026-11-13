@@ -1814,6 +1814,12 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    // A conversation's routine consent records: none, unless a spec routes its own.
+    if (request.method() === "GET" && /^\/history\/chat\/[^/]+\/consents$/.test(path)) {
+      await json(route, { consents: [] });
+      return;
+    }
+
     if (request.method() === "GET" && path.startsWith("/history/chat/") && path.endsWith("/tail")) {
       const conversationId = path.replace("/history/chat/", "").replace("/tail", "");
       const activeConversationDetail = conversationDetails.get(conversationId) ?? conversationDetail;

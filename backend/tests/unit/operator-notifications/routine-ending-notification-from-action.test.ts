@@ -56,7 +56,7 @@ describe("routineEndingNotificationFromAction", () => {
       chosen_home: "Villa Rosa (https://homes.example/villa-rosa)",
       named_home: "Casa Blu",
     });
-    const formatted = formatRoutineEndingNotification(notification!);
+    const formatted = formatRoutineEndingNotification(notification);
     expect(formatted.subject).toBe("Viewing request: Villa Rosa (https://homes.example/villa-rosa)");
     expect(formatted.lines).toContain("  Chosen home: Villa Rosa (https://homes.example/villa-rosa)");
     expect(formatted.lines.join("\n")).not.toContain("[object Object]");

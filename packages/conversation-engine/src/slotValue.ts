@@ -87,7 +87,7 @@ const checkItemObject = (value: object): SlotValueCheck => {
   ) {
     return rejected("type_mismatch");
   }
-  return accepted({ key, title, ...(typeof link === "string" ? { link } : {}), fields: Object.fromEntries(fieldEntries) as RoutineItemValue["fields"] });
+  return accepted({ key, title, ...(typeof link === "string" ? { link } : {}), fields: Object.fromEntries(fieldEntries) });
 };
 
 const checkString = (type: RoutineSlotType, value: string): SlotValueCheck => {

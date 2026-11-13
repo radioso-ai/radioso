@@ -24,7 +24,6 @@ import type {
   RoutineTraceRejectedSlot,
   RoutineTraceStepEntry,
   RoutineTransition,
-  SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
 import {

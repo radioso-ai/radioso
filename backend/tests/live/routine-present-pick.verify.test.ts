@@ -30,7 +30,6 @@ import { DefaultRoutineRunner } from "@radioso/conversation-engine";
 
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { ChatGateway, ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
-import type { StoredReplyBlock } from "../../src/modules/chat/contracts/replyBlocks.js";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { readItemSelection, routineItemSelectionOf } from "../../src/modules/chat/services/replyBlocks/itemSelection.js";
@@ -229,7 +228,7 @@ const named = (answer: string, title: string | undefined): boolean => Boolean(ti
 /** One sample with cards: tap the second card; separately, type "the second one" from the same point. */
 const cardsSample = async () => {
   const first = await briefTurn(true);
-  const block = first.block as StoredReplyBlock | undefined;
+  const block = first.block;
   const pickedKey = block?.items[1]?.key ?? block?.items[0]?.key;
   const message = { id: "assistant-1", conversationId: CONVERSATION_ID, workspaceId: "workspace-1", role: "assistant", content: first.result.response.answer, metadata: { blocks: block ? [block] : [] }, createdAt: new Date() } as unknown as MessageRecord;
   const reading = pickedKey && block ? readItemSelection(message, CONVERSATION_ID, { messageId: "assistant-1", blockId: block.id, itemKey: pickedKey }) : null;

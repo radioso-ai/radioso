@@ -20,7 +20,7 @@ interface RoutinePresentingStepOptions {
 }
 
 /** What writes a presenting step's reply: the skill-result outcome, its renderer, and the context it renders in. */
-export interface RoutinePresentingStepReply {
+interface RoutinePresentingStepReply {
   outcome: TurnOutcome;
   renderer: TurnOutcomeRenderer;
   context(): Promise<TurnRenderContext>;

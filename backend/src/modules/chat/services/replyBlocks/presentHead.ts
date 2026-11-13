@@ -14,15 +14,15 @@ export interface PresentHead {
   selection: PresentSelection;
 }
 
-/** The `selection` field of a `present` head, shared by every source of items. */
-export const PRESENT_SELECTION_PROPERTY = {
+/** The `selection` field of the `present` head: whether the visitor can pick one of the pictures shown. */
+const PRESENT_SELECTION_PROPERTY = {
   type: "string",
   enum: ["none", "single"],
   description: "single when the visitor is to pick one of the items shown; none when they are only shown.",
 } as const;
 
 /** The model's `selection`, or `none` when it is missing or not one the schema offers. */
-export const readPresentSelection = (value: unknown): PresentSelection => (value === "single" ? "single" : "none");
+const readPresentSelection = (value: unknown): PresentSelection => (value === "single" ? "single" : "none");
 
 // The same on every turn that offers it: the handles are plain strings rather than a per-turn
 // enum, so the schema stays in the provider's response-schema cache. The block builder drops

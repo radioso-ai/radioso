@@ -175,6 +175,9 @@ const openDrawer = async (page: Page) => {
 };
 
 const consentsPanel = (page: Page) => page.getByRole("region", { name: "Consents" });
+// The All lens's reading pane stays mounted under the drawer and polls the same thread, so it
+// shows the withheld labels too; the drawer's own thread is the one under test.
+const drawer = (page: Page) => page.getByRole("dialog", { name: "Conversation details" });
 
 test("an admin withdraws a visitor's consent from the drawer, and the messages that carried it read as withheld", async ({ page }) => {
   await installMocks(page);
@@ -214,9 +217,9 @@ test("an admin withdraws a visitor's consent from the drawer, and the messages t
   await expect(withdrawnRecord.getByText("Withdrawn", { exact: true })).toBeVisible();
   await expect(withdrawnRecord.getByText(/Withdrawn .*2026/)).toBeVisible();
   await expect(withdrawnRecord.getByRole("button", { name: "Withdraw" })).toHaveCount(0);
-  await expect(page.getByText("Withheld after consent was withdrawn")).toHaveCount(4);
+  await expect(drawer(page).getByText("Withheld after consent was withdrawn")).toHaveCount(4);
   await expect(page.getByText("I have a sore knee")).toHaveCount(0);
-  await expect(page.getByText("I want to book a class").first()).toBeVisible();
+  await expect(drawer(page).getByText("I want to book a class")).toBeVisible();
   if (screenshotDir) await page.screenshot({ path: `${screenshotDir}/32-after-withdraw.png` });
 });
 

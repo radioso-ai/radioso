@@ -326,7 +326,9 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
     const capture = { kind: "images" as const, documentId, workspaceId, documentRevision: 1, requeueFinished: true };
 
     const first = await repository.ensureFollowUpJob(capture);
-    const claimed = await repository.claimById(first.id);
+    // Claimed a minute ahead, as the other claims here: available_at is the database's now(), to the
+    // microsecond, and a claim in the same millisecond with the process's clock would not reach it.
+    const claimed = await repository.claimById(first.id, new Date(Date.now() + 60_000));
     expect(claimed?.status).toBe("processing");
     const whileRunning = await repository.ensureFollowUpJob(capture);
     await repository.markCompleted(first.id);

@@ -68,6 +68,7 @@ export const claimRoutineResume = async (input: {
     ...baseTurn,
     activeRoutineId: state.routineId,
     activeStepId: state.path.at(-1),
+    ...(state.executionId ? { activeRoutineExecutionId: state.executionId } : {}),
   };
   let directiveSteeringStage: ConversationTraceStage | null = null;
   // The activated routine's step prompt never itself emits a `coverage` field, so

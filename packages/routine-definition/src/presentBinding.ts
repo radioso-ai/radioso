@@ -38,3 +38,45 @@ export const presentBindingOf = (step: { metadata?: unknown }): RoutineStepPrese
   const parsed = routineStepPresentSchema.safeParse((metadata as { present?: unknown }).present);
   return parsed.success ? parsed.data : null;
 };
+
+/** The minimum a step and an edge expose to decide where a presenting step's results come from. */
+interface PresentSourceStep {
+  stableStepId: string;
+  kind: string;
+}
+
+interface PresentSourceEdge {
+  fromStep: string;
+  toRef: string;
+}
+
+/**
+ * The tool steps whose result is still staged when the routine reaches `stepId` on the same turn:
+ * those that reach it through tool and action steps only, in document order. A waiting step in
+ * between, a message step or an approval, ends the turn and the staged result with it.
+ */
+export const presentSourceCandidates = (
+  steps: readonly PresentSourceStep[],
+  transitions: readonly PresentSourceEdge[],
+  stepId: string,
+): string[] => {
+  const kindOf = new Map(steps.map((step) => [step.stableStepId, step.kind]));
+  const tools = new Set<string>();
+  const visited = new Set<string>();
+  const pending = [stepId];
+  while (pending.length > 0) {
+    const target = pending.pop();
+    for (const edge of transitions) {
+      const kind = kindOf.get(edge.fromStep);
+      if (edge.toRef !== target || visited.has(edge.fromStep) || (kind !== "tool" && kind !== "action")) {
+        continue;
+      }
+      visited.add(edge.fromStep);
+      pending.push(edge.fromStep);
+      if (kind === "tool") {
+        tools.add(edge.fromStep);
+      }
+    }
+  }
+  return steps.map((step) => step.stableStepId).filter((id) => tools.has(id));
+};

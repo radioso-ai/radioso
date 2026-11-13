@@ -469,7 +469,7 @@ describe("live runner reply block corpus", () => {
   });
 
   it("runs the reply block and tool-card cases apart, and every committed case in exactly one part", () => {
-    const { shared, replyBlocks, toolCards } = partitionCasesByCorpus(conversationQualityCases);
+    const { shared, replyBlocks, toolCards, routineCards } = partitionCasesByCorpus(conversationQualityCases);
 
     expect(replyBlocks.map((evalCase) => evalCase.id).sort()).toEqual([
       "reply-blocks-guest-house-photos",
@@ -482,8 +482,9 @@ describe("live runner reply block corpus", () => {
       "tool-cards-no-match-no-cards",
       "tool-cards-records-without-pictures",
     ]);
-    expect(shared).toHaveLength(conversationQualityCases.length - replyBlocks.length - toolCards.length);
-    expect(shared.some((evalCase) => evalCase.id.startsWith("reply-blocks-") || evalCase.id.startsWith("tool-cards-"))).toBe(false);
+    expect(routineCards.map((evalCase) => evalCase.id)).toEqual(["routine-property-flow"]);
+    expect(shared).toHaveLength(conversationQualityCases.length - replyBlocks.length - toolCards.length - routineCards.length);
+    expect(shared.some((evalCase) => evalCase.id.startsWith("reply-blocks-") || evalCase.id.startsWith("tool-cards-") || evalCase.id === "routine-property-flow")).toBe(false);
   });
 
   const targetPorts = (workspaces: Array<{ id: string; name: string }>) => {

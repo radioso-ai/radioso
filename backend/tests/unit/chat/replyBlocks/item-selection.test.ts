@@ -146,7 +146,7 @@ describe("a card the visitor picked", () => {
   const homesBlock: StoredReplyBlock = {
     ...flatsBlock,
     items: [{ ...flatsBlock.items[0], fields: { id: "h-2", rooms: 2 } }],
-    origin: { kind: "routine_step", skillName: "search_listings", routineId: "routine-homes", stepId: "choose", slot: "chosen_home" },
+    origin: { kind: "routine_step", skillName: "search_listings", routineId: "routine-homes", stepId: "choose", executionId: "run-1", slot: "chosen_home" },
   };
 
   it("takes a pick of a routine step's card, with the step, the slot and the record's scalars", async () => {
@@ -162,12 +162,14 @@ describe("a card the visitor picked", () => {
       title: "Flat 2",
       description: "Two rooms by the river",
       link: "https://homes.example/flat-2",
-      routineStep: { routineId: "routine-homes", stepId: "choose", slot: "chosen_home" },
+      routineStep: { routineId: "routine-homes", stepId: "choose", executionId: "run-1", slot: "chosen_home" },
       fields: { id: "h-2", rooms: 2 },
     });
     expect(routineItemSelectionOf(turn?.item)).toEqual({
       routineId: "routine-homes",
       stepId: "choose",
+      executionId: "run-1",
+      messageId: CARDS_MESSAGE_ID,
       slot: "chosen_home",
       item: { key: "/listings/1", title: "Flat 2", link: "https://homes.example/flat-2", fields: { id: "h-2", rooms: 2 } },
     });

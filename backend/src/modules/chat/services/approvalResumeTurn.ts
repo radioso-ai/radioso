@@ -26,6 +26,7 @@ import {
   createRoutineGroundedAnswerRenderer,
   presentRoutineRenderableAnswer,
 } from "./routines/routineGroundedAnswerRenderer.js";
+import type { RoutinePresentingSteps } from "./routines/routinePresentingStepRenderer.js";
 import { asksConsentField, type CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import { routineConsentTurnFacts } from "./routines/routineConsentTurn.js";
@@ -67,6 +68,8 @@ interface ApprovalResumeTurnOptions {
   chatAnswerPresenter: ChatAnswerPresenter;
   chatAnswerSupport?: ChatAnswerSupport;
   turnSkills: TurnSkill[];
+  /** Writes a routine step that shows a skill step's results after the decision (#1763). */
+  presentingSteps?: RoutinePresentingSteps;
   conversationEngine: ConversationEngine;
   chatTurnLifecycle: Pick<ChatTurnLifecycle, "completeAssistantTurn">;
   conversationTurnRegistry: Pick<ConversationTurnRegistry, "start">;
@@ -196,6 +199,7 @@ export class ApprovalResumeTurn {
         accountId: input.decidedBy,
         responseLanguage: session.responseLanguage,
         turnSkills: this.options.turnSkills,
+        presentingSteps: this.options.presentingSteps,
         chatAnswerPresenter: this.options.chatAnswerPresenter,
       }),
       throwIfCancelled: () => this.checkTurnCancellation(coordination, "routing"),

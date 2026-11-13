@@ -26,7 +26,11 @@ const ENVELOPE = JSON.stringify({
   present: { records: ["r2", "r1"], fields: { title: "/name", subtitle: "/area", image: "/photo", link: "/url" }, caption: "Homes in Mitte" },
   answer: "Two homes match; pick the one you like.",
 });
-const TEXT_LIST = "Two homes match: Casa Blu and Villa Rosa. Which one do you like?";
+const TEXT_LIST = "Two homes match:\n1. Casa Blu\n2. Villa Rosa\nWhich one do you like?";
+const LIST_ENVELOPE = JSON.stringify({
+  present: { records: ["r1", "r2"], fields: { title: "/name", subtitle: "/area", image: "/photo", link: "/url" }, caption: "Homes in Mitte" },
+  answer: TEXT_LIST,
+});
 
 const session = (replyCardsEnabled: boolean, declared = true): PreparedSession => ({
   agent: { id: "agent-1", workspaceId: "workspace-1", name: "Nico", chatModelOverride: null, replyCardsEnabled },
@@ -73,11 +77,11 @@ const setup = (replyCardsEnabled: boolean, declared = true) => {
   const gateway: ChatGateway = {
     async answer(input) {
       calls.push(input);
-      return input.generation?.responseFormat ? ENVELOPE : TEXT_LIST;
+      return input.prompt.includes("Listed records") ? LIST_ENVELOPE : ENVELOPE;
     },
     async *streamAnswer(input) {
       calls.push(input);
-      yield input.generation?.responseFormat ? ENVELOPE : TEXT_LIST;
+      yield input.prompt.includes("Listed records") ? LIST_ENVELOPE : ENVELOPE;
     },
   };
   const runtime = buildChatTurnRuntime({
@@ -89,22 +93,24 @@ const setup = (replyCardsEnabled: boolean, declared = true) => {
       newImageId: (() => { let next = 0; return () => `image-${++next}`; })(),
     }),
   });
+  const metrics = { incrementCounter: vi.fn() };
   const renderer = createRoutineGroundedAnswerRenderer({
     session: session(replyCardsEnabled, declared),
     turnSkills: runtime.turnSkills,
-    skillResultRenderer: runtime.skillResultRenderer,
+    presentingSteps: { skillResultRenderer: runtime.skillResultRenderer, metrics },
     chatAnswerPresenter: runtime.chatAnswerPresenter,
   });
-  return { renderer, calls };
+  const outcomes = () => metrics.incrementCounter.mock.calls.map(([name, options]) => [name, (options as { labels: { outcome: string } }).labels.outcome]);
+  return { renderer, calls, outcomes };
 };
 
 const presenter = new ChatAnswerPresenter(new AssistantSuggestionExpansionService());
 
 describe("a routine step that shows a skill step's results (#1763)", () => {
-  it("offers cards from the staged records, picked into the step's slot and stored with the step's origin", async () => {
-    const { renderer, calls } = setup(true);
+  it("offers cards from the staged records, picked into the step's slot and stored with the step's run as their origin", async () => {
+    const { renderer, calls, outcomes } = setup(true);
 
-    const reply = await renderer.prepare!({ step: choose, steering: [], turn: turn([staged()]) })!.render();
+    const reply = await renderer.prepare!({ step: choose, steering: [], turn: { ...turn([staged()]), activeRoutineExecutionId: "run-1" } })!.render();
     const presentation = presentRoutineRenderableAnswer(presenter, reply);
 
     expect(reply.answer).toBe("Two homes match; pick the one you like.");
@@ -112,8 +118,9 @@ describe("a routine step that shows a skill step's results (#1763)", () => {
     const stored = presentation.replyBlocks?.stored[0];
     expect(stored).toMatchObject({
       selection: "single",
-      origin: { kind: "routine_step", skillName: "search_homes", routineId: "routine-homes", stepId: "choose", slot: "chosen_home" },
+      origin: { kind: "routine_step", skillName: "search_homes", routineId: "routine-homes", stepId: "choose", executionId: "run-1", slot: "chosen_home" },
     });
+    expect(outcomes()).toEqual([["routine_present_total", "cards"]]);
     expect(stored?.items.map((item) => [item.title, item.fields?.id])).toEqual([["Villa Rosa", "h-2"], ["Casa Blu", "h-1"]]);
     expect(presentation.replyBlocks?.presented[0]?.items[0]?.actions).toEqual([
       { type: "open", url: "https://homes.example/villa-rosa" },
@@ -144,16 +151,27 @@ describe("a routine step that shows a skill step's results (#1763)", () => {
   it.each([
     ["the agent's cards switch is off", false, true],
     ["the client draws no cards", true, false],
-  ])("lists the records in text when %s, with no cards and no head", async (_label, enabled, declared) => {
-    const { renderer, calls } = setup(enabled, declared);
+  ])("lists the records in text when %s, and keeps what it listed, unpresented", async (_label, enabled, declared) => {
+    const { renderer, calls, outcomes } = setup(enabled, declared);
 
     const reply = await renderer.prepare!({ step: choose, steering: [], turn: turn([staged()]) })!.render();
+    const presentation = presentRoutineRenderableAnswer(presenter, reply);
 
     expect(reply.answer).toBe(TEXT_LIST);
     expect(reply.blocks).toBeUndefined();
-    expect(calls[0]?.generation?.responseFormat).toBeUndefined();
-    expect(calls[0]?.prompt).toContain("Villa Rosa");
-    expect(calls[0]?.prompt).not.toContain("[r1]");
+    expect(presentation.replyBlocks).toBeUndefined();
+    expect(calls[0]?.prompt).toContain("Listed records");
+    expect(calls[0]?.prompt).toContain("[r1]");
+    expect(presentation.listedItems).toMatchObject({
+      selection: "none",
+      layout: "list",
+      origin: { kind: "routine_step", stepId: "choose", slot: "chosen_home" },
+    });
+    expect(presentation.listedItems?.items.map((item) => [item.title, item.image, item.fields?.id])).toEqual([
+      ["Casa Blu", undefined, "h-1"],
+      ["Villa Rosa", undefined, "h-2"],
+    ]);
+    expect(outcomes()).toEqual([["routine_present_total", "text"]]);
   });
 
   it.each([
@@ -162,9 +180,10 @@ describe("a routine step that shows a skill step's results (#1763)", () => {
     ["the source returned nothing", [staged({ data: {} })]],
     ["another step's result is staged", [staged({}, { stepId: "lookup" })]],
   ])("leaves the step its own reply when %s", (_label, stagedContext) => {
-    const { renderer } = setup(true);
+    const { renderer, outcomes } = setup(true);
 
     expect(renderer.prepare!({ step: choose, steering: [], turn: turn(stagedContext) })).toBeNull();
+    expect(outcomes()).toHaveLength(1);
   });
 
   it("leaves a step with no binding to its own reply", () => {

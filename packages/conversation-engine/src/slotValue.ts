@@ -49,15 +49,6 @@ const isIsoCalendarDate = (value: string): boolean => {
 const accepted = (value: string | number | boolean | RoutineItemValue): SlotValueCheck => ({ ok: true, value });
 const rejected = (reason: SlotValueRejection): SlotValueCheck => ({ ok: false, reason });
 
-/** At most `max` UTF-16 code units, never splitting a surrogate pair. */
-const cut = (text: string, max: number): string => {
-  if (text.length <= max) {
-    return text;
-  }
-  const end = /[\uD800-\uDBFF]/u.test(text.charAt(max - 1)) ? max - 1 : max;
-  return text.slice(0, end);
-};
-
 // An absolute http(s) address, as a stored card's link is. Protocol syntax, not vocabulary.
 const isWebAddress = (value: string): boolean => {
   if (value.length > ROUTINE_ITEM_VALUE_LIMITS.link || !/^https?:\/\//iu.test(value)) {
@@ -93,8 +84,8 @@ const checkItemObject = (value: object): SlotValueCheck => {
 const checkString = (type: RoutineSlotType, value: string): SlotValueCheck => {
   switch (type) {
     case "item":
-      // An item the visitor named in text, where no card was picked: its name is all it holds.
-      return accepted({ key: cut(value, ROUTINE_ITEM_VALUE_LIMITS.key), title: cut(value, ROUTINE_ITEM_VALUE_LIMITS.title), fields: {} });
+      // A name is never an item: the runner resolves it to an item the step showed (#1763).
+      return rejected("type_mismatch");
     case "text":
       return accepted(value);
     case "email":
@@ -115,7 +106,7 @@ const checkString = (type: RoutineSlotType, value: string): SlotValueCheck => {
  * Checks one value against a slot's declared type and returns it in that type's canonical
  * form: a trimmed string, a number for a numeric string, a boolean for `true`/`false`. A text
  * slot also takes a finite number or a boolean, stated as text. Objects and arrays fit no type
- * but `item`, which takes the card a pick copies, or a name given in text.
+ * but `item`, which takes the stored card a pick or a resolved name copies.
  * Checking an accepted value again returns it unchanged.
  */
 export const checkSlotValue = (type: RoutineSlotType, value: unknown): SlotValueCheck => {

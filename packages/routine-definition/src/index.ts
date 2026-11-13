@@ -101,6 +101,7 @@ export const routineValidationCodes = [
   "consent_step_needs_default_exit",
   "present_step_not_chat",
   "present_source_not_earlier_tool",
+  "present_source_unreachable",
   "present_slot_not_item",
   "present_selection_mismatch",
   "item_slot_without_presenting_step",

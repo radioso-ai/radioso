@@ -70,7 +70,7 @@ export type StoredReplyItem = Omit<ReplyItem, "image" | "facts"> & {
  */
 export type StoredReplyBlockOrigin =
   | { kind: "skill_result"; skillName: string }
-  | { kind: "routine_step"; skillName: string; routineId: string; stepId: string; slot?: string };
+  | { kind: "routine_step"; skillName: string; routineId: string; stepId: string; executionId?: string; slot?: string };
 
 /** A reply block as `messages.metadata_json.blocks` keeps it. */
 export type StoredReplyBlock = Omit<ItemListBlock, "items"> & { items: StoredReplyItem[]; origin?: StoredReplyBlockOrigin };
@@ -137,6 +137,7 @@ export const storedReplyBlockSchema = itemListBlockSchemaWith(storedReplyImageSc
       skillName: z.string().min(1).max(200),
       routineId: z.string().min(1).max(200),
       stepId: z.string().min(1).max(200),
+      executionId: z.string().min(1).max(200).optional(),
       slot: z.string().min(1).max(200).optional(),
     }),
   ]).optional(),

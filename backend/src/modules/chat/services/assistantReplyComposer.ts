@@ -125,7 +125,10 @@ export class AssistantReplyComposer {
     extras: Record<string, unknown> | undefined,
   ): ChatPresentedAnswer {
     const replyBlocks = offer?.build(extras);
-    return replyBlocks ? { ...presentation, replyBlocks } : presentation;
+    const listedItems = offer?.listed?.(extras);
+    return replyBlocks || listedItems
+      ? { ...presentation, ...(replyBlocks ? { replyBlocks } : {}), ...(listedItems ? { listedItems } : {}) }
+      : presentation;
   }
 
   async composeAnswer(

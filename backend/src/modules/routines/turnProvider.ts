@@ -37,6 +37,7 @@ import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js"
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 import { createRoutineTurnReporter } from "./routineTurnReporter.js";
+import { itemPickTelemetry } from "./itemPickTelemetry.js";
 import { selectorCompletionTelemetry } from "./selectorCompletionTelemetry.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { setTraceAttributes } from "../../shared/observability/tracing/operations.js";
@@ -564,6 +565,7 @@ export const createRoutineTurnProvider = (
       {
         contextRenderer: routineContextRenderer,
         includeSlotValues,
+        onItemPick: itemPickTelemetry({ logger: dependencies.logger, metricsRegistry: dependencies.metricsRegistry ?? null, agentId, workspaceId }),
         ...(consent && consentStore
           ? {
               consent: createRoutineConsentTurnPort({

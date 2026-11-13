@@ -1,4 +1,4 @@
-import { presentBindingOf, type RoutineValidationCode } from "@radioso/routine-definition";
+import { presentBindingOf, presentSourceCandidates, type RoutineValidationCode } from "@radioso/routine-definition";
 
 import type { RoutineDefinition } from "./domain.js";
 
@@ -12,6 +12,7 @@ interface PresentBindingDiagnostic {
 export const safePresentBindingValidationMessages: Partial<Record<RoutineValidationCode, string>> = {
   present_step_not_chat: "Only a message step can show results as cards.",
   present_source_not_earlier_tool: "A step that shows results as cards must take them from a tool step that comes before it.",
+  present_source_unreachable: "A step that shows results as cards must follow its tool step with no message or approval step in between.",
   present_slot_not_item: "A step that lets the visitor pick a card must fill a field of type item.",
   present_selection_mismatch: "A step lets the visitor pick a card exactly when it names the item field the pick fills.",
   item_slot_without_presenting_step: "An item field is filled only by a pick on a step that shows results as cards, and no step fills this one.",
@@ -35,7 +36,8 @@ const stepsBefore = (definition: RoutineDefinition, stepId: string): ReadonlySet
 
 /**
  * The rules of a presenting step (#1763): it is a message step; `from` is a tool step the routine
- * passes through before it; `slot` is a declared `item` slot; and the step lets the visitor pick
+ * passes through before it, through tool and action steps only, so its result is still staged on
+ * the turn the step replies; `slot` is a declared `item` slot; and the step lets the visitor pick
  * (`single`) exactly when it names one. An `item` slot no presenting step binds can never be filled.
  */
 export const presentBindingDiagnostics = (definition: RoutineDefinition): PresentBindingDiagnostic[] => {
@@ -62,6 +64,12 @@ export const presentBindingDiagnostics = (definition: RoutineDefinition): Presen
         code: "present_source_not_earlier_tool",
         location: `${at}.from`,
         message: `present source invalid: "${step.stableStepId}" shows results from "${present.from}", which is not a tool step the routine passes through before it.`,
+      });
+    } else if (!presentSourceCandidates(definition.steps, definition.transitions, step.stableStepId).includes(present.from)) {
+      diagnostics.push({
+        code: "present_source_unreachable",
+        location: `${at}.from`,
+        message: `present source unreachable: a step that waits for the visitor comes between "${present.from}" and "${step.stableStepId}", so its result is gone by the turn "${step.stableStepId}" replies.`,
       });
     }
     if (present.slot !== undefined) {

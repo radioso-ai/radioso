@@ -386,7 +386,8 @@ The visitor taps **Select** on a card. Their message appears as the item's title
 - **The binding.** A `chat` step may declare `present: { fromStep, selection }` in its typed step metadata. A `single` selection names the slot that receives the choice in `captureKey`. Today only approval steps take a `captureKey`.
 - **What the model and the step decide.** The model picks the records and the fields. The step decides `selection`, so the head omits it.
 - **When cards appear.** Cards show only on the turn the source step ran, while its result is staged. On a later turn at the same step, the reply is text.
-- **Slot type `item`.** The value is `{ key, title, subtitle?, link?, imageId? }`, copied from the stored block item. It is filled only by a validated selection, never extracted from text, and renders as its title.
+- **Slot type `item`.** The value is `{ key, title, link?, fields }`, copied from the stored block item; `fields` is a bounded copy of the record's top-level scalars. It renders as its title wherever a scalar is read.
+- **Filled only from stored items.** A tap fills it while the run waits on the step and the card comes from the step's latest presentation in that run (the block's origin carries the run's `executionId`). A typed answer on the step is resolved against the same presentation: the selector sees the items numbered and returns a number or a key, and the host's stored item fills the slot, identical to a tap. Where no cards are drawn, the step lists the records in text and the message keeps them server-side (`metadata.listedItems`, `selection: "none"`), so a typed answer there resolves the same way. A value the selector writes itself is never kept.
 
 ### D11. Selection is a structured fact (PR 2a.2)
 
@@ -442,7 +443,7 @@ The steps are brief (`area`, `budget`, `rooms`) → tool step `search` with inpu
 
 1. **Given** the brief is complete, **When** the turn runs `search` and lands on `choose`, **Then** that reply shows up to 10 cards with Select. The block's origin is `routine_step/choose`.
 2. **Given** a tap, **When** the next turn arrives, **Then** `property` holds the item, the routine hands off, and the operator notice shows the title and the link.
-3. **Given** the visitor types "the second one", **When** the turn arrives, **Then** `property` stays empty, and the step asks again.
+3. **Given** the visitor types "the second one" or the second card's title, **When** the turn arrives, **Then** `property` holds the second card's stored item, as a tap would; a name or position the step did not show leaves it empty, and the step asks again.
 4. **Given** `search` failed, **When** the routine reaches `choose`, **Then** the reply is text, and no block is built.
 5. **Given** a tap on an older block after the routine moved on, **When** it arrives, **Then** no slot changes, and the agent treats it as an item-selection fact.
 6. **Given** a binding to a step that is not a tool step, does not come before it, or has a non-`item` capture slot, **When** the routine is saved, **Then** the validator reports it.
@@ -463,7 +464,6 @@ The steps are brief (`area`, `budget`, `rooms`) → tool step `search` with inpu
 - WhatsApp rendering (slice 3).
 - Facts on cards; multi-select.
 - Re-showing cards on a later turn of the step.
-- Resolving typed references ("the second one") into a selection.
 - Pictures a tool returns as MCP `image` content: they carry no title, so they make title-less cards, and keeping their bytes would store them on every channel.
 
 ## Later
@@ -474,6 +474,6 @@ The steps are brief (`area`, `budget`, `rooms`) → tool step `search` with inpu
 ## Open questions
 
 1. Free tool choice (D12).
-2. Typed references to presented items: let the slot extractor return a key from the latest block, validated by the host?
+2. Typed references to presented items: resolved in 2b against the step's latest presentation (D10).
 3. Should an `item` slot also keep a bounded copy of the record's scalars, so a later skill step can bind its upstream id?
 4. Measure the on-demand capture's p95 under a burst of ten cards before a large rollout (`plan-track2.md` §6, risk 1).

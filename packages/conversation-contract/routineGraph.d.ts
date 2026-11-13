@@ -80,14 +80,33 @@ export interface RoutineItemValue {
 
 /**
  * A card the visitor picked from a routine step's reply, as the host read it from the stored block:
- * the routine and step that showed it, the slot the step binds, and the item. The engine fills the
- * slot only while the routine still waits on that step.
+ * the run and step that showed it, the reply it showed on, the slot the step binds, and the item.
+ * The engine fills the slot only while that run waits on that step and the reply is the step's
+ * latest presentation ({@link RoutineShownItems}).
  */
 export interface RoutineItemSelection {
   routineId: string;
   stepId: string;
+  /** The run that showed the card, when the host keeps one. */
+  executionId?: string;
+  messageId: string;
   slot: string;
   item: RoutineItemValue;
+}
+
+/**
+ * The items a routine step showed on its latest presentation, as the host stored them: cards, or
+ * the records a reply listed in text where no cards are drawn. A typed answer on that step names
+ * one by its position or its title, and the engine takes the stored item, as a pick would.
+ */
+export interface RoutineShownItems {
+  routineId: string;
+  stepId: string;
+  executionId?: string;
+  /** The reply that showed them. */
+  messageId: string;
+  /** In the order shown. */
+  items: RoutineItemValue[];
 }
 
 /**
@@ -238,4 +257,28 @@ export interface Routine {
   /** The consents the routine asks before it collects the slots each covers (#1544). */
   consents?: RoutineConsent[];
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Present when the turn renders the same chat step the user was answering, because
+ * their reply did not satisfy it. Absent on a step's first rendering, including the
+ * routine's activation turn.
+ */
+export interface RoutineStepReask {
+  /**
+   * The step's collected slots that are still unfilled, plus any whose value this turn was
+   * rejected for not fitting its declared type. Schema only, never values.
+   */
+  missingSlots: RoutineSlotSchema[];
+  /**
+   * True once the step has been asked again more times in a row than the runner's re-ask
+   * limit allows (#1376): the reply should ask differently rather than repeat the question.
+   */
+  exhausted?: boolean;
+  /**
+   * True when the routine could not read the visitor's reply at all (#1715): the next-step
+   * selector's output was unreadable and no slot-only reading recovered it. The reply may have
+   * answered the step, so the re-ask must not suggest it fell short.
+   */
+  replyUnreadable?: boolean;
 }

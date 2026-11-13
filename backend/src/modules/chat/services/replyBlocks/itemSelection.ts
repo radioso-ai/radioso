@@ -23,8 +23,8 @@ export interface SelectedItem {
   description?: string;
   link?: string;
   document?: StoredReplyItemDocument;
-  /** The routine step that showed the card and the slot a pick there fills (#1763), with the record's scalars. */
-  routineStep?: { routineId: string; stepId: string; slot: string };
+  /** The routine run and step that showed the card and the slot a pick there fills (#1763), with the record's scalars. */
+  routineStep?: { routineId: string; stepId: string; executionId?: string; slot: string };
   fields?: StoredReplyItemFields;
 }
 
@@ -93,7 +93,7 @@ export const readItemSelection = (
 const pickingRoutineStep = (block: StoredReplyBlock): SelectedItem["routineStep"] => {
   const origin = block.origin;
   return origin?.kind === "routine_step" && origin.slot
-    ? { routineId: origin.routineId, stepId: origin.stepId, slot: origin.slot }
+    ? { routineId: origin.routineId, stepId: origin.stepId, ...(origin.executionId ? { executionId: origin.executionId } : {}), slot: origin.slot }
     : undefined;
 };
 
@@ -105,6 +105,7 @@ export const routineItemSelectionOf = (item: SelectedItem | undefined): RoutineI
   item?.routineStep
     ? {
         ...item.routineStep,
+        messageId: item.messageId,
         item: { key: item.key, title: item.title, ...(item.link ? { link: item.link } : {}), fields: item.fields ?? {} },
       }
     : undefined;

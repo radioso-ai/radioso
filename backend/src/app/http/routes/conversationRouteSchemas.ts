@@ -6,6 +6,12 @@ export const conversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
 
+/** One consent record of a conversation (#1544). */
+export const conversationConsentParamsSchema = z.object({
+  conversationId: z.string().uuid(),
+  recordId: z.string().uuid(),
+});
+
 export const historySearchParamsSchema = z.object({
   searchId: z.string().uuid(),
 });

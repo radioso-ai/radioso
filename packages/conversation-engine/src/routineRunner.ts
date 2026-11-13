@@ -284,9 +284,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     const traceSteps: RoutineTraceStepEntry[] = [];
     const slotKeyChanges = (before: Record<string, unknown>, decision?: { variables?: Record<string, unknown> }) =>
       slotKeyChangesFor(declaredSlotKeys, before, decision);
-    // Set by `selectNext` each call: whether it consulted the LLM selector (vs taking a
-    // default/structured-guard edge), and what the selector reported its model returned.
-    // Read immediately after each awaited call.
+    // Set by `selectNext` each call, read right after it: whether it consulted the LLM selector
+    // (vs taking a default/structured-guard edge), and what the selector reported its model returned.
     let lastSelectorRan = false;
     let lastSelection: RoutineSelectionTrace | undefined;
     // The slots whose returned value the last `selectNext` call did not store (#1374).
@@ -834,6 +833,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       ...(terminalKind ? { terminalKind } : {}),
       ...runSlotKeyFields(traceSteps),
       filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+      ...consentGate.earlierMessageTraceField(state.variables, variables),
       ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
       steps: traceSteps,
     });

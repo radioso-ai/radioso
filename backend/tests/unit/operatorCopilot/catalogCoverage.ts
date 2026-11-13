@@ -214,6 +214,9 @@ const heldReplyDiscardIsAPersons = permanent(
 const erasureIsAPersons = permanent(
   "Permanent exclusion: erasing a conversation or a visitor destroys a data subject's records with no undo, and the audit event that answers their request names the person who decided it, so erasure stays with a person in the dashboard or an automated request pipeline over the API.",
 );
+const consentWithdrawalIsAPersons = permanent(
+  "Permanent exclusion: withdrawing a visitor's consent answers that person's request (Article 7(3)). It erases the values the consent covered and withholds the messages that carried them, with no undo, and the record and its audit event name the teammate who acted on the request, so it stays with a person in the dashboard or an automated request pipeline over the API. Reading the records is part of handling that request, not a model task.",
+);
 const dataSubjectRequestIsAPersons = permanent(
   "Permanent exclusion: finding, exporting and erasing one person's data answers their access, portability or erasure request. It is a human operator's audited action: a teammate confirms which identities are the person's, and the export hands their personal data to them, never to a model. It runs in the dashboard or an automated request pipeline over the API.",
 );
@@ -470,6 +473,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["releaseHeldReply"], neverListExclusion("unattended_live_customer_reply")),
   ...coverage(["discardHeldReply"], heldReplyDiscardIsAPersons),
   ...coverage(["deleteHistoryConversation", "deleteHistoryVisitor"], erasureIsAPersons),
+  ...coverage(["listHistoryConversationConsents", "withdrawHistoryConversationConsent"], consentWithdrawalIsAPersons),
   ...coverage(["lookupDataSubject", "listDataSubjectConversations", "exportDataSubject", "eraseDataSubject"], dataSubjectRequestIsAPersons),
   ...coverage(["updateConnectorConfig", "enableConnector", "disableConnector"], connectorConfiguration),
   ...coverage(["syncConnector"], connectorManualSync),

@@ -10,6 +10,8 @@ import {
   type DataSubjectExportRecord,
   type DataSubjectExportScope,
 } from "../../shared/domain/dataSubjectAccess.js";
+import type { MessageCopyWithholder, WithheldMessages } from "../../shared/domain/messageWithholding.js";
+import type { BackgroundJobRequest, BackgroundJobWriter } from "../../shared/background-jobs/index.js";
 import { anyOf, currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
@@ -118,6 +120,42 @@ export class ConversationSummaryRetention implements ConversationDataRetentionRu
         .skipLocked())
       .executeTakeFirst();
     return Number(deleted.numDeletedRows);
+  }
+}
+
+/**
+ * Withholds the conversation's summary and title with its withheld messages (#1544). Both are
+ * written from the transcript, the summary from its own last text too, so either can restate what a
+ * withheld message carried, before any turn marked it. The summary goes, the title clears, and a
+ * refresh queued in the withholding's transaction writes both again from the transcript as it now
+ * reads.
+ */
+export class ConversationSummaryWithholder implements MessageCopyWithholder {
+  readonly owner = "conversation-summary";
+
+  constructor(
+    private readonly db: Db,
+    private readonly jobs: Pick<BackgroundJobWriter, "insert">,
+    private readonly refreshRequest: (input: { workspaceId: string; conversationId: string }) => BackgroundJobRequest,
+  ) {}
+
+  async withhold(messages: WithheldMessages): Promise<number> {
+    if (messages.messageIds.length === 0) {
+      return 0;
+    }
+    const deleted = await this.db
+      .deleteFrom("conversation_summaries")
+      .where("session_id", "=", messages.conversationId)
+      .executeTakeFirst();
+    const untitled = await this.db
+      .updateTable("conversations")
+      .set({ title: null })
+      .where("id", "=", messages.conversationId)
+      .where("workspace_id", "=", messages.workspaceId)
+      .where("title", "is not", null)
+      .executeTakeFirst();
+    await this.jobs.insert(this.refreshRequest(messages), this.db);
+    return Number(deleted.numDeletedRows) + Number(untitled.numUpdatedRows);
   }
 }
 

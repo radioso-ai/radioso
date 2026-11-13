@@ -1,4 +1,12 @@
 export {
+  ConsentWithdrawalService,
+  type ConsentRecord,
+  type ConsentWithdrawalOutcome,
+  type ConsentWithdrawalUnitOfWork,
+  type ConsentWithdrawalWriteScope,
+  type ConversationConsents,
+} from "./consentWithdrawal.js";
+export {
   ConversationErasureService,
   type ConversationErasure,
   type ConversationErasureActor,

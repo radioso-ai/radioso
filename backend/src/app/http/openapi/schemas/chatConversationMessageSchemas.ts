@@ -42,6 +42,16 @@ export const registerChatConversationMessageSchemas = (
     }),
   );
 
+  const MessageWithholdingSchema = registry.register(
+    "MessageWithholding",
+    z.object({
+      reason: z.enum(["consent_withdrawn"]),
+      at: z.string().datetime(),
+    }).openapi({
+      description: "Present on a message withheld after the consent that covered what it carried was withdrawn: `content` is `[redacted]`, and the message carries no answer segments, suggestions, reply blocks or photos. `at` is when the consent was withdrawn.",
+    }),
+  );
+
   // Shared by the operator and public message schemas. `debug`, `turnFailure`, and
   // `operatorLabel` are operator-only and are added on top of this shape for the dashboard
   // schema alone: the first two carry turn diagnostics (and `turnFailure` carries raw error
@@ -64,6 +74,7 @@ export const registerChatConversationMessageSchemas = (
     operatorDisplayName: z.string().optional(),
     interruption: ReplyInterruptionSchema.optional(),
     speech: OperatorReplySpeechSchema.optional(),
+    withheld: MessageWithholdingSchema.optional(),
   };
 
   const ChatConversationMessageSchema = registry.register(

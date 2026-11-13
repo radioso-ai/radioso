@@ -7,6 +7,8 @@ import type {
   AnswerCoverageRecord,
   AnswerCoverageRepositoryPort,
 } from "../../modules/answerCoverage/public.js";
+import { WITHHELD_MESSAGE_TEXT, type MessageCopyWithholder, type WithheldMessages } from "../../shared/domain/messageWithholding.js";
+import { anyOf, containsAnyValueText } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import {
   answerCoverageColumns,
@@ -188,5 +190,36 @@ export class AnswerCoverageRepository implements AnswerCoverageRepositoryPort, A
       byAssessmentId.set(reaction.assessmentId, reactions);
     }
     return byAssessmentId;
+  }
+}
+
+/**
+ * Withholds the coverage assessments of a withheld message's turn: the request as the assessment
+ * framed it, and the part it judged unresolved, both restate the visitor's words, so both take the
+ * redaction marker. So does any assessment of the conversation whose request states a withheld
+ * value, as one framed with an earlier turn's words. The verdict, its reason code and the ids stay.
+ */
+export class AnswerCoverageWithholder implements MessageCopyWithholder {
+  readonly owner = "answer-coverage";
+
+  constructor(private readonly db: Db) {}
+
+  async withhold(messages: WithheldMessages): Promise<number> {
+    const result = await this.db
+      .updateTable("answer_coverage_assessments")
+      .set((eb) => ({
+        contextualized_request: WITHHELD_MESSAGE_TEXT,
+        unresolved_request: eb.case().when("unresolved_request", "is", null).then(null).else(WITHHELD_MESSAGE_TEXT).end(),
+      }))
+      .where("workspace_id", "=", messages.workspaceId)
+      .where("conversation_id", "=", messages.conversationId)
+      .where((eb) => eb.or([
+        anyOf(eb.ref("request_message_id"), messages.messageIds, "uuid[]"),
+        anyOf(eb.ref("assistant_message_id"), messages.messageIds, "uuid[]"),
+        containsAnyValueText(eb.ref("contextualized_request"), messages.valueTexts),
+        containsAnyValueText(eb.ref("unresolved_request"), messages.valueTexts),
+      ]))
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows);
   }
 }

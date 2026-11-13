@@ -107,6 +107,16 @@ export class RoutineConsentGate {
     return earlierMessageSlotKeys.length > 0 ? { ...input, earlierMessageSlotKeys } : input;
   }
 
+  /**
+   * The run trace's `earlierMessageSlotKeys`: the slots granted before this turn that it filled,
+   * `before` holding none and `after` one. Each was empty when a step read the message, so the
+   * step could take it from the visitor's earlier messages. Absent when there are none.
+   */
+  earlierMessageTraceField(before: Record<string, unknown>, after: Record<string, unknown>): { earlierMessageSlotKeys?: string[] } {
+    const filled = [...this.grantedBefore].filter((key) => !hasVariable(before, key) && hasVariable(after, key));
+    return filled.length > 0 ? { earlierMessageSlotKeys: filled } : {};
+  }
+
   /** `variables` without a value for any blocked slot; the same object when it holds none. */
   withoutBlocked(variables: Record<string, unknown>): Record<string, unknown> {
     return Object.keys(variables).some((key) => this.blocked.has(key))

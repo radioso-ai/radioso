@@ -142,7 +142,7 @@ describe("a card the visitor picked", () => {
   });
 
   it("names a card without a title by its picture, then by its key, as the chat that sends it does", async () => {
-    const untitled = { ...roomsBlock, items: [{ ...roomsBlock.items[0]!, title: "  " }, { ...roomsBlock.items[1]!, title: "" }] };
+    const untitled = { ...roomsBlock, items: [{ ...roomsBlock.items[0], title: "  " }, { ...roomsBlock.items[1], title: "" }] };
     const { turns } = setup({ stored: message({ metadata: { blocks: [untitled] } }) });
 
     expect((await turns.claim(pick()))?.query).toBe("A garden room");

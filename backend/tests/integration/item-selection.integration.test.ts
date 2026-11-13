@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { MessageRepository } from "../../src/db/repositories/messageRepository.js";
 import { storedReplyBlockSchema, type StoredReplyBlock } from "../../src/modules/chat/contracts/replyBlocks.js";

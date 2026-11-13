@@ -111,3 +111,37 @@ export const replyBlocksCapabilityFromRequest = (
   }
   return { item_list: { layouts: REPLY_BLOCK_LAYOUTS.filter((layout) => itemList.layouts.includes(layout)) } };
 };
+
+/** One card of a reply as a data-subject export carries it. */
+interface ExportedReplyItem {
+  title: string;
+  description: string | null;
+  link: string | null;
+  imageId: string | null;
+}
+
+/**
+ * The blocks an assistant message stored, as a data-subject export carries them: each card the
+ * subject was shown, with its title, subtitle, link and picture's id. The server's own `origin`
+ * stays out. Null when the message stored none that read back.
+ */
+export const replyBlocksForExport = (
+  metadata: unknown,
+): Array<{ id: string; layout: ReplyBlockLayout; caption: string; items: ExportedReplyItem[] }> | null => {
+  const blocks = metadata && typeof metadata === "object" ? (metadata as { blocks?: unknown }).blocks : undefined;
+  const parsed = storedReplyBlockSchema.array().min(1).safeParse(blocks);
+  if (!parsed.success) {
+    return null;
+  }
+  return parsed.data.map((block) => ({
+    id: block.id,
+    layout: block.layout,
+    caption: block.caption,
+    items: block.items.map((item) => ({
+      title: item.title,
+      description: item.description ?? null,
+      link: item.actions.find((action) => action.type === "open")?.url ?? null,
+      imageId: item.image?.imageId ?? null,
+    })),
+  }));
+};

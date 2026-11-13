@@ -47,7 +47,8 @@ export const defaultDataSubjectDataExporters: readonly DataSubjectDataExporterBi
   (trx) => new A2aTaskExporter(trx),
   (trx) => new VisitorImageExporter(trx),
   // No exporter for `conversation_tool_images`: each is a copy of a third party's picture a card
-  // showed, and the card's title and link are exported with the message that carried it.
+  // showed. The cards themselves, with each picture's id, go out with their messages under
+  // `conversations`.
 ];
 
 /**

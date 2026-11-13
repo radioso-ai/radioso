@@ -103,7 +103,7 @@ Once the organization itself is deleted, nobody in it can call that endpoint. On
 
 A photo a visitor sent is stored as a file in the workspace's storage. The deletion removes its record and hands the file to the worker in the same database transaction, and the worker deletes it as soon as it picks the job up, usually within seconds. A delete that storage refuses is tried again, with growing waits, for about two hours; a file that is already gone counts as deleted. The copies of a card's picture are files in the same storage, and go the same way.
 
-A data subject export does not include those copies: each is a copy of a third party's picture, and the card's title and link are in the export with the message that carried it.
+A data subject export carries every card a reply showed, in that reply's message under `conversations`: its title, the line under it, its link and the picture's id. The copies of the pictures themselves stay out of it: each is a copy of a third party's picture.
 
 ## Deleting everything at once
 

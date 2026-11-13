@@ -57,7 +57,10 @@ constructing ad hoc fetches.
   `grid`), which block kinds it draws (stored blocks of other kinds are left
   out), how it draws any other layout (as a list), the frame a block's
   pictures share, and which item links it follows. `anonymous-chat-context.tsx`
-  adds the declaration to the host page's capabilities on every request.
+  adds the declaration to the host page's capabilities on every request. It also
+  holds card picks: which items can be picked, what a pick sends
+  (`item_select` with the card's title as the message), and what each reply's
+  pick was, read from the visitor messages so a reload shows it.
 - `routine-consent-editor.ts`: a routine's consents in the Document view — the
   sensitive fields each covers, the decline choice, and the wording per language,
   edited through the exact-greeting variant transitions — plus where each is asked

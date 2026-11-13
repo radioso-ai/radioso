@@ -815,6 +815,28 @@ describe("chat service fused turn planning", () => {
     expect(staged.languageDetect).toHaveBeenCalledTimes(1);
   });
 
+  it("judges a picked card's turn language without its title: no planner, and the detector never reads the title", async () => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [planJson({ route: "direct" })] });
+    const service = buildService({
+      planner,
+      pipeline: retrievalPipeline([]),
+      chatGateway: pipelineChatGateway("Grounded [[1]]."),
+      staged,
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "Crociera al tramonto",
+      stream: false,
+      itemSelection: { messageId: "7c1d2e3f-4a5b-4c6d-8e7f-90a1b2c3d4e5", blockId: "b1", key: "image-tramonto", title: "Crociera al tramonto" },
+    });
+
+    expect(planner.completeCalls()).toBe(0);
+    expect(staged.languageDetect).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(staged.languageDetect.mock.calls)).not.toContain("Crociera al tramonto");
+  });
+
   it("keeps the staged fallback on the workspace tier when the overridden planner fails", async () => {
     const chatModelOverride = { provider: "openai" as const, model: "gpt-5.4-nano" };
     const staged = countingStagedPorts();

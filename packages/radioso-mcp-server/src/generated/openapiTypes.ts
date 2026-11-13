@@ -9192,13 +9192,19 @@ export interface components {
             userTimeZone?: string;
             inputMetadata?: {
                 /** @enum {string} */
-                method: "typed" | "suggestion_click" | "intent_click";
+                method: "typed" | "suggestion_click" | "intent_click" | "item_select";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
                 suggestionId?: string;
                 intent?: {
                     skillName: string;
                     intentName?: string;
+                };
+                selection?: {
+                    /** Format: uuid */
+                    messageId: string;
+                    blockId: string;
+                    itemKey: string;
                 };
             };
             sourceContext?: {
@@ -9259,13 +9265,19 @@ export interface components {
             privacyNoticeVersion?: string;
             inputMetadata?: {
                 /** @enum {string} */
-                method: "typed" | "suggestion_click" | "intent_click";
+                method: "typed" | "suggestion_click" | "intent_click" | "item_select";
                 /** Format: uuid */
                 suggestionSourceMessageId?: string;
                 suggestionId?: string;
                 intent?: {
                     skillName: string;
                     intentName?: string;
+                };
+                selection?: {
+                    /** Format: uuid */
+                    messageId: string;
+                    blockId: string;
+                    itemKey: string;
                 };
             };
         };
@@ -9582,13 +9594,26 @@ export interface components {
                 reading: string | null;
             }[];
         };
+        /** @description The card a visitor picked from a reply block whose `selection` is `single`. The server reads the item from the stored block; a later card that names the same message shows it as picked. */
+        ItemSelection: {
+            /**
+             * Format: uuid
+             * @description The assistant message whose reply showed the card.
+             */
+            messageId: string;
+            /** @description The block on that message. */
+            blockId: string;
+            /** @description The item's `key` in the block. */
+            itemKey: string;
+        };
         UserMessageInputMetadata: {
             /** @enum {string} */
-            method: "typed" | "suggestion_click" | "intent_click" | "routine_invocation";
+            method: "typed" | "suggestion_click" | "intent_click" | "item_select" | "routine_invocation";
             /** Format: uuid */
             suggestionSourceMessageId?: string;
             /** @description The id of the chip clicked, such as a routine consent's `agree` or `decline`. */
             suggestionId?: string;
+            selection?: components["schemas"]["ItemSelection"];
             intent?: {
                 skillName: string;
                 intentName?: string;
@@ -27192,7 +27217,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Request validation failed, including `imageIds` without `agentId`, with `startConversation`, more than three or one named twice; or `imageIds` from a caller that cannot own images (only an API credential or a signed-in user can). */
+            /** @description Request validation failed, including `imageIds` without `agentId`, with `startConversation`, more than three or one named twice; or `imageIds` from a caller that cannot own images (only an API credential or a signed-in user can). `item_selection_invalid`: an `item_select` names no card that can be picked in this conversation (an unknown message, block or item key, or a block whose `selection` is `none`); nothing was stored and no turn ran. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -27219,7 +27244,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. */
+            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. `item_already_selected`: a card was already picked from the reply an `item_select` names; nothing was stored and no turn ran. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -33416,7 +33441,7 @@ export interface operations {
                     "text/event-stream": components["schemas"]["PublicChatSseStream"];
                 };
             };
-            /** @description Request validation failed, including `imageIds` with `startConversation`, more than three, or one named twice. */
+            /** @description Request validation failed, including `imageIds` with `startConversation`, more than three, or one named twice. `item_selection_invalid`: an `item_select` names no card that can be picked in this conversation (an unknown message, block or item key, or a block whose `selection` is `none`); nothing was stored and no turn ran. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -33434,7 +33459,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. */
+            /** @description `chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. `item_already_selected`: a card was already picked from the reply an `item_select` names; nothing was stored and no turn ran. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -511,6 +511,8 @@ describe("startTurnPlan", () => {
       { activeRoutine: true },
       { pendingClarification: true },
       { suspendedRoutine: true },
+      // A picked card: its title says nothing of the visitor's language, so the staged detector reads the turn.
+      { itemSelection: true },
     ]) {
       expect(startTurnPlan({
         coordinator: coordinator as never,
@@ -522,6 +524,7 @@ describe("startTurnPlan", () => {
     expect(coordinator.recordBypass).toHaveBeenCalledWith("active_routine");
     expect(coordinator.recordBypass).toHaveBeenCalledWith("pending_clarification");
     expect(coordinator.recordBypass).toHaveBeenCalledWith("suspended_routine");
+    expect(coordinator.recordBypass).toHaveBeenCalledWith("item_selection");
   });
 
   it("creates a lazy handle that plans with the first resolver's preparation", async () => {

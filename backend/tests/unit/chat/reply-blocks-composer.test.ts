@@ -130,6 +130,7 @@ const expectedStored = {
     title: `Field Guide ${index}`,
     image: { imageId: `cover-${index}`, width: 1280, height: 960, alt: "" },
     actions: [{ type: "open", url: `https://shop.example/books/guide-${index}` }],
+    document: { id: `doc-${index}`, title: `Field Guide ${index}` },
   })),
 };
 

@@ -6,7 +6,7 @@ import {
   buildReplyBlock,
   presentReplyBlocks,
 } from "../../../../src/modules/chat/services/replyBlocks/replyBlockBuilder.js";
-import type { ReplyImageUrls } from "../../../../src/modules/chat/contracts/replyBlocks.js";
+import { storedReplyBlockSchema, type ReplyImageUrls } from "../../../../src/modules/chat/contracts/replyBlocks.js";
 
 const image = (imageId: string, overrides: Partial<EvidenceImage> = {}): EvidenceImage => ({
   imageId,
@@ -41,7 +41,7 @@ describe("buildReplyBlock", () => {
     const ledger = TurnImageLedger.fromEvidence([1, 2, 3, 4, 5].map(product));
 
     const { block, dropped } = buildReplyBlock({
-      head: { images: ["m3", "m1", "m5"], caption: "Three hiking guides" },
+      head: { images: ["m3", "m1", "m5"], caption: "Three hiking guides", selection: "none" },
       ledger,
       layouts: carouselAndGrid,
     });
@@ -58,15 +58,29 @@ describe("buildReplyBlock", () => {
         title: `Field Guide ${index}`,
         image: { imageId: `cover-${index}`, width: 1280, height: 960, alt: "" },
         actions: [{ type: "open", url: `https://shop.example/books/guide-${index}` }],
+        document: { id: `doc-${index}`, title: `Field Guide ${index}` },
       })),
     });
+  });
+
+  it("lets the visitor pick one when the model offers a single selection, and keeps each item's document", () => {
+    const ledger = TurnImageLedger.fromEvidence([product(1), { ...product(2), sourceUrl: undefined }]);
+
+    const { block } = buildReplyBlock({ head: { images: ["m1", "m2"], caption: "Guides", selection: "single" }, ledger, layouts: carouselAndGrid });
+
+    expect(block?.selection).toBe("single");
+    expect(block?.items.map((item) => item.actions)).toEqual([
+      [{ type: "open", url: "https://shop.example/books/guide-1" }, { type: "select" }],
+      [{ type: "select" }],
+    ]);
+    expect(storedReplyBlockSchema.parse(block).items.map((item) => item.document?.id)).toEqual(["doc-1", "doc-2"]);
   });
 
   it("drops a handle that is not in this turn's evidence, and a URL given in place of a handle", () => {
     const ledger = TurnImageLedger.fromEvidence([product(1), product(2)]);
 
     const { block, dropped } = buildReplyBlock({
-      head: { images: ["m2", "m9", "https://evil.example/pixel.gif", "[m1]"], caption: "Guides" },
+      head: { images: ["m2", "m9", "https://evil.example/pixel.gif", "[m1]"], caption: "Guides", selection: "none" },
       ledger,
       layouts: carouselAndGrid,
     });
@@ -78,7 +92,7 @@ describe("buildReplyBlock", () => {
   it("drops a repeated handle", () => {
     const ledger = TurnImageLedger.fromEvidence([product(1), product(2)]);
 
-    const { block, dropped } = buildReplyBlock({ head: { images: ["m1", "m2", "m1"], caption: "Guides" }, ledger, layouts: carouselAndGrid });
+    const { block, dropped } = buildReplyBlock({ head: { images: ["m1", "m2", "m1"], caption: "Guides", selection: "none" }, ledger, layouts: carouselAndGrid });
 
     expect(block?.items).toHaveLength(2);
     expect(dropped).toEqual(["duplicate_handle"]);
@@ -87,8 +101,8 @@ describe("buildReplyBlock", () => {
   it("builds no block from an empty pick or a pick of unknown handles", () => {
     const ledger = TurnImageLedger.fromEvidence([product(1)]);
 
-    expect(buildReplyBlock({ head: { images: [], caption: "None" }, ledger, layouts: carouselAndGrid }).block).toBeNull();
-    expect(buildReplyBlock({ head: { images: ["m7"], caption: "None" }, ledger, layouts: carouselAndGrid })).toEqual({
+    expect(buildReplyBlock({ head: { images: [], caption: "None", selection: "none" }, ledger, layouts: carouselAndGrid }).block).toBeNull();
+    expect(buildReplyBlock({ head: { images: ["m7"], caption: "None", selection: "none" }, ledger, layouts: carouselAndGrid })).toEqual({
       block: null,
       dropped: ["unknown_handle"],
     });
@@ -98,7 +112,7 @@ describe("buildReplyBlock", () => {
     const ledger = TurnImageLedger.fromEvidence(Array.from({ length: 12 }, (_, index) => product(index + 1)));
 
     const { block, dropped } = buildReplyBlock({
-      head: { images: Array.from({ length: 12 }, (_, index) => `m${index + 1}`), caption: "Guides" },
+      head: { images: Array.from({ length: 12 }, (_, index) => `m${index + 1}`), caption: "Guides", selection: "none" },
       ledger,
       layouts: carouselAndGrid,
     });
@@ -120,7 +134,7 @@ describe("buildReplyBlock", () => {
       ],
     }]);
 
-    const { block } = buildReplyBlock({ head: { images: ["m1", "m2", "m3"], caption: "The guest house" }, ledger, layouts: carouselAndGrid });
+    const { block } = buildReplyBlock({ head: { images: ["m1", "m2", "m3"], caption: "The guest house", selection: "none" }, ledger, layouts: carouselAndGrid });
 
     expect(block?.layout).toBe("grid");
     expect(block?.items.map((item) => item.title)).toEqual(["The garden", "Room with a view", "The Guest House"]);
@@ -132,7 +146,7 @@ describe("buildReplyBlock", () => {
       { ...product(2), images: [image("inline-2", { role: "inline", alt: "Inside" })] },
     ]);
 
-    const { block } = buildReplyBlock({ head: { images: ["m1", "m2"], caption: "Both" }, ledger, layouts: carouselAndGrid });
+    const { block } = buildReplyBlock({ head: { images: ["m1", "m2"], caption: "Both", selection: "none" }, ledger, layouts: carouselAndGrid });
 
     expect(block?.layout).toBe("grid");
   });
@@ -140,8 +154,8 @@ describe("buildReplyBlock", () => {
   it("falls back to list for a layout the client did not declare", () => {
     const ledger = TurnImageLedger.fromEvidence([product(1), product(2)]);
 
-    expect(buildReplyBlock({ head: { images: ["m1", "m2"], caption: "Guides" }, ledger, layouts: ["grid"] }).block?.layout).toBe("list");
-    expect(buildReplyBlock({ head: { images: ["m1", "m2"], caption: "Guides" }, ledger, layouts: [] }).block?.layout).toBe("list");
+    expect(buildReplyBlock({ head: { images: ["m1", "m2"], caption: "Guides", selection: "none" }, ledger, layouts: ["grid"] }).block?.layout).toBe("list");
+    expect(buildReplyBlock({ head: { images: ["m1", "m2"], caption: "Guides", selection: "none" }, ledger, layouts: [] }).block?.layout).toBe("list");
   });
 
   it("links an item only to an http(s) address", () => {
@@ -150,7 +164,7 @@ describe("buildReplyBlock", () => {
       { ...product(2), sourceUrl: undefined },
     ]);
 
-    const { block } = buildReplyBlock({ head: { images: ["m1", "m2"], caption: "Guides" }, ledger, layouts: carouselAndGrid });
+    const { block } = buildReplyBlock({ head: { images: ["m1", "m2"], caption: "Guides", selection: "none" }, ledger, layouts: carouselAndGrid });
 
     expect(block?.items.map((item) => item.actions)).toEqual([[], []]);
   });
@@ -158,7 +172,7 @@ describe("buildReplyBlock", () => {
   it("caps the caption at 120 characters and the title at 160", () => {
     const ledger = TurnImageLedger.fromEvidence([{ ...product(1), documentTitle: "t".repeat(400) }]);
 
-    const { block } = buildReplyBlock({ head: { images: ["m1"], caption: "c".repeat(300) }, ledger, layouts: carouselAndGrid });
+    const { block } = buildReplyBlock({ head: { images: ["m1"], caption: "c".repeat(300), selection: "none" }, ledger, layouts: carouselAndGrid });
 
     expect(block?.caption).toHaveLength(120);
     expect(block?.items[0]?.title).toHaveLength(160);
@@ -168,7 +182,7 @@ describe("buildReplyBlock", () => {
 describe("presentReplyBlocks", () => {
   it("takes src and srcSet from the image URLs port only", () => {
     const ledger = TurnImageLedger.fromEvidence([product(1)]);
-    const { block } = buildReplyBlock({ head: { images: ["m1"], caption: "Guide" }, ledger, layouts: carouselAndGrid });
+    const { block } = buildReplyBlock({ head: { images: ["m1"], caption: "Guide", selection: "none" }, ledger, layouts: carouselAndGrid });
 
     const [presented] = presentReplyBlocks([block!], urls);
 
@@ -180,5 +194,7 @@ describe("presentReplyBlocks", () => {
       alt: "",
     });
     expect(presented?.items[0]?.key).toBe("cover-1");
+    // The item's document is the server's own record of where it came from, never sent.
+    expect(presented?.items[0]).not.toHaveProperty("document");
   });
 });

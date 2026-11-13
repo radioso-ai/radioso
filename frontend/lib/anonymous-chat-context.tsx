@@ -51,7 +51,7 @@ import { choosePrivacyNotice, type ShownPrivacyNotice } from '@/lib/privacy-noti
 import { withReplyBlocksCapability } from '@/lib/reply-blocks'
 import { rememberVisitorImage, visitorImageCacheKey } from '@/lib/visitor-image-blob-cache'
 import { withVisitorImageInput } from '@/lib/visitor-image-input'
-import { getErrorResponse, isRateLimitError, isUsageLimitExceededError, unsentImageSendOf, type UnsentImageSend } from '@/lib/public-chat-errors'
+import { getErrorResponse, isRateLimitError, isUsageLimitExceededError, refusedPickOf, unsentImageSendOf, type UnsentImageSend } from '@/lib/public-chat-errors'
 
 export type { ChatMessage } from '@/lib/public-chat-messages'
 
@@ -922,7 +922,9 @@ export function AnonymousChatProvider({
           const structuredError = getErrorResponse(error)
           const rateLimit = isRateLimitError(error)
           const unsent = imageIds.length > 0 && !streamed ? unsentImageSendOf(error) : null
-          if (unsent === 'images_refused' || unsent === 'not_sent') {
+          // A refused pick stored nothing: its turn goes, so the reply's cards are as they were.
+          const refusedPick = inputMetadata?.method === 'item_select' ? refusedPickOf(error) : null
+          if (unsent === 'images_refused' || unsent === 'not_sent' || refusedPick) {
             onAnalyticsEvent?.({
               event: 'chat.failed',
               subjectType: resolvedConversationId ? 'conversation' : undefined,
@@ -933,7 +935,9 @@ export function AnonymousChatProvider({
             setIsLoading(false)
             // The server said the photos cannot go (turned off, or already sent), so the chat stops offering them.
             if (unsent === 'images_refused') setAcceptsImages(false)
-            options?.onNotSent?.(unsent)
+            // Another card of that reply was picked, such as in another tab: history says which.
+            if (refusedPick === 'already_picked') void hydrateConversation()
+            if (unsent) options?.onNotSent?.(unsent)
             return
           }
           if (rateLimit) {
@@ -962,11 +966,7 @@ export function AnonymousChatProvider({
               event: 'chat.failed',
               subjectType: resolvedConversationId ? 'conversation' : undefined,
               subjectId: resolvedConversationId,
-              properties: {
-                inputMethod,
-                errorCode: structuredError.code,
-                rateLimited: false,
-              },
+              properties: { inputMethod, errorCode: structuredError.code, rateLimited: false },
             })
             setUnavailable(unavailableReason)
             setMessages(previousMessages)
@@ -1010,7 +1010,7 @@ export function AnonymousChatProvider({
         sendInFlightRef.current = false
       }
     },
-    [applyCompletion, bootstrapGreetingId, clientContextCapabilities, conversationId, isHydrating, isLoading, unavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, resolveSignedIdentity, withPublicSessionRetry],
+    [applyCompletion, bootstrapGreetingId, clientContextCapabilities, conversationId, hydrateConversation, isHydrating, isLoading, unavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, resolveSignedIdentity, withPublicSessionRetry],
   )
 
   const loadOlderMessages = useCallback(async () => {

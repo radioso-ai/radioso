@@ -48,6 +48,7 @@ import {
   createActionDispatchJobHandler,
   DrainTriggeringActionOutbox,
   AssistantChatService,
+  ItemSelectionTurns,
   AssistantHistoryService,
   AnswerPresentationService,
   ChatActionSuggestionRegistry,
@@ -914,7 +915,16 @@ export const buildChatServices = (input: {
   return {
     abuseControlService,
     answerPresentation,
-    assistantChatService: new AssistantChatService(chatService, chatBootstrapService, input.assistantChat),
+    assistantChatService: new AssistantChatService(chatService, chatBootstrapService, {
+      ...input.assistantChat,
+      itemSelections: new ItemSelectionTurns({
+        conversations: input.conversationRepository,
+        messages: input.messageRepository,
+        analytics: input.productAnalyticsService,
+        metrics: input.metricsRegistry,
+        logger: input.logger,
+      }),
+    }),
     assistantHistoryService: new AssistantHistoryService(chatHistoryService),
     publicChatActionAdvertiser,
     chatBootstrapService,

@@ -1,16 +1,19 @@
 'use client'
 
 import { useId, useState, type ReactNode } from 'react'
-import { ExternalLink, ImageOff } from 'lucide-react'
+import { Check, ExternalLink, ImageOff } from 'lucide-react'
 
-import type { ReplyBlock } from '@/lib/api-types'
+import type { ChatUserInputMetadata, ReplyBlock } from '@/lib/api-types'
 import {
+  isSelectableItem,
   itemOpenUrl,
+  itemPickMessage,
   pictureFrameOf,
   resolveReplyLayout,
   type ItemListLayout,
   type PictureFrame,
   type ReplyItem,
+  type ReplyPicks,
 } from '@/lib/reply-blocks'
 import { cn } from '@/lib/utils'
 
@@ -181,19 +184,67 @@ const LIST_ITEM_CLASSES: Record<ItemListLayout, string> = {
   list: 'min-w-0',
 }
 
+/** How a reply's cards are picked from: what this thread knows was picked, and how to pick. */
+interface ItemPicking {
+  /** The id of the message whose reply shows the block. */
+  messageId: string
+  picks: ReplyPicks
+  /** The Select button's label. */
+  label: string
+  /**
+   * Sends a pick as the visitor's message. Absent where nothing can be picked now, such as the
+   * read-only Inbox or while a reply is on its way: the pick, if any, still shows.
+   */
+  onPick?: (content: string, inputMetadata: ChatUserInputMetadata) => unknown
+}
+
+/**
+ * The Select button under a card the visitor can pick. Once the reply was picked from, every card
+ * of it is settled: the one picked shows pressed, and none can be picked again.
+ */
+function SelectItemButton({ item, picked, settled, label, onPick }: {
+  item: ReplyItem
+  picked: boolean
+  settled: boolean
+  label: string
+  onPick?: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={picked}
+      disabled={settled || !onPick}
+      onClick={onPick}
+      className={cn(
+        'mt-1 flex w-full items-center justify-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+        'enabled:hover:bg-muted/60 disabled:cursor-default',
+        picked ? 'border-foreground bg-muted' : 'bg-card text-card-foreground disabled:opacity-60',
+        FOCUS_RING,
+      )}
+    >
+      {picked ? <Check aria-hidden="true" className="size-3.5" /> : null}
+      {label}
+      <span className="sr-only"> {item.title || item.image?.alt}</span>
+    </button>
+  )
+}
+
 /**
  * The items a reply presents, under its text: a carousel of cards, a gallery, or a list of rows
  * for any layout the chat does not draw. The block's caption names the list for assistive tech.
+ * A block the visitor can pick from (`selection: single`) carries a Select button under each card.
  */
 export function ItemListBlock({
   block,
   transformHref,
   onOpen,
+  picking,
 }: {
   block: ReplyBlock
   /** Rewrites an item's link before it is shown, as the reply's own links are. */
   transformHref?: (href: string) => string
   onOpen?: (href: string) => void
+  picking?: ItemPicking
 }) {
   const layout = resolveReplyLayout(block.layout)
   const ItemView = ITEM_VIEWS[layout]
@@ -205,6 +256,8 @@ export function ItemListBlock({
   // Tabbing reaches only the cards with links, so when any card has none, the strip itself takes
   // focus and scrolls with the arrow keys to bring every card into view.
   const stripTakesFocus = layout === 'carousel' && items.some(({ href }) => !href)
+  const pick = picking?.picks.get(picking.messageId)
+  const pickedKey = pick?.blockId === block.id ? pick.itemKey : null
 
   return (
     <div
@@ -214,8 +267,19 @@ export function ItemListBlock({
       className={cn(LIST_CLASSES[layout], stripTakesFocus && FOCUS_RING)}
     >
       {items.map(({ item, href }) => (
-        <div role="listitem" key={item.key} className={LIST_ITEM_CLASSES[layout]}>
+        <div role="listitem" key={item.key} data-picked={item.key === pickedKey || undefined} className={LIST_ITEM_CLASSES[layout]}>
           <ItemView item={item} href={href} frame={frame} onOpen={onOpen} />
+          {picking && isSelectableItem(block, item) ? (
+            <SelectItemButton
+              item={item}
+              picked={item.key === pickedKey}
+              settled={pick !== undefined}
+              label={picking.label}
+              onPick={picking.onPick
+                ? () => picking.onPick?.(...itemPickMessage({ messageId: picking.messageId, blockId: block.id, itemKey: item.key }, item))
+                : undefined}
+            />
+          ) : null}
         </div>
       ))}
     </div>

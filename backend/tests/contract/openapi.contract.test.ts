@@ -32,6 +32,10 @@ describe("openapi contract", () => {
       expect(responses["409"]?.description, chat).toContain("chat_turn_superseded");
       expect(responses["400"]?.description, chat).toContain("imageIds");
     }
+    for (const chat of ["/api/v1/assistant/chat", "/api/v1/public/chat/{token}"]) {
+      expect(responsesOf(chat, "post")["400"]?.description, chat).toContain("item_selection_invalid");
+      expect(responsesOf(chat, "post")["409"]?.description, chat).toContain("item_already_selected");
+    }
     expect(responsesOf("/api/v1/assistant/images", "post")["400"]?.description).toContain("agentId");
     expect(responsesOf("/api/v1/public/chat/{token}/images/{imageId}", "get")["400"]?.description).toContain("imageId");
   });

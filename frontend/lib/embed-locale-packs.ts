@@ -65,6 +65,7 @@ export const TRANSLATABLE_COPY_KEYS = [
   'publicChatImageBusyMessage',
   'publicChatImageLimitTemplate',
   'publicChatWithheldMessageLabel',
+  'publicChatSelectItemLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
 export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
@@ -124,6 +125,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: 'Hay mucha actividad. Vuelve a intentarlo con esa foto.',
     publicChatImageLimitTemplate: 'Puedes enviar hasta {count} fotos a la vez.',
     publicChatWithheldMessageLabel: 'Retirado tras revocar el consentimiento',
+    publicChatSelectItemLabel: 'Elegir',
   },
   fr: {
     launcherDefaultLabel: 'Discutez avec nous',
@@ -181,6 +183,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: 'Le service est occupé. Réessayez avec cette photo.',
     publicChatImageLimitTemplate: "Vous pouvez envoyer jusqu'à {count} photos à la fois.",
     publicChatWithheldMessageLabel: 'Masqué après le retrait du consentement',
+    publicChatSelectItemLabel: 'Choisir',
   },
   de: {
     launcherDefaultLabel: 'Mit uns chatten',
@@ -238,6 +241,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: 'Gerade zu viel los. Versuchen Sie dieses Foto erneut.',
     publicChatImageLimitTemplate: 'Sie können bis zu {count} Fotos auf einmal senden.',
     publicChatWithheldMessageLabel: 'Nach Widerruf der Einwilligung entfernt',
+    publicChatSelectItemLabel: 'Auswählen',
   },
   it: {
     launcherDefaultLabel: 'Chatta con noi',
@@ -295,6 +299,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: 'Il servizio è occupato. Riprova con questa foto.',
     publicChatImageLimitTemplate: 'Puoi inviare fino a {count} foto alla volta.',
     publicChatWithheldMessageLabel: 'Rimosso dopo la revoca del consenso',
+    publicChatSelectItemLabel: 'Scegli',
   },
   pt: {
     launcherDefaultLabel: 'Fale conosco',
@@ -352,6 +357,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: 'Estamos ocupados. Tente enviar essa foto de novo.',
     publicChatImageLimitTemplate: 'Você pode enviar até {count} fotos de uma vez.',
     publicChatWithheldMessageLabel: 'Removido após a retirada do consentimento',
+    publicChatSelectItemLabel: 'Escolher',
   },
   nl: {
     launcherDefaultLabel: 'Chat met ons',
@@ -409,6 +415,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: 'Het is druk. Probeer die foto zo opnieuw.',
     publicChatImageLimitTemplate: "Je kunt maximaal {count} foto's tegelijk sturen.",
     publicChatWithheldMessageLabel: 'Verwijderd na intrekking van de toestemming',
+    publicChatSelectItemLabel: 'Kiezen',
   },
   pl: {
     launcherDefaultLabel: 'Porozmawiaj z nami',
@@ -466,6 +473,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: 'Jest duży ruch. Spróbuj wysłać to zdjęcie ponownie.',
     publicChatImageLimitTemplate: 'Limit zdjęć w jednej wiadomości: {count}.',
     publicChatWithheldMessageLabel: 'Usunięto po wycofaniu zgody',
+    publicChatSelectItemLabel: 'Wybierz',
   },
   zh: {
     launcherDefaultLabel: '与我们聊天',
@@ -522,6 +530,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: '服务繁忙，请再试一次这张照片。',
     publicChatImageLimitTemplate: '一次最多可发送 {count} 张照片。',
     publicChatWithheldMessageLabel: '已因撤回同意而移除',
+    publicChatSelectItemLabel: '选择',
   },
   ja: {
     launcherDefaultLabel: 'チャットでお問い合わせ',
@@ -579,6 +588,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: '混み合っています。この写真をもう一度お試しください。',
     publicChatImageLimitTemplate: '一度に送れる写真は最大 {count} 枚です。',
     publicChatWithheldMessageLabel: '同意の撤回により削除されました',
+    publicChatSelectItemLabel: '選択',
   },
   ru: {
     launcherDefaultLabel: 'Напишите нам',
@@ -636,6 +646,7 @@ export const BUILT_IN_EMBED_LOCALE_PACKS: Record<string, EmbedLocalePack> = {
     publicChatImageBusyMessage: 'Сервис занят. Попробуйте отправить это фото ещё раз.',
     publicChatImageLimitTemplate: 'За один раз можно отправить не более {count} фото.',
     publicChatWithheldMessageLabel: 'Удалено после отзыва согласия',
+    publicChatSelectItemLabel: 'Выбрать',
   },
 }
 

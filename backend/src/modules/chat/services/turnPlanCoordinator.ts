@@ -41,6 +41,8 @@ export type TurnPlanBypassReason =
   | "active_routine"
   | "pending_clarification"
   | "suspended_routine"
+  /** A picked card: its title is the item's text, so the planner would read the wrong language from it. */
+  | "item_selection"
   | "routine_claim"
   | "routine_candidates_over_bound"
   | "directive_candidates_over_bound"
@@ -379,7 +381,7 @@ export class TurnPlanCoordinator {
  */
 export const startTurnPlan = (input: {
   coordinator: TurnPlanCoordinator | undefined;
-  bypass: { activeRoutine?: boolean; pendingClarification?: boolean; suspendedRoutine?: boolean };
+  bypass: { activeRoutine?: boolean; pendingClarification?: boolean; suspendedRoutine?: boolean; itemSelection?: boolean };
   /**
    * Thunk so plan-input assembly (directive candidate collection, scope-reference
    * rendering) runs only when a consumer actually resolves the handle — never on
@@ -397,7 +399,9 @@ export const startTurnPlan = (input: {
       ? "pending_clarification"
       : input.bypass.suspendedRoutine
         ? "suspended_routine"
-        : undefined;
+        : input.bypass.itemSelection
+          ? "item_selection"
+          : undefined;
   if (stateBypassReason) {
     coordinator.recordBypass(stateBypassReason);
     return undefined;

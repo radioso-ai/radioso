@@ -4,11 +4,25 @@ import { REPLY_BLOCK_LIMITS } from "../../contracts/replyBlocks.js";
 /** The grounded answer's field that says which of the turn's images to show. */
 export const PRESENT_FIELD = "present";
 
-/** What the model returned in `present`: image handles in display order, and a caption. */
+/** Whether the visitor can pick one of the items shown: the model's call, `none` unless it says otherwise. */
+export type PresentSelection = "none" | "single";
+
+/** What the model returned in `present`: image handles in display order, a caption, and whether one can be picked. */
 export interface PresentHead {
   images: string[];
   caption: string;
+  selection: PresentSelection;
 }
+
+/** The `selection` field of the `present` head: whether the visitor can pick one of the pictures shown. */
+const PRESENT_SELECTION_PROPERTY = {
+  type: "string",
+  enum: ["none", "single"],
+  description: "single when the visitor is to pick one of the items shown; none when they are only shown.",
+} as const;
+
+/** The model's `selection`, or `none` when it is missing or not one the schema offers. */
+const readPresentSelection = (value: unknown): PresentSelection => (value === "single" ? "single" : "none");
 
 // The same on every turn that offers it: the handles are plain strings rather than a per-turn
 // enum, so the schema stays in the provider's response-schema cache. The block builder drops
@@ -18,7 +32,7 @@ const PRESENT_HEAD_FIELDS = {
     [PRESENT_FIELD]: {
       type: "object",
       additionalProperties: false,
-      required: ["images", "caption"],
+      required: ["images", "caption", "selection"],
       properties: {
         images: {
           type: "array",
@@ -32,6 +46,7 @@ const PRESENT_HEAD_FIELDS = {
           minLength: 1,
           maxLength: REPLY_BLOCK_LIMITS.captionLength,
         },
+        selection: PRESENT_SELECTION_PROPERTY,
       },
     },
   },
@@ -57,9 +72,9 @@ export const readPresentHead = (extras: Record<string, unknown> | undefined): Pr
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
-  const { images, caption } = value as Record<string, unknown>;
+  const { images, caption, selection } = value as Record<string, unknown>;
   if (!Array.isArray(images) || !images.every((image) => typeof image === "string") || typeof caption !== "string") {
     return null;
   }
-  return { images, caption: caption.trim() };
+  return { images, caption: caption.trim(), selection: readPresentSelection(selection) };
 };

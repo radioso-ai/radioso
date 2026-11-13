@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest'
 import type { ReplyBlock } from '@/lib/api-types'
 import {
   isRenderableReplyBlock,
+  isSelectableItem,
   itemOpenUrl,
+  itemPickMessage,
+  replyPicks,
   pictureFrameOf,
   resolveReplyLayout,
   withReplyBlocksCapability,
@@ -66,5 +69,39 @@ describe('reply blocks', () => {
     expect(isRenderableReplyBlock({ type: 'item_detail', id: 'block-2', item: { key: 'item-1', title: 'Garden room' } })).toBe(false)
     expect(isRenderableReplyBlock({ type: 'item_list', id: 'block-3' })).toBe(false)
     expect(isRenderableReplyBlock(null)).toBe(false)
+  })
+})
+
+describe('picking a card (#1763)', () => {
+  const selection = { messageId: 'assistant-1', blockId: 'block-1', itemKey: 'item-2' }
+
+  it('sends the card title as the message, with the pick as its input metadata', () => {
+    expect(itemPickMessage(selection, item([{ type: 'select' }]))).toEqual([
+      'Garden room',
+      { method: 'item_select', selection },
+    ])
+    // A card without a title is named by its picture.
+    expect(itemPickMessage(selection, { key: 'item-2', title: ' ', image: { src: 'https://app.example/i', alt: 'A garden room', width: 1, height: 1 }, actions: [] })[0])
+      .toBe('A garden room')
+  })
+
+  it('reads what was picked from each reply out of the visitor messages, so a reload shows it', () => {
+    const picks = replyPicks([
+      { role: 'assistant' },
+      { role: 'user', inputMetadata: { method: 'item_select', selection } },
+      { role: 'user', inputMetadata: { method: 'typed' } },
+      // An assistant message never picks.
+      { role: 'assistant', inputMetadata: { method: 'item_select', selection: { ...selection, messageId: 'assistant-2' } } },
+    ])
+
+    expect([...picks]).toEqual([['assistant-1', { blockId: 'block-1', itemKey: 'item-2' }]])
+  })
+
+  it('offers a pick only on a block that lets the visitor pick one, for an item that offers it', () => {
+    const selectable = { ...blockOf([1, 1]), selection: 'single' as const }
+
+    expect(isSelectableItem(selectable, item([{ type: 'select' }]))).toBe(true)
+    expect(isSelectableItem(selectable, item([]))).toBe(false)
+    expect(isSelectableItem(blockOf([1, 1]), item([{ type: 'select' }]))).toBe(false)
   })
 })

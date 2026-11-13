@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-11-12
+last_updated: 2026-11-13
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -480,6 +480,27 @@ for await (const event of client.chat.stream({
 and history returns them on the assistant message. A turn that declares no
 `reply.blocks` gets the answer as text alone. A layout your client leaves out of
 `layouts` reaches it as `list`.
+
+A block with `selection: "single"`, which only cards from the agent's documents
+carry, lets the user pick one of its cards. Send the pick as the next message of
+the conversation, naming the reply, the block and the item; Radioso reads the
+item from the reply it stored, and the pick names the card's page as the subject
+of the next reply:
+
+```ts
+const answer = await client.chat.create({
+  conversationId,
+  message: item.title,
+  inputMetadata: {
+    method: "item_select",
+    selection: { messageId: assistantMessageId, blockId: block.id, itemKey: item.key },
+  },
+});
+```
+
+A reply is picked from once: a pick of another card from it answers
+`409 item_already_selected`, the same card sent again runs as a retry, and a pick
+naming a card the conversation does not have answers `400 item_selection_invalid`.
 
 List chat history:
 

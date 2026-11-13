@@ -1,4 +1,4 @@
-import type { ReplyAction, ReplyBlockLayout } from "@radioso/conversation-contract";
+import type { ReplyBlockLayout } from "@radioso/conversation-contract";
 
 import { isPubliclyReachableHostname } from "../../../../shared/domain/publicNetwork.js";
 import type { ToolImageSource } from "../../../toolImages/contracts/index.js";
@@ -9,6 +9,7 @@ import {
   type StoredReplyItem,
 } from "../../contracts/replyBlocks.js";
 import type { RecordPresentHead } from "./recordPresentHead.js";
+import { itemActions } from "./replyBlockBuilder.js";
 import { resolveJsonPointer, type ToolRecord, type ToolRecordLedger } from "./toolRecords.js";
 
 /** Why a record the model named, or a field it pointed at, did not reach a card. Bounded: each is a metric label. */
@@ -144,13 +145,12 @@ export const buildRecordBlock = (input: {
     const link = optional(fields.link, publicAddress);
     const imageId = optional(fields.image, imageFor);
     const shownTitle = truncateUtf16(title, REPLY_BLOCK_LIMITS.titleLength);
-    const actions: ReplyAction[] = link ? [{ type: "open", url: link }] : [];
     items.push({
       key: record.key,
       title: shownTitle,
       ...(description ? { description: truncateUtf16(description, REPLY_BLOCK_LIMITS.descriptionLength) } : {}),
       ...(imageId ? { image: { imageId, ...TOOL_IMAGE_FRAME, alt: shownTitle } } : {}),
-      actions,
+      actions: itemActions(link, input.head.selection),
     });
   }
 
@@ -165,7 +165,7 @@ export const buildRecordBlock = (input: {
     type: "item_list",
     id: FIRST_BLOCK_ID,
     layout,
-    selection: "none",
+    selection: input.head.selection,
     caption: truncateUtf16(input.head.caption.trim(), REPLY_BLOCK_LIMITS.captionLength),
     items,
     origin: { kind: "skill_result", skillName: input.skillName },

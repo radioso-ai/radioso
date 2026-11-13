@@ -70,6 +70,7 @@ import { createReplyImageUrls } from "../../src/app/http/routes/replyImageAddres
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
+import { ItemSelectionTurns } from "../../src/modules/chat/services/replyBlocks/itemSelectionTurn.js";
 import { VisitorImageService } from "../../src/modules/visitorImages/composition.js";
 import type { VisitorImageReader } from "../../src/modules/visitorImages/domain.js";
 import { createChatModelImageReading, createVisitorImageAvailability, visitorImageAudit, visitorImageObjectStore } from "../../src/app/composition/visitorImages.js";
@@ -2401,7 +2402,16 @@ export const createTestDependencies = (overrides: {
     metrics: metricsRegistry,
     logger,
   });
-  const assistantChatService = new AssistantChatService(chatService, chatBootstrapService, { visitorImages });
+  const assistantChatService = new AssistantChatService(chatService, chatBootstrapService, {
+    visitorImages,
+    itemSelections: new ItemSelectionTurns({
+      conversations: conversationRepository,
+      messages: messageRepository,
+      analytics: productAnalyticsService,
+      metrics: metricsRegistry,
+      logger,
+    }),
+  });
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: new ProbeConversationReader(conversationRepository),
     agentReader: {

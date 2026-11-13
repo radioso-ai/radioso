@@ -90,6 +90,8 @@ export interface WebsiteEmbedCopy {
   publicChatImageLimitTemplate: string
   /** Stands in for a message withheld after the visitor's consent to what it carried was withdrawn. */
   publicChatWithheldMessageLabel: string
+  /** The button under a reply's card that picks it; the card's title follows it for screen readers. */
+  publicChatSelectItemLabel: string
 }
 
 export interface WebsiteEmbedTheme {
@@ -181,6 +183,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatImageBusyMessage: 'Busy right now. Try that photo again.',
   publicChatImageLimitTemplate: 'You can send up to {count} photos at once.',
   publicChatWithheldMessageLabel: 'Withheld after consent was withdrawn',
+  publicChatSelectItemLabel: 'Select',
 }
 const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
@@ -260,6 +263,7 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatImageBusyMessage',
   'publicChatImageLimitTemplate',
   'publicChatWithheldMessageLabel',
+  'publicChatSelectItemLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
 const THEME_OVERRIDE_KEYS = [

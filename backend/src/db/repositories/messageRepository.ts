@@ -387,6 +387,21 @@ export class MessageRepository
     return row ? mapMessageRow(row as MessageRow) : null;
   }
 
+  /** Whether a visitor message in the conversation already picked a card from `messageId`'s reply. */
+  async hasItemSelectionFrom(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("messages")
+      .select("id")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("conversation_id", "=", input.conversationId)
+      .where("role", "=", "user")
+      .where(sql<string>`metadata_json ->> 'method'`, "=", "item_select")
+      .where(sql<string>`metadata_json -> 'selection' ->> 'messageId'`, "=", input.messageId)
+      .limit(1)
+      .executeTakeFirst();
+    return row !== undefined;
+  }
+
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     const rows = await this.db
       .selectFrom("messages")

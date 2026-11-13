@@ -125,7 +125,7 @@ export const registerAssistantAuthenticatedChatPaths = (
         description: "Bootstrap request completed without creating a greeting",
       },
       400: {
-        description: "Request validation failed, including `imageIds` without `agentId`, with `startConversation`, more than three or one named twice; or `imageIds` from a caller that cannot own images (only an API credential or a signed-in user can).",
+        description: "Request validation failed, including `imageIds` without `agentId`, with `startConversation`, more than three or one named twice; or `imageIds` from a caller that cannot own images (only an API credential or a signed-in user can). `item_selection_invalid`: an `item_select` names no card that can be picked in this conversation (an unknown message, block or item key, or a block whose `selection` is `none`); nothing was stored and no turn ran.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -149,7 +149,7 @@ export const registerAssistantAuthenticatedChatPaths = (
         },
       },
       409: {
-        description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent.",
+        description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. `item_already_selected`: a card was already picked from the reply an `item_select` names; nothing was stored and no turn ran.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -384,7 +384,7 @@ export const registerAssistantPublicChatPaths = (
         },
       },
       400: {
-        description: "Request validation failed, including `imageIds` with `startConversation`, more than three, or one named twice.",
+        description: "Request validation failed, including `imageIds` with `startConversation`, more than three, or one named twice. `item_selection_invalid`: an `item_select` names no card that can be picked in this conversation (an unknown message, block or item key, or a block whose `selection` is `none`); nothing was stored and no turn ran.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -400,7 +400,7 @@ export const registerAssistantPublicChatPaths = (
         },
       },
       409: {
-        description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent.",
+        description: "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. `item_already_selected`: a card was already picked from the reply an `item_select` names; nothing was stored and no turn ran.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

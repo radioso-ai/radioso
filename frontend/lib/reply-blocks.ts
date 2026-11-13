@@ -1,6 +1,35 @@
-import type { ClientContextCapabilities, ReplyBlock } from './api-types'
+import type { ChatUserInputMetadata, ClientContextCapabilities, ReplyBlock } from './api-types'
 
 export type ReplyItem = ReplyBlock['items'][number]
+
+/** A card a visitor picked: the reply's message, the block, and the item's key. */
+export type ItemSelection = NonNullable<ChatUserInputMetadata['selection']>
+
+/** What was picked from one reply, read from the visitor messages; a reply is picked from once. */
+export type ReplyPicks = ReadonlyMap<string, Omit<ItemSelection, 'messageId'>>
+
+/**
+ * What picking a card sends: the card's title as the visitor's message, and the pick. The server
+ * reads the item from the reply it was on and stores the item's own title.
+ */
+export const itemPickMessage = (selection: ItemSelection, item: ReplyItem): [string, ChatUserInputMetadata] => [
+  item.title.trim() || item.image?.alt.trim() || item.key,
+  { method: 'item_select', selection },
+]
+
+/**
+ * The card picked from each reply, keyed by the reply's message id, read from the visitor messages
+ * that picked them: history keeps them, so a reload shows what was picked.
+ */
+export const replyPicks = (messages: readonly { role: string; inputMetadata?: ChatUserInputMetadata }[]): ReplyPicks =>
+  new Map(messages.flatMap(({ role, inputMetadata }) => {
+    const selection = role === 'user' && inputMetadata?.method === 'item_select' ? inputMetadata.selection : undefined
+    return selection ? [[selection.messageId, { blockId: selection.blockId, itemKey: selection.itemKey }] as const] : []
+  }))
+
+/** Whether a visitor can pick the item: its block lets them pick one, and the item offers it. */
+export const isSelectableItem = (block: ReplyBlock, item: ReplyItem): boolean =>
+  block.selection === 'single' && item.actions.some((action) => action.type === 'select')
 
 /** The item list layouts the chat draws. The server sends any other layout as `list`. */
 const DRAWN_ITEM_LIST_LAYOUTS = ['carousel', 'grid'] as const

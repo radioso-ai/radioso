@@ -14,6 +14,7 @@ import {
   type PageContextCondition,
 } from "./pageRead/pageContextCondition.js";
 import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
+import { renderSelectedItem } from "./replyBlocks/selectedItemText.js";
 
 /**
  * Capability-agnostic answer-composition utilities shared by every terminal answer
@@ -63,8 +64,17 @@ export class ChatAnswerSupport {
     });
   }
 
-  /** Render the turn's renderable visitor-context fragments (page + always-surfaced variables). */
+  /**
+   * Render the turn's context: its renderable visitor-context fragments (page + always-surfaced
+   * variables), then the card the visitor picked, when the turn is a pick.
+   */
   buildContextBlock(session: PreparedSession): string {
+    const visitorContext = this.buildVisitorContextBlock(session);
+    const selected = session.itemSelection ? renderSelectedItem(session.itemSelection) : "";
+    return [visitorContext, selected].filter((block) => block.length > 0).join("\n\n");
+  }
+
+  private buildVisitorContextBlock(session: PreparedSession): string {
     const rendered = renderContextBlockWithBound(
       session.resolvedContext?.renderFragments ?? [],
       this.contextVariableRenderBound,

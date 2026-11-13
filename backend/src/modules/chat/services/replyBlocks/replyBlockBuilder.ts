@@ -6,7 +6,7 @@ import {
   type StoredReplyBlock,
   type StoredReplyItem,
 } from "../../contracts/replyBlocks.js";
-import type { PresentHead } from "./presentHead.js";
+import type { PresentHead, PresentSelection } from "./presentHead.js";
 import type { LedgerEntry, TurnImageLedger } from "./turnImageLedger.js";
 
 /** Why a handle the model named did not become an item. */
@@ -40,20 +40,26 @@ const httpAddress = (value: string | undefined): string | undefined => {
   }
 };
 
+/** An item's actions: `open` when it has a page, then `select` when the visitor can pick one. */
+export const itemActions = (url: string | null | undefined, selection: PresentSelection): ReplyAction[] => [
+  ...(url ? [{ type: "open" as const, url }] : []),
+  ...(selection === "single" ? [{ type: "select" as const }] : []),
+];
+
 /** A primary image stands for its document; an inline one is titled by what the page says of it. */
 const itemTitle = (entry: LedgerEntry): string => {
   const own = entry.role === "inline" ? entry.caption?.trim() || entry.alt.trim() : "";
   return truncate(own || entry.documentTitle.trim(), REPLY_BLOCK_LIMITS.titleLength);
 };
 
-const toItem = (entry: LedgerEntry): StoredReplyItem => {
+const toItem = (entry: LedgerEntry, selection: PresentSelection): StoredReplyItem => {
   const url = httpAddress(entry.sourceUrl);
-  const actions: ReplyAction[] = url ? [{ type: "open", url }] : [];
   return {
     key: entry.imageId,
     title: itemTitle(entry),
     image: { imageId: entry.imageId, width: entry.width, height: entry.height, alt: entry.alt },
-    actions,
+    actions: itemActions(url, selection),
+    document: { id: entry.documentId, title: truncate(entry.documentTitle.trim(), REPLY_BLOCK_LIMITS.titleLength) },
   };
 };
 
@@ -100,19 +106,23 @@ export const buildReplyBlock = (input: {
       type: "item_list",
       id: FIRST_BLOCK_ID,
       layout: layoutFor(picked, input.layouts),
-      selection: "none",
+      selection: input.head.selection,
       caption: truncate(input.head.caption.trim(), REPLY_BLOCK_LIMITS.captionLength),
-      items: picked.map(toItem),
+      items: picked.map((entry) => toItem(entry, input.head.selection)),
     },
     dropped,
   };
 };
 
-/** The blocks as a client receives them: each stored image id becomes the URLs it is served at, and the origin stays behind. */
+/**
+ * The blocks as a client receives them: each stored image id becomes the URLs it is served at, and
+ * the server's own records of where the items came from (the block's origin, an item's document)
+ * stay behind.
+ */
 export const presentReplyBlocks = (blocks: readonly StoredReplyBlock[], urls: ReplyImageUrls): ReplyBlock[] =>
   blocks.map(({ origin: _origin, ...block }) => ({
     ...block,
-    items: block.items.map(({ image, ...item }) => ({
+    items: block.items.map(({ image, document: _document, ...item }) => ({
       ...item,
       ...(image
         ? { image: { ...urls.forImage(image.imageId), width: image.width, height: image.height, alt: image.alt } }

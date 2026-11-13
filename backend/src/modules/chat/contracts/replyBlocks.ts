@@ -39,7 +39,16 @@ export interface StoredReplyImage {
   alt: string;
 }
 
-export type StoredReplyItem = Omit<ReplyItem, "image" | "facts"> & { image?: StoredReplyImage };
+/**
+ * The document an item from the answer's evidence stands for. Server-only, like a block's
+ * `origin`: a card the visitor picks makes this document the subject of the next reply.
+ */
+export interface StoredReplyItemDocument {
+  id: string;
+  title: string;
+}
+
+export type StoredReplyItem = Omit<ReplyItem, "image" | "facts"> & { image?: StoredReplyImage; document?: StoredReplyItemDocument };
 
 /**
  * Where a stored block's items came from, when not from the answer's evidence. Server-only: it is
@@ -60,7 +69,10 @@ const replyActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("select") }),
 ]);
 
-const itemListBlockSchemaWith = <TImage extends z.ZodTypeAny>(imageSchema: TImage) => z.object({
+const itemListBlockSchemaWith = <TImage extends z.ZodTypeAny, TItemExtra extends z.ZodRawShape>(
+  imageSchema: TImage,
+  itemExtra: TItemExtra,
+) => z.object({
   type: z.literal("item_list"),
   id: z.string().min(1).max(64),
   layout: z.enum(REPLY_BLOCK_LAYOUTS),
@@ -72,6 +84,7 @@ const itemListBlockSchemaWith = <TImage extends z.ZodTypeAny>(imageSchema: TImag
     description: z.string().max(REPLY_BLOCK_LIMITS.descriptionLength).optional(),
     image: imageSchema.optional(),
     actions: z.array(replyActionSchema).max(2),
+    ...itemExtra,
   })).min(1).max(REPLY_BLOCK_LIMITS.items),
 });
 
@@ -91,10 +104,12 @@ const storedReplyImageSchema = z.object({
 });
 
 /** A reply block as a client receives it. */
-export const replyBlockSchema = itemListBlockSchemaWith(replyImageSchema) satisfies z.ZodType<ReplyBlock>;
+export const replyBlockSchema = itemListBlockSchemaWith(replyImageSchema, {}) satisfies z.ZodType<ReplyBlock>;
 
 /** A reply block as the message row stores it; history reads it back through this. */
-export const storedReplyBlockSchema = itemListBlockSchemaWith(storedReplyImageSchema).extend({
+export const storedReplyBlockSchema = itemListBlockSchemaWith(storedReplyImageSchema, {
+  document: z.object({ id: z.string().min(1).max(128), title: z.string().max(REPLY_BLOCK_LIMITS.titleLength) }).optional(),
+}).extend({
   origin: z.object({ kind: z.literal("skill_result"), skillName: z.string().min(1).max(200) }).optional(),
 }) satisfies z.ZodType<StoredReplyBlock>;
 

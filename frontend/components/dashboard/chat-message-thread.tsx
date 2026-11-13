@@ -9,7 +9,7 @@ import { VisitorImageReadings, type VisitorImageThreadConfig } from '@/component
 import { VisitorMessageBody } from '@/components/chat/visitor-message-body'
 import { InterruptedReplyBadge, OperatorReplySpeechBadge, SpokenMarker } from '@/components/chat/voice-markers'
 import { readVisitorImageInput } from '@/lib/visitor-image-input'
-import { isRenderableReplyBlock } from '@/lib/reply-blocks'
+import { isRenderableReplyBlock, replyPicks } from '@/lib/reply-blocks'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
@@ -275,6 +275,7 @@ export function ChatMessageThread({
   messages,
   onOpenDocument,
   onSuggestionSelect,
+  onItemSelect,
   onMessageSelect,
   selectedMessageId,
   assistantAvatarLabel,
@@ -306,6 +307,8 @@ export function ChatMessageThread({
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
   onSuggestionSelect?: (suggestion: ChatSuggestion, messageId: string) => void
+  // Sends a pick of a reply's card as the visitor's message. Without it the cards show what was picked, read-only.
+  onItemSelect?: (content: string, inputMetadata: ChatUserInputMetadata) => unknown
   onMessageSelect?: (messageId: string) => void
   onAnswerFeedback?: FeedbackHandler
   onClearAnswerFeedback?: (assistantMessageId: string) => Promise<void> | void
@@ -351,6 +354,7 @@ export function ChatMessageThread({
   visitorImages?: VisitorImageThreadConfig
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
+  const replyPicksByMessage = useMemo(() => replyPicks(messages), [messages])
   const activityPlacement = useMemo(
     () => placeActivity(messages, audience === 'operator' ? activity : NO_ACTIVITY, { hasOlderMessages }),
     [messages, activity, audience, hasOlderMessages],
@@ -712,6 +716,13 @@ export function ChatMessageThread({
                             destinationUrl: href,
                             assistantMessageId: message.persistedAssistantMessageId ?? message.id,
                           })}
+                          picking={{
+                            messageId: message.persistedAssistantMessageId ?? message.id,
+                            picks: replyPicksByMessage,
+                            label: copy.publicChatSelectItemLabel,
+                            // A reply is picked from by its stored id; one still streaming has none yet.
+                            onPick: message.persistedAssistantMessageId ? onItemSelect : undefined,
+                          }}
                         />
                       ))}
                       {showReceipt && groupInfo.skill ? (

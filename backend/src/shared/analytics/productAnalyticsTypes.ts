@@ -10,6 +10,7 @@ export const productAnalyticsEventNames = [
   "chat.completed",
   "chat.citation_clicked",
   "chat.link_clicked",
+  "chat.item_selected",
   "frontend.page_view",
   "onboarding.chat_opened",
   "onboarding.first_question",

@@ -60,6 +60,8 @@ import type {
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { sensitiveSlotsAwaited } from "../../routines/public.js";
 import { isMessageOf, storeTurnUserMessage, type ExistingUserMessage } from "./turnUserMessage.js";
+import { findTurnConversation } from "./turnConversation.js";
+import type { SelectedItem } from "./replyBlocks/itemSelection.js";
 import { isAgentRetrievalEnabled, isPrivacyNoticeVersionOf } from "../../agents/public.js";
 import { legacyAgentForWorkspace, legacyAgentWithoutWorkspace } from "./legacyWorkspaceAgent.js";
 import { resolveTurnReferenceTimeZone } from "./turnReferenceTimeZone.js";
@@ -107,6 +109,8 @@ export interface PreparedSession {
   turnRoute: ChatTurnRoute;
   turnFraming?: TurnRouting["framing"];
   userMessage: MessageRecord;
+  /** The card the visitor picked, read from its stored block: the subject of this turn's reply. */
+  itemSelection?: SelectedItem;
   /** What the user is effectively asking this turn; differs from the persisted user message for resolved selectors. */
   effectiveQuery: string;
   /** Raw host input held aside until the page-read gate admits it. */
@@ -227,6 +231,7 @@ export interface PrepareChatSessionInput {
   bootstrapGreetingId?: string;
   query: string;
   inputMetadata?: UserMessageInputMetadata;
+  itemSelection?: SelectedItem;
   /** Told the moment the customer message is stored, before the rest of the turn; never for an existing one. */
   onUserMessageStored?: UserMessageStoredListener;
   metadataFilter?: Record<string, unknown>;
@@ -578,6 +583,7 @@ export class ChatSessionPreparer {
       turnRoute,
       turnFraming: defaultTurnFraming(),
       userMessage,
+      ...(input.itemSelection ? { itemSelection: input.itemSelection } : {}),
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       pageReadCapability: input.pageReadCapability ?? null,
@@ -1196,24 +1202,10 @@ export class ChatSessionPreparer {
   }
 
   private async ensureConversation(conversationId: string, workspaceId: string, chatSessionId?: string | null) {
-    if (chatSessionId) {
-      const conversation = await this.conversationRepository.findByIdAndAnonymousSession(
-        conversationId,
-        workspaceId,
-        chatSessionId,
-      );
-      if (!conversation) {
-        throw notFound("Conversation not found");
-      }
-      return conversation;
-    }
-
-    const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
-
+    const conversation = await findTurnConversation(this.conversationRepository, { conversationId, workspaceId, chatSessionId });
     if (!conversation) {
       throw notFound("Conversation not found");
     }
-
     return conversation;
   }
 

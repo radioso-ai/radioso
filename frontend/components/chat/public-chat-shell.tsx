@@ -13,12 +13,7 @@ import {
   PublicChatConnectingView,
 } from '@/components/chat/public-chat-bubble-view'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import {
   ChatMessageThread,
@@ -1018,6 +1013,7 @@ function PublicChatContent({
                   messages={threadMessages}
                   onOpenDocument={async () => 'unavailable'}
                   onSuggestionSelect={handleSuggestionSelect}
+                  onItemSelect={isLoading || callInProgress ? undefined : sendMessage}
                   onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
                   onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
                   assistantAvatarUrl={resolvedAvatarUrl}

@@ -2,12 +2,12 @@ import { z } from "zod";
 
 /**
  * How a visitor's chat message was entered: typed, a suggestion chip clicked, an intent started,
- * or a calling agent's tool call. The one vocabulary every surface that takes or keeps a message
- * shares: the public chat, assistant chat and agent turn probe request schemas, and the copy
- * stored on a user message. `routine_invocation` is recorded by chat for a routine invoked as a
- * tool, and no client sends it.
+ * a card picked from a reply (`item_select`), or a calling agent's tool call. The one vocabulary
+ * every surface that takes or keeps a message shares: the public chat, assistant chat and agent
+ * turn probe request schemas, and the copy stored on a user message. `routine_invocation` is
+ * recorded by chat for a routine invoked as a tool, and no client sends it.
  */
-const USER_MESSAGE_INPUT_METHODS = ["typed", "suggestion_click", "intent_click", "routine_invocation"] as const;
+const USER_MESSAGE_INPUT_METHODS = ["typed", "suggestion_click", "intent_click", "item_select", "routine_invocation"] as const;
 
 type UserMessageInputMethod = typeof USER_MESSAGE_INPUT_METHODS[number];
 
@@ -27,7 +27,23 @@ const messageImageInputSchema = z.object({
 
 type MessageImageInput = z.infer<typeof messageImageInputSchema>;
 
-const CLIENT_INPUT_METHODS = ["typed", "suggestion_click", "intent_click"] as const satisfies readonly UserMessageInputMethod[];
+const CLIENT_INPUT_METHODS = ["typed", "suggestion_click", "intent_click", "item_select"] as const satisfies readonly UserMessageInputMethod[];
+
+/** The methods the agent turn probe takes: it runs on no stored reply, so it has no card to pick. */
+const PROBE_INPUT_METHODS = ["typed", "suggestion_click", "intent_click"] as const satisfies readonly UserMessageInputMethod[];
+
+/**
+ * The card a visitor picked (`item_select`): the assistant message whose reply showed it, the
+ * block on that message, and the item's key in the block. Ids only: the server reads the item
+ * itself from the stored block.
+ */
+const itemSelectionSchema = z.object({
+  messageId: z.string().uuid(),
+  blockId: z.string().min(1).max(64),
+  itemKey: z.string().min(1).max(128),
+});
+
+export type ItemSelection = z.infer<typeof itemSelectionSchema>;
 
 export interface UserMessageInputMetadata {
   method: UserMessageInputMethod;
@@ -38,6 +54,8 @@ export interface UserMessageInputMetadata {
     skillName: string;
     intentName?: string;
   };
+  /** The card picked (`method: "item_select"`). */
+  selection?: ItemSelection;
   /** The structured form of a calling agent's tool call (`method: "routine_invocation"`). */
   routine?: {
     toolName: string;
@@ -73,10 +91,11 @@ const clientInputMetadataShape = z.object({
   suggestionSourceMessageId: z.string().uuid().optional(),
   suggestionId: suggestionIdSchema,
   intent: clientIntentSchema.optional(),
+  selection: itemSelectionSchema.optional(),
 });
 
 const requireMethodFields = (
-  value: z.infer<typeof clientInputMetadataShape>,
+  value: Omit<z.infer<typeof clientInputMetadataShape>, "method" | "selection"> & { method: string; selection?: ItemSelection },
   ctx: z.RefinementCtx,
 ): void => {
   if (value.method === "suggestion_click" && !value.suggestionSourceMessageId) {
@@ -100,14 +119,22 @@ const requireMethodFields = (
       path: ["intent"],
     });
   }
+  if ((value.method === "item_select") !== (value.selection !== undefined)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "selection is sent with item_select, and only with it",
+      path: ["selection"],
+    });
+  }
 };
 
 /** The input metadata a chat client sends with a message. */
 export const chatInputMetadataSchema = clientInputMetadataShape.superRefine(requireMethodFields);
 
-/** {@link chatInputMetadataSchema} refusing unknown keys, for a tool input a model writes. */
+/** {@link chatInputMetadataSchema} refusing unknown keys and a picked card, for the agent turn probe's tool input. */
 export const strictChatInputMetadataSchema = clientInputMetadataShape
-  .extend({ intent: clientIntentSchema.strict().optional() })
+  .omit({ selection: true })
+  .extend({ method: z.enum(PROBE_INPUT_METHODS), intent: clientIntentSchema.strict().optional() })
   .strict()
   .superRefine(requireMethodFields);
 
@@ -128,6 +155,7 @@ export const parseStoredInputMetadata = (value: unknown): UserMessageInputMetada
     suggestionId?: unknown;
     intent?: unknown;
     routine?: unknown;
+    selection?: unknown;
     imageInput?: unknown;
   };
   if (typeof candidate.method !== "string" || !STORED_INPUT_METHODS.has(candidate.method)) {
@@ -140,6 +168,7 @@ export const parseStoredInputMetadata = (value: unknown): UserMessageInputMetada
     ? candidate.routine as { toolName?: unknown; input?: unknown }
     : null;
   const imageInput = messageImageInputSchema.safeParse(candidate.imageInput);
+  const selection = itemSelectionSchema.safeParse(candidate.selection);
 
   return {
     method: candidate.method as UserMessageInputMethod,
@@ -163,6 +192,7 @@ export const parseStoredInputMetadata = (value: unknown): UserMessageInputMetada
             : {},
         }
       : undefined,
+    ...(selection.success ? { selection: selection.data } : {}),
     ...(imageInput.success ? { imageInput: imageInput.data } : {}),
   };
 };

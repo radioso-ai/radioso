@@ -49,3 +49,35 @@ describe("a clicked chip's id on the input metadata (#1544)", () => {
       .toBeUndefined();
   });
 });
+
+describe("a card picked from a reply (#1763, item_select)", () => {
+  const selection = { messageId: SOURCE_MESSAGE_ID, blockId: "b1", itemKey: "/results/2" };
+
+  it("takes the picked card's message, block and key with item_select, on the chat schema only", () => {
+    const pick = { method: "item_select", selection };
+
+    expect(chatInputMetadataSchema.parse(pick)).toEqual(pick);
+    // The agent turn probe runs without a stored reply to pick from, so it keeps its three methods.
+    expect(strictChatInputMetadataSchema.safeParse(pick).success).toBe(false);
+  });
+
+  it("rejects item_select without a selection, a selection on another method, and a malformed selection", () => {
+    const rejected = [
+      { method: "item_select" },
+      { method: "typed", selection },
+      { method: "suggestion_click", suggestionSourceMessageId: SOURCE_MESSAGE_ID, selection },
+      { method: "item_select", selection: { ...selection, messageId: "not-a-uuid" } },
+      { method: "item_select", selection: { ...selection, blockId: "" } },
+      { method: "item_select", selection: { ...selection, itemKey: "x".repeat(129) } },
+      { method: "item_select", selection: { messageId: SOURCE_MESSAGE_ID, blockId: "b1" } },
+    ];
+    for (const value of rejected) {
+      expect(chatInputMetadataSchema.safeParse(value).success, JSON.stringify(value)).toBe(false);
+    }
+  });
+
+  it("reads the selection back from a stored message, and drops one that is not well formed", () => {
+    expect(parseStoredInputMetadata({ method: "item_select", selection })).toMatchObject({ method: "item_select", selection });
+    expect(parseStoredInputMetadata({ method: "item_select", selection: { messageId: SOURCE_MESSAGE_ID } })?.selection).toBeUndefined();
+  });
+});

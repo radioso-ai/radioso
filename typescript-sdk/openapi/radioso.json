@@ -16136,7 +16136,8 @@
                 "enum": [
                   "typed",
                   "suggestion_click",
-                  "intent_click"
+                  "intent_click",
+                  "item_select"
                 ]
               },
               "suggestionSourceMessageId": {
@@ -16164,6 +16165,30 @@
                 },
                 "required": [
                   "skillName"
+                ]
+              },
+              "selection": {
+                "type": "object",
+                "properties": {
+                  "messageId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "blockId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "itemKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "messageId",
+                  "blockId",
+                  "itemKey"
                 ]
               }
             },
@@ -16402,7 +16427,8 @@
                 "enum": [
                   "typed",
                   "suggestion_click",
-                  "intent_click"
+                  "intent_click",
+                  "item_select"
                 ]
               },
               "suggestionSourceMessageId": {
@@ -16430,6 +16456,30 @@
                 },
                 "required": [
                   "skillName"
+                ]
+              },
+              "selection": {
+                "type": "object",
+                "properties": {
+                  "messageId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "blockId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "itemKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "messageId",
+                  "blockId",
+                  "itemKey"
                 ]
               }
             },
@@ -17608,6 +17658,30 @@
         ],
         "description": "The photos a message carries. Render `typedText` and the photos in the visitor's bubble; the readings are the agent's, not the visitor's words."
       },
+      "ItemSelection": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The assistant message whose reply showed the card."
+          },
+          "blockId": {
+            "type": "string",
+            "description": "The block on that message."
+          },
+          "itemKey": {
+            "type": "string",
+            "description": "The item's `key` in the block."
+          }
+        },
+        "required": [
+          "messageId",
+          "blockId",
+          "itemKey"
+        ],
+        "description": "The card a visitor picked from a reply block whose `selection` is `single`. The server reads the item from the stored block; a later card that names the same message shows it as picked."
+      },
       "UserMessageInputMetadata": {
         "type": "object",
         "properties": {
@@ -17617,6 +17691,7 @@
               "typed",
               "suggestion_click",
               "intent_click",
+              "item_select",
               "routine_invocation"
             ]
           },
@@ -17627,6 +17702,9 @@
           "suggestionId": {
             "type": "string",
             "description": "The id of the chip clicked, such as a routine consent's `agree` or `decline`."
+          },
+          "selection": {
+            "$ref": "#/components/schemas/ItemSelection"
           },
           "intent": {
             "type": "object",
@@ -54192,7 +54270,7 @@
             "description": "Bootstrap request completed without creating a greeting"
           },
           "400": {
-            "description": "Request validation failed, including `imageIds` without `agentId`, with `startConversation`, more than three or one named twice; or `imageIds` from a caller that cannot own images (only an API credential or a signed-in user can).",
+            "description": "Request validation failed, including `imageIds` without `agentId`, with `startConversation`, more than three or one named twice; or `imageIds` from a caller that cannot own images (only an API credential or a signed-in user can). `item_selection_invalid`: an `item_select` names no card that can be picked in this conversation (an unknown message, block or item key, or a block whose `selection` is `none`); nothing was stored and no turn ran.",
             "content": {
               "application/json": {
                 "schema": {
@@ -54222,7 +54300,7 @@
             }
           },
           "409": {
-            "description": "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent.",
+            "description": "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. `item_already_selected`: a card was already picked from the reply an `item_select` names; nothing was stored and no turn ran.",
             "content": {
               "application/json": {
                 "schema": {
@@ -64931,7 +65009,7 @@
             }
           },
           "400": {
-            "description": "Request validation failed, including `imageIds` with `startConversation`, more than three, or one named twice.",
+            "description": "Request validation failed, including `imageIds` with `startConversation`, more than three, or one named twice. `item_selection_invalid`: an `item_select` names no card that can be picked in this conversation (an unknown message, block or item key, or a block whose `selection` is `none`); nothing was stored and no turn ran.",
             "content": {
               "application/json": {
                 "schema": {
@@ -64951,7 +65029,7 @@
             }
           },
           "409": {
-            "description": "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent.",
+            "description": "`chat_turn_superseded`: the turn was superseded by a newer message in the same conversation. `visitor_image_unavailable`: an `imageIds` entry is unknown, was uploaded by another caller or for another agent, or was already sent, or the agent no longer takes images (its `visitorImagesEnabled` was turned off, or its chat model cannot read images); nothing was sent. `item_already_selected`: a card was already picked from the reply an `item_select` names; nothing was stored and no turn ran.",
             "content": {
               "application/json": {
                 "schema": {

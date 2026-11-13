@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { storedReplyBlockSchema } from "../../../../src/modules/chat/contracts/replyBlocks.js";
 import { buildRecordBlock } from "../../../../src/modules/chat/services/replyBlocks/recordBlockBuilder.js";
-import { readRecordPresentHead, type RecordPresentHead } from "../../../../src/modules/chat/services/replyBlocks/recordPresentHead.js";
+import { readRecordPresentHead, recordPresentHeadSchemaExtension, type RecordPresentHead } from "../../../../src/modules/chat/services/replyBlocks/recordPresentHead.js";
 import { ToolRecordLedger } from "../../../../src/modules/chat/services/replyBlocks/toolRecords.js";
 
 const listing = (index: number, over: Record<string, unknown> = {}) => ({
@@ -17,6 +17,7 @@ const head = (over: Partial<RecordPresentHead> = {}): RecordPresentHead => ({
   records: ["r1", "r2"],
   fields: { title: "/name", subtitle: "/area", image: "/photos/0/url", link: "/url" },
   caption: "Flats in Mitte",
+  selection: "none",
   ...over,
 });
 
@@ -177,13 +178,35 @@ describe("record block builder", () => {
 
     expect(block?.layout).toBe("list");
   });
+
+  it("lets the visitor pick a card when the model offers a single selection, after each card's link", () => {
+    const { block } = build({ selection: "single" });
+
+    expect(block?.selection).toBe("single");
+    expect(block?.items.map((item) => item.actions)).toEqual([
+      [{ type: "open", url: "https://homes.example/listings/flat-1" }, { type: "select" }],
+      [{ type: "open", url: "https://homes.example/listings/flat-2" }, { type: "select" }],
+    ]);
+    expect(storedReplyBlockSchema.safeParse(block).success).toBe(true);
+  });
 });
 
 describe("record present head", () => {
+  it("offers the selection as an enum the model returns", () => {
+    const present = recordPresentHeadSchemaExtension().beforeAnswer?.properties.present as {
+      required: string[];
+      properties: Record<string, unknown>;
+    };
+
+    expect(present.required).toEqual(Object.keys(present.properties));
+    expect(present.properties.selection).toMatchObject({ type: "string", enum: ["none", "single"] });
+  });
+
   it("reads the model's head, and nothing malformed", () => {
-    const valid = { records: ["r1"], fields: { title: "/name", subtitle: null, image: "/photo", link: null }, caption: " Flats " };
+    const valid = { records: ["r1"], fields: { title: "/name", subtitle: null, image: "/photo", link: null }, caption: " Flats ", selection: "single" };
 
     expect(readRecordPresentHead({ present: valid })).toEqual({ ...valid, caption: "Flats" });
+    expect(readRecordPresentHead({ present: { ...valid, selection: undefined } })?.selection).toBe("none");
     expect(readRecordPresentHead({ present: { ...valid, fields: { ...valid.fields, title: null } } })).toBeNull();
     expect(readRecordPresentHead({ present: { ...valid, records: [1] } })).toBeNull();
     expect(readRecordPresentHead({ present: { images: [], caption: "x" } })).toBeNull();

@@ -17,6 +17,7 @@ export interface LedgerEntry {
   height: number;
   /** The `Result N` the image belongs to. */
   resultNumber: number;
+  documentId: string;
   documentTitle: string;
   /** The document's http(s) address, when it has one. */
   sourceUrl?: string;
@@ -74,6 +75,7 @@ export class TurnImageLedger {
           width: image.width,
           height: image.height,
           resultNumber: item.resultNumber,
+          documentId: item.documentId,
           documentTitle: item.documentTitle,
           ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
         });

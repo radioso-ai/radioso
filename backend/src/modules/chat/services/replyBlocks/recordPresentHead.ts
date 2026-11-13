@@ -1,6 +1,6 @@
 import type { AnswerSchemaExtension } from "../../../../shared/domain/answerSideChannel.js";
 import { REPLY_BLOCK_LIMITS } from "../../contracts/replyBlocks.js";
-import { PRESENT_FIELD } from "./presentHead.js";
+import { PRESENT_FIELD, PRESENT_SELECTION_PROPERTY, readPresentSelection, type PresentSelection } from "./presentHead.js";
 
 /**
  * What the model returned in `present` for a skill's records: the handles to show, in order, and
@@ -16,6 +16,7 @@ export interface RecordPresentHead {
     link: string | null;
   };
   caption: string;
+  selection: PresentSelection;
 }
 
 const pointer = (description: string, nullable: boolean) => ({
@@ -34,7 +35,7 @@ const RECORD_PRESENT_HEAD_EXTENSION: AnswerSchemaExtension = {
       [PRESENT_FIELD]: {
         type: "object",
         additionalProperties: false,
-        required: ["records", "fields", "caption"],
+        required: ["records", "fields", "caption", "selection"],
         properties: {
           records: {
             type: "array",
@@ -59,6 +60,7 @@ const RECORD_PRESENT_HEAD_EXTENSION: AnswerSchemaExtension = {
             minLength: 1,
             maxLength: REPLY_BLOCK_LIMITS.captionLength,
           },
+          selection: PRESENT_SELECTION_PROPERTY,
         },
       },
     },
@@ -77,7 +79,7 @@ export const readRecordPresentHead = (extras: Record<string, unknown> | undefine
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
-  const { records, fields, caption } = value as Record<string, unknown>;
+  const { records, fields, caption, selection } = value as Record<string, unknown>;
   if (!Array.isArray(records) || !records.every((record) => typeof record === "string") || typeof caption !== "string") {
     return null;
   }
@@ -88,5 +90,5 @@ export const readRecordPresentHead = (extras: Record<string, unknown> | undefine
   if (typeof title !== "string" || !nullableString(subtitle) || !nullableString(image) || !nullableString(link)) {
     return null;
   }
-  return { records, fields: { title, subtitle, image, link }, caption: caption.trim() };
+  return { records, fields: { title, subtitle, image, link }, caption: caption.trim(), selection: readPresentSelection(selection) };
 };

@@ -112,6 +112,7 @@ import {
   type PendingClarificationResolution,
 } from "./clarification/pendingClarificationResolver.js";
 import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseResolutionInput.js";
+import type { SelectedItem } from "./replyBlocks/itemSelection.js";
 import { createTurnLanguageReport, withTurnLanguageReport, type TurnLanguageReport } from "./turnLanguageReport.js";
 import {
   type RetrievalSenseDetectorPort,
@@ -285,6 +286,8 @@ interface ChatAnswerInput {
   stream: boolean;
   userExpectedLocale?: string | null;
   inputMetadata?: UserMessageInputMetadata;
+  /** The card the visitor picked (`item_select`), read from its stored block: the reply's subject. */
+  itemSelection?: SelectedItem;
   /** Told the moment the turn stores the customer message, before the rest of the turn runs. */
   onUserMessageStored?: UserMessageStoredListener;
   metadataFilter?: Record<string, unknown>;
@@ -1379,41 +1382,7 @@ export class ChatService {
     }
   }
 
-  async *streamAnswer(input: {
-    workspaceId: string;
-    agentId?: string | null;
-    accountId?: string;
-    conversationId?: string;
-    bootstrapGreetingId?: string;
-    query: string;
-    stream: boolean;
-    userExpectedLocale?: string | null;
-    inputMetadata?: UserMessageInputMetadata;
-    /** Told the moment the turn stores the customer message, before the rest of the turn runs. */
-    onUserMessageStored?: UserMessageStoredListener;
-    metadataFilter?: Record<string, unknown>;
-    pageContext?: AssistantPageContext | null;
-    /** The IANA zone the visitor's client reports, for reading "today" in; an invalid one is ignored. */
-    visitorTimeZone?: string | null;
-  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
-  requestContext?: ConversationRequestContext | null;
-  /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
-  entryReferrer?: string | null;
-  /** The privacy notice version the client showed before this first message (#1545); ignored for a resumed conversation. */
-  privacyNoticeVersion?: string | null;
-  /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
-  visitorKey?: string | null;
-    clientContextCapabilities?: AssistantClientContextCapabilities;
-    sourceChannel?: string | null;
-    channelContext?: ConversationChannelContext | null;
-    chatSessionId?: string | null;
-    /** @deprecated Use chatSessionId. */
-    anonymousSessionId?: string | null;
-    sourceOrigin?: string | null;
-    verifiedCustomerId?: string | null;
-    verifiedIdentity?: Record<string, unknown> | null;
-    previewRoutineIds?: string[];
-    routineInvocation?: RoutineInvocation;
+  async *streamAnswer(input: Omit<ChatAnswerInput, "usageAttribution" | "executionMode"> & {
     /** How a newer turn on the conversation cuts this one off; `until_emission` when absent. */
     supersession?: ConversationTurnSupersession;
     /**

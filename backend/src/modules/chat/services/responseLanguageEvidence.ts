@@ -19,6 +19,6 @@ export const responseLanguageEvidence = (
   if (!turn.itemSelection) {
     return { query, history };
   }
-  const written = history.findLast((message) => message.role === "user");
+  const written = [...history].reverse().find((message) => message.role === "user");
   return { query: written?.content ?? "", history };
 };

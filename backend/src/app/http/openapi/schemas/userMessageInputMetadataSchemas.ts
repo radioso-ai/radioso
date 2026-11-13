@@ -27,8 +27,8 @@ export const registerUserMessageInputMetadataSchema = (registry: OpenAPIRegistry
     "ItemSelection",
     z.object({
       messageId: z.string().uuid().openapi({ description: "The assistant message whose reply showed the card." }),
-      blockId: z.string().openapi({ description: "The block on that message." }),
-      itemKey: z.string().openapi({ description: "The item's `key` in the block." }),
+      blockId: z.string().min(1).max(64).openapi({ description: "The block on that message." }),
+      itemKey: z.string().min(1).max(128).openapi({ description: "The item's `key` in the block." }),
     }).openapi({
       description: "The card a visitor picked from a reply block whose `selection` is `single`. The server reads the item from the stored block; a later card that names the same message shows it as picked.",
     }),

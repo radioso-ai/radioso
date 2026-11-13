@@ -17668,10 +17668,14 @@
           },
           "blockId": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
             "description": "The block on that message."
           },
           "itemKey": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
             "description": "The item's `key` in the block."
           }
         },

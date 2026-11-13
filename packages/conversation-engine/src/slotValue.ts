@@ -1,4 +1,5 @@
-import type { RoutineSlotType, RoutineTraceRejectedSlot } from "@radioso/conversation-contract";
+import type { RoutineItemValue, RoutineSlotType, RoutineTraceRejectedSlot } from "@radioso/conversation-contract";
+import { ROUTINE_ITEM_VALUE_LIMITS } from "@radioso/conversation-contract";
 
 /**
  * The one structural rule set for a routine slot value against its declared type (#1374).
@@ -18,7 +19,7 @@ import type { RoutineSlotType, RoutineTraceRejectedSlot } from "@radioso/convers
 type SlotValueRejection = "empty" | RoutineTraceRejectedSlot["reason"];
 
 type SlotValueCheck =
-  | { ok: true; value: string | number | boolean }
+  | { ok: true; value: string | number | boolean | RoutineItemValue }
   | { ok: false; reason: SlotValueRejection };
 
 // Structural format check, not English product vocabulary: a localpart, "@", and a dotted
@@ -45,11 +46,55 @@ const isIsoCalendarDate = (value: string): boolean => {
     date.getUTCDate() === day;
 };
 
-const accepted = (value: string | number | boolean): SlotValueCheck => ({ ok: true, value });
+const accepted = (value: string | number | boolean | RoutineItemValue): SlotValueCheck => ({ ok: true, value });
 const rejected = (reason: SlotValueRejection): SlotValueCheck => ({ ok: false, reason });
+
+/** At most `max` UTF-16 code units, never splitting a surrogate pair. */
+const cut = (text: string, max: number): string => {
+  if (text.length <= max) {
+    return text;
+  }
+  const end = /[\uD800-\uDBFF]/u.test(text.charAt(max - 1)) ? max - 1 : max;
+  return text.slice(0, end);
+};
+
+// An absolute http(s) address, as a stored card's link is. Protocol syntax, not vocabulary.
+const isWebAddress = (value: string): boolean => {
+  if (value.length > ROUTINE_ITEM_VALUE_LIMITS.link || !/^https?:\/\//iu.test(value)) {
+    return false;
+  }
+  return URL.canParse(value);
+};
+
+const isFieldValue = (value: unknown): value is string | number | boolean =>
+  (typeof value === "string" && value.length <= ROUTINE_ITEM_VALUE_LIMITS.fieldValue) ||
+  (typeof value === "number" && Number.isFinite(value)) ||
+  typeof value === "boolean";
+
+/**
+ * An `item` value as a pick writes it: a key and a title within the stored card's bounds, an
+ * optional web address, and at most twelve scalar fields. Anything else does not fit.
+ */
+const checkItemObject = (value: object): SlotValueCheck => {
+  const { key, title, link, fields } = value as Partial<Record<keyof RoutineItemValue, unknown>>;
+  const fieldEntries = fields !== null && typeof fields === "object" && !Array.isArray(fields) ? Object.entries(fields) : null;
+  if (
+    typeof key !== "string" || key.trim().length === 0 || key.length > ROUTINE_ITEM_VALUE_LIMITS.key ||
+    typeof title !== "string" || title.trim().length === 0 || title.length > ROUTINE_ITEM_VALUE_LIMITS.title ||
+    (link !== undefined && (typeof link !== "string" || !isWebAddress(link))) ||
+    !fieldEntries || fieldEntries.length > ROUTINE_ITEM_VALUE_LIMITS.fields ||
+    !fieldEntries.every(([name, entry]) => name.length > 0 && name.length <= ROUTINE_ITEM_VALUE_LIMITS.fieldKey && isFieldValue(entry))
+  ) {
+    return rejected("type_mismatch");
+  }
+  return accepted({ key, title, ...(typeof link === "string" ? { link } : {}), fields: Object.fromEntries(fieldEntries) as RoutineItemValue["fields"] });
+};
 
 const checkString = (type: RoutineSlotType, value: string): SlotValueCheck => {
   switch (type) {
+    case "item":
+      // An item the visitor named in text, where no card was picked: its name is all it holds.
+      return accepted({ key: cut(value, ROUTINE_ITEM_VALUE_LIMITS.key), title: cut(value, ROUTINE_ITEM_VALUE_LIMITS.title), fields: {} });
     case "text":
       return accepted(value);
     case "email":
@@ -69,7 +114,8 @@ const checkString = (type: RoutineSlotType, value: string): SlotValueCheck => {
 /**
  * Checks one value against a slot's declared type and returns it in that type's canonical
  * form: a trimmed string, a number for a numeric string, a boolean for `true`/`false`. A text
- * slot also takes a finite number or a boolean, stated as text. Objects and arrays fit no type.
+ * slot also takes a finite number or a boolean, stated as text. Objects and arrays fit no type
+ * but `item`, which takes the card a pick copies, or a name given in text.
  * Checking an accepted value again returns it unchanged.
  */
 export const checkSlotValue = (type: RoutineSlotType, value: unknown): SlotValueCheck => {
@@ -88,6 +134,9 @@ export const checkSlotValue = (type: RoutineSlotType, value: unknown): SlotValue
   }
   if (typeof value === "boolean") {
     return type === "boolean" ? accepted(value) : type === "text" ? accepted(String(value)) : rejected("type_mismatch");
+  }
+  if (type === "item" && typeof value === "object" && !Array.isArray(value)) {
+    return checkItemObject(value);
   }
   return rejected("not_scalar");
 };

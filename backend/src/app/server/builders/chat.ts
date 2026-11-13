@@ -709,6 +709,7 @@ export const buildChatServices = (input: {
     chatAnswerPresenter: chatTurnRuntime.chatAnswerPresenter,
     conversationEngine,
     turnSkills: chatTurnRuntime.turnSkills,
+    skillResultRenderer: chatTurnRuntime.skillResultRenderer,
     selectionStrategy: input.composition.selectionStrategy,
     directiveRuntime: directiveSteering,
     turnRouter,

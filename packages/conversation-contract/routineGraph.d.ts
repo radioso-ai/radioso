@@ -49,7 +49,45 @@ export interface RoutineStep {
   outputAssignments?: Record<string, string>;
   /** Skill-step mode. Absence is treated as typed by routine authoring. */
   mode?: RoutineStepMode;
+  /** A `chat` step that shows a skill step's results as cards (#1763). */
+  present?: RoutineStepPresent;
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Where a presenting step's cards come from and where a pick goes. `from` is the skill step whose
+ * staged result the cards are drawn from; the host draws them only on the turn that step ran.
+ * `slot` is the `item` slot the visitor's pick fills, and a step that names one has `single`.
+ */
+export interface RoutineStepPresent {
+  from: string;
+  selection: "none" | "single";
+  slot?: string;
+}
+
+/**
+ * The value an `item` slot holds: the card the visitor picked, copied by the host from the block
+ * that showed it. `fields` is a bounded copy of the record's own top-level scalars. An item the
+ * visitor named in text, where no card was picked, holds its name as key and title, and no fields.
+ * Every reader that expects a scalar reads its title ({@link readableSlotValue}).
+ */
+export interface RoutineItemValue {
+  key: string;
+  title: string;
+  link?: string;
+  fields: Record<string, string | number | boolean>;
+}
+
+/**
+ * A card the visitor picked from a routine step's reply, as the host read it from the stored block:
+ * the routine and step that showed it, the slot the step binds, and the item. The engine fills the
+ * slot only while the routine still waits on that step.
+ */
+export interface RoutineItemSelection {
+  routineId: string;
+  stepId: string;
+  slot: string;
+  item: RoutineItemValue;
 }
 
 /**
@@ -142,7 +180,7 @@ export type RoutineGuard =
   | { kind: "default" }
   | { kind: "llm" };
 
-export type RoutineSlotType = "text" | "number" | "boolean" | "email" | "date";
+export type RoutineSlotType = "text" | "number" | "boolean" | "email" | "date" | "item";
 
 export interface RoutineSlotSchema {
   id: string;

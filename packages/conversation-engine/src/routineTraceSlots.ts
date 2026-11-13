@@ -6,7 +6,7 @@ import type {
   RoutineTraceSlotValue,
   RoutineTraceStepEntry,
 } from "@radioso/conversation-contract";
-import { REDACTED_VALUE } from "@radioso/conversation-contract";
+import { readableSlotValue, REDACTED_VALUE } from "@radioso/conversation-contract";
 
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
@@ -114,8 +114,9 @@ const MAX_TRACE_SLOT_VALUE_CHARS = 500;
 /** Filled-slot count bound for one turn's traced slot values. */
 const MAX_TRACE_SLOT_VALUES = 50;
 
-/** Narrows a captured slot value to the scalar shape a trace can carry, and caps its length. */
-const traceableSlotValue = (value: unknown): { value: string | number | boolean; truncated?: boolean } => {
+/** Narrows a captured slot value to the scalar shape a trace can carry, and caps its length. An item reads as its title. */
+const traceableSlotValue = (held: unknown): { value: string | number | boolean; truncated?: boolean } => {
+  const value = readableSlotValue(held);
   const scalar = typeof value === "string" || typeof value === "number" || typeof value === "boolean"
     ? value
     : JSON.stringify(value) ?? String(value);

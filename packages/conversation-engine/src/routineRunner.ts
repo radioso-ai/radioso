@@ -58,40 +58,8 @@ import {
   sensitiveSlotKeys,
 } from "./routineSlotValues.js";
 import { stepForReply } from "./stepReferences.js";
-
-/**
- * Projects a step's `action` into a routine steering rule — the keystone that lets
- * a routine step steer the reply through the same steering set authored Directives
- * use. A step with no action (a bare skill step) projects nothing.
- */
-const projectStep = (step: RoutineStep): SteeringRule[] =>
-  step.action
-    ? [{
-        action: step.action,
-        source: "routine",
-        lifespan: "response",
-        description: `routine step ${step.id}`,
-      }]
-    : [];
-
-const stagedContextForSkillResult = (
-  step: RoutineStep,
-  result: RoutineSkillResult,
-): TurnContext["stagedContext"][number] | null => {
-  if (!result.outputs) {
-    return null;
-  }
-  return {
-    kind: "skill_result",
-    ...(step.skillName ? { source: step.skillName } : {}),
-    data: result.outputs,
-    metadata: {
-      stepId: step.id,
-      status: result.status,
-      ...(result.metadata ? { skillMetadata: result.metadata } : {}),
-    },
-  };
-};
+import { projectStep, stagedContextForSkillResult } from "./routineStepContext.js";
+import { pickedItem, pickedItemTraceEntry, withoutUnboundItemSlots } from "./itemSelection.js";
 
 const hasTypedSlotSchema = (routine: Routine): boolean =>
   Array.isArray(routine.slots) && routine.slots.length > 0;
@@ -240,12 +208,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // The values a routine starts with — the activator's extraction, or what a re-entered run
     // carries — enter its state here, so they are checked like any selector's (#1374). A resumed
     // run keeps none for a covered slot whose grant was withdrawn.
-    const startCheck = input.activationTurn ? checkDeclaredSlotValues(routine, input.state.variables, consentGate.blocked) : null;
+    const startCheck = input.activationTurn ? checkDeclaredSlotValues(routine, withoutUnboundItemSlots(routine, input.state.variables), consentGate.blocked) : null;
     const startVariables = startCheck?.values ?? consentGate.withoutBlocked(input.state.variables);
-    const state: RoutineState = startVariables === input.state.variables ? input.state : { ...input.state, variables: startVariables };
+    // A card the visitor picked from the step the run waits on fills that step's item slot (#1763).
+    const picked = pickedItem(routine, startVariables === input.state.variables ? input.state : { ...input.state, variables: startVariables }, turn.inputEvent.itemSelection);
+    const state: RoutineState = picked ? { ...input.state, variables: picked.variables } : startVariables === input.state.variables ? input.state : { ...input.state, variables: startVariables };
     // Whether this turn's message can state slot values: a resumed run never received the
-    // input of a call that opens a run, so it reads the message as a reply.
-    const messageStatesSlotValues = !input.activationTurn || this.options.openingMessageStatesSlotValues !== false;
+    // input of a call that opens a run, so it reads the message as a reply. A pick's message is
+    // the card's title, which states nothing the pick did not.
+    const messageStatesSlotValues = !picked && (!input.activationTurn || this.options.openingMessageStatesSlotValues !== false);
     // The activator's rejections the selector did not make good: the selector reads the same
     // opening message, so a valid value it returns for the slot replaces the rejected one.
     const unreplacedStartRejections = (variables: Record<string, unknown>): RoutineTraceRejectedSlot[] =>
@@ -281,7 +252,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // Debug trace: a step-by-step log of this turn's traversal, surfaced to the panel.
     // Slot KEYS only — never the captured values (which may be PII).
     const declaredSlotKeys = new Set((routine.slots ?? []).map((slot) => slot.key));
-    const traceSteps: RoutineTraceStepEntry[] = [];
+    const traceSteps: RoutineTraceStepEntry[] = pickedItemTraceEntry(picked);
     const slotKeyChanges = (before: Record<string, unknown>, decision?: { variables?: Record<string, unknown> }) =>
       slotKeyChangesFor(declaredSlotKeys, before, decision);
     // Set by `selectNext` each call, read right after it: whether it consulted the LLM selector
@@ -314,7 +285,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (!decision.variables) {
         return decision;
       }
-      const checked = checkDeclaredSlotValues(routine, decision.variables, consentGate.blocked);
+      const checked = checkDeclaredSlotValues(routine, withoutUnboundItemSlots(routine, decision.variables, selectInput.currentStep), consentGate.blocked);
       lastRejectedSlots = [...lastRejectedSlots, ...checked.rejected];
       return { ...decision, variables: checked.values };
     };

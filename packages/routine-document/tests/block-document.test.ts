@@ -186,6 +186,24 @@ describe('routine block document', () => {
     expect(restored).toEqual(withDocumentOrdinals(input))
   })
 
+  it('carries a presenting step\'s binding and its item slot through the document and back (#1763)', () => {
+    const base = draft()
+    const input = draft({
+      slots: [...base.slots, { stableSlotId: 'chosen_account', key: 'chosen_account', type: 'item', required: true, description: null, ordinal: 10 }],
+      steps: [...base.steps, {
+        stableStepId: 'choose', kind: 'chat', instruction: 'Show the matching accounts.', toolRef: null, actionType: null, ordinal: 9,
+        metadata: { present: { from: 'collect', selection: 'single', slot: 'chosen_account' } },
+      }],
+    })
+    const { projected, restored } = roundTrip(input)
+
+    const choose = projected.doc.steps.find((step) => step.stableStepId === 'choose')
+    expect(choose?.present).toEqual({ from: 'collect', selection: 'single', slot: 'chosen_account' })
+    expect(choose?.additionalMetadata).toEqual({})
+    expect(projected.doc.information.find((slot) => slot.key === 'chosen_account')?.type).toBe('item')
+    expect(restored).toEqual(withDocumentOrdinals(input))
+  })
+
   it('carries tool exposure through the document and back, and leaves an absent block absent', () => {
     const exposure = { enabled: true, toolName: 'escalate_account', description: 'Escalate an account to a person.' }
     const exposed = roundTrip(draft({ exposure }))

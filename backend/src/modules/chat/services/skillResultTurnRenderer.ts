@@ -9,7 +9,7 @@ import { estimateTextGenerationInputTokens } from "../../../shared/infra/llm/mod
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TurnOutcome, TurnOutcomeRenderer, TurnRenderContext, TurnStreamResult } from "./turnOutcome.js";
 import type { SkillResultCardsOffer, SkillResultReplyBlocks } from "./replyBlocks/skillResultReplyBlocks.js";
-import { hasToolRecords } from "./replyBlocks/toolRecords.js";
+import { hasToolRecords, ToolRecordLedger } from "./replyBlocks/toolRecords.js";
 
 /**
  * A reply the agent writes from a directive-bound skill's result. The outcome kind seeds
@@ -160,9 +160,13 @@ export const createSkillResultTurnRenderer = (
     return `${records}\n\n${cappedSkillFindings(own, ids, options.logger, remaining)}`;
   };
 
+  // A routine step that shows the results (#1763) is written from the records whether or not its
+  // cards are shown: without cards, the reply lists them in text.
   const prepare = (outcome: TurnOutcome, ctx: TurnRenderContext): SkillResultReplyInput => {
-    const offer = options.replyBlocks?.offerFor(ctx.session, outcome.skillName, outcome.outcome.outputs) ?? null;
-    return { findings: findingsWith(outcome, ctx, offer?.records.withHandles ?? ""), offer };
+    const outputs = outcome.outcome.outputs;
+    const offer = options.replyBlocks?.offerFor(ctx.session, outcome.skillName, outputs, ctx.presentBinding) ?? null;
+    const plainRecords = ctx.presentBinding && !offer ? ToolRecordLedger.fromOutputs(outputs).promptSection({ handles: false }) : "";
+    return { findings: findingsWith(outcome, ctx, offer?.records.withHandles ?? plainRecords), offer };
   };
 
   return {

@@ -1,8 +1,15 @@
+import type { RoutineItemSelection } from "@radioso/conversation-contract";
 import { z } from "zod";
 
 import type { MessageRecord } from "../../../../db/repositories/messageRepository.js";
 import type { ItemSelection } from "../../../../shared/domain/chatInputMetadata.js";
-import { storedReplyBlockSchema, type StoredReplyItem, type StoredReplyItemDocument } from "../../contracts/replyBlocks.js";
+import {
+  storedReplyBlockSchema,
+  type StoredReplyBlock,
+  type StoredReplyItem,
+  type StoredReplyItemDocument,
+  type StoredReplyItemFields,
+} from "../../contracts/replyBlocks.js";
 
 /**
  * The item a visitor picked, read from the block stored on the message that showed it: the
@@ -16,6 +23,9 @@ export interface SelectedItem {
   description?: string;
   link?: string;
   document?: StoredReplyItemDocument;
+  /** The routine step that showed the card and the slot a pick there fills (#1763), with the record's scalars. */
+  routineStep?: { routineId: string; stepId: string; slot: string };
+  fields?: StoredReplyItemFields;
 }
 
 /**
@@ -51,9 +61,11 @@ export const readItemSelection = (
   if (!block) {
     return { ok: false, reason: "unknown_block" };
   }
-  // Only cards from the answer's documents are picked in conversation. A skill's cards (`origin`)
-  // are only shown: a pick there would reach retrieval, not the skill.
-  if (block.selection !== "single" || block.origin) {
+  // Cards from the answer's documents are picked in conversation, and so are the cards of a routine
+  // step that fills a slot with the pick (#1763). A skill's cards are only shown in free
+  // conversation: a pick there would reach retrieval, not the skill.
+  const routineStep = pickingRoutineStep(block);
+  if (block.selection !== "single" || (block.origin && !routineStep)) {
     return { ok: false, reason: "not_selectable" };
   }
   const item = block.items.find((candidate) => candidate.key === selection.itemKey);
@@ -72,6 +84,27 @@ export const readItemSelection = (
       ...(item.description ? { description: item.description } : {}),
       ...(link ? { link } : {}),
       ...(item.document ? { document: item.document } : {}),
+      ...(routineStep ? { routineStep, fields: item.fields ?? {} } : {}),
     },
   };
 };
+
+/** The routine step whose pick fills a slot, when the block came from one. */
+const pickingRoutineStep = (block: StoredReplyBlock): SelectedItem["routineStep"] => {
+  const origin = block.origin;
+  return origin?.kind === "routine_step" && origin.slot
+    ? { routineId: origin.routineId, stepId: origin.stepId, slot: origin.slot }
+    : undefined;
+};
+
+/**
+ * A pick of a routine step's card as the routine engine reads it from the turn: the step, the slot
+ * and the item the stored card holds. Undefined for any other pick.
+ */
+export const routineItemSelectionOf = (item: SelectedItem | undefined): RoutineItemSelection | undefined =>
+  item?.routineStep
+    ? {
+        ...item.routineStep,
+        item: { key: item.key, title: item.title, ...(item.link ? { link: item.link } : {}), fields: item.fields ?? {} },
+      }
+    : undefined;

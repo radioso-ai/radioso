@@ -4,6 +4,7 @@ import type {
   RoutineStepReplyInput,
   TurnContext,
 } from "@radioso/conversation-contract";
+import { readableSlotValue } from "@radioso/conversation-contract";
 
 // A step instruction embeds two kinds of reference: `{{slot.<key>}}` reads a captured
 // variable, `{{context.<name>}}` reads a staged context variable (the visitor's current
@@ -12,7 +13,9 @@ import type {
 // value or a page title cannot smuggle a second reference in.
 export const STEP_REFERENCE = /\{\{\s*(slot|context)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
 
-const stringifySlotValue = (value: unknown): string => {
+// An `item` slot reads as its title (#1763).
+const stringifySlotValue = (held: unknown): string => {
+  const value = readableSlotValue(held);
   if (typeof value === "string") {
     return value;
   }

@@ -1,8 +1,10 @@
 import { z } from "zod";
 
 import { routineConsentEditingSchema, routineConsentSchema } from "./consent.js";
+import { presentBindingOf, routineStepPresentSchema } from "./presentBinding.js";
 
 export * from "./consent.js";
+export * from "./presentBinding.js";
 
 export const ROUTINE_DEFINITION_LIMITS = {
   name: 200,
@@ -32,7 +34,8 @@ export const ROUTINE_DEFINITION_LIMITS = {
 // (a completed instance suppresses re-activation). `semantic` is reserved for a later
 // slice and currently resolves like the default at activation time.
 export const routineReentryModes = ["once_per_conversation", "always", "semantic"] as const;
-export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
+// An `item` slot holds a card the visitor picked from a presenting step's results (#1763).
+export const routineSlotTypes = ["text", "number", "boolean", "email", "date", "item"] as const;
 /**
  * Whether a slot's value may leave the conversation as the visitor gave it. Authored, never
  * inferred from the slot's key or what the visitor typed. A sensitive value stays in the
@@ -96,6 +99,11 @@ export const routineValidationCodes = [
   "sensitive_slot_without_consent",
   "consent_step_mixes_fields",
   "consent_step_needs_default_exit",
+  "present_step_not_chat",
+  "present_source_not_earlier_tool",
+  "present_slot_not_item",
+  "present_selection_mismatch",
+  "item_slot_without_presenting_step",
 ] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
@@ -209,6 +217,7 @@ export const routineStepMetadataSchema = z.object({
   inputBindings: z.record(z.string(), routineInputBindingSchema).optional(),
   outputAssignments: z.record(z.string(), routineVariableNameSchema).optional(),
   mode: routineStepModeSchema.optional(),
+  present: routineStepPresentSchema.optional(),
 }).passthrough();
 
 const routineSlotSharedFields = {
@@ -651,6 +660,8 @@ export interface SlotCollectionStep {
   kind: RoutineStepKind;
   instruction: string;
   ordinal: number;
+  /** Read for a presenting step's `present.slot` only. */
+  metadata?: unknown;
 }
 
 /**
@@ -659,7 +670,8 @@ export interface SlotCollectionStep {
  *
  * A slot is *collected* by the FIRST chat step (in ordinal order) that references
  * `{{slot.x}}`; a later reference is a *use* (interpolation), not a re-collection.
- * Only `chat` steps collect from the customer.
+ * Only `chat` steps collect from the customer. A slot a presenting step binds
+ * (`present.slot`) is that step's, whatever references it earlier: only a pick there fills it.
  *
  * The compiler uses this to auto-gate the collecting step and to stamp `collectsSlots`
  * metadata; the population analysis uses it to decide which step *produces* a variable;
@@ -673,25 +685,25 @@ export interface SlotCollectionStep {
 export const collectedSlotsByStep = (
   steps: readonly SlotCollectionStep[],
 ): ReadonlyMap<string, string[]> => {
-  const sortedSteps = [...steps].sort((left, right) => left.ordinal - right.ordinal);
+  const chatSteps = [...steps].sort((left, right) => left.ordinal - right.ordinal).filter((step) => step.kind === "chat");
+  const boundSlotOf = (step: SlotCollectionStep): string[] => {
+    const bound = presentBindingOf(step)?.slot;
+    return bound ? [bound] : [];
+  };
   const firstReferencerByKey = new Map<string, string>();
-  for (const step of sortedSteps) {
-    if (step.kind !== "chat") {
-      continue;
-    }
-    for (const key of collectSlotKeys(step.instruction)) {
-      if (!firstReferencerByKey.has(key)) {
-        firstReferencerByKey.set(key, step.stableStepId);
-      }
+  const claims = [
+    ...chatSteps.flatMap((step) => boundSlotOf(step).map((slot) => [slot, step.stableStepId] as const)),
+    ...chatSteps.flatMap((step) => collectSlotKeys(step.instruction).map((slot) => [slot, step.stableStepId] as const)),
+  ];
+  for (const [slot, stepId] of claims) {
+    if (!firstReferencerByKey.has(slot)) {
+      firstReferencerByKey.set(slot, stepId);
     }
   }
 
   const collectedByStep = new Map<string, string[]>();
-  for (const step of sortedSteps) {
-    if (step.kind !== "chat") {
-      continue;
-    }
-    const collected = collectSlotKeys(step.instruction).filter(
+  for (const step of chatSteps) {
+    const collected = [...new Set([...boundSlotOf(step), ...collectSlotKeys(step.instruction)])].filter(
       (key) => firstReferencerByKey.get(key) === step.stableStepId,
     );
     if (collected.length > 0) {

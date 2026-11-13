@@ -9,6 +9,7 @@ import type {
   Routine,
   RoutineHandoffTerminalKind,
   RoutineInputBinding,
+  RoutineItemSelection,
   RoutineOperatorNoticeTemplate,
   RoutineSlotSchema,
   RoutineStep,
@@ -149,6 +150,8 @@ export interface ConversationInputEvent {
   content: string;
   locale?: string | null;
   metadata?: Record<string, unknown>;
+  /** A card the visitor picked from a routine step's reply; the host validated it against the stored block. */
+  itemSelection?: RoutineItemSelection;
 }
 
 export type ConversationChannelContext =
@@ -927,27 +930,16 @@ export interface RoutineState {
   metadata?: Record<string, unknown>;
 }
 
-export type {
-  DecisionOption,
-  Routine,
-  RoutineActivation,
-  RoutineAuthoredTerminalKind,
-  RoutineCompletionExport,
-  RoutineFieldGuardOp,
-  RoutineFieldGuardUnit,
-  RoutineFieldGuardValue,
-  RoutineGuard,
-  RoutineHandoffTerminalKind,
-  RoutineInputBinding,
-  RoutineOperatorNoticeTemplate,
-  RoutineReentryMode,
-  RoutineSlotSchema,
-  RoutineSlotType,
-  RoutineStep,
-  RoutineStepMode,
-  RoutineTerminalKind,
-  RoutineTransition,
-} from "./routineGraph.js";
+export type * from "./routineGraph.js";
+
+/**
+ * A slot value as a reader that expects a scalar reads it: an `item` value reads as its title,
+ * any other value as it is. The one reading rule every copy of a routine's values shares.
+ */
+export declare function readableSlotValue(value: unknown): unknown;
+
+/** The bounds of a {@link RoutineItemValue}, the stored card's own: its host copies within them and the engine checks them. */
+export declare const ROUTINE_ITEM_VALUE_LIMITS: Readonly<{ key: 128; title: 160; link: 2048; fields: 12; fieldKey: 64; fieldValue: 200 }>;
 
 export interface RoutineAwaitingDecision {
   stepId: string;

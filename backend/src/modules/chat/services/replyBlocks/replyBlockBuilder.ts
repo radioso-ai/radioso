@@ -122,7 +122,7 @@ export const buildReplyBlock = (input: {
 export const presentReplyBlocks = (blocks: readonly StoredReplyBlock[], urls: ReplyImageUrls): ReplyBlock[] =>
   blocks.map(({ origin: _origin, ...block }) => ({
     ...block,
-    items: block.items.map(({ image, document: _document, ...item }) => ({
+    items: block.items.map(({ image, document: _document, fields: _fields, ...item }) => ({
       ...item,
       ...(image
         ? { image: { ...urls.forImage(image.imageId), width: image.width, height: image.height, alt: image.alt } }

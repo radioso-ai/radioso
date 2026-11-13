@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { routineEndingNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
+import { formatRoutineEndingNotification, routineEndingNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
 
 const ids = { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1" };
 const fallback = { reason: "routine_handoff" };
@@ -32,6 +32,34 @@ describe("routineEndingNotificationFromAction", () => {
       routine: { id: "routine_1", name: "Book accommodation" },
       collected: { program: "Yoga retreat", guests: 2, needs_transfer: true },
     });
+  });
+
+  it("reads a picked card as its title and link, in the notice and in its slot references (#1763)", () => {
+    const notification = routineEndingNotificationFromAction({
+      kind: "handoff",
+      payload: {
+        reason: "routine_handoff",
+        routineId: "routine_1",
+        collected: {
+          area: "Mitte",
+          chosen_home: { key: "/results/1", title: "Villa Rosa", link: "https://homes.example/villa-rosa", fields: { id: "h-2" } },
+          named_home: { key: "Casa Blu", title: "Casa Blu", fields: {} },
+        },
+        notice: { subject: "Viewing request: {{slot.chosen_home}}" },
+      },
+      ids,
+      fallback,
+    });
+
+    expect(notification?.collected).toEqual({
+      area: "Mitte",
+      chosen_home: "Villa Rosa (https://homes.example/villa-rosa)",
+      named_home: "Casa Blu",
+    });
+    const formatted = formatRoutineEndingNotification(notification!);
+    expect(formatted.subject).toBe("Viewing request: Villa Rosa (https://homes.example/villa-rosa)");
+    expect(formatted.lines).toContain("  Chosen home: Villa Rosa (https://homes.example/villa-rosa)");
+    expect(formatted.lines.join("\n")).not.toContain("[object Object]");
   });
 
   it("reads which collected values were masked as sensitive, keeping only keys the payload collected (#1543)", () => {

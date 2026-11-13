@@ -735,6 +735,19 @@ describe("routine defaults", () => {
       expect(systemPrompt).toContain("a date they give for a date slot counts as provided");
     });
 
+    it("tells how an item slot is read only when the routine declares one (#1763)", async () => {
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {"chosen_home": "Villa Rosa"}}');
+      const withItem: Routine = { ...booking, slots: [...(booking.slots ?? []), { id: "s_home", key: "chosen_home", type: "item", required: true }] };
+      const decision = await new RoutineNextStepSelector(gw).select({ routine: withItem, state, currentStep, transitions, turn });
+      await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn });
+
+      const [withItemPrompt, withoutItemPrompt] = vi.mocked(gw.complete).mock.calls.map(([request]) => request.systemPrompt ?? "");
+      expect(withItemPrompt).toContain("- chosen_home (item)");
+      expect(withItemPrompt).toContain("An item slot holds one of the items the assistant's messages listed by name.");
+      expect(withoutItemPrompt).not.toContain("An item slot");
+      expect(decision.variables).toEqual({ chosen_home: { key: "Villa Rosa", title: "Villa Rosa", fields: {} } });
+    });
+
     // 02:00 UTC on 3 November 2026 is 18:00 on 2 November in Los Angeles: a visitor's
     // "tomorrow" there is the 3rd, the day the grounded answer listed.
     it("dates the turn in the zone the turn reads today in", async () => {

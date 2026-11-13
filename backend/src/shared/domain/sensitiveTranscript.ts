@@ -1,4 +1,4 @@
-import { REDACTED_VALUE } from "@radioso/conversation-contract";
+import { readableSlotValue, REDACTED_VALUE } from "@radioso/conversation-contract";
 
 /**
  * Which messages of a transcript may hold a sensitive routine value (#1543), and how a copy of
@@ -44,12 +44,14 @@ const collapseWhitespace = (text: string): string => text.replace(/\s+/gu, " ").
 /**
  * The texts a message that stated these slot values contains, each with its whitespace collapsed:
  * every string value, and every string in a list value, at least {@link MIN_MATCHED_VALUE_LENGTH}
- * characters long. A number, a yes or no, an object and a shorter string have none. Structural
- * matching on what the visitor gave, never a list of words.
+ * characters long, a picked card's title among them (its pick's message is the title, #1763). A
+ * number, a yes or no, any other object and a shorter string have none. Structural matching on what
+ * the visitor gave, never a list of words.
  */
 export const matchableValueTexts = (values: readonly unknown[]): string[] => {
   const texts = values
     .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .map(readableSlotValue)
     .filter((value): value is string => typeof value === "string")
     .map(collapseWhitespace)
     .filter((text) => [...text].length >= MIN_MATCHED_VALUE_LENGTH);

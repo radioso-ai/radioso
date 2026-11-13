@@ -500,6 +500,7 @@ export const createRoutineTurnProvider = (
         slotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-slots.md"),
         filledSlotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-filled-slots.md"),
         dateRulePromptTemplate: loadPromptTemplate("chat/routine-next-step-date-rule.md"),
+        itemRulePromptTemplate: loadPromptTemplate("chat/routine-next-step-item-rule.md"),
         earlierSlotsPromptTemplate: loadPromptTemplate("chat/routine-next-step-earlier-slots.md"),
         slotFallbackPromptTemplate: loadPromptTemplate("chat/routine-next-step-slot-fallback.md"),
         onCompletion: selectorCompletionTelemetry({

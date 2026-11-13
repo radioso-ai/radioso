@@ -23,6 +23,7 @@ import {
   DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_EARLIER_SLOTS_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
+  DEFAULT_ROUTINE_NEXT_STEP_ITEM_RULE_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_SLOT_FALLBACK_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
@@ -80,6 +81,8 @@ interface SlotRuleTemplates {
   slots: string;
   filledSlots: string;
   dateRule: string;
+  /** How an `item` slot is read from text (#1763): only an item the assistant listed by name. */
+  itemRule: string;
   earlierSlots: string;
 }
 
@@ -136,6 +139,9 @@ const slotSchemaBlock = (
       })}`
       : "",
     date_rule: routine.slots.some((slot) => slot.type === "date") ? `\n${dateRule(today, templates.dateRule)}` : "",
+    item_rule: routine.slots.some((slot) => slot.type === "item")
+      ? `\n${renderPromptTemplate("chat/routine-next-step-item-rule.md", templates.itemRule, {})}`
+      : "",
     earlier_slots: earlierMessageSlotKeys.length > 0
       ? `\n${renderPromptTemplate("chat/routine-next-step-earlier-slots.md", templates.earlierSlots, {
         slot_keys: earlierMessageSlotKeys.join(", "),
@@ -406,6 +412,8 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       filledSlotsPromptTemplate?: string;
       /** How a date slot's value is read and recorded (`{{today}}`, `{{time_zone}}`). */
       dateRulePromptTemplate?: string;
+      /** How an item slot is read from text (#1763). */
+      itemRulePromptTemplate?: string;
       /** The slots that may take their value from the user's earlier messages (`{{slot_keys}}`). */
       earlierSlotsPromptTemplate?: string;
       clock?: () => Date;
@@ -418,6 +426,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       slots: options.slotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_SLOTS_PROMPT,
       filledSlots: options.filledSlotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_FILLED_SLOTS_PROMPT,
       dateRule: options.dateRulePromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_DATE_RULE_PROMPT,
+      itemRule: options.itemRulePromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_ITEM_RULE_PROMPT,
       earlierSlots: options.earlierSlotsPromptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_EARLIER_SLOTS_PROMPT,
     };
     this.clock = options.clock ?? (() => new Date());

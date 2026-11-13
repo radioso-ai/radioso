@@ -9,7 +9,7 @@ import type {
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { redactSensitiveValues } from "@radioso/conversation-contract";
+import { readableSlotValue, redactSensitiveValues } from "@radioso/conversation-contract";
 import { completedRunSentValues, correctableSlots } from "@radioso/conversation-engine";
 
 import {
@@ -30,7 +30,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const none = (reason: RoutineSlotCorrectionSkipReason): RoutineSlotCorrectionDetection => ({ kind: "none", reason });
 
-const heldValueText = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value));
+const heldValueText = (held: unknown): string => {
+  const value = readableSlotValue(held);
+  return typeof value === "string" ? value : JSON.stringify(value);
+};
 
 // What the run holds goes in beside each slot: given only keys and types, the model could not
 // tell "I'd like to book from 8 to 10 January" from a change to an arrival the run never held

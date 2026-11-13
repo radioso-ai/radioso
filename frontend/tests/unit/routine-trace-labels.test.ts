@@ -46,3 +46,24 @@ describe('a consent step in the turn inspector', () => {
     expect(routineEventDescription(consentStep('consent_skipped', { key: 'health', reason: 'wording_unavailable' }))).toMatch(/No wording/)
   })
 })
+
+// #1763: a pick of a card a routine step showed reads as its own event, with the slot it filled.
+describe('a picked card in the turn inspector', () => {
+  it('names the pick and keeps the slot key it filled', () => {
+    const stage: ConversationTraceStage = {
+      id: 'routine:homes',
+      kind: 'routine_resume',
+      status: 'applied',
+      outputs: { routineId: 'homes' },
+      subTrace: {
+        namespace: 'routine',
+        version: 1,
+        payload: { steps: [{ stepId: 'choose', kind: 'chat', event: 'item_selected', capturedSlotKeys: ['chosen_home'] }] },
+      },
+    }
+    const step = buildRoutineRunTrace(stage)!.steps[0]
+    expect(routineEventLabel(step)).toBe('Card picked')
+    expect(routineEventDescription(step)).toMatch(/picked one of the cards/)
+    expect(step.capturedSlotKeys).toEqual(['chosen_home'])
+  })
+})

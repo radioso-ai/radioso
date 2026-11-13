@@ -7,7 +7,7 @@ import type { MetricsRegistry } from "../../../../shared/observability/metrics/m
 import { setTraceAttributes } from "../../../../shared/observability/tracing/operations.js";
 import type { ReplyImageUrls } from "../../contracts/replyBlocks.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
-import { buildRecordBlock, type RecordBlockDropReason } from "./recordBlockBuilder.js";
+import { buildRecordBlock, type RecordBlockBinding, type RecordBlockDropReason } from "./recordBlockBuilder.js";
 import { readRecordPresentHead, recordPresentHeadSchemaExtension } from "./recordPresentHead.js";
 import { channelLabel, type PresentedReplyBlocks } from "./replyBlockTurn.js";
 import { presentReplyBlocks } from "./replyBlockBuilder.js";
@@ -54,7 +54,16 @@ interface SkillResultReplyBlocksDependencies {
 export class SkillResultReplyBlocks {
   constructor(private readonly deps: SkillResultReplyBlocksDependencies) {}
 
-  offerFor(session: PreparedSession, skillName: string, outputs: Record<string, unknown> | undefined): SkillResultCardsOffer | null {
+  /**
+   * A routine step's `binding` (#1763) decides whether its cards are picked and stores them with the
+   * step's origin; the gate and the records decide whether there are cards, as for any skill result.
+   */
+  offerFor(
+    session: PreparedSession,
+    skillName: string,
+    outputs: Record<string, unknown> | undefined,
+    binding?: RecordBlockBinding,
+  ): SkillResultCardsOffer | null {
     const itemList = skillResultCardsFor(session);
     if (!itemList) {
       return null;
@@ -82,6 +91,7 @@ export class SkillResultReplyBlocks {
           layouts: itemList.layouts,
           skillName,
           newImageId: this.deps.newImageId ?? randomUUID,
+          ...(binding ? { binding } : {}),
         });
         this.countDropped(dropped);
         if (!block) {
@@ -104,7 +114,7 @@ export class SkillResultReplyBlocks {
         }
         this.deps.metrics?.incrementCounter("reply_blocks_emitted_total", {
           help: "Reply blocks built for replies, by layout, conversation channel and where the items came from",
-          labels: { layout: block.layout, channel, source: "skill_result" },
+          labels: { layout: block.layout, channel, source: binding ? "routine_step" : "skill_result" },
         });
         return {
           stored: [block],

@@ -208,3 +208,40 @@ describe("record present head", () => {
     expect(readRecordPresentHead(undefined)).toBeNull();
   });
 });
+
+describe("record block builder for a routine step that shows the results (#1763)", () => {
+  const origin = { kind: "routine_step" as const, skillName: "search_listings", routineId: "routine-homes", stepId: "choose", slot: "chosen_home" };
+  const outputs = { listings: [listing(1, { id: "h-1", rooms: 2, nested: { a: 1 }, tags: ["x"] }), listing(2, { id: "h-2", rooms: 3 })] };
+
+  it("lets the visitor pick, stores the step's origin and keeps each record's scalars for the slot", () => {
+    const { block } = buildRecordBlock({
+      head: head({ records: ["r2"] }),
+      ledger: ToolRecordLedger.fromOutputs(outputs),
+      layouts: ["carousel"],
+      skillName: "search_listings",
+      newImageId: ids(),
+      binding: { selection: "single", origin },
+    });
+
+    expect(block?.selection).toBe("single");
+    expect(block?.origin).toEqual(origin);
+    expect(block?.items[0]?.actions).toEqual([{ type: "open", url: "https://homes.example/listings/flat-2" }, { type: "select" }]);
+    expect(block?.items[0]?.fields).toEqual({ name: "Flat 2", area: "Mitte", url: "https://homes.example/listings/flat-2", id: "h-2", rooms: 3 });
+    expect(storedReplyBlockSchema.safeParse(block).success).toBe(true);
+  });
+
+  it("keeps no scalars when the step only shows its cards", () => {
+    const { block } = buildRecordBlock({
+      head: head({ records: ["r1"] }),
+      ledger: ToolRecordLedger.fromOutputs(outputs),
+      layouts: ["carousel"],
+      skillName: "search_listings",
+      newImageId: ids(),
+      binding: { selection: "none", origin: { kind: "routine_step", skillName: "search_listings", routineId: "routine-homes", stepId: "show" } },
+    });
+
+    expect(block?.selection).toBe("none");
+    expect(block?.items[0]?.fields).toBeUndefined();
+    expect(block?.items[0]?.actions).toEqual([{ type: "open", url: "https://homes.example/listings/flat-1" }]);
+  });
+});

@@ -45,6 +45,7 @@ import {
 import type { RouteScopedDirectiveRuntime } from "./routeScopedDirectiveSteering.js";
 import type { DirectiveStateStore } from "../../directives/public.js";
 import {
+  type TurnOutcomeRenderer,
   type TurnSkill,
   type TurnStreamSuggestions,
 } from "./turnOutcome.js";
@@ -293,6 +294,8 @@ export interface ChatTurnAssemblyOptions {
   chatSessionPreparer: ChatSessionPreparer;
   conversationEngine: ConversationEngine;
   turnSkills: TurnSkill[];
+  /** Writes a routine step that shows a skill step's results (#1763). */
+  skillResultRenderer?: TurnOutcomeRenderer;
   selectionStrategy: TurnSelectionStrategy;
   directiveRuntime: RouteScopedDirectiveRuntime;
   directiveStateStore: DirectiveStateStore;
@@ -436,14 +439,7 @@ export class ChatTurnAssembly {
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),
       responseLanguage: input.responseLanguage,
-      groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
-        session,
-        accountId: input.accountId,
-        responseLanguage: input.responseLanguage,
-        turnSkills: this.options.turnSkills,
-        chatAnswerPresenter: this.options.chatAnswerPresenter,
-        signal: input.coordination?.signal,
-      }),
+      groundedAnswerRenderer: this.routineAnswerRenderer(session, input, input.coordination?.signal),
       throwIfCancelled: input.coordination
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
@@ -652,13 +648,7 @@ export class ChatTurnAssembly {
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, null),
       responseLanguage: input.responseLanguage,
-      groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
-        session,
-        accountId: input.accountId,
-        responseLanguage: input.responseLanguage,
-        turnSkills: this.options.turnSkills,
-        chatAnswerPresenter: this.options.chatAnswerPresenter,
-      }),
+      groundedAnswerRenderer: this.routineAnswerRenderer(session, input),
       throwIfCancelled: input.coordination
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
@@ -1389,6 +1379,12 @@ export class ChatTurnAssembly {
         this.options.recordClarificationDecision({ surface, ...recorded });
       }
     }
+  }
+
+  /** The host's replies for a routine step: grounded on a staged retrieval, or from a skill step's results. */
+  private routineAnswerRenderer(session: PreparedSession, input: Pick<ChatTurnAssemblyRoutineTurnInput, "accountId" | "responseLanguage">, signal?: AbortSignal) {
+    const { turnSkills, skillResultRenderer, chatAnswerPresenter } = this.options;
+    return createRoutineGroundedAnswerRenderer({ session, accountId: input.accountId, responseLanguage: input.responseLanguage, turnSkills, skillResultRenderer, chatAnswerPresenter, signal });
   }
 
   private async routineCatalogPinIds(

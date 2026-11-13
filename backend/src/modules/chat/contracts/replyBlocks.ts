@@ -5,6 +5,7 @@ import type {
   ReplyImage,
   ReplyItem,
 } from "@radioso/conversation-contract";
+import { ROUTINE_ITEM_VALUE_LIMITS } from "@radioso/conversation-contract";
 import { z } from "zod";
 
 export type { ReplyBlock, ReplyBlockLayout } from "@radioso/conversation-contract";
@@ -48,13 +49,28 @@ export interface StoredReplyItemDocument {
   title: string;
 }
 
-export type StoredReplyItem = Omit<ReplyItem, "image" | "facts"> & { image?: StoredReplyImage; document?: StoredReplyItemDocument };
+/**
+ * A record's own top-level scalars, kept on a card a routine step lets the visitor pick (#1763), so
+ * the item slot the pick fills can name more of the item than its title. Server-only, like
+ * `document`, and bounded as `ROUTINE_ITEM_VALUE_LIMITS` bounds an item value.
+ */
+export type StoredReplyItemFields = Record<string, string | number | boolean>;
+
+export type StoredReplyItem = Omit<ReplyItem, "image" | "facts"> & {
+  image?: StoredReplyImage;
+  document?: StoredReplyItemDocument;
+  fields?: StoredReplyItemFields;
+};
 
 /**
  * Where a stored block's items came from, when not from the answer's evidence. Server-only: it is
  * kept on the message for whatever acts on a block later, and presenting a block never sends it.
+ * A `routine_step` block came from a routine step that shows a skill step's results (#1763); a pick
+ * on it fills `slot` while the routine still waits on that step.
  */
-export type StoredReplyBlockOrigin = { kind: "skill_result"; skillName: string };
+export type StoredReplyBlockOrigin =
+  | { kind: "skill_result"; skillName: string }
+  | { kind: "routine_step"; skillName: string; routineId: string; stepId: string; slot?: string };
 
 /** A reply block as `messages.metadata_json.blocks` keeps it. */
 export type StoredReplyBlock = Omit<ItemListBlock, "items"> & { items: StoredReplyItem[]; origin?: StoredReplyBlockOrigin };
@@ -109,8 +125,21 @@ export const replyBlockSchema = itemListBlockSchemaWith(replyImageSchema, {}) sa
 /** A reply block as the message row stores it; history reads it back through this. */
 export const storedReplyBlockSchema = itemListBlockSchemaWith(storedReplyImageSchema, {
   document: z.object({ id: z.string().min(1).max(128), title: z.string().max(REPLY_BLOCK_LIMITS.titleLength) }).optional(),
+  fields: z.record(
+    z.string().min(1).max(ROUTINE_ITEM_VALUE_LIMITS.fieldKey),
+    z.union([z.string().max(ROUTINE_ITEM_VALUE_LIMITS.fieldValue), z.number().finite(), z.boolean()]),
+  ).refine((fields) => Object.keys(fields).length <= ROUTINE_ITEM_VALUE_LIMITS.fields).optional(),
 }).extend({
-  origin: z.object({ kind: z.literal("skill_result"), skillName: z.string().min(1).max(200) }).optional(),
+  origin: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("skill_result"), skillName: z.string().min(1).max(200) }),
+    z.object({
+      kind: z.literal("routine_step"),
+      skillName: z.string().min(1).max(200),
+      routineId: z.string().min(1).max(200),
+      stepId: z.string().min(1).max(200),
+      slot: z.string().min(1).max(200).optional(),
+    }),
+  ]).optional(),
 }) satisfies z.ZodType<StoredReplyBlock>;
 
 /**

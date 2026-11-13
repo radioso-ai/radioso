@@ -1,7 +1,8 @@
 import type { RoutineDefinition } from "./domain.js";
-import { collectContextVariableRefs, routineExposureToolNamePattern, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
+import { collectContextVariableRefs, presentBindingOf, routineExposureToolNamePattern, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
 import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
 import { consentDiagnostics, safeConsentValidationMessages } from "./consentValidation.js";
+import { presentBindingDiagnostics, safePresentBindingValidationMessages } from "./presentBindingValidation.js";
 import { reservedRoutineToolNames } from "./exposure/reservedToolNames.js";
 import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
@@ -47,6 +48,7 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   operator_notice_skill_unavailable: "An ending's operator notice is sent with a skill that is not one of this agent's enabled notify skills.",
   operator_notice_reply_to_slot_invalid: "An ending's operator notice sends replies to a field that is not one of this routine's email fields, or to one marked sensitive.",
   ...safeConsentValidationMessages,
+  ...safePresentBindingValidationMessages,
 };
 
 const replyToSlotInvalidMessage = (
@@ -111,8 +113,10 @@ const isBackEdge = (
 };
 
 // A field guard's operator must fit the variable's type: relative-date ops need a date,
-// numeric comparisons need a number, boolean checks need a boolean. The rest apply to any.
+// numeric comparisons need a number, boolean checks need a boolean. The rest apply to any
+// scalar; an item (#1763) is only present or absent.
 const isFieldOpCompatible = (op: string, slotType: string): boolean => {
+  if (slotType === "item") return op === "is_present" || op === "is_absent";
   if (op === "older_than" || op === "within") return slotType === "date";
   if (op === "gt" || op === "gte" || op === "lt" || op === "lte") return slotType === "number";
   if (op === "is_true" || op === "is_false") return slotType === "boolean";
@@ -562,7 +566,8 @@ export const validateRoutineDefinition = (
 
   const referencedSlotKeys = new Set<string>();
   for (const step of steps) {
-    for (const key of collectSlotReferences(step.instruction)) {
+    const boundSlot = presentBindingOf(step)?.slot;
+    for (const key of [...collectSlotReferences(step.instruction), ...(boundSlot ? [boundSlot] : [])]) {
       referencedSlotKeys.add(key);
     }
   }
@@ -772,6 +777,7 @@ export const validateRoutineDefinition = (
   if (context.agentDefaultLocale !== undefined) {
     diagnostics.push(...consentDiagnostics(definition, context.agentDefaultLocale));
   }
+  diagnostics.push(...presentBindingDiagnostics(definition));
 
   // Slice 3 seam: validate referenced action types against the action registry and
   // per-agent capability policy before publish.

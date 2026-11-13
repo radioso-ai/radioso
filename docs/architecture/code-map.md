@@ -2025,13 +2025,13 @@ Primary internals:
   wired by `backend/src/app/composition/replyBlocks.ts`; the golden prompt and
   schema of a turn without them are in `backend/tests/fixtures/reply-blocks/`.
   Cards from a skill's result: `toolRecords.ts` (records and JSON Pointers),
-  `recordPresentHead.ts`, `recordBlockBuilder.ts`, `skillResultReplyBlocks.ts`
-  (the offer) and `presentReplyEnvelope.ts` (the `{present, answer}` envelope
+  `recordPresentHead.ts`, `recordBlockBuilder.ts`, `skillResultCardsGate.ts` (the
+  one gate for skill-result cards), `skillResultReplyBlocks.ts` (the offer) and `presentReplyEnvelope.ts` (the `{present, answer}` envelope
   `assistantReplyComposer.ts` asks for); their pictures are copied by
   `backend/src/modules/toolImages/` (module brief in its `README.md`; rows,
-  intake, capture job, on-demand lookup, eraser and sweep), wired by
+  capture job, on-demand lookup, eraser and sweep), wired by
   `backend/src/app/composition/toolImages.ts`. Focused checks:
-  `cd backend && pnpm exec vitest run tests/unit/chat/replyBlocks tests/unit/toolImages tests/unit/externalSkills/mcp-tool-images.test.ts tests/unit/eval-suite/tool-card-cases.test.ts`,
+  `cd backend && pnpm exec vitest run tests/unit/chat/replyBlocks tests/unit/toolImages tests/unit/eval-suite/tool-card-cases.test.ts tests/contract/skill-result-reply-blocks.contract.test.ts`,
   and `tests/integration/tool-result-cards.integration.test.ts` on the disposable
   integration database
 - `backend/src/modules/chat/services/answerLinkGuard.ts` and

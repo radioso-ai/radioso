@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-11-11
+last_updated: 2026-11-13
 ---
 
 # Agents and skills
@@ -224,52 +224,18 @@ When a directive with an external MCP binding matches a non-routine turn, the
 turn selector routes to the bound skill if that skill is available as a runtime
 turn skill. The agent's model then writes the reply from what the tool returned,
 read as findings rather than instructions, in the agent's voice and with the
-directive action steering it. What the tool returned is its text and, when it
-returns structured content, the records in it: each object of an array, such as
-one listing or one product. A tool that returns records and no text is answered
-from its records. If the bound skill then fails, times out, returns neither text
-nor records, or is kept off by a private test, the agent answers through normal
-selection without claiming the tool's results, and the turn trace records the
-failure reason on the bound skill's dispatch.
-
-When the client renders reply blocks (it sends `clientContextCapabilities["reply.blocks"]`,
-as the web chat, the embed and Test Chat do), a reply written from records can
-carry an `item_list` block: a short lead in the text and up to ten cards beside
-it. The model picks which records to show and where in each record its title,
-subtitle, picture and link are; every value on a card is read from the record
-itself, and a picture or link must be a public `http` or `https` address. Cards
-with pictures come as a `carousel`, cards without as a `list`.
-
-### Cards from a skill's records
-
-The model reads the records in a shortened form: at most 20 of them, each
-expanded three levels deep with up to 12 keys, 3 items of any array and 120
-characters of any string, and an address cut to its host and last path segment.
-The whole list stays within about 3,000 tokens, so a long result loses its last
-records first. The card's own values are read from the full record, so a title
-or an address the model saw shortened arrives whole. When the tool's text only
-repeats its structured content as JSON, the reply is written from the records
-alone.
-
-A card's picture is copied for the conversation that showed it: fetched once
-from its address, with a 10-second budget and an 8 MB cap, re-encoded to WebP at
-320 and 640 pixels wide, and served from `/api/v1/public/reply-images/{imageId}/{width}`
-like the pictures of an answer's documents. A browser that asks for the picture
-before the copy is ready gets it copied on the spot. JPEG, PNG, WebP, GIF and
-AVIF are read; an SVG, a page that is not a picture, a private address or a
-link that has expired leaves the card without a picture. A tool may also return
-pictures as MCP `image` content: up to four per call, 5 MB each, kept for the
-conversation while the call runs. The copies are deleted with the conversation,
-and one no stored reply carries goes after a day.
-
-Test Chat shows the same cards. Its pictures from addresses are copied like
-any other and deleted after a day; a picture a tool returns as MCP `image`
-content is not kept for a private test, so its card shows none. A routine's
-tool step shows no cards, and a visitor cannot pick a card: each card opens its
-link. When a directive with a retrieval binding
-matches, the answer loop receives a lookup tool for that skill. The directive
-action still steers the answer. A non-matching directive has no selection
-effect.
+directive action steering it. What the tool returned is its text and, where the
+reply may show cards (see
+[Cards from a skill's records](#cards-from-a-skills-records)), the records in
+its structured content: each object of an array, such as one listing or one
+product. If the bound skill then
+fails, times out, returns nothing the reply can be written from (no text, and no
+records where cards are shown), or is kept off by a private test, the agent
+answers through normal selection without claiming the tool's results, and the
+turn trace records the failure reason on the bound skill's dispatch. When a
+directive with a retrieval binding matches, the answer loop receives a lookup
+tool for that skill. The directive action still steers the answer. A
+non-matching directive has no selection effect.
 
 When multiple matched directives bind skills, one binding wins:
 
@@ -295,6 +261,46 @@ selection — right up until you add and enable a skill with that name.
 Bindings on directives scoped with `routine:<id>` or
 `step:<routineId>:<stepId>` are accepted but inert during routine turns, because
 routine flow bypasses terminal turn selection.
+
+### Cards from a skill's records
+
+When the client renders reply blocks (it sends `clientContextCapabilities["reply.blocks"]`,
+as the web chat, the embed and Test Chat do), a reply written from records can
+carry an `item_list` block: a short lead in the text and up to ten cards beside
+it. The model picks which records to show and where in each record its title,
+subtitle, picture and link are; every value on a card is read from the record
+itself, and a picture or link must be a public `http` or `https` address. Cards
+with pictures come as a `carousel`, cards without as a `list`. When the model
+names cards none of which can be built, a non-streamed reply is written again
+without cards; a streamed one has already gone out, so the loss is logged as
+`chat.skill_result.cards_lost`.
+
+The model reads the records in a shortened form: at most 20 of them, each
+expanded three levels deep with up to 12 keys, 3 items of any array and 120
+characters of any string, and an address longer than 80 characters or carrying
+a query, such as a signed link, cut to its host and last path segment.
+The whole list stays within about 3,000 tokens, so a long result loses its last
+records first. The card's own values are read from the full record, so a title
+or an address the model saw shortened arrives whole. When the tool's text only
+repeats its structured content as JSON, the reply is written from the records
+alone.
+
+A card's picture is copied for the conversation that showed it: fetched once
+from its address, with an 8 MB cap, re-encoded to WebP at 320 and 640 pixels
+wide, and served from `/api/v1/public/reply-images/{imageId}/{width}` like the
+pictures of an answer's documents. A job copies the pictures a few seconds after
+the reply is stored, within 20 seconds each. A browser that asks for a picture
+first gets it copied on the spot within 6 seconds; while the server is already
+copying four pictures it answers `404` at once, the card shows without its
+picture, and the job copies it. JPEG, PNG, WebP, GIF and AVIF are read; an SVG,
+a page that is not a picture, a private address or a link that has expired
+leaves the card without a picture. The copies are deleted with the
+conversation, and one no stored reply carries goes after a day. A data-subject
+export carries each card with its message.
+
+Test Chat shows the same cards and copies their pictures, deleted after a day. A
+routine's tool step shows no cards, and a visitor cannot pick a card: each card
+opens its link.
 
 ## Agent skills
 

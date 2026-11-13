@@ -132,21 +132,25 @@ A skill can also answer a chat turn on its own: a directive bound to the skill
 claims the turn, and the agent writes the reply from what the tool returned (see
 [Agents and skills](../docs-portal/content/api/agents-and-skills.mdx)). When the
 tool returns structured content, each object of an array in it is a record, such
-as one listing, one product or one office. The agent answers from the records,
-so a tool that returns structured content and no text still gets a reply.
+as one listing, one product or one office.
 
 When the visitor's chat renders reply blocks (the web chat, the embed and Test
-Chat all do), the reply can show records as cards: a short lead in the text, and
-up to ten cards beside it, each with a title, a line under it, a picture and a
-link. For a property search that returns fifteen flats, a visitor who asks for
-flats in Mitte under 2,000 a month gets a sentence and a carousel of the four
-that fit.
+Chat all do), the reply is written from those records and can show them as
+cards: a short lead in the text, and up to ten cards beside it, each with a
+title, a line under it, a picture and a link. For a property search that returns
+fifteen flats, a visitor who asks for flats in Mitte under 2,000 a month gets a
+sentence and a carousel of the four that fit. A tool that returns records and no
+text is answered from its records there. On a channel that shows no cards, such
+as voice, WhatsApp or email, the reply is written from the tool's text alone,
+and a tool that returns no text leaves the turn to the agent's usual answer.
 
 The model decides which records to show and where in each record the card's
 title, subtitle, picture and link are; Radioso reads every value from the
 record itself. A title must be text or a number, and a picture or a link must be
 a public `http` or `https` address. A field that is anything else is left off
-its card. Cards with pictures come as a carousel, cards without as a list.
+its card. Cards with pictures come as a carousel, cards without as a list. When
+the model names cards none of which can be built, the reply is written again
+without cards, so its lead never points at a list that is not there.
 
 What the model reads of the records is bounded: at most 20 records, each three
 levels deep with up to 12 keys, 3 items of any array and 120 characters of any
@@ -154,21 +158,21 @@ string, within about 3,000 tokens. An address with a query, such as a signed
 link, or one longer than 80 characters, is shown cut to its host and last path
 segment; the card still gets the whole address.
 
-A card's picture is copied for the conversation. Radioso fetches it once, with a
-10-second budget and an 8 MB cap, re-encodes it to WebP at 320 and 640 pixels
-wide, and serves the copy from its own image route, so the card keeps its
-picture after a signed link expires. A browser that asks for the picture before
-the copy is ready gets it copied on the spot. JPEG, PNG, WebP, GIF and AVIF are
-read. An SVG, a page that is not a picture, a private address or an expired link
-leaves the card without a picture. A tool can also return pictures as MCP
-`image` content: up to four per call, 5 MB each, kept for the conversation while
-the call runs.
+A card's picture is the address a record names, copied for the conversation.
+Radioso fetches it once, with an 8 MB cap, re-encodes it to WebP at 320 and 640
+pixels wide, and serves the copy from its own image route, so the card keeps its
+picture after a signed link expires. A job copies the pictures a few seconds
+after the reply is stored, within 20 seconds each; a browser that asks for a
+picture first gets it copied on the spot within 6 seconds, unless the server is
+already copying four pictures, in which case the card shows without it until the
+job has run. JPEG, PNG, WebP, GIF and AVIF are read. An SVG, a page that is not
+a picture, a private address or an expired link leaves the card without a
+picture.
 
 The copies are deleted with the conversation, and a copy no stored reply carries
-goes after a day. Test Chat shows the same cards and copies their pictures from
-addresses; a picture a tool returns as MCP `image` content is not kept for a
-private test. A routine's tool step shows no cards, and a visitor cannot pick a
-card: each card opens its link.
+goes after a day. Test Chat shows the same cards and copies their pictures. A
+routine's tool step shows no cards, and a visitor cannot pick a card: each card
+opens its link.
 
 ## Call timeout
 

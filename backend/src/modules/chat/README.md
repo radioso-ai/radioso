@@ -201,20 +201,24 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
 - Cards from a skill's result (`services/replyBlocks/toolRecords.ts`,
   `recordPresentHead.ts`, `recordBlockBuilder.ts`, `skillResultReplyBlocks.ts`,
   `presentReplyEnvelope.ts`): the skill-result renderer
-  (`skillResultTurnRenderer.ts`) walks the skill's `outputs` into records
-  `r1..rN` (`ToolRecordLedger`: every array of objects, or the outputs
-  themselves, plus each picture the skill returned as bytes) and shows them as
-  findings within their own token budget. When the client renders item lists,
-  `SkillResultReplyBlocks.offerFor` gives the reply a `present` head of handles
-  and JSON Pointers, and `AssistantReplyComposer` asks for the
-  `{present, answer}` envelope, streaming `answer` alone. The block builder
-  reads every card value from the record the model named, keeps a server-only
-  `origin` on the stored block, and lists the pictures to copy as
+  (`skillResultTurnRenderer.ts`) asks `SkillResultReplyBlocks.offerFor` for an
+  offer, which opens only where `skillResultCardsFor` (`skillResultCardsGate.ts`,
+  the one gate for skill-result cards) does and the outputs hold records
+  (`ToolRecordLedger`: every array of objects, or the outputs themselves). The
+  offer carries the records as findings under handles `r1..rN`, a `present` head
+  of handles and JSON Pointers, and the composer asks for the `{present, answer}`
+  envelope, streaming `answer` alone. The block builder reads every card value
+  from the record the model named, cuts text by UTF-16 length, drops an address
+  whose normalized form outgrows the stored limit, checks the block against the
+  stored schema, keeps a server-only `origin`, and lists the pictures to copy as
   `toolImages`, which the turn's persistence hands to the `toolImages` module.
-  Without the capability, or without records, the prompt and options are what
-  they would be without cards (`tests/fixtures/reply-blocks/skill-result-without-present.json`).
-  `hasRenderableResult` (`agentSkillTurnSkillProvider.ts`) makes an outcome with
-  records and no text renderable.
+  When the model named cards none of which could be built, a non-streamed reply
+  is written again from the records without handles or cards; a streamed one
+  logs `chat.skill_result.cards_lost`. Without the gate, or without records, the
+  prompt and options are what they would be without cards
+  (`tests/fixtures/reply-blocks/skill-result-without-present.json`), and
+  `hasRenderableResult` (`agentSkillTurnSkillProvider.ts`) leaves a records-only
+  result as `empty_answer`, as it always was.
   A routine step that answers from evidence crosses the engine as a
   `RenderableTurn`: `routineGroundedAnswerRenderer.ts` sends the presented blocks
   as `blocks` and the stored form as `metadata.storedReplyBlocks`, and

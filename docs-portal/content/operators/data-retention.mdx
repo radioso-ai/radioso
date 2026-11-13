@@ -56,7 +56,7 @@ Opening the raw view of an email older than 30 days answers `410 raw_purged`.
 
 A photo that went out with a message stays with that message's conversation, under the conversation's window. One the visitor attached and then removed, or that never reached a stored message, has no conversation to follow, so it goes a day after its upload.
 
-The pictures on cards built from a skill's results are copies Radioso keeps of a third party's images. A copy shown in a stored reply stays with that reply's conversation. One no stored reply carries, such as a Test Chat card's or one whose reply never committed, goes a day after it was written.
+The pictures on cards built from a skill's results are copies Radioso keeps of a third party's images. A copy shown in a stored reply stays with that reply's conversation. One no stored reply carries, such as a Test Chat card's or one whose message was deleted on its own, goes a day after it was written.
 
 An audit event's 365 days count from when it happened. Closing a workspace erases the turn audit events that carry a conversation's content, the same way deleting that conversation does; every other audit event for the workspace keeps its row with no workspace named, so the record of the closure itself, and everything that led up to it, keeps the same 365 days as any other event. A run that removes any audit events records one `audit_event.retention.enforced` event with the count and the window, naming no event it removed.
 

@@ -344,7 +344,7 @@ The visitor taps **Select** on a card. Their message appears as the item's title
 
 ### D8. Cards from tool results need no operator mapping (built in 2a.1)
 
-- **Records.** The host walks a skill's `outputs` structurally (`ToolRecordLedger`, `chat/services/replyBlocks/toolRecords.ts`). Every array whose items are all objects, at depth 4 or less, becomes records with handles `r1..rN` in document order; the walk does not go inside a record, so a listing's own `photos` never become records beside it. If there is none, the outputs themselves become `r1`. Each MCP `image` content block the skill returned becomes a record `{ "image": "tool-image:<n>" }`.
+- **Records.** The host walks a skill's `outputs` structurally (`ToolRecordLedger`, `chat/services/replyBlocks/toolRecords.ts`). Every array whose items are all objects, at depth 4 or less, becomes records with handles `r1..rN` in document order; the walk does not go inside a record, so a listing's own `photos` never become records beside it. If there is none, the outputs themselves become `r1`. Pictures a tool returns as MCP `image` content are not kept (non-goal): a card's picture is always an address a record names.
 - **The model's view is compact and capped:**
   - at most 20 records;
   - per record: three levels of containers expanded, 12 keys, arrays cut to 3 items plus `"+N"`, strings cut to 120 characters;
@@ -360,25 +360,26 @@ The visitor taps **Select** on a card. Their message appears as the item's title
 
   `selection` joins the head in 2a.2, where something acts on it; 2a.1 builds every block with `selection: "none"`.
 - **The host resolves the values; the model writes none of them.** Pointers (RFC 6901, no `-`; a pointer written without its leading slash is read as if it had one) are resolved against the full, untruncated record.
-  - The title must resolve to a string or a finite number, cut to 160 characters, or the item is dropped (`title_unresolved`).
-  - The subtitle is cut to 400 characters.
-  - `image` and `link` must be public `http(s)` URLs: a host the public internet reaches by its literal form, no credentials, at most 2,048 characters. `image` may also be the token of an MCP image this turn returned.
+  - The title must resolve to a string or a finite number, cut to 160 UTF-16 code units (never splitting a surrogate pair), or the item is dropped (`title_unresolved`).
+  - The subtitle is cut to 400 code units, the caption to 120.
+  - `image` and `link` must be public `http(s)` URLs: a host the public internet reaches by its literal form, no credentials, and at most 2,048 characters in their normalized, percent-encoded form.
   - Any other value is left off that card (`field_unresolved`), never invented.
-  - The item key is the record's JSON Pointer within `outputs` (`/` for the outputs themselves, `media/<n>` for an MCP image), hashed when it is over 128 characters.
+  - The item key is the record's JSON Pointer within `outputs` (`/` for the outputs themselves), hashed when it is over 128 characters.
+  - The built block is checked against the stored schema before it is returned (`block_invalid` otherwise), so a block that would not read back from history is never stored.
   - The layout is `carousel` when any card has a picture and the client draws carousels, otherwise `list`. A tool image's size is unknown until it is copied, so the stored item frames it as 640×480 and the client fits the picture inside.
-- **The offer rule.** `present` is offered only when the client declares `reply.blocks.item_list` and the outcome has at least one record. There is no agent flag: slice 1 offers evidence pictures on the capability alone, and skill-result cards follow it. A routine step's binding is the opt-in for routines (D10). Otherwise the prompt and the options are byte-identical to the reply without cards (golden: `backend/tests/fixtures/reply-blocks/skill-result-without-present.json`).
-- **Records make data-only outcomes renderable.** An outcome with records and no text no longer fails (`hasRenderableResult`). Without the capability, the findings are the skill's text, exactly as before, and the records only when there is no text. With it, the findings are the records first and then the text, unless the text only repeats the structured content as JSON (parsed and compared deeply).
-- **Cards are built only for a real answer.** A blank reply's fallback, a failed or suppressed skill, and an envelope whose `present` is missing or malformed build none.
+- **The offer rule.** `present` is offered only where the cards gate opens (`skillResultCardsFor`: today the client declares `reply.blocks.item_list`) and the outcome has at least one record. One per-agent switch for all cards, `replyCardsEnabled`, shared with content images (#1782), joins the gate once that lands; it is the gate's one line. A routine step's binding is the opt-in for routines (D10). Otherwise the prompt and the options are byte-identical to the reply without cards (golden: `backend/tests/fixtures/reply-blocks/skill-result-without-present.json`).
+- **Records make data-only outcomes renderable only where cards are shown.** There, an outcome with records and no text no longer fails, and the findings are the records first, under their handles, then the text unless it only repeats the structured content as JSON (parsed and compared deeply). Where the gate is shut, such as voice, WhatsApp or email, the findings are the skill's text exactly as before, and a records-only outcome still settles as `empty_answer`, so that path is byte-identical and no handle reaches it (`hasRenderableResult` checks the shape alone).
+- **Cards are built only for a real answer.** A blank reply's fallback, a failed or suppressed skill, and an envelope whose `present` is missing or malformed build none. When the model named records but no card could be built, a non-streamed reply is written once more from the records without handles or cards, so its lead promises no list; a streamed reply has gone out, so the loss is counted and logged (`chat.skill_result.cards_lost`, ids only).
 
 ### D9. Tool images are copied per conversation and deleted with it (built in 2a.1)
 
 - **Rows.** `conversation_tool_images` (migration 259) holds one row per picture; the block stores only the row's id.
-  - An address picture's row is written in the reply's own transaction, with the assistant message, by the `toolImages` module's `ToolImageRowWriter`. `source_url` is kept only until the picture is stored or fails, then cleared, because third-party links are often signed.
-  - An MCP image's bytes are uploaded untouched while the tool call runs (`<id>-source`), and an unbound row records them (`source_object`); the reply that shows it binds it to its message. A conversation that is not stored (a replay, Test Chat) keeps no bytes; the drop is counted.
-  - A Test Chat reply's address pictures are written with no conversation and no message (`ToolImagePreviewRecorder`), so Test Chat shows them, and the unbound sweep deletes them a day later.
-- **Capture.** A `tool_images.capture` job is written in the same transaction and first runs five seconds after the commit. It fetches through `fetchPublicBytes` (10-second budget, 8 MB cap, `Accept: image/*`), sniffs, decodes and re-encodes with the shared codec (in a slot pool of its own) to WebP at 320 and 640 wide, stores the copies in the `tool-images` folder, and marks the row `stored`. A timeout, a network or server error and a busy decoder hand the row back and the job retries (4 attempts over about 15 minutes, then `retries_exhausted`); a private address, an expired link, a page, an SVG, a picture under 32 pixels or bytes that do not decode fail it for good.
-- **On demand.** The image route is unchanged. Composition puts a tool-image lookup behind the documents' image lookup; it captures a waiting row on demand within a 6-second budget, one capture of a row at a time per process, and a request that finds another capture holding the row waits for it. A failed row is a plain 404.
-- **Lifetime is the conversation's.** The row cascades with the conversation. `ToolImageEraser` deletes a conversation's rows in its erasure and hands their objects to the `tool_images.object_deletion` job in the same transaction, as `VisitorImageEraser` does. A row no message carries is swept after 24 hours. The data-subject export leaves the copies out: each is a third party's picture, and the card's title and link go out with the message.
+  - A picture's row is written in the reply's own transaction, with the assistant message, by the `toolImages` module's `ToolImageRowWriter`. `source_url` is kept only until the picture is stored or fails, then cleared, because third-party links are often signed.
+  - A Test Chat reply's pictures are written with no conversation and no message (`ToolImagePreviewRecorder`), so Test Chat shows them, and the unbound sweep deletes them a day later.
+- **Capture.** A `tool_images.capture` job is written in the same transaction and first runs five seconds after the commit. A capture takes one of the process's capture turns (four by default, set in composition), claims the row, fetches through `fetchPublicBytes` (8 MB cap, `Accept: image/*`), sniffs, decodes and re-encodes with the shared codec (in a slot pool of its own) to WebP at 320 and 640 wide, and marks the row `stored`. One deadline covers the wait for a turn, the fetch, the decode and the uploads: 20 seconds for the job, 6 on demand; the job also stops on the runtime's abort signal. A timeout, a network or server error and a busy decoder hand the row back and the job retries (4 attempts over about 15 minutes, then `retries_exhausted`); a private address, an expired link, a page, an SVG, a picture under 32 pixels or bytes that do not decode fail it for good.
+- **Claims and takeover.** A claim older than 30 seconds may be taken over. `claimed_at` is the claim's generation, and every finishing write (`stored`, `failed`, released) matches it, so a capture that outlived its claim changes nothing. Each capture writes its copies under names of its own (`<id>-w<width>-<tag>`), so a capture that lost the row deletes only what it wrote.
+- **On demand.** The image route is unchanged. Composition puts a tool-image lookup behind the documents' image lookup; it captures a waiting row on demand within its deadline, one capture of a row at a time per process, and a request that finds another capture holding the row waits for it. When every capture turn is taken, or the row failed, the route answers 404 at once: the card shows without its picture, and the job copies it.
+- **Lifetime is the conversation's.** The row cascades with the conversation. `ToolImageEraser` deletes a conversation's rows in its erasure and hands their objects to the `tool_images.object_deletion` job in the same transaction, as `VisitorImageEraser` does. A row no message carries is swept after 24 hours. The data-subject export carries each card, with its title, subtitle, link and picture id, on the message that showed it under `conversations`; the copies themselves are a third party's pictures and stay out.
 
 ### D10. Routines bind explicitly (PR 2b)
 
@@ -401,7 +402,6 @@ A model calling any skill mid-turn, without a directive or a routine, is an open
 ## Contract additions
 
 - `StoredReplyBlock.origin?: { kind: "skill_result"; skillName }` (2a.1). Server-only: it is stored on the message and never presented. 2b adds `{ kind: "routine_step"; routineId; stepId; captureKey? }`.
-- `SkillOutcome.media?: { kind: "image"; imageId: string }[]` in `@radioso/conversation-contract`. This is a reference, never bytes.
 - `TestExecutionEvent` `side_completed.blocks?: ReplyBlock[]` (2a.1): Test Chat declares `reply.blocks` with every layout and gets a turn's cards on its completion.
 - Later: `RoutineStep.present?` in the engine contract; `routineSlotTypes` gains `"item"`; embed copy keys `replyCardSelectLabel`, `replyCardSelectedLabel`.
 
@@ -412,9 +412,8 @@ A model calling any skill mid-turn, without a directive or a routine, is an open
 | `chat/services/replyBlocks/toolRecords.ts`, `recordPresentHead.ts`, `recordBlockBuilder.ts` (pure) | Walking outputs, handles, the compact view, pointer resolution, building items | Transports, storage, routines |
 | `chat` skill-result renderer, `SkillResultReplyBlocks`, `AssistantReplyComposer` | Offering `present`, the `{present, answer}` envelope, building blocks with their origin | MCP, third-party formats, bytes |
 | `chat` item selection (2a.2) | Validating against the stored block; the turn tag | Routine internals beyond the origin |
-| `modules/toolImages` | Rows, intake, capture, on-demand lookup, eraser, sweep | Blocks, chat, MCP |
+| `modules/toolImages` | Rows, capture, claims, on-demand lookup, eraser, sweep | Blocks, chat, MCP |
 | `shared/infra/images`, `shared/infra/http` | Codec; bounded public fetch | Who owns an image |
-| `externalSkills` | Turning an MCP image into a `ToolImageIntake` reference, bound to the calling conversation | Rows, cards |
 | `routine-definition`, `routine-document` (2b) | The `present` binding, slot type `item`, validation codes | Records, blocks |
 | `conversation-engine` (2b) | Applying an item selection; checking an `item` value | Where items come from |
 | Frontend `ItemListBlock` | The Select action (2a.2) and the selected state | Where records came from |
@@ -428,7 +427,7 @@ The visitor asks "flats in Mitte under 2,000?". A directive-bound MCP skill retu
 1. **Given** records with `photos[0].url` and `url` fields, **When** the model presents 4, **Then** each card's title, image and link come from the data, the block persists, and history replays it.
 2. **Given** a handle that is not in the turn, or a title pointer that resolves to an object, **When** the block is built, **Then** that item is dropped and counted, and the turn succeeds.
 3. **Given** an `image` pointer to a page URL, an SVG, a private address or an expired link, **When** it is captured, **Then** the card shows without a picture, and `tool_image_capture_total{outcome}` records why.
-4. **Given** structured content only, with no text, and no capability, **When** the skill runs, **Then** the reply is text written from the records, not `empty_answer`.
+4. **Given** structured content only, with no text, **When** the skill runs for a client that shows cards, **Then** the reply is written from the records; for one that shows none, it settles as `empty_answer`, as before cards existed.
 5. **Given** the conversation is erased, **When** an image URL is requested, **Then** it returns `404`, and the objects are deleted by the job.
 6. **Given** the operator tries the agent in Test Chat, **When** the skill returns listings, **Then** the completion carries the cards and their pictures load.
 
@@ -453,8 +452,8 @@ The steps are brief (`area`, `budget`, `rooms`) → tool step `search` with inpu
 - **Metrics (2a.1):**
   - `reply_blocks_emitted_total{layout, channel, source}`, where `source` is `evidence` or `skill_result` (`routine_step` in 2b);
   - `reply_block_items_dropped_total{reason}`, with the record reasons `unknown_record`, `duplicate_record`, `over_limit`, `title_unresolved` and `field_unresolved`;
-  - `tool_image_capture_total{trigger, outcome}` and `tool_image_capture_duration_seconds{trigger}`, where `trigger` is `job | on_demand`;
-  - `tool_image_intake_dropped_total{reason}`.
+  - `tool_image_capture_total{trigger, outcome}` and `tool_image_capture_duration_seconds{trigger}`, where `trigger` is `job | on_demand` and `busy` counts an on-demand request that found no free turn.
+- **Logs (2a.1):** `chat.skill_result.cards_lost` when named cards could not be built.
 - **Metrics (later):** `reply_item_selection_total{outcome}`, `routine_present_total{outcome}`.
 - **Spans, traces, analytics:** a `tool_images.capture` span with its outcome; `chat.reply_blocks.record_count` on the turn; routine trace events `presented` and `item_selected` and analytics `reply_item_selected {channel, source}` later.
 - **Logs** carry ids and error classes only. Never record values, titles, source URLs or bytes.
@@ -465,7 +464,7 @@ The steps are brief (`area`, `budget`, `rooms`) → tool step `search` with inpu
 - Facts on cards; multi-select.
 - Re-showing cards on a later turn of the step.
 - Resolving typed references ("the second one") into a selection.
-- Keeping an MCP tool's picture bytes for a Test Chat turn.
+- Pictures a tool returns as MCP `image` content: they carry no title, so they make title-less cards, and keeping their bytes would store them on every channel.
 
 ## Later
 

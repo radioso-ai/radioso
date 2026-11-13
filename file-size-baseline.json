@@ -1,7 +1,7 @@
 {
   "backend/src/app/http/openapi/paths/documentsPaths.ts": 1035,
   "backend/src/app/server/dependencies.ts": 1453,
-  "backend/src/db/repositories/agentRepository.ts": 1284,
+  "backend/src/db/repositories/agentRepository.ts": 1269,
   "backend/src/db/repositories/documentProcessingJobRepository.ts": 1063,
   "backend/src/db/repositories/documentRepository.ts": 1250,
   "backend/src/db/repositories/vectorIndexWorkRepository.ts": 1168,

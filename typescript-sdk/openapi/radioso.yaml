@@ -2788,6 +2788,9 @@ components:
             visitorImagesEnabled:
               type: boolean
               description: "Whether visitors and API callers may attach photos to a message. This is the draft's value: visitors and API callers get it when the agent is published, and Test Chat tests it before then. The agent's chat model reads each photo at upload, so it takes effect only when that model reads images."
+            answerImagesEnabled:
+              type: boolean
+              description: Whether a grounded answer may show the pictures captured from its documents as reply block cards, on clients that declare `reply.blocks`. Off until an operator turns it on.
             contactRequestDelivery:
               $ref: "#/components/schemas/AgentContactRequestDelivery"
             theme:
@@ -2913,6 +2916,7 @@ components:
             - webhookExportsEnabled
             - handoffOnRetrievalMiss
             - visitorImagesEnabled
+            - answerImagesEnabled
             - contactRequestDelivery
             - theme
             - branding
@@ -2981,6 +2985,8 @@ components:
         handoffOnRetrievalMiss:
           type: boolean
         visitorImagesEnabled:
+          type: boolean
+        answerImagesEnabled:
           type: boolean
         contactRequestDelivery:
           $ref: "#/components/schemas/AgentContactRequestDeliveryRequest"
@@ -7188,6 +7194,9 @@ components:
         visitorImagesEnabled:
           type: boolean
           description: Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off.
+        answerImagesEnabled:
+          type: boolean
+          description: Whether answers may show the pictures captured from their documents as cards. An import of a bundle exported before the field existed reads it as off.
         contactRequestsEnabled:
           type: boolean
         webhookExportsEnabled:
@@ -7380,6 +7389,7 @@ components:
         - internalName
         - customInstruction
         - handoffOnRetrievalMiss
+        - answerImagesEnabled
         - contactRequestsEnabled
         - webhookExportsEnabled
         - contactRequestDelivery
@@ -7394,7 +7404,7 @@ components:
         - chatModelOverride
         - authoredDirectives
         - externalSkills
-      description: "The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on."
+      description: "The agent configuration projection (AgentConfig) at schemaVersion 5. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on."
     AgentBundleRoutine:
       type: object
       properties:
@@ -8111,6 +8121,9 @@ components:
         visitorImagesEnabled:
           type: boolean
           description: Whether visitors may attach photos. Absent in a bundle exported before the field existed, which imports as off.
+        answerImagesEnabled:
+          type: boolean
+          description: Whether answers may show the pictures captured from their documents as cards. An import of a bundle exported before the field existed reads it as off.
         contactRequestsEnabled:
           type: boolean
         webhookExportsEnabled:
@@ -8996,6 +9009,60 @@ components:
               - type: boolean
               - type: "null"
       additionalProperties: false
+    DocumentImage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - primary
+            - inline
+          description: "`primary` is the picture the document's metadata names for itself (a page's `og:image`, a post's featured image); `inline` sits in its text."
+        status:
+          type: string
+          enum:
+            - pending
+            - stored
+            - skipped
+          description: "`stored` once Radioso keeps a copy; `pending` until the worker fetches it; `skipped` when it was refused (smaller than 200 px on its short side, a type Radioso does not read, too large, or at an address it may not fetch)."
+        alt:
+          type: string
+        caption:
+          type:
+            - string
+            - "null"
+        width:
+          type:
+            - integer
+            - "null"
+          exclusiveMinimum: 0
+          description: The source's upright width in pixels; null until stored.
+        height:
+          type:
+            - integer
+            - "null"
+          exclusiveMinimum: 0
+        sourceUrl:
+          type: string
+          description: The address the content names the picture by.
+        src:
+          type: string
+          description: The stored copy at its widest width, served by `GET /api/v1/public/reply-images/{imageId}/{width}`; present once stored.
+        srcSet:
+          type: string
+          description: Every stored width as an `srcset`; present once stored.
+      required:
+        - id
+        - role
+        - status
+        - alt
+        - caption
+        - width
+        - height
+        - sourceUrl
     DocumentDetails:
       allOf:
         - $ref: "#/components/schemas/DocumentSummary"
@@ -9003,6 +9070,11 @@ components:
           properties:
             content:
               type: string
+            images:
+              type: array
+              items:
+                $ref: "#/components/schemas/DocumentImage"
+              description: The pictures the document's content names, in document order, with whether Radioso kept each one. An agent with `answerImagesEnabled` shows stored ones as cards in its answers.
           required:
             - content
     DocumentChunkSummary:

@@ -1,12 +1,13 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, BellRing, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, BellRing, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, LayoutGrid, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
 import { contextVariableLabel } from '@/lib/routine-context-variables'
 import { branchDecisionLabel, branchIsImplicitFallThrough, documentTextToSegments, guardToSentence } from '@/lib/routine-document'
+import { formatPresentLine } from '@/lib/routine-present-edits'
 import type { RoutineBlockBranch, RoutineBlockDoc, RoutineBlockEnding, RoutineBlockInstructionSegment, RoutineBlockSlot, RoutineBlockStep } from '@/lib/routine-prose'
 
 export const instructionIsEmpty = (segments: RoutineBlockInstructionSegment[]) =>
@@ -301,6 +302,7 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
         </div>
         {editing === 'step' ? <div className="mt-2 rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : null}
         {asksConsentFirst ? <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground"><ShieldCheck className="h-3 w-3" />Asks consent first</p> : null}
+        {step.kind === 'chat' && step.present && editing !== 'step' ? <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"><LayoutGrid className="h-3 w-3" />{formatPresentLine(step.present)}</p> : null}
         {details}
       </div>
     </div>

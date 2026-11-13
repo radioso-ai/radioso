@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 
 import { AssistantIdentityLine, type AssistantIdentity } from '@/components/chat/assistant-identity'
+import { ItemListBlock } from '@/components/chat/item-list-block'
 import { VisitorImageReadings, type VisitorImageThreadConfig } from '@/components/chat/visitor-image-thumbnails'
 import { VisitorMessageBody } from '@/components/chat/visitor-message-body'
+import { InterruptedReplyBadge, OperatorReplySpeechBadge, SpokenMarker } from '@/components/chat/voice-markers'
 import { readVisitorImageInput } from '@/lib/visitor-image-input'
+import { isRenderableReplyBlock } from '@/lib/reply-blocks'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Check, CircleCheckBig, Clock, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, Volume2, VolumeX, Workflow } from 'lucide-react'
+import { Check, CircleCheckBig, Copy, PauseCircle, ThumbsDown, ThumbsUp, Workflow } from 'lucide-react'
 import { appendAssistantLinkUtm, sanitizeDestinationForAnalytics } from '@/lib/assistant-link-analytics'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
@@ -30,7 +32,6 @@ import {
 } from '@/lib/product-analytics'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { humanReplyAuthor, isHumanAuthoredSource, type ReplyAttributionAudience } from '@/lib/reply-attribution'
-import { heardPercent } from '@/lib/reply-interruption'
 import { activityLine, placeActivity, threadDayBreaks } from '@/lib/conversation-activity'
 import type { ConversationActivityEntry, OperatorReplySpeech, ReplyInterruption } from '@/lib/api-types'
 import type {
@@ -41,6 +42,7 @@ import type {
   ChatSuggestion,
   ChatUserInputMetadata,
   Citation,
+  ReplyBlock,
   SkillDisplayMetadata,
   SkillStreamPayload,
 } from '@/lib/api'
@@ -121,6 +123,8 @@ export interface ChatThreadMessage {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  /** An assistant reply's blocks, such as picture cards, shown under its text. */
+  blocks?: ReplyBlock[]
   answerFeedback?: AnswerFeedbackState
   answerFeedbackEntries?: AnswerFeedbackEntry[]
   persistedAssistantMessageId?: string
@@ -136,58 +140,6 @@ export interface ChatThreadMessage {
   speech?: OperatorReplySpeech
   /** A line said on a voice call rather than typed; the label marks it, in the visitor's language. */
   spokenLabel?: string
-}
-
-function SpokenMarker({ label, theme }: { label: string; theme?: WebsiteEmbedTheme | null }) {
-  return (
-    <span
-      className="inline-flex w-fit items-center gap-1 px-1 text-xs text-muted-foreground"
-      style={theme ? { color: theme.mutedForeground } : undefined}
-    >
-      <Mic aria-hidden="true" className="size-3" />
-      {label}
-    </span>
-  )
-}
-
-function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterruption }) {
-  const percent = heardPercent(interruption.heardCharacterCount, interruption.spokenCharacterCount)
-  // A reply cut off mid-stream is stored as far as it was heard, so there is no share to state.
-  const tooltip = interruption.partial
-    ? 'Cut off while speaking. Only what was heard is stored.'
-    : `The caller spoke over this reply.${percent === undefined ? '' : ` About ${percent}% was heard.`}`
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge variant="outline" tabIndex={0} className="w-fit cursor-default gap-1 px-2 py-0 text-[11px] font-medium">
-          <VolumeX aria-hidden="true" className="size-3" />
-          Interrupted
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{tooltip}</TooltipContent>
-    </Tooltip>
-  )
-}
-
-const OPERATOR_REPLY_SPEECH_BADGES = {
-  pending: { Icon: Clock, label: 'Pending', tooltip: 'The caller hears this on their next turn.' },
-  spoken: { Icon: Volume2, label: 'Spoken', tooltip: 'Spoken to the caller on the call.' },
-  skipped: { Icon: VolumeX, label: 'Not spoken: no words to say', tooltip: 'A call speaks words only, and this reply has none.' },
-} as const satisfies Record<OperatorReplySpeech['state'], { Icon: typeof Clock; label: string; tooltip: string }>
-
-function OperatorReplySpeechBadge({ speech }: { speech: OperatorReplySpeech }) {
-  const { Icon, label, tooltip } = OPERATOR_REPLY_SPEECH_BADGES[speech.state]
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge variant="outline" tabIndex={0} className="w-fit cursor-default gap-1 px-2 py-0 text-[11px] font-medium">
-          <Icon aria-hidden="true" className="size-3" />
-          {label}
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{tooltip}</TooltipContent>
-    </Tooltip>
-  )
 }
 
 const SKILL_ACCENT_FALLBACK = '#0f172a'
@@ -842,6 +794,18 @@ export function ChatMessageThread({
                           </div>
                         )}
                       </div>
+                      {message.blocks?.filter(isRenderableReplyBlock).map((block) => (
+                        <ItemListBlock
+                          key={block.id}
+                          block={block}
+                          transformHref={assistantLinkUtmEnabled ? (href) => appendAssistantLinkUtm(href, assistantAvatarLabel) : undefined}
+                          onOpen={(href) => trackAssistantLinkClick({
+                            linkType: 'assistant_url',
+                            destinationUrl: href,
+                            assistantMessageId: message.persistedAssistantMessageId ?? message.id,
+                          })}
+                        />
+                      ))}
                       {showReceipt && groupInfo.skill ? (
                         <SkillReceiptCard skill={groupInfo.skill} theme={theme} copy={copy} />
                       ) : null}

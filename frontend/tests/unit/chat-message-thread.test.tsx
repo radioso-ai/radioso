@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
+import type { ReplyBlock } from '@/lib/api-types'
 import { appendAssistantLinkUtm } from '@/lib/assistant-link-analytics'
 
 const UTILITY_BUTTON_LABELS = /aria-label="(Copy message|Copied|Thumbs up|Thumbs down)"/
@@ -612,4 +613,36 @@ describe('ChatMessageThread', () => {
     expect(html).not.toContain('Routine started')
   })
 
+
+  it('draws the reply blocks it knows and leaves out a stored block of a kind it does not', () => {
+    const gallery: ReplyBlock = {
+      type: 'item_list',
+      id: 'block-1',
+      layout: 'grid',
+      selection: 'none',
+      caption: 'Rooms at the guest house',
+      items: [{ key: 'image-1', title: 'Garden room', actions: [] }],
+    }
+    // History returns blocks of every kind the server stores, including ones newer than this chat.
+    const detail = { type: 'item_detail', id: 'block-2', item: { key: 'image-2', title: 'Hill view room' } } as unknown as ReplyBlock
+
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Here are the rooms.',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            blocks: [detail, gallery],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('Here are the rooms.')
+    expect(html).toContain('Garden room')
+    expect(html).not.toContain('Hill view room')
+  })
 })

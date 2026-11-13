@@ -290,13 +290,7 @@ export type WebsiteCrawlEnqueueResponse = ApiSchemas['WebsiteCrawlJobResponse']
 export type WebsiteCrawlJobListResponse = ApiSchemas['WebsiteCrawlJobListResponse']
 
 export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
-export interface ClientContextCapabilities {
-  'page.read'?: {
-    available: boolean
-    mode: 'metadata' | 'content' | null
-    supportedOperations: Array<'metadata' | 'lookup' | 'summarize'>
-  }
-}
+export type ClientContextCapabilities = NonNullable<ApiSchemas['PublicChatRequest']['clientContextCapabilities']>
 export interface PublicChatIntakeAction {
   skillName: string
   intentName?: string
@@ -334,6 +328,8 @@ export type ChatUserInputMetadata = Omit<GeneratedChatUserInputMetadata, 'method
   imageInput?: VisitorImageInput
 }
 export type Citation = ApiSchemas['Citation']
+/** A structured part of an assistant reply, such as picture cards, rendered beside its text. */
+export type ReplyBlock = ApiSchemas['ReplyBlock']
 export type SkillDisplayMetadata = NonNullable<ApiSchemas['SkillCatalogEntry']['display']>
 export type AnswerSegment = ApiSchemas['AnswerSegment']
 export type ChatSuggestionKind = ApiSchemas['ChatSuggestion']['kind']
@@ -384,6 +380,12 @@ export interface ChatStreamCancelled {
   stage: 'waiting' | 'preparing' | 'routing' | 'rendering' | 'persisting'
 }
 
+export interface ChatStreamBlock {
+  conversationId?: string
+  assistantMessageId?: string
+  block: ReplyBlock
+}
+
 export interface ChatStreamSuggestions {
   conversationId?: string
   suggestions?: ChatSuggestion[]
@@ -423,6 +425,7 @@ export interface ChatStreamCompletion {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  blocks?: ReplyBlock[]
   ownership?: ChatResponse['ownership']
   debug?: ChatResponse['debug']
   skill?: SkillStreamPayload
@@ -634,6 +637,8 @@ export interface ChatStreamHandlers {
   onConversation?: (payload: ChatStreamConversation) => void
   onChunk?: (payload: ChatStreamChunk) => void
   onCancelled?: (payload: ChatStreamCancelled) => void
+  /** Called per `block` event, with every block the reply has sent so far, one per id. */
+  onBlock?: (payload: ChatStreamBlock & { blocks: ReplyBlock[] }) => void
   onDone?: (payload: ChatStreamCompletion) => void
   onSuggestions?: (payload: ChatStreamSuggestions) => void
   onSkill?: (payload: ChatStreamSkill) => void

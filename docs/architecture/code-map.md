@@ -2709,6 +2709,16 @@ Agent settings and channels entry points:
   — owns the website widget placement and persistence of every `websiteEmbed*`
   settings key
 
+Reply blocks in the chat (#1763) entry points:
+
+- `frontend/lib/reply-blocks.ts` — the `reply.blocks` declaration, the block kinds
+  the chat draws, layout fallback, picture frame, and item links;
+  `frontend/lib/api-chat-stream.ts` parses the `block` event, one block per id
+- `frontend/components/chat/item-list-block.tsx` — carousel, grid and list, rendered
+  by `frontend/components/dashboard/chat-message-thread.tsx`
+- `cd frontend && pnpm exec vitest run tests/unit/reply-blocks.test.ts tests/unit/anonymous-chat-reply-blocks.test.tsx tests/unit/api-chat-stream.test.ts`
+- `cd frontend && pnpm run test:e2e -- reply-blocks.spec.ts`
+
 Turn debug view entry points:
 
 - `frontend/components/dashboard/turn-inspector/turn-diagnostics-panel.tsx` — the

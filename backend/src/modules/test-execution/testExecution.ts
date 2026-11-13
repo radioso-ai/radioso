@@ -1,3 +1,5 @@
+import type { ReplyBlock } from "@radioso/conversation-contract";
+
 import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import {
   isUsageLimitExceededError,
@@ -230,7 +232,7 @@ export type TestExecutionEvent =
   | { type: "side_started"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string }
   | { type: "message_delta"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; delta: string }
   /** `answer` is the stored answer, the authority over the `message_delta` text streamed before it. */
-  | { type: "side_completed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; messageId: string; answer: string; turnTrace?: unknown }
+  | { type: "side_completed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; messageId: string; answer: string; blocks?: readonly ReplyBlock[]; turnTrace?: unknown }
   | { type: "side_failed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; code: string; retryable: boolean }
   | { type: "execution_partial"; executionId: string; generation: number; turnId: string; attemptId: string }
   | { type: "execution_completed"; executionId: string; generation: number; turnId: string; attemptId: string };
@@ -289,6 +291,8 @@ export interface TrustedTestExecutionRunnerPort {
 export interface TestExecutionRunnerResult {
   answer: string;
   messageId: string;
+  /** The reply blocks the turn presents beside its answer, as Test Chat renders them. */
+  blocks?: readonly ReplyBlock[];
   /** The runner's presentation trace stays with the private execution evidence. */
   turnTrace?: unknown;
   /** Opaque, versioned runtime continuation owned by the runner adapter. */
@@ -866,6 +870,7 @@ export class TestExecutionService {
         sideId,
         messageId: result.messageId,
         answer: result.answer,
+        ...(result.blocks?.length ? { blocks: result.blocks } : {}),
         ...(result.turnTrace ? { turnTrace: result.turnTrace } : {}),
       },
     ];

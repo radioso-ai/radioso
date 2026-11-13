@@ -82,6 +82,22 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
     return toolImageCaptureRequests([...urls.map((source) => source.imageId), ...bound.map((row) => row.id)]);
   }
 
+  /**
+   * The address pictures of a reply in a conversation no row stores, such as Test Chat's: written
+   * with no conversation and no message, so the unbound sweep deletes them a day later. A picture
+   * a skill returned as bytes is never kept for such a conversation, so only addresses are written.
+   */
+  async recordPreview(transaction: Db, input: { workspaceId: string; sources: readonly ToolImageSource[] }): Promise<BackgroundJobRequest[]> {
+    const urls = input.sources.filter((source) => source.kind === "url");
+    if (urls.length === 0) return [];
+    await transaction
+      .insertInto("conversation_tool_images")
+      .values(urls.map((source) => ({ id: source.imageId, workspace_id: input.workspaceId, source_kind: "url", source_url: source.url })))
+      .onConflict((conflict) => conflict.column("id").doNothing())
+      .execute();
+    return toolImageCaptureRequests(urls.map((source) => source.imageId));
+  }
+
   /** A picture a skill returned as bytes, kept unbound until the reply that shows it binds it. */
   async insertInline(input: { id: string; workspaceId: string; conversationId: string; object: ToolImageObject }): Promise<void> {
     await this.db
@@ -126,7 +142,15 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
 
   async markStored(input: { imageId: string; width: number; height: number; sha256: string; renditions: readonly ToolImageRendition[] }): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const row = await trx
+      // RETURNING reads the row as updated, with its source already cleared: read the source first.
+      const before = await trx
+        .selectFrom("conversation_tool_images")
+        .select("source_object")
+        .where("id", "=", input.imageId)
+        .where("status", "=", "capturing")
+        .forUpdate()
+        .executeTakeFirst();
+      const row = before && await trx
         .updateTable("conversation_tool_images")
         .set({
           status: "stored",
@@ -142,10 +166,10 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
         })
         .where("id", "=", input.imageId)
         .where("status", "=", "capturing")
-        .returning("source_object")
+        .returning("id")
         .executeTakeFirst();
       // Another capture took the row over and finished first: what this one wrote is not the row's.
-      const leftover = row ? [toolImageObjectFrom(row.source_object)] : input.renditions;
+      const leftover = row ? [toolImageObjectFrom(before.source_object)] : input.renditions;
       await handOffToolImageObjects(this.jobsIn(trx), trx, leftover.filter((object): object is ToolImageObject => object !== null));
     });
   }
@@ -188,13 +212,21 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
   ): Promise<void> {
     if (imageIds.length === 0) return;
     await this.db.transaction().execute(async (trx) => {
+      // RETURNING reads the rows as updated, with their sources already cleared: read them first.
       const rows = await trx
-        .updateTable("conversation_tool_images")
-        .set({ status: "failed", failure_reason: reason, claimed_at: null, source_url: null, source_object: null })
+        .selectFrom("conversation_tool_images")
+        .select(["id", "source_object"])
         .where((eb) => anyOf(eb.ref("id"), imageIds, "uuid[]"))
         .where("status", "in", from)
-        .returning("source_object")
+        .forUpdate()
         .execute();
+      if (rows.length > 0) {
+        await trx
+          .updateTable("conversation_tool_images")
+          .set({ status: "failed", failure_reason: reason, claimed_at: null, source_url: null, source_object: null })
+          .where((eb) => anyOf(eb.ref("id"), rows.map((row) => row.id), "uuid[]"))
+          .execute();
+      }
       const objects = [...rows.map((row) => toolImageObjectFrom(row.source_object)), ...written];
       await handOffToolImageObjects(this.jobsIn(trx), trx, objects.filter((object): object is ToolImageObject => object !== null));
     });

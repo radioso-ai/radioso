@@ -305,9 +305,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceModelAvailability,
     workspaceTimeZones,
   } = documentRetrievalGraph;
-  // Field suggestions for metadata rules are the catalog's declarations unioned
-  // with the keys already observed on document metadata; the advisory reference
-  // list is the same rules read the other way round.
+  // Field suggestions for metadata rules are the catalog's declarations unioned with the keys
+  // already observed on document metadata; the advisory reference list is the same rules read the other way round.
   const metadataFieldSuggestionProvider = new MetadataFieldSuggestionService(
     settings.documentTypeCatalogService,
     repositories.documentRepository,

@@ -302,7 +302,11 @@ export const buildChatServices = (input: {
   // The pictures a reply's cards show from a skill's result: kept from a tool's bytes, recorded with
   // the reply, copied by a job or on demand, and served at the reply image route.
   const toolImages = wireToolImages({
-    database: input.database, storage: input.documentStorage, metrics: input.metricsRegistry, logger: input.logger,
+    database: input.database,
+    storage: input.documentStorage,
+    jobs: input.backgroundJobs,
+    metrics: input.metricsRegistry,
+    logger: input.logger,
   });
   // Register the external-skills (MCP) executor here, where the database + encryption
   // key are available (spec 087). Guarded for repeated dependency builds; skipped when
@@ -921,6 +925,7 @@ export const buildChatServices = (input: {
     chatService,
     contextVariableResolutionReader: contextVariableResolver,
     workbenchReplayRunner,
+    toolImagePreviews: toolImages.previews,
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchJobRuntime,

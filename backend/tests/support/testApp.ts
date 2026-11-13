@@ -60,6 +60,8 @@ import { createConversationEngine, DefaultRoutineRunner } from "@radioso/convers
 import { scopeTag } from "@radioso/conversation-defaults";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createReplyBlocksComposition } from "../../src/app/composition/replyBlocks.js";
+import { composeReplyImageLookup } from "../../src/app/composition/toolImages.js";
+import type { ToolImageLookup } from "../../src/modules/toolImages/composition.js";
 import { InMemoryDocumentImages } from "./inMemoryDocumentImages.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
@@ -1028,6 +1030,8 @@ export const createTestDependencies = (overrides: {
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** The documents' stored images answers present as reply blocks; omitted means a workspace with none. */
   documentImages?: InMemoryDocumentImages;
+  /** The pictures cards from a skill's result show, found after the documents' images; omitted means none. */
+  toolImages?: Pick<ToolImageLookup, "findServable">;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -2304,6 +2308,7 @@ export const createTestDependencies = (overrides: {
     metrics: metricsRegistry,
     logger,
     replyBlocks: replyBlocks.turnFactory,
+    skillResultReplyBlocks: replyBlocks.skillResults,
   });
   const chatService = new ChatService({
     conversationRepository,
@@ -3171,7 +3176,7 @@ export const createTestDependencies = (overrides: {
     } as any,
     documentDeletionService,
     documentStorage,
-    replyImageObjectLookup: documentImages,
+    replyImageObjectLookup: composeReplyImageLookup(documentImages, overrides.toolImages ?? { findServable: async () => null }),
     chatService,
     approvalDecisionService,
     closeApprovalResumeEffectJournal: async () => undefined,
@@ -3432,6 +3437,7 @@ export const createTestApp = (overrides: {
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   documentImages?: InMemoryDocumentImages;
+  toolImages?: Pick<ToolImageLookup, "findServable">;
 } = {}) => {
   const {
     dependencies,

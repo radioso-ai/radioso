@@ -18949,6 +18949,11 @@ components:
             answer:
               type: string
               description: The stored answer. It is authoritative over the message_delta text streamed before it, which the runtime's final presentation may normalize.
+            blocks:
+              type: array
+              items:
+                $ref: "#/components/schemas/ReplyBlock"
+              description: The reply blocks the turn presents beside its answer, such as cards built from a skill's records. Test Chat renders every block kind and layout.
             turnTrace: {}
           required:
             - type

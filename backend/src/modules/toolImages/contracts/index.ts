@@ -27,6 +27,14 @@ export interface ToolImageRowWriter {
   ): Promise<BackgroundJobRequest[]>;
 }
 
+/**
+ * Records the pictures a reply shows in a conversation no row stores, such as a Test Chat turn's:
+ * unbound, copied like any other, and swept a day after they were written.
+ */
+export interface ToolImagePreviewRecorder {
+  recordPreview(input: { workspaceId: string; sources: readonly ToolImageSource[] }): Promise<void>;
+}
+
 /** Why a picture a skill returned as bytes was not kept. Bounded: each is a metric label. */
 export type ToolImageIntakeDropReason = "unsupported_type" | "too_large" | "over_limit" | "no_conversation" | "store_failed";
 

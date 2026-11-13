@@ -14,8 +14,14 @@ import {
   toolImageCaptureHandler,
   toolImageObjectDeletionHandler,
 } from "../../modules/toolImages/composition.js";
-import type { ToolImageIntake, ToolImageObjectStore, ToolImageRowWriter } from "../../modules/toolImages/public.js";
-import type { BackgroundJobHandlerRegistration } from "../../shared/background-jobs/index.js";
+import type {
+  ToolImageIntake,
+  ToolImageObjectStore,
+  ToolImagePreviewRecorder,
+  ToolImageRowWriter,
+} from "../../modules/toolImages/public.js";
+import type { BackgroundJobHandlerRegistration, BackgroundJobQueue } from "../../shared/background-jobs/index.js";
+import { errorClassOf } from "../../shared/observability/errorClass.js";
 import { fetchPublicBytes } from "../../shared/infra/http/publicBytesFetch.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
@@ -66,10 +72,12 @@ export const composeReplyImageLookup = (
 export const wireToolImages = (deps: {
   database: { kysely: Kysely<DB> };
   storage: DocumentStoragePort & DocumentStorageLocator;
+  jobs: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
   metrics?: MetricsRegistry | null;
   logger: AppLogger;
 }): {
   rows: ToolImageRowWriter;
+  previews: ToolImagePreviewRecorder;
   intake: ToolImageIntake;
   lookup: DocumentImageObjectLookup;
   jobHandlers: BackgroundJobHandlerRegistration[];
@@ -84,8 +92,22 @@ export const wireToolImages = (deps: {
     metrics: deps.metrics,
     logger: deps.logger,
   });
+  // A failed write costs the preview its pictures, never the turn its reply.
+  const previews: ToolImagePreviewRecorder = {
+    recordPreview: async (input) => {
+      try {
+        await deps.database.kysely.transaction().execute(async (trx) => {
+          for (const job of await store.recordPreview(trx, input)) await deps.jobs.enqueueInTransaction(trx, job);
+        });
+        await deps.jobs.wake();
+      } catch (error) {
+        deps.logger.warn({ workspaceId: input.workspaceId, errorClass: errorClassOf(error) }, "tool_image_preview_record_failed");
+      }
+    },
+  };
   return {
     rows: store,
+    previews,
     intake: new StoredToolImageIntake({ objects, rows: store, logger: deps.logger }),
     lookup: new ToolImageLookup({ store, capture }),
     jobHandlers: [

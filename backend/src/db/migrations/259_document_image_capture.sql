@@ -33,7 +33,8 @@ CREATE INDEX document_images_released_idx
   ON document_images (updated_at)
   WHERE document_id IS NULL;
 
--- How many documents in a workspace name one stored image as their primary.
+-- How many documents in a workspace name one stored image as their primary, answered from the
+-- index alone: the document is included, and the count stops a few past the banner threshold.
 CREATE INDEX document_images_stored_primary_sha256_idx
-  ON document_images (workspace_id, sha256)
+  ON document_images (workspace_id, sha256) INCLUDE (document_id)
   WHERE status = 'stored' AND role = 'primary' AND document_id IS NOT NULL;

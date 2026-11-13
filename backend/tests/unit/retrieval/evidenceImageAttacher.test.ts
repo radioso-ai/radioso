@@ -43,6 +43,8 @@ describe("EvidenceImageAttacher", () => {
       workspaceId: "workspace-1",
       documentIds: ["doc-1", "doc-2"],
       chunkIds: ["chunk-1", "chunk-2", "chunk-3"],
+      // One more than the banner threshold: enough to tell, and the count stops there.
+      primaryDocumentCountLimit: 6,
     });
   });
 

@@ -36,7 +36,8 @@ export interface StoredDocumentImageRef {
   sha256: string;
   /**
    * Primary only: how many documents in the workspace name an image with this content as their
-   * own stored primary, this one included. Zero for an inline image.
+   * own stored primary, this one included, counted no higher than the reader was asked to count.
+   * Zero for an inline image.
    */
   primaryDocumentCount: number;
 }
@@ -52,6 +53,8 @@ export interface DocumentImageEvidenceReader {
     workspaceId: string;
     documentIds: readonly string[];
     chunkIds: readonly string[];
+    /** Where counting the documents that share a primary stops, so the count costs at most this many index reads. */
+    primaryDocumentCountLimit: number;
   }): Promise<StoredDocumentImageRef[]>;
 }
 

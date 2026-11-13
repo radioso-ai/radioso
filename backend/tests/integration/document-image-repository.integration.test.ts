@@ -109,7 +109,7 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
     await insertImage({ documentId, workspaceId, role: "inline", status: "pending", position: 2, chunkId, sourceUrl: "https://shop.example/pending.jpg" });
     await insertImage({ documentId, workspaceId, role: "inline", status: "stored", position: 3, chunkId: randomUUID(), sourceUrl: "https://shop.example/elsewhere.jpg" });
 
-    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [chunkId] });
+    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [chunkId], primaryDocumentCountLimit: 6 });
 
     expect(rows.map((row) => row.id).sort()).toEqual([primary, inline].sort());
     expect(rows.find((row) => row.id === primary)).toEqual({
@@ -131,13 +131,13 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
   it("never reads another workspace's images", async () => {
     await insertImage({ documentId: otherDocumentId, workspaceId: otherWorkspaceId, role: "primary", status: "stored", position: 0, sourceUrl: "https://other.example/cover.jpg" });
 
-    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [otherDocumentId], chunkIds: [] });
+    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [otherDocumentId], chunkIds: [], primaryDocumentCountLimit: 6 });
 
     expect(rows).toEqual([]);
   });
 
   it("asks nothing of the database for empty evidence", async () => {
-    await expect(repository.listStoredForEvidence({ workspaceId, documentIds: [], chunkIds: [] })).resolves.toEqual([]);
+    await expect(repository.listStoredForEvidence({ workspaceId, documentIds: [], chunkIds: [], primaryDocumentCountLimit: 6 })).resolves.toEqual([]);
   });
 
   it("finds the stored rendition for a width, and nothing for a pending image or another width", async () => {
@@ -180,9 +180,22 @@ describeIntegration("DocumentImageRepository (Postgres)", () => {
     await insertImage({ documentId: otherDocumentId, workspaceId: otherWorkspaceId, role: "primary", status: "stored", position: 0, sourceUrl: shared });
     await insertImage({ documentId, workspaceId, role: "inline", status: "stored", position: 1, chunkId, sourceUrl: `${shared}?inline` });
 
-    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [chunkId] });
+    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [chunkId], primaryDocumentCountLimit: 6 });
 
     expect(rows.map((row) => [row.role, row.primaryDocumentCount])).toEqual([["primary", 3], ["inline", 0]]);
+  });
+
+  it("stops counting the documents that share a primary at the limit asked for", async () => {
+    const shared = "https://shop.example/site-banner.jpg";
+    const documents = [documentId, ...Array.from({ length: 7 }, () => randomUUID())];
+    for (const id of documents.slice(1)) await insertDocument(id, workspaceId);
+    for (const id of documents) {
+      await insertImage({ documentId: id, workspaceId, role: "primary", status: "stored", position: 0, sourceUrl: shared });
+    }
+
+    const rows = await repository.listStoredForEvidence({ workspaceId, documentIds: [documentId], chunkIds: [], primaryDocumentCountLimit: 6 });
+
+    expect(rows.map((row) => row.primaryDocumentCount)).toEqual([6]);
   });
 
   it("records what the content names: new addresses pending, kept ones re-placed, the rest released", async () => {

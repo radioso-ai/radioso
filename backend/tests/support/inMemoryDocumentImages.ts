@@ -31,6 +31,7 @@ export class InMemoryDocumentImages implements DocumentImageEvidenceReader, Docu
     workspaceId: string;
     documentIds: readonly string[];
     chunkIds: readonly string[];
+    primaryDocumentCountLimit: number;
   }): Promise<StoredDocumentImageRef[]> {
     const inWorkspace = [...this.images.values()].filter(({ workspaceId }) => workspaceId === input.workspaceId);
     const primaryDocumentCount = (ref: SeededImage): number => ref.role === "primary"
@@ -38,11 +39,12 @@ export class InMemoryDocumentImages implements DocumentImageEvidenceReader, Docu
         .filter((entry) => entry.ref.role === "primary" && entry.ref.sha256 === ref.sha256)
         .map((entry) => entry.ref.documentId)).size
       : 0;
+    const counted = (ref: SeededImage): number => Math.min(primaryDocumentCount(ref), input.primaryDocumentCountLimit);
     return inWorkspace
       .filter(({ ref }) =>
         (ref.role === "primary" && input.documentIds.includes(ref.documentId))
         || (ref.role === "inline" && ref.chunkId !== null && input.chunkIds.includes(ref.chunkId)))
-      .map(({ ref }) => ({ ...ref, primaryDocumentCount: primaryDocumentCount(ref) }));
+      .map(({ ref }) => ({ ...ref, primaryDocumentCount: counted(ref) }));
   }
 
   async findServable(input: { imageId: string; width: number }) {

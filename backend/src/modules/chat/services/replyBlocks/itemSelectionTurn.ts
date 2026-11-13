@@ -7,10 +7,10 @@ import type { AssistantChatRequest, UserMessageStoredListener } from "../../type
 import { findTurnConversation, type TurnConversationReader } from "../turnConversation.js";
 import { readItemSelection, type ItemSelectionRejection, type SelectedItem } from "./itemSelection.js";
 
-/** The messages a pick reads: the one that showed the cards, and whether its reply was already picked from. */
+/** The messages a pick reads: the one that showed the cards, and whether another of its cards was picked. */
 export interface ItemSelectionMessages {
   findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null>;
-  hasItemSelectionFrom(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean>;
+  hasOtherItemSelectionFrom(input: { workspaceId: string; conversationId: string; messageId: string; itemKey: string }): Promise<boolean>;
 }
 
 export interface ItemSelectionTurnDependencies {
@@ -22,7 +22,7 @@ export interface ItemSelectionTurnDependencies {
 }
 
 /**
- * A pick, claimed for its turn: the text the turn runs on (the item's stored title, whatever the
+ * A pick, claimed for its turn: the text the turn runs on (read from the stored card, whatever the
  * client sent), the metadata its message stores, the item the turn carries as its subject, and the
  * listener that records the pick once the message is stored.
  */
@@ -44,8 +44,10 @@ const repeatedSelection = (): AppError =>
 /**
  * Turns a visitor's pick (`inputMetadata.method: "item_select"`) into its turn. The item is read
  * from the block stored on the message that showed it, in the conversation the sender reaches,
- * never from client fields. A pick that names no such item is refused with 400 and a second pick
- * from the same reply with 409, both before a message is stored or a turn runs. It knows nothing
+ * never from client fields. A pick that names no such item is refused with 400, and a pick of a
+ * different card from a reply already picked from with 409, both before a message is stored or a
+ * turn runs. The same card again is a retry and runs, so a pick whose turn failed is not locked
+ * out. Two first picks sent at the same moment are not held against each other. It knows nothing
  * of channels: every surface that shows cards sends the same pick.
  */
 export class ItemSelectionTurns {
@@ -77,14 +79,14 @@ export class ItemSelectionTurns {
       this.reject(reading.reason, ids);
       throw invalidSelection();
     }
-    if (await this.deps.messages.hasItemSelectionFrom({ workspaceId, conversationId, messageId: selection.messageId })) {
+    const { item, text } = reading;
+    if (await this.deps.messages.hasOtherItemSelectionFrom({ workspaceId, conversationId, messageId: item.messageId, itemKey: item.key })) {
       this.reject("already_selected", ids);
       throw repeatedSelection();
     }
     this.count("accepted");
-    const { item } = reading;
     return {
-      query: item.title.trim() || item.document?.title.trim() || item.key,
+      query: text,
       inputMetadata: { method: "item_select", selection },
       item,
       onUserMessageStored: async () => {
@@ -98,7 +100,6 @@ export class ItemSelectionTurns {
             blockId: item.blockId,
             itemKey: item.key,
             channel: conversation.sourceChannel ?? null,
-            source: item.skillName ? "skill_result" : "document",
           },
           source: "backend",
         }).catch(() => null);

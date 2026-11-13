@@ -17,7 +17,6 @@ const head = (over: Partial<RecordPresentHead> = {}): RecordPresentHead => ({
   records: ["r1", "r2"],
   fields: { title: "/name", subtitle: "/area", image: "/photos/0/url", link: "/url" },
   caption: "Flats in Mitte",
-  selection: "none",
   ...over,
 });
 
@@ -179,34 +178,30 @@ describe("record block builder", () => {
     expect(block?.layout).toBe("list");
   });
 
-  it("lets the visitor pick a card when the model offers a single selection, after each card's link", () => {
-    const { block } = build({ selection: "single" });
+  it("never lets the visitor pick a skill's card: a pick there would bypass the skill, so records wait for routines", () => {
+    const { block } = build({});
 
-    expect(block?.selection).toBe("single");
-    expect(block?.items.map((item) => item.actions)).toEqual([
-      [{ type: "open", url: "https://homes.example/listings/flat-1" }, { type: "select" }],
-      [{ type: "open", url: "https://homes.example/listings/flat-2" }, { type: "select" }],
-    ]);
-    expect(storedReplyBlockSchema.safeParse(block).success).toBe(true);
+    expect(block?.selection).toBe("none");
+    expect(block?.items.flatMap((item) => item.actions).some((action) => action.type === "select")).toBe(false);
   });
 });
 
 describe("record present head", () => {
-  it("offers the selection as an enum the model returns", () => {
+  it("asks the model for no selection", () => {
     const present = recordPresentHeadSchemaExtension().beforeAnswer?.properties.present as {
       required: string[];
       properties: Record<string, unknown>;
     };
 
     expect(present.required).toEqual(Object.keys(present.properties));
-    expect(present.properties.selection).toMatchObject({ type: "string", enum: ["none", "single"] });
+    expect(present.properties).not.toHaveProperty("selection");
   });
 
   it("reads the model's head, and nothing malformed", () => {
-    const valid = { records: ["r1"], fields: { title: "/name", subtitle: null, image: "/photo", link: null }, caption: " Flats ", selection: "single" };
+    const valid = { records: ["r1"], fields: { title: "/name", subtitle: null, image: "/photo", link: null }, caption: " Flats " };
 
     expect(readRecordPresentHead({ present: valid })).toEqual({ ...valid, caption: "Flats" });
-    expect(readRecordPresentHead({ present: { ...valid, selection: undefined } })?.selection).toBe("none");
+    expect(readRecordPresentHead({ present: { ...valid, selection: "single" } })).toEqual({ ...valid, caption: "Flats" });
     expect(readRecordPresentHead({ present: { ...valid, fields: { ...valid.fields, title: null } } })).toBeNull();
     expect(readRecordPresentHead({ present: { ...valid, records: [1] } })).toBeNull();
     expect(readRecordPresentHead({ present: { images: [], caption: "x" } })).toBeNull();

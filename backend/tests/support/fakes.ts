@@ -5049,12 +5049,13 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return null;
   }
 
-  async hasItemSelectionFrom(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean> {
+  async hasOtherItemSelectionFrom(input: { workspaceId: string; conversationId: string; messageId: string; itemKey: string }): Promise<boolean> {
     return (this.items.get(input.conversationId) ?? []).some((message) =>
       message.workspaceId === input.workspaceId
       && message.role === "user"
       && message.inputMetadata?.method === "item_select"
-      && message.inputMetadata.selection?.messageId === input.messageId);
+      && message.inputMetadata.selection?.messageId === input.messageId
+      && message.inputMetadata.selection.itemKey !== input.itemKey);
   }
 
   async deleteUserMessage(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean> {

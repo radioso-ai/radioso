@@ -188,7 +188,7 @@ describe("picking a card on the public chat", () => {
     expect(crossed.body.error.code).toBe("item_selection_invalid");
   });
 
-  it("changes nothing for a second pick from the same reply: 409, and no message", async () => {
+  it("refuses another card from a reply already picked from with 409, and takes the same card again as a retry", async () => {
     const { app, session } = await guidesToPick();
     const { send, history } = await publicChat(app, session);
     const cards = await send({ message: "Which hiking guides do you have?" });
@@ -200,12 +200,15 @@ describe("picking a card on the public chat", () => {
     });
 
     expect((await pick(block.items[0].key)).status).toBe(200);
-    const again = await pick(block.items[1].key);
+    const other = await pick(block.items[1].key);
 
-    expect(again.status).toBe(409);
-    expect(again.body.error.code).toBe("item_already_selected");
-    const thread = await history(String(cards.body.conversationId));
-    expect(thread.body.messages).toHaveLength(4);
+    expect(other.status).toBe(409);
+    expect(other.body.error.code).toBe("item_already_selected");
+    expect((await history(String(cards.body.conversationId))).body.messages).toHaveLength(4);
+
+    // A retry of the same card, as after a turn that failed once its message was stored, runs.
+    expect((await pick(block.items[0].key)).status).toBe(200);
+    expect((await history(String(cards.body.conversationId))).body.messages).toHaveLength(6);
   });
 
   it("refuses item_select without its selection at validation", async () => {

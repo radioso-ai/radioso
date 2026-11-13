@@ -387,8 +387,16 @@ export class MessageRepository
     return row ? mapMessageRow(row as MessageRow) : null;
   }
 
-  /** Whether a visitor message in the conversation already picked a card from `messageId`'s reply. */
-  async hasItemSelectionFrom(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean> {
+  /**
+   * Whether a visitor message in the conversation already picked a card other than `itemKey` from
+   * `messageId`'s reply. The same card picked again is a retry, never another card.
+   */
+  async hasOtherItemSelectionFrom(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+    itemKey: string;
+  }): Promise<boolean> {
     const row = await this.db
       .selectFrom("messages")
       .select("id")
@@ -397,6 +405,7 @@ export class MessageRepository
       .where("role", "=", "user")
       .where(sql<string>`metadata_json ->> 'method'`, "=", "item_select")
       .where(sql<string>`metadata_json -> 'selection' ->> 'messageId'`, "=", input.messageId)
+      .where(sql<string>`metadata_json -> 'selection' ->> 'itemKey'`, "<>", input.itemKey)
       .limit(1)
       .executeTakeFirst();
     return row !== undefined;

@@ -150,7 +150,7 @@ export const buildRecordBlock = (input: {
       title: shownTitle,
       ...(description ? { description: truncateUtf16(description, REPLY_BLOCK_LIMITS.descriptionLength) } : {}),
       ...(imageId ? { image: { imageId, ...TOOL_IMAGE_FRAME, alt: shownTitle } } : {}),
-      actions: itemActions(link, input.head.selection),
+      actions: itemActions(link, "none"),
     });
   }
 
@@ -165,7 +165,9 @@ export const buildRecordBlock = (input: {
     type: "item_list",
     id: FIRST_BLOCK_ID,
     layout,
-    selection: input.head.selection,
+    // A skill's cards are only shown: a pick in free conversation would reach retrieval, not the
+    // skill. Picking a record belongs to a routine step that fills a slot with it.
+    selection: "none",
     caption: truncateUtf16(input.head.caption.trim(), REPLY_BLOCK_LIMITS.captionLength),
     items,
     origin: { kind: "skill_result", skillName: input.skillName },

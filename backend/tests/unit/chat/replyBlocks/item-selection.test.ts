@@ -42,6 +42,7 @@ const roomsBlock: StoredReplyBlock = {
   ],
 };
 
+// A skill's cards are built with `selection: "none"`; this one claims otherwise, to show the origin decides.
 const flatsBlock: StoredReplyBlock = {
   type: "item_list",
   id: "b1",
@@ -70,13 +71,13 @@ const message = (over: Partial<MessageRecord> = {}): MessageRecord => ({
 
 const conversation = { id: CONVERSATION_ID, workspaceId: WORKSPACE_ID, sourceChannel: "website_embed" } as ConversationRecord;
 
-const setup = (over: { stored?: MessageRecord | null; reachable?: boolean; alreadySelected?: boolean } = {}) => {
+const setup = (over: { stored?: MessageRecord | null; reachable?: boolean; otherPicked?: boolean } = {}) => {
   const metrics = { incrementCounter: vi.fn() };
   const analytics = { track: vi.fn(async () => null) };
   const logger = { info: vi.fn() };
   const messages = {
     findByIdAndWorkspaceId: vi.fn(async () => (over.stored === undefined ? message() : over.stored)),
-    hasItemSelectionFrom: vi.fn(async () => over.alreadySelected ?? false),
+    hasOtherItemSelectionFrom: vi.fn(async () => over.otherPicked ?? false),
   };
   const conversations = {
     findByIdAndAnonymousSession: vi.fn(async () => (over.reachable === false ? null : conversation)),
@@ -131,21 +132,21 @@ describe("a card the visitor picked", () => {
     expect(outcomes(metrics)).toEqual(["accepted"]);
   });
 
-  it("carries a skill card's subtitle and the skill that returned it", async () => {
-    const { turns } = setup({ stored: message({ metadata: { blocks: [flatsBlock] } }) });
+  it("refuses a skill's card, whatever its block says: only cards from the answer's documents are picked", async () => {
+    const { turns, metrics } = setup({ stored: message({ metadata: { blocks: [flatsBlock] } }) });
 
-    const turn = await turns.claim(pick({ itemKey: "/listings/1" }));
+    const error = await rejection(turns.claim(pick({ itemKey: "/listings/1" })));
 
-    expect(turn?.query).toBe("Flat 2");
-    expect(turn?.item).toEqual({
-      messageId: CARDS_MESSAGE_ID,
-      blockId: "b1",
-      key: "/listings/1",
-      title: "Flat 2",
-      description: "Two rooms by the river",
-      link: "https://homes.example/flat-2",
-      skillName: "search_listings",
-    });
+    expect(error.statusCode).toBe(400);
+    expect(outcomes(metrics)).toEqual(["rejected_not_selectable"]);
+  });
+
+  it("names a card without a title by its picture, then by its key, as the chat that sends it does", async () => {
+    const untitled = { ...roomsBlock, items: [{ ...roomsBlock.items[0]!, title: "  " }, { ...roomsBlock.items[1]!, title: "" }] };
+    const { turns } = setup({ stored: message({ metadata: { blocks: [untitled] } }) });
+
+    expect((await turns.claim(pick()))?.query).toBe("A garden room");
+    expect((await turns.claim(pick({ itemKey: "image-attic" })))?.query).toBe("image-attic");
   });
 
   it("leaves a message sent any other way alone", async () => {
@@ -196,19 +197,29 @@ describe("a card the visitor picked", () => {
     expect(messages.findByIdAndWorkspaceId).not.toHaveBeenCalled();
   });
 
-  it("changes nothing for a second pick from the same reply: 409, and no turn", async () => {
-    const { turns, metrics, messages } = setup({ alreadySelected: true });
+  it("refuses a different card once one was picked from the same reply: 409, and no turn", async () => {
+    const { turns, metrics, messages } = setup({ otherPicked: true });
 
     const error = await rejection(turns.claim(pick({ itemKey: "image-attic" })));
 
     expect(error.statusCode).toBe(409);
     expect(error.code).toBe("item_already_selected");
-    expect(messages.hasItemSelectionFrom).toHaveBeenCalledWith({
+    expect(messages.hasOtherItemSelectionFrom).toHaveBeenCalledWith({
       workspaceId: WORKSPACE_ID,
       conversationId: CONVERSATION_ID,
       messageId: CARDS_MESSAGE_ID,
+      itemKey: "image-attic",
     });
     expect(outcomes(metrics)).toEqual(["rejected_already_selected"]);
+  });
+
+  it("takes the same card again as a retry, so a pick whose turn failed can be sent once more", async () => {
+    const { turns, metrics } = setup({ otherPicked: false });
+
+    const retry = await turns.claim(pick());
+
+    expect(retry?.query).toBe("Garden room");
+    expect(outcomes(metrics)).toEqual(["accepted"]);
   });
 
   it("records what was picked, by id, once the visitor's message is stored", async () => {
@@ -223,7 +234,7 @@ describe("a card the visitor picked", () => {
       workspaceId: WORKSPACE_ID,
       subjectType: "conversation",
       subjectId: CONVERSATION_ID,
-      properties: { messageId: CARDS_MESSAGE_ID, blockId: "b1", itemKey: "image-garden", channel: "website_embed", source: "document" },
+      properties: { messageId: CARDS_MESSAGE_ID, blockId: "b1", itemKey: "image-garden", channel: "website_embed" },
       source: "backend",
     });
   });

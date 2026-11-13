@@ -20,6 +20,5 @@ export const renderSelectedItem = (item: SelectedItem): string =>
       ...field("subtitle", item.description),
       ...field("link", item.link),
       ...field("document", item.document?.title),
-      ...field("from skill", item.skillName),
     ].join("\n"),
   });

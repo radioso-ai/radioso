@@ -284,8 +284,16 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   `tests/integration/item-selection.integration.test.ts`. A channel adapter
   reaches the same claim through `ChatDoorPickTurnPort` (contracts), which
   `AssistantChatService` implements; the connector host runs a WhatsApp tap
-  through it and reads `ITEM_SELECTION_REFUSAL_CODES` to answer a refused pick as
-  the card's words.
+  through it and reads `ITEM_SELECTION_REFUSAL_CODES` to refuse a pick the claim
+  refuses, as the web chat does, so no turn runs on it.
+- Reply picture readiness (`services/replyBlocks/replyPictureReadiness.ts`): for a
+  channel whose provider fetches a card's picture by its address when the cards
+  are sent, it reads the picture ids from the reply's stored blocks and asks the
+  reply image lookup for each until all are stored or the time runs out; asking
+  copies a waiting skill picture on demand. Wired in
+  `app/composition/connectorChat.ts` as the connector port's
+  `awaitReplyPictures`. Tests:
+  `tests/unit/chat/replyBlocks/reply-picture-readiness.test.ts`.
 - Button labels (`services/replyBlocks/presentButtonLabels.ts`): a client with no
   copy of its own for buttons declares `reply.blocks.item_list.buttonLabels`, in
   process only (the request schemas drop it; the WhatsApp connector declares it).

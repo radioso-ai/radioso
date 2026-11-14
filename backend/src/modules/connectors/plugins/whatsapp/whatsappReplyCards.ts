@@ -1,5 +1,7 @@
 import type { ReplyBlock, ReplyItem } from "@radioso/conversation-contract";
 
+import { clipAtGraphemeBoundary } from "../../../../shared/text/clipAtGraphemeBoundary.js";
+
 /**
  * How a reply's cards (an `item_list` reply block) become WhatsApp Cloud API messages. Pure: it
  * knows Meta's message shapes and limits, and nothing of chat, documents or where the cards came
@@ -62,29 +64,31 @@ export type WhatsAppOutboundMessage =
 /** The kind of message the cards went as: a bounded metric label. */
 export type WhatsAppCardsMessageType = "carousel" | "button" | "list" | "image";
 
-/** A message of a cards reply: the model's own text, or the cards. */
+/**
+ * A message of a cards reply: the model's own text, the cards, or the numbered list of the cards a
+ * gallery had no room for.
+ */
 export interface WhatsAppReplyPart {
-  role: "text" | "cards";
+  role: "text" | "cards" | "list";
   message: WhatsAppOutboundMessage;
 }
 
 /**
  * How a block goes out: as cards (the model's text first when it does not fit the message's
  * body); as the text with a numbered list when the reply left out a button label the message needs;
- * or as the text alone when no WhatsApp message carries the block.
+ * or as the text with a numbered list when no WhatsApp message carries the block.
  */
 export type WhatsAppCardsRendering =
-  | { kind: "cards"; messageType: WhatsAppCardsMessageType; textSentFirst: boolean; parts: WhatsAppReplyPart[] }
+  | { kind: "cards"; messageType: WhatsAppCardsMessageType; textSentFirst: boolean; pictured: boolean; parts: WhatsAppReplyPart[] }
   | { kind: "labels_missing"; messageType: WhatsAppCardsMessageType }
   | { kind: "text_only" };
 
-const characters = (value: string): string[] => Array.from(value);
-
-/** Text cut to `max` characters, never inside a character, with an ellipsis where it was cut. */
-const fit = (value: string, max: number): string => {
-  const chars = characters(value);
-  return chars.length <= max ? value : `${chars.slice(0, max - 1).join("").trimEnd()}…`;
-};
+/**
+ * Text cut to `max` UTF-16 units, the strictest way Meta may count, on whole characters (an emoji,
+ * a flag, a letter with its accents), with an ellipsis where it was cut.
+ */
+const fit = (value: string, max: number): string =>
+  value.length <= max ? value : `${clipAtGraphemeBoundary(value, max - 1).trimEnd()}…`;
 
 const oneLine = (value: string): string => value.replace(/\s+/g, " ").trim();
 
@@ -93,24 +97,26 @@ const itemName = (item: ReplyItem): string => oneLine(item.title) || oneLine(ite
 
 const openUrl = (item: ReplyItem): string | undefined => item.actions.find((action) => action.type === "open")?.url;
 
+/** A label as a button takes it, cut on whole characters to 20 UTF-16 units; none when blank. */
 const usableLabel = (value: string | undefined): string | undefined => {
-  const label = value?.trim();
-  return label && characters(label).length <= WHATSAPP_MESSAGE_LIMITS.buttonLabel ? label : undefined;
+  const label = value ? clipAtGraphemeBoundary(oneLine(value), WHATSAPP_MESSAGE_LIMITS.buttonLabel).trimEnd() : "";
+  return label || undefined;
 };
 
 const text = (body: string): WhatsAppOutboundMessage => ({ type: "text", text: { body } });
 
 /**
- * The cards as a numbered text list: each card's name, and its page on the next line. The fallback
- * wherever the cards cannot go as interactive messages; a typed number or name still resolves where
- * the reply kept the items.
+ * Cards as a numbered text list, from the card at `from` on, each numbered by its place in the
+ * block: its name, and its page on the next line. The fallback wherever the cards cannot go as
+ * interactive messages; a typed number or name still resolves where the reply kept the items.
  */
-const numberedItemList = (block: ReplyBlock): string =>
+const numberedItemList = (block: ReplyBlock, from = 0): string =>
   block.items
     .map((item, index) => {
       const link = openUrl(item);
       return `${index + 1}. ${itemName(item)}${link ? `\n${link}` : ""}`;
     })
+    .slice(from)
     .join("\n");
 
 /**
@@ -124,7 +130,7 @@ export const fallbackTextMessages = (replyText: string | null, block: ReplyBlock
     return [text(fit(list, WHATSAPP_MESSAGE_LIMITS.textBody))];
   }
   const combined = `${lead}\n\n${list}`;
-  return characters(combined).length <= WHATSAPP_MESSAGE_LIMITS.textBody
+  return combined.length <= WHATSAPP_MESSAGE_LIMITS.textBody
     ? [text(combined)]
     : [text(fit(lead, WHATSAPP_MESSAGE_LIMITS.textBody)), text(fit(list, WHATSAPP_MESSAGE_LIMITS.textBody))];
 };
@@ -136,7 +142,7 @@ export const fallbackTextMessages = (replyText: string | null, block: ReplyBlock
 const placeText = (replyText: string, block: ReplyBlock, bodyLimit: number): { body: string; textFirst: boolean } => {
   const lead = replyText.trim();
   const caption = oneLine(block.caption);
-  if (lead && characters(lead).length <= bodyLimit) {
+  if (lead && lead.length <= bodyLimit) {
     return { body: lead, textFirst: false };
   }
   if (caption) {
@@ -175,6 +181,7 @@ const carousel = (
     kind: "cards",
     messageType: "carousel",
     textSentFirst: textFirst,
+    pictured: true,
     parts: withText(replyText, textFirst, [{ type: "interactive", interactive: { type: "carousel", body: { text: body }, action: { cards } } }]),
   };
 };
@@ -195,10 +202,10 @@ const imageMessage = (item: ReplyItem): WhatsAppOutboundMessage => {
  * |---|---|
  * | Selectable, 2–10 items, all with pictures | Carousel, one quick-reply button per card |
  * | Not selectable, 2–10 items, all with pictures and links | Carousel, one URL button per card |
- * | Not selectable, all with pictures, some without links | Up to 4 image messages, each captioned with its name |
+ * | Not selectable, all with pictures, some without links | Up to 4 image messages, each captioned with its name, then a numbered list of the rest |
  * | 1 item with a picture | Image message; a reply-button message with the picture as header if selectable |
  * | Selectable, some without pictures | List message |
- * | Anything else | The model's text alone |
+ * | Anything else | `text_only`: the model's text with a numbered list of the items |
  */
 export const renderReplyCards = (input: {
   text: string;
@@ -232,6 +239,7 @@ export const renderReplyCards = (input: {
         kind: "cards",
         messageType: "button",
         textSentFirst: textFirst,
+        pictured: true,
         parts: withText(replyText, textFirst, [{
           type: "interactive",
           interactive: {
@@ -249,7 +257,7 @@ export const renderReplyCards = (input: {
     const { body, textFirst } = placeText(replyText, block, WHATSAPP_MESSAGE_LIMITS.textBody);
     const rows = items.map((item, index) => {
       const name = itemName(item);
-      const fitsTitle = characters(name).length <= WHATSAPP_MESSAGE_LIMITS.listRowTitle;
+      const fitsTitle = name.length <= WHATSAPP_MESSAGE_LIMITS.listRowTitle;
       const description = fitsTitle ? (item.description ? oneLine(item.description) : "") : name;
       return {
         id: tapId(index),
@@ -261,6 +269,7 @@ export const renderReplyCards = (input: {
       kind: "cards",
       messageType: "list",
       textSentFirst: textFirst,
+      pictured: false,
       parts: withText(replyText, textFirst, [{
         type: "interactive",
         interactive: {
@@ -278,14 +287,23 @@ export const renderReplyCards = (input: {
   if (!allPictured) {
     return { kind: "text_only" };
   }
+  const hasText = replyText.trim().length > 0;
   if (count === 1) {
-    return { kind: "cards", messageType: "image", textSentFirst: replyText.trim().length > 0, parts: withText(replyText, replyText.trim().length > 0, [imageMessage(items[0])]) };
+    return { kind: "cards", messageType: "image", textSentFirst: hasText, pictured: true, parts: withText(replyText, hasText, [imageMessage(items[0])]) };
   }
   if (items.every((item) => openUrl(item))) {
     return openLabel
       ? carousel(replyText, block, (item) => ({ name: "cta_url", parameters: { display_text: openLabel, url: openUrl(item)! } }))
       : { kind: "labels_missing", messageType: "carousel" };
   }
-  const gallery = items.slice(0, WHATSAPP_MESSAGE_LIMITS.galleryImages).map(imageMessage);
-  return { kind: "cards", messageType: "image", textSentFirst: replyText.trim().length > 0, parts: withText(replyText, replyText.trim().length > 0, gallery) };
+  // A gallery shows its first pictures; the cards it has no room for follow as a numbered list.
+  const shown = WHATSAPP_MESSAGE_LIMITS.galleryImages;
+  const rest = count > shown ? [{ role: "list" as const, message: text(fit(numberedItemList(block, shown), WHATSAPP_MESSAGE_LIMITS.textBody)) }] : [];
+  return {
+    kind: "cards",
+    messageType: "image",
+    textSentFirst: hasText,
+    pictured: true,
+    parts: [...withText(replyText, hasText, items.slice(0, shown).map(imageMessage)), ...rest],
+  };
 };

@@ -60,6 +60,7 @@ describe("WhatsAppMessageHandler", () => {
     // Photos are off unless a test turns them on: the agent allows none, so an image is an unsupported message.
     const chat = {
       imageAllowance: vi.fn<ConnectorChatPort["imageAllowance"]>(async () => null),
+      awaitReplyPictures: vi.fn<ConnectorChatPort["awaitReplyPictures"]>(async () => true),
       ...(input?.chat ?? {
         answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-1", answer: "Combined answer", outcome: "answered" })),
       }),

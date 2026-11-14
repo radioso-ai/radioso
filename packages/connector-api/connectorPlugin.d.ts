@@ -199,10 +199,11 @@ export interface ConnectorChatPort {
     /**
      * A card the customer picked from an earlier reply in `conversationId`, sent alone, with no
      * images. The host reads the item from the block stored on that reply, never from the
-     * connector, exactly as the web chat's pick, and runs the turn on it. `query` is the card's
-     * words as the customer saw them: when the pick names no card the conversation can pick (an
-     * old reply, another card of a reply already picked from), the turn runs on `query` as a
-     * typed message instead.
+     * connector, exactly as the web chat's pick, and runs the turn on it; `query` is the card's
+     * title. A pick that names no card the conversation can pick (a reply from another
+     * conversation, another card of a reply already picked from) is refused, as the web chat
+     * refuses it, with an error whose `code` is `connector_pick_refused` (409): nothing is stored
+     * and no turn runs, and a connector treats the tap as a message it does not support.
      */
     selection?: ConnectorItemSelection;
   }): Promise<{
@@ -218,6 +219,14 @@ export interface ConnectorChatPort {
      */
     outcome: ConnectorChatOutcome;
   }>;
+  /**
+   * Waits, up to `withinMs`, until every picture the blocks of reply `messageId` show is stored and
+   * served at its address, copying at once the ones that are still waiting (a skill's pictures are
+   * copied after the reply is written). True when they all are. A connector whose provider fetches
+   * a card's picture by its address when the cards are sent asks before it sends them.
+   */
+  // Message-queue impact: synchronous host port only; no AMQP or worker payload changes.
+  awaitReplyPictures(input: { workspaceId: string; messageId: string; withinMs: number }): Promise<boolean>;
 }
 
 export interface ConnectorStatePort {

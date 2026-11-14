@@ -19,6 +19,7 @@ import {
   CONNECTOR_IMAGES_UNAVAILABLE_CODE,
   CONNECTOR_IMAGES_UNUSABLE_CODE,
 } from "../../services/connectorImageTurns.js";
+import { CONNECTOR_PICK_REFUSED_CODE } from "../../services/connectorChatPort.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresWhatsAppPersistence, photoReceiptOf, type WhatsAppPersistencePort } from "./whatsappPersistence.js";
 import { WhatsAppReplyDelivery } from "./whatsappReplyDelivery.js";
@@ -27,7 +28,7 @@ import { isCardTap, REPLY_CARDS_KEY, replyCardsOf, WhatsAppReplyTaps, type Whats
 interface WhatsAppMessageHandlerOptions {
   db: ConnectorDatabasePort;
   logger: ConnectorLogger;
-  chat: Pick<ConnectorChatPort, "answer" | "imageAllowance">;
+  chat: Pick<ConnectorChatPort, "answer" | "imageAllowance" | "awaitReplyPictures">;
   state: Pick<ConnectorStatePort, "getConfig" | "setErrorStatus">;
   client: Pick<WhatsAppClient, "sendTextMessage" | "sendMessage" | "downloadImage">;
   persistence?: WhatsAppPersistencePort;
@@ -58,8 +59,10 @@ export interface WhatsAppInboundMessage {
   textBody?: string;
   /** The photo of an image message, by the media id Graph resolves to its bytes. */
   image?: { mediaId: string };
-  /** A tap on a reply's card button or list row; `textBody` is the words on it. */
+  /** A tap on a button or list row, with the id it carried. */
   tap?: WhatsAppTap;
+  /** The card a tap names, read from the reply that showed it; `textBody` is then the card's title. */
+  pick?: ConnectorItemSelection;
   payload: Record<string, unknown>;
 }
 
@@ -88,6 +91,18 @@ class PhotosNotTakenError extends Error {
   }
 }
 
+/**
+ * Raised inside a turn when a tap picks a card the conversation cannot pick: the host refused it,
+ * as the web chat refuses one, or there is no conversation to pick in. The tap is then a message
+ * the connector does not support: no turn runs, and the card's words never run as typed text.
+ */
+class PickNotTakenError extends Error {
+  constructor() {
+    super("The tap picks no card this conversation can pick");
+    this.name = "PickNotTakenError";
+  }
+}
+
 /** What the host's refusal of a turn's photos means for the connector, when it is one the connector acts on. */
 const isStaleReceiptsRefusal = (error: unknown): boolean =>
   isStructuredAppError(error) && error.code === CONNECTOR_IMAGES_STALE_CODE;
@@ -101,6 +116,9 @@ const photosNotTakenBy = (error: unknown): PhotosNotTakenError | null => {
   }
   return error.code === CONNECTOR_IMAGES_UNAVAILABLE_CODE ? new PhotosNotTakenError("unavailable") : null;
 };
+
+const sameCard = (left: ConnectorItemSelection, right: ConnectorItemSelection): boolean =>
+  left.messageId === right.messageId && left.blockId === right.blockId && left.itemKey === right.itemKey;
 
 const DEFAULT_RETRY_BASE_DELAY_MS = 1000;
 const DEFAULT_MAX_RETRY_ATTEMPTS = 3;
@@ -121,7 +139,13 @@ export class WhatsAppMessageHandler {
     this.debounceMs = options.debounceMs ?? 3000;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.maxRetryAttempts = options.maxRetryAttempts ?? DEFAULT_MAX_RETRY_ATTEMPTS;
-    this.delivery = new WhatsAppReplyDelivery({ client: options.client, persistence: this.persistence, logger: options.logger, metrics: options.metrics });
+    this.delivery = new WhatsAppReplyDelivery({
+      client: options.client,
+      persistence: this.persistence,
+      pictures: options.chat,
+      logger: options.logger,
+      metrics: options.metrics,
+    });
     this.taps = new WhatsAppReplyTaps({ persistence: this.persistence, logger: options.logger });
   }
 
@@ -180,20 +204,22 @@ export class WhatsAppMessageHandler {
     }, this.debounceMs);
   }
 
-  private async flushBatch(messages: WhatsAppInboundMessage[]): Promise<void> {
-    if (messages.length === 0) {
+  private async flushBatch(batch: WhatsAppInboundMessage[]): Promise<void> {
+    if (batch.length === 0) {
       return;
     }
 
-    const [first] = messages;
+    const [first] = batch;
     const configRecord = await this.options.state.getConfig(first.workspaceId);
     if (!configRecord?.enabled) {
-      for (const message of messages) {
+      for (const message of batch) {
         await this.persistence.updateMessageLogStatus(message.wamid, "failed", "Connector disabled before batch processing");
       }
       return;
     }
 
+    // A tap on a card reads as the card it names; one that names none is unsupported.
+    const messages = await this.withCardTaps(batch);
     // Rapid messages are one batch, so an album's photos and the caption that comes with them are
     // one turn, the same as a few lines of text sent in a row.
     const photoMessages = await this.selectPhotoMessages(messages, configRecord.config);
@@ -241,7 +267,9 @@ export class WhatsAppMessageHandler {
         await this.answerAndReply(turnMessages, this.buildTextQuery(turnMessages), config, photoMessages);
       });
     } catch (error) {
-      if (!(error instanceof PhotosNotTakenError)) {
+      if (error instanceof PickNotTakenError) {
+        unsupportedMessages.push(...turnMessages);
+      } else if (!(error instanceof PhotosNotTakenError)) {
         errors.push(error);
       } else if (error.reason === "unusable") {
         unsupportedMessages.push(...turnMessages);
@@ -272,7 +300,7 @@ export class WhatsAppMessageHandler {
         await this.persistence.updateMessageLogStatus(message.wamid, "replied");
       }
     } catch (error) {
-      if (error instanceof PhotosNotTakenError) {
+      if (error instanceof PhotosNotTakenError || error instanceof PickNotTakenError) {
         // Not a failure: the caller handles these messages as ones it does not support.
         throw error;
       }
@@ -387,14 +415,17 @@ export class WhatsAppMessageHandler {
     }
 
     const { conversationId, latestTimestamp } = await this.continuingConversation(messages, config);
-    const pick = conversationId ? await this.resolvePick(messages) : null;
+    const selection = this.pickOf(messages);
+    if (selection && !conversationId) {
+      throw new PickNotTakenError();
+    }
     const response = await this.answerOnChat({
       workspaceId: first.workspaceId,
       conversationId,
-      query: pick?.words ?? query,
+      query,
       photoMessages,
       config,
-      ...(pick ? { selection: pick.selection } : {}),
+      ...(selection ? { selection } : {}),
     });
 
     await this.persistence.upsertContact({
@@ -431,24 +462,39 @@ export class WhatsAppMessageHandler {
   }
 
   /**
-   * The card a lone tap picks, resolved through the reply that showed it. A tap sent with other
-   * messages, or one that names no card, is answered as the words on its button.
+   * The batch with each tap on a card this connector sent read as the card it names: the stored
+   * card's title as its words and the card as its pick. A tap that names no card the log still
+   * holds keeps no words and no pick, so it is a message the connector does not support.
    */
-  private async resolvePick(messages: WhatsAppInboundMessage[]): Promise<{ selection: ConnectorItemSelection; words: string } | null> {
-    const [only] = messages;
-    if (messages.length !== 1 || !only?.tap) {
-      return null;
-    }
-    return this.taps.resolve({ workspaceId: only.workspaceId, waId: only.waId, wamid: only.wamid, tap: only.tap });
+  private async withCardTaps(messages: WhatsAppInboundMessage[]): Promise<WhatsAppInboundMessage[]> {
+    return Promise.all(messages.map(async (message) => {
+      if (!message.tap || message.pick || !isCardTap(message.tap)) {
+        return message;
+      }
+      const resolved = await this.taps.resolve({ workspaceId: message.workspaceId, waId: message.waId, wamid: message.wamid, tap: message.tap });
+      return resolved ? { ...message, textBody: resolved.words, pick: resolved.selection } : message;
+    }));
   }
 
   /**
-   * What the sender typed across the turn: text bodies and photo captions, in the order they were
-   * sent, the same order the photos go in. WhatsApp can deliver a batch out of order, and the
-   * sender's clock is the one both follow.
+   * The card a turn picks: the batch is taps on one card and nothing else, however often it was
+   * tapped. A tap sent with anything else is its card's words, never a pick.
+   */
+  private pickOf(messages: WhatsAppInboundMessage[]): ConnectorItemSelection | null {
+    const [first] = messages;
+    const pick = first?.pick;
+    return pick && messages.every((message) => message.pick && sameCard(message.pick, pick)) ? pick : null;
+  }
+
+  /**
+   * What the sender typed across the turn: text bodies, photo captions and the titles of the cards
+   * they tapped (each card once), in the order they were sent, the same order the photos go in.
+   * WhatsApp can deliver a batch out of order, and the sender's clock is the one both follow.
    */
   private buildTextQuery(messages: WhatsAppInboundMessage[]): string {
-    return this.inSentOrder(messages)
+    const ordered = this.inSentOrder(messages);
+    return ordered
+      .filter((message, index) => !message.pick || !ordered.slice(0, index).some((earlier) => earlier.pick && sameCard(earlier.pick, message.pick!)))
       .map((message) => message.textBody?.trim() ?? "")
       .filter((value) => value.length > 0)
       .join("\n");
@@ -464,11 +510,11 @@ export class WhatsAppMessageHandler {
   }
 
   /**
-   * A tap on a card this connector sent: a turn whether or not the card can still be picked, since
-   * its button carries words. A tap on any other button stays unsupported, as it always was.
+   * A tap on a card this connector sent, read as that card. A tap that names no card, or one on any
+   * other button, stays unsupported.
    */
   private isTapMessage(message: WhatsAppInboundMessage): boolean {
-    return isCardTap(message.tap);
+    return Boolean(message.pick);
   }
 
   private isPhotoMessage(message: WhatsAppInboundMessage): message is WhatsAppInboundMessage & { image: { mediaId: string } } {
@@ -570,6 +616,9 @@ export class WhatsAppMessageHandler {
         if (useReceipts && images.some((image) => image.receipt !== undefined) && isStaleReceiptsRefusal(error)) {
           useReceipts = false;
           continue;
+        }
+        if (input.selection && isStructuredAppError(error) && error.code === CONNECTOR_PICK_REFUSED_CODE) {
+          throw new PickNotTakenError();
         }
         throw (images.length > 0 ? photosNotTakenBy(error) : null) ?? error;
       }

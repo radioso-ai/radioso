@@ -17,6 +17,7 @@ import { buildChatTurnRuntime } from "../../../../src/modules/chat/services/chat
 import { routineItemSelectionOf, type SelectedItem } from "../../../../src/modules/chat/services/replyBlocks/itemSelection.js";
 import { ItemSelectionTurns } from "../../../../src/modules/chat/services/replyBlocks/itemSelectionTurn.js";
 import { latestRoutinePresentation } from "../../../../src/modules/chat/services/replyBlocks/routinePresentation.js";
+import { ReplyPictureReadiness } from "../../../../src/modules/chat/services/replyBlocks/replyPictureReadiness.js";
 import { SkillResultReplyBlocks } from "../../../../src/modules/chat/services/replyBlocks/skillResultReplyBlocks.js";
 import {
   createRoutineGroundedAnswerRenderer,
@@ -201,7 +202,9 @@ const chatHost = () => {
       },
       messages: {
         findByIdAndWorkspaceId: async (_workspaceId, id) => messages.find((message) => message.id === id) ?? null,
-        hasOtherItemSelectionFrom: async () => false,
+        // As the message repository answers it: a stored pick of another card from that reply.
+        hasOtherItemSelectionFrom: async ({ messageId, itemKey }) => messages.some((message) =>
+          message.inputMetadata?.selection?.messageId === messageId && message.inputMetadata.selection.itemKey !== itemKey),
       },
     }),
   });
@@ -264,7 +267,7 @@ describe("a WhatsApp reply with and without cards", () => {
       return sends <= unreachableSends ? Promise.reject(new TypeError("fetch failed")) : graph.fetch(url, init);
     });
     const persistence = new InMemoryWhatsAppPersistence();
-    const chat = { imageAllowance: vi.fn(async () => null), answer: vi.fn(async () => answer as never) };
+    const chat = { imageAllowance: vi.fn(async () => null), awaitReplyPictures: vi.fn(async () => true), answer: vi.fn(async () => answer as never) };
     const handler = new WhatsAppMessageHandler({
       db: { query: vi.fn() },
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -300,8 +303,8 @@ describe("a WhatsApp reply with and without cards", () => {
   });
 
   it("keeps a reply's cards on its outbound row, and sends the same cards again, with no new turn, when nothing of the reply went", async () => {
-    // The carousel and its numbered-list fallback both fail to reach Graph, so the reply is retried whole.
-    const { graph, chat, receive, outbound } = setup({ conversationId: CONVERSATION, answer: "Two homes fit.", outcome: "answered", replyBlocks: CARDS }, 2);
+    // Graph cannot be reached when the carousel goes: nothing of the reply went, so it is retried whole, with no list.
+    const { graph, chat, receive, outbound } = setup({ conversationId: CONVERSATION, answer: "Two homes fit.", outcome: "answered", replyBlocks: CARDS }, 1);
 
     await receive();
     await vi.advanceTimersByTimeAsync(200);
@@ -324,15 +327,23 @@ describe("a routine's cards on WhatsApp", () => {
     vi.useRealTimers();
   });
 
-  it("sends the presenting step as a carousel, and a tap fills the step's slot and the next step names the card", async () => {
-    const host = chatHost();
+  /** The WhatsApp connector over the real chat port, the chat door and the picture check, against the host above. */
+  const whatsAppOn = (host: ReturnType<typeof chatHost>) => {
     const graph = recordedGraph();
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const persistence = new InMemoryWhatsAppPersistence();
+    const stored = { findServable: vi.fn(async (_input: { imageId: string; width: number }) => ({ bucket: "b", objectPath: "p" })) };
     const handler = new WhatsAppMessageHandler({
       db: { query: vi.fn() },
       logger,
-      chat: createConnectorChatPort(host.chatService as unknown as ChatAnswerPort, { ingest: vi.fn() }, null, host.door),
+      chat: createConnectorChatPort(host.chatService as unknown as ChatAnswerPort, { ingest: vi.fn() }, {
+        picks: host.door,
+        replyPictures: new ReplyPictureReadiness({
+          messages: { findByIdAndWorkspaceId: async (_workspaceId, id) => host.messages.find((message) => message.id === id) ?? null },
+          pictures: stored,
+          width: 640,
+        }),
+      }),
       state: {
         getConfig: async () => ({ enabled: true, config: { phone_number_id: "15550001111", access_token: "wa-access-token", conversation_timeout_hours: "24" } }),
         setErrorStatus: vi.fn(),
@@ -347,23 +358,31 @@ describe("a routine's cards on WhatsApp", () => {
       await handler.handleInboundMessage(inbound);
       await vi.advanceTimersByTimeAsync(10);
     };
-
-    await receive("wamid-in-1", { type: "text", text: { body: "Mitte, fino a 2.000" } });
-
-    const carousel = graph.bodies[0]?.interactive as {
+    type Carousel = {
       type: string;
       body: { text: string };
       action: { cards: Array<{ body: { text: string }; header: { image: { link: string } }; action: { buttons: Array<{ quick_reply: { id: string; title: string } }> } }> };
     };
-    expect(carousel.type).toBe("carousel");
-    expect(carousel.body.text).toBe("Ecco due case a Mitte: quale preferisci?");
-    expect(carousel.action.cards.map((card) => card.body.text)).toEqual(["Casa Blu", "Villa Rosa"]);
-    expect(carousel.action.cards.map((card) => card.action.buttons[0].quick_reply.title)).toEqual(["Scegli", "Scegli"]);
-    expect(carousel.action.cards[0].header.image.link).toBe("https://api.example/api/v1/public/reply-images/image-1/640");
+    const carousel = () => graph.bodies.find((body) => body.type === "interactive")?.interactive as Carousel;
+    const tap = (card: number) => ({ type: "interactive", interactive: { type: "button_reply", button_reply: { id: carousel().action.cards[card].action.buttons[0].quick_reply.id, title: "Scegli" } } });
+    return { graph, persistence, stored, receive, carousel, tap };
+  };
 
-    const villaRosa = carousel.action.cards[1].action.buttons[0].quick_reply.id;
+  it("sends the presenting step as a carousel, and a tap fills the step's slot and the next step names the card", async () => {
+    const host = chatHost();
+    const { graph, stored, receive, carousel, tap } = whatsAppOn(host);
+
+    await receive("wamid-in-1", { type: "text", text: { body: "Mitte, fino a 2.000" } });
+
+    expect(stored.findServable.mock.calls.map(([input]) => input)).toEqual([{ imageId: "image-1", width: 640 }, { imageId: "image-2", width: 640 }]);
+    expect(carousel().type).toBe("carousel");
+    expect(carousel().body.text).toBe("Ecco due case a Mitte: quale preferisci?");
+    expect(carousel().action.cards.map((card) => card.body.text)).toEqual(["Casa Blu", "Villa Rosa"]);
+    expect(carousel().action.cards.map((card) => card.action.buttons[0].quick_reply.title)).toEqual(["Scegli", "Scegli"]);
+    expect(carousel().action.cards[0].header.image.link).toBe("https://api.example/api/v1/public/reply-images/image-1/640");
+
     await vi.advanceTimersByTimeAsync(60_000);
-    await receive("wamid-in-2", { type: "interactive", interactive: { type: "button_reply", button_reply: { id: villaRosa, title: "Scegli" } } });
+    await receive("wamid-in-2", tap(1));
 
     expect(host.state().variables.chosen_home).toEqual({ key: "/structuredContent/results/1", title: "Villa Rosa", link: "https://homes.example/villa-rosa", fields: { id: "h-2", name: "Villa Rosa", url: "https://homes.example/villa-rosa", photo: "https://img.homes.example/villa-rosa.jpg" } });
     expect(host.state().path.at(-1)).toBe("contact");
@@ -373,5 +392,26 @@ describe("a routine's cards on WhatsApp", () => {
       content: "Villa Rosa",
       inputMetadata: { method: "item_select", selection: { blockId: "b1", itemKey: "/structuredContent/results/1" } },
     });
+  });
+
+  it("runs no turn on a tap of the other card once the routine has moved on to a step that asks for text, so no slot is filled from it", async () => {
+    const host = chatHost();
+    const { graph, persistence, receive, tap } = whatsAppOn(host);
+    await receive("wamid-in-1", { type: "text", text: { body: "Mitte, fino a 2.000" } });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await receive("wamid-in-2", tap(1));
+    const before = structuredClone(host.state());
+    const turns = host.chatService.answer.mock.calls.length;
+    const sent = graph.bodies.length;
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await receive("wamid-in-3", tap(0));
+
+    expect(host.chatService.answer).toHaveBeenCalledTimes(turns);
+    expect(host.state()).toEqual(before);
+    expect(host.state().path.at(-1)).toBe("contact");
+    expect(host.messages.filter((message) => message.content === "Casa Blu")).toEqual([]);
+    expect(graph.bodies).toHaveLength(sent);
+    expect(persistence.messageLogs.get("wamid-in-3")?.status).toBe("skipped");
   });
 });

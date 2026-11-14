@@ -2,6 +2,7 @@ import type { ReplyBlock, ReplyButtonLabels } from "@radioso/conversation-contra
 
 import type { AnswerSchemaExtension } from "../../../../shared/domain/answerSideChannel.js";
 import { renderPromptTemplate } from "../../../../shared/infra/prompts/promptLoader.js";
+import { clipAtGraphemeBoundary } from "../../../../shared/text/clipAtGraphemeBoundary.js";
 
 /**
  * The words on a block's buttons, for a client that draws them from the reply because it has no
@@ -51,14 +52,17 @@ export const withButtonLabelFields = (extension: AnswerSchemaExtension, presentF
   };
 };
 
-/** A label as a button takes it: text of 1 to 20 characters on one line; anything else is no label. */
+/**
+ * A label as a button takes it: text on one line, cut on whole characters (an emoji, a flag, a
+ * letter with its accents) to 20 UTF-16 units, the strictest way a channel counts. Anything else
+ * is no label.
+ */
 const readLabel = (value: unknown): string | undefined => {
-  if (typeof value !== "string") {
+  if (typeof value !== "string" || /[\r\n]/.test(value.trim())) {
     return undefined;
   }
-  const trimmed = value.trim();
-  const length = Array.from(trimmed).length;
-  return length > 0 && length <= BUTTON_LABEL_MAX_LENGTH && !/[\r\n]/.test(trimmed) ? trimmed : undefined;
+  const label = clipAtGraphemeBoundary(value.trim(), BUTTON_LABEL_MAX_LENGTH).trimEnd();
+  return label.length > 0 ? label : undefined;
 };
 
 /** The labels the model wrote in its `present` head, or undefined when it wrote no usable one. */

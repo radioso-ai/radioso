@@ -50,13 +50,15 @@ const harness = (options: { messageIds?: { conversationId: string; messageId: st
   const connectorChat = createConnectorChatPort(
     {} as ChatAnswerPort,
     { ingest: vi.fn() },
-    createConnectorImageTurns({
-      agents: { resolve: async (_workspaceId, agentId) => ({ id: agentId ?? AGENT }) },
-      conversations: { findByIdAndWorkspaceId: async () => null },
-      availability,
-      images: visitorImages,
-      door,
-    }),
+    {
+      imageTurns: createConnectorImageTurns({
+        agents: { resolve: async (_workspaceId, agentId) => ({ id: agentId ?? AGENT }) },
+        conversations: { findByIdAndWorkspaceId: async () => null },
+        availability,
+        images: visitorImages,
+        door,
+      }),
+    },
   );
   return { connectorChat, store, chatService, turns, availability, reader };
 };

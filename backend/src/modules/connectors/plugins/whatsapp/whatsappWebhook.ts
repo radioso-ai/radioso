@@ -91,7 +91,7 @@ const extractInboundMessages = (
           typeof message.text === "object" &&
           typeof (message.text as { body?: unknown }).body === "string"
             ? (message.text as { body: string }).body
-            : image?.caption ?? tap?.title;
+            : image?.caption;
 
         if (!wamid || !from) {
           continue;

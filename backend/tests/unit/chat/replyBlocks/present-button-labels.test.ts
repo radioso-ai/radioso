@@ -34,7 +34,7 @@ describe("button labels on the present head", () => {
     expect(BUTTON_LABEL_MAX_LENGTH).toBe(20);
   });
 
-  it("reads the labels the model wrote, trimmed, and drops one that is empty, too long or not text", () => {
+  it("reads the labels the model wrote, trimmed, cuts one that is too long, and drops one that is empty, on two lines or not text", () => {
     const head = readPresentHead({ [PRESENT_FIELD]: { images: ["m1"], caption: "Guides", selection: "single", selectLabel: " Scegli ", openLabel: "Apri la pagina" } });
     expect(head?.buttonLabels).toEqual({ select: "Scegli", open: "Apri la pagina" });
 
@@ -43,21 +43,27 @@ describe("button labels on the present head", () => {
         records: ["r1"],
         fields: { title: "/name", subtitle: null, image: null, link: null },
         caption: "Homes",
-        selectLabel: "x".repeat(21),
+        selectLabel: "Diese Wohnung auswählen",
         openLabel: "Ansehen",
       },
     });
-    expect(record?.buttonLabels).toEqual({ open: "Ansehen" });
+    expect(record?.buttonLabels).toEqual({ select: "Diese Wohnung auswäh", open: "Ansehen" });
 
     expect(readPresentHead({ [PRESENT_FIELD]: { images: ["m1"], caption: "Guides", selectLabel: "", openLabel: 3 } })?.buttonLabels).toBeUndefined();
+    expect(readPresentHead({ [PRESENT_FIELD]: { images: ["m1"], caption: "Guides", selectLabel: "Pick\nthis" } })?.buttonLabels).toBeUndefined();
     expect(readPresentHead({ [PRESENT_FIELD]: { images: ["m1"], caption: "Guides" } })).not.toHaveProperty("buttonLabels");
   });
 
-  it("counts a label's length in characters, so an accented or emoji label is not cut short", () => {
-    const label = `Wählen 👍${"é".repeat(12)}`;
-    expect(Array.from(label).length).toBe(20);
-    expect(label.length).toBe(21);
-    expect(readPresentHead({ [PRESENT_FIELD]: { images: ["m1"], caption: "c", selectLabel: label, openLabel: "Öffnen" } })?.buttonLabels?.select).toBe(label);
+  it.each([
+    ["an emoji", `Scegli questa 👍👍👍`, `Scegli questa 👍👍👍`],
+    ["an emoji past the budget", `Scegli questa ca 👍👍`, `Scegli questa ca 👍`],
+    ["a flag", `Scegli 🇮🇹🇮🇹🇮🇹🇮🇹`, `Scegli 🇮🇹🇮🇹🇮🇹`],
+    ["a combining accent", `Choisir l’hôte${"é".repeat(4)}`, `Choisir l’hôte${"é".repeat(3)}`],
+  ])("counts a label with %s in UTF-16 units and cuts it on whole characters only", (_case, written, kept) => {
+    const select = readPresentHead({ [PRESENT_FIELD]: { images: ["m1"], caption: "c", selectLabel: written } })?.buttonLabels?.select;
+
+    expect(select).toBe(kept);
+    expect(select!.length).toBeLessThanOrEqual(BUTTON_LABEL_MAX_LENGTH);
   });
 
   it("puts the labels on the presented blocks only when there are any", () => {

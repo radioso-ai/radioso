@@ -157,6 +157,24 @@ export class InMemoryWhatsAppPersistence implements WhatsAppPersistencePort {
     return true;
   }
 
+  async releaseCardsFallback(outboundWamid: string): Promise<void> {
+    const existing = this.messageLogs.get(outboundWamid);
+    if (existing?.direction === "outbound") {
+      const { cardsFallback: _released, ...state } = (existing.payload.radioso ?? {}) as Record<string, unknown>;
+      existing.payload = { ...existing.payload, radioso: state };
+    }
+  }
+
+  async findLatestOutboundReply(input: { workspaceId: string; waId: string }): Promise<WhatsAppMessageLogRecord | null> {
+    return [...this.messageLogs.values()]
+      .filter((record) =>
+        record.direction === "outbound" &&
+        record.workspaceId === input.workspaceId &&
+        record.waId === input.waId &&
+        record.payload.inbound_wamids !== undefined)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+  }
+
   nextLocalOutboundWamid(): string {
     return `local-${this.messageLogs.size + 1}`;
   }

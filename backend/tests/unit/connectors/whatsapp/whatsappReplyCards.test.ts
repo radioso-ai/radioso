@@ -32,19 +32,21 @@ const recordedGraph = (failures: Record<number, { status: number; message: strin
   return { bodies, fetch };
 };
 
-const setup = (failures: Record<number, { status: number; message: string }> = {}) => {
+const setup = (failures: Record<number, { status: number; message: string }> = {}, options: { picturesStored?: boolean } = {}) => {
   const graph = recordedGraph(failures);
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const counts: Array<Record<string, string> | undefined> = [];
   const persistence = new InMemoryWhatsAppPersistence();
   const client = new WhatsAppClient({ fetch: graph.fetch, sleep: async () => undefined, logger });
+  const pictures = { awaitReplyPictures: vi.fn(async () => options.picturesStored ?? true) };
   const delivery = new WhatsAppReplyDelivery({
     client,
     persistence,
+    pictures,
     logger,
-    metrics: { incrementCounter: (name, options) => (name === "whatsapp_block_send_total" ? counts.push(options.labels) : undefined) },
+    metrics: { incrementCounter: (name, metric) => (name === "whatsapp_block_send_total" ? counts.push(metric.labels) : undefined) },
   });
-  return { ...graph, logger, counts, persistence, delivery };
+  return { ...graph, logger, counts, persistence, pictures, delivery };
 };
 
 const item = (index: number, overrides: Partial<ReplyItem> = {}): ReplyItem => ({
@@ -124,7 +126,7 @@ describe("WhatsApp reply cards", () => {
     expect(harness.counts).toEqual([{ message_type: "carousel", outcome: "sent" }]);
   });
 
-  it("sends a gallery whose pictures are not all pages as the text, then at most four image messages, each captioned with its title", async () => {
+  it("sends a gallery whose pictures are not all pages as the text, four image messages each captioned with its title, then a numbered list of the rest", async () => {
     const harness = setup();
     const photos = [0, 1, 2, 3, 4, 5].map((index) => item(index, { title: `Room ${index}`, actions: index === 0 ? [{ type: "open", url: "https://stay.example/rooms" }] : [] }));
 
@@ -134,8 +136,18 @@ describe("WhatsApp reply cards", () => {
       { messaging_product: "whatsapp", to: TO, type: "text", text: { body: LEAD } },
       { messaging_product: "whatsapp", to: TO, type: "image", image: { link: header(0).image.link, caption: "Room 0\nhttps://stay.example/rooms" } },
       ...[1, 2, 3].map((index) => ({ messaging_product: "whatsapp", to: TO, type: "image", image: { link: header(index).image.link, caption: `Room ${index}` } })),
+      { messaging_product: "whatsapp", to: TO, type: "text", text: { body: "5. Room 4\n6. Room 5" } },
     ]);
-    expect(harness.bodies).toHaveLength(1 + WHATSAPP_MESSAGE_LIMITS.galleryImages);
+    expect(harness.counts).toEqual([{ message_type: "text_list", outcome: "sent" }, { message_type: "image", outcome: "sent" }]);
+  });
+
+  it("sends a gallery of four or fewer with no list after it", async () => {
+    const harness = setup();
+    const photos = [0, 1, 2, 3].map((index) => item(index, { actions: [] }));
+
+    await deliver(harness, block(photos, { selection: "none", layout: "grid" }));
+
+    expect(harness.bodies.map((body) => body.type)).toEqual(["text", "image", "image", "image", "image"]);
   });
 
   it("sends one card that is only shown as the text, then an image message", async () => {
@@ -193,18 +205,50 @@ describe("WhatsApp reply cards", () => {
     }]);
     const rows = (harness.bodies[0]?.interactive as { action: { sections: Array<{ rows: Array<{ id: string; title: string }> }> } }).action.sections[0].rows;
     for (const row of rows) {
-      expect(Array.from(row.title).length).toBeLessThanOrEqual(WHATSAPP_MESSAGE_LIMITS.listRowTitle);
+      expect(row.title.length).toBeLessThanOrEqual(WHATSAPP_MESSAGE_LIMITS.listRowTitle);
       expect(row.id.length).toBeLessThanOrEqual(200);
     }
   });
 
-  it("sends the text alone for cards no WhatsApp message carries: only shown, without pictures", async () => {
+  it("sends the text with a numbered list of the cards no WhatsApp message carries: only shown, not all with a picture", async () => {
     const harness = setup();
 
-    await deliver(harness, block([item(0, { image: undefined }), item(1, { image: undefined })], { selection: "none", layout: "list" }));
+    await deliver(harness, block([item(0, { image: undefined }), item(1)], { selection: "none", layout: "list" }));
 
-    expect(harness.bodies).toEqual([{ messaging_product: "whatsapp", to: TO, type: "text", text: { body: LEAD } }]);
-    expect(harness.counts).toEqual([{ message_type: "none", outcome: "unsupported" }]);
+    expect(harness.bodies).toEqual([{
+      messaging_product: "whatsapp",
+      to: TO,
+      type: "text",
+      text: { body: `${LEAD}\n\n1. Home 0\nhttps://homes.example/listing-0\n2. Home 1\nhttps://homes.example/listing-1` },
+    }]);
+    expect(harness.counts).toEqual([{ message_type: "none", outcome: "unsupported" }, { message_type: "text_list", outcome: "sent" }]);
+  });
+
+  it("waits for the cards' pictures to be stored before it sends them", async () => {
+    const harness = setup();
+
+    await deliver(harness, block([item(0), item(1)]));
+
+    expect(harness.pictures.awaitReplyPictures).toHaveBeenCalledWith({ workspaceId: "workspace-1", messageId: "11111111-1111-4111-8111-111111111111", withinMs: 6000 });
+    expect(harness.bodies[0]).toMatchObject({ type: "interactive" });
+  });
+
+  it("sends the text with a numbered list when the cards' pictures are not stored in time", async () => {
+    const harness = setup({}, { picturesStored: false });
+
+    await deliver(harness, block([item(0), item(1)]));
+
+    expect(harness.bodies).toEqual([{ messaging_product: "whatsapp", to: TO, type: "text", text: { body: expect.stringContaining(`${LEAD}\n\n1. Home 0`) } }]);
+    expect(harness.counts).toEqual([{ message_type: "carousel", outcome: "pictures_not_ready" }, { message_type: "text_list", outcome: "sent" }]);
+  });
+
+  it("does not wait on pictures for a list message, which shows none", async () => {
+    const harness = setup({}, { picturesStored: false });
+
+    await deliver(harness, block([item(0, { image: undefined }), item(1, { image: undefined })], { layout: "list" }));
+
+    expect(harness.pictures.awaitReplyPictures).not.toHaveBeenCalled();
+    expect(harness.bodies[0]).toMatchObject({ type: "interactive", interactive: { type: "list" } });
   });
 
   it("sends a text too long for the body first, and puts the block's caption in the carousel's body", async () => {
@@ -223,8 +267,24 @@ describe("WhatsApp reply cards", () => {
     await deliver(harness, block([item(0, { title: "T".repeat(160), description: "line\nline\nline" }), item(1)]));
 
     const first = (harness.bodies[0]?.interactive as { action: { cards: Array<{ body: { text: string } }> } }).action.cards[0].body.text;
-    expect(Array.from(first).length).toBeLessThanOrEqual(WHATSAPP_MESSAGE_LIMITS.cardBody);
+    expect(first.length).toBeLessThanOrEqual(WHATSAPP_MESSAGE_LIMITS.cardBody);
     expect(first.split("\n").length - 1).toBeLessThanOrEqual(WHATSAPP_MESSAGE_LIMITS.cardBodyLineBreaks);
+  });
+
+  it.each([
+    ["emoji", "🏡".repeat(30), "🏡".repeat(11)],
+    ["flags", "🇮🇹".repeat(15), "🇮🇹".repeat(5)],
+    ["combining accents", "é".repeat(30), "é".repeat(11)],
+  ])("cuts a list row's title of %s on whole characters within 24 UTF-16 units", async (_case, title, kept) => {
+    const harness = setup();
+
+    await deliver(harness, block([item(0, { image: undefined, title }), item(1, { image: undefined })], { layout: "list", buttonLabels: { select: "👉 Scegli 🇮🇹🇮🇹🇮🇹🇮🇹" } }));
+
+    const interactive = harness.bodies[0]?.interactive as { action: { button: string; sections: Array<{ rows: Array<{ title: string }> }> } };
+    expect(interactive.action.sections[0].rows[0].title).toBe(`${kept}…`);
+    expect(interactive.action.sections[0].rows[0].title.length).toBeLessThanOrEqual(WHATSAPP_MESSAGE_LIMITS.listRowTitle);
+    expect(interactive.action.button).toBe("👉 Scegli 🇮🇹🇮🇹");
+    expect(interactive.action.button.length).toBeLessThanOrEqual(WHATSAPP_MESSAGE_LIMITS.buttonLabel);
   });
 
   it("sends the text with a numbered list when the reply left out the label the buttons need", async () => {
@@ -267,19 +327,43 @@ describe("WhatsApp reply cards", () => {
     expect(harness.counts).toEqual([{ message_type: "carousel", outcome: "failed" }, { message_type: "text_list", outcome: "failed" }]);
   });
 
-  it("throws, for the reply to be retried, when nothing of it reached Graph", async () => {
+  it("throws, for the reply to be retried, when nothing of it reached Graph, and lets go of the list it claimed", async () => {
     const harness = setup({ 1: { status: 400, message: "bad" }, 2: { status: 500, message: "down" } });
 
     await expect(deliver(harness, block([item(0), item(1)]))).rejects.toMatchObject({ statusCode: 500 });
+    await expect(harness.persistence.claimCardsFallback(OUTBOUND)).resolves.toBe(true);
+  });
+
+  it.each([
+    ["a server error", { status: 503, message: "unavailable" }],
+    ["a rate limit Graph kept answering", { status: 429, message: "slow down" }],
+  ])("retries the whole reply, sending no list, when Graph answers the cards with %s and nothing of the reply went", async (_case, failure) => {
+    const harness = setup({ 1: failure, 2: failure, 3: failure });
+
+    await expect(deliver(harness, block([item(0), item(1)]))).rejects.toMatchObject({ retryable: true });
+    expect(harness.bodies.every((body) => body.type === "interactive")).toBe(true);
+    expect(harness.counts).toEqual([{ message_type: "carousel", outcome: "retried" }]);
+  });
+
+  it("does not send a list a reply already sent, when its retry finds the cards refused again", async () => {
+    const harness = setup({ 1: { status: 400, message: "bad" }, 3: { status: 400, message: "bad" } });
+
+    await deliver(harness, block([item(0), item(1)]));
+    const again = await harness.delivery.deliver({ config: CONFIG, workspaceId: "workspace-1", waId: TO, outboundWamid: OUTBOUND, text: LEAD, cards: cards(block([item(0), item(1)])) });
+
+    expect(harness.bodies.map((body) => body.type)).toEqual(["interactive", "text", "interactive"]);
+    expect(again).toEqual({ wamid: null });
   });
 
   describe("when Graph reports later that it could not deliver the cards", () => {
-    const failedLater = async (options: { now?: Date } = {}) => {
+    const failedLater = async (options: { now?: Date; customerWroteAt?: Date } = {}) => {
       const harness = setup();
+      await harness.persistence.upsertContact({ workspaceId: "workspace-1", waId: TO, profileName: null, conversationId: "conversation-1", lastMessageAt: options.customerWroteAt ?? new Date() });
       await deliver(harness, block([item(0), item(1)]));
       const delivery = new WhatsAppReplyDelivery({
         client: new WhatsAppClient({ fetch: harness.fetch, logger: harness.logger }),
         persistence: harness.persistence,
+        pictures: harness.pictures,
         logger: harness.logger,
         metrics: { incrementCounter: (_name, metric) => harness.counts.push(metric.labels) },
         ...(options.now ? { now: () => options.now! } : {}),
@@ -298,8 +382,41 @@ describe("WhatsApp reply cards", () => {
       expect(harness.counts.slice(1)).toEqual([{ message_type: "carousel", outcome: "failed" }, { message_type: "text_list", outcome: "sent" }]);
     });
 
-    it("sends nothing outside the 24-hour service window", async () => {
-      const { harness, delivery } = await failedLater({ now: new Date(Date.now() + 25 * 60 * 60 * 1000) });
+    it("sends nothing once the customer's last message is more than 24 hours old", async () => {
+      const wrote = new Date("2026-11-13T09:00:00.000Z");
+      const { harness, delivery } = await failedLater({ customerWroteAt: wrote, now: new Date(wrote.getTime() + 24 * 60 * 60 * 1000 + 1) });
+
+      await delivery.handleFailedStatus({ workspaceId: "workspace-1", wamid: "wamid.sent.1", errorCode: 131053, config: CONFIG });
+
+      expect(harness.bodies).toHaveLength(1);
+    });
+
+    it("sends nothing when a newer reply has already gone to the customer", async () => {
+      const { harness, delivery } = await failedLater();
+      vi.useFakeTimers({ now: Date.now() + 60_000 });
+      try {
+        await harness.persistence.createMessageLog({
+          wamid: "local-newer",
+          direction: "outbound",
+          workspaceId: "workspace-1",
+          waId: TO,
+          messageType: "text",
+          payload: { text: "Anything else?", inbound_wamids: ["wamid-in-2"] },
+          status: "replied",
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+
+      await delivery.handleFailedStatus({ workspaceId: "workspace-1", wamid: "wamid.sent.1", errorCode: 131053, config: CONFIG });
+
+      expect(harness.bodies).toHaveLength(1);
+      expect(harness.counts.at(-1)).toEqual({ message_type: "carousel", outcome: "failed" });
+    });
+
+    it("sends nothing when the reply already fell back to its list", async () => {
+      const { harness, delivery } = await failedLater();
+      await harness.persistence.claimCardsFallback(OUTBOUND);
 
       await delivery.handleFailedStatus({ workspaceId: "workspace-1", wamid: "wamid.sent.1", errorCode: 131053, config: CONFIG });
 

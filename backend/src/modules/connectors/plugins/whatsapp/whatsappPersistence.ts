@@ -88,6 +88,10 @@ export interface WhatsAppPersistencePort {
    * call that marked it, false when it already was, or the log holds no such outbound row.
    */
   claimCardsFallback(outboundWamid: string): Promise<boolean>;
+  /** Lets go of a claim whose numbered list never reached Graph, so the reply's retry can claim it again. */
+  releaseCardsFallback(outboundWamid: string): Promise<void>;
+  /** The newest reply the connector wrote to a number, whatever its status; null when it wrote none. */
+  findLatestOutboundReply(input: { workspaceId: string; waId: string }): Promise<WhatsAppMessageLogRecord | null>;
   listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]>;
   nextLocalOutboundWamid(): string;
 }
@@ -394,6 +398,33 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
       RETURNING wamid
     `.execute(this.db);
     return result.rows.length > 0;
+  }
+
+  async releaseCardsFallback(outboundWamid: string): Promise<void> {
+    await sql`
+      UPDATE connector_whatsapp_message_log
+      SET payload = payload || jsonb_build_object(
+        ${RADIOSO_STATE_KEY}::text,
+        COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) - ${CARDS_FALLBACK_KEY}::text
+      )
+      WHERE wamid = ${outboundWamid} AND direction = 'outbound'
+    `.execute(this.db);
+  }
+
+  async findLatestOutboundReply(input: { workspaceId: string; waId: string }): Promise<WhatsAppMessageLogRecord | null> {
+    // A reply's own row names the inbound messages it answers; a sent cards message's row does not.
+    const row = await this.db
+      .selectFrom("connector_whatsapp_message_log")
+      .select(messageLogColumns)
+      .where("direction", "=", "outbound")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("wa_id", "=", input.waId)
+      .where(sql<boolean>`payload -> 'inbound_wamids' IS NOT NULL`)
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
+
+    return row ? mapMessageLog(row as WhatsAppMessageLogRow) : null;
   }
 
   async listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]> {

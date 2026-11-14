@@ -11,7 +11,7 @@ import {
   type ConversationIngestPort,
 } from "../../../src/modules/chat/contracts/index.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
-import { createConnectorChatPort } from "../../../src/modules/connectors/services/connectorChatPort.js";
+import { CONNECTOR_PICK_REFUSED_CODE, createConnectorChatPort } from "../../../src/modules/connectors/services/connectorChatPort.js";
 import {
   CONNECTOR_IMAGES_UNUSABLE_CODE,
   type ConnectorImageAnswer,
@@ -125,7 +125,7 @@ describe("createConnectorChatPort", () => {
         imageAllowance: vi.fn(async () => ({ maxImages: 3 })),
         answer: vi.fn(async () => answered),
       };
-      return { chatService, imageTurns, connectorChat: createConnectorChatPort(chatService, unusedIngest, imageTurns) };
+      return { chatService, imageTurns, connectorChat: createConnectorChatPort(chatService, unusedIngest, { imageTurns }) };
     };
     const photoAnswer: ConnectorImageAnswer = { conversationId: "conversation-new", answer: "Looks lovely.", skillOutcome: "grounded" };
 
@@ -249,7 +249,7 @@ describe("createConnectorChatPort", () => {
     it("runs a pick through the chat door, which reads the card from the stored reply", async () => {
       const chatService = { answer: vi.fn() } as unknown as ChatAnswerPort;
       const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => ({ ...reply, blocks: undefined, answer: "Casa Blu it is." })) };
-      const connectorChat = createConnectorChatPort(chatService, unusedIngest, null, picks);
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, { picks });
 
       const response = await connectorChat.answer({
         workspaceId: "workspace-1",
@@ -278,33 +278,43 @@ describe("createConnectorChatPort", () => {
     it.each([
       ["names no card the conversation can pick", new AppError(400, ITEM_SELECTION_REFUSAL_CODES.invalid, "no card")],
       ["picks another card of a reply already picked from", new AppError(409, ITEM_SELECTION_REFUSAL_CODES.alreadySelected, "picked")],
-    ])("runs the turn on the card's words as typed text when the pick %s", async (_case, refusal) => {
+    ])("refuses the pick, as the web chat does, and never runs the card's words as typed text, when it %s", async (_case, refusal) => {
       const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
       const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => { throw refusal; }) };
-      const connectorChat = createConnectorChatPort(chatService, unusedIngest, null, picks);
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, { picks });
 
-      await connectorChat.answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Casa Blu", selection: SELECTION });
-
-      expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({ query: "Casa Blu", conversationId: "conversation-1" }));
+      await expect(connectorChat.answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Casa Blu", selection: SELECTION }))
+        .rejects.toMatchObject({ statusCode: 409, code: CONNECTOR_PICK_REFUSED_CODE });
+      expect(chatService.answer).not.toHaveBeenCalled();
     });
 
     it("passes any other failure of a pick on, for the connector to retry", async () => {
       const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => { throw new AppError(503, "busy", "busy"); }) };
-      const connectorChat = createConnectorChatPort({ answer: vi.fn() } as unknown as ChatAnswerPort, unusedIngest, null, picks);
+      const connectorChat = createConnectorChatPort({ answer: vi.fn() } as unknown as ChatAnswerPort, unusedIngest, { picks });
 
       await expect(connectorChat.answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Casa Blu", selection: SELECTION }))
         .rejects.toMatchObject({ statusCode: 503 });
     });
 
-    it("runs a pick as typed text on a port without the chat door, or with no conversation to pick in", async () => {
+    it("refuses a pick on a port without the chat door, or with no conversation to pick in", async () => {
       const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
       const picks: ChatDoorPickTurnPort = { answer: vi.fn() };
 
-      await createConnectorChatPort(chatService, unusedIngest).answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Casa Blu", selection: SELECTION });
-      await createConnectorChatPort(chatService, unusedIngest, null, picks).answer({ workspaceId: "workspace-1", query: "Casa Blu", selection: SELECTION });
-
-      expect(chatService.answer).toHaveBeenCalledTimes(2);
+      await expect(createConnectorChatPort(chatService, unusedIngest).answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Casa Blu", selection: SELECTION }))
+        .rejects.toMatchObject({ code: CONNECTOR_PICK_REFUSED_CODE });
+      await expect(createConnectorChatPort(chatService, unusedIngest, { picks }).answer({ workspaceId: "workspace-1", query: "Casa Blu", selection: SELECTION }))
+        .rejects.toMatchObject({ code: CONNECTOR_PICK_REFUSED_CODE });
+      expect(chatService.answer).not.toHaveBeenCalled();
       expect(picks.answer).not.toHaveBeenCalled();
+    });
+
+    it("asks whether a reply's pictures are stored, and answers yes on a port that cannot tell", async () => {
+      const replyPictures = { awaitStored: vi.fn(async () => false) };
+      const input = { workspaceId: "workspace-1", messageId: "message-9", withinMs: 6000 };
+
+      await expect(createConnectorChatPort({} as ChatAnswerPort, unusedIngest, { replyPictures }).awaitReplyPictures(input)).resolves.toBe(false);
+      expect(replyPictures.awaitStored).toHaveBeenCalledWith(input);
+      await expect(createConnectorChatPort({} as ChatAnswerPort, unusedIngest).awaitReplyPictures(input)).resolves.toBe(true);
     });
   });
 

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectorChatPort, ConnectorReplyBlocks } from "@radioso/connector-api";
 
+import { AppError } from "../../../../src/shared/domain/errors.js";
+import { CONNECTOR_PICK_REFUSED_CODE } from "../../../../src/modules/connectors/services/connectorChatPort.js";
 import type { WhatsAppClient } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import { WhatsAppMessageHandler } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappMessageHandler.js";
 import { REPLY_CARDS_KEY } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappReplyTaps.js";
@@ -50,8 +52,11 @@ describe("reading a tap from the webhook", () => {
     ["a list row", { type: "interactive", interactive: { type: "list_reply", list_reply: { id: `rb:${REPLY}:0:1`, title: "Villa Rosa", description: "2 rooms" } } }, "Villa Rosa"],
     ["a carousel's quick reply in a shape Meta does not document", { type: "interactive", interactive: { type: "quick_reply", quick_reply: { id: `rb:${REPLY}:0:1`, title: "Scegli" } } }, "Scegli"],
     ["a quick-reply button message", { type: "button", button: { payload: `rb:${REPLY}:0:1`, text: "Scegli" } }, "Scegli"],
-  ])("reads %s as a tap with the id it carried and the words on it", (_case, message, title) => {
-    expect(parse(message)).toMatchObject({ tap: { id: `rb:${REPLY}:0:1`, title }, textBody: title });
+  ])("reads %s as a tap with the id it carried, and never the button's words as typed text", (_case, message, title) => {
+    const tap = parse(message);
+
+    expect(tap).toMatchObject({ tap: { id: `rb:${REPLY}:0:1`, title } });
+    expect(tap?.textBody).toBeUndefined();
   });
 
   it("reads a text message as no tap", () => {
@@ -72,7 +77,7 @@ describe("answering a tap", () => {
     vi.clearAllMocks();
   });
 
-  const setup = async (options: { replyTo?: string; conversation?: boolean } = {}) => {
+  const setup = async (options: { replyTo?: string; conversation?: boolean; answer?: ConnectorChatPort["answer"] } = {}) => {
     const persistence = new InMemoryWhatsAppPersistence();
     if (options.conversation ?? true) {
       await persistence.upsertContact({ workspaceId: WORKSPACE, waId: CUSTOMER, profileName: "Alicia", conversationId: "conversation-1", lastMessageAt: new Date("2026-03-18T09:59:00.000Z") });
@@ -88,7 +93,8 @@ describe("answering a tap", () => {
     });
     const chat = {
       imageAllowance: vi.fn<ConnectorChatPort["imageAllowance"]>(async () => null),
-      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-1", answer: "Villa Rosa it is.", outcome: "answered" })),
+      awaitReplyPictures: vi.fn<ConnectorChatPort["awaitReplyPictures"]>(async () => true),
+      answer: vi.fn<ConnectorChatPort["answer"]>(options.answer ?? (async () => ({ conversationId: "conversation-1", answer: "Villa Rosa it is.", outcome: "answered" }))),
     };
     const client = {
       sendTextMessage: vi.fn<WhatsAppClient["sendTextMessage"]>(async () => ({ wamid: "wamid.sent.2" })),
@@ -148,40 +154,67 @@ describe("answering a tap", () => {
   it.each([
     ["a reply the log no longer holds", buttonTap("rb:local-gone:0:0", "Yes please"), "unknown_reply"],
     ["a card the reply did not show", buttonTap(`rb:${REPLY}:0:7`, "Yes please"), "unknown_item"],
-  ])("answers a tap on %s as the words on its button, logging ids only", async (_case, message, reason) => {
-    const { chat, send } = await setup();
+    ["a reply sent to another customer", buttonTap(`rb:${REPLY}:0:1`, "Yes please"), "other_sender"],
+  ])("leaves a tap on %s unsupported, never running the button's words, and logs ids only", async (_case, message, reason) => {
+    const { chat, persistence, send } = await setup(reason === "other_sender" ? { replyTo: "14155559999" } : {});
 
     await send(message);
 
-    const [call] = chat.answer.mock.calls[0];
-    expect(call.query).toBe("Yes please");
-    expect(call).not.toHaveProperty("selection");
+    expect(chat.answer).not.toHaveBeenCalled();
+    expect(persistence.messageLogs.get("wamid-in-0")?.status).toBe("skipped");
     expect(logger.info).toHaveBeenCalledWith({ workspaceId: WORKSPACE, wamid: "wamid-in-0", reason }, expect.any(String));
   });
 
-  it("does not resolve a tap on a reply sent to another customer", async () => {
-    const { chat, send } = await setup({ replyTo: "14155559999" });
+  it("leaves a pick unsupported when there is no conversation to pick in", async () => {
+    const { chat, persistence, send } = await setup({ conversation: false });
 
     await send(buttonTap(`rb:${REPLY}:0:1`));
 
-    expect(chat.answer.mock.calls[0][0]).not.toHaveProperty("selection");
+    expect(chat.answer).not.toHaveBeenCalled();
+    expect(persistence.messageLogs.get("wamid-in-0")?.status).toBe("skipped");
   });
 
-  it("does not send a pick when there is no conversation to pick in", async () => {
-    const { chat, send } = await setup({ conversation: false });
+  it("leaves a pick the host refuses unsupported, as the web chat refuses it, with no turn on the card's words", async () => {
+    const answer = vi.fn<ConnectorChatPort["answer"]>(async () => {
+      throw new AppError(409, CONNECTOR_PICK_REFUSED_CODE, "refused");
+    });
+    const { chat, client, persistence, send } = await setup({ answer });
 
     await send(buttonTap(`rb:${REPLY}:0:1`));
 
-    expect(chat.answer.mock.calls[0][0]).not.toHaveProperty("selection");
+    expect(chat.answer).toHaveBeenCalledTimes(1);
+    expect(chat.answer.mock.calls[0][0]).toMatchObject({ selection: { itemKey: "/results/1" } });
+    expect(client.sendTextMessage).not.toHaveBeenCalled();
+    expect(persistence.messageLogs.get("wamid-in-0")?.status).toBe("skipped");
   });
 
-  it("answers a tap sent together with typed text as words, not a pick", async () => {
+  it("answers a tap sent together with typed text on the card's title, not the button's words, and not as a pick", async () => {
     const { chat, send } = await setup();
 
     await send({ type: "text", text: { body: "this one" } }, buttonTap(`rb:${REPLY}:0:1`));
 
     expect(chat.answer).toHaveBeenCalledTimes(1);
-    expect(chat.answer.mock.calls[0][0]).toMatchObject({ query: "this one\nScegli" });
+    expect(chat.answer.mock.calls[0][0]).toMatchObject({ query: "this one\nVilla Rosa" });
+    expect(chat.answer.mock.calls[0][0]).not.toHaveProperty("selection");
+  });
+
+  it("reads the same card tapped twice in the batch as one pick", async () => {
+    const { chat, persistence, send } = await setup();
+
+    await send(buttonTap(`rb:${REPLY}:0:1`), buttonTap(`rb:${REPLY}:0:1`));
+
+    expect(chat.answer).toHaveBeenCalledTimes(1);
+    expect(chat.answer.mock.calls[0][0]).toMatchObject({ query: "Villa Rosa", selection: { itemKey: "/results/1" } });
+    expect(persistence.messageLogs.get("wamid-in-0")?.status).toBe("replied");
+    expect(persistence.messageLogs.get("wamid-in-1")?.status).toBe("replied");
+  });
+
+  it("answers two different cards tapped in the batch as their titles, not a pick", async () => {
+    const { chat, send } = await setup();
+
+    await send(buttonTap(`rb:${REPLY}:0:0`), buttonTap(`rb:${REPLY}:0:1`));
+
+    expect(chat.answer.mock.calls[0][0]).toMatchObject({ query: "Casa Blu\nVilla Rosa" });
     expect(chat.answer.mock.calls[0][0]).not.toHaveProperty("selection");
   });
 });

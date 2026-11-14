@@ -83,6 +83,15 @@ export interface WhatsAppPersistencePort {
    * message finds it too. A no-op for a message the log does not hold.
    */
   savePhotoReceipt(wamid: string, receipt: string): Promise<void>;
+  /**
+   * Marks a cards reply's outbound row as fallen back to its numbered list, once: true for the
+   * call that marked it, false when it already was, or the log holds no such outbound row.
+   */
+  claimCardsFallback(outboundWamid: string): Promise<boolean>;
+  /** Lets go of a claim whose numbered list never reached Graph, so the reply's retry can claim it again. */
+  releaseCardsFallback(outboundWamid: string): Promise<void>;
+  /** The newest reply the connector wrote to a number, whatever its status; null when it wrote none. */
+  findLatestOutboundReply(input: { workspaceId: string; waId: string }): Promise<WhatsAppMessageLogRecord | null>;
   listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]>;
   nextLocalOutboundWamid(): string;
 }
@@ -90,6 +99,7 @@ export interface WhatsAppPersistencePort {
 /** The key of an inbound row's payload under which Radioso keeps what it learned about the message. */
 const RADIOSO_STATE_KEY = "radioso";
 const PHOTO_RECEIPT_KEY = "photoReceipt";
+const CARDS_FALLBACK_KEY = "cardsFallback";
 
 /** The receipt a previous attempt kept for this inbound message's photo, if any. */
 export const photoReceiptOf = (log: WhatsAppMessageLogRecord | null): string | null => {
@@ -371,6 +381,50 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
       )
       WHERE wamid = ${wamid} AND direction = 'inbound'
     `.execute(this.db);
+  }
+
+  async claimCardsFallback(outboundWamid: string): Promise<boolean> {
+    // One conditional update, so two failed statuses for the same reply mark it once. The flag
+    // sits under the same namespaced key as an inbound row's photo receipt.
+    const result = await sql<{ wamid: string }>`
+      UPDATE connector_whatsapp_message_log
+      SET payload = payload || jsonb_build_object(
+        ${RADIOSO_STATE_KEY}::text,
+        COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) || jsonb_build_object(${CARDS_FALLBACK_KEY}::text, true)
+      )
+      WHERE wamid = ${outboundWamid}
+        AND direction = 'outbound'
+        AND COALESCE((payload -> ${RADIOSO_STATE_KEY}::text ->> ${CARDS_FALLBACK_KEY}::text)::boolean, false) = false
+      RETURNING wamid
+    `.execute(this.db);
+    return result.rows.length > 0;
+  }
+
+  async releaseCardsFallback(outboundWamid: string): Promise<void> {
+    await sql`
+      UPDATE connector_whatsapp_message_log
+      SET payload = payload || jsonb_build_object(
+        ${RADIOSO_STATE_KEY}::text,
+        COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) - ${CARDS_FALLBACK_KEY}::text
+      )
+      WHERE wamid = ${outboundWamid} AND direction = 'outbound'
+    `.execute(this.db);
+  }
+
+  async findLatestOutboundReply(input: { workspaceId: string; waId: string }): Promise<WhatsAppMessageLogRecord | null> {
+    // A reply's own row names the inbound messages it answers; a sent cards message's row does not.
+    const row = await this.db
+      .selectFrom("connector_whatsapp_message_log")
+      .select(messageLogColumns)
+      .where("direction", "=", "outbound")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("wa_id", "=", input.waId)
+      .where(sql<boolean>`payload -> 'inbound_wamids' IS NOT NULL`)
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
+
+    return row ? mapMessageLog(row as WhatsAppMessageLogRow) : null;
   }
 
   async listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]> {

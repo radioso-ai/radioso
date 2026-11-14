@@ -223,6 +223,40 @@ describeIntegration("PostgresWhatsAppPersistence (Postgres)", () => {
     expect(photoReceiptOf(await persistence.findMessageLogByWamid(outboundWamid))).toBeNull();
   });
 
+  it("claims a cards reply's numbered list once, keeps the rest of its payload, and lets a released claim be taken again", async () => {
+    const replyWamid = `local-${randomUUID()}`;
+    await persistence.createMessageLog({
+      wamid: replyWamid,
+      direction: "outbound",
+      workspaceId,
+      waId,
+      messageType: "interactive",
+      payload: { text: "Two homes fit.", inbound_wamids: [`wamid-${randomUUID()}`], reply_cards: { messageId: randomUUID(), blocks: [] } },
+      status: "replied",
+    });
+
+    await expect(persistence.claimCardsFallback(replyWamid)).resolves.toBe(true);
+    await expect(persistence.claimCardsFallback(replyWamid)).resolves.toBe(false);
+    await persistence.releaseCardsFallback(replyWamid);
+    await expect(persistence.claimCardsFallback(replyWamid)).resolves.toBe(true);
+    await expect(persistence.claimCardsFallback(`local-${randomUUID()}`)).resolves.toBe(false);
+    expect((await persistence.findMessageLogByWamid(replyWamid))?.payload).toMatchObject({ text: "Two homes fit.", radioso: { cardsFallback: true } });
+  });
+
+  it("finds the newest reply to a number, never a sent cards message's own row", async () => {
+    const number = `1${Math.floor(Math.random() * 1e9)}`;
+    const older = `local-${randomUUID()}`;
+    const newer = `local-${randomUUID()}`;
+    await persistence.createMessageLog({ wamid: older, direction: "outbound", workspaceId, waId: number, messageType: "text", payload: { text: "a", inbound_wamids: ["w-1"] }, status: "replied" });
+    await database.query(`UPDATE connector_whatsapp_message_log SET created_at = now() - interval '2 minutes' WHERE wamid = $1`, [older]);
+    await persistence.createMessageLog({ wamid: newer, direction: "outbound", workspaceId, waId: number, messageType: "text", payload: { text: "b", inbound_wamids: ["w-2"] }, status: "processing" });
+    await database.query(`UPDATE connector_whatsapp_message_log SET created_at = now() - interval '1 minute' WHERE wamid = $1`, [newer]);
+    await persistence.createMessageLog({ wamid: `wamid.${randomUUID()}`, direction: "outbound", workspaceId, waId: number, messageType: "carousel", payload: { cards_of: older }, status: "replied" });
+
+    expect((await persistence.findLatestOutboundReply({ workspaceId, waId: number }))?.wamid).toBe(newer);
+    await expect(persistence.findLatestOutboundReply({ workspaceId, waId: `1${Math.floor(Math.random() * 1e9)}` })).resolves.toBeNull();
+  });
+
   it("issues a local outbound wamid", () => {
     expect(persistence.nextLocalOutboundWamid()).toMatch(/^local-[0-9a-f-]{36}$/);
   });

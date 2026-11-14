@@ -140,6 +140,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       state: context.state,
       client,
       persistence,
+      metrics: (context as WhatsAppConnectorContext).metricsRegistry ?? null,
       debounceMs: this.debounceMs,
     });
 

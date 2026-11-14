@@ -4,7 +4,7 @@ import type { ConnectorImageAllowance, ConnectorInboundImage, ConnectorStoredIma
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import { AppError, badRequest, isStructuredAppError } from "../../../shared/domain/errors.js";
-import type { ChatDoorPhotoTurnPort } from "../../chat/contracts/index.js";
+import type { AssistantClientContextCapabilities, ChatDoorPhotoTurnPort, ReplyBlock } from "../../chat/contracts/index.js";
 import {
   VISITOR_IMAGE_LIMITS,
   type VisitorImageAvailability,
@@ -59,11 +59,16 @@ const decodeReceipt = (receipt: string): { imageId: string; ownerId: string } | 
 const isDoorClaimRefusal = (error: unknown): boolean =>
   isStructuredAppError(error) && error.statusCode === 409 && error.code === "visitor_image_unavailable";
 
-/** What a turn with photos answered: the conversation it ran in and the host's reply outcome. */
+/**
+ * What a turn with photos answered: the conversation it ran in, the host's reply outcome, and the
+ * reply's blocks with the message that stored them, when the channel declared blocks.
+ */
 export interface ConnectorImageAnswer {
   readonly conversationId: string;
   readonly answer: string;
   readonly skillOutcome: string | undefined;
+  readonly assistantMessageId?: string;
+  readonly blocks?: ReplyBlock[];
 }
 
 /**
@@ -93,6 +98,8 @@ export interface ConnectorImageTurns {
     /** The channel the photos came through (`whatsapp`), for usage attribution and the turn's source. */
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    /** The reply blocks the channel draws, passed to the turn as it declares them. */
+    clientContextCapabilities?: AssistantClientContextCapabilities;
     /** The photos stored just now, handed back before the turn runs, so a retry can reuse them. */
     onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
   }): Promise<ConnectorImageAnswer | null>;
@@ -200,6 +207,7 @@ export const createConnectorImageTurns = (deps: {
         stream: false,
         sourceChannel: input.sourceChannel,
         channelContext: input.channelContext,
+        ...(input.clientContextCapabilities ? { clientContextCapabilities: input.clientContextCapabilities } : {}),
         imageIds,
         imageOwner: owner,
       }).catch(async (error: unknown) => {
@@ -215,7 +223,14 @@ export const createConnectorImageTurns = (deps: {
       if (!response?.conversationId) {
         throw new Error("Chat turn returned no conversation");
       }
-      return { conversationId: response.conversationId, answer: response.answer, skillOutcome: response.skillOutcome };
+      return {
+        conversationId: response.conversationId,
+        answer: response.answer,
+        skillOutcome: response.skillOutcome,
+        ...(response.blocks?.length && response.assistantMessageId
+          ? { assistantMessageId: response.assistantMessageId, blocks: response.blocks }
+          : {}),
+      };
     },
   };
 };

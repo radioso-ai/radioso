@@ -1,5 +1,8 @@
+import type { ReplyButtonLabels } from "@radioso/conversation-contract";
+
 import type { AnswerSchemaExtension } from "../../../../shared/domain/answerSideChannel.js";
 import { REPLY_BLOCK_LIMITS } from "../../contracts/replyBlocks.js";
+import { readButtonLabels, withButtonLabelFields } from "./presentButtonLabels.js";
 
 /** The grounded answer's field that says which of the turn's images to show. */
 export const PRESENT_FIELD = "present";
@@ -7,11 +10,15 @@ export const PRESENT_FIELD = "present";
 /** Whether the visitor can pick one of the items shown: the model's call, `none` unless it says otherwise. */
 export type PresentSelection = "none" | "single";
 
-/** What the model returned in `present`: image handles in display order, a caption, and whether one can be picked. */
+/**
+ * What the model returned in `present`: image handles in display order, a caption, whether one can
+ * be picked, and the button labels where the turn asked for them.
+ */
 export interface PresentHead {
   images: string[];
   caption: string;
   selection: PresentSelection;
+  buttonLabels?: ReplyButtonLabels;
 }
 
 /** The `selection` field of the `present` head: whether the visitor can pick one of the pictures shown. */
@@ -59,12 +66,16 @@ const PRESENT_HEAD_EXTENSION: AnswerSchemaExtension = {
   beforeAnswer: PRESENT_HEAD_FIELDS,
 };
 
+const PRESENT_HEAD_EXTENSION_WITH_LABELS = withButtonLabelFields(PRESENT_HEAD_EXTENSION, PRESENT_FIELD);
+
 /**
  * The `present` field, written ahead of `answer`: the model decides which pictures to show
  * first, then writes the answer around them. Written after the answer, a lead that already
- * listed the items left no reason to show them (#1763).
+ * listed the items left no reason to show them (#1763). `buttonLabels` adds the labels for a
+ * client that draws its buttons from the reply.
  */
-export const presentHeadSchemaExtension = (): AnswerSchemaExtension => PRESENT_HEAD_EXTENSION;
+export const presentHeadSchemaExtension = (options: { buttonLabels?: boolean } = {}): AnswerSchemaExtension =>
+  options.buttonLabels ? PRESENT_HEAD_EXTENSION_WITH_LABELS : PRESENT_HEAD_EXTENSION;
 
 /** The model's `present` field, or null when it is missing or malformed. */
 export const readPresentHead = (extras: Record<string, unknown> | undefined): PresentHead | null => {
@@ -76,5 +87,6 @@ export const readPresentHead = (extras: Record<string, unknown> | undefined): Pr
   if (!Array.isArray(images) || !images.every((image) => typeof image === "string") || typeof caption !== "string") {
     return null;
   }
-  return { images, caption: caption.trim(), selection: readPresentSelection(selection) };
+  const buttonLabels = readButtonLabels(value as Record<string, unknown>);
+  return { images, caption: caption.trim(), selection: readPresentSelection(selection), ...(buttonLabels ? { buttonLabels } : {}) };
 };

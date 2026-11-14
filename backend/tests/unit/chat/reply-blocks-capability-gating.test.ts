@@ -185,6 +185,18 @@ describe("reply blocks capability gating", () => {
     expect(attach).not.toHaveBeenCalled();
   });
 
+  it("sends the recorded prompt and schema to a WhatsApp turn, which asks for button labels, when the agent has reply cards off", async () => {
+    const recorded: Partial<GoldenCalls> = {};
+    const { composer, attach } = composerWithReplyBlocks(recorded);
+    const whatsappCardsOff = (): PreparedSession => {
+      const session = sessionDeclaring({ item_list: { layouts: ["carousel", "grid", "list"], buttonLabels: true } })();
+      return { ...session, agent: { ...session.agent, replyCardsEnabled: false } };
+    };
+
+    expectGolden(await recordCalls(composer, recorded, whatsappCardsOff));
+    expect(attach).not.toHaveBeenCalled();
+  });
+
   it("sends the recorded prompt and schema when the evidence carries no stored image", async () => {
     const recorded: Partial<GoldenCalls> = {};
     const { composer, attach } = composerWithReplyBlocks(recorded);

@@ -10,159 +10,11 @@ import {
 import { WhatsAppClientError } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import type { WhatsAppClient } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import { WhatsAppMessageHandler, type WhatsAppInboundMessage } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappMessageHandler.js";
-import {
-  photoReceiptOf,
-  type WhatsAppContactRecord,
-  type WhatsAppMessageLogRecord,
-  type WhatsAppPersistencePort,
-} from "../../../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
+import { photoReceiptOf } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
+import { InMemoryWhatsAppPersistence } from "./support/inMemoryWhatsAppPersistence.js";
 
-class InMemoryWhatsAppPersistence implements WhatsAppPersistencePort {
-  readonly contacts = new Map<string, WhatsAppContactRecord>();
-  readonly messageLogs = new Map<string, WhatsAppMessageLogRecord>();
-
-  async findContact(workspaceId: string, waId: string): Promise<WhatsAppContactRecord | null> {
-    return this.contacts.get(`${workspaceId}:${waId}`) ?? null;
-  }
-
-  async upsertContact(input: {
-    workspaceId: string;
-    waId: string;
-    profileName: string | null;
-    conversationId: string;
-    lastMessageAt: Date;
-  }): Promise<WhatsAppContactRecord> {
-    const key = `${input.workspaceId}:${input.waId}`;
-    const existing = this.contacts.get(key);
-    const record: WhatsAppContactRecord = {
-      id: existing?.id ?? `contact-${this.contacts.size + 1}`,
-      workspaceId: input.workspaceId,
-      waId: input.waId,
-      profileName: input.profileName,
-      conversationId: input.conversationId,
-      firstSeenAt: existing?.firstSeenAt ?? new Date(),
-      lastMessageAt: input.lastMessageAt,
-    };
-    this.contacts.set(key, record);
-    return record;
-  }
-
-  async findMessageLogByWamid(wamid: string): Promise<WhatsAppMessageLogRecord | null> {
-    return this.messageLogs.get(wamid) ?? null;
-  }
-
-  async createMessageLog(input: {
-    wamid: string;
-    direction: "inbound" | "outbound";
-    workspaceId: string;
-    waId: string;
-    messageType: string;
-    payload: Record<string, unknown>;
-    status: WhatsAppMessageLogRecord["status"];
-    errorDetails?: string | null;
-  }): Promise<WhatsAppMessageLogRecord> {
-    const record: WhatsAppMessageLogRecord = {
-      id: `log-${this.messageLogs.size + 1}`,
-      wamid: input.wamid,
-      direction: input.direction,
-      workspaceId: input.workspaceId,
-      waId: input.waId,
-      messageType: input.messageType,
-      payload: input.payload,
-      status: input.status,
-      errorDetails: input.errorDetails ?? null,
-      createdAt: new Date(),
-    };
-    this.messageLogs.set(input.wamid, record);
-    return record;
-  }
-
-  async createInboundMessageLog(input: {
-    wamid: string;
-    workspaceId: string;
-    waId: string;
-    messageType: string;
-    payload: Record<string, unknown>;
-  }): Promise<WhatsAppMessageLogRecord | null> {
-    if (this.messageLogs.has(input.wamid)) {
-      return null;
-    }
-    return this.createMessageLog({
-      ...input,
-      direction: "inbound",
-      status: "received",
-    });
-  }
-
-  async findPendingOutboundReply(input: {
-    workspaceId: string;
-    waId: string;
-    inboundWamids: string[];
-  }): Promise<WhatsAppMessageLogRecord | null> {
-    return [...this.messageLogs.values()]
-      .filter((record) =>
-        record.direction === "outbound" &&
-        record.workspaceId === input.workspaceId &&
-        record.waId === input.waId &&
-        ["processing", "retryable_failed"].includes(record.status) &&
-        JSON.stringify(record.payload.inbound_wamids) === JSON.stringify(input.inboundWamids))
-      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
-  }
-
-  async findDeliveredOutboundReply(input: {
-    workspaceId: string;
-    waId: string;
-    inboundWamids: string[];
-  }): Promise<WhatsAppMessageLogRecord | null> {
-    return [...this.messageLogs.values()]
-      .filter((record) =>
-        record.direction === "outbound" &&
-        record.workspaceId === input.workspaceId &&
-        record.waId === input.waId &&
-        record.status === "replied" &&
-        JSON.stringify(record.payload.inbound_wamids) === JSON.stringify(input.inboundWamids))
-      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
-  }
-
-  async markOutboundReplyDelivered(input: {
-    outboundWamid: string;
-    inboundWamids: string[];
-  }): Promise<void> {
-    await this.updateMessageLogStatus(input.outboundWamid, "replied");
-    for (const wamid of input.inboundWamids) {
-      await this.updateMessageLogStatus(wamid, "replied");
-    }
-  }
-
-  async updateMessageLogStatus(
-    wamid: string,
-    status: WhatsAppMessageLogRecord["status"],
-    errorDetails?: string | null,
-  ): Promise<void> {
-    const existing = this.messageLogs.get(wamid);
-    if (existing) {
-      existing.status = status;
-      existing.errorDetails = errorDetails ?? null;
-    }
-  }
-
-  async listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]> {
-    return [...this.messageLogs.values()].filter(
-      (record) => record.direction === "inbound" && ["received", "processing", "retryable_failed"].includes(record.status),
-    );
-  }
-
-  async savePhotoReceipt(wamid: string, receipt: string): Promise<void> {
-    const existing = this.messageLogs.get(wamid);
-    if (existing?.direction === "inbound") {
-      existing.payload = { ...existing.payload, radioso: { photoReceipt: receipt } };
-    }
-  }
-
-  nextLocalOutboundWamid(): string {
-    return `local-${this.messageLogs.size + 1}`;
-  }
-}
+/** What every WhatsApp turn declares it draws: cards still show only where the agent has them on. */
+const WHATSAPP_REPLY_BLOCKS = { item_list: { layouts: ["carousel", "grid", "list"], buttonLabels: true } };
 
 const inbound = (overrides: Partial<WhatsAppInboundMessage> = {}): WhatsAppInboundMessage => ({
   workspaceId: "workspace-1",
@@ -208,6 +60,7 @@ describe("WhatsAppMessageHandler", () => {
     // Photos are off unless a test turns them on: the agent allows none, so an image is an unsupported message.
     const chat = {
       imageAllowance: vi.fn<ConnectorChatPort["imageAllowance"]>(async () => null),
+      awaitReplyPictures: vi.fn<ConnectorChatPort["awaitReplyPictures"]>(async () => true),
       ...(input?.chat ?? {
         answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-1", answer: "Combined answer", outcome: "answered" })),
       }),
@@ -215,6 +68,10 @@ describe("WhatsAppMessageHandler", () => {
     const client = {
       downloadImage: vi.fn<WhatsAppClient["downloadImage"]>(async () => {
         throw new Error("no photo download expected");
+      }),
+      // A reply without cards goes as text alone: no interactive or image message.
+      sendMessage: vi.fn<WhatsAppClient["sendMessage"]>(async () => {
+        throw new Error("no message other than text expected");
       }),
       ...(input?.client ?? {
         sendTextMessage: vi.fn<WhatsAppClient["sendTextMessage"]>(async () => ({ wamid: "wamid-out-1" })),
@@ -679,6 +536,7 @@ describe("WhatsAppMessageHandler", () => {
         conversationId: undefined,
         query: "Something like this, near the coast",
         sourceChannel: "whatsapp",
+        replyBlocks: WHATSAPP_REPLY_BLOCKS,
         images: [{ key: "wamid-photo-1", bytes: PHOTO }],
         onImagesStored: expect.any(Function),
       });
@@ -845,6 +703,7 @@ describe("WhatsAppMessageHandler", () => {
         conversationId: undefined,
         query: "Do you have this in blue?",
         sourceChannel: "whatsapp",
+        replyBlocks: WHATSAPP_REPLY_BLOCKS,
       });
       expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
     });
@@ -1137,6 +996,7 @@ describe("WhatsAppMessageHandler", () => {
           conversationId: undefined,
           query: "Do you have this in blue?",
           sourceChannel: "whatsapp",
+          replyBlocks: WHATSAPP_REPLY_BLOCKS,
         });
         expect(client.sendTextMessage).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ text: "Lovely place." }));
         expect(persistence.messageLogs.get("wamid-text-1")?.status).toBe("replied");

@@ -1,6 +1,13 @@
 import type { Router } from "express";
 import type { QueryResultRow } from "pg";
-import type { ConversationChannelContext, ReplyDraft, ReplyOutcome, ReviewTurnFacts } from "@radioso/conversation-contract";
+import type {
+  ConversationChannelContext,
+  ReplyBlock,
+  ReplyBlockLayout,
+  ReplyDraft,
+  ReplyOutcome,
+  ReviewTurnFacts,
+} from "@radioso/conversation-contract";
 import type { ConfigFieldDefinition } from "./configSchema.js";
 
 /**
@@ -109,6 +116,29 @@ export interface ConnectorImageAllowance {
   maxImages: number;
 }
 
+/**
+ * The reply blocks a connector's channel draws, as it declares them on a turn: each block kind,
+ * with the layouts it draws. `buttonLabels` says the channel has no copy of its own for buttons,
+ * so the reply writes their labels (`ReplyBlock.buttonLabels`). Declaring it offers cards only
+ * where the agent shows them; a reply carries no blocks otherwise.
+ */
+export interface ConnectorReplyBlocksCapability {
+  item_list?: { layouts: readonly ReplyBlockLayout[]; buttonLabels?: boolean };
+}
+
+/** A card the customer picked, by the ids of the reply that showed it (`ConnectorReplyBlocks`). */
+export interface ConnectorItemSelection {
+  messageId: string;
+  blockId: string;
+  itemKey: string;
+}
+
+/** The blocks a reply carries, and the id of the message that stored them, which a pick names. */
+export interface ConnectorReplyBlocks {
+  messageId: string;
+  blocks: readonly ReplyBlock[];
+}
+
 export interface ConnectorChatPort {
   /**
    * Whether a turn on this conversation (a new one when `conversationId` is omitted) reads photos
@@ -163,9 +193,24 @@ export interface ConnectorChatPort {
      * Photos stored before another photo's upload failed are reported too.
      */
     onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
+    /** The reply blocks the channel draws; without it, a reply carries none. */
+    // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
+    replyBlocks?: ConnectorReplyBlocksCapability;
+    /**
+     * A card the customer picked from an earlier reply in `conversationId`, sent alone, with no
+     * images. The host reads the item from the block stored on that reply, never from the
+     * connector, exactly as the web chat's pick, and runs the turn on it; `query` is the card's
+     * title. A pick that names no card the conversation can pick (a reply from another
+     * conversation, another card of a reply already picked from) is refused, as the web chat
+     * refuses it, with an error whose `code` is `connector_pick_refused` (409): nothing is stored
+     * and no turn runs, and a connector treats the tap as a message it does not support.
+     */
+    selection?: ConnectorItemSelection;
   }): Promise<{
     conversationId: string;
     answer: string;
+    /** The reply's blocks, when the channel declared `replyBlocks` and the reply carries any. */
+    replyBlocks?: ConnectorReplyBlocks;
     /**
      * The turn's typed result. `no_context` is an in-remit content gap a connector may
      * escalate; `out_of_scope` is a correct decline for a request outside the agent's
@@ -174,6 +219,14 @@ export interface ConnectorChatPort {
      */
     outcome: ConnectorChatOutcome;
   }>;
+  /**
+   * Waits, up to `withinMs`, until every picture the blocks of reply `messageId` show is stored and
+   * served at its address, copying at once the ones that are still waiting (a skill's pictures are
+   * copied after the reply is written). True when they all are. A connector whose provider fetches
+   * a card's picture by its address when the cards are sent asks before it sends them.
+   */
+  // Message-queue impact: synchronous host port only; no AMQP or worker payload changes.
+  awaitReplyPictures(input: { workspaceId: string; messageId: string; withinMs: number }): Promise<boolean>;
 }
 
 export interface ConnectorStatePort {

@@ -2,7 +2,9 @@ import type { ChatResponse } from "../types/chatResponses.js";
 import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
 import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ItemSelection } from "../../../shared/domain/chatInputMetadata.js";
 import type { VisitorImageOwner } from "../../visitorImages/public.js";
+import type { ReplyBlock } from "./replyBlocks.js";
 
 export type {
   AssistantClientContextCapabilities,
@@ -68,6 +70,7 @@ export type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "./routin
 export type { ChatStreamEvent } from "./streamEvents.js";
 // Reply blocks: what a reply carries beside its text, and the capability a client declares to receive them.
 export { replyBlockSchema, type ReplyBlock, type ReplyImageUrls } from "./replyBlocks.js";
+export { ITEM_SELECTION_REFUSAL_CODES } from "../services/replyBlocks/itemSelectionTurn.js";
 export { pageReadCapabilitySchema, replyBlocksCapabilitySchema } from "./clientContextCapabilities.js";
 // A channel whose caller spoke over a reply marks it, or reports the part that reached the caller
 // of a reply cut off mid-stream so chat stores that part; history reads the marker back.
@@ -120,6 +123,18 @@ export type {
   ReviewTurnFactsSource,
 } from "../types/chatReview.js";
 /**
+ * What a channel's turn through the chat door answered: the reply's text and outcome, and the
+ * blocks it carries with the id of the message that stored them, when the channel declared blocks.
+ */
+export interface ChatDoorTurnReply {
+  conversationId?: string;
+  answer: string;
+  skillOutcome?: string;
+  assistantMessageId?: string;
+  blocks?: ReplyBlock[];
+}
+
+/**
  * The chat door (`AssistantChatService`) as a channel with photos sees it: it claims the photos
  * for their owner, renders them into the turn text, stores them with the message and binds them
  * to it. A channel hands it the ids its upload returned and never touches that path itself.
@@ -134,9 +149,30 @@ export interface ChatDoorPhotoTurnPort {
     stream: false;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    clientContextCapabilities?: AssistantClientContextCapabilities;
     imageIds: readonly string[];
     imageOwner: VisitorImageOwner;
-  }): Promise<{ conversationId?: string; answer: string; skillOutcome?: string } | null>;
+  }): Promise<ChatDoorTurnReply | null>;
+}
+
+/**
+ * The chat door as a channel that shows cards sees it when the customer picks one: the door reads
+ * the item from the block stored on the message that showed it, in this conversation, and refuses
+ * a pick that names none with one of `ITEM_SELECTION_REFUSAL_CODES`, before any message is stored.
+ */
+export interface ChatDoorPickTurnPort {
+  answer(input: {
+    workspaceId: string;
+    agentId?: string;
+    conversationId: string;
+    /** The words the customer saw on the card; the door runs the turn on the stored card's own. */
+    message: string;
+    stream: false;
+    inputMetadata: { method: "item_select"; selection: ItemSelection };
+    sourceChannel?: string | null;
+    channelContext?: ConversationChannelContext | null;
+    clientContextCapabilities?: AssistantClientContextCapabilities;
+  }): Promise<ChatDoorTurnReply | null>;
 }
 
 /** The chat turns a connector host runs: a live answer, and a review turn that returns a draft. */

@@ -55,11 +55,12 @@ const setupApp = (overrides?: {
   enabled?: boolean;
   phoneNumberId?: string;
   persistence?: ReturnType<typeof createPersistence>;
-  handler?: Pick<WhatsAppMessageHandler, "handleInboundMessage">;
+  handler?: Pick<WhatsAppMessageHandler, "handleInboundMessage"> & Partial<Pick<WhatsAppMessageHandler, "handleFailedStatus">>;
 }) => {
   const persistence = overrides?.persistence ?? createPersistence();
-  const handler = overrides?.handler ?? {
-    handleInboundMessage: vi.fn<WhatsAppMessageHandler["handleInboundMessage"]>(async () => {}),
+  const handler = {
+    handleFailedStatus: vi.fn<WhatsAppMessageHandler["handleFailedStatus"]>(async () => {}),
+    ...(overrides?.handler ?? { handleInboundMessage: vi.fn<WhatsAppMessageHandler["handleInboundMessage"]>(async () => {}) }),
   };
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const router = createWhatsAppWebhookRouter({
@@ -344,5 +345,32 @@ describe("createWhatsAppWebhookRouter", () => {
       "WhatsApp inbound message processing failed",
     );
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain(visitorPhone);
+  });
+
+  it("hands each failed delivery status of this number to the handler, and no other status", async () => {
+    const { app, handler } = setupApp();
+    const status = (id: string, state: string, errors?: unknown[]) => ({ id, status: state, recipient_id: visitorPhone, timestamp: "1773828000", ...(errors ? { errors } : {}) });
+    const payload = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [{ changes: [
+        { value: { metadata: { phone_number_id: "15550001111" }, statuses: [
+          status("wamid.sent.1", "failed", [{ code: 131053, title: "Media upload error" }]),
+          status("wamid.sent.2", "delivered"),
+        ] } },
+        { value: { metadata: { phone_number_id: "15559999999" }, statuses: [status("wamid.other.1", "failed")] } },
+      ] }],
+    });
+
+    await request(app)
+      .post("/api/connectors/whatsapp/workspace-status/webhook")
+      .set("content-type", "application/json")
+      .set("X-Hub-Signature-256", signPayload(payload))
+      .send(payload)
+      .expect(200);
+    await Promise.resolve();
+
+    expect(handler.handleFailedStatus).toHaveBeenCalledTimes(1);
+    expect(handler.handleFailedStatus).toHaveBeenCalledWith({ workspaceId: "workspace-status", wamid: "wamid.sent.1", errorCode: 131053 });
+    expect(handler.handleInboundMessage).not.toHaveBeenCalled();
   });
 });

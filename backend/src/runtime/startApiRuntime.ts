@@ -7,7 +7,7 @@ import { buildDependencies } from "../app/server/dependencies.js";
 import type { Env } from "../app/config/env.js";
 import type { ApplicationModule } from "../app/composition/index.js";
 import { runMigrations, type MigrationTimeoutOptions } from "../db/runMigrations.js";
-import { createConnectorChatPort, createConnectorImageTurns } from "../modules/connectors/services/public.js";
+import { composeConnectorChatPort } from "../app/composition/connectorChat.js";
 import { fetchPublicUrl } from "../shared/infra/http/publicUrlFetch.js";
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
 import type { AppDependencies } from "../app/server/types.js";
@@ -67,14 +67,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
   await dependencies.connectorRegistry.initializeAll({
     db: dependencies.connectorDb,
     logger: dependencies.logger,
-    chat: createConnectorChatPort(dependencies.chatService, dependencies.conversationIngestService, createConnectorImageTurns({
-      agents: dependencies.agentService,
-      conversations: dependencies.conversationRepository,
-      availability: dependencies.visitorImageAvailability,
-      images: dependencies.visitorImages,
-      // A turn with photos goes through the chat door, which claims, renders and binds them.
-      door: dependencies.assistantChatService,
-    })),
+    chat: composeConnectorChatPort(dependencies),
     ingestion: dependencies.connectorIngestionPort,
     sourceDirectory: dependencies.connectorSourceDirectory,
     approvalDecisionService: dependencies.approvalDecisionService,

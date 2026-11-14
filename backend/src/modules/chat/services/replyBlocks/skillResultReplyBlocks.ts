@@ -7,6 +7,7 @@ import type { MetricsRegistry } from "../../../../shared/observability/metrics/m
 import { setTraceAttributes } from "../../../../shared/observability/tracing/operations.js";
 import type { ReplyImageUrls, StoredReplyBlock } from "../../contracts/replyBlocks.js";
 import type { PreparedSession } from "../chatSessionPreparer.js";
+import { buttonLabelsPromptSection, withButtonLabels } from "./presentButtonLabels.js";
 import { buildRecordBlock, type RecordBlockBinding, type RecordBlockDropReason } from "./recordBlockBuilder.js";
 import { readRecordPresentHead, recordPresentHeadSchemaExtension } from "./recordPresentHead.js";
 import { channelLabel, type PresentedReplyBlocks } from "./replyBlockTurn.js";
@@ -79,10 +80,12 @@ export class SkillResultReplyBlocks {
       return binding ? this.listingOffer(skillName, ledger, binding) : null;
     }
     const channel = channelLabel(session.conversation.sourceChannel);
+    const buttonLabels = itemList.buttonLabels === true;
+    const recordsSection = renderPromptTemplate("chat/skill-result-present-records.md", {});
     let lost = false;
     return {
-      schemaExtension: recordPresentHeadSchemaExtension(),
-      promptSection: renderPromptTemplate("chat/skill-result-present-records.md", {}),
+      schemaExtension: recordPresentHeadSchemaExtension({ buttonLabels }),
+      promptSection: buttonLabels ? `${recordsSection}\n\n${buttonLabelsPromptSection()}` : recordsSection,
       records: { withHandles: ledger.promptSection({ handles: true }), plain: ledger.promptSection({ handles: false }) },
       cardsLost: () => lost,
       build: (extras) => {
@@ -123,7 +126,7 @@ export class SkillResultReplyBlocks {
         });
         return {
           stored: [block],
-          presented: presentReplyBlocks([block], this.deps.imageUrls),
+          presented: withButtonLabels(presentReplyBlocks([block], this.deps.imageUrls), buttonLabels ? head.buttonLabels : undefined),
           ...(toolImages.length > 0 ? { toolImages } : {}),
         };
       },

@@ -87,6 +87,7 @@ export {
 export { buildChatTurnRuntime } from "./services/chatTurnRuntime.js";
 export { ReplyBlockTurnFactory } from "./services/replyBlocks/replyBlockTurn.js";
 export { SkillResultReplyBlocks } from "./services/replyBlocks/skillResultReplyBlocks.js";
+export { ReplyPictureReadiness } from "./services/replyBlocks/replyPictureReadiness.js";
 export { ItemSelectionTurns } from "./services/replyBlocks/itemSelectionTurn.js";
 export type {
   TurnOutcome,

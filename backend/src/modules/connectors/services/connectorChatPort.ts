@@ -21,7 +21,7 @@ export const CONNECTOR_PICK_REFUSED_CODE = "connector_pick_refused";
 type ConnectorAnswer = Awaited<ReturnType<ConnectorChatPort["answer"]>>;
 
 /** Whether a reply's pictures are stored, for a connector whose provider fetches them by address. */
-export interface ConnectorReplyPictures {
+interface ConnectorReplyPictures {
   awaitStored(input: { workspaceId: string; messageId: string; withinMs: number }): Promise<boolean>;
 }
 

@@ -9,7 +9,7 @@ const storedBlocksSchema = z.array(storedReplyBlockSchema).min(1);
 const DEFAULT_POLL_MS = 250;
 
 /** The served copy of a reply's picture, by its id; asking for one that is still waiting copies it. */
-export interface ReplyPictureLookup {
+interface ReplyPictureLookup {
   findServable(input: { imageId: string; width: number }): Promise<unknown>;
 }
 

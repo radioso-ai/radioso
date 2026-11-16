@@ -1,4 +1,5 @@
 import { AppError } from "../../domain/errors.js";
+import { causeChainNodes } from "./causeChain.js";
 import { abortReasonOf } from "./providerTimeouts.js";
 
 /**
@@ -33,6 +34,14 @@ export class ModelCallShedError extends AppError {
     this.reason = reason;
   }
 }
+
+/**
+ * The shed error `error` is or carries as a (bounded) `.cause`, or `undefined`. A wrapper that
+ * hides the cause from the typed `503` (a routine activation failure, say) must not turn an
+ * expected load-shedding outcome into a reported fault.
+ */
+export const modelCallShedBehind = (error: unknown): ModelCallShedError | undefined =>
+  causeChainNodes(error).find((node): node is ModelCallShedError => node instanceof ModelCallShedError);
 
 export interface ModelCallAdmissionLimits {
   /** Most calls the turn lane may have in flight on this instance. */

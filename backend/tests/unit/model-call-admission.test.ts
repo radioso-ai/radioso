@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ModelCallAdmission,
   ModelCallShedError,
+  modelCallShedBehind,
   type ModelCallAdmissionObserver,
 } from "../../src/shared/infra/llm/modelCallAdmission.js";
 import { isReportableFault } from "../../src/shared/domain/errors.js";
@@ -145,5 +146,29 @@ describe("ModelCallAdmission", () => {
 
   it("treats shedding as an expected outcome, not a fault for error tracking", () => {
     expect(isReportableFault(new ModelCallShedError("turn", "queue_timeout"))).toBe(false);
+  });
+
+  describe("modelCallShedBehind", () => {
+    it("finds the shed error itself, or one a wrapper carries as its cause", () => {
+      const shed = new ModelCallShedError("turn", "lane_full");
+
+      expect(modelCallShedBehind(shed)).toBe(shed);
+      expect(modelCallShedBehind(new Error("wrapper", { cause: shed }))).toBe(shed);
+      expect(modelCallShedBehind(new Error("outer", { cause: new Error("inner", { cause: shed }) }))).toBe(shed);
+    });
+
+    it("finds nothing in an unrelated failure, a cyclic chain, or a chain deeper than it walks", () => {
+      const cyclic: { cause?: unknown } = {};
+      cyclic.cause = cyclic;
+      let deep: unknown = new ModelCallShedError("turn", "lane_full");
+      for (let hop = 0; hop < 6; hop += 1) {
+        deep = new Error(`wrapper ${hop}`, { cause: deep });
+      }
+
+      expect(modelCallShedBehind(new Error("boom"))).toBeUndefined();
+      expect(modelCallShedBehind(undefined)).toBeUndefined();
+      expect(modelCallShedBehind(cyclic)).toBeUndefined();
+      expect(modelCallShedBehind(deep)).toBeUndefined();
+    });
   });
 });

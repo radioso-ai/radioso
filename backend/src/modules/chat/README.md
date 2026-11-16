@@ -1016,7 +1016,11 @@ imports from `services/`.
   `TurnPlanCoordinator.plan` rejects with the provider's error (a
   `ProviderRequestTimeoutError` for the timeout, the `ModelCallShedError` for a shed
   call), so the turn fails through `failTurn` like a failed answer call, and records
-  `outcome: degraded` with the bounded reason. Malformed output, a rejected request,
+  `outcome: degraded` with the bounded reason. The engine wraps a failure of the
+  routine pass it runs the planner under (and of an active routine's resume) as a
+  `RoutineActivationFailure`; `failTurn` looks through that wrapper's `.cause` for a
+  `ModelCallShedError` and surfaces it, so a shed turn is `503 model_capacity_busy`
+  and unreported whichever consumer first met the shed call. Malformed output, a rejected request,
   an unavailable model, or a rejected credential still fall back staged
   (`tests/unit/turn-plan-coordinator.test.ts`,
   `tests/unit/chat-service-turn-planning.test.ts`).

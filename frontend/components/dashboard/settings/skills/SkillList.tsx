@@ -1,11 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pencil, Server, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Server } from 'lucide-react'
 
+import { QuietList, QuietListGroup, QuietListRow } from '@/components/dashboard/settings/quiet-list'
+import { useScopedRowMutations } from '@/components/dashboard/settings/use-scoped-row-mutations'
 import { useRegisterAddSkillAction } from '@/components/dashboard/shared/skills-header-action'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
@@ -22,25 +23,34 @@ import {
   type SkillCapabilityDescriptor,
 } from '@/lib/api-skills'
 import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retrieval-settings-view-state'
-import { cn } from '@/lib/utils'
 import { CapabilityPicker } from './CapabilityPicker'
 import { McpServersPanel } from './McpServersPanel'
 import { RecentNotifications } from './RecentNotifications'
+import { isRetrievalAnswerSkill, RetrievalAnswersSwitch, type RetrievalAnswersControl } from './RetrievalAnswersSwitch'
+import { SkillDetailSheet, type SkillSheetActions, type SkillSheetTarget } from './SkillDetailSheet'
 import { SkillForm } from './SkillForm'
-import { formatCapabilityLabel, formatInvocationMode } from './skill-form-model'
-import { countSkillUsage, describeSkillUsage, NO_SKILL_USAGE, type SkillUsage } from './skill-usage'
+import { builtInSkillRowDomId, skillRowDomId, skillRowSummary } from './skill-list-rows'
+import { countSkillUsage, type SkillUsage } from './skill-usage'
 
-const targetLabel = (skill: AgentSkill, capabilities: readonly SkillCapabilityDescriptor[]) => {
-  const capability = capabilities.find((candidate) => candidate.id === skill.capability)
-  if (capability && !(capability.requiresTarget ?? true)) {
-    return 'Inline configuration'
+// The sheet holds which skill it shows, not a copy of it, so a toggle or reload shows the current
+// skill and a deleted one closes the sheet. The selection belongs to one agent: switching agents
+// closes it rather than carrying a built-in's sheet over to another agent.
+type SheetSelection = { agentId: string } & ({ kind: 'authored'; id: string } | { kind: 'built-in'; name: string })
+
+const resolveSheetTarget = (
+  selection: SheetSelection | null,
+  agentId: string,
+  skills: readonly AgentSkill[],
+  platformSkills: readonly PlatformAnswerSkill[],
+): SkillSheetTarget | null => {
+  if (!selection || selection.agentId !== agentId) return null
+  if (selection.kind === 'authored') {
+    const skill = skills.find((candidate) => candidate.id === selection.id)
+    return skill ? { kind: 'authored', skill } : null
   }
-  const target = capability?.targets.find((candidate) => candidate.id === skill.target.id)
-  return target?.label ?? skill.target.id ?? skill.target.kind
+  const skill = platformSkills.find((candidate) => candidate.name === selection.name)
+  return skill ? { kind: 'built-in', skill } : null
 }
-
-const enabledTone = (enabled: boolean) =>
-  enabled ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
 
 export function SkillList({
   agentId,
@@ -57,21 +67,36 @@ export function SkillList({
   const [platformSkills, setPlatformSkills] = useState<PlatformAnswerSkill[]>([])
   const [capabilities, setCapabilities] = useState<SkillCapabilityDescriptor[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [serversOpen, setServersOpen] = useState(false)
+  const [builtInsOpen, setBuiltInsOpen] = useState(false)
+  const [sheetSelection, setSheetSelection] = useState<SheetSelection | null>(null)
   const [editingSkill, setEditingSkill] = useState<AgentSkill | null>(null)
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<AgentSkillCapabilityId | null>(null)
   // Null while the referencing surfaces are unread or unreadable: a partial count would report a
   // used skill as an orphan, which is worse than saying nothing.
   const [usage, setUsage] = useState<Map<string, SkillUsage> | null>(null)
   const loadVersion = useRef(0)
+  const rowMutations = useScopedRowMutations(agentId)
   const retrievalSettingsViewState = resolveAssistantRetrievalSettingsViewState({
     isAssistantBehaviorLoading,
     assistantBehaviorSettings,
   })
+  const retrievalAnswers: RetrievalAnswersControl = {
+    enabled: retrievalSettingsViewState === 'controls',
+    isOff: retrievalSettingsViewState === 'disabled',
+    disabled: retrievalSettingsViewState === 'loading' || retrievalSettingsViewState === 'unavailable',
+    onChange: (retrievalEnabled) => onAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled })),
+  }
+
+  // Memoized: the sheet keeps the last target it showed, compared by identity.
+  const sheetTarget = useMemo(
+    () => resolveSheetTarget(sheetSelection, agentId, skills, platformSkills),
+    [sheetSelection, agentId, skills, platformSkills],
+  )
 
   const loadUsage = useCallback(async (version: number) => {
     const [directiveResult, routineResult] = await Promise.allSettled([
@@ -130,14 +155,8 @@ export function SkillList({
     setFormOpen(true)
   }
 
-  const openEdit = (skill: AgentSkill) => {
-    setEditingSkill(skill)
-    setSelectedCapabilityId(null)
-    setFormOpen(true)
-  }
-
   const submitSkill = async (input: AgentSkillCreateInput) => {
-    setBusyAction('save')
+    setIsSaving(true)
     setError(null)
     try {
       if (editingSkill) {
@@ -157,47 +176,56 @@ export function SkillList({
     } catch (saveError) {
       setError(getApiErrorMessage(saveError, 'Failed to save skill.'))
     } finally {
-      setBusyAction(null)
+      setIsSaving(false)
     }
   }
 
+  // Each row holds its own controls until its own request settles, so acting on a second skill
+  // never releases the first one's while its update is still in flight.
   const toggleSkill = async (skill: AgentSkill, enabled: boolean) => {
-    setBusyAction(`toggle:${skill.id}`)
     setError(null)
-    try {
-      const response = await agentSkillsApi.updateSkill(agentId, skill.id, { enabled })
-      setSkills((current) => current.map((item) => item.id === skill.id ? response.skill : item))
-    } catch (updateError) {
-      setError(getApiErrorMessage(updateError, 'Failed to update skill.'))
-    } finally {
-      setBusyAction(null)
+    const outcome = await rowMutations.run(skill.id, () => agentSkillsApi.updateSkill(agentId, skill.id, { enabled }))
+    if (outcome.status === 'applied') {
+      setSkills((current) => current.map((item) => item.id === skill.id ? outcome.value.skill : item))
+    } else if (outcome.status === 'failed') {
+      setError(getApiErrorMessage(outcome.error, 'Failed to update skill.'))
     }
   }
 
   const deleteSkill = async (skill: AgentSkill) => {
-    setBusyAction(`delete:${skill.id}`)
     setError(null)
-    try {
-      await agentSkillsApi.deleteSkill(agentId, skill.id)
+    const outcome = await rowMutations.run(skill.id, () => agentSkillsApi.deleteSkill(agentId, skill.id))
+    if (outcome.status === 'applied') {
       setSkills((current) => current.filter((item) => item.id !== skill.id))
-    } catch (deleteError) {
-      setError(getApiErrorMessage(deleteError, 'Failed to delete skill.'))
-    } finally {
-      setBusyAction(null)
+      setSheetSelection(null)
+    } else if (outcome.status === 'failed') {
+      setError(getApiErrorMessage(outcome.error, 'Failed to delete skill.'))
     }
+  }
+
+  const sheetActions: SkillSheetActions = {
+    isRowPending: rowMutations.isPending,
+    onToggleEnabled: (skill, enabled) => void toggleSkill(skill, enabled),
+    onEdit: (skill) => {
+      setError(null)
+      setSheetSelection(null)
+      setEditingSkill(skill)
+      setSelectedCapabilityId(null)
+      setFormOpen(true)
+    },
+    onDelete: (skill) => void deleteSkill(skill),
   }
 
   return (
     <section id="assistant-skills-list" className="space-y-4 scroll-mt-24">
-      <div className="flex justify-end">
-        <Button type="button" variant="outline" size="sm" onClick={() => setServersOpen(true)}>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          Skill changes apply live, outside Review &amp; Publish.
+        </p>
+        <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setServersOpen(true)}>
           <Server className="h-4 w-4" />
           Manage MCP connections
         </Button>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
-        <span>Skill changes apply live now and are outside the agent publication release.</span>
-        <Badge variant="outline">Applies live now</Badge>
       </div>
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
 
@@ -207,93 +235,66 @@ export function SkillList({
           Loading skills...
         </div>
       ) : null}
-
-      {!isLoading ? (
-        <ul className="space-y-3">
-          {platformSkills.map((skill) => {
-            const isRetrievalAnswer = skill.name === 'retrieval.answer'
-            const retrievalEnabled = retrievalSettingsViewState === 'controls'
-            return (
-              <li key={skill.name}>
-                <article className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-sm font-medium text-foreground">{skill.displayName}</span>
-                      <Badge variant="secondary">Built in</Badge>
-                      <Badge className={cn(enabledTone(isRetrievalAnswer ? retrievalEnabled : true))} variant="secondary">
-                        {isRetrievalAnswer ? (retrievalEnabled ? 'Enabled' : 'Disabled') : 'Always on'}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{skill.description}</p>
-                  </div>
-                  {isRetrievalAnswer ? (
-                    <Switch
-                      checked={retrievalEnabled}
-                      onCheckedChange={(retrievalEnabled) => onAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled }))}
-                      disabled={retrievalSettingsViewState === 'loading' || retrievalSettingsViewState === 'unavailable'}
-                      aria-label="Enable retrieval answers"
-                    />
-                  ) : null}
-                </article>
-              </li>
-            )
-          })}
-        </ul>
-      ) : null}
-
-      {!isLoading && skills.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-          This agent always answers directly, from documents, or with a clarification. Add a named skill to extend it.
-        </div>
-      ) : null}
-
+      {/* A reload after a save keeps the rows on screen under the spinner instead of emptying them. */}
       {skills.length > 0 ? (
-        <ul className="space-y-3">
+        <QuietList>
           {skills.map((skill) => (
-            <li key={skill.id}>
-              <article className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-medium text-foreground">@{skill.name}</span>
-                    <Badge variant="secondary">{formatCapabilityLabel(skill.capability)}</Badge>
-                    <Badge className={cn(enabledTone(skill.enabled))} variant="secondary">
-                      {skill.enabled ? 'Enabled' : 'Disabled'}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {targetLabel(skill, capabilities)} · {formatInvocationMode(skill.invocationMode)}
-                    {usage ? ` · ${describeSkillUsage(usage.get(skill.name) ?? NO_SKILL_USAGE)}` : ''}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={skill.enabled}
-                    onCheckedChange={(enabled) => void toggleSkill(skill, enabled)}
-                    disabled={busyAction === `toggle:${skill.id}`}
-                    aria-label={`Enable ${skill.name}`}
-                  />
-                  <Button type="button" variant="ghost" size="icon" onClick={() => openEdit(skill)} aria-label={`Edit ${skill.name}`}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => void deleteSkill(skill)}
-                    disabled={busyAction === `delete:${skill.id}`}
-                    aria-label={`Delete ${skill.name}`}
-                  >
-                    {busyAction === `delete:${skill.id}` ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </article>
-            </li>
+            <QuietListRow
+              key={skill.id}
+              domId={skillRowDomId(skill.id)}
+              title={`@${skill.name}`}
+              summary={skillRowSummary(skill, capabilities, usage)}
+              isDimmed={!skill.enabled}
+              onOpen={() => setSheetSelection({ agentId, kind: 'authored', id: skill.id })}
+              lead={(
+                <Switch
+                  checked={skill.enabled}
+                  onCheckedChange={(enabled) => void toggleSkill(skill, enabled)}
+                  disabled={rowMutations.isPending(skill.id)}
+                  aria-label={`Enable ${skill.name}`}
+                />
+              )}
+            />
           ))}
-        </ul>
+        </QuietList>
+      ) : !isLoading ? (
+        <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+          This agent always answers directly, from documents, or with a clarification. Add a named skill to extend it.
+        </p>
+      ) : null}
+
+      {platformSkills.length > 0 ? (
+        // Retrieval answers being off changes how the agent answers, so the closed group says so.
+        <QuietListGroup
+          label={`Built-in skills · ${platformSkills.length}${retrievalAnswers.isOff ? ' · retrieval answers off' : ''}`}
+          isOpen={builtInsOpen}
+          onOpenChange={setBuiltInsOpen}
+        >
+          {platformSkills.map((skill) => (
+            <QuietListRow
+              key={skill.name}
+              domId={builtInSkillRowDomId(skill.name)}
+              title={skill.displayName}
+              summary={skill.description}
+              isDimmed={isRetrievalAnswerSkill(skill) && retrievalAnswers.isOff}
+              onOpen={() => setSheetSelection({ agentId, kind: 'built-in', name: skill.name })}
+              lead={isRetrievalAnswerSkill(skill) ? <RetrievalAnswersSwitch control={retrievalAnswers} /> : null}
+            />
+          ))}
+        </QuietListGroup>
       ) : null}
 
       {!isLoading ? <RecentNotifications agentId={agentId} /> : null}
 
+      <SkillDetailSheet
+        target={sheetTarget}
+        capabilities={capabilities}
+        usage={usage}
+        error={error}
+        retrievalAnswers={retrievalAnswers}
+        actions={sheetActions}
+        onClose={() => setSheetSelection(null)}
+      />
       <CapabilityPicker
         open={pickerOpen}
         agentId={agentId}
@@ -317,8 +318,8 @@ export function SkillList({
         skills={skills}
         editingSkill={editingSkill}
         capabilityId={selectedCapabilityId}
-        isSaving={busyAction === 'save'}
-        error={busyAction === 'save' ? null : error}
+        isSaving={isSaving}
+        error={isSaving ? null : error}
         onOpenChange={(open) => {
           setFormOpen(open)
           if (!open) {

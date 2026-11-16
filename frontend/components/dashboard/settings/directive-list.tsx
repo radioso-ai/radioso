@@ -1,10 +1,9 @@
 'use client'
 
-import { ChevronRight, Layers } from 'lucide-react'
+import { Layers } from 'lucide-react'
 
-import { QuietList, QuietListRow, focusQuietListRow } from '@/components/dashboard/settings/quiet-list'
+import { QuietList, QuietListGroup, QuietListRow, focusQuietListRow } from '@/components/dashboard/settings/quiet-list'
 import { Badge } from '@/components/ui/badge'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Switch } from '@/components/ui/switch'
 import type { BuiltInDefaultEntry, DirectiveRow } from '@/lib/directive-list-view-model'
 
@@ -85,29 +84,21 @@ export function BuiltInDefaultsGroup({
 }) {
   if (defaults.length === 0) return null
   return (
-    <Collapsible open={isOpen} onOpenChange={onOpenChange} className="space-y-2">
-      <CollapsibleTrigger className="group flex items-center gap-2 rounded-md py-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
-        <ChevronRight className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-90" aria-hidden />
-        Radioso defaults · {defaults.length}
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <QuietList>
-          {defaults.map((entry) => (
-            <QuietListRow
-              key={entry.builtIn.name}
-              domId={builtInRowDomId(entry.builtIn.name)}
-              title={entry.title}
-              // An unconditional replacer retires the default outright; the row says so rather
-              // than reading "Always" for behaviour the agent no longer has.
-              summary={entry.replacedBy && entry.replacedBy.condition.kind === 'always'
-                ? `Always · replaced by ${entry.replacedBy.name}`
-                : 'Always'}
-              lead={null}
-              onOpen={() => onOpen(entry.builtIn.name)}
-            />
-          ))}
-        </QuietList>
-      </CollapsibleContent>
-    </Collapsible>
+    <QuietListGroup label={`Radioso defaults · ${defaults.length}`} isOpen={isOpen} onOpenChange={onOpenChange}>
+      {defaults.map((entry) => (
+        <QuietListRow
+          key={entry.builtIn.name}
+          domId={builtInRowDomId(entry.builtIn.name)}
+          title={entry.title}
+          // An unconditional replacer retires the default outright; the row says so rather
+          // than reading "Always" for behaviour the agent no longer has.
+          summary={entry.replacedBy && entry.replacedBy.condition.kind === 'always'
+            ? `Always · replaced by ${entry.replacedBy.name}`
+            : 'Always'}
+          lead={null}
+          onOpen={() => onOpen(entry.builtIn.name)}
+        />
+      ))}
+    </QuietListGroup>
   )
 }

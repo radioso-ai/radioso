@@ -164,6 +164,10 @@ describe('SkillList submit', () => {
       root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
     })
 
+    // Edit lives in the sheet a skill's row opens.
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[aria-label="@answer"]')?.click()
+    })
     await act(async () => {
       document.querySelector<HTMLButtonElement>('[aria-label="Edit answer"]')?.click()
     })
@@ -228,6 +232,12 @@ describe('SkillList submit', () => {
       root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={onAssistantBehaviorDraft} />)
     })
 
+    // The built-in skills wait in a collapsed group.
+    await act(async () => {
+      ;[...document.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.startsWith('Built-in skills'))
+        ?.click()
+    })
     await act(async () => {
       document.querySelector<HTMLButtonElement>('[aria-label="Enable retrieval answers"]')?.click()
     })

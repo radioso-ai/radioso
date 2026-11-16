@@ -98,6 +98,10 @@ The Prometheus-style surface is intentionally small and low-cardinality:
 - `radioso_product_events_total`
 - `radioso_errors_total`
 - `radioso_abuse_control_store_fallback_total`
+- `radioso_llm_calls_in_flight`
+- `radioso_llm_call_queue_wait_ms`
+- `radioso_llm_calls_shed_total`
+- `radioso_llm_provider_pressure_total`
 
 The two HTTP metrics label a request by the route pattern it matched, such as
 `/api/v1/public/chat/:token/messages`. Requests no route matched, a 404 or a
@@ -337,7 +341,10 @@ not limited to the HTTP request path:
   `provider_unavailable`, or `provider_rejected`) plus the provider's HTTP status
   and machine code. `quota_exhausted` means the provider account has no credit
   left (`insufficient_quota`, `credit_balance_exhausted`): each turn fails until
-  someone adds credit. A `rate_limited` turn clears on retry. The kind is set
+  someone adds credit. A `rate_limited` turn clears on retry. A turn its API
+  instance shed at the model call limit fails with `503 model_capacity_busy`, an
+  expected outcome that `radioso_llm_calls_shed_total` counts instead of error
+  tracking (see [Monitoring And Alerts](monitoring-alerts.md#model-provider-pressure)). The kind is set
   only once the failure is confirmed to be an actual LLM provider call — the OpenAI
   SDK's own error types, this backend's `ProviderHttpError` for the Gemini/Claude
   adapters, or one wrapped a hop or two down a routine activation failure's

@@ -130,6 +130,29 @@ describe("OpenAITextGenerationClient.complete", () => {
     expect(createMock).toHaveBeenCalledWith(expect.any(Object), { signal: controller.signal });
   });
 
+  it("hands a caller's own retry budget to the SDK, so a governed call is retried by one layer only", async () => {
+    createMock.mockResolvedValueOnce({ id: "resp-retries", choices: [{ message: { content: "Hello" } }] });
+    createMock.mockResolvedValueOnce(asyncIterableOf([]));
+    const controller = new AbortController();
+    const client = new OpenAITextGenerationClient(chatConfig);
+
+    await client.complete({ prompt: "Hi", signal: controller.signal, maxProviderRetries: 0 });
+    for await (const _chunk of client.stream({ prompt: "Hi", maxProviderRetries: 0 }).textStream) {
+      // drain
+    }
+
+    expect(createMock.mock.calls[0]?.[1]).toEqual({ signal: controller.signal, maxRetries: 0 });
+    expect(createMock.mock.calls[1]?.[1]).toEqual({ maxRetries: 0 });
+  });
+
+  it("keeps the SDK's own retry default for a caller that sets none", async () => {
+    createMock.mockResolvedValue({ id: "resp-default-retries", choices: [{ message: { content: "Hello" } }] });
+
+    await new OpenAITextGenerationClient(chatConfig).complete({ prompt: "Hi" });
+
+    expect(createMock.mock.calls[0]).toHaveLength(1);
+  });
+
   it("returns generated text plus provider-reported usage marked actual", async () => {
     createMock.mockResolvedValue({
       id: "resp-1",

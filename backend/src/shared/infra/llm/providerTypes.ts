@@ -86,6 +86,12 @@ export interface TextGenerationRequest {
   responseFormat?: JsonSchemaResponseFormat;
   signal?: AbortSignal;
   dispatchRecord?: ProviderDispatchRecord;
+  /**
+   * The most retries the provider's own SDK may make for this request; its default when
+   * absent. A caller that retries on its own sets `0`, so no call is retried by two layers.
+   * Adapters without an SDK retry layer ignore it.
+   */
+  maxProviderRetries?: number;
 }
 
 export type UsageQuality = "actual" | "estimated";

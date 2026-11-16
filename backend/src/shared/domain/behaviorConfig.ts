@@ -1,6 +1,27 @@
 export const LLM_DEFAULTS = {
   textGenerationMaxInputTokens: 32_000,
   textGenerationMaxOutputTokens: 1536,
+  // The model calls conversation turns make on one instance (shared/infra/llm/
+  // modelCallGovernance.ts). Composition-owned; LLM_MAX_CONCURRENT_TURN_CALLS sizes the
+  // turn lane per deployment.
+  turnCalls: {
+    // Default for LLM_MAX_CONCURRENT_TURN_CALLS. A planner call plus a streamed answer
+    // hold a turn-lane slot for roughly 6-7 s, so ten turns a second over two instances
+    // keep about 30 in flight on each. 64 leaves room for twice that: shedding starts
+    // when provider latency roughly doubles, which is when in-flight calls pile up.
+    maxConcurrent: 64,
+    // The deferrable lane (shadow assessment, best-effort action chips) is its own
+    // budget of the turn lane's size divided by this, at least one.
+    deferrableDivisor: 8,
+    // How long a turn call waits for a free slot before it is shed with a typed busy
+    // failure. Well inside the planner's 12 s bound: a slot that frees later than this
+    // serves the visitor worse than a prompt failure they can resend.
+    maxQueueWaitMs: 2_000,
+    // The one retry layer for governed calls (their SDK retries are off): one retry,
+    // honouring the provider's Retry-After up to maxDelayMs. A provider asking for a
+    // longer wait fails the call at once, so a turn spends at most 2 s more per call.
+    retry: { maxAttempts: 2, baseDelayMs: 500, maxDelayMs: 2_000 },
+  },
 } as const;
 
 export const DIRECTIVES_BEHAVIOR = {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import OpenAI from "openai";
 
 import { createConversationEngine } from "@radioso/conversation-engine";
 import { RoutineRegistry, type RoutineRegistration } from "@radioso/conversation-defaults";
@@ -30,7 +31,9 @@ import {
   type TurnPlanGatewayFactory,
 } from "../../src/modules/chat/services/turnPlanService.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import { ModelCallShedError } from "../../src/shared/infra/llm/modelCallAdmission.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import { ProviderRequestTimeoutError } from "../../src/shared/infra/llm/providerTimeouts.js";
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
 import { SKILL_TURN_OUTCOME } from "../../src/modules/chat/services/assistantTurnOutcomeTypes.js";
@@ -132,6 +135,8 @@ const plannerFactory = (input: {
   completions: string[];
   recorder?: UsageEventRecorder;
   neverComplete?: boolean;
+  /** Thrown by every planner call, as the provider would. */
+  failWith?: Error;
 }): TurnPlanGatewayFactory & {
   completeCalls: () => number;
   prompts: () => string[];
@@ -142,6 +147,9 @@ const plannerFactory = (input: {
   const complete = vi.fn(async (request: { prompt: string; systemPrompt?: string; signal?: AbortSignal }) => {
     // Everything the planner reads: standing rules (system) and the turn's request (user).
     prompts.push(`${request.systemPrompt ?? ""}\n\n${request.prompt}`);
+    if (input.failWith) {
+      throw input.failWith;
+    }
     if (input.neverComplete) {
       return new Promise<never>((_resolve, reject) => {
         if (request.signal?.aborted) {
@@ -390,6 +398,8 @@ const buildService = (input: {
   fallbackReplyComposer?: FallbackReplyComposer;
   assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
   quickReplyLaneEnabled?: boolean;
+  errorReporter?: ChatServiceOptions["errorReporter"];
+  logger?: ChatServiceOptions["logger"];
 }): ChatService =>
   new ChatService({
     conversationRepository: input.conversationRepository ?? new InMemoryConversationRepository(),
@@ -426,6 +436,8 @@ const buildService = (input: {
     turnPlanInterpretationContextSettings: input.turnPlanInterpretationContextSettings,
     contextVariableRepository: input.contextVariableRepository,
     assistantTurnPersistence: input.assistantTurnPersistence,
+    errorReporter: input.errorReporter,
+    logger: input.logger,
     ...(input.planner
       ? {
           turnPlanCoordinator: new TurnPlanCoordinator(
@@ -886,7 +898,28 @@ describe("chat service fused turn planning", () => {
     expect(staged.languageDetect).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back staged when the planner times out, without an unhandled rejection", async () => {
+  it.each([
+    ["rate-limited", new OpenAI.RateLimitError(429, {}, "rate limited", new Headers())],
+    ["out of quota", new OpenAI.RateLimitError(429, { code: "insufficient_quota" }, "no credit", new Headers())],
+    ["unavailable", new OpenAI.InternalServerError(503, {}, "unavailable", new Headers())],
+  ])("fails the turn without a single staged call when the planner is %s", async (_label, providerError) => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [], failWith: providerError });
+    const service = buildService({
+      planner,
+      pipeline: retrievalPipeline([]),
+      chatGateway: pipelineChatGateway("Grounded [[1]]."),
+      staged,
+    });
+
+    await expect(service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false }))
+      .rejects.toBe(providerError);
+    expect(planner.completeCalls()).toBe(1);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
+  });
+
+  it("fails the turn without staged calls when the planner times out, and without an unhandled rejection", async () => {
     const staged = countingStagedPorts();
     const planner = plannerFactory({ completions: [], neverComplete: true });
     const service = new ChatService({
@@ -909,12 +942,189 @@ describe("chat service fused turn planning", () => {
       ),
     });
 
-    const response = await service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false });
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      await expect(service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false }))
+        .rejects.toBeInstanceOf(ProviderRequestTimeoutError);
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
 
-    expect(response.answer).toBeTruthy();
     expect(planner.completeCalls()).toBe(1);
-    expect(staged.routerClassify).toHaveBeenCalledTimes(1);
-    expect(staged.languageDetect).toHaveBeenCalledTimes(1);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it("ends a streamed turn without staged calls when the planner is rate-limited", async () => {
+    const staged = countingStagedPorts();
+    const providerError = new OpenAI.RateLimitError(429, {}, "rate limited", new Headers());
+    const planner = plannerFactory({ completions: [], failWith: providerError });
+    const service = buildService({
+      planner,
+      pipeline: retrievalPipeline([]),
+      chatGateway: pipelineChatGateway("Grounded [[1]]."),
+      staged,
+    });
+
+    const drain = async () => {
+      for await (const _event of service.streamAnswer({ workspaceId: "workspace-1", query: "refund window?", stream: true })) {
+        // drain
+      }
+    };
+
+    await expect(drain()).rejects.toBe(providerError);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
+  });
+
+  describe("a turn this instance shed while a routine is in play", () => {
+    const shedError = () => new ModelCallShedError("turn", "queue_timeout");
+    const idleRoutineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: async () => {},
+      clear: async () => {},
+    };
+    const drain = async (service: ChatService) => {
+      for await (const _event of service.streamAnswer({ workspaceId: "workspace-1", query: "I want to talk to someone", stream: true })) {
+        // drain
+      }
+    };
+
+    it.each([
+      ["answer", (service: ChatService) => service.answer({ workspaceId: "workspace-1", query: "I want to talk to someone", stream: false })],
+      ["streamAnswer", drain],
+    ])("fails %s as a model_capacity_busy 503, unreported, when the planner ranking its routine candidates is shed", async (_surface, run) => {
+      const staged = countingStagedPorts();
+      const shed = shedError();
+      const registration: RoutineRegistration = {
+        routine: { id: "contact.request", rootStepId: "ask_email", steps: [], transitions: [] },
+        trigger: { description: "User wants to contact the team", priority: 0 },
+      };
+      const registry = new RoutineRegistry([registration], { policy: { floor: 0.4, margin: 0.15, maxOptions: 4 } });
+      const rankedActivationGateway = { complete: vi.fn(async () => ({ text: "{\"matches\":[]}" })) };
+      const planner = plannerFactory({ completions: [], failWith: shed });
+      const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+        forTurn: async ({ turnPlan }) => ({
+          activator: planAwareRoutineActivator({
+            handle: turnPlan,
+            registry,
+            fallback: registry.activator(rankedActivationGateway),
+          }),
+          runner: { resume: vi.fn() },
+        }),
+      };
+      const errorReporter = { report: vi.fn(async () => {}) };
+      const logger = { warn: vi.fn(), info: vi.fn() };
+      const service = buildService({
+        planner,
+        pipeline: directPipeline("I want to talk to someone"),
+        chatGateway: pipelineChatGateway("unused"),
+        staged,
+        routine: { routineStore: idleRoutineStore, routineProvider },
+        errorReporter,
+        logger,
+      });
+
+      const failure = await run(service).catch((error: unknown) => error);
+
+      expect(failure).toBe(shed);
+      expect(failure).toMatchObject({ statusCode: 503, code: "model_capacity_busy" });
+      expect(errorReporter.report).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), "Routine activation failed");
+      expect(rankedActivationGateway.complete).not.toHaveBeenCalled();
+      expect(staged.routerClassify).not.toHaveBeenCalled();
+    });
+
+    it("fails a turn as a model_capacity_busy 503, unreported, when an active routine's resume is shed", async () => {
+      const staged = countingStagedPorts();
+      const shed = shedError();
+      const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+        loadActive: async () => ({
+          sessionId: "s",
+          routineId: "contact.request",
+          path: ["ask_email"],
+          variables: {},
+          status: "active",
+        }),
+        save: async () => {},
+        clear: async () => {},
+      };
+      const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+        forTurn: async () => ({
+          activator: { activate: async () => null },
+          runner: {
+            resume: async () => {
+              throw shed;
+            },
+          },
+        }),
+      };
+      const errorReporter = { report: vi.fn(async () => {}) };
+      const logger = { warn: vi.fn(), info: vi.fn() };
+      const service = buildService({
+        planner: plannerFactory({ completions: [planJson({ route: "direct" })] }),
+        pipeline: directPipeline("my email is a@b.c"),
+        chatGateway: pipelineChatGateway("unused"),
+        staged,
+        routine: { routineStore, routineProvider },
+        errorReporter,
+        logger,
+      });
+
+      const failure = await service
+        .answer({ workspaceId: "workspace-1", query: "my email is a@b.c", stream: false })
+        .catch((error: unknown) => error);
+
+      expect(failure).toBe(shed);
+      expect(failure).toMatchObject({ statusCode: 503, code: "model_capacity_busy" });
+      expect(errorReporter.report).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), "Routine activation failed");
+    });
+
+    it("still reports and logs a routine step that failed for another reason", async () => {
+      const staged = countingStagedPorts();
+      const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+        loadActive: async () => ({
+          sessionId: "s",
+          routineId: "contact.request",
+          path: ["ask_email"],
+          variables: {},
+          status: "active",
+        }),
+        save: async () => {},
+        clear: async () => {},
+      };
+      const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+        forTurn: async () => ({
+          activator: { activate: async () => null },
+          runner: {
+            resume: async () => {
+              throw new Error("step blew up");
+            },
+          },
+        }),
+      };
+      const errorReporter = { report: vi.fn(async () => {}) };
+      const logger = { warn: vi.fn(), info: vi.fn() };
+      const service = buildService({
+        planner: plannerFactory({ completions: [planJson({ route: "direct" })] }),
+        pipeline: directPipeline("my email is a@b.c"),
+        chatGateway: pipelineChatGateway("unused"),
+        staged,
+        routine: { routineStore, routineProvider },
+        errorReporter,
+        logger,
+      });
+
+      await expect(service.answer({ workspaceId: "workspace-1", query: "my email is a@b.c", stream: false }))
+        .rejects.toMatchObject({ name: "RoutineActivationFailure" });
+
+      expect(errorReporter.report).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(expect.anything(), "Routine activation failed");
+    });
   });
 
   it("never invokes the planner while a routine is active for the conversation", async () => {

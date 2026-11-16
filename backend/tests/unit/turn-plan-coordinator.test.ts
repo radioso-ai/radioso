@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import OpenAI from "openai";
 
 import type {
   ConversationRoutineActivator,
@@ -30,6 +31,8 @@ import {
 } from "../../src/modules/chat/services/turnPlanCoordinator.js";
 import { TurnPlanService as RealTurnPlanService, type TurnPlan, type TurnPlanService } from "../../src/modules/chat/services/turnPlanService.js";
 import type { AppLogger } from "../../src/shared/observability/logger.js";
+import { ModelCallShedError } from "../../src/shared/infra/llm/modelCallAdmission.js";
+import { ProviderRequestTimeoutError } from "../../src/shared/infra/llm/providerTimeouts.js";
 import { setTraceAttributes } from "../../src/shared/observability/tracing/operations.js";
 
 vi.mock("../../src/shared/observability/tracing/operations.js", async (importOriginal) => {
@@ -182,15 +185,90 @@ describe("TurnPlanCoordinator.plan", () => {
     });
   });
 
-  it("sets failureSource to timeout when the planner's own bound timed out, not threw", async () => {
+  it.each([
+    ["rate_limited", 429, OpenAI.RateLimitError],
+    ["quota_exhausted", 429, OpenAI.RateLimitError],
+    ["provider_unavailable", 503, OpenAI.InternalServerError],
+  ] as const)("stops the turn on a %s planner failure instead of fanning out into the staged calls", async (kind, status, Ctor) => {
+    const providerError = new (Ctor as new (...args: unknown[]) => InstanceType<typeof OpenAI.APIError>)(
+      status,
+      {},
+      "pushback",
+      new Headers(),
+    );
+    const service = {
+      plan: vi.fn(async (_request: unknown, onFailure?: (failure: unknown, error: unknown) => void) => {
+        onFailure?.({ kind, status }, providerError);
+        return null;
+      }),
+    } as unknown as TurnPlanService;
+
+    // The provider's own error, so the turn's failure path classifies and renders it as it
+    // would the answer call's.
+    await expect(new TurnPlanCoordinator(service).plan(inputs())).rejects.toBe(providerError);
+  });
+
+  it("stops the turn when the planner's own bound timed out: a slow provider is not asked for four more calls", async () => {
     const service = {
       plan: vi.fn(async (_request: unknown, _onFailure?: (failure: unknown) => void, onTimeout?: () => void) => {
         onTimeout?.();
         return null;
       }),
     } as unknown as TurnPlanService;
+
+    const planning = new TurnPlanCoordinator(service).plan(inputs());
+
+    await expect(planning).rejects.toBeInstanceOf(ProviderRequestTimeoutError);
+    await expect(planning).rejects.toMatchObject({ operation: "turn_planning" });
+  });
+
+  it("stops the turn when this instance shed the planner call", async () => {
+    const shed = new ModelCallShedError("turn", "queue_timeout");
+    const service = {
+      plan: vi.fn(async (_request: unknown, onFailure?: (failure: unknown, error: unknown) => void) => {
+        onFailure?.(null, shed);
+        return null;
+      }),
+    } as unknown as TurnPlanService;
+
+    await expect(new TurnPlanCoordinator(service).plan(inputs())).rejects.toBe(shed);
+  });
+
+  it("records a stopped turn as degraded, by bounded reason, on the outcome metric and log", async () => {
+    const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const service = {
+      plan: vi.fn(async (_request: unknown, onFailure?: (failure: unknown, error: unknown) => void) => {
+        onFailure?.({ kind: "rate_limited", status: 429 }, new OpenAI.RateLimitError(429, {}, "x", new Headers()));
+        return null;
+      }),
+    } as unknown as TurnPlanService;
+
+    await expect(
+      new TurnPlanCoordinator(service, logger as unknown as AppLogger, metrics).plan(inputs()),
+    ).rejects.toThrow();
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      "chat_turn_planning_outcomes_total",
+      expect.objectContaining({ labels: { outcome: "degraded", reason: "rate_limited" } }),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "degraded", reason: "rate_limited", failureKind: "rate_limited", providerStatus: 429 }),
+      "chat.turn_planning.outcome",
+    );
+  });
+
+  it("keeps the staged fallback for a planner failure the staged calls can recover from", async () => {
+    const service = {
+      plan: vi.fn(async (_request: unknown, onFailure?: (failure: unknown, error: unknown) => void) => {
+        onFailure?.({ kind: "provider_rejected", status: 400 }, new OpenAI.BadRequestError(400, {}, "x", new Headers()));
+        return null;
+      }),
+    } as unknown as TurnPlanService;
+
     const outcome = await new TurnPlanCoordinator(service).plan(inputs());
-    expect(outcome).toEqual({ status: "failed", reason: "invalid_or_error", failureSource: "timeout" });
+
+    expect(outcome).toMatchObject({ status: "failed", failureSource: "threw", failure: { kind: "provider_rejected" } });
   });
 
   it("logs the classified failure kind/status/code on the outcome log, never the model output", async () => {
@@ -228,7 +306,7 @@ describe("TurnPlanCoordinator.plan", () => {
     expect(call?.[0]).not.toHaveProperty("providerCode");
   });
 
-  it("logs failureSource: timeout distinctly from a clean miss and from an unclassified throw", async () => {
+  it("logs a planner timeout as degraded, distinctly from a clean miss and from an unclassified throw", async () => {
     const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const service = {
       plan: vi.fn(async (_request: unknown, _onFailure?: (failure: unknown) => void, onTimeout?: () => void) => {
@@ -236,10 +314,10 @@ describe("TurnPlanCoordinator.plan", () => {
         return null;
       }),
     } as unknown as TurnPlanService;
-    await new TurnPlanCoordinator(service, logger as unknown as AppLogger).plan(inputs());
+    await expect(new TurnPlanCoordinator(service, logger as unknown as AppLogger).plan(inputs())).rejects.toThrow();
 
     const call = logger.info.mock.calls.find((args) => args[1] === "chat.turn_planning.outcome");
-    expect(call?.[0]).toMatchObject({ reason: "invalid_or_error", failureSource: "timeout" });
+    expect(call?.[0]).toMatchObject({ outcome: "degraded", reason: "timeout" });
   });
 
   it("does not enter staged fallback after the caller cancels planning", async () => {

@@ -19,6 +19,8 @@ import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsag
 import { addressesSurface } from "../../../shared/domain/steeringRule.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
+import { ModelCallShedError } from "../../../shared/infra/llm/modelCallAdmission.js";
+import { ProviderRequestTimeoutError } from "../../../shared/infra/llm/providerTimeouts.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
@@ -59,6 +61,46 @@ export type TurnPlanFailureReason = "invalid_or_error";
  * thrown error (`threw`) were one indistinguishable line.
  */
 export type TurnPlanFailureSource = "threw" | "invalid_output" | "timeout";
+
+/**
+ * Why a planner failure stops the turn instead of falling back. Each says the provider (or
+ * this instance) is saturated, out of credit, or too slow: the staged path would answer one
+ * failed call with three or four more against the same provider, amplifying the overload.
+ */
+type TurnPlanDegradeReason = "rate_limited" | "quota_exhausted" | "provider_unavailable" | "timeout" | "capacity";
+
+/** A planner failure that stops the turn. Internal: `plan()` records it, then throws `error`. */
+interface DegradedTurnPlan {
+  status: "degraded";
+  reason: TurnPlanDegradeReason;
+  error: unknown;
+  failure?: LlmProviderFailureClassification;
+}
+
+const DEGRADE_REASON_BY_KIND: Partial<Record<LlmProviderFailureClassification["kind"], TurnPlanDegradeReason>> = {
+  rate_limited: "rate_limited",
+  quota_exhausted: "quota_exhausted",
+  provider_unavailable: "provider_unavailable",
+};
+
+/**
+ * The planner failures the staged path cannot help with. Malformed output, a rejected request,
+ * an unavailable model, or a rejected credential keep the staged fallback, which runs on its
+ * own prompts and tier.
+ */
+const degradeReasonFor = (input: {
+  failure: LlmProviderFailureClassification | null;
+  error: unknown;
+  timedOut: boolean;
+}): TurnPlanDegradeReason | null => {
+  if (input.timedOut) {
+    return "timeout";
+  }
+  if (input.error instanceof ModelCallShedError) {
+    return "capacity";
+  }
+  return input.failure ? DEGRADE_REASON_BY_KIND[input.failure.kind] ?? null : null;
+};
 
 /**
  * The per-turn plan outcome, memoized on the session. `planned` carries the plan
@@ -194,10 +236,18 @@ export class TurnPlanCoordinator {
     this.quickReplyLaneEnabled = options.quickReplyLaneEnabled ?? true;
   }
 
+  /**
+   * The turn's plan outcome. Rejects, instead of returning `failed`, when the planner failed
+   * because the provider or this instance is overloaded (see {@link TurnPlanDegradeReason}):
+   * the turn then fails through the host's typed failure path with no staged fan-out.
+   */
   async plan(input: TurnPlanInputs): Promise<TurnPlanOutcome> {
     const startedAt = Date.now();
     const outcome = await this.computePlan(input);
     this.recordOutcome(input, outcome, Date.now() - startedAt);
+    if (outcome.status === "degraded") {
+      throw outcome.error;
+    }
     return outcome;
   }
 
@@ -206,7 +256,7 @@ export class TurnPlanCoordinator {
     this.recordOutcome(undefined, { status: "bypassed", reason }, 0);
   }
 
-  private async computePlan(input: TurnPlanInputs): Promise<TurnPlanOutcome> {
+  private async computePlan(input: TurnPlanInputs): Promise<TurnPlanOutcome | DegradedTurnPlan> {
     // A routine explicitly claims the turn — activate directly, no planner (the
     // turn is owned by the routine, so route/language/directive planning is moot).
     if (input.routinePreparation && input.routinePreparation.kind === "claim") {
@@ -277,19 +327,21 @@ export class TurnPlanCoordinator {
     request: TurnPlanRequest,
     signal: AbortSignal | undefined,
     prepared: RankableRoutineCandidates | null,
-  ): Promise<TurnPlanOutcome> {
+  ): Promise<TurnPlanOutcome | DegradedTurnPlan> {
     if (signal?.aborted) {
       throw signal.reason ?? new Error("chat_turn_aborted");
     }
 
     let failure: LlmProviderFailureClassification | null = null;
+    let failureError: unknown;
     let threw = false;
     let timedOut = false;
     const plan = await this.service.plan(
       request,
-      (classified) => {
+      (classified, error) => {
         threw = true;
         failure = classified;
+        failureError = error;
       },
       () => {
         timedOut = true;
@@ -302,18 +354,27 @@ export class TurnPlanCoordinator {
       throw signal.reason ?? new Error("chat_turn_aborted");
     }
     if (!plan) {
+      const degradeReason = degradeReasonFor({ failure, error: failureError, timedOut });
+      if (degradeReason) {
+        const error = timedOut ? new ProviderRequestTimeoutError("turn_planning", this.bounds.timeoutMs) : failureError;
+        return { status: "degraded", reason: degradeReason, error, ...(failure ? { failure } : {}) };
+      }
       const failureSource: TurnPlanFailureSource = timedOut ? "timeout" : threw ? "threw" : "invalid_output";
       return { status: "failed", reason: "invalid_or_error", failureSource, ...(failure ? { failure } : {}) };
     }
     return { status: "planned", plan, prepared };
   }
 
-  private recordOutcome(input: TurnPlanInputs | undefined, outcome: TurnPlanOutcome, latencyMs: number): void {
+  private recordOutcome(
+    input: TurnPlanInputs | undefined,
+    outcome: TurnPlanOutcome | DegradedTurnPlan,
+    latencyMs: number,
+  ): void {
     const metricOutcome = outcome.status === "planned"
       ? "fastpath"
       : outcome.status === "bypassed"
         ? "bypass"
-        : "fallback";
+        : outcome.status === "degraded" ? "degraded" : "fallback";
     const metricLabels = {
       outcome: metricOutcome,
       ...(outcome.status === "planned" ? {} : { reason: outcome.reason }),
@@ -347,7 +408,7 @@ export class TurnPlanCoordinator {
     // miss (malformed output) stays indistinguishable from itself, but no longer from a
     // provider outage: the fields below are absent either way, unlike before this existed,
     // when both reasons collapsed into the same bare "invalid_or_error".
-    const failureFields = outcome.status === "failed" && outcome.failure
+    const failureFields = (outcome.status === "failed" || outcome.status === "degraded") && outcome.failure
       ? { failureKind: outcome.failure.kind, providerStatus: outcome.failure.status, providerCode: outcome.failure.code }
       : {};
     this.logger?.info(

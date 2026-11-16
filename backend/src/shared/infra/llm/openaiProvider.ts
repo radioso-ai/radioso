@@ -493,7 +493,21 @@ export const createOpenAIClient = (config: LlmCapabilityConfig, overrides: OpenA
     ...(overrides.maxRetries !== undefined ? { maxRetries: overrides.maxRetries } : {}),
   });
 
-const withDispatchRecording = (client: OpenAI, input: TextGenerationRequest): OpenAI => {
+/**
+ * Per-request SDK options: the caller's abort signal, and the caller's SDK retry budget when it
+ * brings one. `undefined` when there are neither, so such a request keeps every SDK default.
+ */
+const sdkRequestOptions = (
+  input: Pick<TextGenerationRequest, "signal" | "maxProviderRetries">,
+): { signal?: AbortSignal; maxRetries?: number } | undefined =>
+  input.signal || input.maxProviderRetries !== undefined
+    ? {
+        ...(input.signal ? { signal: input.signal } : {}),
+        ...(input.maxProviderRetries !== undefined ? { maxRetries: input.maxProviderRetries } : {}),
+      }
+    : undefined;
+
+const withDispatchRecording =(client: OpenAI, input: TextGenerationRequest): OpenAI => {
   const dispatchRecord = input.dispatchRecord;
   if (!dispatchRecord) return client;
 
@@ -539,8 +553,9 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         ...buildResponseFormat(this.config.provider, input),
         messages,
       };
-      return (input.signal
-        ? client.chat.completions.create(request, { signal: input.signal })
+      const options = sdkRequestOptions(input);
+      return (options
+        ? client.chat.completions.create(request, options)
         : client.chat.completions.create(request)) as Promise<OpenAIChatCompletionResponse>;
     };
     let response = await createChatCompletionWithSamplingFallback(
@@ -586,8 +601,9 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         ...buildResponseFormat(config.provider, input),
         messages,
       };
-      return (input.signal
-        ? client.chat.completions.create(request, { signal: input.signal })
+      const options = sdkRequestOptions(input);
+      return (options
+        ? client.chat.completions.create(request, options)
         : client.chat.completions.create(request)) as Promise<AsyncIterable<OpenAIChatCompletionChunk>>;
     };
     return streamWithUsage(async function* () {

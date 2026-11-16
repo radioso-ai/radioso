@@ -1075,17 +1075,18 @@ describe("TurnPlanService", () => {
     expect(plan).toBeNull();
   });
 
-  it("classifies a provider failure through the optional onFailure sink, without changing the null fallback", async () => {
+  it("hands a provider failure, classified and as thrown, to the onFailure sink, without changing the null fallback", async () => {
+    // A real OpenAI SDK error — what client.complete actually throws in production.
+    const providerError = new OpenAI.NotFoundError(404, { code: "DeploymentNotFound" }, "message", new Headers());
     const client = {
       complete: vi.fn(async () => {
-        // A real OpenAI SDK error — what client.complete actually throws in production.
-        throw new OpenAI.NotFoundError(404, { code: "DeploymentNotFound" }, "message", new Headers());
+        throw providerError;
       }),
     };
     const onFailure = vi.fn();
     const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
     expect(plan).toBeNull();
-    expect(onFailure).toHaveBeenCalledWith({ kind: "model_unavailable", status: 404, code: "DeploymentNotFound" });
+    expect(onFailure).toHaveBeenCalledWith({ kind: "model_unavailable", status: 404, code: "DeploymentNotFound" }, providerError);
   });
 
   it("never calls onFailure for malformed (non-provider) output — parsing fails without throwing", async () => {
@@ -1097,11 +1098,12 @@ describe("TurnPlanService", () => {
   });
 
   it("calls onFailure with a null classification when a thrown error has no provider shape", async () => {
-    const client = { complete: vi.fn(async () => { throw new Error("boom"); }) };
+    const boom = new Error("boom");
+    const client = { complete: vi.fn(async () => { throw boom; }) };
     const onFailure = vi.fn();
     const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
     expect(plan).toBeNull();
-    expect(onFailure).toHaveBeenCalledWith(null);
+    expect(onFailure).toHaveBeenCalledWith(null, boom);
   });
 
   it("never calls onFailure when the plan resolves successfully", async () => {
@@ -1144,7 +1146,7 @@ describe("TurnPlanService", () => {
     await expect(service.plan(request(), onFailure, onTimeout)).resolves.toBeNull();
     expect(onTimeout).toHaveBeenCalledOnce();
     // The abort error itself carries no provider shape, same as any other abort.
-    expect(onFailure).toHaveBeenCalledWith(null);
+    expect(onFailure).toHaveBeenCalledWith(null, expect.any(Error));
   });
 
   it("propagates an external abort into the gateway call without rejecting", async () => {

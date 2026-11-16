@@ -3,6 +3,7 @@ import { databaseFailureReport } from "../../../shared/errors/databaseFailureRep
 import { errorReportMessage, errorSummaryOf } from "../../../shared/errors/errorReportShape.js";
 import type { ErrorReportMessage, ErrorSeverity } from "../../../shared/errors/errorTypes.js";
 import { classifyLlmProviderFailure, type LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
+import { modelCallShedBehind } from "../../../shared/infra/llm/modelCallAdmission.js";
 import { turnExecutionCapabilities, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AuditEventInput } from "../../audit/contracts/index.js";
 import { ActivitySummaryPresenter, ActivityTracePresenter } from "../../retrieval/public.js";
@@ -183,6 +184,14 @@ export const turnFailureAuditEvent = (input: {
   };
   return auditsWithoutContent(input.executionMode) ? reviewTurnFailureAuditEvent(event, input.error) : event;
 };
+
+/**
+ * The error a failed turn is classified, reported, and rendered as. The engine wraps a failure
+ * of the routine pass in a `RoutineActivationFailure`, which would turn a model call this
+ * instance shed (an expected `503 model_capacity_busy`) into a reported `500`; the shed error
+ * it carries is what the turn fails with.
+ */
+export const surfacedTurnFailure = (error: unknown): unknown => modelCallShedBehind(error) ?? error;
 
 /**
  * The `RoutineActivationFailure` warn log's fields, including the classified kind of

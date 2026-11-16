@@ -1016,6 +1016,17 @@ variable "monitoring_voice_abandoned_turn_threshold" {
   }
 }
 
+variable "monitoring_model_call_pressure_threshold" {
+  description = "Attempts at conversation-turn model calls on the backend service that the provider rate-limited, refused for quota, or failed as unavailable, plus turn calls an instance shed at its concurrent call limit, in fifteen minutes, that trigger the model provider pressure alert."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.monitoring_model_call_pressure_threshold >= 1 && floor(var.monitoring_model_call_pressure_threshold) == var.monitoring_model_call_pressure_threshold
+    error_message = "monitoring_model_call_pressure_threshold must be a whole number of at least 1."
+  }
+}
+
 variable "container_health_probes_enabled" {
   description = "Whether the backend and MCP Cloud Run services probe their health routes for startup and liveness. Enabling this makes a revision that boots but cannot serve fail its rollout instead of receiving traffic."
   type        = bool

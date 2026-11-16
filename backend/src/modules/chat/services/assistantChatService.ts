@@ -11,6 +11,12 @@ import { renderRoutineInvocation } from "../../routines/public.js";
 import type { VisitorImageTurnInput } from "../../visitorImages/public.js";
 import { claimVisitorImageTurn } from "./visitorImageTurn.js";
 import type { ItemSelectionTurn, ItemSelectionTurns } from "./replyBlocks/itemSelectionTurn.js";
+import {
+  runAsyncIterableWithModelCallGovernance,
+  runWithModelCallGovernance,
+  type ModelCallGovernanceScope,
+  type ModelCallGovernor,
+} from "../../../shared/infra/llm/modelCallGovernance.js";
 
 /**
  * The text a turn runs on: the message, or a tool call rendered as the text a
@@ -23,18 +29,38 @@ export class AssistantChatService {
   private readonly assistantRouteService = new AssistantRouteService();
   private readonly visitorImages: VisitorImageTurnInput | null;
   private readonly itemSelections: Pick<ItemSelectionTurns, "claim"> | null;
+  private readonly modelCallGovernor: ModelCallGovernor | null;
 
   constructor(
     private readonly chatService: ChatService,
     private readonly chatBootstrapService: ChatBootstrapService,
     /**
      * Where a send's photos are claimed, bound and let go, and where a picked card is read from its
-     * stored block; absent, a request with photos or a pick is refused.
+     * stored block; absent, a request with photos or a pick is refused. `modelCallGovernor` bounds
+     * the model calls every turn through this service makes on this instance; absent, they run
+     * ungoverned.
      */
-    options: { visitorImages?: VisitorImageTurnInput | null; itemSelections?: Pick<ItemSelectionTurns, "claim"> | null } = {},
+    options: {
+      visitorImages?: VisitorImageTurnInput | null;
+      itemSelections?: Pick<ItemSelectionTurns, "claim"> | null;
+      modelCallGovernor?: ModelCallGovernor | null;
+    } = {},
   ) {
     this.visitorImages = options.visitorImages ?? null;
     this.itemSelections = options.itemSelections ?? null;
+    this.modelCallGovernor = options.modelCallGovernor ?? null;
+  }
+
+  /** The turn lane, abandoned once the caller's client disconnects; `null` when ungoverned. */
+  private governanceScope(input: AssistantChatRequest): ModelCallGovernanceScope | null {
+    return this.modelCallGovernor
+      ? { governor: this.modelCallGovernor, lane: "turn", ...(input.clientDisconnected ? { abandoned: input.clientDisconnected } : {}) }
+      : null;
+  }
+
+  private governed<T>(input: AssistantChatRequest, run: () => T): T {
+    const scope = this.governanceScope(input);
+    return scope ? runWithModelCallGovernance(scope, run) : run();
   }
 
   /** A pick's turn, or null for a message sent any other way. Claimed before photos, so a refused pick claims none. */
@@ -51,7 +77,7 @@ export class AssistantChatService {
   async answer(input: AssistantChatRequest): Promise<AssistantChatResponse | null> {
     const chatSessionId = input.chatSessionId ?? input.anonymousSessionId;
     if (input.startConversation) {
-      const response = await this.chatBootstrapService.startConversation({
+      const response = await this.governed(input, () => this.chatBootstrapService.startConversation({
         workspaceId: input.workspaceId,
         agentId: input.agentId,
         accountId: input.accountId,
@@ -61,7 +87,7 @@ export class AssistantChatService {
         sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
         userExpectedLocale: input.userExpectedLocale,
         pageContext: input.pageContext,
-      });
+      }));
       return response
         ? {
             ...response,
@@ -78,7 +104,7 @@ export class AssistantChatService {
     }
 
     try {
-      return await this.chatService.answer({
+      return await this.governed(input, () => this.chatService.answer({
         workspaceId: input.workspaceId,
         agentId: input.agentId,
         accountId: input.accountId,
@@ -106,7 +132,7 @@ export class AssistantChatService {
         channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
         chatSessionId,
         sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
-      });
+      }));
     } finally {
       await images?.finish();
     }
@@ -121,8 +147,9 @@ export class AssistantChatService {
       throw badRequest("message is required for streaming assistant chat");
     }
 
+    const scope = this.governanceScope(input);
     try {
-      yield* this.chatService.streamAnswer({
+      const events = () => this.chatService.streamAnswer({
         workspaceId: input.workspaceId,
         agentId: input.agentId,
         accountId: input.accountId,
@@ -155,6 +182,7 @@ export class AssistantChatService {
         ...(input.reportResponseLanguage ? { reportResponseLanguage: true } : {}),
         signal: input.signal,
       });
+      yield* scope ? runAsyncIterableWithModelCallGovernance(scope, events) : events();
     } finally {
       await images?.finish();
     }

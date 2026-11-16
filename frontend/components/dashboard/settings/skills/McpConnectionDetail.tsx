@@ -100,7 +100,7 @@ export function McpConnectionDetail({
             size="sm"
             aria-label={`Save token for ${name}`}
             onClick={() => void saveToken()}
-            disabled={!newToken.trim()}
+            disabled={!newToken.trim() || isBusy}
             loading={actions.isPending('replace-token', id)}
           >
             Save token

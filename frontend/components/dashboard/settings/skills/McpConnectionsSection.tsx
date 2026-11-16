@@ -70,6 +70,11 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
   const loadVersion = useRef(0)
   const [testResults, setTestResults] = useState<Record<string, McpConnectionTestResult>>({})
   const [selection, setSelection] = useState<Selection | null>(null)
+  // What is open now, readable from a request that settles after the render that started it.
+  const selectionRef = useRef<Selection | null>(null)
+  useEffect(() => {
+    selectionRef.current = selection
+  }, [selection])
   // The row to hand the keyboard back to once the list is on screen again.
   const restoreFocusRowId = useRef<string | null>(null)
   const rowMutations = useScopedRowMutations(agentId)
@@ -203,11 +208,22 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     if (outcome.status === 'failed') {
       setError(getApiErrorMessage(outcome.error, 'Failed to delete MCP connection.'))
     } else if (outcome.status === 'applied') {
-      const nextId = neighborConnectionId(connections, connectionId)
-      restoreFocusRowId.current = nextId ? connectionRowDomId(nextId) : null
-      setSelection(null)
+      // The operator may have left this connection for another while the request ran; only the
+      // deleted connection's own detail view closes, and only then does the keyboard move.
+      if (selectionRef.current?.connectionId === connectionId) {
+        const nextId = neighborConnectionId(connections, connectionId)
+        restoreFocusRowId.current = nextId ? connectionRowDomId(nextId) : null
+        setSelection(null)
+      }
       setConnections((current) => current.filter((connection) => connection.id !== connectionId))
     }
+  }
+
+  const openConnection = (connectionId: string) => {
+    // An earlier failure described a different connection (or the list); it must not sit over this one.
+    setError(null)
+    restoreFocusRowId.current = null
+    setSelection({ agentId, connectionId })
   }
 
   const closeDetail = () => {
@@ -261,7 +277,7 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
                 title={connection.displayName}
                 summary={connection.serverUrl}
                 badge={connectionNeedsAttention(connection.status) ? <McpStatusBadge status={connection.status} /> : undefined}
-                onOpen={() => setSelection({ agentId, connectionId: connection.id })}
+                onOpen={() => openConnection(connection.id)}
               />
             ))}
           </QuietList>

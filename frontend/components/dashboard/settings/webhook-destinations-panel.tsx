@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Webhook } from 'lucide-react'
 
 import { QuietList, QuietListRow } from '@/components/dashboard/settings/quiet-list'
@@ -79,6 +79,12 @@ export function WebhookDestinationsPanel({
   const [sheetDestinationId, setSheetDestinationId] = useState<string | null>(null)
   const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
   const rowMutations = useScopedRowMutations(ROW_MUTATION_SCOPE)
+  // A form save and a delete are separate requests, so a save can land after its destination is
+  // gone. Ids are never reused, so remembering them is enough to drop that response.
+  const deletedDestinationIds = useRef(new Set<string>())
+  // The form takes the keyboard when it opens, and again when it switches to another destination.
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  const shouldFocusForm = useRef(false)
 
   const isSavingForm = rowMutations.isPending(FORM_ROW)
 
@@ -123,15 +129,25 @@ export function WebhookDestinationsPanel({
     })
   }
 
+  // Runs once the form this open rendered is on screen; typing re-renders it without moving focus.
+  // Focusing the input also scrolls it into view.
+  useEffect(() => {
+    if (!form || !shouldFocusForm.current) return
+    shouldFocusForm.current = false
+    nameInputRef.current?.focus()
+  }, [form])
+
   const openCreate = () => {
     setSecret(null)
     setError(null)
+    shouldFocusForm.current = true
     setForm(emptyForm())
   }
 
   const openEdit = (destination: WebhookDestination) => {
     setSecret(null)
     setError(null)
+    shouldFocusForm.current = true
     setForm({
       id: destination.id,
       name: destination.name,
@@ -166,17 +182,23 @@ export function WebhookDestinationsPanel({
       return
     }
 
+    const editedId = form.id
     const saveId = beginSave()
     setError(null)
     const outcome = await rowMutations.run(FORM_ROW, async () => {
-      if (form.id) {
-        const response = await webhookDestinationsApi.updateDestination(form.id, { name, url })
+      if (editedId) {
+        const response = await webhookDestinationsApi.updateDestination(editedId, { name, url })
         return { destination: response.destination, secret: null }
       }
       return webhookDestinationsApi.createDestination({ name, url })
     })
     const settled = settleOutcome(saveId, outcome, 'Failed to save webhook destination.')
     if (!settled) return
+    // The destination was deleted while this save was in flight: its row must not come back.
+    if (editedId && deletedDestinationIds.current.has(editedId)) {
+      if (isCurrentSave(saveId)) resetSaveState()
+      return
+    }
     upsertDestination(settled.value.destination)
     if (settled.value.secret) setSecret({ destinationId: settled.value.destination.id, value: settled.value.secret })
     setForm(null)
@@ -208,11 +230,11 @@ export function WebhookDestinationsPanel({
       () => webhookDestinationsApi.deleteDestination(destination.id),
     )
     if (!settleOutcome(saveId, outcome, 'Failed to delete webhook destination.')) return
+    deletedDestinationIds.current.add(destination.id)
     setDestinations((current) => current.filter((item) => item.id !== destination.id))
-    setSheetDestinationId(null)
-    if (form?.id === destination.id) {
-      setForm(null)
-    }
+    // The operator may have opened another destination while this one was being deleted.
+    setSheetDestinationId((current) => (current === destination.id ? null : current))
+    setForm((current) => (current?.id === destination.id ? null : current))
     if (isCurrentSave(saveId)) markSaved()
   }
 
@@ -257,6 +279,7 @@ export function WebhookDestinationsPanel({
               <Label htmlFor="webhookDestinationName">Destination name</Label>
               <Input
                 id="webhookDestinationName"
+                ref={nameInputRef}
                 value={form.name}
                 onChange={(event) => setForm((current) => current ? { ...current, name: event.target.value } : current)}
                 placeholder="crm-leads"

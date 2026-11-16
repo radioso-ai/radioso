@@ -67,6 +67,13 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
   const [healthResult, setHealthResult] = useState<{ connectionId: string; health: EmailConnectionHealth } | null>(null)
   // Only the latest read may land: two rows acted on back to back each reload the list.
   const loadVersion = useRef(0)
+  // The newest read, so a read that is superseded can wait for the one that replaced it.
+  const latestRead = useRef<Promise<void>>(Promise.resolve())
+  // The current workspace, readable from a reload started by a render before a workspace switch.
+  const workspaceIdRef = useRef(workspaceId)
+  useEffect(() => {
+    workspaceIdRef.current = workspaceId
+  }, [workspaceId])
   const rowMutations = useScopedRowMutations(workspaceId ?? '')
 
   // Memoized: the sheet keeps the last connection it showed, compared by identity.
@@ -79,7 +86,7 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
 
   const authorizedOauthConnections = oauthConnections.filter((connection) => connection.status === 'authorized')
 
-  const loadConnections = async () => {
+  const readConnections = async () => {
     const version = ++loadVersion.current
     if (!workspaceId) {
       setOauthConnections([])
@@ -94,7 +101,8 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
         customerEmailApi.listOauthConnections(workspaceId),
         customerEmailApi.listEmailConnections(workspaceId),
       ])
-      if (version !== loadVersion.current) return
+      if (workspaceIdRef.current !== workspaceId) return
+      if (version !== loadVersion.current) return await latestRead.current
       setOauthConnections(oauthResult.connections)
       setEmailConnections(emailResult.connections)
       setSelectedOauthConnectionId((current) => {
@@ -104,11 +112,22 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
         return oauthResult.connections.find((connection) => connection.status === 'authorized')?.id ?? ''
       })
     } catch (loadError) {
-      if (version !== loadVersion.current) return
+      if (workspaceIdRef.current !== workspaceId) return
+      if (version !== loadVersion.current) return await latestRead.current
       setError(getApiErrorMessage(loadError, 'Failed to load email connections.'))
     } finally {
       if (version === loadVersion.current) setIsLoading(false)
     }
+  }
+
+  // Resolves once the list on screen reflects a read started after this call: a read that a newer
+  // one superseded waits for it. A call from a render before a workspace switch reads nothing, so
+  // it can neither write the old workspace's list nor invalidate the new workspace's read.
+  const loadConnections = (): Promise<void> => {
+    if (workspaceIdRef.current !== workspaceId) return Promise.resolve()
+    const read = readConnections()
+    latestRead.current = read
+    return read
   }
 
   useEffect(() => {
@@ -189,7 +208,7 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
     )
   }
 
-  // A row action holds its own row's controls until its own request and the reload that shows its
+  // A row action holds its own row's controls until its own request and a reload that shows its
   // result settle, so acting on a second connection never releases the first one's.
   const runRowAction = async <T,>(
     connectionId: string,
@@ -247,7 +266,8 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
       'Failed to delete customer email connection.',
     )
     if (result.applied) {
-      setSheetSelection(null)
+      // The operator may have opened another connection while this one was being deleted.
+      setSheetSelection((current) => (current?.connectionId === connection.id ? null : current))
     }
   }
 

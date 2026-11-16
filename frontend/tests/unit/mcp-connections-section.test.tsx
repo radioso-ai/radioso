@@ -141,6 +141,43 @@ describe('McpConnectionsSection', () => {
     expect(document.activeElement).toBe(rowButton(container, 'Spare'))
   })
 
+  it('keeps another connection\'s detail open when a delete of the one left behind finishes', async () => {
+    const deletion = deferred<undefined>()
+    apiMocks.listConnections.mockResolvedValue({
+      connections: [connection('connection-1', 'Shared'), connection('connection-2', 'Spare')],
+    })
+    apiMocks.deleteConnection.mockReturnValue(deletion.promise)
+    await act(async () => { root.render(<McpConnectionsSection agentId="agent-1" />) })
+    await click(rowButton(container, 'Shared'))
+    await click(byLabel(container, 'Delete Shared'))
+    await click(Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Back to connections')) ?? null)
+    await click(rowButton(container, 'Spare'))
+
+    await act(async () => {
+      deletion.resolve(undefined)
+      await deletion.promise
+    })
+
+    expect(byLabel(container, 'Delete Spare')).not.toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('h3'))
+  })
+
+  it('clears an earlier failure when a different connection is opened', async () => {
+    apiMocks.listConnections.mockResolvedValue({
+      connections: [connection('connection-1', 'Shared'), connection('connection-2', 'Spare')],
+    })
+    apiMocks.deleteConnection.mockRejectedValue(new Error('The server refused.'))
+    await act(async () => { root.render(<McpConnectionsSection agentId="agent-1" />) })
+    await click(rowButton(container, 'Shared'))
+    await click(byLabel(container, 'Delete Shared'))
+    expect(container.querySelector('[role="alert"]')).not.toBeNull()
+    await click(Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Back to connections')) ?? null)
+
+    await click(rowButton(container, 'Spare'))
+
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+
   it('keeps one connection\'s pending test from locking another connection\'s controls', async () => {
     const testResult = deferred<{ tools: { name: string }[] }>()
     apiMocks.listConnections.mockResolvedValue({

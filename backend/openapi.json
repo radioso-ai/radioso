@@ -17074,7 +17074,13 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "The words of the conversation's opening visitor message, never the readings of photos it carried. Null when no visitor message has words; see `previewPhotoCount`."
+          },
+          "previewPhotoCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The photos of the message the preview is read from; a conversation nobody wrote a word in previews as its first photo message, with a null `preview`."
           },
           "title": {
             "type": [
@@ -17105,6 +17111,7 @@
           "userMessageCount",
           "assistantMessageCount",
           "preview",
+          "previewPhotoCount",
           "title"
         ]
       },
@@ -18456,7 +18463,12 @@
               "string",
               "null"
             ],
-            "description": "The conversation's first-message preview."
+            "description": "See ChatConversationSummary.preview."
+          },
+          "previewPhotoCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "See ChatConversationSummary.previewPhotoCount."
           }
         },
         "required": [
@@ -18470,7 +18482,8 @@
           "resolution",
           "assistantMessageId",
           "title",
-          "preview"
+          "preview",
+          "previewPhotoCount"
         ]
       },
       "RecentlyClosedInboxItemsResponse": {
@@ -22828,7 +22841,13 @@
           },
           "question": {
             "type": "string",
-            "maxLength": 1200
+            "maxLength": 1200,
+            "description": "The words the visitor typed. For a message with photos, never the readings of them; empty when they sent photos alone."
+          },
+          "questionPhotoCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The photos the question's message carried; 0 when it carried none."
           },
           "occurrenceCount": {
             "type": "integer",
@@ -22846,6 +22865,7 @@
           "conversationId",
           "messageId",
           "question",
+          "questionPhotoCount",
           "occurrenceCount"
         ]
       },
@@ -22888,7 +22908,13 @@
           },
           "content": {
             "type": "string",
-            "maxLength": 1200
+            "maxLength": 1200,
+            "description": "The words the visitor typed. For a message with photos, never the readings of them; empty when they sent photos alone."
+          },
+          "photoCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The photos the message carried; 0 when it carried none."
           },
           "createdAt": {
             "type": "string",
@@ -22900,6 +22926,7 @@
           "role",
           "source",
           "content",
+          "photoCount",
           "createdAt"
         ]
       },
@@ -26688,6 +26715,46 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "imageInput": {
+                      "type": "object",
+                      "properties": {
+                        "typedText": {
+                          "type": "string",
+                          "description": "What the visitor typed, without the photo readings. Empty when they sent photos alone."
+                        },
+                        "images": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "The image id; read the photo from the conversation's image route."
+                              },
+                              "reading": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "What the agent's chat model read in the photo, in the visitor's language; null when it could not read it."
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "reading"
+                            ]
+                          },
+                          "minItems": 1,
+                          "maxItems": 3
+                        }
+                      },
+                      "required": [
+                        "typedText",
+                        "images"
+                      ],
+                      "description": "The photos a visitor's message carried; `content` is the turn text with their readings. Absent on a snapshot captured before photos were kept."
                     }
                   },
                   "required": [
@@ -26994,6 +27061,46 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "imageInput": {
+                  "type": "object",
+                  "properties": {
+                    "typedText": {
+                      "type": "string",
+                      "description": "What the visitor typed, without the photo readings. Empty when they sent photos alone."
+                    },
+                    "images": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "The image id; read the photo from the conversation's image route."
+                          },
+                          "reading": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "What the agent's chat model read in the photo, in the visitor's language; null when it could not read it."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "reading"
+                        ]
+                      },
+                      "minItems": 1,
+                      "maxItems": 3
+                    }
+                  },
+                  "required": [
+                    "typedText",
+                    "images"
+                  ],
+                  "description": "The photos a visitor's message carried; `content` is the turn text with their readings. Absent on a snapshot captured before photos were kept."
                 }
               },
               "required": [

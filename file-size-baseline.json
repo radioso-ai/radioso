@@ -5,7 +5,7 @@
   "backend/src/db/repositories/documentProcessingJobRepository.ts": 1063,
   "backend/src/db/repositories/documentRepository.ts": 1250,
   "backend/src/db/repositories/vectorIndexWorkRepository.ts": 1168,
-  "backend/src/modules/audiencePulse/services/audiencePulseService.ts": 1156,
+  "backend/src/modules/audiencePulse/services/audiencePulseService.ts": 1097,
   "backend/src/modules/auth/services/authService.ts": 1413,
   "backend/src/modules/chat/services/chatHistoryService.ts": 1533,
   "backend/src/modules/chat/services/chatService.ts": 2150,

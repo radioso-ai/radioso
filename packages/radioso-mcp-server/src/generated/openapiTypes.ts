@@ -9445,7 +9445,10 @@ export interface components {
             messageCount: number;
             userMessageCount: number;
             assistantMessageCount: number;
+            /** @description The words of the conversation's opening visitor message, never the readings of photos it carried. Null when no visitor message has words; see `previewPhotoCount`. */
             preview: string | null;
+            /** @description The photos of the message the preview is read from; a conversation nobody wrote a word in previews as its first photo message, with a null `preview`. */
+            previewPhotoCount: number;
             /** @description Short LLM-generated topic label refreshed alongside the rolling conversation summary. Null until the first successful regeneration; the dashboard falls back to `preview` until then. */
             title: string | null;
             ownership?: components["schemas"]["ConversationOwnership"];
@@ -9837,8 +9840,10 @@ export interface components {
             assistantMessageId: string | null;
             /** @description See ChatConversationSummary.title. */
             title: string | null;
-            /** @description The conversation's first-message preview. */
+            /** @description See ChatConversationSummary.preview. */
             preview: string | null;
+            /** @description See ChatConversationSummary.previewPhotoCount. */
+            previewPhotoCount: number;
         };
         RecentlyClosedInboxItemsResponse: {
             items: components["schemas"]["RecentlyClosedInboxItem"][];
@@ -10904,7 +10909,10 @@ export interface components {
             conversationId: string;
             /** Format: uuid */
             messageId: string;
+            /** @description The words the visitor typed. For a message with photos, never the readings of them; empty when they sent photos alone. */
             question: string;
+            /** @description The photos the question's message carried; 0 when it carried none. */
+            questionPhotoCount: number;
             occurrenceCount: number;
             answerCoverage?: components["schemas"]["AnswerCoverage"];
             answerStatus?: components["schemas"]["AudiencePulseAnswerStatus"];
@@ -10922,7 +10930,10 @@ export interface components {
             role: "user";
             /** @enum {string} */
             source: "customer";
+            /** @description The words the visitor typed. For a message with photos, never the readings of them; empty when they sent photos alone. */
             content: string;
+            /** @description The photos the message carried; 0 when it carried none. */
+            photoCount: number;
             /** Format: date-time */
             createdAt: string;
         };
@@ -11957,6 +11968,20 @@ export interface components {
                     answerSegments?: unknown[];
                     groundingSummary?: unknown;
                     directiveFirings?: string[];
+                    /** @description The photos a visitor's message carried; `content` is the turn text with their readings. Absent on a snapshot captured before photos were kept. */
+                    imageInput?: {
+                        /** @description What the visitor typed, without the photo readings. Empty when they sent photos alone. */
+                        typedText: string;
+                        images: {
+                            /**
+                             * Format: uuid
+                             * @description The image id; read the photo from the conversation's image route.
+                             */
+                            id: string;
+                            /** @description What the agent's chat model read in the photo, in the visitor's language; null when it could not read it. */
+                            reading: string | null;
+                        }[];
+                    };
                 }[];
                 originalInstructionBlock: string | null;
                 originalModelId: string | null;
@@ -12038,6 +12063,20 @@ export interface components {
                 answerSegments?: unknown[];
                 groundingSummary?: unknown;
                 directiveFirings?: string[];
+                /** @description The photos a visitor's message carried; `content` is the turn text with their readings. Absent on a snapshot captured before photos were kept. */
+                imageInput?: {
+                    /** @description What the visitor typed, without the photo readings. Empty when they sent photos alone. */
+                    typedText: string;
+                    images: {
+                        /**
+                         * Format: uuid
+                         * @description The image id; read the photo from the conversation's image route.
+                         */
+                        id: string;
+                        /** @description What the agent's chat model read in the photo, in the visitor's language; null when it could not read it. */
+                        reading: string | null;
+                    }[];
+                };
             }[];
             originalInstructionBlock: string | null;
             originalModelId: string | null;

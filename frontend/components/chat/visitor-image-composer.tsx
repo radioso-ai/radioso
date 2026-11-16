@@ -108,11 +108,13 @@ export function VisitorImageAttachButton({
         type="button"
         size="icon"
         variant="ghost"
-        className={`${className} shrink-0 rounded-full`}
+        // The ghost variant's hover is the page's accent, which is yellow in the dashboard; a quiet
+        // control hovers on the theme's neutral surface instead, for both light and dark.
+        className={`${className} shrink-0 rounded-full hover:bg-[var(--attach-hover)] active:bg-[var(--attach-hover)] dark:hover:bg-[var(--attach-hover)]`}
         disabled={full || disabled}
         title={copy.publicChatAttachImageLabel}
         data-visitor-image-attach
-        style={{ color: theme.mutedForeground }}
+        style={{ color: theme.mutedForeground, ['--attach-hover' as string]: theme.mutedBackground }}
         onClick={() => inputRef.current?.click()}
         // Keep focus in the message field, as Send does.
         onMouseDown={(event) => event.preventDefault()}

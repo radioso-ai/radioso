@@ -11,6 +11,7 @@ import {
   serializeFrontendThrowable,
   topStackFrameUsesBrowserExtensionScheme,
 } from '@/lib/frontend-errors'
+import { FRONTEND_ERROR_REPORTS_PER_RATE_WINDOW } from '@/lib/frontend-error-report-limiter'
 
 describe('frontend error reporting', () => {
   it('reports generic frontend errors to configured sinks', async () => {
@@ -106,6 +107,69 @@ describe('frontend error reporting', () => {
       '    at listener (chrome-extension://abc/inject.js:1:1)',
     ].join('\n'))).toBe(false)
     expect(topStackFrameUsesBrowserExtensionScheme(undefined)).toBe(false)
+  })
+
+  it('sends a burst of identical string rejections from one page once', async () => {
+    const sink = {
+      record: vi.fn().mockResolvedValue(undefined),
+    }
+    const reporter = createFrontendErrorReporter({ sinks: [sink] })
+
+    const events = await Promise.all(Array.from({ length: 74 }, () => reporter.report({
+      errorType: 'frontend.promise.unhandled',
+      error: 'rejected',
+      path: '/embed-frame?copy=%7B%7D',
+      source: 'embed',
+    })))
+
+    expect(sink.record).toHaveBeenCalledTimes(1)
+    expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
+      errorType: 'frontend.promise.unhandled',
+      errorClass: 'string',
+      path: '/embed-frame',
+    }))
+    expect(events.filter((event) => event !== null)).toHaveLength(1)
+  })
+
+  it('caps a burst of distinct rejections from one page', async () => {
+    const sink = {
+      record: vi.fn().mockResolvedValue(undefined),
+    }
+    const reporter = createFrontendErrorReporter({ sinks: [sink] })
+
+    const events = await Promise.all(Array.from({ length: 300 }, (_, index) => reporter.report({
+      errorType: 'frontend.promise.unhandled',
+      error: `rejected ${index}`,
+      path: '/embed-frame',
+      source: 'embed',
+    })))
+
+    expect(sink.record).toHaveBeenCalledTimes(FRONTEND_ERROR_REPORTS_PER_RATE_WINDOW)
+    expect(events.filter((event) => event !== null)).toHaveLength(FRONTEND_ERROR_REPORTS_PER_RATE_WINDOW)
+  })
+
+  it('does not spend the page cap on dropped browser extension crashes', async () => {
+    const sink = {
+      record: vi.fn().mockResolvedValue(undefined),
+    }
+    const reporter = createFrontendErrorReporter({ sinks: [sink] })
+
+    for (let index = 0; index < FRONTEND_ERROR_REPORTS_PER_RATE_WINDOW + 5; index += 1) {
+      await reporter.report({
+        errorType: 'frontend.runtime.unhandled',
+        message: `extension failure ${index}`,
+        stack: `TypeError: x\n    at chrome-extension://abc/inject.js:1:${index}`,
+        source: 'frontend',
+      })
+    }
+    const event = await reporter.report({
+      errorType: 'frontend.runtime.unhandled',
+      error: new TypeError('Dashboard render failed'),
+      source: 'frontend',
+    })
+
+    expect(event).not.toBeNull()
+    expect(sink.record).toHaveBeenCalledTimes(1)
   })
 
   it('truncates the client envelope before delivery', async () => {

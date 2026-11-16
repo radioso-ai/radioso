@@ -583,6 +583,16 @@ The browser posts sanitized error envelopes to
 generic error reporting service and configured error sinks. React components do
 not import PostHog, Sentry, or any other vendor SDK.
 
+Each page paces its reports in
+[`frontend/lib/frontend-error-report-limiter.ts`](../frontend/lib/frontend-error-report-limiter.ts).
+An error with the same type, class, message and path as one the page reported
+in the last ten minutes is held back, and a page reports at most ten errors in
+any rolling minute. A script that rejects hundreds of promises at once
+therefore costs ten reports, well inside the relay's limit of 120 per client a
+minute, and an operator tab left open all day still reports an error that
+first appears in the afternoon. A repeating error shows up about once every ten
+minutes per tab. Errors held back in the browser are dropped and never counted.
+
 A page that stays open across a deploy asks the new build for chunks it no
 longer serves, and the browser raises `ChunkLoadError`. When that failure breaks
 a render, the boundary treats it as deploy skew: it reloads the page once and

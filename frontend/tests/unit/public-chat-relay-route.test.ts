@@ -199,4 +199,27 @@ describe('public chat relay route', () => {
 
     expect(upstream).toEqual({})
   })
+
+  it('passes on every cookie the backend sets as a cookie of its own', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const upstreamHeaders = new Headers({ 'Content-Type': 'application/json' })
+    upstreamHeaders.append('Set-Cookie', 'anon_session_workspace-1=session-1; Path=/; HttpOnly; SameSite=Lax')
+    upstreamHeaders.append('Set-Cookie', 'anon_rate_limit_workspace-1=browser-1.signature; Path=/; Expires=Wed, 16 Dec 2026 10:00:00 GMT; HttpOnly; SameSite=Lax')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers: upstreamHeaders })))
+
+    const { POST } = await import('@/app/api/public/chat/[token]/route')
+    const response = await POST(
+      new Request('https://frontend.example.com/api/public/chat/token-1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Radioso-Public-Session': 'session-1' },
+        body: JSON.stringify({ message: 'Hello' }),
+      }),
+      { params: Promise.resolve({ token: 'token-1' }) },
+    )
+
+    expect(response.headers.getSetCookie()).toEqual([
+      'anon_session_workspace-1=session-1; Path=/; HttpOnly; SameSite=Lax',
+      'anon_rate_limit_workspace-1=browser-1.signature; Path=/; Expires=Wed, 16 Dec 2026 10:00:00 GMT; HttpOnly; SameSite=Lax',
+    ])
+  })
 })

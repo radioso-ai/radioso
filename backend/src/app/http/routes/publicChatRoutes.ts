@@ -7,11 +7,12 @@ import { AppError, badRequest, notFound, serviceUnavailable } from "../../../sha
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
 import {
-  anonymousRateLimiters,
+  publicChatTurnRateLimiter,
   publicChatEmbedConfigRateLimiter,
   publicChatSessionExchangeRateLimiter,
   publicChatSessionReadRateLimiter,
   type AnonymousRateLimiterDependencies,
+  type PublicChatTurnRateLimiterDependencies,
 } from "../middleware/anonymousRateLimiter.js";
 import { buildAgentCardUrl } from "../../../modules/agentDiscovery/public.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
@@ -50,7 +51,7 @@ import { registerPublicVisitorImageRoutes } from "./publicVisitorImageRoutes.js"
 import { publicVisitorImageOwner } from "../shared/visitorImageUpload.js";
 import type { PublicVoiceSessionRateLimiterDependencies } from "../middleware/publicVoiceSessionRateLimiter.js";
 
-type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & PublicVoiceSessionRateLimiterDependencies & Pick<
+type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & PublicChatTurnRateLimiterDependencies & PublicVoiceSessionRateLimiterDependencies & Pick<
   AppDependencies,
   | "env"
   | "agentPublication"
@@ -89,7 +90,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     dependencies.agentService,
     dependencies.accessGrantService,
   );
-  const rateLimitAnonymousChat = anonymousRateLimiters(dependencies);
+  const rateLimitPublicChatTurn = publicChatTurnRateLimiter(dependencies);
   const rateLimitPublicChatSessionExchange = publicChatSessionExchangeRateLimiter(dependencies);
   const rateLimitPublicChatEmbedConfig = publicChatEmbedConfigRateLimiter(dependencies);
   const rateLimitPublicChatSessionRead = publicChatSessionReadRateLimiter(dependencies);
@@ -627,7 +628,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     "/:token",
     sessionMiddleware,
     requirePublicChatPermission(dependencies, "public_chat.turn.create"),
-    ...rateLimitAnonymousChat,
+    rateLimitPublicChatTurn,
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {

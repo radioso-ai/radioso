@@ -56,6 +56,88 @@ describe("rate-limit batch middleware", () => {
     }
   });
 
+  describe("a budget the caller is not shown", () => {
+    const visitorAndWorkspace = (limits: { visitor: number; workspace: number }) => [
+      { scope: "visitor", subjectKey: "visitor-1", limit: limits.visitor, windowMs: 60_000 },
+      { scope: "workspace", subjectKey: "workspace-1", limit: limits.workspace, windowMs: 60_000, advertised: false },
+    ];
+
+    it("stays out of the headers of an admitted request, even when it is the tightest", async () => {
+      const middleware = createRateLimitBatchMiddleware({
+        service: new AbuseControlService(new InMemoryAbuseControlRepository()),
+        auditService,
+        resolvePolicies: () => visitorAndWorkspace({ visitor: 10, workspace: 2 }),
+      });
+
+      const { error, headers } = await respond([middleware]);
+
+      expect(error).toBeUndefined();
+      expect(headers).toMatchObject({ "RateLimit-Limit": "10", "RateLimit-Remaining": "9" });
+    });
+
+    it("sets no rate-limit headers when no budget is shown", async () => {
+      const middleware = createRateLimitBatchMiddleware({
+        service: new AbuseControlService(new InMemoryAbuseControlRepository()),
+        auditService,
+        resolvePolicies: () => visitorAndWorkspace({ visitor: 10, workspace: 2 }).map((policy) => ({ ...policy, advertised: false })),
+      });
+
+      const { error, headers } = await respond([middleware]);
+
+      expect(error).toBeUndefined();
+      expect(headers).toEqual({});
+    });
+
+    it("refuses with a 429 that says only when to retry", async () => {
+      const middleware = createRateLimitBatchMiddleware({
+        service: new AbuseControlService(new InMemoryAbuseControlRepository()),
+        auditService,
+        resolvePolicies: () => visitorAndWorkspace({ visitor: 10, workspace: 1 }),
+      });
+      await respond([middleware]);
+
+      const { error, headers } = await respond([middleware]);
+
+      expect(error).toMatchObject({ statusCode: 429, code: "rate_limit_exceeded" });
+      const details = (error as { details: Record<string, unknown> }).details;
+      expect(details).toEqual({ retryAfterSeconds: expect.any(Number) });
+      expect(Number(headers["Retry-After"])).toBeGreaterThan(0);
+      expect(headers).not.toHaveProperty("RateLimit-Limit");
+      expect(headers).not.toHaveProperty("RateLimit-Remaining");
+    });
+
+    it("leaves a refusal by a shown budget its figures", async () => {
+      const middleware = createRateLimitBatchMiddleware({
+        service: new AbuseControlService(new InMemoryAbuseControlRepository()),
+        auditService,
+        resolvePolicies: () => visitorAndWorkspace({ visitor: 1, workspace: 10 }),
+      });
+      await respond([middleware]);
+
+      const { error, headers } = await respond([middleware]);
+
+      expect(error).toMatchObject({ statusCode: 429, details: { limit: 1, remaining: 0 } });
+      expect(headers).toMatchObject({ "RateLimit-Limit": "1", "RateLimit-Remaining": "0" });
+    });
+
+    it("records which budget refused, with its subject and size, in the audit event", async () => {
+      const record = vi.fn().mockResolvedValue(undefined);
+      const middleware = createRateLimitBatchMiddleware({
+        service: new AbuseControlService(new InMemoryAbuseControlRepository()),
+        auditService: { record },
+        resolvePolicies: () => visitorAndWorkspace({ visitor: 10, workspace: 1 }),
+      });
+      await respond([middleware]);
+
+      await respond([middleware]);
+
+      expect(record).toHaveBeenCalledWith(expect.objectContaining({
+        eventType: "security.rate_limit_enforced",
+        metadata: expect.objectContaining({ scopes: ["visitor", "workspace"], scope: "workspace", subjectKey: "workspace-1", limit: 1 }),
+      }));
+    });
+  });
+
   it("admits a voice start a full window after the last accepted one, through the batch the route spends", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const start = new Date("2026-11-02T16:35:03.000Z").getTime();

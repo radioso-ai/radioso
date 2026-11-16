@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-11-08
+last_updated: 2026-11-16
 ---
 
 # Monitoring And Alerts
@@ -199,6 +199,8 @@ Responses carry the budget as headers, so a client can pace itself instead of di
 | `Retry-After` | `429` only | seconds until a retry is admitted |
 
 A client should honour `Retry-After` on a `429` and back off before `RateLimit-Remaining` reaches zero. The same wait is in the body as `error.details.retryAfterSeconds`, alongside the limit, what remains, and the reset instant, so a client that reads the JSON needs nothing else.
+
+When one request spends several budgets at once, the headers describe the one closest to running out among those that belong to the caller. A budget shared by many callers, such as public chat's per-workspace total, stays out of them: a `429` it raises carries `Retry-After` and `error.details.retryAfterSeconds` alone, so a visitor never learns that budget's size.
 
 ## Logs
 

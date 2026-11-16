@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { AbuseControlBatchRefusal } from "../../src/modules/security/contracts/abuseControl.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
 import { InMemoryAbuseControlRepository } from "../support/fakes.js";
 
@@ -358,6 +359,27 @@ describe("AbuseControlService", () => {
 
     expect(await repository.find("agent.channel.chat.grant", "grant:one")).toBeNull();
     expect((await repository.find("agent.channel.chat.workspace", "workspace:one:global"))?.attemptCount).toBe(1);
+  });
+
+  it("names the policy that refused a batch, off the response details", async () => {
+    const service = new AbuseControlService(new InMemoryAbuseControlRepository());
+    const now = new Date("2026-03-30T10:00:00.000Z");
+    const batch = [
+      { scope: "agent.channel.chat.grant", subjectKey: "grant:one", limit: 3, windowMs: 60_000, now },
+      { scope: "agent.channel.chat.workspace", subjectKey: "workspace:one:global", limit: 1, windowMs: 60_000, now },
+    ];
+    await service.enforceBatch(batch);
+
+    const refusal: unknown = await service.enforceBatch(batch).catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(AbuseControlBatchRefusal);
+    expect(refusal).toMatchObject({
+      statusCode: 429,
+      code: "rate_limit_exceeded",
+      refusedPolicy: { scope: "agent.channel.chat.workspace", subjectKey: "workspace:one:global" },
+      details: { limit: 1, remaining: 0 },
+    });
+    expect((refusal as { details: object }).details).not.toHaveProperty("scope");
   });
 
   it("keeps the store failure as the cause of the service_unavailable error on both paths", async () => {

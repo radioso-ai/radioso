@@ -381,6 +381,12 @@ const envSchema = z.object({
   AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS: z.coerce.number().int().positive().default(AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS_DEFAULT),
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  // Messages one request source may send a workspace per window, across every visitor behind it.
+  // The per-visitor budget above follows a cookie or a public session, both of which the server
+  // hands to anyone who asks, so this is what bounds a caller that keeps discarding them. Generous,
+  // because one school, office, or carrier address can carry many visitors. Skipped where the
+  // backend sees only the relaying frontend's address.
+  PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(120),
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(600),
   // Read/poll traffic (conversation list, tail, history, live-event connect) is far
   // more frequent than turn creation in normal use, so it gets its own, more

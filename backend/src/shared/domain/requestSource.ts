@@ -40,3 +40,28 @@ export const resolveRequestSourceAddress = (input: ResolveRequestSourceAddressIn
     trustedProxyHops: input.trustedProxyHops,
   });
 };
+
+/**
+ * Whether the request source names the caller rather than the first-party edge that relayed it.
+ * A relayed request names its visitor only through a verified envelope whose chain resolves at
+ * this backend's trusted hop count. When this backend holds no edge-proof secret, or the verified
+ * chain resolves to nothing (zero trusted hops), all that is left is the edge's own address,
+ * which every visitor it relays shares. A marker that fails a configured secret leaves the
+ * backend's own observation standing as the caller's address, so a direct caller cannot shed its
+ * address by sending a marker it cannot sign.
+ */
+export const requestSourceIdentifiesClient = (input: {
+  envelope: EdgeFactsEnvelopeReading;
+  /** Whether `RADIOSO_EDGE_PROOF_SECRET` is set on this backend. */
+  edgeProofConfigured: boolean;
+  trustedProxyHops: number;
+}): boolean => {
+  switch (input.envelope.status) {
+    case "absent":
+      return true;
+    case "verified":
+      return resolveEdgeFactsClientAddress(input.envelope.facts, input.trustedProxyHops) !== null;
+    case "rejected":
+      return input.edgeProofConfigured;
+  }
+};

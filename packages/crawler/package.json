@@ -17,11 +17,11 @@
   "devDependencies": {
     "@types/node": "^24.3.0",
     "typescript": "^5.8.2",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "cheerio": "1.2.0",
-    "crawlee": "^3.18.1"
+    "crawlee": "^3.18.2"
   },
   "optionalDependencies": {
     "playwright": "^1.60.0"

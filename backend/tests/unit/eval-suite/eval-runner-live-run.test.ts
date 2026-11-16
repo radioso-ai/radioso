@@ -416,6 +416,7 @@ describe("live runner shutdown", () => {
       closeApprovalResumeEffectJournal: step("approval journal"),
       closeAbuseControlRepository: step("abuse control"),
       connectorRegistry: { shutdownAll: step("connectors") },
+      conversationTurnCoordination: { shutdown: step("turn coordination") },
       connectorDb: { close: step("pool") },
       logger: { error: vi.fn() },
     } as unknown as Parameters<typeof closeEvalDependencies>[0];
@@ -426,7 +427,7 @@ describe("live runner shutdown", () => {
 
     await closeEvalDependencies(closers(closed));
 
-    expect(closed).toEqual(["realtime publisher", "application modules", "approval journal", "abuse control", "connectors", "pool"]);
+    expect(closed).toEqual(["realtime publisher", "application modules", "approval journal", "abuse control", "connectors", "turn coordination", "pool"]);
   });
 
   it("still ends the pool after a step that fails, and reports that failure", async () => {

@@ -7,6 +7,11 @@ import type { RetrievalCoverageVerdictSink } from "../../../src/modules/chat/con
 import type { AnswerCoverageAssessment } from "../../../src/modules/answerCoverage/public.js";
 import type { ChatGatewayInput } from "../../../src/modules/chat/contracts/chatGateway.js";
 import { setTraceAttributes } from "../../../src/shared/observability/tracing/operations.js";
+import {
+  currentModelCallGovernance,
+  ModelCallGovernor,
+  runWithModelCallGovernance,
+} from "../../../src/shared/infra/llm/modelCallGovernance.js";
 
 vi.mock("../../../src/shared/observability/tracing/operations.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../src/shared/observability/tracing/operations.js")>();
@@ -58,6 +63,25 @@ describe("AnswerCoverageShadowAssessor", () => {
 
     expect(gateway.answer).toHaveBeenCalledOnce();
     expect(inner.report).not.toHaveBeenCalled();
+  });
+
+  it("runs the shadow call in the deferrable lane, on its own budget, so it never takes a visitor turn's slot", () => {
+    const lanes: Array<string | undefined> = [];
+    const gateway = {
+      answer: vi.fn(async (_input: ChatGatewayInput) => {
+        lanes.push(currentModelCallGovernance()?.lane);
+        return JSON.stringify({ classification: "answered", requestFocus: "x" });
+      }),
+    };
+    const governor = new ModelCallGovernor({
+      limits: { maxConcurrentTurnCalls: 4, maxConcurrentDeferrableCalls: 1, maxQueueWaitMs: 100 },
+      retryPolicy: { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    runWithModelCallGovernance({ governor, lane: "turn" }, () =>
+      new AnswerCoverageShadowAssessor(gateway, true, metrics()).wrapVerdictSink({ getSession: () => session() }, fakeSink()));
+
+    expect(lanes).toEqual(["deferrable"]);
   });
 
   // R4 (review round 2): the shadow's gateway call must resolve its workspace

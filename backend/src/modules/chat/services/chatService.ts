@@ -1,6 +1,6 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import { classifyLlmProviderFailure } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
-import { routineActivationFailureFields } from "./turnFailureReporting.js";
+import { routineActivationFailureFields, surfacedTurnFailure } from "./turnFailureReporting.js";
 import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import {
   createModelCallTraceCollector,
@@ -997,19 +997,19 @@ export class ChatService {
   }
 
   /**
-   * The shared tail of every turn-ending catch block that is not a cancellation.
-   * `answer()` and `streamAnswer()` both reach here with the identical sequence;
-   * this is the one place it is written. Classifies `preferredError` (not the
-   * normalized one, which carries no `.cause` back to the original — see
-   * classifyLlmProviderFailure's own doc) before normalizing and rethrowing it.
+   * The shared tail of every turn-ending catch block that is not a cancellation, written
+   * once for `answer()` and `streamAnswer()`. Classifies the failure (not the normalized
+   * one, which carries no `.cause` back to the original — see classifyLlmProviderFailure)
+   * before normalizing and rethrowing it. A shed model call surfaces as its own `503`.
    */
   private async failTurn(
-    preferredError: unknown,
+    failure: unknown,
     input: Parameters<ChatTurnLifecycle["recordFailure"]>[0],
     session: PreparedSession | null,
     assistantMessageId: string | undefined,
     workflowPolicy: ReturnType<typeof assertInteractiveAssistantWorkflow>,
   ): Promise<never> {
+    const preferredError = surfacedTurnFailure(failure);
     const normalizedError = normalizeProviderCredentialError(preferredError);
     const providerFailure = classifyLlmProviderFailure(preferredError);
     const activationFailure = routineActivationFailureFields(preferredError);

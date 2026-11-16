@@ -10,6 +10,7 @@ import {
 import { SLACK_INBOUND_EVENT_RETENTION_DAYS } from "../../modules/slack/public.js";
 import { resolveMailDriverName } from "../../modules/mail/public.js";
 import { OPENAI_DATA_RESIDENCIES } from "../../shared/infra/llm/providerTypes.js";
+import { LLM_DEFAULTS } from "../../shared/domain/behaviorConfig.js";
 import {
   previousFieldEncryptionKeyProblems,
   type FieldEncryptionKeyRing,
@@ -320,6 +321,12 @@ const envSchema = z.object({
   LLM_RERANK_MODEL: emptyStringToUndefined(z.string().min(1)),
   LLM_EMBEDDING_PROVIDER: emptyStringToUndefined(z.enum(["openai", "openai-compatible", "gemini", "claude"])),
   LLM_EMBEDDING_MODEL: emptyStringToUndefined(z.string().min(1)),
+  // Most model calls conversation turns may have in flight at once on one API instance;
+  // past it a call waits briefly, then the turn fails with a typed busy error.
+  LLM_MAX_CONCURRENT_TURN_CALLS: emptyStringToDefault(
+    z.coerce.number().int().positive(),
+    LLM_DEFAULTS.turnCalls.maxConcurrent,
+  ),
   SESSION_COOKIE_NAME: z.string().min(1).default("radioso_session"),
   SESSION_COOKIE_SECRET: z.string().min(16),
   WORKSPACE_TOKEN_SECRET: emptyStringToUndefined(z.string().min(16)),

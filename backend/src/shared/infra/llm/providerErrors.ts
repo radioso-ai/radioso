@@ -19,12 +19,39 @@ interface ProviderHttpErrorInput {
   status: number;
   bodyText?: string;
   bodyJson?: Record<string, unknown>;
+  retryAfterMs?: number;
 }
 
 const CREDENTIAL_ERROR_CODE = "invalid_api_key";
 const GENERIC_PROVIDER_HTTP_ERROR_CODE = "provider_http_error";
 // Structural shape of a machine code (`RESOURCE_EXHAUSTED`, `overloaded_error`), never prose.
 const MACHINE_CODE_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
+// `Retry-After` as delta-seconds (RFC 9110 §10.2.3); anything else is read as an HTTP date.
+const DELTA_SECONDS_SHAPE = /^\d+(\.\d+)?$/;
+
+/**
+ * How long a provider asked the caller to wait, in milliseconds: `retry-after-ms` when sent
+ * (OpenAI and Azure send it), else `Retry-After` as seconds or an HTTP date. `undefined` when
+ * the response named no readable wait.
+ */
+export const parseRetryAfterMs = (
+  headers: { get(name: string): string | null } | undefined,
+  now = Date.now(),
+): number | undefined => {
+  const milliseconds = headers?.get("retry-after-ms")?.trim();
+  if (milliseconds && DELTA_SECONDS_SHAPE.test(milliseconds)) {
+    return Number(milliseconds);
+  }
+  const value = headers?.get("retry-after")?.trim();
+  if (!value) {
+    return undefined;
+  }
+  if (DELTA_SECONDS_SHAPE.test(value)) {
+    return Number(value) * 1_000;
+  }
+  const at = Date.parse(value);
+  return Number.isFinite(at) ? Math.max(0, at - now) : undefined;
+};
 
 /**
  * `undefined` unless `value` has the shape of a machine code (`RESOURCE_EXHAUSTED`,
@@ -51,6 +78,8 @@ export class ProviderHttpError extends Error implements ProviderErrorShape {
   readonly code: string;
   readonly error?: ProviderErrorShape["error"];
   readonly bodyText: string;
+  /** The wait the provider asked for before a retry, from its response headers. */
+  readonly retryAfterMs?: number;
 
   constructor(input: ProviderHttpErrorInput) {
     const innerError = extractInnerProviderError(input.bodyJson);
@@ -78,6 +107,7 @@ export class ProviderHttpError extends Error implements ProviderErrorShape {
       };
     }
     this.bodyText = input.bodyText ?? "";
+    this.retryAfterMs = input.retryAfterMs;
   }
 }
 
@@ -144,6 +174,7 @@ export const readProviderErrorBody = async (
     status: response.status,
     bodyText,
     bodyJson,
+    retryAfterMs: parseRetryAfterMs(response.headers),
   });
 };
 

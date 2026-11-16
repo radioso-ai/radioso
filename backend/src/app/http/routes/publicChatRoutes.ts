@@ -46,6 +46,7 @@ import {
 import { resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 import { verifyPublicChatIdentity } from "../shared/publicChatIdentity.js";
 import { answeredPublicUsageLimit } from "../shared/publicUsageLimit.js";
+import { clientDisconnectSignal } from "../shared/clientDisconnectSignal.js";
 import { registerPublicVoiceSessionRoute } from "./publicVoiceSessionRoute.js";
 import { registerPublicVisitorImageRoutes } from "./publicVisitorImageRoutes.js";
 import { publicVisitorImageOwner } from "../shared/visitorImageUpload.js";
@@ -706,6 +707,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           entryReferrer: req.body.pageContext?.referrer ?? null,
           privacyNoticeVersion: req.body.privacyNoticeVersion,
           visitorKey,
+          clientDisconnected: clientDisconnectSignal(res),
         };
 
         if (input.stream) {

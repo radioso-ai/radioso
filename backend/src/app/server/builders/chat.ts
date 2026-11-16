@@ -138,6 +138,8 @@ import {
   ContextualTurnPlanGatewayFactory,
 } from "../../../shared/infra/llm/contextualGateways.js";
 import { TextGenerationClientCache } from "../../../shared/infra/llm/textClientFactory.js";
+import { ModelCallGovernor, turnCallAdmissionLimits } from "../../../shared/infra/llm/modelCallGovernance.js";
+import { LLM_DEFAULTS } from "../../../shared/domain/behaviorConfig.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
 import { ContextVariableResolverService } from "../../../modules/context-variables/public.js";
 import { SkillBackedContextResolver } from "../../composition/builtIn/contextResolverModule.js";
@@ -922,6 +924,13 @@ export const buildChatServices = (input: {
         conversations: input.conversationRepository,
         messages: input.messageRepository,
         analytics: input.productAnalyticsService,
+        metrics: input.metricsRegistry,
+        logger: input.logger,
+      }),
+      // One per process: every turn through this service shares the instance's model-call lanes.
+      modelCallGovernor: new ModelCallGovernor({
+        limits: turnCallAdmissionLimits(input.env.LLM_MAX_CONCURRENT_TURN_CALLS),
+        retryPolicy: LLM_DEFAULTS.turnCalls.retry,
         metrics: input.metricsRegistry,
         logger: input.logger,
       }),

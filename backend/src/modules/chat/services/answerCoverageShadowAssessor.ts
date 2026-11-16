@@ -10,6 +10,7 @@ import { buildContextualizedRequest } from "./contextualizedRequest.js";
 import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
+import { runInDeferrableModelCallLane } from "../../../shared/infra/llm/modelCallGovernance.js";
 
 /** Usage operation of the shadow call; the turn trace keeps it out of every stage's cost. */
 export const ANSWER_COVERAGE_SHADOW_USAGE_OPERATION = "answer_coverage_shadow_assessment";
@@ -61,7 +62,8 @@ export class AnswerCoverageShadowAssessor {
     if (!this.enabled || session.turnRoute !== "retrieval" || session.retrieval.contexts.length === 0) {
       return inner;
     }
-    const shadowRun = this.runShadow(session, input.accountId, input.signal);
+    // Observational work the turn never waits on: its own budget, shed before a turn's call.
+    const shadowRun = runInDeferrableModelCallLane(() => this.runShadow(session, input.accountId, input.signal));
     return {
       report: async ({ assessment }) => {
         const decision = await inner.report({ assessment });

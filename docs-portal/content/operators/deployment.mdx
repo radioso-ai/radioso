@@ -116,7 +116,7 @@ Deploy the frontend release carrying the callback route before you apply the cre
 
 ## Alerting
 
-Cloud Monitoring alerting is off until an environment asks for it. Set these on the GitHub environment and the next Terraform apply builds an uptime check on the backend `/health` route, a log-based error metric, and alert policies for Cloud Run 5xx rate, backend p95 latency, error-log volume, Cloud SQL saturation, Cloud Tasks backlog, and Cloud Scheduler failures.
+Cloud Monitoring alerting is off until an environment asks for it. Set these on the GitHub environment and the next Terraform apply builds an uptime check on the backend `/health` route, a log-based error metric, and alert policies for Cloud Run 5xx rate, backend p95 latency, error-log volume, Cloud SQL saturation, Cloud Tasks backlog, Cloud Scheduler failures, voice turn health, and model provider pressure.
 
 | Value | What it does |
 |---|---|
@@ -222,6 +222,18 @@ Every Slack webhook delivery is recorded by its event id, with no message text, 
 ## Agent bundle import recovery
 
 An interrupted bundle import can leave the newly created agent behind before the request can compensate for a later failure. The document worker checks durable import jobs and removes agents from jobs that have stayed active longer than `AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS`. The default is `900000` (15 minutes); raise it only when an import can legitimately take longer in your deployment. Imports normally take seconds: once an import exceeds the threshold, cleanup fences it and the request returns a retryable conflict instead of claiming an agent that cleanup may delete. Terraform-managed deployments set the same value with `agent_bundle_import_orphan_age_ms`; Cloud Scheduler calls `POST /internal/tasks/agent-bundle-imports/sweep` every five minutes by default (override with `agent_bundle_import_cleanup_schedule`). Each cleanup writes an audit event and a `agent_bundle_import_compensations_total` metric, with ids but never bundle content.
+
+## Model provider pressure
+
+A conversation turn makes a handful of model calls: one that plans the turn, one that writes the answer, and a little best-effort work it never waits on. When the provider slows down or starts refusing, each API instance sheds load on its own instead of piling requests onto a provider that is already struggling. Everything below covers the turns behind public chat and the website embed, voice, the agent channels, and the dashboard's assistant chat.
+
+- `LLM_MAX_CONCURRENT_TURN_CALLS` defaults to 64 and caps the model calls those turns may have in flight at once on one API instance. A call over the cap waits up to 2 seconds for a free slot. If none frees, the turn fails with `503 model_capacity_busy`, and the visitor sees the chat's usual failure message and can send again. A planned turn holds a slot for six or seven seconds, so ten turns a second across two instances keep about 30 in flight on each; at 64, an instance starts shedding when provider latency roughly doubles. Lower it when several instances share a small provider quota, and raise it when your provider tier and instance memory have room. It is a plain environment variable on the API service, with no Terraform variable.
+- The coverage shadow assessment and suggested action chips run on a budget of their own, an eighth of that cap and at least one. When it is full they are skipped, so they never take a slot a visitor's turn needs.
+- A call the provider rate-limits or fails with a 5xx is retried once, after the provider's `Retry-After` when it sends one, provided the wait is 2 seconds or less. A longer `Retry-After`, an exhausted quota, or a second failure fails the call. The OpenAI SDK's own retries are off for these calls, so one layer decides.
+- When the call that plans a turn fails because the provider is rate-limiting, out of quota, unavailable, slower than the planner's 12-second bound, or the instance shed it, the turn fails there. The three or four separate classification calls a turn otherwise falls back to would only ask an overloaded provider for more. A planner reply that is unusable for any other reason, such as malformed output, still falls back to them.
+- A visitor who closes public chat or the embed mid-turn still has the answer stored when the instance has room to spare. Once the instance is at its cap, that turn starts no more model calls and fails instead of queueing ahead of visitors who are still waiting, so its answer is missing when they come back.
+
+Each failed attempt at a turn's model call that the provider pushes back on, and each turn call an instance sheds, writes one `llm.call_pressure` log line. Every such attempt and shed call, best-effort work included, counts under the `radioso_llm_*` metrics. On Google Cloud, the bundled Terraform alerts on the log lines with the model provider pressure policy.
 
 ## External skill call timeout
 

@@ -1,9 +1,10 @@
 import type { ChatSuggestion } from "../../types/chatResponses.js";
 import { runWithoutModelCallTrace } from "../../../../shared/observability/tracing/modelCallTraceContext.js";
+import { runInDeferrableModelCallLane } from "../../../../shared/infra/llm/modelCallGovernance.js";
 import type { ChatActionSuggestionRegistry } from "./chatActionSuggestionRegistry.js";
 import type { ChatActionSuggestionContext } from "./chatActionSuggestionProvider.js";
 
-export interface ChatActionSuggestionServiceOptions {
+interface ChatActionSuggestionServiceOptions {
   /**
    * Maximum number of action chips returned per turn. When more providers
    * return a suggestion than the cap allows, the providers registered first win.
@@ -26,8 +27,9 @@ export class ChatActionSuggestionService {
     this.onError = options.onError;
   }
 
+  /** Best-effort chips the turn's answer never waits on, so their model calls run in the deferrable lane. */
   async evaluate(context: ChatActionSuggestionContext): Promise<ChatSuggestion[]> {
-    return runWithoutModelCallTrace(() => this.evaluateOutsideTurnRollup(context));
+    return runWithoutModelCallTrace(() => runInDeferrableModelCallLane(() => this.evaluateOutsideTurnRollup(context)));
   }
 
   private async evaluateOutsideTurnRollup(context: ChatActionSuggestionContext): Promise<ChatSuggestion[]> {

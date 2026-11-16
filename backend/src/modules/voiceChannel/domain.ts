@@ -5,7 +5,18 @@ import type { VoiceVendor, VoiceVendorRegion } from "../../shared/domain/voiceVe
 
 import type { AgentVoiceSettings } from "../agents/public.js";
 
+import type { VoiceRuntimeBinding, VoiceRuntimeConnectionActor, VoiceVendorCredentialPresence } from "./runtimeConnectionDomain.js";
 import type { VoiceTestChatBinding, VoiceTestChatSubject } from "./testChatSessionDomain.js";
+export { VOICE_RUNTIME_CONNECTION_STATES, VoiceRuntimeConnectionError } from "./runtimeConnectionDomain.js";
+export type {
+  VoiceRuntimeBinding,
+  VoiceRuntimeConnectionActor,
+  VoiceRuntimeConnectionFailure,
+  VoiceRuntimeConnectionPort,
+  VoiceRuntimeConnectionStatus,
+  VoiceRuntimeDisconnection,
+  VoiceVendorCredentialPresence,
+} from "./runtimeConnectionDomain.js";
 export type { VoiceSessionSurface, VoiceTestChatBinding, VoiceTestChatSubject, VoiceTestChatTurnEvent, VoiceTestChatTurns } from "./testChatSessionDomain.js";
 
 export type VoiceTransport = "phone" | "web";
@@ -209,12 +220,6 @@ export type VoiceVendorCredentialReading =
   | { kind: "missing" }
   | { kind: "unreadable" };
 
-/**
- * Whether the workspace stores a key for a vendor, without decrypting it: `unreadable` is a key
- * stored while the backend has no master key to decrypt it with.
- */
-export type VoiceVendorCredentialPresence = "stored" | "missing" | "unreadable";
-
 export interface VoiceVendorCredentialReader {
   /** Rejects only when the credential store cannot be read at all. */
   read(input: { workspaceId: string; vendor: VoiceVendor }): Promise<VoiceVendorCredentialReading>;
@@ -310,9 +315,6 @@ export interface VoiceRuntimeProvisioner {
   releaseAgent(input: { region: VoiceVendorRegion; credential: VoiceVendorCredential; vendorAgentId: string }): Promise<void>;
 }
 
-/** The agent's runtime binding as its `voice` block stores it. */
-export type VoiceRuntimeBinding = NonNullable<AgentVoiceSettings["runtime"]>;
-
 /**
  * The REST credential a vendor agent carries: its id, and a fingerprint of the secret Radioso
  * handed the vendor, which names that secret without revealing it. A rotation keeps the id and
@@ -363,12 +365,6 @@ export interface VoiceRuntimeConnectionLock {
   run<T>(agent: { workspaceId: string; agentId: string }, work: () => Promise<T>): Promise<{ ran: true; value: T } | { ran: false }>;
 }
 
-/** Who connected or disconnected the runtime, for the credential's lifecycle record and the audit trail. */
-export interface VoiceRuntimeConnectionActor {
-  accountId: string | null;
-  userId: string | null;
-}
-
 /**
  * The REST agent-channel credential a maintained vendor agent sends on every turn. `issue` returns
  * the secret once, beside the credential the vendor will hold; Radioso keeps only its hash. `revoke`
@@ -385,11 +381,12 @@ export interface VoiceRuntimeChannelCredentials {
 }
 
 /**
- * Writes the agent's `voice.runtime` binding, through the agent's own write path so every side
- * effect of an agent write runs. The rest of the `voice` block stays as stored.
+ * Writes the agent's `voice.runtime` binding and, when given, `voice.enabled`, in one write through
+ * the agent's own write path so every side effect of an agent write runs. The rest of the `voice`
+ * block stays as stored.
  */
 export interface VoiceRuntimeBinder {
-  bind(input: { workspaceId: string; agentId: string; runtime: VoiceRuntimeBinding | null }): Promise<void>;
+  bind(input: { workspaceId: string; agentId: string; runtime: VoiceRuntimeBinding | null; enabled?: boolean }): Promise<void>;
 }
 
 /** What connecting reads of the Radioso agent. Null when the agent does not exist. */
@@ -398,6 +395,7 @@ export interface VoiceRuntimeAgentProfileSource {
     name: string;
     defaultLocale: string | null;
     runtime: VoiceRuntimeBinding | null;
+    enabled: boolean;
   } | null>;
 }
 
@@ -433,70 +431,6 @@ export interface VoiceRuntimeConnectionAudit {
     vendorAgentLeft: boolean;
     cause: "operator" | "agent_deleted";
   }): Promise<void>;
-}
-
-/**
- * Where an agent's voice runtime stands. `connected`: the binding is a vendor agent Radioso created
- * and maintains. `connected_externally`: the binding names a vendor agent set up outside Radioso.
- */
-export const VOICE_RUNTIME_CONNECTION_STATES = ["not_connected", "connected", "connected_externally"] as const;
-
-export type VoiceRuntimeConnectionState = (typeof VOICE_RUNTIME_CONNECTION_STATES)[number];
-
-/**
- * An agent's voice runtime as the Voice card shows it. `region` is the bound vendor account's.
- * `vendorKey` is the presence of the workspace's key for `vendor`. `connectAvailable` is false
- * when the deployment has no public origin a vendor can reach. `runtime` is the agent's binding
- * as stored, so a dashboard form can carry it on its next save.
- */
-export interface VoiceRuntimeConnectionStatus {
-  vendor: VoiceVendor;
-  state: VoiceRuntimeConnectionState;
-  region: VoiceVendorRegion | null;
-  vendorKey: VoiceVendorCredentialPresence;
-  connectAvailable: boolean;
-  runtime: VoiceRuntimeBinding | null;
-}
-
-/** The status after a disconnect, and whether the vendor agent Radioso created may still be at the vendor. */
-export type VoiceRuntimeDisconnection = VoiceRuntimeConnectionStatus & { vendorAgentLeft: boolean };
-
-/**
- * Why a Connect or Disconnect did not finish, as closed codes the HTTP layer maps to its answers.
- * `connection_busy`: another change of the agent's connection was running, so this one ran nothing.
- */
-export const VOICE_RUNTIME_CONNECTION_FAILURES = [
-  "agent_not_found",
-  "connection_busy",
-  "connection_unavailable",
-  "vendor_key_missing",
-  "vendor_key_unreadable",
-  "vendor_key_rejected",
-  "vendor_key_lacks_agents_permission",
-  "vendor_unreachable",
-  "vendor_failed",
-] as const;
-
-export type VoiceRuntimeConnectionFailure = (typeof VOICE_RUNTIME_CONNECTION_FAILURES)[number];
-
-export class VoiceRuntimeConnectionError extends Error {
-  constructor(readonly reason: VoiceRuntimeConnectionFailure) {
-    super(`Voice runtime connection failed: ${reason}`);
-    this.name = new.target.name;
-  }
-}
-
-/** What the agent's Voice card asks of its runtime connection. */
-export interface VoiceRuntimeConnectionPort {
-  status(agent: { workspaceId: string; agentId: string }): Promise<VoiceRuntimeConnectionStatus>;
-  /** Creates or repairs the vendor agent and binds it. Rejects with `VoiceRuntimeConnectionError`. */
-  connect(input: { workspaceId: string; agentId: string; actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeConnectionStatus>;
-  /**
-   * Unbinds the runtime, and removes the vendor agent when Radioso created it. Rejects with
-   * `VoiceRuntimeConnectionError` only for an agent that does not exist, or while another change of
-   * its connection runs.
-   */
-  disconnect(input: { workspaceId: string; agentId: string; actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeDisconnection>;
 }
 
 /**

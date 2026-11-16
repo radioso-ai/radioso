@@ -68,8 +68,7 @@ import {
   readProviderCredentialHealth,
 } from "./builders/accessAuth.js";
 import { buildChatServices } from "./builders/chat.js";
-import { buildConnectorRegistry, buildSlackInboundJobComposition } from "./builders/integrations.js";
-import { buildIntegrationServices } from "./builders/integrations.js";
+import { buildConnectorRegistry, buildIntegrationServices, buildSlackInboundJobComposition } from "./builders/integrations.js";
 import { buildDocumentRetrievalGraph } from "./builders/documentRetrievalGraph.js";
 import { buildRetentionWorkers } from "./builders/retentionWorkers.js";
 import {
@@ -1333,6 +1332,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     approvalDecisionService: chat.approvalDecisionService,
     closeApprovalResumeEffectJournal: chat.closeApprovalResumeEffectJournal,
     closeAbuseControlRepository: () => abuseControlComposition.shutdown(),
+    conversationTurnCoordination: chat.conversationTurnCoordination,
     conversationOwnershipService,
     conversationIngestService,
     conversationOperatorDirectory,

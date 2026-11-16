@@ -1102,10 +1102,14 @@ export const installDashboardApiMocks = async (
     /** What `GET /agents/:id` says of the agent's voice readiness. Defaults to the voice channel missing. */
     voiceCallReadiness?: ApiSchemas["VoiceCallReadiness"];
     /**
-     * The default agent's managed voice runtime (`/agents/:id/voice/connection`). `managedVendorAgentId`
-     * is the vendor agent Radioso maintains; a bound runtime naming another reads as set up outside
-     * Radioso. Connect binds `connectVendorAgentId` in `connectRegion`, or answers `connectFailure`.
-     * Defaults to no key stored and no managed agent.
+     * The default agent's managed voice runtime (`/agents/:id/voice/connection`) and voice switch
+     * (`/agents/:id/voice/channel`). `managedVendorAgentId` is the vendor agent Radioso maintains; a
+     * bound runtime naming another reads as set up outside Radioso. Connect, and switching voice on
+     * with nothing bound, binds `connectVendorAgentId` in `connectRegion`, or answers `connectFailure`;
+     * switching on with no usable key stored answers the key's own failure. Disconnect turns voice
+     * off. Storing an
+     * ElevenLabs key under Settings → Providers makes `vendorKey` stored. Defaults to no key stored
+     * and no managed agent.
      */
     voiceConnection?: {
       vendorKey?: ApiSchemas["AgentVoiceConnection"]["vendorKey"];
@@ -1118,6 +1122,8 @@ export const installDashboardApiMocks = async (
     };
     /** Every `POST`/`DELETE /agents/:id/voice/connection`, as `METHOD`. */
     voiceConnectionRequests?: string[];
+    /** The `enabled` of every `PUT /agents/:id/voice/channel`. */
+    voiceChannelSwitches?: boolean[];
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
     llmModelUpdates?: Array<unknown>;
     /** Per capability, the model the plan runs instead of the preference. Defaults to none. */
@@ -1257,6 +1263,19 @@ export const installDashboardApiMocks = async (
   const ingestionSettingsUpdates = options.ingestionSettingsUpdates;
   const agentUpdates = options.agentUpdates;
   const voiceConnection = { ...options.voiceConnection };
+  /** `AgentVoiceConnection` for the default agent, as its voice is stored now. */
+  const voiceConnectionStatus = () => {
+    const bound = agentSettings.voice?.runtime ?? null;
+    return {
+      vendor: "elevenlabs" as const,
+      state: bound === null ? "not_connected" as const : bound.agentId === voiceConnection.managedVendorAgentId ? "connected" as const : "connected_externally" as const,
+      region: bound?.region ?? null,
+      vendorKey: voiceConnection.vendorKey ?? "missing",
+      connectAvailable: voiceConnection.connectAvailable ?? true,
+      runtime: bound,
+      enabled: agentSettings.voice?.enabled ?? false,
+    };
+  };
   let directives: AuthoredDirectiveFixture[] = (options.directives ?? []).map(buildDirective);
   const builtIns = options.builtIns ?? baseBuiltInDirectives();
   let nextDirectiveIndex = 1;
@@ -2966,6 +2985,7 @@ export const installDashboardApiMocks = async (
         updatedAt: new Date().toISOString(),
         residency: body.residency ?? providerCredentials[provider]?.residency ?? "global",
       };
+      if (provider === "elevenlabs" && body.apiKey) voiceConnection.vendorKey = "stored";
       providerCredentialUpdates?.push({ method: "PUT", provider, body: request.postDataJSON() });
       await route.fulfill({ status: 204, contentType: "application/json", body: "" });
       return;
@@ -2974,6 +2994,7 @@ export const installDashboardApiMocks = async (
     if (request.method() === "DELETE" && path.startsWith("/settings/credentials/")) {
       const provider = path.replace("/settings/credentials/", "");
       providerCredentials[provider] = null;
+      if (provider === "elevenlabs") voiceConnection.vendorKey = "missing";
       providerCredentialUpdates?.push({ method: "DELETE", provider });
       await route.fulfill({ status: 204, contentType: "application/json", body: "" });
       return;
@@ -3135,19 +3156,8 @@ export const installDashboardApiMocks = async (
     }
 
     if (path === `/agents/${defaultAgentId}/voice/connection`) {
-      const connectionStatus = () => {
-        const bound = agentSettings.voice?.runtime ?? null;
-        return {
-          vendor: "elevenlabs" as const,
-          state: bound === null ? "not_connected" as const : bound.agentId === voiceConnection.managedVendorAgentId ? "connected" as const : "connected_externally" as const,
-          region: bound?.region ?? null,
-          vendorKey: voiceConnection.vendorKey ?? "missing",
-          connectAvailable: voiceConnection.connectAvailable ?? true,
-          runtime: bound,
-        };
-      };
       if (request.method() === "GET") {
-        await json(route, connectionStatus());
+        await json(route, voiceConnectionStatus());
         return;
       }
       options.voiceConnectionRequests?.push(request.method());
@@ -3162,15 +3172,44 @@ export const installDashboardApiMocks = async (
           ...agentSettings,
           voice: { ...agentSettings.voice, runtime: { vendor: "elevenlabs", agentId: vendorAgentId, region: voiceConnection.connectRegion ?? "eu" } },
         };
-        await json(route, connectionStatus());
+        await json(route, voiceConnectionStatus());
         return;
       }
       if (request.method() === "DELETE") {
         voiceConnection.managedVendorAgentId = null;
-        agentSettings = { ...agentSettings, voice: { ...agentSettings.voice, runtime: null } };
-        await json(route, { ...connectionStatus(), state: "not_connected", region: null, runtime: null, vendorAgentLeft: voiceConnection.vendorAgentLeftOnDisconnect ?? false });
+        agentSettings = { ...agentSettings, voice: { ...agentSettings.voice, runtime: null, enabled: false } };
+        await json(route, { ...voiceConnectionStatus(), state: "not_connected", region: null, runtime: null, enabled: false, vendorAgentLeft: voiceConnection.vendorAgentLeftOnDisconnect ?? false });
         return;
       }
+    }
+
+    if (request.method() === "PUT" && path === `/agents/${defaultAgentId}/voice/channel`) {
+      const { enabled } = request.postDataJSON() as { enabled: boolean };
+      options.voiceChannelSwitches?.push(enabled);
+      const bound = agentSettings.voice?.runtime ?? null;
+      // On needs a usable key; with nothing bound it connects first, as Connect does. A failure
+      // leaves voice as it was.
+      const vendorKey = voiceConnection.vendorKey ?? "missing";
+      const keyFailure = enabled && vendorKey !== "stored"
+        ? { status: 409, code: vendorKey === "unreadable" ? "voice_vendor_key_unreadable" : "voice_vendor_key_missing" }
+        : null;
+      const failure = keyFailure ?? (enabled && bound === null ? voiceConnection.connectFailure : undefined);
+      if (failure) {
+        await json(route, { error: { code: failure.code, message: "Switch failed" } }, failure.status);
+        return;
+      }
+      if (enabled && bound === null) {
+        const vendorAgentId = voiceConnection.connectVendorAgentId ?? "agent_managed_1";
+        voiceConnection.managedVendorAgentId = vendorAgentId;
+        agentSettings = {
+          ...agentSettings,
+          voice: { ...agentSettings.voice, enabled: true, runtime: { vendor: "elevenlabs", agentId: vendorAgentId, region: voiceConnection.connectRegion ?? "eu" } },
+        };
+      } else {
+        agentSettings = { ...agentSettings, voice: { ...agentSettings.voice, enabled } };
+      }
+      await json(route, voiceConnectionStatus());
+      return;
     }
 
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/channel-credentials`) {

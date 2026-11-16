@@ -37,15 +37,18 @@ export type ClosableDependencies = Pick<
   | "closeApprovalResumeEffectJournal"
   | "closeAbuseControlRepository"
   | "connectorRegistry"
+  | "conversationTurnCoordination"
   | "logger"
 >;
 
 /**
  * What `buildDependencies` opened, in the order every runtime shuts it down: the realtime publisher
  * (its Redis connection, when it has one), the application modules, the approval journal's
- * database, the abuse-control repository, then the connectors, whose shutdown is a no-op for a
- * connector that never started. The main database pool stays open for the caller, which ends it
- * or exits.
+ * database, the abuse-control repository, the connectors, whose shutdown is a no-op for a
+ * connector that never started, then chat turn coordination. Turn coordination closes last of the
+ * turn-running parts, because connector work may still finish a turn; its shutdown stops lease
+ * renewal and closes its notification connection. The main database pool stays open for the
+ * caller, which ends it or exits.
  */
 export const dependencyCloseSteps = (dependencies: ClosableDependencies): CloseStep[] => [
   { name: "realtime publisher", close: () => dependencies.realtimePublisherLifecycle.shutdown() },
@@ -53,6 +56,7 @@ export const dependencyCloseSteps = (dependencies: ClosableDependencies): CloseS
   { name: "approval resume effect journal", close: () => dependencies.closeApprovalResumeEffectJournal() },
   { name: "abuse control repository", close: () => dependencies.closeAbuseControlRepository?.() },
   { name: "connectors", close: () => dependencies.connectorRegistry.shutdownAll() },
+  { name: "conversation turn coordination", close: () => dependencies.conversationTurnCoordination.shutdown() },
 ];
 
 /** Closes what the composition opened (`dependencyCloseSteps`) with `closeInOrder`. */

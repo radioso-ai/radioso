@@ -8,9 +8,10 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-// The website widget's "Offer calls on the website" switch: the operator's own choice, which the
-// dashboard lets them switch on only once the backend says the agent's voice is ready, and which
-// it saves on the agent's website embed block.
+// The website widget's "Offer calls on the website" switch: the operator's own choice, saved on the
+// agent's website embed block. When the backend says voice is missing a piece that turning voice on
+// sets up, the switch turns voice on first (asking for the vendor key in place); a publication or an
+// unreadable stored key it cannot fix.
 
 const readyVoice = {
   enabled: true,
@@ -54,22 +55,53 @@ test("an operator offers calls on the website once voice is ready, and the choic
   await expect(page.getByRole("switch", { name: "Offer calls on the website" })).toBeChecked();
 });
 
-test("the switch stays off with one line naming what voice still needs", async ({ page }) => {
+test("an operator with voice off and no key turns calls on: the key is asked for in place, and saving it sets voice up and offers calls", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+  const voiceChannelSwitches: boolean[] = [];
+  const providerCredentialUpdates: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }> = [];
   await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    agentUpdates,
+    voiceChannelSwitches,
+    providerCredentialUpdates,
+    voiceCallReadiness: { ready: false, missing: "voice_channel" },
+  });
   await openWebChat(page);
 
   const offerCalls = page.getByRole("switch", { name: "Offer calls on the website" });
-  await expect(offerCalls).toBeDisabled();
+  await expect(offerCalls).toBeEnabled();
   await expect(offerCalls).not.toBeChecked();
-  await expect(page.getByText("Turn on the voice channel on the API page first.")).toBeVisible();
+  await expect(page.getByText("Turning it on sets up the agent’s voice on ElevenLabs.")).toBeVisible();
+
+  // Cancelling the key leaves calls off.
+  await offerCalls.click();
+  const keyDialog = page.getByRole("dialog", { name: "ElevenLabs API key" });
+  await expect(keyDialog).toContainText("Add your ElevenLabs API key.");
+  await keyDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(offerCalls).not.toBeChecked();
+  expect(agentUpdates).toEqual([]);
+
+  await offerCalls.click();
+  await keyDialog.getByLabel("API key").fill("sk_elevenlabs_example");
+  await keyDialog.getByRole("button", { name: "Save key" }).click();
+
+  await expect(keyDialog).toHaveCount(0);
+  await expect(offerCalls).toBeChecked();
+  expect(providerCredentialUpdates).toEqual([{ method: "PUT", provider: "elevenlabs", body: { apiKey: "sk_elevenlabs_example" } }]);
+  // Turning voice on failed for want of a key, then went through once the key was stored.
+  expect(voiceChannelSwitches).toEqual([true, true, true]);
+  await expect.poll(() => agentUpdates.length).toBe(1);
+  expect(agentUpdates).toEqual([{ surfaceSettings: { websiteEmbed: { voiceCallsOffered: true } } }]);
+
+  await page.reload();
+  await expect(page.getByRole("switch", { name: "Offer calls on the website" })).toBeChecked();
 });
 
 for (const [missing, hint] of [
   ["publication", "Publish the agent first: until it is published, it answers no chats or calls."],
-  ["vendor_key", "Store the ElevenLabs key under Settings → Providers first."],
   ["encryption", "Radioso cannot read the stored ElevenLabs key. Check CONNECTOR_ENCRYPTION_KEY; after a key rotation, list the key it replaced in CONNECTOR_ENCRYPTION_PREVIOUS_KEYS. Otherwise enter the key again."],
-] as const) test(`a bound runtime whose ${missing} is missing says so`, async ({ page }) => {
+] as const) test(`a bound runtime whose ${missing} is missing says so, and the switch stays off`, async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     platformSettings: basePlatformSettings(),
@@ -83,7 +115,7 @@ for (const [missing, hint] of [
 });
 
 test("the switch reads readiness again when the window regains focus, after the missing piece was set up elsewhere", async ({ page }) => {
-  const readiness: { ready: boolean; missing: "vendor_key" | null } = { ready: false, missing: "vendor_key" };
+  const readiness: { ready: boolean; missing: "publication" | null } = { ready: false, missing: "publication" };
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     platformSettings: basePlatformSettings(),
@@ -94,7 +126,7 @@ test("the switch reads readiness again when the window regains focus, after the 
   const offerCalls = page.getByRole("switch", { name: "Offer calls on the website" });
   await expect(offerCalls).toBeDisabled();
 
-  // The operator stores the ElevenLabs key under Settings → Providers in another tab and comes back.
+  // The operator publishes the agent in another tab and comes back.
   readiness.ready = true;
   readiness.missing = null;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -103,19 +135,22 @@ test("the switch reads readiness again when the window regains focus, after the 
   await expect(page.getByText("Visitors see Talk beside Send and can talk to the agent.")).toBeVisible();
 });
 
-test("saving the Voice card tells the page to read the agent's voice readiness again", async ({ page }) => {
+test("switching voice and saving the Voice card each tell the page to read the agent's voice readiness again", async ({ page }) => {
   await page.addInitScript(() => {
     const heard: unknown[] = [];
     Object.assign(window, { __voiceSaved: heard });
     window.addEventListener("radioso:agent-voice-saved", (event) => heard.push((event as CustomEvent).detail));
   });
   await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), voiceConnection: { vendorKey: "stored" } });
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=api-channel`);
   const card = page.locator("#voice-channel");
-  await card.getByRole("switch", { name: "Voice channel" }).click();
+  const voiceSwitch = card.getByRole("switch", { name: "Voice channel" });
+  await voiceSwitch.click();
+  await expect(voiceSwitch).toBeChecked();
+  await card.getByRole("switch", { name: "Switch language with the caller" }).click();
   await card.getByRole("button", { name: "Save voice settings" }).click();
   await expect(card.getByText("Saved", { exact: true })).toBeVisible();
 
-  expect(await page.evaluate(() => (window as unknown as { __voiceSaved: unknown[] }).__voiceSaved)).toEqual([{ agentId: defaultAgentId }]);
+  expect(await page.evaluate(() => (window as unknown as { __voiceSaved: unknown[] }).__voiceSaved)).toEqual([{ agentId: defaultAgentId }, { agentId: defaultAgentId }]);
 });

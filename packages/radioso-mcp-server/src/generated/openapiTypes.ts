@@ -1830,9 +1830,29 @@ export interface paths {
         post: operations["connectAgentVoice"];
         /**
          * Disconnect the agent's voice runtime
-         * @description Unbinds the agent's `voice.runtime`. A vendor agent Radioso created is deleted from the vendor account with its stored credential, and the credential is revoked; a runtime bound by hand is only unbound, and its vendor agent left alone. Unbinding never waits on the vendor: `vendorAgentLeft` says when the vendor agent may still be there. Records an `agent.voice_runtime.disconnected` audit event when there was something to disconnect. Dashboard session only.
+         * @description Unbinds the agent's `voice.runtime` and turns `voice.enabled` off. A vendor agent Radioso created is deleted from the vendor account with its stored credential, and the credential is revoked; a runtime bound by hand is only unbound, and its vendor agent left alone. Unbinding never waits on the vendor: `vendorAgentLeft` says when the vendor agent may still be there. Records an `agent.voice_runtime.disconnected` audit event when there was something to disconnect. Dashboard session only.
          */
         delete: operations["disconnectAgentVoice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/voice/channel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turn the agent's voice channel on or off
+         * @description Sets the agent's `voice.enabled`. Turning it on when no `voice.runtime` is bound first connects, exactly as `POST /api/v1/agents/{agentId}/voice/connection` does, and binds the runtime and turns voice on in one write; when that Connect fails, voice stays off and the answer names why with Connect's codes. Turning it on with a runtime bound only checks that the vendor accepts the stored key, and leaves voice off with Connect's key codes when it does not. Turning it off keeps the runtime and the vendor agent, so turning it on again creates nothing. Runs as one change of the agent's connection: while a Connect or Disconnect runs, it answers `409 voice_connection_busy`. Dashboard session only.
+         */
+        put: operations["switchAgentVoiceChannel"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -11079,6 +11099,8 @@ export interface components {
                 /** @enum {string} */
                 region: "us" | "eu" | "in" | "sg";
             } | null;
+            /** @description The agent's `voice.enabled` as stored after the request: whether pages may start calls with it. A client that saves the whole `voice` block sends this value. */
+            enabled: boolean;
         };
         /** @description Where the agent's voice runtime stands after Disconnect. */
         AgentVoiceDisconnection: components["schemas"]["AgentVoiceConnection"] & {
@@ -19674,6 +19696,110 @@ export interface operations {
             };
             /** @description `voice_connection_busy`: another Connect or Disconnect of this agent is running, and this one changed nothing */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    switchAgentVoiceChannel: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Required on writes from the dashboard session. */
+                "x-radioso-csrf": "1";
+            };
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description True turns voice on, connecting first when no runtime is bound; false turns it off. */
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The voice channel as switched */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentVoiceConnection"];
+                };
+            };
+            /** @description The body is not `{ "enabled": boolean }` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required; API tokens are refused, this is for dashboard sessions */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required, or the CSRF header is missing */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `voice_vendor_key_missing`, `voice_vendor_key_unreadable`: turning voice on needs a readable stored key; `voice_connection_busy`: another change of this agent's connection is running, and this one changed nothing */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `voice_vendor_key_rejected`, `voice_vendor_key_lacks_agents_permission`: turning voice on and the vendor refused the stored key */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `voice_vendor_failed`: turning voice on needed a Connect and the vendor refused to set up the agent */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `voice_vendor_unreachable`, `voice_connection_unavailable`: turning voice on needed a Connect and the vendor, or this deployment, could not be reached */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

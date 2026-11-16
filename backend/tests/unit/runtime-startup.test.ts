@@ -193,6 +193,7 @@ const createDependencies = () =>
       stop: vi.fn().mockResolvedValue(undefined),
     },
     closeApprovalResumeEffectJournal: vi.fn().mockResolvedValue(undefined),
+    conversationTurnCoordination: { shutdown: vi.fn().mockResolvedValue(undefined) },
     copilotRetentionWorker: {
       start: vi.fn(),
       stop: vi.fn(async () => {}),
@@ -305,6 +306,8 @@ describe("runtime startup", () => {
     expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
     expectCalledBefore(dependencies.applicationModules.shutdownAll, dependencies.connectorRegistry.shutdownAll);
+    expect(dependencies.conversationTurnCoordination.shutdown).toHaveBeenCalledOnce();
+    expectCalledBefore(dependencies.connectorRegistry.shutdownAll, dependencies.conversationTurnCoordination.shutdown);
   });
 
   it("starts the worker runtime without connector bootstrapping and fails fast on pending migrations", async () => {
@@ -383,6 +386,8 @@ describe("runtime startup", () => {
     expectCalledBefore(dependencies.credentialExpiryWarningLifecycle?.stop, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.periodicTasksLifecycle?.stop, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
+    expect(dependencies.conversationTurnCoordination.shutdown).toHaveBeenCalledOnce();
+    expectCalledBefore(dependencies.actionDispatchJobRuntime.stop, dependencies.conversationTurnCoordination.shutdown);
   });
 
   it("starts the worker task runtime with only the internal task server", async () => {
@@ -418,6 +423,8 @@ describe("runtime startup", () => {
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
+    expect(dependencies.conversationTurnCoordination.shutdown).toHaveBeenCalledOnce();
+    expectCalledBefore(close, dependencies.conversationTurnCoordination.shutdown);
   });
 
   // documentWorkerServer.ts (the production push-worker entrypoint) is the only caller that

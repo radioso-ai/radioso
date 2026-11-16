@@ -25,6 +25,7 @@ const profileBodySchema = z.object({
   monthlyIndexedByteLimit: nullableByteLimitSchema,
   monthlyConversationLimit: nullableLimitSchema.optional(),
   repliesPerConversation: z.number().int().min(1).max(1000).optional(),
+  publicChatMessagesPerMinute: z.number().int().min(1).max(1_000_000).nullable().optional(),
 });
 
 const creditsBodySchema = z.object({
@@ -147,6 +148,9 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
           : {}),
         ...(Object.prototype.hasOwnProperty.call(body, "repliesPerConversation")
           ? { repliesPerConversation: body.repliesPerConversation }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(body, "publicChatMessagesPerMinute")
+          ? { publicChatMessagesPerMinute: body.publicChatMessagesPerMinute ?? null }
           : {}),
       });
       res.status(200).json({ profile });

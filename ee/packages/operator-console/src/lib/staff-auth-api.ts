@@ -24,6 +24,7 @@ export interface UsageLimitProfile {
   monthlyIndexedByteLimit: number | null;
   monthlyConversationLimit: number | null;
   repliesPerConversation: number;
+  publicChatMessagesPerMinute?: number | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -120,6 +121,7 @@ interface TierPayload {
   monthlyIndexedByteLimit?: number | null;
   monthlyConversationLimit?: number | null;
   repliesPerConversation?: number;
+  publicChatMessagesPerMinute?: number | null;
 }
 
 interface StaffCreatePayload {

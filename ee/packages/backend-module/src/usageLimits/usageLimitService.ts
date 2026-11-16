@@ -45,6 +45,9 @@ export interface UsageLimitProfile {
   monthlyConversationLimit: number | null;
   /** A customer conversation is charged once per this many replies. */
   repliesPerConversation: number;
+  /** Public chat messages per minute across all of one workspace's visitors. Null keeps the
+   *  deployment's own workspace budget, not unlimited. */
+  publicChatMessagesPerMinute: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -187,6 +190,7 @@ const mapProfile = (row: {
   monthly_indexed_byte_limit: number | string | null;
   monthly_conversation_limit: number | null;
   replies_per_conversation: number;
+  public_chat_messages_per_minute: number | null;
   created_at: Date;
   updated_at: Date;
 }): UsageLimitProfile => ({
@@ -198,6 +202,7 @@ const mapProfile = (row: {
   monthlyIndexedByteLimit: toNullableNumber(row.monthly_indexed_byte_limit),
   monthlyConversationLimit: row.monthly_conversation_limit,
   repliesPerConversation: row.replies_per_conversation,
+  publicChatMessagesPerMinute: row.public_chat_messages_per_minute,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
 });
@@ -262,21 +267,20 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     return profile ? findPlan(profile.key)?.dailyNotificationEmails ?? null : null;
   }
 
+  async getPublicChatMessagesPerMinute(input: {
+    accountId?: string | null;
+    workspaceId: string;
+  }): Promise<number | null> {
+    const accountId = await this.resolveAccountId(input);
+    if (!accountId) return null;
+    const profile = await this.findProfileForAccount(accountId);
+    return profile?.publicChatMessagesPerMinute ?? null;
+  }
+
   async listProfiles(): Promise<UsageLimitProfile[]> {
     const rows = await this.db
       .selectFrom("ee_usage_limit_profiles")
-      .select([
-        "key",
-        "display_name",
-        "monthly_answer_limit",
-        "stored_document_limit",
-        "stored_indexed_byte_limit",
-        "monthly_indexed_byte_limit",
-        "monthly_conversation_limit",
-        "replies_per_conversation",
-        "created_at",
-        "updated_at",
-      ])
+      .selectAll()
       .orderBy("key", "asc")
       .execute();
 
@@ -292,6 +296,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     monthlyIndexedByteLimit?: number | null;
     monthlyConversationLimit?: number | null;
     repliesPerConversation?: number;
+    publicChatMessagesPerMinute?: number | null;
   }): Promise<UsageLimitProfile> {
     // An omitted optional field preserves the stored value on update; an
     // explicit `null` clears it. Only fields the caller actually named go into
@@ -300,6 +305,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     const hasMonthlyIndexedByteLimit = "monthlyIndexedByteLimit" in input;
     const hasMonthlyConversationLimit = "monthlyConversationLimit" in input;
     const hasRepliesPerConversation = "repliesPerConversation" in input;
+    const hasPublicChatMessagesPerMinute = "publicChatMessagesPerMinute" in input;
 
     const row = await this.db
       .insertInto("ee_usage_limit_profiles")
@@ -310,6 +316,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
         stored_document_limit: input.storedDocumentLimit,
         monthly_conversation_limit: input.monthlyConversationLimit ?? null,
         replies_per_conversation: input.repliesPerConversation ?? 10,
+        public_chat_messages_per_minute: input.publicChatMessagesPerMinute ?? null,
         stored_indexed_byte_limit:
           input.storedIndexedByteLimit === null || input.storedIndexedByteLimit === undefined
             ? null
@@ -336,21 +343,13 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
           ...(hasRepliesPerConversation
             ? { replies_per_conversation: (eb) => eb.ref("excluded.replies_per_conversation") }
             : {}),
+          ...(hasPublicChatMessagesPerMinute
+            ? { public_chat_messages_per_minute: (eb) => eb.ref("excluded.public_chat_messages_per_minute") }
+            : {}),
           updated_at: sql<Date>`now()`,
         }),
       )
-      .returning([
-        "key",
-        "display_name",
-        "monthly_answer_limit",
-        "stored_document_limit",
-        "stored_indexed_byte_limit",
-        "monthly_indexed_byte_limit",
-        "monthly_conversation_limit",
-        "replies_per_conversation",
-        "created_at",
-        "updated_at",
-      ])
+      .returningAll()
       .executeTakeFirstOrThrow();
 
     return mapProfile(row);
@@ -1132,18 +1131,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     const row = await this.db
       .selectFrom("ee_usage_limit_account_assignments as a")
       .innerJoin("ee_usage_limit_profiles as p", "p.key", "a.profile_key")
-      .select([
-        "p.key",
-        "p.display_name",
-        "p.monthly_answer_limit",
-        "p.stored_document_limit",
-        "p.stored_indexed_byte_limit",
-        "p.monthly_indexed_byte_limit",
-        "p.monthly_conversation_limit",
-        "p.replies_per_conversation",
-        "p.created_at",
-        "p.updated_at",
-      ])
+      .selectAll("p")
       .where("a.account_id", "=", accountId)
       .executeTakeFirst();
 

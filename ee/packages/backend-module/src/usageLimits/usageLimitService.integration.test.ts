@@ -69,6 +69,7 @@ const fakeConversationProfile = (limitTenths: number): UsageLimitProfile => ({
   monthlyIndexedByteLimit: null,
   monthlyConversationLimit: limitTenths / TENTHS_PER_CONVERSATION,
   repliesPerConversation: 10,
+  publicChatMessagesPerMinute: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 });
@@ -224,6 +225,7 @@ describeIfDatabase("EE usage limit service integration", () => {
       monthlyIndexedByteLimit?: number | null;
       monthlyConversationLimit?: number | null;
       repliesPerConversation?: number;
+      publicChatMessagesPerMinute?: number | null;
     },
   ): Promise<void> => {
     const service = new EnterpriseUsageLimitService(database);
@@ -237,6 +239,7 @@ describeIfDatabase("EE usage limit service integration", () => {
       monthlyIndexedByteLimit: limits.monthlyIndexedByteLimit ?? null,
       monthlyConversationLimit: limits.monthlyConversationLimit ?? null,
       repliesPerConversation: limits.repliesPerConversation,
+      ...("publicChatMessagesPerMinute" in limits ? { publicChatMessagesPerMinute: limits.publicChatMessagesPerMinute } : {}),
     });
     await service.assignProfile(accountId, key);
   };
@@ -754,6 +757,70 @@ describeIfDatabase("EE usage limit service integration", () => {
     expect(cleared.monthlyConversationLimit).toBeNull();
     // repliesPerConversation was omitted, not cleared, so the earlier value survives.
     expect(cleared.repliesPerConversation).toBe(25);
+  });
+
+  // ── Public chat cap ──────────────────────────────────────────────────────
+
+  it("resolves a workspace's public chat messages per minute from its account's tier", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { publicChatMessagesPerMinute: 3_000 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    await expect(service.getPublicChatMessagesPerMinute({ workspaceId })).resolves.toBe(3_000);
+  });
+
+  it("leaves the public chat cap to the deployment for an account without a tier or a tier without a cap", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    const service = new EnterpriseUsageLimitService(database);
+
+    await expect(service.getPublicChatMessagesPerMinute({ workspaceId })).resolves.toBeNull();
+
+    await assignProfile(accountId, {});
+    await expect(service.getPublicChatMessagesPerMinute({ workspaceId })).resolves.toBeNull();
+  });
+
+  it("keeps a tier's public chat cap when an edit omits it and clears it on an explicit null", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+    const key = `it_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+
+    const created = await service.upsertProfile({
+      key,
+      displayName: "Large host",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+      publicChatMessagesPerMinute: 3_000,
+    });
+    expect(created.publicChatMessagesPerMinute).toBe(3_000);
+
+    const kept = await service.upsertProfile({
+      key,
+      displayName: "Large host v2",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+    });
+    expect(kept.publicChatMessagesPerMinute).toBe(3_000);
+    expect((await service.listProfiles()).find((profile) => profile.key === key)?.publicChatMessagesPerMinute).toBe(3_000);
+
+    const cleared = await service.upsertProfile({
+      key,
+      displayName: "Large host v3",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+      publicChatMessagesPerMinute: null,
+    });
+    expect(cleared.publicChatMessagesPerMinute).toBeNull();
+  });
+
+  it("refuses a public chat cap below one message per minute", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+
+    await expect(service.upsertProfile({
+      key: `it_${randomUUID().replace(/-/g, "").slice(0, 16)}`,
+      displayName: "Closed",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+      publicChatMessagesPerMinute: 0,
+    })).rejects.toThrow();
   });
 
   // ── Credits ledger ───────────────────────────────────────────────────────

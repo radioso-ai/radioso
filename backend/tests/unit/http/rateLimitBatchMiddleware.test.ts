@@ -56,6 +56,21 @@ describe("rate-limit batch middleware", () => {
     }
   });
 
+  it("hands a failure to work out the budgets to the error handler instead of leaving it unhandled", async () => {
+    const failure = new Error("plan store unavailable");
+    const enforceBatch = vi.fn();
+    const middleware = createRateLimitBatchMiddleware({
+      service: { enforceBatch },
+      auditService,
+      resolvePolicies: () => Promise.reject(failure),
+    });
+
+    const { error } = await respond([middleware]);
+
+    expect(error).toBe(failure);
+    expect(enforceBatch).not.toHaveBeenCalled();
+  });
+
   describe("a budget the caller is not shown", () => {
     const visitorAndWorkspace = (limits: { visitor: number; workspace: number }) => [
       { scope: "visitor", subjectKey: "visitor-1", limit: limits.visitor, windowMs: 60_000 },

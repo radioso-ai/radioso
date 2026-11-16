@@ -15,6 +15,7 @@ type TierProfile = {
   monthlyIndexedByteLimit: number | null;
   monthlyConversationLimit: number | null;
   repliesPerConversation: number;
+  publicChatMessagesPerMinute?: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -246,6 +247,7 @@ const installOperatorConsoleMocks = async (
         storedDocumentLimit: body.storedDocumentLimit,
         storedIndexedByteLimit: body.storedIndexedByteLimit,
         monthlyIndexedByteLimit: body.monthlyIndexedByteLimit,
+        publicChatMessagesPerMinute: body.publicChatMessagesPerMinute ?? null,
       };
       tiers = [...tiers.filter((tier) => tier.key !== key), profile];
       await json(route, { profile });
@@ -388,6 +390,20 @@ test("billing staff can create a tier with byte limits in human units", async ({
   await expect(scaleRow).toContainText("Scale");
   await expect(scaleRow).toContainText("1 GB");
   await expect(scaleRow).toContainText("2 GB");
+});
+
+test("billing staff can give a tier its own public chat messages per minute", async ({ page }) => {
+  await installOperatorConsoleMocks(page, "billing_write");
+
+  await page.goto("/operator/tiers");
+  await expect(page.getByRole("row").filter({ hasText: "growth" })).toContainText("default");
+  await page.getByRole("button", { name: "Edit Growth" }).click();
+  await page.getByLabel("Public chat messages per minute").fill("3000");
+  const saved = page.waitForRequest((request) => request.method() === "PUT" && request.url().includes("/tiers/growth"));
+  await page.getByRole("button", { name: "Save tier" }).click();
+
+  expect((await saved).postDataJSON()).toMatchObject({ publicChatMessagesPerMinute: 3000 });
+  await expect(page.getByRole("row").filter({ hasText: "growth" })).toContainText("3,000");
 });
 
 test("support_read staff sees read-only tier UI and no staff management", async ({ page }) => {

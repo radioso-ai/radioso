@@ -314,6 +314,7 @@ const sampleUsageSummary: AccountUsageSummary = {
     monthlyIndexedByteLimit: 1_000_000,
     monthlyConversationLimit: null,
     repliesPerConversation: 10,
+    publicChatMessagesPerMinute: null,
     createdAt: "2026-06-01T00:00:00.000Z",
     updatedAt: "2026-06-01T00:00:00.000Z",
   },
@@ -344,6 +345,7 @@ const sampleProfiles: UsageLimitProfile[] = [
     monthlyIndexedByteLimit: 1_000_000,
     monthlyConversationLimit: null,
     repliesPerConversation: 10,
+    publicChatMessagesPerMinute: null,
     createdAt: "2026-06-01T00:00:00.000Z",
     updatedAt: "2026-06-01T00:00:00.000Z",
   },
@@ -358,6 +360,7 @@ const sampleGrowthProfile: UsageLimitProfile = {
   monthlyIndexedByteLimit: null,
   monthlyConversationLimit: null,
   repliesPerConversation: 10,
+  publicChatMessagesPerMinute: null,
   createdAt: "2026-06-01T00:00:00.000Z",
   updatedAt: "2026-06-01T00:00:00.000Z",
 };
@@ -1060,6 +1063,59 @@ describe("staff console routes and guards", () => {
       })
       .expect(403);
     expect(readOnlyUpsertProfile).not.toHaveBeenCalled();
+  });
+
+  it("sets, keeps, and clears a tier's public chat messages per minute", async () => {
+    const repositories = await createMemoryRepositories("billing_write");
+    const auditRecord = vi.fn(async () => undefined);
+    const upsertProfile = vi.fn(async () => sampleGrowthProfile);
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      auditRecord,
+    }), {
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      usageLimitService: {
+        getAccountUsage: vi.fn(async () => sampleUsageSummary),
+        listProfiles: vi.fn(async () => sampleProfiles),
+        upsertProfile,
+      },
+    });
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+    const putTier = (body: Record<string, unknown>) => request(app)
+      .put("/api/v1/ee/operator-console/tiers/growth")
+      .set("Cookie", login.headers["set-cookie"][0])
+      .send({ displayName: "Growth", monthlyAnswerLimit: null, storedDocumentLimit: null, ...body });
+
+    await putTier({ publicChatMessagesPerMinute: 3_000 }).expect(200);
+    expect(upsertProfile).toHaveBeenLastCalledWith({
+      key: "growth",
+      displayName: "Growth",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+      publicChatMessagesPerMinute: 3_000,
+    });
+    expect(auditRecord).toHaveBeenLastCalledWith(expect.objectContaining({
+      eventType: "staff.tier.upserted",
+      metadata: expect.objectContaining({
+        fields: ["monthlyAnswerLimit", "storedDocumentLimit", "publicChatMessagesPerMinute"],
+      }),
+    }));
+
+    await putTier({}).expect(200);
+    expect((upsertProfile.mock.lastCall as unknown[] | undefined)?.[0]).not.toHaveProperty("publicChatMessagesPerMinute");
+
+    await putTier({ publicChatMessagesPerMinute: null }).expect(200);
+    expect(upsertProfile).toHaveBeenLastCalledWith(expect.objectContaining({ publicChatMessagesPerMinute: null }));
+
+    const callsBeforeInvalid = upsertProfile.mock.calls.length;
+    await putTier({ publicChatMessagesPerMinute: 0 }).expect(400);
+    await putTier({ publicChatMessagesPerMinute: 12.5 }).expect(400);
+    expect(upsertProfile).toHaveBeenCalledTimes(callsBeforeInvalid);
   });
 
   it("audits tier create and edit with sanitized metadata", async () => {

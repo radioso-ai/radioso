@@ -9,6 +9,7 @@ import {
 } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import type { Env } from "../../src/app/config/env.js";
 import { AppError } from "../../src/shared/domain/errors.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { createTestDependencies } from "../support/testApp.js";
 import { InMemoryAbuseControlRepository } from "../support/fakes.js";
 
@@ -448,6 +449,88 @@ describe("public chat turn budgets for a visitor without the rate-limit cookie",
     expect(refused.getHeader("RateLimit-Limit")).toBeUndefined();
     expect(refused.getHeader("RateLimit-Remaining")).toBeUndefined();
     expect(refused.body).toEqual({ code: "rate_limit_exceeded", retryAfterSeconds: expect.any(Number) });
+  });
+});
+
+describe("public chat workspace budget a plan can set", () => {
+  beforeEach(() => {
+    resetRateLimiterState();
+    vi.restoreAllMocks();
+  });
+
+  const planWithCap = (cap: number | null): UsageLimitPolicy => Object.assign(new NoopUsageLimitPolicy(), {
+    getPublicChatMessagesPerMinute: async () => cap,
+  });
+  const turnLimiterFor = (cap: number | null, env: Partial<Env> = {}) => publicChatTurnRateLimiter(
+    createTestDependencies({ usageLimitPolicy: planWithCap(cap), envOverrides: env }).dependencies,
+  );
+  const sendFrom = async (limiter: RequestHandler, n: number) => {
+    const { req, res, next, wasNextCalled, getStatus, getHeader, getBody } = createMockReqRes({
+      workspaceId: "workspace-1",
+      chatSessionId: `visitor-${n}`,
+      anonymousRateLimitId: `visitor-${n}`,
+      anonymousRateLimitIdFromCookie: true,
+    }, { ip: `203.0.113.${100 + n}` });
+    await limiter(req, res, next);
+    return { admitted: wasNextCalled(), status: wasNextCalled() ? 200 : getStatus(), getHeader, body: getBody() };
+  };
+
+  it("refuses a workspace's visitors past a cap its plan sets below the deployment default", async () => {
+    const limiter = turnLimiterFor(3, { PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600 });
+
+    for (let n = 0; n < 3; n++) {
+      expect((await sendFrom(limiter, n)).admitted).toBe(true);
+    }
+
+    expect(await sendFrom(limiter, 3)).toMatchObject({ admitted: false, status: 429 });
+  });
+
+  it("admits a workspace's visitors past the deployment default when its plan raises the cap", async () => {
+    const limiter = turnLimiterFor(4, { PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 2 });
+
+    for (let n = 0; n < 4; n++) {
+      expect((await sendFrom(limiter, n)).admitted).toBe(true);
+    }
+
+    expect((await sendFrom(limiter, 4)).admitted).toBe(false);
+  });
+
+  it("never tells a visitor the cap the workspace's plan sets", async () => {
+    const limiter = turnLimiterFor(2, { PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10 });
+
+    const admitted = await sendFrom(limiter, 0);
+    expect(admitted.getHeader("RateLimit-Limit")).toBe("10");
+    await sendFrom(limiter, 1);
+
+    const refused = await sendFrom(limiter, 2);
+    expect(refused).toMatchObject({ admitted: false, status: 429 });
+    expect(Number(refused.getHeader("Retry-After"))).toBeGreaterThan(0);
+    expect(refused.getHeader("RateLimit-Limit")).toBeUndefined();
+    expect(refused.body).toEqual({ code: "rate_limit_exceeded", retryAfterSeconds: expect.any(Number) });
+  });
+
+  it("records the workspace cap a refused visitor ran into", async () => {
+    const { dependencies } = createTestDependencies({ usageLimitPolicy: planWithCap(1) });
+    const record = vi.spyOn(dependencies.auditService, "record");
+    const limiter = publicChatTurnRateLimiter(dependencies);
+
+    await sendFrom(limiter, 0);
+    await sendFrom(limiter, 1);
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "workspace-1",
+      eventType: "security.rate_limit_enforced",
+      metadata: expect.objectContaining({ scope: "public.chat.global", subjectKey: "workspace-1:global", limit: 1 }),
+    }));
+  });
+
+  it("keeps the deployment default for a workspace whose plan sets no cap", async () => {
+    const limiter = turnLimiterFor(null, { PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 2 });
+
+    expect((await sendFrom(limiter, 0)).admitted).toBe(true);
+    expect((await sendFrom(limiter, 1)).admitted).toBe(true);
+
+    expect((await sendFrom(limiter, 2)).admitted).toBe(false);
   });
 });
 

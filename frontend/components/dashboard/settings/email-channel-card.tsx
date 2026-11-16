@@ -46,9 +46,9 @@ type CardLoad =
   | { status: 'ready'; overview: EmailChannelOverview }
 
 const STATUS_BADGES: Record<AgentChannelCatalogStatus | 'off', string> = {
-  active: 'On',
-  available: 'Not set up',
-  attention: 'Needs attention',
+  on: 'On',
+  'not-set-up': 'Not set up',
+  'needs-setup': 'Needs setup',
   off: 'Off',
 }
 

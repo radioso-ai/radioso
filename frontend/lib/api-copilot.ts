@@ -306,7 +306,7 @@ export const deriveCopilotPageContext = (
         entities: [],
       }
     case 'agents':
-      return { view: (routeState.agentTab ?? 'chat') === 'chat' ? 'workbench' : 'agent', agentId, conversationId: null, selection: null, entities: [] }
+      return { view: routeState.agentTab === 'chat' ? 'workbench' : 'agent', agentId, conversationId: null, selection: null, entities: [] }
     case 'knowledge':
       return { view: 'documents', agentId, conversationId: null, selection: null, entities: [] }
     case 'quality':

@@ -56,7 +56,7 @@ const baseRoutine: Omit<RoutineFixture, "id" | "enabled" | "version"> = {
   updatedAt: nowIso,
 };
 
-const routinesListUrl = new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-routines$`);
+const routinesListUrl = new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?anchor=assistant-routines$`);
 
 // A routine row is one button carrying the name and its trigger; the row's own controls are
 // labelled by verb, so anchoring on the leading name keeps this off the delete button.

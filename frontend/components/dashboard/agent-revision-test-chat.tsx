@@ -140,7 +140,6 @@ export function AgentRevisionTestChat({
   assistantName,
   privacyNotice = null,
   evalsHref,
-  agentVersionsHref,
   usageHref,
   actionsContainer,
   titleContainer,
@@ -154,7 +153,6 @@ export function AgentRevisionTestChat({
   /** The agent's privacy notice, shown before the first message as a visitor sees it. */
   privacyNotice?: ShownPrivacyNotice | null;
   evalsHref: string;
-  agentVersionsHref: string;
   /** The dashboard link to the workspace's usage tab, shown when a test run hits a plan limit. */
   usageHref: string;
   actionsContainer: HTMLElement | null;
@@ -1466,9 +1464,6 @@ export function AgentRevisionTestChat({
             Copy link to this chat
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem asChild>
-          <Link href={agentVersionsHref}>Agent versions</Link>
-        </DropdownMenuItem>
         {mode === "single" ? (
           <DropdownMenuItem onSelect={() => changeMode("compare")}>
             Compare versions

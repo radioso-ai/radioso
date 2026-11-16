@@ -2,12 +2,14 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { RefreshCw, X } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronLeft, RefreshCw, X } from 'lucide-react'
 
 import { AgentCockpitNav, type AgentCockpitTab } from '@/components/dashboard/agent-cockpit-nav'
 import { AgentRevisionTestChat } from '@/components/dashboard/agent-revision-test-chat'
 import { AgentRevisionHistory } from '@/components/dashboard/agent-revision-history'
 import { AgentRevisionHeader } from '@/components/dashboard/agent-revision-header'
+import { AgentDeleteDialog } from '@/components/dashboard/agent-delete-dialog'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { RoutineHeaderActionsProvider, useRoutineHeaderState } from '@/components/dashboard/shared/routine-header-actions'
 import { AddSkillHeaderButton, SkillsHeaderActionProvider } from '@/components/dashboard/shared/skills-header-action'
@@ -20,7 +22,8 @@ import {
   type DashboardRouteState,
 } from '@/lib/dashboard-routes'
 import type { TestChatNavigation, TestChatRoute } from '@/lib/test-chat-open-route'
-import { agentSectionFromRoute, agentSectionRoute, type AgentSectionId } from '@/lib/dashboard-areas'
+import { AGENT_DELETE_ANCHOR, agentSectionFromRoute, agentSectionRoute, type AgentSectionId } from '@/lib/dashboard-areas'
+import { AGENT_DELETE_REQUESTED_EVENT } from '@/lib/agent-delete-request'
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
@@ -84,7 +87,6 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat' | 'changes'>, Ag
   'whatsapp-channel': { title: 'WhatsApp', mode: 'channels' },
   'email-channel': { title: 'Email', mode: 'channels' },
   'channels-overview': { title: 'Channels', mode: 'channels', description: 'Configure the channels where this agent can answer.' },
-  danger: { title: 'Danger zone', mode: 'assistant' },
 }
 
 function AgentCreationHandoffBanner({
@@ -150,6 +152,7 @@ function AgentSettingsDashboardPage({
   saveStateAccessory,
   cockpitNavigation,
   cockpitActions,
+  backAction,
   section,
   selectedAgentId,
   onSaveStateChange,
@@ -164,6 +167,8 @@ function AgentSettingsDashboardPage({
   saveStateAccessory: React.ReactNode
   cockpitNavigation: React.ReactNode
   cockpitActions: React.ReactNode
+  /** A channel page links back to the Channels overview. */
+  backAction: React.ReactNode
   section: Exclude<AgentSectionId, 'chat'>
   selectedAgentId: string
   onSaveStateChange: (state: AgentPageSaveState) => void
@@ -177,7 +182,7 @@ function AgentSettingsDashboardPage({
       // Only the absence of any registration reads as loading; a routine section that has
       // loaded and deliberately registered no subtitle (`null`) shows none.
       description={isRoutineDetail ? (routineHeader.description === undefined ? 'Loading…' : routineHeader.description) : meta.description}
-      backAction={isRoutineDetail ? routineHeader.backAction ?? null : undefined}
+      backAction={isRoutineDetail ? routineHeader.backAction ?? null : backAction}
       titleAccessory={saveStateAccessory}
       actions={
         <>
@@ -217,7 +222,7 @@ export function AgentView({
   routeState: DashboardRouteState
 }) {
   const router = useRouter()
-  const { activeWorkspaceId } = useWorkspace()
+  const { activeWorkspaceId, accounts } = useWorkspace()
   const [agents, setAgents] = useState<AgentSettings[]>([])
   const [agentsError, setAgentsError] = useState<string | null>(null)
   const [isAgentsLoading, setIsAgentsLoading] = useState(true)
@@ -226,6 +231,7 @@ export function AgentView({
   const [testActionsContainer, setTestActionsContainer] = useState<HTMLDivElement | null>(null)
   const [testTitleContainer, setTestTitleContainer] = useState<HTMLDivElement | null>(null)
   const [agentCreationHandoff, setAgentCreationHandoff] = useState<AgentCreationHandoff | null>(null)
+  const [deleteRequested, setDeleteRequested] = useState(false)
 
   // A blocking load replaces the page with the loading state; a silent one only swaps the list in,
   // so the tab and the unsaved draft it holds stay mounted. Failures are reported by blocking loads.
@@ -343,26 +349,38 @@ export function AgentView({
     }))
   }, [accountId, agentsError, isAgentsLoading, routeState, router, selectedAgentId])
 
+  // The confirmation opens when the agent menu asks for it, or when the link names it by anchor.
+  // The anchor is the URL's own state, so closing the confirmation also clears it from the URL.
+  useEffect(() => {
+    const requested = (event: Event) => {
+      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId === selectedAgentId) setDeleteRequested(true)
+    }
+    window.addEventListener(AGENT_DELETE_REQUESTED_EVENT, requested)
+    return () => window.removeEventListener(AGENT_DELETE_REQUESTED_EVENT, requested)
+  }, [selectedAgentId])
+  const deleteOpen = deleteRequested || routeState.anchor === AGENT_DELETE_ANCHOR
+  const handleDeleteOpenChange = (open: boolean) => {
+    if (open) return
+    setDeleteRequested(false)
+    if (routeState.anchor === AGENT_DELETE_ANCHOR) router.replace(profileHref)
+  }
+  const accountRole = accounts.find((account) => account.accountId === accountId)?.role
+  const canDeleteAgent = accountRole === 'owner' || accountRole === 'admin'
+
   const saveStateAccessory = <SaveStateIndicator saveState={saveState} />
   const handleSaveStateChange = useCallback((next: AgentPageSaveState) => {
     setSaveState(next)
   }, [])
 
+  // Test chat has no tab: it is its own row in the agent menu, and Build owns the tab bar.
   const cockpitTab = (section: AgentSectionId): AgentCockpitTab | null =>
-    section === 'chat' || section === 'profile' || section === 'directives' || section === 'routines' || section === 'skills' || section === 'context-variables'
+    section === 'profile' || section === 'directives' || section === 'routines' || section === 'skills' || section === 'context-variables'
       ? section
       : null
 
-  const cockpitHrefFor = (tab: AgentCockpitTab) => {
-    const route = agentSectionRoute(tab)
-    return buildAgentSectionHref(accountId, routeState, selectedAgentId, route)
-  }
-  const agentVersionsHref = buildAgentSectionHref(
-    accountId,
-    routeState,
-    selectedAgentId,
-    agentSectionRoute('changes'),
-  )
+  const sectionHrefFor = (target: AgentSectionId) =>
+    buildAgentSectionHref(accountId, routeState, selectedAgentId, agentSectionRoute(target))
+  const agentVersionsHref = sectionHrefFor('changes')
   const evalsHref = buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined })
   const usageHref = buildDashboardHref(accountId, { ...routeState, section: 'account', accountTab: 'usage' })
   // The share link for one saved test: anyone in this workspace who can manage agents can open it.
@@ -489,15 +507,23 @@ export function AgentView({
     || section === 'routines'
     || section === 'skills'
     || section === 'context-variables'
-  const cockpitNavigation = showRevisionActions
-    ? <AgentCockpitNav activeTab={cockpitTab(section)} hrefForTab={cockpitHrefFor} />
+  const cockpitNavigation = showRevisionActions && section !== 'chat'
+    ? <AgentCockpitNav activeTab={cockpitTab(section)} hrefForTab={sectionHrefFor} />
     : null
   const cockpitActions = showRevisionActions
-    ? <AgentRevisionHeader key={selectedAgentId} agentId={selectedAgentId} saveState={saveState.state} canSaveDraft={isDraftDirty} testChatHref={cockpitHrefFor('chat')} />
+    ? <AgentRevisionHeader key={selectedAgentId} agentId={selectedAgentId} saveState={saveState.state} canSaveDraft={isDraftDirty} testChatHref={sectionHrefFor('chat')} versionsHref={agentVersionsHref} />
     : null
 
   const settingsSection = section === 'chat' || section === 'changes' ? 'profile' : section
   const settingsMeta = AGENT_SECTION_META[settingsSection]
+  const channelsBackAction = settingsMeta.mode === 'channels' && settingsSection !== 'channels-overview'
+    ? (
+      <Link href={sectionHrefFor('channels-overview')} className="inline-flex items-center gap-1 self-start text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <ChevronLeft className="h-4 w-4" />
+        Channels
+      </Link>
+    )
+    : null
   const settingsPage = (
     <SkillsHeaderActionProvider>
       <RoutineHeaderActionsProvider>
@@ -509,8 +535,9 @@ export function AgentView({
           meta={settingsMeta}
           routeState={routeState}
           saveStateAccessory={saveStateAccessory}
-          cockpitNavigation={section === 'chat' ? null : cockpitNavigation}
+          cockpitNavigation={cockpitNavigation}
           cockpitActions={section === 'chat' ? null : cockpitActions}
+          backAction={channelsBackAction}
           section={settingsSection}
           selectedAgentId={selectedAgentId}
           onSaveStateChange={handleSaveStateChange}
@@ -533,7 +560,6 @@ export function AgentView({
             assistantName={selectedAgent?.name}
             privacyNotice={choosePrivacyNotice(selectedAgent?.branding?.privacyNotice, selectedAgent?.assistantDefaultLocale)}
             evalsHref={evalsHref}
-            agentVersionsHref={agentVersionsHref}
             usageHref={usageHref}
             actionsContainer={testActionsContainer}
             titleContainer={testTitleContainer}
@@ -548,6 +574,15 @@ export function AgentView({
           <AgentRevisionHistory key={selectedAgentId} agentId={selectedAgentId} />
         </DashboardPage>
       ) : null}
+      <AgentDeleteDialog
+        accountId={accountId}
+        agentId={selectedAgentId}
+        agentName={getAgentOperatorLabel(selectedAgent)}
+        agentCount={agents.length}
+        canDelete={canDeleteAgent}
+        open={deleteOpen}
+        onOpenChange={handleDeleteOpenChange}
+      />
     </>
   )
 }

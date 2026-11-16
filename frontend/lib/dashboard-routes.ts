@@ -187,7 +187,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
 ]
 
 const DEFAULT_SECTION: DashboardSection = 'activity'
-const DEFAULT_AGENT_TAB: AgentTab = 'chat'
+const DEFAULT_AGENT_TAB: AgentTab = 'behavior'
 const DEFAULT_KNOWLEDGE_TAB: KnowledgeTab = 'documents'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
 const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
@@ -924,7 +924,7 @@ export const parseDashboardRoute = (
 
   if (sectionCandidate === 'chat') {
     return rest.length === 0 && !secondSegment
-      ? normalizeState({ section: 'agents', workspaceId })
+      ? normalizeState({ section: 'agents', agentTab: 'chat', workspaceId })
       : null
   }
 
@@ -981,18 +981,17 @@ export const parseDashboardRoute = (
         return null
       }
     }
+    const testExecutionId = searchParams?.get('testExecution') || undefined
+    const historyView = searchParams?.get('view') === 'history'
     return normalizeState({
       section: 'agents',
       workspaceId,
       ...(secondSegment ? { agentId: secondSegment } : {}),
       ...(fourthSegment ? { agentRoutineId: fourthSegment } : {}),
-      agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
-      ...(searchParams?.get('testExecution')
-        ? { agentTestExecutionId: searchParams.get('testExecution') ?? undefined }
-        : {}),
-      ...(searchParams?.get('view') === 'history'
-        ? { agentTestChatView: 'history' as const }
-        : {}),
+      // A saved-test or history link with no tab names the chat, which has a tab of its own now.
+      agentTab: parseAgentTab(searchParams?.get('tab') ?? null) ?? (testExecutionId || historyView ? 'chat' : undefined),
+      ...(testExecutionId ? { agentTestExecutionId: testExecutionId } : {}),
+      ...(historyView ? { agentTestChatView: 'history' as const } : {}),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })
   }

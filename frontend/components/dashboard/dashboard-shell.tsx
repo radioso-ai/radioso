@@ -60,6 +60,8 @@ export function DashboardShell({
     ? workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.publicRouteKey
     : undefined
   const currentView = routeState.section
+  // First-run onboarding takes over the agent landing and the chat tab; an agent whose onboarding
+  // is done opens on Build instead, so the landing needs the onboarding answer before it renders.
   const isAgentChatView = currentView === 'agents' && (routeState.agentTab ?? 'chat') === 'chat'
   // The labeled sidebar is the single nav surface: the active section's sub-nav
   // nests under its rail row instead of occupying a second column. The first-run

@@ -277,6 +277,14 @@ describe('deriveCopilotPageContext', () => {
       selection: null,
       entities: [],
     })
+    // An agent opens on Build, so a route with no tab is the editor, not the Test chat.
+    expect(deriveCopilotPageContext({ section: 'agents', agentId: 'agent-1' })).toEqual({
+      view: 'agent',
+      agentId: 'agent-1',
+      conversationId: null,
+      selection: null,
+      entities: [],
+    })
     expect(deriveCopilotPageContext({ section: 'settings', agentId: undefined })).toEqual({
       view: 'other',
       agentId: null,

@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-11
+last_updated: 2026-11-16
 ---
 
 # Code Map
@@ -2814,12 +2814,18 @@ Primary paths:
 
 Agent settings and channels entry points:
 
-- `frontend/lib/dashboard-areas.ts` — nav areas and section ids; the Web chat
-  page is section id `web-chat`, reached at `?tab=channels&anchor=web-chat`
+- `frontend/lib/dashboard-areas.ts` — nav areas, section ids and which agent-menu
+  row (Build, Test, Channels) a section sits under; the Web chat page is section
+  id `web-chat`, reached at `?tab=channels&anchor=web-chat`. An agent URL with no
+  tab opens Build, Profile; Test chat is `?tab=chat`
+- `frontend/components/dashboard/agent-switcher.tsx`, `area-subnavs.tsx`,
+  `agent-channels-overview.tsx` and `frontend/lib/agent-channel-catalog.ts` — the
+  agent menu, its Channels summary and the grouped Channels overview
 - `frontend/components/dashboard/settings/assistant-profile-section.tsx` —
   exports `AssistantProfileSection`, owning the Profile page: Name, Instructions,
   Model, and Answers. It is section id `profile`, reached at
-  `?tab=behavior&anchor=assistant-profile`
+  `?anchor=assistant-profile` (the `behavior` tab is the default and leaves the
+  URL)
 - `frontend/components/dashboard/settings/chat-channel-section.tsx` — exports
   `ChatChannelSection`, owning the Web chat page: Look, Wording, Footer, and the
   Where it runs placements (public link and website widget) beside a live preview

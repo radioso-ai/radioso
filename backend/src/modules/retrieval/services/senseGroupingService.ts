@@ -7,6 +7,7 @@ import { pgVectorText } from "../../../shared/infra/kysely/pgVectorSql.js";
 import { anyOf } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
+import { holdsPrimaryEvidence } from "./candidateScoring.js";
 
 export interface RetrievalSensePolicy {
   minGroupShare: number;
@@ -202,7 +203,11 @@ export class SenseGroupingService {
     conversationLanguage?: string;
     usageContext?: ModelCallUsageContext;
   }): Promise<RetrievalSenseClarificationCandidate[]> {
-    const groups = this.qualifyingDocumentGroups(input.rankedCandidates);
+    // A chunk that only part of the question's words reached corroborates other evidence and
+    // never leads, so its document is no second reading of the question. It carries no
+    // semantic score to be judged on, so left in it would tie the document the question
+    // matches and turn into a "which one do you mean?".
+    const groups = this.qualifyingDocumentGroups(input.rankedCandidates.filter(holdsPrimaryEvidence));
     if (groups.length < 2) {
       return [];
     }

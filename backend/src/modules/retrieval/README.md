@@ -264,6 +264,10 @@ as "the chunk holds what was asked for" check the coverage:
   candidate, so it reaches the answer pool only when semantic search returned fewer
   candidates than the pool holds.
 - `hasUsefulCandidateEvidence` never counts it as lexical evidence.
+- `senseGroupingService.ts` leaves a document that only a some-terms hit reached out
+  of its groups (`holdsPrimaryEvidence`). It carries no semantic score to be judged
+  on, so it would tie the document the question matches and turn into a "which one
+  do you mean?" for a single-reading question.
 - `candidatePreparationStage.ts` treats a filtered set holding only some-terms
   hits as empty for trigger backoff, drops them on a turn where nothing else was
   found (`holdsPrimaryEvidence`), and passes them over for a `lexicalBias:

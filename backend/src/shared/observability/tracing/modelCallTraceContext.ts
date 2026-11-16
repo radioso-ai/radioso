@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
+import { runAsyncIterableWithin } from "../../infra/asyncContextIterable.js";
 import type { LlmProviderName } from "../../infra/llm/providerTypes.js";
 import type { CacheAccounting } from "../../infra/llm/providerTypes.js";
 
@@ -117,30 +118,10 @@ export const runWithModelCallTrace = <T>(
 export const runWithoutModelCallTrace = <T>(run: () => T): T =>
   modelCallTraceStorage.exit(run);
 
-export const runAsyncIterableWithModelCallTrace = async function* <T>(
+export const runAsyncIterableWithModelCallTrace = <T>(
   collector: ModelCallTraceCollector,
   createIterable: () => AsyncIterable<T>,
-): AsyncIterable<T> {
-  const iterator = runWithModelCallTrace(
-    collector,
-    () => createIterable()[Symbol.asyncIterator](),
-  );
-  let completed = false;
-  try {
-    while (true) {
-      const step = await runWithModelCallTrace(collector, () => iterator.next());
-      if (step.done) {
-        completed = true;
-        return;
-      }
-      yield step.value;
-    }
-  } finally {
-    if (!completed && iterator.return) {
-      await runWithModelCallTrace(collector, () => iterator.return!());
-    }
-  }
-};
+): AsyncIterable<T> => runAsyncIterableWithin((run) => runWithModelCallTrace(collector, run), createIterable);
 
 export const captureModelCallTrace = async <T>(
   run: () => Promise<T>,

@@ -15,6 +15,10 @@ export class ProviderRequestTimeoutError extends Error {
 export const isProviderRequestTimeoutError = (error: unknown): error is ProviderRequestTimeoutError =>
   error instanceof ProviderRequestTimeoutError;
 
+/** What an aborted signal's waiter rejects with: the abort's own reason when it is an error. */
+export const abortReasonOf = (signal: AbortSignal): Error =>
+  signal.reason instanceof Error ? signal.reason : new Error("aborted", { cause: signal.reason });
+
 export const runProviderRequestWithTimeout = async <T>(
   operation: string,
   timeoutMs: number,

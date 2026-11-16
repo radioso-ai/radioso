@@ -166,7 +166,6 @@
   "types|backend/src/modules/audit/requestAuditContext.ts|RequestAuditPrincipal",
   "types|backend/src/modules/chat/retrievalSupport.ts|GroundingSummary",
   "types|backend/src/modules/chat/retrievalSupport.ts|GroundingVerdict",
-  "types|backend/src/modules/chat/services/actionSuggestions/chatActionSuggestionService.ts|ChatActionSuggestionServiceOptions",
   "types|backend/src/modules/chat/services/assistantSuggestionExpansionService.ts|AssistantSuggestionExpansionResult",
   "types|backend/src/modules/chat/services/boundedGroundingStreamGate.ts|BoundedGroundingStreamGateOptions",
   "types|backend/src/modules/chat/services/boundedGroundingStreamGate.ts|GroundingStreamGateFinishDecision",

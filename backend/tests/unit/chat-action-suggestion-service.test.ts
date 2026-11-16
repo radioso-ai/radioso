@@ -7,6 +7,11 @@ import type {
   ChatActionSuggestionProvider,
 } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
 import type { ChatSuggestion } from "../../src/modules/chat/types/chatResponses.js";
+import {
+  currentModelCallGovernance,
+  ModelCallGovernor,
+  runWithModelCallGovernance,
+} from "../../src/shared/infra/llm/modelCallGovernance.js";
 
 const baseContext: ChatActionSuggestionContext = {
   workspaceId: "ws-1",
@@ -42,6 +47,27 @@ const buildSuggestion = (kind: string, text: string): ChatSuggestion => ({
 });
 
 describe("ChatActionSuggestionService", () => {
+  it("evaluates best-effort chips in the deferrable lane, so they are shed before a visitor turn's call", async () => {
+    const lanes: Array<string | undefined> = [];
+    const registry = new ChatActionSuggestionRegistry();
+    registry.register({
+      name: "lane-probe",
+      evaluate: async () => {
+        lanes.push(currentModelCallGovernance()?.lane);
+        return null;
+      },
+    });
+    const governor = new ModelCallGovernor({
+      limits: { maxConcurrentTurnCalls: 4, maxConcurrentDeferrableCalls: 1, maxQueueWaitMs: 100 },
+      retryPolicy: { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    await runWithModelCallGovernance({ governor, lane: "turn" }, () =>
+      new ChatActionSuggestionService(registry).evaluate(baseContext));
+
+    expect(lanes).toEqual(["deferrable"]);
+  });
+
   it("returns an empty array when no providers are registered", async () => {
     const service = new ChatActionSuggestionService(new ChatActionSuggestionRegistry());
 

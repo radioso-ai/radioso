@@ -125,6 +125,12 @@ export interface AssistantChatRequest {
    * stops instead of running to completion against a gone client.
    */
   signal?: AbortSignal;
+  /**
+   * Fires the moment the caller's client disconnects. The turn keeps running so its answer
+   * is stored, but once this instance's model-call lane is full it stops starting model
+   * calls instead of queueing them ahead of a visitor who is still waiting.
+   */
+  clientDisconnected?: AbortSignal;
 }
 
 export type AssistantChatResponse = ChatResponse | ChatBootstrapResponse;

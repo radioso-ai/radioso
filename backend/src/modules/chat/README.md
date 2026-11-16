@@ -1009,6 +1009,17 @@ imports from `services/`.
   offers, follow-up rules, and the lead-back follow.
   `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
   gate/state/candidate/prompt bypass without forcing lazy prompt construction.
+  A planner failure that says the provider or this instance is overloaded — a rate
+  limit, an exhausted quota, an unavailable provider, the planner's own timeout, or a
+  call the instance's model-call admission shed — has no staged fallback: the staged
+  calls would add three or four requests to a provider that just failed one.
+  `TurnPlanCoordinator.plan` rejects with the provider's error (a
+  `ProviderRequestTimeoutError` for the timeout, the `ModelCallShedError` for a shed
+  call), so the turn fails through `failTurn` like a failed answer call, and records
+  `outcome: degraded` with the bounded reason. Malformed output, a rejected request,
+  an unavailable model, or a rejected credential still fall back staged
+  (`tests/unit/turn-plan-coordinator.test.ts`,
+  `tests/unit/chat-service-turn-planning.test.ts`).
   The plan's last fields are `requestPresent`, `openQuestion`, and the quick reply
   (`quickReply: { kind, language, text }`): on a turn of pure conversational mechanics
   the planner writes the reply, and the direct skill (`directTurnSkill.ts`) sends it
@@ -1037,6 +1048,13 @@ imports from `services/`.
   `tests/unit/turn-plan-coordinator.test.ts`,
   `tests/unit/chat-service-turn-planning.test.ts`, and the `quick-reply` cases in
   `tests/unit/eval-suite/suite-runner.test.ts`.
+- Model-call governance for turns: `AssistantChatService` runs every turn in the
+  turn lane of the composition-built `ModelCallGovernor`
+  (`shared/infra/llm/modelCallGovernance.ts`), abandoned once the request's
+  `clientDisconnected` signal fires (public chat passes it). The shadow coverage
+  assessor and action-chip suggestions run in the deferrable lane
+  (`runInDeferrableModelCallLane`), a separate budget that is shed first
+  (`tests/unit/chat/assistant-chat-model-call-governance.test.ts`).
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`,
   `chatTurnAssembly.ts`, and

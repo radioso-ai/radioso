@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import OpenAI from "openai";
 
 import { createConversationEngine } from "@radioso/conversation-engine";
 import { RoutineRegistry, type RoutineRegistration } from "@radioso/conversation-defaults";
@@ -31,6 +32,7 @@ import {
 } from "../../src/modules/chat/services/turnPlanService.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import { ProviderRequestTimeoutError } from "../../src/shared/infra/llm/providerTimeouts.js";
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
 import { SKILL_TURN_OUTCOME } from "../../src/modules/chat/services/assistantTurnOutcomeTypes.js";
@@ -132,6 +134,8 @@ const plannerFactory = (input: {
   completions: string[];
   recorder?: UsageEventRecorder;
   neverComplete?: boolean;
+  /** Thrown by every planner call, as the provider would. */
+  failWith?: Error;
 }): TurnPlanGatewayFactory & {
   completeCalls: () => number;
   prompts: () => string[];
@@ -142,6 +146,9 @@ const plannerFactory = (input: {
   const complete = vi.fn(async (request: { prompt: string; systemPrompt?: string; signal?: AbortSignal }) => {
     // Everything the planner reads: standing rules (system) and the turn's request (user).
     prompts.push(`${request.systemPrompt ?? ""}\n\n${request.prompt}`);
+    if (input.failWith) {
+      throw input.failWith;
+    }
     if (input.neverComplete) {
       return new Promise<never>((_resolve, reject) => {
         if (request.signal?.aborted) {
@@ -886,7 +893,28 @@ describe("chat service fused turn planning", () => {
     expect(staged.languageDetect).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back staged when the planner times out, without an unhandled rejection", async () => {
+  it.each([
+    ["rate-limited", new OpenAI.RateLimitError(429, {}, "rate limited", new Headers())],
+    ["out of quota", new OpenAI.RateLimitError(429, { code: "insufficient_quota" }, "no credit", new Headers())],
+    ["unavailable", new OpenAI.InternalServerError(503, {}, "unavailable", new Headers())],
+  ])("fails the turn without a single staged call when the planner is %s", async (_label, providerError) => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [], failWith: providerError });
+    const service = buildService({
+      planner,
+      pipeline: retrievalPipeline([]),
+      chatGateway: pipelineChatGateway("Grounded [[1]]."),
+      staged,
+    });
+
+    await expect(service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false }))
+      .rejects.toBe(providerError);
+    expect(planner.completeCalls()).toBe(1);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
+  });
+
+  it("fails the turn without staged calls when the planner times out, and without an unhandled rejection", async () => {
     const staged = countingStagedPorts();
     const planner = plannerFactory({ completions: [], neverComplete: true });
     const service = new ChatService({
@@ -909,12 +937,42 @@ describe("chat service fused turn planning", () => {
       ),
     });
 
-    const response = await service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false });
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      await expect(service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false }))
+        .rejects.toBeInstanceOf(ProviderRequestTimeoutError);
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
 
-    expect(response.answer).toBeTruthy();
     expect(planner.completeCalls()).toBe(1);
-    expect(staged.routerClassify).toHaveBeenCalledTimes(1);
-    expect(staged.languageDetect).toHaveBeenCalledTimes(1);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it("ends a streamed turn without staged calls when the planner is rate-limited", async () => {
+    const staged = countingStagedPorts();
+    const providerError = new OpenAI.RateLimitError(429, {}, "rate limited", new Headers());
+    const planner = plannerFactory({ completions: [], failWith: providerError });
+    const service = buildService({
+      planner,
+      pipeline: retrievalPipeline([]),
+      chatGateway: pipelineChatGateway("Grounded [[1]]."),
+      staged,
+    });
+
+    const drain = async () => {
+      for await (const _event of service.streamAnswer({ workspaceId: "workspace-1", query: "refund window?", stream: true })) {
+        // drain
+      }
+    };
+
+    await expect(drain()).rejects.toBe(providerError);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
   });
 
   it("never invokes the planner while a routine is active for the conversation", async () => {

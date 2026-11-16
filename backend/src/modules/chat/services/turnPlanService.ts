@@ -971,7 +971,7 @@ export const turnPlanDirectiveClassifications = (plan: TurnPlan): DirectiveClass
  * classification calls. It owns the prompt, the strict parse, and semantic
  * validation; it never owns routine, directive, or language *policy*. It resolves
  * `null` on timeout, malformed output, semantic-validation failure, or provider
- * error so the caller can fall back to the staged path all-or-nothing.
+ * error; the caller falls back to the staged path all-or-nothing, or stops the turn.
  */
 export class TurnPlanService {
   constructor(
@@ -985,16 +985,16 @@ export class TurnPlanService {
   ) {}
 
   /**
-   * `onFailure`/`onTimeout` are pure observability sinks, never control-flow: the
-   * fallback (`null`) is identical with or without them. Both fire only when `plan()`
-   * threw, never for a clean miss (`parseTurnPlan` returning `null`). `onTimeout`
+   * This service always resolves `null` on failure; `onFailure`/`onTimeout` tell the caller
+   * why, so its policy decides between the staged fallback and stopping the turn. Both fire
+   * only when `plan()` threw (with the thrown error), never for a clean miss. `onTimeout`
    * distinguishes this call's own bound timing out from any other thrown error (an
    * external cancellation included), which `onFailure` alone cannot: both look like
    * an unclassifiable `null` to it, same as malformed output would without `onTimeout`.
    */
   async plan(
     request: TurnPlanRequest,
-    onFailure?: (failure: LlmProviderFailureClassification | null) => void,
+    onFailure?: (failure: LlmProviderFailureClassification | null, error: unknown) => void,
     onTimeout?: () => void,
   ): Promise<TurnPlan | null> {
     const timeoutMs = this.options.timeoutMs ?? CHAT_BEHAVIOR.turnPlanning.timeoutMs;
@@ -1035,7 +1035,7 @@ export class TurnPlanService {
       if (timedOut()) {
         onTimeout?.();
       }
-      onFailure?.(classifyLlmProviderFailure(error));
+      onFailure?.(classifyLlmProviderFailure(error), error);
       return null;
     } finally {
       dispose();

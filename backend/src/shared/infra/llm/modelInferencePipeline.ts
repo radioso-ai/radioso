@@ -20,6 +20,13 @@ import { recordModelCallTrace } from "../../observability/tracing/modelCallTrace
 import type { MetricsRegistry } from "../../observability/metrics/metricsRegistry.js";
 import { reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
 import { recordCacheInferenceTelemetry } from "./cacheTelemetry.js";
+import {
+  acquireModelCallPermit,
+  currentModelCallGovernance,
+  governedCall,
+  governedStream,
+  type ModelCallGovernanceScope,
+} from "./modelCallGovernance.js";
 
 export interface ModelInferenceRequest extends TextGenerationRequest {
   operation: ModelCallUsageContext;
@@ -198,11 +205,28 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     return traceOperation({
       name: "llm.provider.complete",
       attributes: providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: false }),
-      run: () => this.completeWithinTrace(input),
+      run: () => this.completeWithPermit(input),
     });
   }
 
-  private async completeWithinTrace(input: ModelInferenceRequest): Promise<TextGenerationResult> {
+  /**
+   * Inside a conversation turn the call first takes a permit in its lane. A shed call fails
+   * here, before usage accounting starts, since it never reached the provider.
+   */
+  private async completeWithPermit(input: ModelInferenceRequest): Promise<TextGenerationResult> {
+    const scope = currentModelCallGovernance();
+    const release = await acquireModelCallPermit(scope, input.signal);
+    try {
+      return await this.completeWithinTrace(input, scope);
+    } finally {
+      release();
+    }
+  }
+
+  private async completeWithinTrace(
+    input: ModelInferenceRequest,
+    scope: ModelCallGovernanceScope | undefined,
+  ): Promise<TextGenerationResult> {
     const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
     const request = stripOperation(input, input.dispatchRecord ? dispatchRecord : undefined);
     this.enforceImageInputCapability(input, request);
@@ -210,7 +234,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     const startedAtMs = Date.now();
     let result: TextGenerationResult;
     try {
-      result = await this.delegate.complete(request);
+      result = await this.invokeComplete(request, scope);
       publishDispatch(input.dispatchRecord, dispatchRecord);
     } catch (error) {
       publishDispatch(input.dispatchRecord, dispatchRecord);
@@ -265,8 +289,9 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     const request = stripOperation(input, input.dispatchRecord ? dispatchRecord : undefined);
     this.enforceImageInputCapability(input, request);
     this.enforceInputBudget(input, request);
-    const startedAtMs = Date.now();
-    const result = this.delegate.stream(request);
+    let startedAtMs = Date.now();
+    const scope = currentModelCallGovernance();
+    const result = this.invokeStream(request, scope);
     let outputText = "";
     const readUsage = async (): Promise<ProviderUsage | undefined> => {
       try {
@@ -285,6 +310,10 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       name: "llm.provider.stream",
       attributes: providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: true }),
       createIterable: () => (async function* (pipeline: ModelInferencePipelineService) {
+      // Taken on the first read and held until the stream ends; a shed stream fails here,
+      // before any usage is recorded for a call that never reached the provider.
+      const release = await acquireModelCallPermit(scope, input.signal);
+      startedAtMs = Date.now();
       let terminalRecorded = false;
       let firstTextRecorded = false;
       const recordTerminal = async (
@@ -326,6 +355,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         await recordTerminal(input.signal?.aborted || isAbortError(error) ? "aborted" : "failed", error);
         throw error;
       } finally {
+        release();
         if (!terminalRecorded) {
           await recordTerminal(input.signal?.aborted ? "aborted" : "cancelled");
         }
@@ -334,6 +364,39 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     });
 
     return { textStream, usage: result.usage };
+  }
+
+  /**
+   * A call made inside a conversation turn's governance scope retries a provider that pushed
+   * back within the turn's bounds, with the SDK's own retries off so one layer decides. Any
+   * other call reaches the provider as it is.
+   */
+  private invokeComplete(
+    request: TextGenerationRequest,
+    scope: ModelCallGovernanceScope | undefined,
+  ): Promise<TextGenerationResult> {
+    if (!scope) {
+      return this.delegate.complete(request);
+    }
+    return governedCall(scope, {
+      provider: this.delegate.metadata.provider,
+      signal: request.signal,
+      call: () => this.delegate.complete({ ...request, maxProviderRetries: 0 }),
+    });
+  }
+
+  private invokeStream(
+    request: TextGenerationRequest,
+    scope: ModelCallGovernanceScope | undefined,
+  ): TextGenerationStreamResult {
+    if (!scope) {
+      return this.delegate.stream(request);
+    }
+    return governedStream(scope, {
+      provider: this.delegate.metadata.provider,
+      signal: request.signal,
+      open: () => this.delegate.stream({ ...request, maxProviderRetries: 0 }),
+    });
   }
 
   private recordTrace(

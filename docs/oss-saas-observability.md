@@ -580,14 +580,15 @@ The browser posts sanitized error envelopes to
 generic error reporting service and configured error sinks. React components do
 not import PostHog, Sentry, or any other vendor SDK.
 
-One page load sends each distinct error once, where distinct means a different
-type, class, message or path, and sends at most ten reports in total. The
-budget lives in
+Each page paces its reports in
 [`frontend/lib/frontend-error-report-limiter.ts`](../frontend/lib/frontend-error-report-limiter.ts).
-A script in the page that rejects hundreds of promises at once therefore costs
-ten reports, well inside the relay's limit of 120 per client a minute. The
-first ten distinct errors of a page load are the ones you see; later ones on
-that page are dropped in the browser and never counted.
+An error with the same type, class, message and path as one the page reported
+in the last ten minutes is held back, and a page reports at most ten errors in
+any rolling minute. A script that rejects hundreds of promises at once
+therefore costs ten reports, well inside the relay's limit of 120 per client a
+minute, and an operator tab left open all day still reports an error that
+first appears in the afternoon. A repeating error shows up about once every ten
+minutes per tab. Errors held back in the browser are dropped and never counted.
 
 ## Rollout Plan
 

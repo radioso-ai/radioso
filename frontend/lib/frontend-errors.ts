@@ -180,8 +180,8 @@ interface FrontendErrorReporterOptions {
   sinks?: FrontendErrorSink[]
 }
 
-// A reporter is one page load's budget: the shell keeps a single reporter per
-// document, so the limiter it is created with caps what that page can send.
+// The shell keeps a single reporter per document, so the limiter it is created
+// with paces everything that page sends.
 export const createFrontendErrorReporter = (
   options: FrontendErrorReporterOptions = {},
   limiter = createFrontendErrorReportLimiter(),

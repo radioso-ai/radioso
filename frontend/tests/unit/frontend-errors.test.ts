@@ -11,7 +11,7 @@ import {
   serializeFrontendThrowable,
   topStackFrameUsesBrowserExtensionScheme,
 } from '@/lib/frontend-errors'
-import { FRONTEND_ERROR_REPORTS_PER_PAGE_MAX } from '@/lib/frontend-error-report-limiter'
+import { FRONTEND_ERROR_REPORTS_PER_RATE_WINDOW } from '@/lib/frontend-error-report-limiter'
 
 describe('frontend error reporting', () => {
   it('reports generic frontend errors to configured sinks', async () => {
@@ -144,8 +144,8 @@ describe('frontend error reporting', () => {
       source: 'embed',
     })))
 
-    expect(sink.record).toHaveBeenCalledTimes(FRONTEND_ERROR_REPORTS_PER_PAGE_MAX)
-    expect(events.filter((event) => event !== null)).toHaveLength(FRONTEND_ERROR_REPORTS_PER_PAGE_MAX)
+    expect(sink.record).toHaveBeenCalledTimes(FRONTEND_ERROR_REPORTS_PER_RATE_WINDOW)
+    expect(events.filter((event) => event !== null)).toHaveLength(FRONTEND_ERROR_REPORTS_PER_RATE_WINDOW)
   })
 
   it('does not spend the page cap on dropped browser extension crashes', async () => {
@@ -154,7 +154,7 @@ describe('frontend error reporting', () => {
     }
     const reporter = createFrontendErrorReporter({ sinks: [sink] })
 
-    for (let index = 0; index < FRONTEND_ERROR_REPORTS_PER_PAGE_MAX + 5; index += 1) {
+    for (let index = 0; index < FRONTEND_ERROR_REPORTS_PER_RATE_WINDOW + 5; index += 1) {
       await reporter.report({
         errorType: 'frontend.runtime.unhandled',
         message: `extension failure ${index}`,

@@ -1,6 +1,5 @@
 import { getApiErrorCode, getApiErrorMessage } from './api-error'
 import type { VoiceVendorName } from './api-llm-providers'
-import type { AgentVoiceConnection } from './api-types'
 
 /** The vendor Radioso connects when an agent with no runtime bound turns its voice on. */
 export const CONNECT_VOICE_VENDOR: VoiceVendorName = 'elevenlabs'
@@ -38,14 +37,6 @@ const KEY_PROBLEM_OF_CODE: Record<string, VoiceVendorKeyProblem> = {
 /** The key problem a failed voice switch names, or null when storing another key would not help. */
 export function voiceVendorKeyProblemOfError(error: unknown): VoiceVendorKeyProblem | null {
   return KEY_PROBLEM_OF_CODE[getApiErrorCode(error) ?? ''] ?? null
-}
-
-/**
- * The key problem left after voice went on: an agent with a runtime already bound turns on without
- * calling the vendor, so the answer may report no usable key, and calls would fail until one is stored.
- */
-export function voiceVendorKeyProblemOfConnection(connection: Pick<AgentVoiceConnection, 'vendorKey'>): VoiceVendorKeyProblem | null {
-  return connection.vendorKey === 'stored' ? null : connection.vendorKey
 }
 
 const KEY_PROBLEM_LINES: Record<VoiceVendorKeyProblem, (vendor: string) => string> = {

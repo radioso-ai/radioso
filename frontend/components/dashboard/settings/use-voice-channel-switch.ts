@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { agentVoiceConnectionApi } from '@/lib/api-agent-voice-connection'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -8,7 +8,6 @@ import { llmProvidersApi, providerDisplayName, type VoiceVendorName } from '@/li
 import type { AgentVoiceConnection } from '@/lib/api-types'
 import {
   voiceConnectionFailureMessage,
-  voiceVendorKeyProblemOfConnection,
   voiceVendorKeyProblemOfError,
   type VoiceVendorKeyProblem,
 } from '@/lib/voice-connection-failures'
@@ -27,6 +26,8 @@ export interface VoiceVendorKeyDialogState {
   open: boolean
   /** Why the key is asked for; kept after closing, so the dialog reads the same while it closes. */
   problem: VoiceVendorKeyProblem
+  /** Counts each time the key is asked for, so every ask starts with an empty field. */
+  ask: number
   vendorName: string
   saving: boolean
   error: string | null
@@ -36,10 +37,11 @@ export interface VoiceVendorKeyDialogState {
 
 /**
  * Turns an agent's voice channel on or off. When turning it on needs the vendor's API key, it asks
- * for the key in place, stores it as the workspace's key, and switches again once. Every answer the
- * backend gives goes to `onSwitched` and tells the page that the agent's voice changed, including
- * one that turned voice on but found no usable key. `switchChannel` resolves once the operator has
- * saved a key or cancelled; `pending` holds the side being switched to until then.
+ * for the key in place, stores it as the workspace's key, and switches again. The backend turns voice
+ * on only with a key the vendor accepts, so a cancelled ask changes nothing. Every switch that went
+ * through goes to `onSwitched` and tells the page that the agent's voice changed. `switchChannel`
+ * resolves once the operator has saved a working key or cancelled, or the page unmounts; `pending`
+ * holds the side being switched to until then.
  */
 export function useVoiceChannelSwitch({
   agentId,
@@ -52,10 +54,18 @@ export function useVoiceChannelSwitch({
 }) {
   const vendorName = providerDisplayName[vendor]
   const [pending, setPending] = useState<boolean | null>(null)
-  const [keyRequest, setKeyRequest] = useState<{ open: boolean; problem: VoiceVendorKeyProblem }>({ open: false, problem: 'missing' })
+  const [keyRequest, setKeyRequest] = useState<{ open: boolean; problem: VoiceVendorKeyProblem; ask: number }>({ open: false, problem: 'missing', ask: 0 })
   const [keySaving, setKeySaving] = useState(false)
   const [keyError, setKeyError] = useState<string | null>(null)
   const settleRef = useRef<((result: VoiceChannelSwitchResult) => void) | null>(null)
+
+  // A page that unmounts with the key dialog open ends the switch as cancelled.
+  useEffect(() => () => {
+    settleRef.current?.({ switched: false, error: null })
+    settleRef.current = null
+  }, [])
+
+  const askForKey = (problem: VoiceVendorKeyProblem) => setKeyRequest((current) => ({ open: true, problem, ask: current.ask + 1 }))
 
   const attempt = async (enabled: boolean): Promise<Answer> => {
     let connection: AgentVoiceConnection
@@ -88,13 +98,13 @@ export function useVoiceChannelSwitch({
       setPending(null)
       return { switched: false, error: answer.message }
     }
-    const problem = answer.kind === 'key' ? answer.problem : enabled ? voiceVendorKeyProblemOfConnection(answer.connection) : null
-    if (!problem) {
+    if (answer.kind === 'switched') {
       setPending(null)
       return { switched: true }
     }
-    setKeyRequest({ open: true, problem })
+    askForKey(answer.problem)
     return new Promise<VoiceChannelSwitchResult>((resolve) => {
+      settleRef.current?.({ switched: false, error: null })
       settleRef.current = resolve
     })
   }
@@ -114,7 +124,7 @@ export function useVoiceChannelSwitch({
     if (!answer) return
     // The key just stored fails as well: the dialog says why, and the operator may enter another.
     if (answer.kind === 'key') {
-      setKeyRequest({ open: true, problem: answer.problem })
+      askForKey(answer.problem)
       return
     }
     settle(answer.kind === 'switched' ? { switched: true } : { switched: false, error: answer.message })

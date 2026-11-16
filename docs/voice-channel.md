@@ -89,8 +89,9 @@ from the dashboard session.
 The lines below the switch (bridge lines, the fallback line, quick replies)
 take effect when you select **Save voice settings**; the switch does not wait
 for it. Turning the channel off keeps the ElevenLabs agent and its link to the
-Radioso agent, so turning it on again takes no setup and asks ElevenLabs for
-nothing.
+Radioso agent, so turning it on again takes no setup: Radioso only checks that
+ElevenLabs still accepts the stored key, and asks for a new one in place when
+it doesn't.
 
 Turning the channel on when no ElevenLabs agent is linked connects the agent
 to ElevenLabs first, and the website widget's **Offer calls on the website**
@@ -141,7 +142,8 @@ a new credential, points the ElevenLabs agent at it, and only then revokes the
 old one.
 
 **Disconnect** deletes the ElevenLabs agent and its secret, revokes the
-**Voice calls** credential, and unbinds the agent. When ElevenLabs can't be
+**Voice calls** credential, unbinds the agent, and turns its voice channel
+off. When ElevenLabs can't be
 reached, or no readable key is stored, Radioso still revokes the credential
 and unbinds; the card says the ElevenLabs agent is left in your account, and
 you delete it there. Deleting the Radioso agent revokes the credential at once
@@ -221,8 +223,9 @@ the ElevenLabs agent may still be in your account.
 no `runtime` bound connects exactly as `POST` does, then binds the runtime and
 turns voice on in one write; when the connect fails, voice stays off and the
 answer carries the codes in the table above. Turning it on with a `runtime`
-bound asks ElevenLabs for nothing. Turning it off keeps `runtime` and the
-ElevenLabs agent. A body that is not `{ "enabled": boolean }` answers `400`.
+bound only checks that ElevenLabs accepts the stored key; when it doesn't,
+voice stays off and the answer carries the key's code. Turning it off keeps
+`runtime` and the ElevenLabs agent. A body that is not `{ "enabled": boolean }` answers `400`.
 
 Each connect, disconnect and language update logs one line with the agent,
 vendor, region, `operation` and `outcome` (`Voice runtime connected`,

@@ -161,14 +161,16 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   region's account gets a new vendor agent there. `disconnect`
   releases the vendor agent the connection names, revokes its credential and
   drops the record (best effort when the vendor or the key is gone, reported
-  as `vendorAgentLeft`), then unbinds; a runtime with no connection, or one
+  as `vendorAgentLeft`), then unbinds and turns voice off in one binder write; a runtime with no connection, or one
   naming another vendor agent, is the operator's and is only unbound.
   `switchChannel` is the Voice card's **Voice channel** switch and the website
   widget's calls switch. On with no runtime bound runs Connect's work under the
   lock it already holds (`connectHoldingLock`), and the one `VoiceRuntimeBinder`
   write sets `runtime` and `enabled: true` together, so a failed connect leaves
-  voice off and rejects with Connect's failure; on with a runtime bound writes
-  `enabled: true` and calls no vendor; off writes `enabled: false` and keeps the
+  voice off and rejects with Connect's failure; on with a runtime bound reads
+  the key (`requireCredential`) and asks the vendor's `locateAccount` whether it
+  accepts it before writing `enabled: true`, so the switch never reads on while
+  every call would fail on the key; off writes `enabled: false` and keeps the
   runtime, the connection record and the vendor agent. The binder's `enabled`
   is optional, and composition spreads only the fields it is given, so a bind
   that carries none leaves `voice.enabled` as stored. The status carries

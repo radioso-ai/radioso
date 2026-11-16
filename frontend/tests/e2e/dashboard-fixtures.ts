@@ -1106,7 +1106,8 @@ export const installDashboardApiMocks = async (
      * (`/agents/:id/voice/channel`). `managedVendorAgentId` is the vendor agent Radioso maintains; a
      * bound runtime naming another reads as set up outside Radioso. Connect, and switching voice on
      * with nothing bound, binds `connectVendorAgentId` in `connectRegion`, or answers `connectFailure`;
-     * switching on with nothing bound and no key stored answers the key's own failure. Storing an
+     * switching on with no usable key stored answers the key's own failure. Disconnect turns voice
+     * off. Storing an
      * ElevenLabs key under Settings → Providers makes `vendorKey` stored. Defaults to no key stored
      * and no managed agent.
      */
@@ -3176,8 +3177,8 @@ export const installDashboardApiMocks = async (
       }
       if (request.method() === "DELETE") {
         voiceConnection.managedVendorAgentId = null;
-        agentSettings = { ...agentSettings, voice: { ...agentSettings.voice, runtime: null } };
-        await json(route, { ...voiceConnectionStatus(), state: "not_connected", region: null, runtime: null, vendorAgentLeft: voiceConnection.vendorAgentLeftOnDisconnect ?? false });
+        agentSettings = { ...agentSettings, voice: { ...agentSettings.voice, runtime: null, enabled: false } };
+        await json(route, { ...voiceConnectionStatus(), state: "not_connected", region: null, runtime: null, enabled: false, vendorAgentLeft: voiceConnection.vendorAgentLeftOnDisconnect ?? false });
         return;
       }
     }
@@ -3186,16 +3187,18 @@ export const installDashboardApiMocks = async (
       const { enabled } = request.postDataJSON() as { enabled: boolean };
       options.voiceChannelSwitches?.push(enabled);
       const bound = agentSettings.voice?.runtime ?? null;
-      // On with nothing bound connects first, as Connect does; a failure leaves voice as it was.
+      // On needs a usable key; with nothing bound it connects first, as Connect does. A failure
+      // leaves voice as it was.
+      const vendorKey = voiceConnection.vendorKey ?? "missing";
+      const keyFailure = enabled && vendorKey !== "stored"
+        ? { status: 409, code: vendorKey === "unreadable" ? "voice_vendor_key_unreadable" : "voice_vendor_key_missing" }
+        : null;
+      const failure = keyFailure ?? (enabled && bound === null ? voiceConnection.connectFailure : undefined);
+      if (failure) {
+        await json(route, { error: { code: failure.code, message: "Switch failed" } }, failure.status);
+        return;
+      }
       if (enabled && bound === null) {
-        const vendorKey = voiceConnection.vendorKey ?? "missing";
-        const failure = vendorKey !== "stored"
-          ? { status: 409, code: vendorKey === "unreadable" ? "voice_vendor_key_unreadable" : "voice_vendor_key_missing" }
-          : voiceConnection.connectFailure;
-        if (failure) {
-          await json(route, { error: { code: failure.code, message: "Switch failed" } }, failure.status);
-          return;
-        }
         const vendorAgentId = voiceConnection.connectVendorAgentId ?? "agent_managed_1";
         voiceConnection.managedVendorAgentId = vendorAgentId;
         agentSettings = {

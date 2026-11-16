@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { voiceVendorKeyProblemLine } from '@/lib/voice-connection-failures'
 
-// The form mounts with the dialog and unmounts with it, so every opening starts with an empty key.
-function KeyForm({ problem, vendorName, saving, error, onSave, onCancel }: Omit<VoiceVendorKeyDialogState, 'open'>) {
+// Keyed by the ask, so every ask (a first opening, or a key the vendor refused) starts with an empty key.
+function KeyForm({ problem, vendorName, saving, error, onSave, onCancel }: Omit<VoiceVendorKeyDialogState, 'open' | 'ask'>) {
   const [apiKey, setApiKey] = useState('')
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -47,11 +47,11 @@ function KeyForm({ problem, vendorName, saving, error, onSave, onCancel }: Omit<
 }
 
 /** Asks for the voice vendor's API key when turning voice on needs one. */
-export function VoiceVendorKeyDialog({ open, ...form }: VoiceVendorKeyDialogState) {
+export function VoiceVendorKeyDialog({ open, ask, ...form }: VoiceVendorKeyDialogState) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) form.onCancel() }}>
       <DialogContent className="sm:max-w-md">
-        <KeyForm {...form} />
+        <KeyForm key={ask} {...form} />
       </DialogContent>
     </Dialog>
   )

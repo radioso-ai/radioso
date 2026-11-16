@@ -308,16 +308,36 @@ describe("agent voice connection contract", () => {
     expect(vendor.agents.has("agent_2")).toBe(true);
   });
 
-  it("turns voice off keeping the ElevenLabs agent, and on again without calling ElevenLabs", async () => {
+  it("turns voice off keeping the ElevenLabs agent, and on again only checking the key", async () => {
     const { switchChannel, agent, vendor } = await operatorWith();
     await switchChannel({ enabled: true }).expect(200);
     const callsAfterConnect = vendor.calls.length;
 
     expect((await switchChannel({ enabled: false }).expect(200)).body).toMatchObject({ state: "connected", enabled: false });
     expect((await agent()).voice).toMatchObject({ enabled: false, runtime: { agentId: "agent_2" } });
-    expect((await switchChannel({ enabled: true }).expect(200)).body).toMatchObject({ state: "connected", enabled: true });
     expect(vendor.calls.length).toBe(callsAfterConnect);
-    expect(vendor.agents.has("agent_2")).toBe(true);
+    expect((await switchChannel({ enabled: true }).expect(200)).body).toMatchObject({ state: "connected", enabled: true });
+    expect(vendor.calls.slice(callsAfterConnect).every((call) => call.method === "GET" && call.url.endsWith("/v1/convai/agents?page_size=1"))).toBe(true);
+    expect([...vendor.agents.keys()]).toEqual(["agent_2"]);
+  });
+
+  it("leaves voice off for a connected agent when ElevenLabs rejects the stored key", async () => {
+    let probe = () => json(200, { agents: [], next_cursor: null });
+    const { switchChannel, agent } = await operatorWith({ vendor: fakeElevenLabs({ probe: () => probe() }) });
+    await switchChannel({ enabled: true }).expect(200);
+    await switchChannel({ enabled: false }).expect(200);
+    probe = () => json(401, { detail: { type: "authentication_error", code: "invalid_api_key" } });
+
+    expect((await switchChannel({ enabled: true }).expect(422)).body.error.code).toBe("voice_vendor_key_rejected");
+    expect((await agent()).voice.enabled).toBe(false);
+  });
+
+  it("turns voice off when it disconnects", async () => {
+    const { switchChannel, disconnect, agent } = await operatorWith();
+    await switchChannel({ enabled: true }).expect(200);
+
+    expect((await disconnect().expect(200)).body).toMatchObject({ state: "not_connected", enabled: false });
+    expect((await agent()).voice).toMatchObject({ enabled: false, runtime: null });
   });
 
   it("names a missing key when turning voice on needs a Connect, and leaves voice off", async () => {

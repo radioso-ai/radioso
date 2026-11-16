@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   voiceConnectionFailureMessage,
-  voiceVendorKeyProblemOfConnection,
   voiceVendorKeyProblemOfError,
 } from '@/lib/voice-connection-failures'
 
@@ -22,13 +21,5 @@ describe('which failed voice switch asks for the vendor key', () => {
     expect(voiceConnectionFailureMessage(apiError('voice_vendor_unreachable'), 'ElevenLabs', 'Failed to turn voice on.'))
       .toBe('ElevenLabs didn’t answer. Try again in a moment.')
     expect(voiceConnectionFailureMessage({}, 'ElevenLabs', 'Failed to turn voice on.')).toBe('Failed to turn voice on.')
-  })
-})
-
-describe('a voice switch that went on', () => {
-  it('asks for the key when the workspace has no usable one', () => {
-    expect(voiceVendorKeyProblemOfConnection({ vendorKey: 'stored' })).toBeNull()
-    expect(voiceVendorKeyProblemOfConnection({ vendorKey: 'missing' })).toBe('missing')
-    expect(voiceVendorKeyProblemOfConnection({ vendorKey: 'unreadable' })).toBe('unreadable')
   })
 })

@@ -1017,7 +1017,7 @@ variable "monitoring_voice_abandoned_turn_threshold" {
 }
 
 variable "monitoring_model_call_pressure_threshold" {
-  description = "Conversation-turn model calls on the backend service that the provider rate-limited, refused for quota, or failed as unavailable, or that an instance shed at its concurrent call limit, in fifteen minutes, that trigger the model provider pressure alert."
+  description = "Attempts at conversation-turn model calls on the backend service that the provider rate-limited, refused for quota, or failed as unavailable, plus turn calls an instance shed at its concurrent call limit, in fifteen minutes, that trigger the model provider pressure alert."
   type        = number
   default     = 10
 

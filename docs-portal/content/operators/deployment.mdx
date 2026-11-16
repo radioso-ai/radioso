@@ -233,7 +233,7 @@ A conversation turn makes a handful of model calls: one that plans the turn, one
 - When the call that plans a turn fails because the provider is rate-limiting, out of quota, unavailable, slower than the planner's 12-second bound, or the instance shed it, the turn fails there. The three or four separate classification calls a turn otherwise falls back to would only ask an overloaded provider for more. A planner reply that is unusable for any other reason, such as malformed output, still falls back to them.
 - A visitor who closes public chat or the embed mid-turn still has the answer stored when the instance has room to spare. Once the instance is at its cap, that turn starts no more model calls and fails instead of queueing ahead of visitors who are still waiting, so its answer is missing when they come back.
 
-Provider pushback and shed calls each write one `llm.call_pressure` log line and count under the `radioso_llm_*` metrics. On Google Cloud, the bundled Terraform alerts on them with the model provider pressure policy.
+Each failed attempt at a turn's model call that the provider pushes back on, and each turn call an instance sheds, writes one `llm.call_pressure` log line. Every such attempt and shed call, best-effort work included, counts under the `radioso_llm_*` metrics. On Google Cloud, the bundled Terraform alerts on the log lines with the model provider pressure policy.
 
 ## External skill call timeout
 

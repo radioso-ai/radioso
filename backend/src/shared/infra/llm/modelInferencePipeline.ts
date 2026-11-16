@@ -20,6 +20,7 @@ import { recordModelCallTrace } from "../../observability/tracing/modelCallTrace
 import type { MetricsRegistry } from "../../observability/metrics/metricsRegistry.js";
 import { reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
 import { recordCacheInferenceTelemetry } from "./cacheTelemetry.js";
+import type { ReleaseModelCallPermit } from "./modelCallAdmission.js";
 import {
   acquireModelCallPermit,
   currentModelCallGovernance,
@@ -211,13 +212,15 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
 
   /**
    * Inside a conversation turn the call first takes a permit in its lane. A shed call fails
-   * here, before usage accounting starts, since it never reached the provider.
+   * here, before usage accounting starts, since it never reached the provider. The permit
+   * covers the provider call alone: it is released the moment that call settles, so a slow
+   * usage write cannot hold a slot and shed turns while the provider is healthy.
    */
   private async completeWithPermit(input: ModelInferenceRequest): Promise<TextGenerationResult> {
     const scope = currentModelCallGovernance();
     const release = await acquireModelCallPermit(scope, input.signal);
     try {
-      return await this.completeWithinTrace(input, scope);
+      return await this.completeWithinTrace(input, scope, release);
     } finally {
       release();
     }
@@ -226,6 +229,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   private async completeWithinTrace(
     input: ModelInferenceRequest,
     scope: ModelCallGovernanceScope | undefined,
+    release: ReleaseModelCallPermit,
   ): Promise<TextGenerationResult> {
     const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
     const request = stripOperation(input, input.dispatchRecord ? dispatchRecord : undefined);
@@ -234,7 +238,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     const startedAtMs = Date.now();
     let result: TextGenerationResult;
     try {
-      result = await this.invokeComplete(request, scope);
+      result = await this.invokeComplete(request, scope, release);
       publishDispatch(input.dispatchRecord, dispatchRecord);
     } catch (error) {
       publishDispatch(input.dispatchRecord, dispatchRecord);
@@ -310,8 +314,9 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       name: "llm.provider.stream",
       attributes: providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: true }),
       createIterable: () => (async function* (pipeline: ModelInferencePipelineService) {
-      // Taken on the first read and held until the stream ends; a shed stream fails here,
-      // before any usage is recorded for a call that never reached the provider.
+      // Taken on the first read and held until the provider's stream ends, not until its usage
+      // is recorded; a shed stream fails here, before any usage is recorded for a call that
+      // never reached the provider.
       const release = await acquireModelCallPermit(scope, input.signal);
       startedAtMs = Date.now();
       let terminalRecorded = false;
@@ -350,8 +355,10 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
           }
           yield chunk;
         }
+        release();
         await recordTerminal("succeeded");
       } catch (error) {
+        release();
         await recordTerminal(input.signal?.aborted || isAbortError(error) ? "aborted" : "failed", error);
         throw error;
       } finally {
@@ -369,20 +376,26 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   /**
    * A call made inside a conversation turn's governance scope retries a provider that pushed
    * back within the turn's bounds, with the SDK's own retries off so one layer decides. Any
-   * other call reaches the provider as it is.
+   * other call reaches the provider as it is. `release` gives the call's permit back as soon
+   * as the provider call settles, whether it answered or failed.
    */
-  private invokeComplete(
+  private async invokeComplete(
     request: TextGenerationRequest,
     scope: ModelCallGovernanceScope | undefined,
+    release: ReleaseModelCallPermit,
   ): Promise<TextGenerationResult> {
-    if (!scope) {
-      return this.delegate.complete(request);
+    try {
+      if (!scope) {
+        return await this.delegate.complete(request);
+      }
+      return await governedCall(scope, {
+        provider: this.delegate.metadata.provider,
+        signal: request.signal,
+        call: () => this.delegate.complete({ ...request, maxProviderRetries: 0 }),
+      });
+    } finally {
+      release();
     }
-    return governedCall(scope, {
-      provider: this.delegate.metadata.provider,
-      signal: request.signal,
-      call: () => this.delegate.complete({ ...request, maxProviderRetries: 0 }),
-    });
   }
 
   private invokeStream(

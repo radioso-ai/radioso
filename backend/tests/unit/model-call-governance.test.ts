@@ -178,6 +178,20 @@ describe("model call governance on the inference pipeline", () => {
     }));
   });
 
+  it("counts a best-effort call's pushback by its lane but writes no pressure line: only a call a turn waits on is an alert", async () => {
+    const { instance, metrics, logger } = governor();
+    const pipeline = new ModelInferencePipelineService(scriptedClient([rateLimited({ "retry-after": "30" })]));
+
+    await expect(runWithModelCallGovernance(turnScope(instance), () =>
+      runInDeferrableModelCallLane(() => pipeline.complete({ prompt: "p", operation: usageContext }))))
+      .rejects.toBeInstanceOf(OpenAI.RateLimitError);
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("llm_provider_pressure_total", expect.objectContaining({
+      labels: { lane: "deferrable", provider: "openai", kind: "rate_limited", retried: "false" },
+    }));
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
   it("sheds a turn call over the instance cap with a typed busy failure, without calling the provider", async () => {
     const { instance, metrics, logger } = governor({
       limits: { maxConcurrentTurnCalls: 1, maxConcurrentDeferrableCalls: 1, maxQueueWaitMs: 1_000 },
@@ -287,6 +301,88 @@ describe("model call governance on the inference pipeline", () => {
       pipeline.stream({ prompt: "p", operation: usageContext }).textStream)))
       .rejects.toBeInstanceOf(OpenAI.InternalServerError);
     expect(client.calls()).toBe(1);
+  });
+
+  describe("a slot is held for the provider call, not for usage accounting", () => {
+    const oneSlot = { maxConcurrentTurnCalls: 1, maxConcurrentDeferrableCalls: 1, maxQueueWaitMs: 1_000 };
+    /** A usage recorder whose database write never returns. */
+    const stalledRecorder = () => ({
+      recordModelCall: vi.fn(() => new Promise<void>(() => {})),
+      recordEmbedding: vi.fn(async () => {}),
+    });
+    const lastInFlight = (metrics: ReturnType<typeof governor>["metrics"]) =>
+      metrics.setGauge.mock.calls
+        .filter(([name]) => name === "llm_calls_in_flight")
+        .map(([, options]) => options.value)
+        .at(-1);
+
+    it("gives a completed call's slot back while its usage is still being recorded", async () => {
+      const { instance, metrics } = governor({ limits: oneSlot });
+      const recorder = stalledRecorder();
+      const pipeline = new ModelInferencePipelineService(scriptedClient(["answer"]), recorder);
+
+      void runWithModelCallGovernance(turnScope(instance), () => pipeline.complete({ prompt: "p", operation: usageContext }));
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(recorder.recordModelCall).toHaveBeenCalledTimes(1);
+      expect(lastInFlight(metrics)).toBe(0);
+    });
+
+    it("gives a failed call's slot back while its usage is still being recorded", async () => {
+      const { instance, metrics } = governor({ limits: oneSlot });
+      const recorder = stalledRecorder();
+      const pipeline = new ModelInferencePipelineService(scriptedClient([new OpenAI.BadRequestError(400, {}, "bad", new Headers())]), recorder);
+
+      void runWithModelCallGovernance(turnScope(instance), () => pipeline.complete({ prompt: "p", operation: usageContext }))
+        .catch(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(recorder.recordModelCall).toHaveBeenCalledTimes(1);
+      expect(lastInFlight(metrics)).toBe(0);
+    });
+
+    it("gives a fully read stream's slot back while its usage is still being recorded", async () => {
+      const { instance, metrics } = governor({ limits: oneSlot });
+      const recorder = stalledRecorder();
+      const pipeline = new ModelInferencePipelineService(scriptedClient(["one two"]), recorder);
+
+      void drain(runAsyncIterableWithModelCallGovernance(turnScope(instance), () =>
+        pipeline.stream({ prompt: "p", operation: usageContext }).textStream));
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(recorder.recordModelCall).toHaveBeenCalledTimes(1);
+      expect(lastInFlight(metrics)).toBe(0);
+    });
+
+    it("gives a failed stream's slot back while its usage is still being recorded", async () => {
+      const { instance, metrics } = governor({ limits: oneSlot });
+      const recorder = stalledRecorder();
+      const pipeline = new ModelInferencePipelineService(failingMidStreamClient(), recorder);
+
+      void drain(runAsyncIterableWithModelCallGovernance(turnScope(instance), () =>
+        pipeline.stream({ prompt: "p", operation: usageContext }).textStream)).catch(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(recorder.recordModelCall).toHaveBeenCalledTimes(1);
+      expect(lastInFlight(metrics)).toBe(0);
+    });
+  });
+
+  it("never fails a fully read stream because its usage promise rejected", async () => {
+    const { instance } = governor();
+    const client = scriptedClient(["one two"]);
+    const brokenUsage = Promise.reject(new Error("usage unavailable"));
+    brokenUsage.catch(() => {});
+    const pipeline = new ModelInferencePipelineService({
+      ...client,
+      stream: (request) => ({ ...client.stream(request), usage: brokenUsage }),
+    });
+
+    const result = runWithModelCallGovernance(turnScope(instance), () => pipeline.stream({ prompt: "p", operation: usageContext }));
+    const chunks = await drain(runAsyncIterableWithModelCallGovernance(turnScope(instance), () => result.textStream));
+
+    expect(chunks).toEqual(["one", "two"]);
+    await expect(result.usage).resolves.toBeUndefined();
   });
 
   it("resolves the stream's usage from the attempt that answered", async () => {

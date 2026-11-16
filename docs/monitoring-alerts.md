@@ -23,7 +23,7 @@ Radioso emits signals through standard interfaces — a Prometheus-compatible me
 | Is inbound email stuck past its processing deadline | `radioso_email_backlog{table="inbound_events",state="pending"}` | `/metrics` |
 | Is the email webhook being forged or misconfigured | `radioso_email_webhook_requests_total{result=~"bad_signature\|stale_timestamp"}` | `/metrics` |
 | Did an email sending domain stop verifying | `radioso_email_domain_readiness_transitions_total{capability="sending",to!="verified"}` | `/metrics` |
-| Is the model provider pushing back on chat turns | `radioso_llm_provider_pressure_total` | `/metrics`, `llm.call_pressure` log line |
+| Is the model provider pushing back on chat turns | `radioso_llm_provider_pressure_total{lane="turn"}` | `/metrics`, `llm.call_pressure` log line |
 | Is an instance shedding chat turns' model calls | `radioso_llm_calls_shed_total{lane="turn"}`, `radioso_llm_calls_in_flight` | `/metrics`, `llm.call_pressure` log line |
 | Are voice turns hitting the turn limit | `radioso_voice_turn_limit_total` | `/metrics` |
 | Is the voice runtime closing requests before the answer reaches it | `radioso_voice_turn_abandoned_total` | `/metrics` |
@@ -137,7 +137,7 @@ groups:
           summary: "An email sending domain lost its verified status"
 
       - alert: RadiosoModelProviderPressure
-        expr: sum(increase(radioso_llm_provider_pressure_total[15m])) by (kind) > 10
+        expr: sum(increase(radioso_llm_provider_pressure_total{lane="turn"}[15m])) by (kind) > 10
         annotations:
           summary: "The model provider is pushing back on chat turns ({{ $labels.kind }})"
 
@@ -189,9 +189,9 @@ The two voice rules watch whether calls get their answers in time. `radioso_voic
 
 A chat turn's model calls are where a saturated provider hurts first: visitors wait, then see the chat's failure message. Each API instance caps the calls turns may have in flight (`LLM_MAX_CONCURRENT_TURN_CALLS`, 64 by default), retries a provider that pushed back once and only within 2 seconds, and fails a turn whose planning call was rate-limited, out of quota, unavailable, or too slow instead of asking the provider for more calls. [Deployment](../docs-portal/content/operators/deployment.mdx#model-provider-pressure) covers the behavior and the knob.
 
-`radioso_llm_provider_pressure_total` counts every turn-call attempt the provider rate-limited (`kind="rate_limited"`), refused for quota (`quota_exhausted`), or failed with a 5xx or a dropped connection (`provider_unavailable`), with `retried` saying whether the call tried again. `quota_exhausted` is the one to wake for: the account behind the platform key has no credit left, and every turn on it fails until someone adds some. `radioso_llm_calls_shed_total` counts calls an instance refused to start: `lane="turn"` with `reason="queue_timeout"` is a turn that waited 2 seconds and failed as busy, and `reason="abandoned"` is one whose visitor had already left. The `deferrable` lane is best-effort work that is skipped by design under load, so it belongs on a dashboard rather than an alert. `radioso_llm_calls_in_flight` shows how close each instance runs to its cap, and `radioso_llm_call_queue_wait_ms` how long admitted calls waited for a slot.
+`radioso_llm_provider_pressure_total` counts every attempt at a turn's model call the provider rate-limited (`kind="rate_limited"`), refused for quota (`quota_exhausted`), or failed with a 5xx or a dropped connection (`provider_unavailable`), with `retried` saying whether the call tried again, so a call retried once after a rate limit can count twice. The `lane` label separates the calls a turn waits on (`turn`) from best-effort work (`deferrable`). `quota_exhausted` is the one to wake for: the account behind the platform key has no credit left, and every turn on it fails until someone adds some. `radioso_llm_calls_shed_total` counts calls an instance refused to start: `lane="turn"` with `reason="queue_timeout"` is a turn that waited 2 seconds and failed as busy, and `reason="abandoned"` is one whose visitor had already left. The `deferrable` lane is best-effort work that is skipped by design under load, so its series in both metrics belong on a dashboard rather than an alert. `radioso_llm_calls_in_flight` shows how close each instance runs to its cap, and `radioso_llm_call_queue_wait_ms` how long admitted calls waited for a slot.
 
-Each pressure event also writes one `llm.call_pressure` warning line, with `signal` set to `provider_rate_limited`, `provider_quota_exhausted`, `provider_unavailable`, or `capacity_shed`, plus `lane`, `provider`, `providerStatus`, `providerCode`, `retried`, and `reason`. The line never carries a prompt or an answer. A turn that fails this way also appears in `radioso_chat_turn_planning_outcomes_total` as `outcome="degraded"` when it was the planning call that failed.
+Each `turn`-lane pressure event also writes one `llm.call_pressure` warning line, with `signal` set to `provider_rate_limited`, `provider_quota_exhausted`, `provider_unavailable`, or `capacity_shed`, plus `lane`, `provider`, `providerStatus`, `providerCode`, `retried`, and `reason`. The line never carries a prompt or an answer. A turn that fails this way also appears in `radioso_chat_turn_planning_outcomes_total` as `outcome="degraded"` when it was the planning call that failed.
 
 ## Rate limits
 

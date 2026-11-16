@@ -16,8 +16,10 @@ import { providerRetryDelayMs, sleepUnlessAborted, type ProviderRetryPolicy } fr
 import type { ProviderUsage, TextGenerationStreamResult } from "./providerTypes.js";
 
 /**
- * The `event` of the one log line written when the provider pushes back on a conversation
- * turn's model call or this instance sheds one. infra/terraform/monitoring.tf counts it.
+ * The `event` of the one log line written for each failed attempt at which the provider pushes
+ * back on a model call a conversation turn waits on, and for each such call this instance sheds.
+ * Best-effort (deferrable) work is metered, never logged under it. infra/terraform/monitoring.tf
+ * counts it.
  */
 export const MODEL_CALL_PRESSURE_LOG_EVENT = "llm.call_pressure";
 
@@ -65,7 +67,11 @@ export class ModelCallGovernor {
     this.random = options.random ?? Math.random;
   }
 
-  /** Records one failed attempt whose failure says the provider is saturated or out of credit. */
+  /**
+   * Records one failed attempt whose failure says the provider is saturated or out of credit.
+   * Every attempt counts under its lane; only an attempt of a call a turn waits on writes the
+   * line the alert counts, so best-effort work is metered but never pages anyone.
+   */
   recordProviderPressure(input: { lane: ModelCallLane; provider: string; error: unknown; retried: boolean }): void {
     const failure = classifyLlmProviderFailure(input.error);
     const signal = failure ? PRESSURE_SIGNAL_BY_KIND[failure.kind] : undefined;
@@ -77,6 +83,9 @@ export class ModelCallGovernor {
       help: "Conversation-turn model call attempts the provider rate-limited, refused for quota, or failed as unavailable.",
       labels: { lane: input.lane, provider, kind: failure.kind, retried: String(input.retried) },
     });
+    if (input.lane !== "turn") {
+      return;
+    }
     this.options.logger?.warn(
       {
         event: MODEL_CALL_PRESSURE_LOG_EVENT,
@@ -213,6 +222,18 @@ export const governedCall = async <T>(
 };
 
 /**
+ * The usage an attempt reported. Usage is best-effort telemetry: a provider that breaks the
+ * resolve-only contract must not fail, or make the governor retry, a stream already read in full.
+ */
+const bestEffortUsage = async (result: TextGenerationStreamResult): Promise<ProviderUsage | undefined> => {
+  try {
+    return await result.usage;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
  * Runs one streaming provider call under the scope's bounded retries. A failure before the
  * first chunk is retried within the policy, one after it is not (the caller already has part
  * of an answer). `usage` resolves from the attempt that answered, or `undefined` when none did.
@@ -235,7 +256,7 @@ export const governedStream = (
             sentText = true;
             yield chunk;
           }
-          resolveUsage(await result.usage);
+          resolveUsage(await bestEffortUsage(result));
           return;
         } catch (error) {
           const delayMs = retryDelayAfter(scope, input.provider, error, attempt, !sentText);

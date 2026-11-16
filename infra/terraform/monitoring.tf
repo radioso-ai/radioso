@@ -393,10 +393,12 @@ resource "google_monitoring_alert_policy" "voice_turn_health" {
 
 # The model-call counters are process-local too, so this metric counts the backend's one log line
 # per pressure event by its `event` (MODEL_CALL_PRESSURE_LOG_EVENT in
-# backend/src/shared/infra/llm/modelCallGovernance.ts): a conversation turn's model call the
-# provider rate-limited, refused for quota, or failed as unavailable, or one this instance shed at
-# its concurrent call limit. backend/tests/unit/model-call-pressure-alert-log-event.test.ts holds
-# the name in step.
+# backend/src/shared/infra/llm/modelCallGovernance.ts): an attempt at a model call a conversation
+# turn waits on that the provider rate-limited, refused for quota, or failed as unavailable (a
+# retried call writes a line per failed attempt), or a turn call this instance shed at its
+# concurrent call limit. Best-effort work is counted by the process-local metrics only and writes
+# no such line. backend/tests/unit/model-call-pressure-alert-log-event.test.ts holds the name in
+# step.
 resource "google_logging_metric" "model_call_pressure" {
   count = local.monitoring_enabled && var.deploy_services ? 1 : 0
 
@@ -423,7 +425,7 @@ resource "google_monitoring_alert_policy" "model_call_pressure" {
   combiner     = "OR"
 
   conditions {
-    display_name = "Conversation turns' model calls rate-limited, out of quota, unavailable, or shed"
+    display_name = "Conversation turns' model call attempts rate-limited, out of quota, unavailable, or shed"
 
     condition_threshold {
       filter = join(" AND ", [
@@ -445,7 +447,7 @@ resource "google_monitoring_alert_policy" "model_call_pressure" {
   notification_channels = local.notification_channel_ids
   depends_on            = [google_project_service.apis]
   documentation {
-    content = "More than ${var.monitoring_model_call_pressure_threshold} conversation-turn model calls met provider pushback or were shed by an API instance in fifteen minutes. Search the backend's logs for jsonPayload.event=\"llm.call_pressure\": jsonPayload.signal says which. provider_quota_exhausted means the platform key has no credit left and every turn on it fails until someone adds some. provider_rate_limited or provider_unavailable means the provider is saturated or down; turns fail fast instead of retrying into it. capacity_shed means an instance reached LLM_MAX_CONCURRENT_TURN_CALLS, usually because provider latency rose. Each line carries lane, provider, providerStatus, providerCode, retried and reason, never prompts or answers. ${local.alert_documentation}"
+    content = "More than ${var.monitoring_model_call_pressure_threshold} conversation-turn model call attempts met provider pushback, or turn calls were shed by an API instance, in fifteen minutes. Search the backend's logs for jsonPayload.event=\"llm.call_pressure\": jsonPayload.signal says which. provider_quota_exhausted means the platform key has no credit left and every turn on it fails until someone adds some. provider_rate_limited or provider_unavailable means the provider is saturated or down; turns fail fast instead of retrying into it. capacity_shed means an instance reached LLM_MAX_CONCURRENT_TURN_CALLS, usually because provider latency rose. Each line carries lane, provider, providerStatus, providerCode, retried and reason, never prompts or answers. ${local.alert_documentation}"
   }
 }
 

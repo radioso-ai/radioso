@@ -8,8 +8,8 @@ session's conversation and hands the reply back as sentence-sized speech. It
 also starts a session for a page: it opens one on the vendor agent the Radioso
 agent is bound to, with the workspace's own vendor key, and mints the session
 key the runtime sends back on every turn. And it creates and maintains that
-vendor agent: Connect on the agent's Voice card has Radioso set one up on the
-workspace's own vendor account and bind the agent to it.
+vendor agent: turning on the voice channel on the agent's Voice card has Radioso
+set one up on the workspace's own vendor account and bind the agent to it.
 
 For the broader repository map, see
 [`docs/architecture/code-map.md`](../../../../docs/architecture/code-map.md).
@@ -28,6 +28,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   maintained vendor agent sets reaches it as `VoiceSessionLanguageSource` (the
   vendor's code, `default`, `unsupported` or `not_allowed`), so it knows no
   vendor's language list.
+- `runtimeConnectionDomain.ts` (re-exported by `domain.ts`) knows what the
+  Voice card and the website widget's calls switch ask of a runtime connection:
+  `VoiceRuntimeConnectionPort` (status, Connect, Disconnect, the voice channel
+  switch), the `VoiceRuntimeConnectionStatus` it answers, and the closed
+  `VoiceRuntimeConnectionFailure` codes.
 - `testChatSessionDomain.ts` (its types re-exported by `domain.ts`) knows a
   session started from the dashboard's Test Chat: the private test it runs on,
   by an opaque id (`VoiceTestChatSubject`, `VoiceTestChatBinding`), the start's
@@ -134,10 +139,10 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   once.
   `voiceRuntimeConnectionService.ts` connects an agent's voice channel to a
   vendor agent Radioso creates and maintains (`VoiceRuntimeConnectionPort`).
-  `connect`, `disconnect` and `syncPrimaryLanguage` each run holding the
-  agent's `VoiceRuntimeConnectionLock`, which never waits: while another holds
-  it, Connect and Disconnect fail as `connection_busy` having changed nothing,
-  and a sync is skipped and logged. `connect` reads the vendor key (`VoiceVendorCredentialReader`), finds the
+  `connect`, `disconnect`, `switchChannel` and `syncPrimaryLanguage` each run
+  holding the agent's `VoiceRuntimeConnectionLock`, which never waits: while
+  another holds it, Connect, Disconnect and the channel switch fail as
+  `connection_busy` having changed nothing, and a sync is skipped and logged. `connect` reads the vendor key (`VoiceVendorCredentialReader`), finds the
   key's region (`VoiceRuntimeProvisioner.locateAccount`), reuses the REST
   credential the connection holds while the vendor's copy of its secret still
   admits the agent's turns (`VoiceRuntimeChannelCredentials.admitsHeldSecret`:
@@ -158,6 +163,18 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   drops the record (best effort when the vendor or the key is gone, reported
   as `vendorAgentLeft`), then unbinds; a runtime with no connection, or one
   naming another vendor agent, is the operator's and is only unbound.
+  `switchChannel` is the Voice card's **Voice channel** switch and the website
+  widget's calls switch. On with no runtime bound runs Connect's work under the
+  lock it already holds (`connectHoldingLock`), and the one `VoiceRuntimeBinder`
+  write sets `runtime` and `enabled: true` together, so a failed connect leaves
+  voice off and rejects with Connect's failure; on with a runtime bound writes
+  `enabled: true` and calls no vendor; off writes `enabled: false` and keeps the
+  runtime, the connection record and the vendor agent. The binder's `enabled`
+  is optional, and composition spreads only the fields it is given, so a bind
+  that carries none leaves `voice.enabled` as stored. The status carries
+  `enabled` (the agent's `voice.enabled`, read through
+  `VoiceRuntimeAgentProfileSource`) so a client that saves the whole `voice`
+  block sends it back, as it does `runtime`.
   `syncPrimaryLanguage` sets a maintained vendor agent up again after its
   agent's default locale changed (no credential minted; a gone vendor agent
   waits for Connect), and `releaseForDeletedAgent`, before its agent is
@@ -389,7 +406,9 @@ helpers and the shared chat message limit from `app/http`
   `agents/public.ts`, and composition hands the turn service the agent's block
   and default locale.
 - `backend/src/app/http/routes/agentVoiceConnectionRoutes.ts` — mounts
-  `GET|POST|DELETE /api/v1/agents/:agentId/voice/connection` (dashboard
+  `GET|POST|DELETE /api/v1/agents/:agentId/voice/connection` and
+  `PUT /api/v1/agents/:agentId/voice/channel` (`{ "enabled": boolean }`, the
+  switch; operation `switchAgentVoiceChannel`) (dashboard
   sessions, `workspace.agents.manage`, `X-Radioso-CSRF` on writes,
   `sessionOnly` in `apiPrincipalRoutePolicy.ts`) and maps each
   `VoiceRuntimeConnectionFailure` to its answer (`409`
@@ -397,8 +416,9 @@ helpers and the shared chat message limit from `app/http`
   `voice_vendor_key_lacks_agents_permission`, `502` `voice_vendor_failed`,
   `503` `voice_vendor_unreachable`/`voice_connection_unavailable`); permanent
   copilot coverage exclusions (`getAgentVoiceConnection`, `connectAgentVoice`,
-  `disconnectAgentVoice`: Connect and Disconnect issue and revoke an access
-  grant).
+  `disconnectAgentVoice`, `switchAgentVoiceChannel`: Connect and Disconnect
+  issue and revoke an access grant, and the switch connects when it turns voice
+  on with no runtime bound).
 - `backend/src/app/http/routes/agentVoiceRoute.ts` — mounts
   `POST /api/v1/agents/:agentId/voice/:dialect/v1/chat/completions` beside the
   REST agent channel, behind `requireRestAgentChannelCredential` (an
@@ -1153,11 +1173,15 @@ never the vendor's conversation id, and never the key, the vendor URL or any
 audio.
 
 A runtime connection logs each operation with `workspaceId`, `agentId`,
-`vendor`, `operation` (`connect`, `disconnect`, `sync`, `agent_deleted`) and
-`outcome`: `Voice runtime connected`, `Voice runtime disconnected` and `Voice
-runtime released after its agent was deleted` at info (`created`, `repaired`;
-`released`, `unbound`, `vendor_agent_left`), `Voice
-runtime connect failed`, `Voice runtime disconnect failed` and `Voice runtime
+`vendor`, `operation` (`connect`, `disconnect`, `channel_on`, `channel_off`,
+`sync`, `agent_deleted`) and `outcome`: `Voice runtime connected`, `Voice
+runtime disconnected`, `Voice channel switched` and `Voice runtime released
+after its agent was deleted` at info (`created`, `repaired`; `released`,
+`unbound`, `vendor_agent_left`; `switched`; the connect inside a switch on
+keeps its own `Voice runtime connected` line, count and audit event), `Voice
+runtime connect failed`, `Voice runtime disconnect failed`, `Voice runtime
+channel_on failed` (a connect inside a switch on fails as the switch, counted
+under `channel_on`), `Voice runtime channel_off failed` and `Voice runtime
 language sync failed` at warn with
 the `VoiceRuntimeConnectionFailure` (or `error`, `needs_connect`;
 `connection_busy` for a sync skipped while a Connect or Disconnect held the

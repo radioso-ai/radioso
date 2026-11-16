@@ -13,15 +13,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useVoiceChannelSwitch } from '@/components/dashboard/settings/use-voice-channel-switch'
+import { VoiceVendorKeyDialog } from '@/components/dashboard/settings/voice-vendor-key-dialog'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { agentVoiceConnectionApi } from '@/lib/api-agent-voice-connection'
-import { getApiErrorCode, getApiErrorMessage } from '@/lib/api-error'
+import { getApiErrorMessage } from '@/lib/api-error'
 import { providerDisplayName } from '@/lib/api-llm-providers'
 import type { AgentVoiceConnection } from '@/lib/api-types'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { useWorkspace } from '@/lib/workspace-context'
-import { AGENT_VOICE_SAVED_EVENT, type VoiceRuntimeBinding, type VoiceRuntimeRegion } from '@/lib/voice-settings-form'
+import { CONNECT_VOICE_VENDOR, voiceConnectionFailureMessage } from '@/lib/voice-connection-failures'
+import { AGENT_VOICE_SAVED_EVENT, type VoiceRuntimeRegion, type VoiceSettingsForm } from '@/lib/voice-settings-form'
 
 /** Where the vendor keeps a call's recording, by the account's data residency region. */
 const REGION_LABELS: Record<VoiceRuntimeRegion, string> = {
@@ -31,38 +36,28 @@ const REGION_LABELS: Record<VoiceRuntimeRegion, string> = {
   sg: 'Singapore',
 }
 
-/** What the card says for each way Connect or Disconnect can fail; the API's `error.code` names the way. */
-const CONNECT_FAILURES: Record<string, (vendor: string) => string> = {
-  voice_vendor_key_missing: (vendor) => `Add your ${vendor} API key under Settings → Providers first.`,
-  voice_vendor_key_unreadable: (vendor) => `Radioso can’t read the stored ${vendor} key. Enter it again under Settings → Providers.`,
-  voice_vendor_key_rejected: (vendor) => `${vendor} didn’t accept the stored API key. Check the key under Settings → Providers.`,
-  voice_vendor_key_lacks_agents_permission: (vendor) =>
-    `The ${vendor} key needs the Agents permission, read and write. Turn it on for the key in ${vendor}, or store a key that has it.`,
-  voice_vendor_unreachable: (vendor) => `${vendor} didn’t answer. Try again in a moment.`,
-  voice_vendor_failed: (vendor) => `${vendor} wouldn’t set up the agent. Try again; if it keeps failing, contact support.`,
-  voice_connection_busy: () => 'Another Connect or Disconnect of this agent is still running. Try again in a moment.',
-  voice_connection_unavailable: (vendor) =>
-    `${vendor} can’t reach this Radioso deployment: its address (APP_BASE_URL) isn’t reachable from the internet. Ask your administrator to fix it.`,
-}
-
 type Action = 'connect' | 'disconnect'
 
+/** The agent's voice as stored, which the card's form takes over so its whole-block save sends it back unchanged. */
+type StoredVoice = Pick<VoiceSettingsForm, 'enabled' | 'runtime'>
+
 /**
- * The agent's voice runtime on the Voice card: Connect has Radioso create and maintain the vendor
- * agent on the workspace's own vendor account; Disconnect removes it (or only unbinds one set up
- * outside Radioso). Each answer carries the binding as stored, which the card's form takes over so
- * its next save sends it back unchanged.
+ * The agent's voice provider on the Voice card. The Voice channel switch saves at once: on, with
+ * nothing bound, it has Radioso create and maintain the vendor agent on the workspace's own vendor
+ * account, asking for the vendor key in place when needed; off keeps the vendor agent. Reconnect
+ * repairs that agent, "Let Radioso manage it" takes over one set up outside Radioso, and Disconnect
+ * removes it (or only unbinds one set up outside Radioso). Each answer carries the voice as stored.
  */
 export function VoiceRuntimeConnection({
   agentId,
   disabled,
-  onRuntimeChange,
+  onVoiceChange,
   onBusyChange,
 }: {
   agentId: string
-  /** True while the card saves its form: the binding must not change under the save. */
+  /** True while the card saves its form: the stored voice must not change under the save. */
   disabled: boolean
-  onRuntimeChange: (runtime: VoiceRuntimeBinding | null) => void
+  onVoiceChange: (voice: StoredVoice) => void
   onBusyChange: (busy: boolean) => void
 }) {
   const { user } = useAuth()
@@ -98,7 +93,12 @@ export function VoiceRuntimeConnection({
     }
   }, [agentId])
 
-  const vendor = providerDisplayName[status?.vendor ?? 'elevenlabs']
+  const take = (next: AgentVoiceConnection) => {
+    setStatus(next)
+    onVoiceChange({ enabled: next.enabled, runtime: next.runtime })
+  }
+  const voiceSwitch = useVoiceChannelSwitch({ agentId, vendor: status?.vendor ?? CONNECT_VOICE_VENDOR, onSwitched: take })
+  const vendor = providerDisplayName[status?.vendor ?? CONNECT_VOICE_VENDOR]
 
   const run = async (action: Action) => {
     setBusy(action)
@@ -114,20 +114,33 @@ export function VoiceRuntimeConnection({
         setVendorAgentLeft(disconnected.vendorAgentLeft)
         next = disconnected
       }
-      setStatus(next)
-      onRuntimeChange(next.runtime)
+      take(next)
       window.dispatchEvent(new CustomEvent(AGENT_VOICE_SAVED_EVENT, { detail: { agentId } }))
     } catch (error) {
-      const failure = CONNECT_FAILURES[getApiErrorCode(error) ?? '']
-      setActionError(failure ? failure(vendor) : getApiErrorMessage(error, action === 'connect' ? `Failed to connect ${vendor}.` : `Failed to disconnect ${vendor}.`))
+      setActionError(voiceConnectionFailureMessage(error, vendor, action === 'connect' ? `Failed to connect ${vendor}.` : `Failed to disconnect ${vendor}.`))
     } finally {
       setBusy(null)
       onBusyChange(false)
     }
   }
 
+  const switchVoice = async (enabled: boolean) => {
+    onBusyChange(true)
+    setActionError(null)
+    setVendorAgentLeft(false)
+    const result = await voiceSwitch.switchChannel(enabled)
+    if (!result.switched && result.error) setActionError(result.error)
+    onBusyChange(false)
+  }
+
+  const idle = !disabled && busy === null && voiceSwitch.pending === null
   const keyMissing = status !== null && status.vendorKey !== 'stored'
-  const canConnect = status !== null && !keyMissing && status.connectAvailable && !disabled && busy === null
+  const canConnect = status !== null && !keyMissing && status.connectAvailable && idle
+  // An agent stored with voice on but nothing bound takes no calls, so it reads off: turning it on connects.
+  const voiceOn = status !== null && status.enabled && status.runtime !== null
+  const switchedOn = voiceSwitch.pending ?? voiceOn
+  // With nothing bound, turning voice on connects, which needs the vendor to reach this deployment.
+  const canTurnOn = status !== null && (status.runtime !== null || status.connectAvailable)
 
   const connectButton = (label: string, variant?: 'outline') => (
     <Button type="button" size="sm" variant={variant} disabled={!canConnect} loading={busy === 'connect'} onClick={() => void run('connect')}>
@@ -135,7 +148,7 @@ export function VoiceRuntimeConnection({
     </Button>
   )
   const disconnectButton = (
-    <Button type="button" size="sm" variant="outline" disabled={disabled || busy !== null} loading={busy === 'disconnect'} onClick={() => setConfirmingDisconnect(true)}>
+    <Button type="button" size="sm" variant="outline" disabled={!idle} loading={busy === 'disconnect'} onClick={() => setConfirmingDisconnect(true)}>
       Disconnect
     </Button>
   )
@@ -152,33 +165,49 @@ export function VoiceRuntimeConnection({
       {!status && !loadError ? <p className="text-sm text-muted-foreground">Checking the {vendor} connection…</p> : null}
       {status ? (
         <div className="space-y-3">
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background/60 p-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="voiceEnabled" className="text-foreground">Voice channel</Label>
+              <p id="voiceEnabledHint" className="text-xs text-muted-foreground">
+                Pages can start calls only while it is on.{status.runtime === null ? ` Turning it on connects ${vendor}.` : null}
+              </p>
+            </div>
+            <Switch
+              id="voiceEnabled"
+              aria-describedby="voiceEnabledHint"
+              checked={switchedOn}
+              disabled={!idle || (!switchedOn && !canTurnOn)}
+              onCheckedChange={(enabled) => void switchVoice(enabled)}
+            />
+          </div>
           {status.state === 'connected' && status.region ? (
             <p className="text-sm text-foreground">Connected to {vendor} · recordings stay in {REGION_LABELS[status.region]}</p>
           ) : null}
           {status.state === 'connected_externally' ? (
             <p className="text-sm text-foreground">Uses an {vendor} agent set up outside Radioso.</p>
           ) : null}
-          {status.state !== 'connected' && keyMissing ? (
+          {status.state === 'connected_externally' && keyMissing ? (
             <p className="text-sm text-muted-foreground">
               {status.vendorKey === 'unreadable'
                 ? `Radioso can’t read the stored ${vendor} key. Enter it again under `
                 : `Add your ${vendor} API key, with the Agents permission, under `}
               {providersHref ? <Link href={providersHref} className="font-medium text-primary underline-offset-4 hover:underline">Settings → Providers</Link> : 'Settings → Providers'}
-              {' '}to connect.
+              {' '}to let Radioso manage it.
             </p>
           ) : null}
-          {status.state !== 'connected' && !keyMissing && !status.connectAvailable ? (
+          {status.state !== 'connected' && !status.connectAvailable && !(status.state === 'connected_externally' && keyMissing) ? (
             <p className="text-sm text-muted-foreground">
               {vendor} can’t reach this Radioso deployment: its address (APP_BASE_URL) isn’t reachable from the internet. Ask your administrator to fix it.
             </p>
           ) : null}
-          <div className="flex flex-wrap items-center gap-2">
-            {status.state === 'not_connected' ? connectButton(`Connect ${vendor}`) : null}
-            {status.state === 'connected_externally' ? connectButton('Let Radioso manage it') : null}
-            {/* Connect again repairs: the vendor agent's settings, and a credential that was revoked. */}
-            {status.state === 'connected' ? connectButton('Reconnect', 'outline') : null}
-            {status.state !== 'not_connected' ? disconnectButton : null}
-          </div>
+          {status.state !== 'not_connected' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {status.state === 'connected_externally' ? connectButton('Let Radioso manage it') : null}
+              {/* Connect again repairs: the vendor agent's settings, and a credential that was revoked. */}
+              {status.state === 'connected' ? connectButton('Reconnect', 'outline') : null}
+              {disconnectButton}
+            </div>
+          ) : null}
           {vendorAgentLeft ? (
             <p className="text-sm text-muted-foreground" role="status">
               Radioso couldn’t delete the {vendor} agent it created. It can no longer reach this agent; delete it in your {vendor} account.
@@ -187,14 +216,15 @@ export function VoiceRuntimeConnection({
           {actionError ? <p className="text-sm text-destructive" role="alert">{actionError}</p> : null}
         </div>
       ) : null}
+      <VoiceVendorKeyDialog {...voiceSwitch.keyDialog} />
       <AlertDialog open={confirmingDisconnect} onOpenChange={setConfirmingDisconnect}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect {vendor}?</AlertDialogTitle>
             <AlertDialogDescription>
               {status?.state === 'connected'
-                ? `Pages can’t start calls with this agent until you connect again. Radioso deletes the ${vendor} agent it created for it.`
-                : `Pages can’t start calls with this agent until you connect again. Your ${vendor} agent stays as it is.`}
+                ? `Pages can’t start calls with this agent until you turn its voice channel on again. Radioso deletes the ${vendor} agent it created for it.`
+                : `Pages can’t start calls with this agent until you turn its voice channel on again. Your ${vendor} agent stays as it is.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

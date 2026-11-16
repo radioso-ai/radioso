@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, the period's call numbers on the Quality page, and calls from Test Chat that run on the draft under test."
-last_updated: 2026-11-11
+last_updated: 2026-11-16
 ---
 
 # Voice Channel
@@ -54,10 +54,11 @@ Activity and the Inbox.
 A voice call runs over two connections. The voice runtime calls Radioso on
 every turn, with a REST credential for the agent. The page where the caller
 presses Talk opens the session on the runtime, which takes the vendor's key
-and a session key. With ElevenLabs, Radioso sets up both ends: you store your
-ElevenLabs key and press **Connect**, and Radioso creates the ElevenLabs
-agent in your account, gives it a credential, keeps it set up, and opens each
-session for the page, so the key never leaves the workspace.
+and a session key. With ElevenLabs, Radioso sets up both ends: you turn on
+the agent's **Voice channel** and give it your ElevenLabs key when it asks, and
+Radioso creates the ElevenLabs agent in your account, gives it a credential,
+keeps it set up, and opens each session for the page, so the key never leaves
+the workspace.
 
 A call runs on the agent's published release, like every chat, so publish the
 agent before you offer calls. Until it is published, the Voice card and the
@@ -70,20 +71,32 @@ Radioso starts no session for it.
    **Agents** permission with write access (`convai_read` and `convai_write`
    in the ElevenLabs API). A key without it reads as one that lacks the Agents
    permission on the Voice card.
-2. In **Settings → Providers**, under **Voice runtime keys**, set the
-   ElevenLabs API key. Radioso encrypts it with `CONNECTOR_ENCRYPTION_KEY`,
-   like the model provider keys, and never shows it again. Workspace owners
-   and admins can set and remove it; `PUT` and `DELETE`
-   `/api/v1/settings/credentials/elevenlabs` do the same from the dashboard
-   session.
-3. On the agent's **Voice** card (**Channels → API**), select **Connect
-   ElevenLabs** and turn on **Voice channel**, the one setting a call needs
-   on this card. The card then reads **Connected to ElevenLabs · recordings
-   stay in the European Union**, or whichever region your account keeps its
-   data in. Connect takes effect at once; the **Voice channel** switch and the
-   lines below it take effect when you select **Save voice settings**.
+2. On the agent's **Voice** card (**Channels → API**), turn on **Voice
+   channel**. The switch saves at once. When the workspace has no ElevenLabs
+   key, or ElevenLabs refuses the one it has, the switch asks for the key
+   right there; paste it and Radioso stores it, finishes turning the channel
+   on, and the card reads **Connected to ElevenLabs · recordings stay in the
+   European Union**, or whichever region your account keeps its data in.
 
-Connect does four things:
+The key belongs to the workspace, so every agent in it uses the same one. The
+switch's prompt stores it where **Settings → Providers**, under **Voice runtime
+keys**, does, so you can also set it there before you turn anything on.
+Radioso encrypts it with `CONNECTOR_ENCRYPTION_KEY`, like the model provider
+keys, and never shows it again. Workspace owners and admins can set and remove
+it; `PUT` and `DELETE` `/api/v1/settings/credentials/elevenlabs` do the same
+from the dashboard session.
+
+The lines below the switch (bridge lines, the fallback line, quick replies)
+take effect when you select **Save voice settings**; the switch does not wait
+for it. Turning the channel off keeps the ElevenLabs agent and its link to the
+Radioso agent, so turning it on again takes no setup and asks ElevenLabs for
+nothing.
+
+Turning the channel on when no ElevenLabs agent is linked connects the agent
+to ElevenLabs first, and the website widget's **Offer calls on the website**
+switch does the same when voice is not yet set up (see
+[Talk from the website embed](#talk-from-the-website-embed)). Connecting does
+four things:
 
 - It finds your account's data residency region from the key. An ElevenLabs
   account lives on exactly one region's host (`api.elevenlabs.io` for the
@@ -114,7 +127,7 @@ Connect does four things:
 
 Everything else on the ElevenLabs agent is yours to tune in ElevenLabs: the
 voice, the speech model, speech recognition keywords, and call limits.
-Connect leaves them as they are. Set the agent's concurrency and daily call
+Connecting leaves them as they are. Set the agent's concurrency and daily call
 limits there: they bound what a leaked signed URL or a busy day can cost.
 
 The ElevenLabs agent follows the Radioso agent. When you change the agent's
@@ -135,25 +148,29 @@ you delete it there. Deleting the Radioso agent revokes the credential at once
 and deletes its ElevenLabs agent right after; the deletion never waits on
 ElevenLabs.
 
-When you replace the key with one for an account in another region, the
-next Connect creates a new ElevenLabs agent there and revokes the old agent's
-credential, so the old agent can no longer reach Radioso. The new key can't
-see the old account, so delete the old agent in that account yourself.
+When you replace the key with one for an account in another region, the next
+connect (**Reconnect** on the Voice card) creates a new ElevenLabs agent there
+and revokes the old agent's credential, so the old agent can no longer reach
+Radioso. The new key can't see the old account, so delete the old agent in that
+account yourself.
 
-Ray doesn't connect ElevenLabs: Connect creates an agent in your ElevenLabs
-account and issues a credential, which is yours to do from the Voice card.
-When Ray drafts a change to the `voice` block, it carries `runtime` over as
-stored. The API key is yours to enter in Settings; Ray never asks for it.
+Ray doesn't connect ElevenLabs: connecting creates an agent in your ElevenLabs
+account and issues a credential, which is yours to do from the Voice card's
+**Voice channel** switch or the website widget's calls switch. When Ray drafts
+a change to the `voice` block, it carries `runtime` over as stored. The API key
+is yours to enter in Settings; Ray never asks for it.
 
-#### When Connect fails
+#### When connecting fails
 
 The Voice card names what to fix. From the API, the same answers come from
-`POST /api/v1/agents/:agentId/voice/connection`:
+`POST /api/v1/agents/:agentId/voice/connection`, and from
+`PUT /api/v1/agents/:agentId/voice/channel` when it turns voice on with no
+ElevenLabs agent linked:
 
 | Status | `error.code` | What it means |
 |---|---|---|
 | `409` | `voice_vendor_key_missing` | No ElevenLabs key is stored under **Voice runtime keys**. |
-| `409` | `voice_connection_busy` | Another Connect or Disconnect of the agent is running, from another tab or teammate. This one changed nothing; try again when it finishes. |
+| `409` | `voice_connection_busy` | Another change to the agent's connection (a Connect, a Disconnect, or the **Voice channel** switch) is running, from another tab or teammate. This one changed nothing; try again when it finishes. |
 | `409` | `voice_vendor_key_unreadable` | A key is stored but no configured key decrypts it; see [Rotate the credential encryption key](../docs-portal/content/operators/self-hosting-operations.mdx#rotate-the-credential-encryption-key), or enter the key again. |
 | `422` | `voice_vendor_key_rejected` | No ElevenLabs region accepts the key. |
 | `422` | `voice_vendor_key_lacks_agents_permission` | ElevenLabs accepts the key, but it may not read and write agents. |
@@ -165,16 +182,18 @@ A failed attempt cleans up after itself: a credential issued for it is
 revoked again when ElevenLabs refuses the agent, and an ElevenLabs agent
 Radioso could not record is deleted again. When Radioso can't record a
 Reconnect that already gave the ElevenLabs agent a new credential, it revokes
-that credential and the one it replaced, so calls stop until the next Connect
-issues a fresh one. Select Connect again after any failure; it picks up
-whatever the last attempt left in place.
+that credential and the one it replaced, so calls stop until the next connect
+issues a fresh one. When the switch fails, voice stays off and the card says
+why. Turn the switch on again, or select **Reconnect**, after any failure; it
+picks up whatever the last attempt left in place.
 
-`GET`, `POST` and `DELETE /api/v1/agents/:agentId/voice/connection` are the
-Voice card's: dashboard sessions only, with the agent manage permission, and
-`X-Radioso-CSRF: 1` on `POST` and `DELETE`. One `POST` or `DELETE` of an
-agent runs at a time, across every backend instance; another one meanwhile
-answers `409 voice_connection_busy` at once. Each answers where the runtime
-stands:
+`GET`, `POST` and `DELETE /api/v1/agents/:agentId/voice/connection`, and
+`PUT /api/v1/agents/:agentId/voice/channel`, are the Voice card's: dashboard
+sessions only, with the agent manage permission, and `X-Radioso-CSRF: 1` on
+every write. One change to an agent's connection (a `POST`, a `DELETE` or a
+`PUT` of the channel) runs at a time, across every backend instance; another
+one meanwhile answers `409 voice_connection_busy` at once. Each answers where
+the runtime stands:
 
 ```json
 {
@@ -183,7 +202,8 @@ stands:
   "region": "eu",
   "vendorKey": "stored",
   "connectAvailable": true,
-  "runtime": { "vendor": "elevenlabs", "agentId": "agent_01jxk2v9qbe8n7r6t5w4", "region": "eu" }
+  "runtime": { "vendor": "elevenlabs", "agentId": "agent_01jxk2v9qbe8n7r6t5w4", "region": "eu" },
+  "enabled": true
 }
 ```
 
@@ -191,19 +211,33 @@ stands:
 maintains) or `connected_externally` (one you set up yourself; see
 [Use an ElevenLabs agent you set up yourself](#use-an-elevenlabs-agent-you-set-up-yourself)).
 `runtime` is the agent's `voice.runtime` as stored: a client that saves the
-whole `voice` block sends it back, or the save unbinds the agent. `DELETE`
-adds `vendorAgentLeft`, true when the ElevenLabs agent may still be in your
-account.
+whole `voice` block sends it back, or the save unbinds the agent. `enabled` is
+the agent's `voice.enabled` as stored, and a client that saves the whole
+`voice` block sends it back too. `DELETE` adds `vendorAgentLeft`, true when
+the ElevenLabs agent may still be in your account.
+
+`PUT /api/v1/agents/:agentId/voice/channel` takes `{ "enabled": true }` or
+`{ "enabled": false }` and answers the same object. Turning the channel on with
+no `runtime` bound connects exactly as `POST` does, then binds the runtime and
+turns voice on in one write; when the connect fails, voice stays off and the
+answer carries the codes in the table above. Turning it on with a `runtime`
+bound asks ElevenLabs for nothing. Turning it off keeps `runtime` and the
+ElevenLabs agent. A body that is not `{ "enabled": boolean }` answers `400`.
 
 Each connect, disconnect and language update logs one line with the agent,
 vendor, region, `operation` and `outcome` (`Voice runtime connected`,
 `Voice runtime connect failed`, `Voice runtime disconnect failed`,
+`Voice runtime channel_on failed`, `Voice runtime channel_off failed`,
 `Voice runtime language sync failed`, and an
 ElevenLabs agent left behind as `Voice runtime vendor agent left at the
-vendor`), never the key, the credential or a URL. The
-`voice_runtime_connection_total` metric counts them by `vendor`,
-`operation` and `outcome`, and the audit trail records
-`agent.voice_runtime.connected` and `agent.voice_runtime.disconnected`.
+vendor`), never the key, the credential or a URL. Switching the channel logs
+`Voice channel switched` with the agent, vendor and `operation` (`channel_on`
+or `channel_off`). The `voice_runtime_connection_total` metric counts each of
+these by `vendor`, `operation` and `outcome` (a switch counts as `switched`),
+and the audit trail records `agent.voice_runtime.connected` and
+`agent.voice_runtime.disconnected`. A switch that connects first also logs,
+counts and audits that connect as above when it succeeds; when it fails, the
+failure is the switch's, logged and counted under `channel_on`.
 
 ElevenLabs reaches this backend the same way every dashboard and embed
 request already does, through the dashboard's own `/backend` proxy, at
@@ -212,8 +246,8 @@ request carries the agent's bearer credential, so on a self-hosted
 deployment, `APP_BASE_URL` needs to be an HTTPS address the public internet
 can reach — not `localhost`, a private network address, a
 `.local`/`.internal` name, or a single-label host name like a Docker or
-Kubernetes service name; until it is, the Voice card says Connect is
-unavailable.
+Kubernetes service name; until it is, the Voice card can't connect ElevenLabs
+and a connect answers `503 voice_connection_unavailable`.
 
 ### Start sessions from Radioso
 
@@ -452,13 +486,17 @@ Radioso maintains, and leaves yours alone too.
 The website embed is a ready-made page for voice calls. Offering them is your
 choice, and it starts off:
 
-1. Get the agent's voice ready: the agent published, an ElevenLabs key under
-   **Voice runtime keys**, ElevenLabs connected under **Voice provider**, and
-   the **Voice channel** on, as above.
+1. Publish the agent. A call runs on its published release, so the switch in
+   the next step stays unavailable, naming the publication, until the agent is
+   published.
 2. On the agent's **Web chat** page, under **Website widget**, turn on
-   **Offer calls on the website**. You can turn it on once voice is ready;
-   until then it names the piece still missing. You can turn it off at any
-   time.
+   **Offer calls on the website**. On a published agent the switch also does
+   whatever voice setup is missing: it turns the **Voice channel** on, connects
+   ElevenLabs, and asks for the ElevenLabs key in place when the workspace has
+   none, the same way the Voice card's switch does (see
+   [Connect ElevenLabs](#connect-elevenlabs)). When Radioso cannot read the key
+   it stores, the switch stays unavailable and says to check
+   `CONNECTOR_ENCRYPTION_KEY`. You can turn it off at any time.
 
 The embed's composer then shows a microphone button, **Talk**, beside Send.
 The switch governs only the widget: a page of your own that starts sessions
@@ -656,7 +694,8 @@ it works, and one line to say if the answer takes far too long.
 You write them in the **Voice** card, below the Agent API card on the agent's
 **Channels → API** page:
 
-1. Turn on **Voice channel**.
+1. Turn on **Voice channel**. The switch saves at once and connects
+   ElevenLabs the first time (see [Connect ElevenLabs](#connect-elevenlabs)).
 2. Add a language, such as English. Each language carries its own lines.
 3. Under **Bridge lines**, add **Check** lines, which the agent says while it
    looks an answer up, and **Acknowledge** lines, which it says inside a
@@ -680,9 +719,9 @@ The same card holds the agent's **Quick replies**: the lines it says word for
 word to a greeting, thanks, farewell, or acknowledgement, in chat as well as
 on calls. The card saves both blocks together.
 
-Ray can make the same change. Ask it to turn voice on or to add a bridge line,
-and it drafts the whole block with `propose_agent_setting` for you to review
-and apply.
+Ray can draft the same lines. Ask it to add a bridge line, and it drafts the
+whole block with `propose_agent_setting` for you to review and apply. Turning
+voice on is the **Voice channel** switch's, since it may connect ElevenLabs.
 
 The card writes the agent's `voice` settings block, which you can also send
 to the agent settings API yourself:
@@ -1711,9 +1750,10 @@ stay there until you delete them in ElevenLabs.
 The recording stays in the data residency region of the ElevenLabs account
 the agent is connected to, and Radioso reads and deletes it on that region's
 host only. For a workspace whose data must stay in the EU, store the key of
-an ElevenLabs account on EU data residency and connect: Radioso finds the
-region from the key, and the Voice card reads **recordings stay in the
-European Union**. A US account keeps EU callers' recordings in the US.
+an ElevenLabs account on EU data residency and turn on the agent's **Voice
+channel**: Radioso finds the region from the key, and the Voice card reads
+**recordings stay in the European Union**. A US account keeps EU callers'
+recordings in the US.
 
 ### The recording notice
 

@@ -11,7 +11,8 @@ overrides:
   '@types/react': 19.2.14
   '@types/react-dom': 19.2.3
   '@tootallnate/once': 3.0.1
-  '@xmldom/xmldom': 0.9.12
+  '@xmldom/xmldom@<0.9.0': 0.8.15
+  '@xmldom/xmldom@>=0.9.0': 0.9.12
   adm-zip@<0.6.1: ^0.6.1
   body-parser@<1.20.9: ~1.20.9
   body-parser@>=2.0.0 <2.4.0: ^2.4.0
@@ -4314,6 +4315,10 @@ packages:
   '@vladfrangu/async_event_emitter@2.4.7':
     resolution: {integrity: sha512-Xfe6rpCTxSxfbswi/W/Pz7zp1WWSNn4A0eW4mLkQUewCrXXtMj31lCg+iQyTkh/CkusZSq9eDflu7tjEDXUY6g==}
     engines: {node: '>=v14.0.0', npm: '>=7.0.0'}
+
+  '@xmldom/xmldom@0.8.15':
+    resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
+    engines: {node: '>=10.0.0'}
 
   '@xmldom/xmldom@0.9.12':
     resolution: {integrity: sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==}
@@ -13756,6 +13761,8 @@ snapshots:
 
   '@vladfrangu/async_event_emitter@2.4.7': {}
 
+  '@xmldom/xmldom@0.8.15': {}
+
   '@xmldom/xmldom@0.9.12': {}
 
   '@xobotyi/scrollbar-width@1.9.5': {}
@@ -17195,7 +17202,7 @@ snapshots:
 
   mammoth@1.12.1:
     dependencies:
-      '@xmldom/xmldom': 0.9.12
+      '@xmldom/xmldom': 0.8.15
       argparse: 1.0.10
       base64-js: 1.5.1
       bluebird: 3.4.7

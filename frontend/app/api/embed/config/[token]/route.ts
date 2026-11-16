@@ -1,3 +1,4 @@
+import { createEmbedConfigCache } from '../../../../../lib/server/embed-config-cache'
 import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
 import { relayRateLimitResponseHeaders } from '../../../../../lib/server/rate-limit-headers'
 
@@ -19,9 +20,9 @@ const BASE_CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
   Vary: 'Origin',
 }
-// Short browser TTL, modest shared/edge TTL. Operator settings changes propagate
-// immediately via CDN cache invalidation on save, so we don't need a long
-// serve-stale window here.
+// Short browser TTL, modest shared/edge TTL. Operator settings changes reach the
+// CDN through cache invalidation on save (then within this instance's own hold,
+// below), so we don't need a long serve-stale window here.
 const CDN_CACHE_CONTROL = 'public, max-age=60, s-maxage=300'
 
 const resolveOrigin = (value: string | null) => {
@@ -44,6 +45,21 @@ const corsHeaders = (origin: string | null, extra?: HeadersInit) => {
   return headers
 }
 
+// Each host page view fetches this config, so without a CDN every page view
+// would reach the backend. This instance holds admitted answers for half a
+// minute: an operator's change shows within that, plus the browser's minute.
+const embedConfigCache = createEmbedConfigCache({ ttlMs: 30_000, maxEntries: 1_000 })
+
+// A held answer may predate a settings change the backend has since invalidated
+// on the CDN, so only the browser may keep it: a CDN fills from fresh answers.
+const HELD_CACHE_CONTROL = 'private, max-age=60'
+
+const admittedConfigResponse = (origin: string | null, body: string, contentType: string, cacheControl: string) =>
+  new Response(body, {
+    status: 200,
+    headers: corsHeaders(origin, { 'Content-Type': contentType, 'Cache-Control': cacheControl }),
+  })
+
 export async function OPTIONS(request: Request) {
   const origin = resolveOrigin(request.headers.get('origin'))
   return new Response(null, { status: 204, headers: corsHeaders(origin) })
@@ -55,6 +71,10 @@ export async function GET(
 ) {
   const { token } = await context.params
   const requestOrigin = resolveOrigin(request.headers.get('origin'))
+  const held = embedConfigCache.get(token, requestOrigin)
+  if (held) {
+    return admittedConfigResponse(requestOrigin, held.body, held.contentType, HELD_CACHE_CONTROL)
+  }
   const upstreamMethod = 'GET'
   const upstreamPath = `/api/v1/public/chat/${encodeURIComponent(token)}/embed-config`
 
@@ -69,21 +89,19 @@ export async function GET(
       },
     })
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
-    const responseHeaders = new Headers({
-      'Content-Type': contentType,
-      'Cache-Control': upstream.ok ? CDN_CACHE_CONTROL : 'no-store',
-    })
-
-    if (!upstream.ok) {
-      relayRateLimitResponseHeaders(upstream.headers, responseHeaders)
+    if (upstream.ok) {
+      const body = await upstream.text()
+      embedConfigCache.set(token, requestOrigin, { body, contentType })
+      return admittedConfigResponse(requestOrigin, body, contentType, CDN_CACHE_CONTROL)
     }
 
+    const responseHeaders = new Headers({ 'Content-Type': contentType, 'Cache-Control': 'no-store' })
+    relayRateLimitResponseHeaders(upstream.headers, responseHeaders)
+
+    // A rejected origin gets no `Access-Control-Allow-Origin` and is never cached.
     return new Response(upstream.body, {
       status: upstream.status,
-      // Only reflect the origin (and allow caching) when the backend accepted
-      // it. A rejected origin gets no `Access-Control-Allow-Origin` and is never
-      // cached.
-      headers: corsHeaders(upstream.ok ? requestOrigin : null, responseHeaders),
+      headers: corsHeaders(null, responseHeaders),
     })
   } catch (error) {
     const message =

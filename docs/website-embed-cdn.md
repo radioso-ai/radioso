@@ -1,7 +1,7 @@
 ---
 title: "Website embed assets on Cloud CDN"
 description: "Architecture for caching embed launcher and config on Cloud CDN to avoid cold-starting the frontend on every page view."
-last_updated: 2026-09-28
+last_updated: 2026-11-16
 ---
 
 # Website embed assets on Cloud CDN
@@ -17,6 +17,14 @@ page that hosts it:
 Both are fetched on page load, before the visitor opens the chat. The frontend
 runs on Cloud Run and scales to zero, so without a cache these requests cold-start
 it on every external page view.
+
+The chat window itself, `/embed-frame`, loads when a visitor points at, presses,
+or focuses the launcher or its greeting teaser, so it stays out of that
+per-page-view traffic. Each frontend instance also holds admitted config answers
+for 30 seconds, so even without a CDN a busy site's page views mostly stop at the
+frontend: the backend sees one refresh per site and instance every 30 seconds,
+plus whatever arrives during that refresh's round trip. The CDN takes the
+remaining requests off Cloud Run.
 
 This setup puts those two paths behind an external HTTPS load balancer with
 Cloud CDN, so the edge serves them and the traffic stays off Cloud Run. It is
@@ -90,6 +98,10 @@ path when an agent's settings change.
   `/api/embed/config/<token>` after a successful update.
 - The call is best effort: it never blocks or fails the settings save. A CDN
   hiccup just means the change waits for the TTL instead.
+- A frontend instance can still hold the answer from before the change for up
+  to 30 seconds. It sends held answers as `private`, so the CDN never stores one
+  and refills only from fresh backend answers. Visitors see the change within
+  those 30 seconds, plus up to the minute their browser keeps its copy.
 - When the variables are unset (local, tests, no-CDN deployments), the
   invalidator is a no-op.
 

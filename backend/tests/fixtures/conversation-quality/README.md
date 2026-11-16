@@ -36,13 +36,15 @@ Two layers (see `src/modules/eval/suite/`):
   drops them unless a case carries a tag passed with `--judge-tag`; those are graded on the
   cheapest text model the configuration resolves (the rerank tier, or `--judge-model`).
   `evals`, `evals:ci`, `evals:update-baseline`, and the nightly workflow all pass
-  `--judge-tag quick-reply --judge-tag unavailable --judge-tag offer-scope`, so the quick-reply
-  judge assertions, the judges of the two `unavailable` cases, and the judges of the three
-  `offer-scope` cases gate every run, and the baseline is recorded the way the gate runs. No
+  `--judge-tag quick-reply --judge-tag unavailable --judge-tag offer-scope --judge-tag photo-turn`,
+  so the quick-reply judge assertions, the judges of the two `unavailable` cases, the judges of
+  the three `offer-scope` cases, and the judges of the three `photo-turn` cases gate every run,
+  and the baseline is recorded the way the gate runs. No
   deterministic check can tell an invented page summary from a real one
   (`page-read-metadata-only-summary-unavailable`), a date the reply made up from one it read
-  (`routine-step-without-sources-keeps-visitor-dates-theirs`), or an offer to write the
-  visitor's email from a reply that only gives the contact (`offer-scope-*`). A run refuses any
+  (`routine-step-without-sources-keeps-visitor-dates-theirs`), an offer to write the
+  visitor's email from a reply that only gives the contact (`offer-scope-*`), or a course
+  offered as the closest from one passed off as a match (`photo-turn-*`). A run refuses any
   case left with nothing to gate, so a filtered run that selects a judge-only case must grade its
   tag too.
 
@@ -66,6 +68,32 @@ Run only these cases with:
 
 ```bash
 pnpm run evals -- --tag quick-reply
+```
+
+## Photo-turn cases
+
+The `photo-turn` cases send a message with a photo already read: the query is the typed text
+followed by the photo's `<attached_photo>` block, rendered with `renderVisitorImageTurn` as the
+chat door renders it, so no vision call runs. Each case gives the agent a course centre's
+instruction that lists the contacts for a question it cannot answer, which pulls a reply toward
+a bare decline.
+
+- `photo-turn-unmatched-photo-says-what-it-saw` sends a pixel-art pyramid and asks for similar
+  courses. No course is about it. The reply must name what the photo shows (a regex checks for
+  "pyramid"), then offer the closest course as the closest, or ask one question about what the
+  visitor is after, before any contacts. The judge fails an invented match and a reply that
+  only declines and gives the contacts.
+- `photo-turn-matching-photo-answers` sends yoga on an alpine meadow and asks which course is
+  like it. The reply names and cites the mountain yoga course.
+- `photo-turn-unreadable-photo-asks-again` sends a photo that could not be read. The reply says
+  so and asks for a description or another photo, and never guesses at the photo.
+
+`tests/unit/eval-suite/photo-turn-cases.test.ts` drives the first case through the chat pipeline
+with scripted replies: the answer model gets the attached-photo rules, a bare decline fails the
+case, and a reply that names the photo and offers the closest course passes it.
+
+```bash
+pnpm run evals -- --tag photo-turn
 ```
 
 ## Withheld-figures cases

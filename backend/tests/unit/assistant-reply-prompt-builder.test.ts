@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import { buildAssistantReplyPrompt } from "../../src/modules/chat/services/assistantReplyPromptBuilder.js";
 import { CHAT_TURN_ROUTE } from "../../src/shared/domain/chatTurnRoute.js";
+import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 
 const historyMessage = (overrides: Partial<MessageRecord>): MessageRecord => ({
   id: "message-1",
@@ -129,5 +130,23 @@ describe("non-retrieval answer prompt builder", () => {
 
     expect(prompt).toContain("The following behavioral directives govern the visible answer you write");
     expect(prompt).toContain("Prefer short paragraphs and avoid unnecessary structure.");
+  });
+
+  // A photo turn the planner sends straight to a reply, such as one whose photo could not be
+  // read, gets the same attached-photo rules as the grounded answer and the focused decline.
+  it("carries the attached-photo rules after the question, ahead of the turn's steering", () => {
+    const photos = loadPromptTemplate("chat/attached-photos.md");
+    const steering = { id: "d1", action: "Prefer short paragraphs.", source: "directive" as const, lifespan: "response" as const };
+    const prompt = buildAssistantReplyPrompt({
+      route: CHAT_TURN_ROUTE.DIRECT,
+      answerInstructionBlock: "Configured response instructions:\nHelp visitors choose courses.",
+      history: [],
+      query: 'something like this?\n<attached_photo index="1" status="unreadable"/>',
+      steering: [steering],
+    });
+
+    expect(prompt).toContain(photos);
+    expect(prompt.indexOf('status="unreadable"/>')).toBeLessThan(prompt.indexOf(photos));
+    expect(prompt.indexOf(photos)).toBeLessThan(prompt.indexOf(steering.action));
   });
 });

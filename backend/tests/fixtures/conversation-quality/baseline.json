@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T00:20:11.250Z",
+  "generatedAt": "2026-11-16T17:59:58.786Z",
   "passThreshold": 1,
   "cases": {
     "directive-refund-empathy": {
@@ -361,6 +361,21 @@
       "status": "pass",
       "passRate": 1,
       "samples": 5
+    },
+    "photo-turn-matching-photo-answers": {
+      "status": "fail",
+      "passRate": 0.6666666666666666,
+      "samples": 3
+    },
+    "photo-turn-unmatched-photo-says-what-it-saw": {
+      "status": "fail",
+      "passRate": 0.6666666666666666,
+      "samples": 3
+    },
+    "photo-turn-unreadable-photo-asks-again": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
     }
   }
 }

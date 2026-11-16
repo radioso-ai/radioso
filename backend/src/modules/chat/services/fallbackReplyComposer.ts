@@ -146,14 +146,16 @@ const readComposedDecline = (raw: string | undefined): ComposedDecline => {
   };
 };
 
+// The grounded answer carries the same attached-photo rules, so a decline either path writes
+// says what the visitor's photo shows before redirecting.
 const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
   appendRoutineLeadBack(
     appendSteeringBlock(
-      renderPromptTemplate("chat/grounded-miss.md", {
+      `${renderPromptTemplate("chat/grounded-miss.md", {
         decline_rules: loadPromptTemplate("chat/grounded-decline-rules.md"),
         locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
         answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
-      }),
+      })}\n\n${loadPromptTemplate("chat/attached-photos.md")}`,
       input.steering,
     ),
     input.steering,

@@ -361,6 +361,15 @@ imports from `services/`.
   `services/conversationProcessTurnInput.ts`: adapters from prepared chat turns
   into the reusable conversation-engine contracts.
 - `services/groundedAnswerPromptComposer.ts`: grounded answer prompt assembly.
+  Its standing blocks close with `prompts/chat/attached-photos.md`, which the
+  coverage head and response guidance point to; the focused decline
+  (`fallbackReplyComposer.ts`) and the direct reply
+  (`assistantReplyPromptBuilder.ts`) append it too: a request for something like a
+  photo is about what its description shows, and a reply to one the evidence does
+  not answer says what the photo shows before it offers the closest supported
+  thing or asks one question. It sits after the envelope: placed earlier, the mini
+  model drops the clause that says what the photo shows.
+  Test: `tests/unit/grounded-answer-prompt-contract.test.ts`.
 
 ## Common Change Paths
 
@@ -1005,7 +1014,7 @@ imports from `services/`.
   Directive names stay a sorted enum of this turn's candidate names, the same set
   turn to turn for one agent configuration. The grounded answer composer
   (`groundedAnswerPromptComposer.ts`) follows the same rule: base instructions,
-  coverage, and envelope blocks form its reusable prefix, and turn steering,
+  coverage, envelope, and attached-photo blocks form its reusable prefix, and turn steering,
   offers, follow-up rules, and the lead-back follow.
   `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
   gate/state/candidate/prompt bypass without forcing lazy prompt construction.

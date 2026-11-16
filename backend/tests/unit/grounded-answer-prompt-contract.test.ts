@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import { composeGroundedAnswerSystemPrompt } from "../../src/modules/chat/services/groundedAnswerPromptComposer.js";
+import { groundedMissPrompt } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { appendRoutineLeadBack } from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
 import { DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { Routine } from "@radioso/conversation-contract";
@@ -209,6 +210,7 @@ describe("grounded answer prompt contract", () => {
       loadPromptTemplate("chat/answer-coverage-head.md"),
       loadPromptTemplate("chat/answer-coverage-response-guidance.md"),
       loadPromptTemplate("chat/answer-envelope.md"),
+      loadPromptTemplate("chat/attached-photos.md"),
     ].join("\n\n");
     expect(result.reusableInputBoundary).toEqual({
       stableSystemPrefix,
@@ -238,7 +240,7 @@ describe("grounded answer prompt contract", () => {
     const stable = steered.reusableInputBoundary?.stableSystemPrefix;
     expect(stable).toBeDefined();
     expect(plain.reusableInputBoundary?.stableSystemPrefix).toBe(stable);
-    for (const standing of ["OPERATOR INSTRUCTIONS", "Coverage verdict", "Coverage-aware response", "Output envelope"]) {
+    for (const standing of ["OPERATOR INSTRUCTIONS", "Coverage verdict", "Coverage-aware response", "Attached photos", "Output envelope"]) {
       expect(stable).toContain(standing);
     }
     for (const turnSpecific of ["Mention the spring retreat.", "Retrieval sense offer", "Follow-up field rules", "Ask for the arrival date."]) {
@@ -413,6 +415,47 @@ describe("grounded answer prompt contract", () => {
     expect(steering).toMatch(/one limits what the answer says and another how it says it/i);
   });
 
+  // A turn's text carries one block per photo the visitor attached. On a miss the reply says
+  // what the photo shows before anything else, so the visitor knows it was understood, and
+  // both prompts that can write that reply read the same one explanation of the blocks.
+  it("explains attached photos once, in a block the grounded answer and the focused decline both carry", () => {
+    const photos = loadPromptTemplate("chat/attached-photos.md");
+    const grounded = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 0,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+    });
+    const focused = groundedMissPrompt({
+      query: 'are there any similar courses?\n<attached_photo index="1">A stepped stone pyramid under a night sky.</attached_photo>',
+      usageContext: { workspaceId: "ws", surface: "assistant", operation: "answer", attemptKey: "grounded_miss" },
+    });
+
+    expect(photos).toContain('<attached_photo index="n">');
+    expect(photos).toContain('status="unreadable"');
+    // Standing on every grounded call, so it stays in the reusable prefix. It closes the
+    // standing blocks, after the envelope's decline examples, and the coverage blocks above
+    // point to it: placed earlier, live samples dropped what the photo shows from the reply.
+    expect(grounded.reusableInputBoundary?.stableSystemPrefix.endsWith(photos)).toBe(true);
+    expect(loadPromptTemplate("chat/answer-coverage-head.md")).toContain("Attached photos below");
+    expect(loadPromptTemplate("chat/answer-coverage-response-guidance.md")).toContain("Attached photos below");
+    expect(focused.systemPrompt.endsWith(photos)).toBe(true);
+    expect(focused.prompt).toContain("<attached_photo");
+    // The block is the one place a prompt explains the photo blocks.
+    for (const file of [
+      "retrieval/answer.md",
+      "chat/grounded-inline-decline.md",
+      "chat/grounded-decline-rules.md",
+      "chat/grounded-miss.md",
+      "chat/answer-coverage-head.md",
+      "chat/answer-coverage-response-guidance.md",
+      "chat/answer-envelope.md",
+    ]) {
+      expect(loadPromptTemplate(file)).not.toContain("attached_photo");
+    }
+  });
+
   it("scopes decline rules by turn type: compact inline guard on grounded, full rules on focused miss", () => {
     const main = new PromptBuilder().build({
       timeZone: "UTC",
@@ -545,6 +588,8 @@ describe("grounded answer prompt contract", () => {
     // answers a request about that subject.
     // Widened in #1575: the answer commits to each directive rule before writing, and a
     // directive may withhold part of an answered request.
+    // Widened with the attached-photo block: a turn carrying a photo's description gets a
+    // reply that says what the photo shows before it offers or asks, on a miss too.
     const groundedWithSuggestions = stack(
       "retrieval/answer.md",
       "retrieval/answer-layout-written.md",
@@ -552,13 +597,14 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-envelope.md",
       "chat/answer-coverage-head.md",
       "chat/answer-coverage-response-guidance.md",
+      "chat/attached-photos.md",
       "chat/answer-suggestions.md",
     );
     expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1900);
     // Widened with the layout rule above (three or more items become a Markdown list).
-    expect(groundedWithSuggestions).toBeLessThanOrEqual(2330);
+    expect(groundedWithSuggestions).toBeLessThanOrEqual(2680);
 
-    // Grounded answer, suggestions disabled. Widened in #1575 with the sheet above.
+    // Grounded answer, suggestions disabled. Widened in #1575 and for photos with the sheet above.
     const groundedNoSuggestions = stack(
       "retrieval/answer.md",
       "retrieval/answer-layout-written.md",
@@ -566,14 +612,16 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-envelope.md",
       "chat/answer-coverage-head.md",
       "chat/answer-coverage-response-guidance.md",
+      "chat/attached-photos.md",
     );
     expect(groundedNoSuggestions).toBeGreaterThanOrEqual(1280);
-    expect(groundedNoSuggestions).toBeLessThanOrEqual(1700);
+    expect(groundedNoSuggestions).toBeLessThanOrEqual(2050);
 
-    // Focused decline / grounded-miss owns the full decline ruleset.
-    const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md");
+    // Focused decline / grounded-miss owns the full decline ruleset, and carries the same
+    // attached-photo block as the grounded answer.
+    const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md", "chat/attached-photos.md");
     expect(focusedDecline).toBeGreaterThanOrEqual(300);
-    expect(focusedDecline).toBeLessThanOrEqual(460);
+    expect(focusedDecline).toBeLessThanOrEqual(740);
 
     // Clarification and direct/non-retrieval turns each stay lean and, by AC,
     // carry no citation/link/suggestion authoring rules.
@@ -583,7 +631,9 @@ describe("grounded answer prompt contract", () => {
     // history. Folded into one sentence on the action bullet, the reply to an accepted
     // offer still drafted the email in 3 of 5 samples (`offer-scope-*` eval cases).
     expect(stack("chat/non-retrieval-answer.md")).toBeLessThanOrEqual(780);
-    for (const file of ["chat/clarification-question.md", "chat/non-retrieval-answer.md", "chat/grounded-miss.md"]) {
+    // A direct reply also carries the attached-photo block, as the two grounded sheets do.
+    expect(stack("chat/non-retrieval-answer.md", "chat/attached-photos.md")).toBeLessThanOrEqual(1070);
+    for (const file of ["chat/clarification-question.md", "chat/non-retrieval-answer.md", "chat/grounded-miss.md", "chat/attached-photos.md"]) {
       const template = loadPromptTemplate(file);
       expect(template).not.toMatch(/append a sourced assertion/i);
       expect(template).not.toMatch(/\[\[1\]\]/);

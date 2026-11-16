@@ -85,11 +85,15 @@ export const composeGroundedAnswerSystemPrompt = (
   // Standing blocks first: they read the same on every turn of this agent, so they
   // form the reusable prefix. The model commits its own coverage verdict as the
   // envelope's head rather than receiving one (#1260), so both coverage blocks
-  // render on every grounded call.
+  // render on every grounded call. The attached-photo rules close the standing blocks, which
+  // the coverage blocks point to: the reply to a photo the evidence does not answer is
+  // written in their order only when they sit nearest the answer, after the envelope's
+  // decline examples. Static, so they stay in the prefix.
   const standing = [
     renderPromptTemplate("chat/answer-coverage-head.md", {}),
     renderPromptTemplate("chat/answer-coverage-response-guidance.md", {}),
     renderPromptTemplate("chat/answer-envelope.md", {}),
+    renderPromptTemplate("chat/attached-photos.md", {}),
   ].reduce(joinBlocks, base);
 
   // Turn-specific blocks follow. Answer steering stays ahead of the follow-up rules,

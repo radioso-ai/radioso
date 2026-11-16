@@ -7,7 +7,7 @@ const escapeMarkup = (text: string): string => text.replace(/[<>]/g, (character)
  * The turn text a message with photos runs on: what the visitor typed, then one
  * `<attached_photo index="n">` block per photo with what the agent's model read in it, or
  * `<attached_photo index="n" status="unreadable"/>` when it could not. The tag names what it holds,
- * so the answering model reads it with no prompt explaining it; structural and language-neutral, so
+ * and the answering prompts explain it once (`prompts/chat/attached-photos.md`); structural and language-neutral, so
  * every transcript reader (history, summaries, facets, export, eval capture) carries the photo's
  * text form as it carries a voice transcript. The structured form, which the UIs render, is the
  * message's `imageInput` metadata.

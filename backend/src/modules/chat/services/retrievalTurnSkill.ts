@@ -59,6 +59,7 @@ import {
   type EnvelopeAnswer,
   type PageContextAnswer,
 } from "./groundedAnswerDeclines.js";
+import { turnCarriesPhotos } from "./attachedPhotoRules.js";
 import {
   combineAbortSignals,
   CoverageVerdictYieldedError,
@@ -169,11 +170,7 @@ export class RetrievalAnswerComposer {
    * says; when the page envelope committed a decline without text, that commitment does,
    * exactly as on the grounded path.
    */
-  private zeroEvidenceDeclineReason(
-    pageAnswer: PageContextAnswer,
-    decline: ComposedDecline,
-    stream: boolean,
-  ): TurnDeclineReason {
+  private zeroEvidenceDeclineReason(pageAnswer: PageContextAnswer, decline: ComposedDecline, stream: boolean): TurnDeclineReason {
     if (pageAnswer.kind !== "blank_decline") {
       return decline.declineReason;
     }
@@ -213,6 +210,7 @@ export class RetrievalAnswerComposer {
       noSupportHandsOff: session.agent.handoffOnRetrievalMiss === true,
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
       presentHeadOffered,
+      photosAttached: turnCarriesPhotos(session.userMessage),
     });
     if (session.directiveSteering) {
       // Whether the follow-up question generator's block went into the prompt at all.
@@ -443,6 +441,7 @@ export class RetrievalAnswerComposer {
     signal?: AbortSignal,
   ): Promise<ChatPresentedAnswer> {
     const linkGuard = new AnswerLinkGuard();
+    const photosAttached = turnCarriesPhotos(session.userMessage);
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
@@ -491,6 +490,7 @@ export class RetrievalAnswerComposer {
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
           steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
           pendingRoutineStep: declinePendingRoutineStep(session),
+          photosAttached,
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
           ...(signal ? { signal } : {}),
@@ -607,6 +607,7 @@ export class RetrievalAnswerComposer {
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], knownAssessment),
       pendingRoutineStep: declinePendingRoutineStep(session),
+      photosAttached: turnCarriesPhotos(session.userMessage),
       // This is a model-authored scope-policy response, not an ordinary answer.
       // It is the refusal path, so it stays on the workspace chat tier rather
       // than the agent override that governs the turn's own calls — see the rule
@@ -635,6 +636,7 @@ export class RetrievalAnswerComposer {
     coverageVerdict?: RetrievalCoverageVerdictSink,
   ): AsyncGenerator<string, TurnStreamResult> {
     const linkGuard = new AnswerLinkGuard();
+    const photosAttached = turnCarriesPhotos(session.userMessage);
     let rawAnswer = "";
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
@@ -686,6 +688,7 @@ export class RetrievalAnswerComposer {
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
           steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
           pendingRoutineStep: declinePendingRoutineStep(session),
+          photosAttached,
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
           ...(signal ? { signal } : {}),

@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { ChatPresentedAnswer } from "../../../src/modules/chat/services/chatAnswerPresenter.js";
+import type { PreparedSession } from "../../../src/modules/chat/services/chatSessionPreparer.js";
+import { attachedPhotoRules } from "../../../src/modules/chat/services/attachedPhotoRules.js";
+import { SKILL_TURN_OUTCOME } from "../../../src/modules/chat/services/assistantTurnOutcomeTypes.js";
+import { retrievalMissHandoffForTurn } from "../../../src/modules/chat/services/handoffOwnership.js";
 import { runConversationQualitySuite, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
-import { loadPromptTemplate } from "../../../src/shared/infra/prompts/promptLoader.js";
 import { conversationQualityCases } from "../../fixtures/conversation-quality/index.js";
 import { ARTS_WEEKEND_DOC_ID, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
 import { canonicalAnswerEnvelope, conversationQualityChatHarness } from "../../support/conversationQualityChatHarness.js";
@@ -21,7 +25,8 @@ describe("photo-turn cases through the chat pipeline", () => {
     const answerCall = vi.mocked(harness.chatGateway.answer).mock.calls
       .map(([input]) => input)
       .find((input) => input.systemPrompt?.includes("Output envelope"));
-    return { report: reports[0], answerCall };
+    const [assistantMessage] = [...harness.messageRepository.items.values()].flat().filter((message) => message.role === "assistant");
+    return { report: reports[0], answerCall, assistantMessage };
   };
 
   it("runs on the photo's description, and gives the answer model the attached-photo rules", async () => {
@@ -35,7 +40,7 @@ describe("photo-turn cases through the chat pipeline", () => {
     }));
 
     expect(unmatchedCase.query).toMatch(/^are there any similar courses\?\n<attached_photo index="1">Pixel-art illustration of a stepped stone pyramid/);
-    expect(answerCall?.systemPrompt).toContain(loadPromptTemplate("chat/attached-photos.md"));
+    expect(answerCall?.systemPrompt).toContain(attachedPhotoRules("grounded"));
   });
 
   it("fails a bare decline that never says what the photo showed and goes straight to the contacts", async () => {
@@ -49,6 +54,39 @@ describe("photo-turn cases through the chat pipeline", () => {
     }));
 
     expect(report?.status).toBe("fail");
+  });
+
+  // The photo rules keep a decline uncited, so a photo miss the model commits as `no_support`
+  // is still a decline: it keeps its reason and the agent's hand-off on a miss.
+  it("keeps an uncited photo decline a decline, with the hand-off on a miss", async () => {
+    const decline = (claims: number[][], answer: string) => canonicalAnswerEnvelope({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "courses like a pixel-art pyramid",
+      outcome: "no_support",
+      answer,
+      claims,
+      grounding: "degraded",
+    });
+    const { report, assistantMessage } = await runCase(decline(
+      [],
+      "That looks like a pixel-art stepped pyramid under a night sky. Are you after a theme, a place, or a style of practice?",
+    ));
+    const cited = await runCase(decline([[1]], "That looks like a pixel-art stepped pyramid. The closest we have is the creative-arts weekend[[1]]."));
+
+    expect(report?.status).toBe("pass");
+    expect(assistantMessage?.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
+    // A decline that cites a Result is read as a degraded answer and never hands off.
+    expect(cited.assistantMessage?.skillOutcome).not.toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
+    const handoff = retrievalMissHandoffForTurn({
+      session: {
+        agent: { handoffOnRetrievalMiss: true, id: "agent-1" },
+        conversation: { id: "conversation-1" },
+        userMessage: { id: "message-1" },
+      } as unknown as PreparedSession,
+      presentation: { skillOutcome: assistantMessage?.skillOutcome } as ChatPresentedAnswer,
+      workspaceId: "ws",
+    });
+    expect(handoff.ownershipHandoff).toEqual({ reason: "retrieval_miss" });
   });
 
   it("passes a reply that says what the photo shows and offers the closest course as the closest", async () => {

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
-import { buildAssistantReplyPrompt } from "../../src/modules/chat/services/assistantReplyPromptBuilder.js";
+import { buildAssistantReplyPrompt, buildSkillResultReplyPrompt } from "../../src/modules/chat/services/assistantReplyPromptBuilder.js";
+import { attachedPhotoRules } from "../../src/modules/chat/services/attachedPhotoRules.js";
 import { CHAT_TURN_ROUTE } from "../../src/shared/domain/chatTurnRoute.js";
-import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 
 const historyMessage = (overrides: Partial<MessageRecord>): MessageRecord => ({
   id: "message-1",
@@ -132,21 +132,27 @@ describe("non-retrieval answer prompt builder", () => {
     expect(prompt).toContain("Prefer short paragraphs and avoid unnecessary structure.");
   });
 
-  // A photo turn the planner sends straight to a reply, such as one whose photo could not be
-  // read, gets the same attached-photo rules as the grounded answer and the focused decline.
-  it("carries the attached-photo rules after the question, ahead of the turn's steering", () => {
-    const photos = loadPromptTemplate("chat/attached-photos.md");
+  // A photo turn the planner answers directly, or from a bound skill's result, gets the
+  // attached-photo rules after the question and ahead of the turn's steering; any other turn
+  // gets the prompt it always had.
+  it("adds the attached-photo rules to a photo turn's direct and skill-result replies only", () => {
     const steering = { id: "d1", action: "Prefer short paragraphs.", source: "directive" as const, lifespan: "response" as const };
-    const prompt = buildAssistantReplyPrompt({
+    const input = {
       route: CHAT_TURN_ROUTE.DIRECT,
       answerInstructionBlock: "Configured response instructions:\nHelp visitors choose courses.",
       history: [],
       query: 'something like this?\n<attached_photo index="1" status="unreadable"/>',
       steering: [steering],
-    });
+    };
+    const rules = attachedPhotoRules("reply");
 
-    expect(prompt).toContain(photos);
-    expect(prompt.indexOf('status="unreadable"/>')).toBeLessThan(prompt.indexOf(photos));
-    expect(prompt.indexOf(photos)).toBeLessThan(prompt.indexOf(steering.action));
+    for (const build of [buildAssistantReplyPrompt, (turn: typeof input & { photosAttached?: boolean }) => buildSkillResultReplyPrompt(turn, "Courses: mountain yoga.")]) {
+      const plain = build(input);
+      const photo = build({ ...input, photosAttached: true });
+      expect(plain).not.toContain(rules);
+      expect(build({ ...input, photosAttached: false })).toBe(plain);
+      expect(photo.indexOf('status="unreadable"/>')).toBeLessThan(photo.indexOf(rules));
+      expect(photo.indexOf(rules)).toBeLessThan(photo.indexOf(steering.action));
+    }
   });
 });

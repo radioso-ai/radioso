@@ -8,6 +8,6 @@ export {
   type VisitorImageObjectStore,
   type VisitorImageRejection,
 } from "./domain.js";
-export { renderVisitorImageTurn } from "./services/turnText.js";
+export { renderVisitorImageTurn, turnTextCarriesPhotos } from "./services/turnText.js";
 export { recordVisitorImageUpload } from "./services/visitorImageMetrics.js";
 export type { VisitorImageService, VisitorImageUploadResult } from "./services/visitorImageService.js";

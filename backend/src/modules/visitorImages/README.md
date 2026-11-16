@@ -135,8 +135,9 @@ a test: a visitor's photo as `conversation.image_viewed`, any other as
    `<attached_photo index="n">reading</attached_photo>` (only `<` and `>`
    escaped) or `<attached_photo index="n" status="unreadable"/>` after the typed
    text, and runs the turn. Routing, slots and retrieval read the blocks as text.
-   The grounded answer, the focused decline and the direct reply carry one
-   explanation of them, `prompts/chat/attached-photos.md`: on a miss the reply
+   `turnTextCarriesPhotos` recognises the blocks by their tag, for text that
+   arrives without `imageInput`. Chat explains the blocks only on a turn that
+   carries them (`modules/chat/services/attachedPhotoRules.ts`): on a miss the reply
    says what the photo shows, then offers the closest supported thing or asks one
    question, and an unreadable photo gets a request to describe it or send
    another.

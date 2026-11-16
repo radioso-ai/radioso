@@ -1,0 +1,1 @@
+When your findings hold something related, the one or two closest things they support, named as the closest you have; otherwise one short question about what they are after, or the one invitation back to the configured scope your rules above describe.

@@ -1,10 +1,11 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { RoutinePendingStep, SteeringRule } from "../../../shared/domain/steeringRule.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
-import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
 import { appendRoutineLeadBack, appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
+import { attachedPhotoRules } from "./attachedPhotoRules.js";
 import type { TurnRouting } from "./turnRouter.js";
 import {
   renderPageContextCondition,
@@ -25,6 +26,8 @@ export interface AssistantReplyPromptInput {
   steering?: SteeringRule[];
   /** The step a routine that yielded this turn still waits on; the reply closes by pointing back to it. */
   pendingRoutineStep?: RoutinePendingStep;
+  /** The visitor's message carries photos, so the reply follows the rules for answering about one. */
+  photosAttached?: boolean;
 }
 
 /** The answer instructions, visitor context, summary, history, and question every reply prompt carries. */
@@ -45,14 +48,19 @@ const turnSectionVariables = (input: AssistantReplyPromptInput): Record<string, 
   };
 };
 
-/** Closes a reply prompt with the turn's steering and, when a routine yielded the turn, the lead-back to its step. */
+/**
+ * Closes a reply prompt with a photo turn's photo rules, the turn's steering and, when a routine
+ * yielded the turn, the lead-back to its step.
+ */
 const withTurnSteering = (prompt: string, input: AssistantReplyPromptInput): string =>
-  appendRoutineLeadBack(appendSteeringBlock(prompt, input.steering), input.steering, input.pendingRoutineStep);
+  appendRoutineLeadBack(
+    appendSteeringBlock(input.photosAttached ? `${prompt}\n\n${attachedPhotoRules("reply")}` : prompt, input.steering),
+    input.steering,
+    input.pendingRoutineStep,
+  );
 
-// The attached-photo rules the grounded answer and the focused decline carry: a photo turn the
-// planner answers directly, one whose photo could not be read among them, follows them too.
 export const buildAssistantReplyPrompt = (input: AssistantReplyPromptInput): string =>
-  withTurnSteering(`${renderPromptTemplate("chat/non-retrieval-answer.md", {
+  withTurnSteering(renderPromptTemplate("chat/non-retrieval-answer.md", {
     route_type: input.route,
     identity_status:
       input.framing?.isIdentityQuestion && !input.responseIdentity
@@ -62,7 +70,7 @@ export const buildAssistantReplyPrompt = (input: AssistantReplyPromptInput): str
     in_scope_request: input.framing?.inScopeRequest || "none",
     outside_scope_request: input.framing?.outsideScopeRequest || "none",
     ...turnSectionVariables(input),
-  })}\n\n${loadPromptTemplate("chat/attached-photos.md")}`, input);
+  }), input);
 
 const SKILL_FINDINGS_TAG = "skill_findings";
 // The `<` of anything a model could read as the findings block's own opening or closing tag, in

@@ -148,7 +148,7 @@
     "@types/pg": "^8.15.5",
     "@types/sanitize-html": "^2.16.2",
     "@types/supertest": "^6.0.3",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-v8": "^4.1.12",
     "ajv": "^8.17.1",
     "dependency-cruiser": "^17.4.0",
     "kysely-codegen": "^0.20.0",
@@ -156,7 +156,7 @@
     "supertest": "^7.1.4",
     "tsx": "^4.22.1",
     "typescript": "^5.9.2",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.12"
   },
   "overrides": {
     "path-to-regexp": "0.1.13"

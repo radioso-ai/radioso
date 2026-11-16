@@ -1,7 +1,7 @@
 ---
 title: "Code Quality Gates"
 description: "How the workspace lint run, the dead-code, file-size, and architecture ratchets, and the route coverage check work, what each one catches, and what to do when they fail."
-last_updated: 2026-10-27
+last_updated: 2026-11-16
 ---
 
 # Code Quality Gates
@@ -11,7 +11,7 @@ These checks gate every pull request and every push to `main`. They catch what a
 The workspace-wide checks run from the repo root:
 
 ```bash
-pnpm run lint                    # ESLint across backend, frontend, packages, ee, docs-portal
+pnpm run lint                    # ESLint across every area, one area per process
 pnpm run lint:fix                # the same, applying every safe autofix
 pnpm run lint:dead-code          # the full dead-code report
 pnpm run lint:dead-code:ci       # the dead-code gate CI runs
@@ -28,12 +28,34 @@ pnpm run lint:architecture          # module cycles and dependency direction
 pnpm run lint:architecture:baseline # re-record the architecture baseline after fixing an edge
 ```
 
-A full lint pass takes about 80 seconds and needs headroom: `NODE_OPTIONS=--max-old-space-size=8192`. The `pnpm run lint` script sets it for you.
-
 Type-aware rules read each workspace package through its built `.d.ts`, so build the packages before linting a fresh checkout:
 
 ```bash
 pnpm --filter "./packages/*" --filter "./ee/packages/*" run build
+```
+
+## How lint runs
+
+`pnpm run lint` starts `scripts/lint-areas.mjs`, which runs ESLint five times, one process after the other, all with the same `eslint.config.mjs`:
+
+| Run | Lints |
+|-----|-------|
+| `backend` | `backend/` |
+| `frontend` | `frontend/` |
+| `ee` | `ee/` |
+| `packages` | `packages/` |
+| `everything else` | `eslint .` with the four directories above ignored: `typescript-sdk/`, `docs-portal/`, `scripts/`, `tests/`, and the files at the repo root |
+
+The split exists for memory. The type-aware rules keep the TypeScript programs for every project they touch in memory until the process exits, so one `eslint .` over the whole workspace holds every area's programs at once, and that total grows with each backend file. With one process per area, each area's memory is released before the next starts and the peak is the largest area's: about 4.8 GB of live heap for `backend` against about 7.3 GB for a single run over everything, with 8 GB as the limit. Each process gets `--max-old-space-size=8192`; the script sets it, so you don't.
+
+The last run is a catch-all built from the same `AREAS` list the script iterates, so a new top-level directory is linted there without an edit, and an area added to the list leaves the catch-all by itself. `tests/ratchets/lint-areas.test.mjs` checks that the catch-all ignores exactly the areas that run on their own.
+
+The script runs every area even when an earlier one fails, so a single pass lists all the findings, then names each area that failed and exits with the first failing area's exit code. It hands any extra arguments to every run: `pnpm run lint:fix` is `pnpm run lint` plus `--fix`.
+
+To lint one area while you work on it, call ESLint on that directory from the repo root:
+
+```bash
+NODE_OPTIONS=--max-old-space-size=8192 pnpm exec eslint backend
 ```
 
 ## What ESLint checks
@@ -154,6 +176,8 @@ A fixture that falls behind a domain type fails here, not in a flaky test months
 ## Common failure modes
 
 **`Parsing error: … was not found by the project service`** — the file belongs to no tsconfig. Add it to the wide `tsconfig.json` of its package.
+
+**`FATAL ERROR: Ineffective mark-compacts near heap limit … JavaScript heap out of memory`, exit 134** — one area's typed programs no longer fit in 8 GB. The summary line names the area. Run ESLint on that directory alone, as above, to reproduce it without waiting for the other areas.
 
 **Lint passes locally and fails in CI** — CI builds the workspace packages first. Without their `.d.ts` files, type-aware rules see `any` and quietly find less than CI does.
 

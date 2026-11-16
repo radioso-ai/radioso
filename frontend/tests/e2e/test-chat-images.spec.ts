@@ -9,6 +9,7 @@ import {
   testExecutionFixtureId,
   workspaceKey,
 } from "./dashboard-fixtures";
+import { pressKeyForFileChooser } from "./file-chooser";
 
 // Test Chat's photo journey: an operator attaches a photo to a test message exactly as a visitor
 // would, the draft answers from the agent's reading of it, and the transcript shows the photo with
@@ -227,9 +228,7 @@ test("Enter on the focused attach control opens the file picker in Test Chat", a
   await expect(attach).toBeVisible();
 
   await attach.focus();
-  const chooser = page.waitForEvent("filechooser");
-  await page.keyboard.press("Enter");
-  expect((await chooser).isMultiple()).toBe(true);
+  expect((await pressKeyForFileChooser(page, "Enter")).isMultiple()).toBe(true);
 });
 
 test("Test Chat offers no attach control while the agent takes no photos from visitors", async ({ page }) => {

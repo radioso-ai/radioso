@@ -415,7 +415,12 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       messageCount: z.number().int().min(0),
       userMessageCount: z.number().int().min(0),
       assistantMessageCount: z.number().int().min(0),
-      preview: z.string().nullable(),
+      preview: z.string().nullable().openapi({
+        description: "The words of the conversation's opening visitor message, never the readings of photos it carried. Null when no visitor message has words; see `previewPhotoCount`.",
+      }),
+      previewPhotoCount: z.number().int().min(0).openapi({
+        description: "The photos of the message the preview is read from; a conversation nobody wrote a word in previews as its first photo message, with a null `preview`.",
+      }),
       title: z.string().nullable().openapi({
         description: "Short LLM-generated topic label refreshed alongside the rolling conversation summary. Null until the first successful regeneration; the dashboard falls back to `preview` until then.",
       }),
@@ -714,7 +719,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       resolution: z.string().nullable().openapi({ description: "The triage resolution code, for negative feedback." }),
       assistantMessageId: z.string().uuid().nullable().openapi({ description: "The answer, for negative feedback." }),
       title: z.string().nullable().openapi({ description: "See ChatConversationSummary.title." }),
-      preview: z.string().nullable().openapi({ description: "The conversation's first-message preview." }),
+      preview: z.string().nullable().openapi({ description: "See ChatConversationSummary.preview." }),
+      previewPhotoCount: z.number().int().min(0).openapi({ description: "See ChatConversationSummary.previewPhotoCount." }),
     }),
   );
 

@@ -24,7 +24,7 @@ export const createConversationActivityComposition = (deps: {
     previews: {
       previewsByConversationIds: async (workspaceId, conversationIds) => {
         const summaries = await deps.messages.summarizeByConversationIds(workspaceId, [...conversationIds]);
-        return new Map([...summaries].map(([conversationId, summary]) => [conversationId, summary.preview]));
+        return new Map([...summaries].map(([conversationId, summary]) => [conversationId, { text: summary.preview, photoCount: summary.previewPhotoCount }]));
       },
     },
   }),

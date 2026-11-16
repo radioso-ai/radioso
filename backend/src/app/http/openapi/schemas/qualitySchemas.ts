@@ -135,7 +135,10 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
       agentName: z.string().nullable(),
       agentInternalName: z.string().nullable(),
       channel: z.string().nullable(),
-      question: z.string().nullable(),
+      question: z.string().nullable().describe(
+        "The words the visitor typed in the message this turn answers. Readings of attached photos are never included; null when the message had no words.",
+      ),
+      questionPhotoCount: z.number().int().min(0).describe("Photos the message this turn answers carried; 0 when it carried none."),
       answerPreview: z.string(),
       skillName: z.string().nullable(),
       skillOutcome: z.string().nullable(),

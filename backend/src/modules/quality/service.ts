@@ -6,7 +6,9 @@ import {
 
 import { systemClock, type Clock } from "../../shared/domain/clock.js";
 import { VOICE_SOURCE_CHANNEL } from "../../shared/domain/conversationSource.js";
+import { parseStoredInputMetadata } from "../../shared/domain/chatInputMetadata.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
+import { visibleMessageText } from "../../shared/domain/visibleMessageText.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { ConversationActivityRecorder } from "../conversationActivity/contracts/index.js";
 import type {
@@ -84,6 +86,8 @@ type TurnRow = GroundingDiagnosticRow & {
   skill_status: string | null;
   total_latency_ms: number | string | null;
   user_question: string | null;
+  /** The question's `metadata_json`, which keeps a message's photos apart from the turn text in `user_question`. */
+  user_question_metadata: unknown;
   up_count: string;
   down_count: string;
   latest_down_updated_at: Date | string | null;
@@ -118,6 +122,15 @@ const buildPreview = (value: string | null): string => {
   }
   const normalized = value.replace(/\s+/g, " ").trim();
   return normalized.length > PREVIEW_LIMIT ? `${normalized.slice(0, PREVIEW_LIMIT - 3)}...` : normalized;
+};
+
+/** The question a turn answered, as a person reads it: the words typed beside any photos, and how many photos came with them. */
+const presentQuestion = (row: Pick<TurnRow, "user_question" | "user_question_metadata">): Pick<LowQualityTurn, "question" | "questionPhotoCount"> => {
+  const question = visibleMessageText({
+    content: row.user_question ?? "",
+    inputMetadata: parseStoredInputMetadata(row.user_question_metadata),
+  });
+  return { question: buildPreview(question.text) || null, questionPhotoCount: question.photoCount };
 };
 
 const clampLimit = (limit: number): number => {
@@ -370,20 +383,22 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
          CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.reason END AS triage_legacy_reason,
          CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.closed_at END AS triage_closed_at,
          CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.updated_at END AS triage_updated_at,
-         (
-           SELECT um.content
-           FROM messages um
-           WHERE um.conversation_id = m.conversation_id
-             AND um.role = 'user'
-             AND um.created_at <= m.created_at
-           ORDER BY um.created_at DESC, um.id DESC
-           LIMIT 1
-         ) AS user_question,
+         asked.content AS user_question,
+         asked.metadata_json AS user_question_metadata,
          COALESCE(feedback_activity.up_count, '0') AS up_count,
          COALESCE(feedback_activity.down_count, '0') AS down_count,
          feedback_activity.latest_down_updated_at
        ${TURN_POPULATION_SOURCE}
        LEFT JOIN agents a ON a.id = c.agent_id
+       LEFT JOIN LATERAL (
+         SELECT um.content, um.metadata_json
+         FROM messages um
+         WHERE um.conversation_id = m.conversation_id
+           AND um.role = 'user'
+           AND um.created_at <= m.created_at
+         ORDER BY um.created_at DESC, um.id DESC
+         LIMIT 1
+       ) asked ON true
        ${TRIAGE_JOIN}
        ${feedbackActivityJoin}
        WHERE ${whereClause}
@@ -410,7 +425,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       agentName: row.agent_name,
       agentInternalName: normalizeNullableText(row.agent_internal_name),
       channel: row.source_channel,
-      question: buildPreview(row.user_question) || null,
+      ...presentQuestion(row),
       answerPreview: buildPreview(row.answer_content),
       skillName: row.skill_name,
       skillOutcome: row.skill_outcome,

@@ -8,7 +8,7 @@ import { SkillChip, SkillReceiptCard } from '@/components/chat/skill-cards'
 import { VisitorImageReadings, type VisitorImageThreadConfig } from '@/components/chat/visitor-image-thumbnails'
 import { VisitorMessageBody } from '@/components/chat/visitor-message-body'
 import { InterruptedReplyBadge, OperatorReplySpeechBadge, SpokenMarker } from '@/components/chat/voice-markers'
-import { readVisitorImageInput } from '@/lib/visitor-image-input'
+import { readVisitorImageInput, visibleMessageText } from '@/lib/visitor-image-input'
 import { isRenderableReplyBlock, replyPicks } from '@/lib/reply-blocks'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -809,7 +809,7 @@ export function ChatMessageThread({
                                 // Walk back to find the user message that triggered this assistant turn.
                                 for (let i = index - 1; i >= 0; i--) {
                                   const m = messages[i]
-                                  if (m?.role === 'user') return m.content
+                                  if (m?.role === 'user') return visibleMessageText(m).text
                                 }
                                 return undefined
                               })()}

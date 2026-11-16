@@ -1,6 +1,7 @@
 import type { AgentRevision } from "../agents/public.js";
 import type { FrozenTestValue } from "../context-variables/public.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
+import type { TestExecutionImageInput } from "./testExecution.js";
 
 /**
  * The minimum private-test evidence Eval needs to capture one immutable turn.
@@ -23,6 +24,8 @@ interface TestExecutionEvalSnapshotHistoryEntry {
   turnId: string;
   role: "user" | "assistant";
   content: string;
+  /** The photos a user turn carried, beside `content`, the turn text with their readings. */
+  imageInput?: TestExecutionImageInput;
   messageId?: string;
   createdAt: Date;
 }

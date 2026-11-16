@@ -78,6 +78,7 @@ const conversationSummary: ChatConversationSummary = {
   userMessageCount: 0,
   assistantMessageCount: 1,
   preview: 'Policy',
+  previewPhotoCount: 0,
 }
 
 const citedAnswer = {

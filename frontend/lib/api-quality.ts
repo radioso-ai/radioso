@@ -134,7 +134,10 @@ export interface LowQualityTurn {
   agentName: string | null
   agentInternalName: string | null
   channel: string | null
+  /** The words the visitor typed; never the readings of photos the message carried. */
   question: string | null
+  /** The photos the message carried; read as 0 when absent. */
+  questionPhotoCount?: number
   answerPreview: string
   skillName: string | null
   skillOutcome: string | null

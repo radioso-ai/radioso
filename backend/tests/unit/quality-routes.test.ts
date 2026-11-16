@@ -197,6 +197,7 @@ describe("quality routes", () => {
           agentInternalName: null,
           channel: "embed",
           question: "Why?",
+          questionPhotoCount: 0,
           answerPreview: "Because.",
           skillName: "retrieval.answer",
           skillOutcome: "no_context",

@@ -1,6 +1,6 @@
 import type { ChatSuggestion } from './api-types'
 import { request } from './api-client'
-import type { ActivityTrace, AnswerSegment, Citation, Directive, TurnTraceEnvelope } from './api-types'
+import type { ActivityTrace, AnswerSegment, Citation, Directive, TurnTraceEnvelope, VisitorImageInput } from './api-types'
 
 // Eval is currently a dashboard-only API surface and is not registered in the
 // public OpenAPI/SDK contract. Keep these local request/response types in sync
@@ -15,6 +15,8 @@ export interface EvalSnapshotMessage {
   createdAt: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  /** The photos a visitor's message carried; `content` is the turn text with their readings. */
+  imageInput?: VisitorImageInput
 }
 
 export interface EvalSnapshotOriginalRetrievalChunk {

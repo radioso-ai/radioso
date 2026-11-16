@@ -68,6 +68,8 @@ const NEEDS_ATTENTION_MAX_LIMIT = 50;
 interface NeedsAttentionRow {
   readonly kind: CopilotNeedsAttentionKind;
   readonly title: string | null;
+  /** The photos of the message the title is read from, so a photo-only question is not a bare null title. */
+  readonly titlePhotoCount: number;
   readonly detail: string | null;
   readonly since: string;
   readonly agentId: string | null;
@@ -107,6 +109,8 @@ const needsAttentionOutputSchema = z.object({
     kind: z.enum(NEEDS_ATTENTION_KINDS),
     /** Workspace data, never composed copy: a reason, preview, question, or failure kind, or null. */
     title: z.string().nullable(),
+    /** Photos the titled message carried; a title of null with a count above 0 is a message of photos alone. */
+    titlePhotoCount: z.number().int().nonnegative(),
     detail: z.string().nullable(),
     since: z.string(),
     waitingMinutes: z.number().int().nonnegative().nullable(),
@@ -138,7 +142,7 @@ type NeedsAttentionInput = z.infer<typeof needsAttentionInputSchema>;
 type NeedsAttentionReader = readonly [CopilotNeedsAttentionKind, () => Promise<AuthorizedSourceRead<NeedsAttentionRow>>];
 type NeedsAttentionOutput = z.infer<typeof needsAttentionOutputSchema>;
 
-const needsAttentionDescription = "Read the operator's working queue: the pending approvals (routine decisions, and agent replies held for review — titled by the hold reason, with a heldReplyId), waiting handoffs, replies that may not have reached the customer (delivery_failed, titled by failure kind with the provider's sanitized code as detail), and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the held reply id (held_replies reads the whole draft by the row's conversationId), the assistant message id and triage version to transition, the owner of a claimed handoff. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. This is the queue to work through; workspace_triage is a one-shot digest that also covers failures and backlog, so do not call both for the same question. Act on a row with the identifiers it gives you — set_triage_state takes the assistantMessageId and triageVersion exactly as they appear here.";
+const needsAttentionDescription = "Read the operator's working queue: the pending approvals (routine decisions, and agent replies held for review — titled by the hold reason, with a heldReplyId), waiting handoffs, replies that may not have reached the customer (delivery_failed, titled by failure kind with the provider's sanitized code as detail), and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the held reply id (held_replies reads the whole draft by the row's conversationId), the assistant message id and triage version to transition, the owner of a claimed handoff. A row whose title is null but whose titlePhotoCount is above 0 is a visitor message of photos alone. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. This is the queue to work through; workspace_triage is a one-shot digest that also covers failures and backlog, so do not call both for the same question. Act on a row with the identifiers it gives you — set_triage_state takes the assistantMessageId and triageVersion exactly as they appear here.";
 
 export const createNeedsAttentionCopilotTools = (
   deps: NeedsAttentionCopilotToolDependencies,
@@ -212,6 +216,7 @@ const buildNeedsAttention = async (
     items: listed.map((item) => ({
       kind: item.kind,
       title: clip(item.title, MAX_TITLE_CHARS),
+      titlePhotoCount: item.titlePhotoCount,
       detail: clip(item.detail, MAX_DETAIL_CHARS),
       since: item.since,
       waitingMinutes: copilotTriageWaitingMinutes(item.since, now),
@@ -240,6 +245,7 @@ const waitingSince = (turn: { feedback: { latestDownUpdatedAt: string | null }; 
   turn.feedback.latestDownUpdatedAt ?? turn.createdAt;
 
 const emptyRowFields = {
+  titlePhotoCount: 0,
   approvalHandle: null,
   heldReplyId: null,
   assistantMessageId: null,
@@ -325,6 +331,7 @@ const readHandoffQueue = async (
         ...emptyRowFields,
         kind: "handoff" as const,
         title: conversation.preview,
+        titlePhotoCount: conversation.previewPhotoCount,
         detail: conversation.ownership?.reason ?? null,
         since: escalatedAt(conversation),
         agentId: conversation.agentId,
@@ -397,6 +404,7 @@ const readFeedbackQueue = async (
         ...emptyRowFields,
         kind: "negative_feedback" as const,
         title: turn.question,
+        titlePhotoCount: turn.questionPhotoCount,
         detail: latestDownComment(turn.feedback.comments),
         since: waitingSince(turn),
         agentId: turn.agentId,

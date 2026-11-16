@@ -59,6 +59,7 @@ const rowSummary =(overrides: Partial<ChatConversationSummary> = {}): ChatConver
   userMessageCount: 1,
   assistantMessageCount: 1,
   preview: 'Please help with this order',
+  previewPhotoCount: 0,
   ...overrides,
 })
 
@@ -171,27 +172,43 @@ describe('selectSituationBody', () => {
     expect(selectSituationBody({
       handoffReason: 'No schedule info',
       summary: 'Visitor wants the weekly yoga schedule.',
-      firstVisitorMessage: 'dove trovo gli orari dei corsi di yoga',
-    })).toBe('Visitor wants the weekly yoga schedule.')
+      firstVisitorMessage: { text: 'dove trovo gli orari dei corsi di yoga', photoCount: 0 },
+    })).toEqual({ text: 'Visitor wants the weekly yoga schedule.', photoCount: 0 })
   })
 
   it('falls back to the first visitor message when the summary is missing', () => {
     expect(selectSituationBody({
       handoffReason: null,
       summary: null,
-      firstVisitorMessage: 'dove trovo gli orari dei corsi di yoga',
-    })).toBe('dove trovo gli orari dei corsi di yoga')
+      firstVisitorMessage: { text: 'dove trovo gli orari dei corsi di yoga', photoCount: 0 },
+    })).toEqual({ text: 'dove trovo gli orari dei corsi di yoga', photoCount: 0 })
   })
 
   it('falls back when the summary field is entirely absent', () => {
     expect(selectSituationBody({
       handoffReason: null,
-      firstVisitorMessage: 'Hello',
-    })).toBe('Hello')
+      firstVisitorMessage: { text: 'Hello', photoCount: 0 },
+    })).toEqual({ text: 'Hello', photoCount: 0 })
+  })
+
+  it('keeps the photo count of the first visitor message', () => {
+    expect(selectSituationBody({
+      handoffReason: null,
+      firstVisitorMessage: { text: 'Something like this', photoCount: 2 },
+    })).toEqual({ text: 'Something like this', photoCount: 2 })
   })
 
   it('returns null when neither source is available', () => {
     expect(selectSituationBody({ handoffReason: null, summary: null, firstVisitorMessage: null })).toBeNull()
+  })
+
+  it('returns null for a first message with no words and no photos', () => {
+    expect(selectSituationBody({ handoffReason: null, firstVisitorMessage: { text: '   ', photoCount: 0 } })).toBeNull()
+  })
+
+  it('keeps a first message of photos alone', () => {
+    expect(selectSituationBody({ handoffReason: null, firstVisitorMessage: { text: '', photoCount: 1 } }))
+      .toEqual({ text: '', photoCount: 1 })
   })
 })
 
@@ -203,7 +220,7 @@ describe('findFirstVisitorMessage', () => {
       { source: 'ai_agent', role: 'assistant', content: 'Contatta la reception.' },
     ]
 
-    expect(findFirstVisitorMessage(messages)).toBe('dove trovo gli orari')
+    expect(findFirstVisitorMessage(messages)).toEqual({ text: 'dove trovo gli orari', photoCount: 0 })
   })
 
   it('falls back to role user when source is absent', () => {
@@ -212,11 +229,28 @@ describe('findFirstVisitorMessage', () => {
       { role: 'user', content: 'Ho una domanda' },
     ]
 
-    expect(findFirstVisitorMessage(messages)).toBe('Ho una domanda')
+    expect(findFirstVisitorMessage(messages)).toEqual({ text: 'Ho una domanda', photoCount: 0 })
   })
 
   it('returns null when there is no visitor message', () => {
     expect(findFirstVisitorMessage([{ source: 'ai_agent', role: 'assistant', content: 'Ciao' }])).toBeNull()
+  })
+
+  it('reads a message with photos as what the visitor typed and how many photos came with it, never the readings', () => {
+    const reading = 'A landscape photo of rolling countryside.'
+    const messages = [
+      {
+        source: 'customer',
+        role: 'user',
+        content: `Something like this, please\n<attached_photo index="1">${reading}</attached_photo>`,
+        inputMetadata: {
+          method: 'typed',
+          imageInput: { typedText: 'Something like this, please', images: [{ id: '00000000-0000-4000-8000-000000000001', reading }] },
+        },
+      },
+    ]
+
+    expect(findFirstVisitorMessage(messages)).toEqual({ text: 'Something like this, please', photoCount: 1 })
   })
 })
 

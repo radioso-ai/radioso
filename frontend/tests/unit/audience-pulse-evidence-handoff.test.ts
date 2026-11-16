@@ -6,10 +6,21 @@ import {
   AUDIENCE_PULSE_EVIDENCE_HANDOFF_KEY,
   clearAudiencePulseEvidenceHandoff,
   consumeAudiencePulseEvidenceHandoff,
+  evidenceAnchorContent,
   writeAudiencePulseEvidenceHandoff,
 } from '@/lib/audience-pulse-evidence-handoff'
 
 const scope = { accountId: 'account-1', workspaceId: 'workspace-1' }
+
+describe('evidenceAnchorContent', () => {
+  it('shows a visitor message as its typed words and photo count, and a reply as it is', () => {
+    expect(evidenceAnchorContent({ content: 'Something like this', photoCount: 2 })).toBe('Something like this · 2 photos')
+    expect(evidenceAnchorContent({ content: '', photoCount: 1 })).toBe('1 photo')
+    expect(evidenceAnchorContent({ content: 'Which plan includes exports?', photoCount: 0 })).toBe('Which plan includes exports?')
+    expect(evidenceAnchorContent({ content: 'Which plan includes exports?' })).toBe('Which plan includes exports?')
+    expect(evidenceAnchorContent({ content: 'The Pro plan does.' })).toBe('The Pro plan does.')
+  })
+})
 
 describe('audience-pulse-evidence-handoff', () => {
   beforeEach(() => {

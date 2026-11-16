@@ -11,9 +11,17 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
+// A 1x1 GIF the browser decodes, served as the photo: the route's content is not what this spec checks.
+const PIXEL = Buffer.from("R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=", "base64");
+
 test("operator opens the inbox, replies to a handoff, marks it done, and the debug drawer stays builder-only", async ({ page }) => {
   const conversationId = "conversation-hitl-inbox";
   const requestLog: string[] = [];
+  // The visitor opened with a photo. Their message stores the turn text the agent's model read
+  // (the typed words, then the photo's reading in a tag) and keeps what they did in `imageInput`.
+  const photoId = "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12";
+  const typedText = "dove trovo gli orari dei corsi di yoga settimanali";
+  const reading = "A printed timetable pinned to a noticeboard.";
   const ownership = {
     conversationId,
     workspaceId,
@@ -51,6 +59,7 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
         userMessageCount: 1,
         assistantMessageCount: 1,
         preview: "Weekly yoga schedule",
+        previewPhotoCount: 1,
         ownership,
       },
     ],
@@ -82,8 +91,9 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
         id: "customer-message-inbox",
         role: "user" as const,
         source: "customer" as const,
-        content: "dove trovo gli orari dei corsi di yoga settimanali",
+        content: `${typedText}\n<attached_photo index="1">${reading}</attached_photo>`,
         createdAt: nowIso,
+        inputMetadata: { method: "typed", imageInput: { typedText, images: [{ id: photoId, reading }] } },
       },
       {
         id: "assistant-message-inbox",
@@ -113,6 +123,9 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
       body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }),
     });
   });
+  await page.route(`**/backend/api/v1/conversations/${conversationId}/images/${photoId}**`, async (route) => {
+    await route.fulfill({ status: 200, contentType: "image/gif", body: PIXEL });
+  });
 
   // The Inbox page defaults to the Needs-you lens, shown via the segmented
   // toggle at the top of the left pane (spec 1116 unification).
@@ -125,6 +138,8 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   const handoffRow = queue.getByRole("button", { name: /Weekly yoga schedule/ });
   await expect(handoffRow).toBeVisible();
   await expect(handoffRow).toContainText("Handoff");
+  // The row is titled by the visitor's words with the count of the photos that came with them.
+  await expect(handoffRow).toContainText("Weekly yoga schedule · 1 photo");
 
   await handoffRow.click();
 
@@ -144,7 +159,12 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   // message thread below renders the same message in full — both legitimately
   // match this text, so disambiguate to the situation card's copy (it renders
   // first in DOM order).
-  await expect(response.getByText("dove trovo gli orari dei corsi di yoga settimanali").first()).toBeVisible();
+  await expect(response.getByText(typedText).first()).toBeVisible();
+  // The card marks the photo with a short count; the reading and its tag stay out of it, and out of the
+  // page until the thread's "What the agent read" is opened.
+  await expect(response.getByText("1 photo", { exact: true })).toBeVisible();
+  await expect(response.getByText("attached_photo")).toHaveCount(0);
+  await expect(response.getByText(reading)).toHaveCount(0);
 
   const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
   await replyBox.fill("Ecco gli orari aggiornati dei corsi di yoga.");
@@ -160,7 +180,7 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   await response.getByRole("button", { name: "Open in debug view" }).click();
   const drawer = page.getByLabel("Conversation details");
   await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
-  await expect(drawer.getByText("dove trovo gli orari dei corsi di yoga settimanali")).toBeVisible();
+  await expect(drawer.getByText(typedText)).toBeVisible();
   await expect(drawer.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Reassign" })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Assign", exact: true })).toHaveCount(0);
@@ -518,6 +538,7 @@ test("operator opens a recently closed feedback conversation from Needs-you", as
       assistantMessageId,
       title: null,
       preview: "Who is Nikola Tesla?",
+      previewPhotoCount: 0,
     }],
     conversationDetail: {
       conversationId,
@@ -686,6 +707,7 @@ test("a recently closed row whose detail 404s before its own route lands keeps t
       assistantMessageId: null,
       title: null,
       preview: "Race closed row",
+      previewPhotoCount: 0,
     }],
   });
   await stubEmptyQualityQueue(page);

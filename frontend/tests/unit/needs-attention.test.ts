@@ -71,7 +71,19 @@ const conversation = (
   userMessageCount: 1,
   assistantMessageCount: 1,
   preview: 'Please help with this order',
+  previewPhotoCount: 0,
   ...overrides,
+})
+
+describe('a handoff whose visitor opened with photos', () => {
+  it('is titled by their words and photo count, and by the count alone when they wrote none', () => {
+    const titled = (overrides: Partial<ChatConversationSummary>) =>
+      toHandoffInboxItem(conversation({ ownership: ownership(), ...overrides })).title
+
+    expect(titled({ preview: 'Something like this', previewPhotoCount: 1 })).toBe('Something like this · 1 photo')
+    expect(titled({ preview: null, previewPhotoCount: 3 })).toBe('3 photos')
+    expect(titled({ preview: null, previewPhotoCount: 0 })).toBe('Untitled conversation')
+  })
 })
 
 describe('needs attention helpers', () => {
@@ -593,6 +605,18 @@ describe('buildInboxItems', () => {
         triageState: 'acknowledged',
       }),
     ])
+  })
+
+  it('titles written feedback on a photo question by its words and photos, never the readings', () => {
+    const titleOf = (overrides: Partial<LowQualityTurn>) => buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn(overrides)],
+    })[0]?.title
+
+    expect(titleOf({ question: 'Something like this', questionPhotoCount: 1 })).toBe('Something like this · 1 photo')
+    expect(titleOf({ question: null, questionPhotoCount: 2 })).toBe('2 photos')
+    expect(titleOf({ question: null, questionPhotoCount: 0 })).toBe('Low-quality answer')
   })
 
   it('orders critical escalations above written feedback', () => {
@@ -1243,6 +1267,7 @@ describe('buildRecentlyClosedItems', () => {
     assistantMessageId: null,
     title: null,
     preview: 'Where is my parcel?',
+    previewPhotoCount: 0,
     ...overrides,
   })
 
@@ -1250,11 +1275,13 @@ describe('buildRecentlyClosedItems', () => {
     const items = buildRecentlyClosedItems([
       apiItem({ id: 'newer', title: 'Refund for order 1042' }),
       apiItem({ id: 'older' }),
+      apiItem({ id: 'photos', preview: null, previewPhotoCount: 2 }),
     ])
 
     expect(items).toEqual([
       expect.objectContaining({ key: 'closed:newer', title: 'Refund for order 1042', closedBy: { userId: 'user-bea', label: 'Bea' } }),
       expect.objectContaining({ key: 'closed:older', title: 'Where is my parcel?' }),
+      expect.objectContaining({ key: 'closed:photos', title: '2 photos' }),
     ])
   })
 

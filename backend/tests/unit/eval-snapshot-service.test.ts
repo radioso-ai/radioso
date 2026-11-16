@@ -189,7 +189,7 @@ class StubMessageRepository implements MessageRepositoryPort {
     throw new Error("not implemented");
   }
 
-  async summarizeByConversationIds(): Promise<Map<string, { messageCount: number; userMessageCount: number; assistantMessageCount: number; preview: string | null }>> {
+  async summarizeByConversationIds(): Promise<Map<string, { messageCount: number; userMessageCount: number; assistantMessageCount: number; preview: string | null; previewPhotoCount: number }>> {
     throw new Error("not implemented");
   }
 
@@ -481,6 +481,59 @@ describe("EvalSnapshotService.captureTestExecutionTurn", () => {
       },
     });
     expect(captured).not.toHaveProperty("testExecutionReplay");
+  });
+
+  it("carries the photos of a user turn beside the turn text the replay runs on", async () => {
+    const repository = new CapturingEvalRepository();
+    const revision: AgentRevision = {
+      id: "revision-1",
+      snapshot: { customInstruction: "Frozen test instruction", directives: [], routines: [], contextVariableEnablements: [] },
+      sourceDraftGeneration: 3,
+      sourceBasePublishedRevisionId: null,
+      createdAt: fixedDate,
+      publishedAt: fixedDate,
+      publishedVersion: 4,
+    };
+    const reading = "A landscape photo of rolling countryside.";
+    const imageInput = { typedText: "Something like this", images: [{ id: "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12", reading }] };
+    const execution: TestExecution = {
+      id: "execution-1",
+      workspaceId: "ws-1",
+      agentId: "agent-1",
+      generation: 1,
+      mode: "single",
+      state: "completed",
+      skillEffects: "suppressed",
+      seededTurnCount: 0,
+      testValues: [],
+      createdAt: fixedDate,
+      sides: [{
+        id: "side-1",
+        executionId: "execution-1",
+        revision,
+        conversationId: "private-conversation-1",
+        state: "completed",
+        retryable: false,
+        continuation: null,
+        history: [
+          { turnId: "turn-1", attemptId: "attempt-1", role: "user", content: `Something like this\n<attached_photo index="1">${reading}</attached_photo>`, imageInput, createdAt: fixedDate },
+          { turnId: "turn-1", attemptId: "attempt-1", role: "assistant", content: "I found three farmhouses.", messageId: "assistant-1", createdAt: fixedDate },
+        ],
+      }],
+    };
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(null),
+      new StubMessageRepository([]),
+      new StubAgentRepository(agent()),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+    );
+
+    await service.captureTestExecutionTurn({ workspaceId: "ws-1", agentId: "agent-1", execution, sideId: "side-1", assistantMessageId: "assistant-1", capturedBy: "account-1" });
+
+    expect(repository.lastCreateInput?.messages[0]).toMatchObject({ role: "user", content: expect.stringContaining("<attached_photo"), imageInput });
+    expect(repository.lastCreateInput?.messages[1]).not.toHaveProperty("imageInput");
   });
 
   it("refuses to capture from a private test that ran skills for real", async () => {
@@ -1089,6 +1142,63 @@ describe("EvalSnapshotService.capture", () => {
     expect(snapshot.originalRoutineState?.variables).toEqual({ class_name: "Yoga", injury: "[redacted]" });
     expect(snapshot.originalInstructionBlock).toBeNull();
     expect(JSON.stringify(snapshot)).not.toContain("ACL");
+  });
+
+  describe("a visitor message with photos", () => {
+    const photoConversation = (id: string): ConversationRecord => ({
+      id,
+      workspaceId: "ws-1",
+      agentId: null,
+      purpose: "production",
+      agentName: null,
+      agentInternalName: null,
+      sourceChannel: null,
+      callerKind: "human" as const,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      entryPageUrl: null,
+      title: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    });
+    const reading = "A landscape photo of rolling countryside.";
+    const imageInput = { typedText: "Something like this, please", images: [{ id: "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12", reading }] };
+    const capture = async (conversation: ConversationRecord, messages: MessageRecord[], messageId: string) => new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      new CapturingEvalRepository(),
+    ).capture({ workspaceId: "ws-1", conversationId: conversation.id, messageId, capturedBy: "account-1" });
+
+    it("keeps the turn text the replay runs on and carries the photos beside it, so a view shows the typed words and the photos", async () => {
+      const conversation = photoConversation("conv-photos");
+      const turnText = `${imageInput.typedText}\n<attached_photo index="1">${reading}</attached_photo>`;
+      const snapshot = await capture(conversation, [
+        { id: "u-photos", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: turnText, inputMetadata: { method: "typed", imageInput }, createdAt: fixedDate },
+        { id: "a-photos", conversationId: conversation.id, workspaceId: "ws-1", role: "assistant", content: "I found three farmhouses.", createdAt: fixedDate },
+      ], "a-photos");
+
+      expect(snapshot.messages[0]).toMatchObject({ content: turnText, imageInput });
+      expect(snapshot.messages[1]).not.toHaveProperty("imageInput");
+    });
+
+    it("leaves the photos out of a message whose turn held a sensitive value, as it leaves its text", async () => {
+      const conversation = photoConversation("conv-photos-sensitive");
+      const snapshot = await capture(conversation, [
+        {
+          id: "u-sensitive", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "I tore my ACL",
+          metadata: { sensitiveSlotKeys: ["injury"] }, inputMetadata: { method: "typed", imageInput }, createdAt: fixedDate,
+        },
+        { id: "a-sensitive", conversationId: conversation.id, workspaceId: "ws-1", role: "assistant", content: "Noted.", createdAt: fixedDate },
+      ], "a-sensitive");
+
+      expect(snapshot.messages[0]).not.toHaveProperty("imageInput");
+      expect(JSON.stringify(snapshot)).not.toContain(reading);
+    });
   });
 
   it("freezes the rolling conversation summary (#866) onto the snapshot at capture time", async () => {

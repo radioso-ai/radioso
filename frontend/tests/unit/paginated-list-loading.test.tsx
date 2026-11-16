@@ -50,6 +50,7 @@ const conversation: ChatConversationSummary = {
   userMessageCount: 1,
   assistantMessageCount: 1,
   preview: 'Existing conversation',
+  previewPhotoCount: 0,
 }
 
 describe('paginated list loading states', () => {

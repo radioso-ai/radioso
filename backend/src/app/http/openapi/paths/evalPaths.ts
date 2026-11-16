@@ -4,6 +4,7 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 import { evalAssertionSchema } from "../../../../modules/eval/domain/assertionSchema.js";
 import { startRevisionEvalRunSchema } from "../../routes/agentRevisionRequestSchemas.js";
+import { visitorImageInputSchema } from "../schemas/userMessageInputMetadataSchemas.js";
 
 const AgentConfigOverrideSchema = z
   .object({
@@ -207,6 +208,7 @@ const EvalSnapshotMessageSchema = z.object({
   answerSegments: z.array(z.unknown()).optional(),
   groundingSummary: z.unknown().optional(),
   directiveFirings: z.array(z.string()).optional(),
+  imageInput: visitorImageInputSchema.optional().describe("The photos a visitor's message carried; `content` is the turn text with their readings. Absent on a snapshot captured before photos were kept."),
 });
 
 const EvalSnapshotSchema = z.object({

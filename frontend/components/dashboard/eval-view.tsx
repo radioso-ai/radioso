@@ -44,6 +44,8 @@ import {
   DashboardTableRow,
 } from '@/components/dashboard/shared/dashboard-table'
 import { ActivityTraceDetail } from './activity-trace-detail'
+import { operatorVisitorImages } from '@/components/chat/visitor-image-thumbnails'
+import { snapshotInputMetadata } from '@/lib/eval-snapshot-message'
 import { ChatMessageThread, type ChatThreadMessage } from './chat-message-thread'
 import { AssistantMessageContent, type CitationOpenResult } from './chat-citations'
 import { AssertionEditor } from './eval/assertion-editor'
@@ -185,16 +187,16 @@ const humanizeVerdictReason = (
 // Map a frozen snapshot message to the shape ChatMessageThread expects so the
 // eval detail page can reuse the same bubble + markdown renderer the dashboard
 // chat uses. Newer snapshots also preserve assistant citation artifacts so
-// eval citations render with the same inline markers and sources rail as chat.
-const toThreadMessages = (
-  messages: EvalSnapshot['messages'],
-): ChatThreadMessage[] => messages.map((m) => ({
+// eval citations render with the same inline markers and sources rail as chat. A visitor's photos
+// travel as input metadata, so the thread shows the typed words and the photos, not `content`.
+const toThreadMessages = (messages: EvalSnapshot['messages']): ChatThreadMessage[] => messages.map((m) => ({
   id: m.id,
   role: m.role,
   content: m.content,
   createdAt: m.createdAt,
   citations: m.citations,
   answerSegments: m.answerSegments,
+  inputMetadata: snapshotInputMetadata(m),
 }))
 
 const emptyReplayBaseline: WorkbenchOverrideValues = {
@@ -1266,10 +1268,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   // conversation panel shows the prompt context plus the latest run answer
   // when one exists.
   const capturedAnswerIsTrailing = snapshot.messages.at(-1)?.role === 'assistant'
-  const conversationMessages = (() => {
-    if (!capturedAnswerIsTrailing) return snapshot.messages
-    return snapshot.messages.slice(0, -1)
-  })()
+  const conversationMessages = capturedAnswerIsTrailing ? snapshot.messages.slice(0, -1) : snapshot.messages
   const latestRunAnswer = latestRun?.observedOutput.answer
   const conversationThreadMessages = toThreadMessages(conversationMessages)
 
@@ -1495,6 +1494,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
                 showCitations
                 analyticsSurface="eval"
                 skillCatalog={skillCatalog}
+                visitorImages={snapshot.sourceConversationId ? operatorVisitorImages(snapshot.workspaceId, snapshot.sourceConversationId) : undefined}
               />
               {originalAssistantMessage ? (
                 <details className="group mt-4 rounded-md border border-border bg-muted/20">

@@ -60,6 +60,7 @@ const conversationSummary: ChatConversationSummary = {
   userMessageCount: 1,
   assistantMessageCount: 0,
   preview: 'Can a person help?',
+  previewPhotoCount: 0,
 }
 
 const conversationList = {

@@ -60,7 +60,10 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     reference: z.string(),
     conversationId: z.string().uuid(),
     messageId: z.string().uuid(),
-    question: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
+    question: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS).openapi({
+      description: "The words the visitor typed. For a message with photos, never the readings of them; empty when they sent photos alone.",
+    }),
+    questionPhotoCount: z.number().int().min(0).openapi({ description: "The photos the question's message carried; 0 when it carried none." }),
     occurrenceCount: z.number().int().min(1),
     answerCoverage: AnswerCoverageSchema.optional(),
     // Absent only for an example from a report saved before answer coverage was recorded.
@@ -74,7 +77,10 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     messageId: z.string().uuid(),
     role: z.literal("user"),
     source: z.literal("customer"),
-    content: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
+    content: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS).openapi({
+      description: "The words the visitor typed. For a message with photos, never the readings of them; empty when they sent photos alone.",
+    }),
+    photoCount: z.number().int().min(0).openapi({ description: "The photos the message carried; 0 when it carried none." }),
     createdAt: z.string().datetime(),
   }));
   const AudiencePulseEvidenceAnchorNextAssistantSchema = registry.register("AudiencePulseEvidenceAnchorNextAssistant", z.object({

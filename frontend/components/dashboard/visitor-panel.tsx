@@ -7,6 +7,7 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { useVisitorConversations } from '@/hooks/use-visitor-conversations'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { ChatConversationDetail, ChatConversationSummary } from '@/lib/api'
+import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { formatConversationLocation } from '@/lib/history-source'
 import { buildVisitorPanelViewModel } from '@/lib/visitor-panel'
 
@@ -31,7 +32,7 @@ function PreviousConversationRow({
   conversation: ChatConversationSummary
   onSelect: (conversationId: string) => void
 }) {
-  const title = conversation.title?.trim() || conversation.preview?.trim() || 'Untitled conversation'
+  const title = resolveConversationDisplayTitle(conversation)
   const agentLabel = getAgentOperatorLabel(
     { internalName: conversation.agentInternalName, name: conversation.agentName },
     'No agent',

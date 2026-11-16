@@ -6,7 +6,7 @@ import { linkifyText } from '@/components/dashboard/chat-citations'
 import { VisitorImageThumbnails } from '@/components/chat/visitor-image-thumbnails'
 import type { VisitorImageThreadConfig } from '@/lib/visitor-image-types'
 import type { ChatUserInputMetadata } from '@/lib/api-types'
-import { visitorMessageBody } from '@/lib/visitor-image-input'
+import { visibleMessageLabel, visitorMessageBody } from '@/lib/visitor-image-input'
 
 /**
  * A calling agent's tool call, recorded with its structured form. Renders the tool
@@ -62,10 +62,12 @@ export function VisitorMessageBody({
   if (body.kind === 'text') {
     return <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(body.text)}</p>
   }
+  // A thread with no photo source cannot show the photos, so it counts them beside the words.
+  const text = imageConfig ? body.typedText : visibleMessageLabel({ text: body.typedText, photoCount: body.images.length })
   return (
     <div className="space-y-2">
       {imageConfig ? <VisitorImageThumbnails images={body.images} config={imageConfig} /> : null}
-      {body.typedText ? <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(body.typedText)}</p> : null}
+      {text ? <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(text)}</p> : null}
     </div>
   )
 }

@@ -156,6 +156,7 @@ export const audiencePulseReportResponseSchema = z.object({
       conversationId: z.string().uuid(),
       messageId: z.string().uuid(),
       question: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
+      questionPhotoCount: z.number().int().min(0),
       occurrenceCount: z.number().int().min(1),
       answerCoverage: z.object({
         availability: z.enum(["assessed", "not_recorded", "failed", "invalid"]),

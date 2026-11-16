@@ -165,6 +165,8 @@ export interface CopilotConversationSummary {
   readonly agentId: string | null;
   readonly agentName: string | null;
   readonly preview: string | null;
+  /** The photos of the message the preview is read from; a null preview with a count above 0 is a message of photos alone. */
+  readonly previewPhotoCount: number;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly ownership?: CopilotConversationOwnershipSummary;

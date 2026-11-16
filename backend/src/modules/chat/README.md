@@ -622,7 +622,10 @@ imports from `services/`.
   renewal landed, and every checkpoint and latch checks that deadline
   synchronously. Long-expired leases are pruned outside the start statement:
   a bounded `SKIP LOCKED` batch rides on renewals, and a conversation's own after
-  a start that saw them. The `LISTEN` connection
+  a start that saw them. A turn is placed from the id its caller sent, before the
+  conversation is read, so no foreign key holds these rows; erasing a conversation
+  removes them through `ConversationTurnLeaseEraser` (owner `chat-turns`), and a
+  turn still running there loses its lease and aborts. The `LISTEN` connection
   (`shared/infra/postgresNotificationListener.ts`) is one per process, opened with
   the first turn and closed after the pool's idle timeout; announcements missed
   while it was down are read back from `conversation_turn_leases` when it

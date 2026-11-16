@@ -105,6 +105,16 @@ const coverage: Record<string, ErasureCoverage> = {
     owner: "customer-email",
     reason: "A private test can send a real email from a conversation that never becomes a conversations row.",
   },
+  "conversation_turn_leases.conversation_id": {
+    kind: "eraser",
+    owner: "chat-turns",
+    reason: "A turn is placed before its conversation is read, from the id the caller sent, which may name no conversation, so no key can hold it. The row goes as the turn ends; the turn eraser removes one a stopped instance left behind.",
+  },
+  "conversation_turn_heads.conversation_id": {
+    kind: "eraser",
+    owner: "chat-turns",
+    reason: "Placed with the conversation's latest turn, before the conversation is read, so no key can hold it. The row goes as that turn ends; the turn eraser removes one a stopped instance left behind.",
+  },
   "usage_events.conversation_id": { kind: "retained", reason: "The billing ledger keeps its rows and loses the link (SET NULL)." },
   "routine_consent_records.conversation_id": {
     kind: "retained",

@@ -8,6 +8,7 @@ import {
 import { ConversationAuditEraser } from "../../src/db/repositories/auditEventRepository.js";
 import { ContextVariableValueEraser } from "../../src/db/repositories/contextVariableRepository.js";
 import { EmailSkillActivityEraser } from "../../src/db/repositories/emailSkillActivityRepository.js";
+import { ConversationTurnLeaseEraser } from "../../src/modules/chat/composition.js";
 import { EmailInboundEraser } from "../../src/modules/emailChannel/public.js";
 import { EvalConversationEraser } from "../../src/modules/eval/composition.js";
 import type { ConversationErasureScope } from "../../src/shared/domain/conversationDataErasure.js";
@@ -153,6 +154,36 @@ describe("EvalConversationEraser", () => {
   });
 });
 
+describe("ConversationTurnLeaseEraser", () => {
+  it("erases the leases, then the heads, of the workspace's own erased conversations", async () => {
+    const { db, statements } = recording();
+
+    expect(await new ConversationTurnLeaseEraser(db).erase(conversations())).toBe(2);
+
+    expect(statements.map((statement) => statement.sql.split(" where")[0])).toEqual([
+      'delete from "conversation_turn_leases"',
+      'delete from "conversation_turn_heads"',
+    ]);
+    expect(statements[0].parameters).toEqual([workspaceId, [conversationId]]);
+  });
+
+  it("finds a whole workspace's turn rows through its conversations", async () => {
+    const { db, statements } = recording();
+
+    await new ConversationTurnLeaseEraser(db).erase(workspace);
+
+    expect(statements).toHaveLength(2);
+    expect(statements[0].parameters).toEqual([workspaceId]);
+  });
+
+  it("sends nothing when no conversation goes", async () => {
+    const { db, statements } = recording();
+
+    expect(await new ConversationTurnLeaseEraser(db).erase(conversations([]))).toBe(0);
+    expect(statements).toEqual([]);
+  });
+});
+
 describe("default erasers", () => {
   it("registers one eraser per owning module", () => {
     const { db } = recording();
@@ -168,6 +199,7 @@ describe("default erasers", () => {
       "voice-channel",
       "visitor-images",
       "tool-images",
+      "chat-turns",
     ]);
     expect(defaultVerifiedCustomerDataErasers.map((bind) => bind(db).owner)).toEqual(["context-variables"]);
     expect(defaultVisitorKeyDataErasers.map((bind) => bind(db).owner)).toEqual(["voice-channel"]);

@@ -1,8 +1,10 @@
-import { sql } from "kysely";
+import { sql, type ExpressionBuilder } from "kysely";
 import { z } from "zod";
 
+import type { ConversationDataEraser, ConversationErasureScope } from "../../../shared/domain/conversationDataErasure.js";
 import type { NotificationHandlers } from "../../../shared/infra/postgresNotificationListener.js";
-import type { Db } from "../../../shared/infra/kysely/types.js";
+import { anyOf } from "../../../shared/infra/kysely/sqlHelpers.js";
+import type { DB, Db } from "../../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type {
   ConversationTurnLeaseStore,
@@ -224,6 +226,35 @@ export class PostgresConversationTurnLeaseStore implements ConversationTurnLease
       supersedeAfterEmission: row.supersede_after_emission,
       ownerInstanceId: row.owner_instance_id,
     }));
+  }
+}
+
+/**
+ * Erases the turn rows of erased conversations. No key can hold them: a turn is placed from the id
+ * its caller sent, before the conversation is read. A turn's rows go as it ends, so this finds only
+ * those an instance that stopped mid-turn left behind, or those of a turn still running, whose
+ * owner then loses its lease and aborts the turn.
+ */
+export class ConversationTurnLeaseEraser implements ConversationDataEraser {
+  readonly owner = "chat-turns";
+
+  constructor(private readonly db: Db) {}
+
+  async erase(scope: ConversationErasureScope): Promise<number> {
+    if (scope.kind === "conversations" && scope.conversationIds.length === 0) {
+      return 0;
+    }
+    // The conversations still exist while erasers run, so the turn rows are found through the
+    // workspace's own conversations.
+    const conversationIds = scope.kind === "conversations" ? scope.conversationIds : null;
+    const erased = (eb: ExpressionBuilder<DB, "conversation_turn_leases" | "conversation_turn_heads">) =>
+      eb("conversation_id", "in", eb.selectFrom("conversations")
+        .select(sql<string>`conversations.id::text`.as("id"))
+        .where("conversations.workspace_id", "=", scope.workspaceId)
+        .$if(conversationIds !== null, (query) => query.where((inner) => anyOf(inner.ref("conversations.id"), conversationIds ?? [], "uuid[]"))));
+    const leases = await this.db.deleteFrom("conversation_turn_leases").where(erased).executeTakeFirst();
+    const heads = await this.db.deleteFrom("conversation_turn_heads").where(erased).executeTakeFirst();
+    return Number(leases.numDeletedRows) + Number(heads.numDeletedRows);
   }
 }
 

@@ -169,6 +169,7 @@ export {
 } from "./services/conversationTurnRegistry.js";
 export { CrossInstanceConversationTurnRegistry } from "./services/crossInstanceConversationTurnRegistry.js";
 export {
+  ConversationTurnLeaseEraser,
   PostgresConversationTurnLeaseStore,
   PostgresConversationTurnNotices,
 } from "./infra/postgresConversationTurnLeases.js";

@@ -1262,8 +1262,10 @@ context-variable session and customer values (an eraser reads the session ids
 it keys by from the conversations before they go), `chat.answer` /
 `chat.suspended` audit events, inbound email deliveries and their events, email
 skill activity, eval cases and runs built on a conversation's snapshot, the
-WhatsApp message log of a number whose latest conversation goes, and an Audience
-Pulse report built on an erased question. Composition binds
+WhatsApp message log of a number whose latest conversation goes, an Audience
+Pulse report built on an erased question, and the turn coordination rows
+(`conversation_turn_leases`, `conversation_turn_heads`) an instance that stopped
+mid-turn left behind. Composition binds
 them to the erasure's transaction, and runs their workspace scope inside
 workspace and organization deletion. A new column that names a conversation,
 session, visitor or message needs a cascading key, an eraser, or a stated

@@ -225,6 +225,26 @@ describe("ModelEmailReplyCompleteness", () => {
     expect(input).toEqual({ customer_messages: [QUESTION[0].text], reply: draft.text, context: PASSAGES });
   });
 
+  it("reads a request for something to be done as answered only by a reply that says it is or will be done", async () => {
+    // A reply that explains the policy, or sends the customer to write to someone, leaves the
+    // request undone, so an automatic send would tell the customer nothing has happened. The
+    // rule rides in the prompt the model is sent, and the model judges it by meaning.
+    const model = stubModel(JSON.stringify({ completeness: "not_answered", unanswered_asks: 1 }));
+    const { check } = completeness(model, {
+      messages: [{ author: "customer", text: "Please cancel my order #48213, I ordered the wrong tea." }],
+    });
+
+    await check.assess({
+      ...subject,
+      draft: { text: "We can cancel it free of charge until it leaves the warehouse. Please write to customer care with your order number.", presentation: {} },
+    });
+
+    const prompt = (model.requests[0]?.prompt ?? "").replace(/\s+/gu, " ");
+    expect(prompt).toContain("An ask for something to be done");
+    expect(prompt).toContain("answered only when the reply says it has been done or that the agent will do it");
+    expect(prompt).toContain("sends the customer elsewhere to get it done");
+  });
+
   /** The input the completeness check sent the model, parsed from its envelope. */
   const completenessInput = (request: ModelInferenceRequest | undefined) =>
     JSON.parse(request!.prompt.split("<email-reply-completeness-input>\n")[1].split("\n</email-reply-completeness-input>")[0]) as {

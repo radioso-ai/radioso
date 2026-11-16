@@ -248,14 +248,19 @@ describeIfDatabase("public conversation events across instances", () => {
         return { id, workspaceId: workspace } as never;
       };
 
+      // B's listener already listens when the stream opens: an earlier subscriber came and went,
+      // and the session stays on the channel.
+      const earlierMissed = vi.fn();
+      const leave = b.bus.subscribe(randomUUID(), vi.fn(), earlierMissed);
+      await vi.waitFor(() => expect(earlierMissed).toHaveBeenCalledOnce());
+      leave();
+
       const { port } = server.address() as AddressInfo;
       stream = await openEventStream(
         `http://127.0.0.1:${port}/api/v1/public/chat/${chatToken}/events/${conversationId}`,
         { "x-radioso-public-session": String(publicSession.body.publicSessionToken) },
       );
       expect(stream.status).toBe(200);
-      // `ready` on subscribing, and again once B's listener hears other instances.
-      await vi.waitFor(() => expect(stream!.named("ready")).toHaveLength(2));
 
       const event = messageCreated(conversationId, workspaceId);
       a.bus.publish(event);
@@ -263,9 +268,12 @@ describeIfDatabase("public conversation events across instances", () => {
         event: "message.created",
         data: { conversationId, messageId: event.messageId, createdAt: event.createdAt },
       }]));
+      // One `ready`, on subscribing: joining a session that already listens misses nothing.
+      expect(stream.named("ready")).toHaveLength(1);
 
+      // A reconnect is a real gap, so the stream sends `ready` again.
       await dropListenerSession(b.applicationName);
-      await vi.waitFor(() => expect(stream!.named("ready")).toHaveLength(3), { timeout: 5_000 });
+      await vi.waitFor(() => expect(stream!.named("ready")).toHaveLength(2), { timeout: 5_000 });
       expect(stream.named("ready").at(-1)?.data).toEqual({ conversationId });
     } finally {
       await stream?.close();

@@ -10,7 +10,8 @@ import type {
 } from "../services/crossInstancePublicConversationEventBus.js";
 
 /**
- * The channel every process listens on while it has subscribers. A payload carries the event's
+ * The channel a process listens on from its first subscriber until its listener session closes. A
+ * payload carries the event's
  * ids and timestamp and the publishing process's id: a few hundred bytes, well inside NOTIFY's
  * 8000-byte limit, and never message content.
  */
@@ -78,7 +79,7 @@ export class PostgresPublicConversationEventRelay implements PublicConversationE
           );
         }
       },
-      listening: () => handlers.listening(),
+      listening: (state) => handlers.listening(state),
       interrupted: () => handlers.interrupted(),
     });
   }

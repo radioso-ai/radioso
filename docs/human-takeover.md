@@ -661,9 +661,14 @@ transcript. The public visitor surface can also subscribe to push notifications.
 The visitor push stream sends `ready` when it opens and `message.created` for
 each new message, whichever backend instance stored it: the instances relay
 these events to each other through Postgres. The stream sends `ready` again
-when the instance holding it may have missed a message, because its database
-listener reconnected. Treat every `ready` and every `message.created` as a cue
-to read the visitor tail from your cursor.
+when the instance holding it may have missed a message: once that instance's
+database listener starts listening, if the stream opened before it did, and
+after the listener reconnects. After a reconnect the instance spreads those
+`ready`s over up to five seconds, so its visitors' tail reads reach the
+database a few at a time. Treat every `ready` and every `message.created` as a
+cue to read the visitor tail from your cursor, and retry a tail read that fails,
+with backoff: the message the event announced reaches the visitor only through
+that read.
 
 Each tail call returns messages created after the cursor plus an advanced cursor.
 Conversation detail responses include `tailCursor`, which clients should use for

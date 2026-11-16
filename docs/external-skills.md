@@ -1,7 +1,7 @@
 ---
 title: "External Skills via MCP"
 description: "Configuration of external MCP server connections and unified named skill definitions for agent routines with encrypted credential storage."
-last_updated: 2026-11-13
+last_updated: 2026-11-16
 ---
 
 # External Skills via MCP
@@ -23,8 +23,13 @@ use it. A skill belongs to one agent.
 
 Open any agent's **Skills** tab and choose **Manage MCP connections** to add a connection
 in the side panel. You can also open the panel when adding an MCP skill. The panel
-shows the same connections from every agent in the workspace, and each one lists the
-agents whose skills use it.
+shows the same connections from every agent in the workspace. Each row gives a
+connection's name and server URL, with a badge when it needs attention, such as an
+OAuth connection that is not yet authorized or one that needs re-authorization.
+Select a row to open the connection in the same panel. Its details show the server
+URL, the authentication method, and the agents whose skills use it, with the actions
+**Test connection**, **Authorize** or **Re-authorize** (OAuth), **Replace token**
+(access token), and **Delete**. **Back to connections** returns to the list.
 This connects your agents to external tools. **Channels → MCP** manages clients
 that talk to an agent.
 
@@ -44,13 +49,13 @@ server with its own credential.
     [Connecting an OAuth server](#connecting-an-oauth-server) below.
 
 The access token is **write-only**. It is encrypted at rest and never returned by
-the API or shown again. To replace it, choose **Replace token** on the connection
+the API or shown again. To replace it, open the connection, choose **Replace token**,
 and paste the new one.
 
-Choose **Test connection** on a saved connection to authenticate with the server
-and list its available tools. The result shows a tool count or an error beside
-that connection. The test does not invoke any tools. **Credentials saved** means
-the credential is stored; use the test to check that the connection works.
+Open a saved connection and choose **Test connection** to authenticate with the
+server and list its available tools. The result shows a tool count or an error in
+the connection's details. The test does not invoke any tools. **Credentials saved**
+means the credential is stored; use the test to check that the connection works.
 
 When the server turns the token down, for example because it was rotated or
 revoked on the server's side, the test and the skill form both say so and the
@@ -77,7 +82,7 @@ To set one up:
    provider's **authorization** and **token** endpoints, the **client id**, the
    **client secret** (leave blank for a public PKCE client), and any **scopes**.
 3. Save. The connection starts as **unconfigured**.
-4. Click **Authorize**. Radioso opens the provider's consent screen. Approve it.
+4. Open the connection and click **Authorize**. Radioso opens the provider's consent screen. Approve it.
    On return, the connection becomes **authorized**.
 
 The client secret and the issued tokens are **write-only** — encrypted at rest and

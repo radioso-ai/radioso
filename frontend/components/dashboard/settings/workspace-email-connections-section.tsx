@@ -1,9 +1,25 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { Activity, ExternalLink, Mail, Power, RefreshCw, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ExternalLink, Mail, RefreshCw } from 'lucide-react'
 
+import {
+  EmailConnectionDetailSheet,
+  type EmailConnectionSheetActions,
+} from '@/components/dashboard/settings/email-connection-detail-sheet'
+import {
+  EMAIL_PROVIDERS,
+  emailConnectionRowDomId,
+  emailConnectionRowSummary,
+  hasEmailConnectionProblem,
+  providerLabel,
+  statusLabel,
+  statusTone,
+  type EmailConnectionHealth,
+} from '@/components/dashboard/settings/email-connection-rows'
+import { QuietList, QuietListRow } from '@/components/dashboard/settings/quiet-list'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { useScopedRowMutations } from '@/components/dashboard/settings/use-scoped-row-mutations'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import {
   customerEmailApi,
   type CustomerEmailConnection,
@@ -24,51 +41,14 @@ import {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 
-const PROVIDERS: Array<{
-  id: CustomerEmailOauthProviderId
-  label: string
-  defaultName: string
-  defaultScopes: string[]
-}> = [
-  {
-    id: 'google_mail',
-    label: 'Google Gmail',
-    defaultName: 'Support Gmail',
-    defaultScopes: [
-      'https://www.googleapis.com/auth/gmail.compose',
-      'https://www.googleapis.com/auth/gmail.send',
-    ],
-  },
-  {
-    id: 'microsoft_graph_mail',
-    label: 'Microsoft 365 Outlook',
-    defaultName: 'Support Outlook',
-    defaultScopes: ['Mail.ReadWrite', 'Mail.Send'],
-  },
-]
-
-const statusTone = (status: WorkspaceOauthConnection['status'] | CustomerEmailConnection['status']) => {
-  if (status === 'authorized') return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-  if (status === 'needs_reauth' || status === 'error') return 'bg-destructive/10 text-destructive'
-  return 'bg-muted text-muted-foreground'
-}
-
-const statusLabel = (status: WorkspaceOauthConnection['status'] | CustomerEmailConnection['status']) => {
-  if (status === 'authorized') return 'Authorized'
-  if (status === 'needs_reauth') return 'Needs re-auth'
-  if (status === 'pending') return 'Pending'
-  if (status === 'disabled') return 'Disabled'
-  if (status === 'error') return 'Error'
-  return status
-}
-
-const providerLabel = (providerId: string) =>
-  PROVIDERS.find((provider) => provider.id === providerId)?.label ?? providerId
+// The sheet holds which connection it shows, not a copy of it, so a toggle or reload shows the
+// current connection and a deleted one closes the sheet. A selection belongs to one workspace.
+type SheetSelection = { workspaceId: string; connectionId: string }
 
 export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId: string | null }) {
   const [providerId, setProviderId] = useState<CustomerEmailOauthProviderId>('google_mail')
   const provider = useMemo(
-    () => PROVIDERS.find((candidate) => candidate.id === providerId) ?? PROVIDERS[0],
+    () => EMAIL_PROVIDERS.find((candidate) => candidate.id === providerId) ?? EMAIL_PROVIDERS[0],
     [providerId],
   )
   const [displayName, setDisplayName] = useState(provider.defaultName)
@@ -82,13 +62,29 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
   const [isLoading, setIsLoading] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sheetSelection, setSheetSelection] = useState<SheetSelection | null>(null)
+  const [checkingHealthIds, setCheckingHealthIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [healthResult, setHealthResult] = useState<{ connectionId: string; health: EmailConnectionHealth } | null>(null)
+  // Only the latest read may land: two rows acted on back to back each reload the list.
+  const loadVersion = useRef(0)
+  const rowMutations = useScopedRowMutations(workspaceId ?? '')
+
+  // Memoized: the sheet keeps the last connection it showed, compared by identity.
+  const sheetConnection = useMemo(
+    () => (sheetSelection && sheetSelection.workspaceId === workspaceId
+      ? emailConnections.find((connection) => connection.id === sheetSelection.connectionId) ?? null
+      : null),
+    [sheetSelection, workspaceId, emailConnections],
+  )
 
   const authorizedOauthConnections = oauthConnections.filter((connection) => connection.status === 'authorized')
 
   const loadConnections = async () => {
+    const version = ++loadVersion.current
     if (!workspaceId) {
       setOauthConnections([])
       setEmailConnections([])
+      setIsLoading(false)
       return
     }
     setIsLoading(true)
@@ -98,6 +94,7 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
         customerEmailApi.listOauthConnections(workspaceId),
         customerEmailApi.listEmailConnections(workspaceId),
       ])
+      if (version !== loadVersion.current) return
       setOauthConnections(oauthResult.connections)
       setEmailConnections(emailResult.connections)
       setSelectedOauthConnectionId((current) => {
@@ -107,9 +104,10 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
         return oauthResult.connections.find((connection) => connection.status === 'authorized')?.id ?? ''
       })
     } catch (loadError) {
+      if (version !== loadVersion.current) return
       setError(getApiErrorMessage(loadError, 'Failed to load email connections.'))
     } finally {
-      setIsLoading(false)
+      if (version === loadVersion.current) setIsLoading(false)
     }
   }
 
@@ -191,32 +189,86 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
     )
   }
 
+  // A row action holds its own row's controls until its own request and the reload that shows its
+  // result settle, so acting on a second connection never releases the first one's.
+  const runRowAction = async <T,>(
+    connectionId: string,
+    mutate: () => Promise<T>,
+    fallbackMessage: string,
+  ): Promise<{ applied: true; value: T } | { applied: false }> => {
+    if (!workspaceId) {
+      return { applied: false }
+    }
+    setError(null)
+    setHealthResult(null)
+    const outcome = await rowMutations.run(connectionId, async () => {
+      const value = await mutate()
+      await loadConnections()
+      return value
+    })
+    if (outcome.status === 'failed') {
+      setError(getApiErrorMessage(outcome.error, fallbackMessage))
+    }
+    return outcome.status === 'applied' ? { applied: true, value: outcome.value } : { applied: false }
+  }
+
   const updateDisabled = async (connection: CustomerEmailConnection, disabled: boolean) => {
-    await runAction(
-      `disabled:${connection.id}`,
-      async () => {
-        await customerEmailApi.updateEmailConnection(workspaceId!, connection.id, { disabled })
-      },
+    await runRowAction(
+      connection.id,
+      () => customerEmailApi.updateEmailConnection(workspaceId!, connection.id, { disabled }),
       disabled ? 'Failed to disable customer email connection.' : 'Failed to re-enable customer email connection.',
     )
   }
 
   const checkHealth = async (connection: CustomerEmailConnection) => {
-    await runAction(
-      `health:${connection.id}`,
-      async () => {
-        await customerEmailApi.checkEmailConnectionHealth(workspaceId!, connection.id)
-      },
-      'Failed to check customer email connection health.',
-    )
+    setCheckingHealthIds((current) => new Set(current).add(connection.id))
+    try {
+      const result = await runRowAction(
+        connection.id,
+        () => customerEmailApi.checkEmailConnectionHealth(workspaceId!, connection.id),
+        'Failed to check customer email connection health.',
+      )
+      if (result.applied) {
+        setHealthResult({ connectionId: connection.id, health: result.value.connection.lastHealthStatus ?? 'unknown' })
+      }
+    } finally {
+      setCheckingHealthIds((current) => {
+        const next = new Set(current)
+        next.delete(connection.id)
+        return next
+      })
+    }
   }
 
   const deleteConnection = async (connection: CustomerEmailConnection) => {
-    await runAction(
-      `delete:${connection.id}`,
+    const result = await runRowAction(
+      connection.id,
       () => customerEmailApi.deleteEmailConnection(workspaceId!, connection.id),
       'Failed to delete customer email connection.',
     )
+    if (result.applied) {
+      setSheetSelection(null)
+    }
+  }
+
+  const openSheet = (connection: CustomerEmailConnection) => {
+    if (!workspaceId) return
+    setError(null)
+    setHealthResult(null)
+    setSheetSelection({ workspaceId, connectionId: connection.id })
+  }
+
+  const closeSheet = () => {
+    setHealthResult(null)
+    setSheetSelection(null)
+  }
+
+  const sheetActions: EmailConnectionSheetActions = {
+    isRowPending: rowMutations.isPending,
+    isCheckingHealth: (connectionId) => checkingHealthIds.has(connectionId),
+    onToggleEnabled: (connection, enabled) => void updateDisabled(connection, !enabled),
+    onCheckHealth: (connection) => void checkHealth(connection),
+    onDelete: (connection) => void deleteConnection(connection),
   }
 
   return (
@@ -241,7 +293,7 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
               value={providerId}
               onValueChange={(value) => {
                 const nextProviderId = value as CustomerEmailOauthProviderId
-                const nextProvider = PROVIDERS.find((candidate) => candidate.id === nextProviderId) ?? PROVIDERS[0]
+                const nextProvider = EMAIL_PROVIDERS.find((candidate) => candidate.id === nextProviderId) ?? EMAIL_PROVIDERS[0]
                 setProviderId(nextProviderId)
                 setDisplayName(nextProvider.defaultName)
               }}
@@ -250,7 +302,7 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PROVIDERS.map((candidate) => (
+                {EMAIL_PROVIDERS.map((candidate) => (
                   <SelectItem key={candidate.id} value={candidate.id}>
                     {candidate.label}
                   </SelectItem>
@@ -350,45 +402,33 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
           </div>
         </div>
 
-        <div className="space-y-2">
-          {emailConnections.map((connection) => (
-            <div key={connection.id} className="rounded-lg border border-border bg-muted/20 p-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">{connection.displayName}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {connection.senderName ? `${connection.senderName} <${connection.senderEmail}>` : connection.senderEmail}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {providerLabel(connection.provider)}
-                    {connection.lastHealthStatus ? ` · health ${connection.lastHealthStatus}` : ''}
-                    {connection.lastErrorCode ? ` · ${connection.lastErrorCode}` : ''}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
+        {emailConnections.length > 0 ? (
+          <QuietList>
+            {emailConnections.map((connection) => (
+              <QuietListRow
+                key={connection.id}
+                domId={emailConnectionRowDomId(connection.id)}
+                title={connection.displayName}
+                summary={emailConnectionRowSummary(connection)}
+                isDimmed={connection.status === 'disabled'}
+                onOpen={() => openSheet(connection)}
+                lead={(
+                  <Switch
+                    checked={connection.status !== 'disabled'}
+                    onCheckedChange={(enabled) => void updateDisabled(connection, !enabled)}
+                    disabled={rowMutations.isPending(connection.id)}
+                    aria-label={`Enable ${connection.displayName}`}
+                  />
+                )}
+                badge={hasEmailConnectionProblem(connection.status) ? (
                   <Badge className={statusTone(connection.status)} variant="secondary">
                     {statusLabel(connection.status)}
                   </Badge>
-                  <Button type="button" variant="outline" size="sm" onClick={() => checkHealth(connection)} loading={busyAction === `health:${connection.id}`} icon={<Activity />}>
-                    Health
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => updateDisabled(connection, connection.status !== 'disabled')}
-                    loading={busyAction === `disabled:${connection.id}`} icon={<Power />}
-                  >
-                    {connection.status === 'disabled' ? 'Enable' : 'Disable'}
-                  </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => deleteConnection(connection)} loading={busyAction === `delete:${connection.id}`} icon={<Trash2 />}>
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+                ) : undefined}
+              />
+            ))}
+          </QuietList>
+        ) : null}
 
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -396,8 +436,15 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
             Loading email connections
           </div>
         ) : null}
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
       </div>
+      <EmailConnectionDetailSheet
+        target={sheetConnection}
+        error={error}
+        healthResult={healthResult}
+        actions={sheetActions}
+        onClose={closeSheet}
+      />
     </SettingsCard>
   )
 }

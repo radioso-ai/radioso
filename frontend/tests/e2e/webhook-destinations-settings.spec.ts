@@ -40,9 +40,15 @@ test("workspace operator manages webhook destinations and one-time secrets", asy
     },
   });
 
-  const createdRow = page.locator("li", { hasText: "sales-intake" });
+  // A row is one line; its details and actions wait in the sheet it opens.
+  const createdRow = page.getByRole("button", { name: "sales-intake", exact: true });
   await expect(createdRow).toBeVisible();
-  await createdRow.getByRole("button", { name: "Edit sales-intake" }).click();
+  await expect(page.getByRole("button", { name: "Edit sales-intake" })).toHaveCount(0);
+
+  await createdRow.click();
+  const sheet = page.getByRole("dialog", { name: "sales-intake" });
+  await sheet.getByRole("button", { name: "Edit sales-intake" }).click();
+  await expect(sheet).toHaveCount(0);
   await page.getByLabel("Destination URL").fill("https://hooks.example.com/sales-v2");
   await page.getByRole("button", { name: "Save destination" }).click();
   expect(webhookDestinationUpdates.at(-1)).toMatchObject({
@@ -53,17 +59,66 @@ test("workspace operator manages webhook destinations and one-time secrets", asy
     },
   });
 
-  await createdRow.getByRole("button", { name: "Rotate secret for sales-intake" }).click();
-  await expect(page.getByText("whsec_rotated_000002")).toBeVisible();
+  await createdRow.click();
+  await sheet.getByRole("button", { name: "Rotate secret for sales-intake" }).click();
+  await expect(sheet.getByText("whsec_rotated_000002")).toBeVisible();
   expect(webhookDestinationUpdates.at(-1)).toMatchObject({
     method: "ROTATE_SECRET",
   });
 
-  await createdRow.getByRole("button", { name: "Delete sales-intake" }).click();
+  await sheet.getByRole("button", { name: "Delete sales-intake" }).click();
+  await expect(sheet).toHaveCount(0);
   await expect(createdRow).toHaveCount(0);
   expect(webhookDestinationUpdates.at(-1)).toMatchObject({
     method: "DELETE",
   });
+});
+
+test("a failing destination is flagged on its row, and its sheet explains a blocked delete", async ({ page }) => {
+  const webhookDestinationUpdates: WebhookDestinationMutationFixture[] = [];
+  const failing = { ...baseWebhookDestination(), lastDeliveryStatus: "failed" as const, lastDeliveryAt: "2026-06-11T12:00:00.000Z" };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    webhookDestinations: [failing, { ...baseWebhookDestination(), id: "44444444-4444-4444-8444-444444444444", name: "billing-sync", lastDeliveryStatus: "success", lastDeliveryAt: "2026-06-11T12:00:00.000Z" }],
+    webhookDestinationUpdates,
+  });
+  // The first delete is refused because a routine still exports to the destination.
+  let refusedOnce = false;
+  await page.route(`**/settings/webhook-destinations/${failing.id}`, async (route) => {
+    if (route.request().method() !== "DELETE" || refusedOnce) {
+      await route.fallback();
+      return;
+    }
+    refusedOnce = true;
+    await route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "conflict", message: "Routine Collect pricing intake still exports to this destination." } }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=workspace&anchor=webhook-destinations`);
+
+  const failingRow = page.getByRole("button", { name: "crm-leads", exact: true });
+  await expect(failingRow).toContainText("Failing");
+  await expect(page.getByRole("button", { name: "billing-sync", exact: true })).not.toContainText("Failing");
+
+  await failingRow.click();
+  const sheet = page.getByRole("dialog", { name: "crm-leads" });
+  await expect(sheet).toContainText("https://hooks.example.com/leads");
+  await expect(sheet).toContainText("failed at");
+  await expect(sheet).toContainText(failing.id);
+
+  await sheet.getByRole("button", { name: "Delete crm-leads" }).click();
+  // A refused delete keeps the destination: its sheet stays open with the reason.
+  await expect(sheet.getByRole("alert")).toContainText("still exports to this destination");
+  await expect(sheet).toBeVisible();
+
+  await sheet.getByRole("button", { name: "Delete crm-leads" }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(failingRow).toHaveCount(0);
+  expect(webhookDestinationUpdates.at(-1)).toMatchObject({ method: "DELETE", destinationId: failing.id });
 });
 
 test("routine editor configures completion export with destination dropdown and payload preview", async ({ page }) => {

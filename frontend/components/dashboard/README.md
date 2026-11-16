@@ -147,7 +147,10 @@ services.
 - Settings UI: `settings-view.tsx`, `settings/`, and settings docs sources.
 - Agent **Skills → Manage MCP connections** opens `settings/skills/McpServersPanel.tsx`,
   which hosts outbound targets through `McpConnectionsSection.tsx`. Connections belong
-  to the workspace, so every agent's panel shows the same list. The capability
+  to the workspace, so every agent's panel shows the same list. The list is a
+  `QuietList`; a row drills into `McpConnectionDetail.tsx` inside the same panel (the
+  panel is already a sheet, so no second sheet opens), and each connection's actions lock
+  through `useScopedRowMutations`. The capability
   picker opens the same panel and refreshes its caller's catalog on close.
   **Channels → MCP** owns inbound
   client access through `settings/mcp-channel-card.tsx`. The shared credential

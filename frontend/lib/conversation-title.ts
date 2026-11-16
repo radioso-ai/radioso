@@ -1,11 +1,14 @@
 import { stripMarkdownSyntax } from '@/lib/markdown-preview'
+import { visibleMessageLabel } from '@/lib/visitor-image-input'
 
 /** The minimal conversation shape the display-title fallback chain needs. */
-export interface ConversationTitleSource {
+interface ConversationTitleSource {
   /** LLM-generated topic label (backend issue #1114). Null until the first successful regeneration. */
   title?: string | null
-  /** The conversation's first-message preview, used while no title has been generated yet. */
+  /** The words of the conversation's opening message, used while no title has been generated yet. */
   preview?: string | null
+  /** The photos that message carried; a conversation nobody wrote a word in previews as this count alone. */
+  previewPhotoCount?: number | null
 }
 
 /**
@@ -24,5 +27,8 @@ export function resolveConversationDisplayTitle(
   if (title) {
     return title
   }
-  return stripMarkdownSyntax(conversation.preview || '') || fallback
+  return visibleMessageLabel({
+    text: stripMarkdownSyntax(conversation.preview || ''),
+    photoCount: conversation.previewPhotoCount ?? 0,
+  }) || fallback
 }

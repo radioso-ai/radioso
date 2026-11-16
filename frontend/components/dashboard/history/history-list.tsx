@@ -27,7 +27,7 @@ import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import { EMPTY_CONVERSATION_FILTERS, filterConversations } from '@/lib/conversation-filters'
 import { formatConversationLocation } from '@/lib/history-source'
 import { stripTrackingParams } from '@/lib/inbox-response'
-import { stripMarkdownSyntax } from '@/lib/markdown-preview'
+import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
@@ -210,7 +210,8 @@ function ConversationRow({
   conversation: ChatConversationSummary
   onSelect: (item: SelectedHistoryItem) => void
 }) {
-  useCopilotEntity('conversation', conversation.id, conversation.preview || 'Untitled conversation')
+  const rowTitle = resolveConversationDisplayTitle({ preview: conversation.preview, previewPhotoCount: conversation.previewPhotoCount })
+  useCopilotEntity('conversation', conversation.id, rowTitle)
   useCopilotEntity(
     'agent',
     conversation.agentId,
@@ -229,7 +230,7 @@ function ConversationRow({
           onClick={() => onSelect({ kind: 'chat', id: conversation.id })}
           className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <span className="block truncate">{stripMarkdownSyntax(conversation.preview || '') || 'Untitled conversation'}</span>
+          <span className="block truncate">{rowTitle}</span>
         </button>
         <ConversationMetaLine conversation={conversation} />
       </DashboardTableCell>

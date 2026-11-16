@@ -59,6 +59,7 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
         userMessageCount: 1,
         assistantMessageCount: 1,
         preview: "Weekly yoga schedule",
+        previewPhotoCount: 1,
         ownership,
       },
     ],
@@ -137,6 +138,8 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   const handoffRow = queue.getByRole("button", { name: /Weekly yoga schedule/ });
   await expect(handoffRow).toBeVisible();
   await expect(handoffRow).toContainText("Handoff");
+  // The row is titled by the visitor's words with the count of the photos that came with them.
+  await expect(handoffRow).toContainText("Weekly yoga schedule · 1 photo");
 
   await handoffRow.click();
 
@@ -535,6 +538,7 @@ test("operator opens a recently closed feedback conversation from Needs-you", as
       assistantMessageId,
       title: null,
       preview: "Who is Nikola Tesla?",
+      previewPhotoCount: 0,
     }],
     conversationDetail: {
       conversationId,
@@ -703,6 +707,7 @@ test("a recently closed row whose detail 404s before its own route lands keeps t
       assistantMessageId: null,
       title: null,
       preview: "Race closed row",
+      previewPhotoCount: 0,
     }],
   });
   await stubEmptyQualityQueue(page);

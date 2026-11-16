@@ -53,13 +53,22 @@ export const jsonbSet = (
   sql`jsonb_set(coalesce(${column}, '{}'::jsonb), ${sql.lit(`{${path.join(",")}}`)}, ${value}, true)`;
 
 /**
+ * How many photos a user message carries, in SQL: the length of `imageInput.images` in its
+ * metadata when that record is well formed (a text `typedText` and a non-empty list), otherwise 0.
+ * The query-side twin of `visibleMessageText`'s `photoCount`; the pair is held to one answer by
+ * `visible-message-text-twin.integration.test.ts`.
+ */
+export const visibleMessagePhotoCountSql = (metadata: Expression<unknown>): RawBuilder<number> =>
+  sql`(case when jsonb_typeof(${metadata} -> 'imageInput' -> 'typedText') = 'string' and jsonb_typeof(${metadata} -> 'imageInput' -> 'images') = 'array' then jsonb_array_length(${metadata} -> 'imageInput' -> 'images') else 0 end)`;
+
+/**
  * The text of a user message as a person reads it, in SQL: what the visitor typed when the message
  * carries photos (`imageInput.typedText` in its metadata), otherwise its content. The query-side
  * twin of `visibleMessageText`, for a query that must pick or match a message by the words a
  * person sees: `content` of a message with photos is the turn text, readings included.
  */
 export const visibleMessageTextSql = (content: Expression<unknown>, metadata: Expression<unknown>): RawBuilder<string> =>
-  sql`coalesce(${metadata} -> 'imageInput' ->> 'typedText', ${content})`;
+  sql`(case when ${visibleMessagePhotoCountSql(metadata)} > 0 then ${metadata} -> 'imageInput' ->> 'typedText' else ${content} end)`;
 
 /** `<expression>::text` — cast to text (e.g. to compare a uuid column against an arbitrary string). */
 export const castText = (expr: Expression<unknown>): RawBuilder<string> => sql`${expr}::text`;

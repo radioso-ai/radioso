@@ -383,29 +383,22 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
          CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.reason END AS triage_legacy_reason,
          CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.closed_at END AS triage_closed_at,
          CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.updated_at END AS triage_updated_at,
-         (
-           SELECT um.content
-           FROM messages um
-           WHERE um.conversation_id = m.conversation_id
-             AND um.role = 'user'
-             AND um.created_at <= m.created_at
-           ORDER BY um.created_at DESC, um.id DESC
-           LIMIT 1
-         ) AS user_question,
-         (
-           SELECT um.metadata_json
-           FROM messages um
-           WHERE um.conversation_id = m.conversation_id
-             AND um.role = 'user'
-             AND um.created_at <= m.created_at
-           ORDER BY um.created_at DESC, um.id DESC
-           LIMIT 1
-         ) AS user_question_metadata,
+         asked.content AS user_question,
+         asked.metadata_json AS user_question_metadata,
          COALESCE(feedback_activity.up_count, '0') AS up_count,
          COALESCE(feedback_activity.down_count, '0') AS down_count,
          feedback_activity.latest_down_updated_at
        ${TURN_POPULATION_SOURCE}
        LEFT JOIN agents a ON a.id = c.agent_id
+       LEFT JOIN LATERAL (
+         SELECT um.content, um.metadata_json
+         FROM messages um
+         WHERE um.conversation_id = m.conversation_id
+           AND um.role = 'user'
+           AND um.created_at <= m.created_at
+         ORDER BY um.created_at DESC, um.id DESC
+         LIMIT 1
+       ) asked ON true
        ${TRIAGE_JOIN}
        ${feedbackActivityJoin}
        WHERE ${whereClause}

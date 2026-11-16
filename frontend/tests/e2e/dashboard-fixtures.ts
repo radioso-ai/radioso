@@ -1998,6 +1998,7 @@ export const installDashboardApiMocks = async (
         assistantMessageId: null,
         title: closed?.title ?? null,
         preview: closed?.messages?.[0]?.content ?? null,
+        previewPhotoCount: 0,
       });
       await json(route, response);
       return;

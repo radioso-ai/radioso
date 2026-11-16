@@ -59,6 +59,7 @@ const rowSummary =(overrides: Partial<ChatConversationSummary> = {}): ChatConver
   userMessageCount: 1,
   assistantMessageCount: 1,
   preview: 'Please help with this order',
+  previewPhotoCount: 0,
   ...overrides,
 })
 

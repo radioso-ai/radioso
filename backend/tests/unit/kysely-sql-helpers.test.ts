@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
 import { pgVectorCosineDistance, pgVectorText, serializePgVector, toPgVector } from "../../src/shared/infra/kysely/pgVectorSql.js";
-import { anyOf, castText, clockTimestamp, containsAnyValueText, jsonbStringContainsAnyValueText, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, optionalTimestampMatch, setLocal, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock, visibleMessageTextSql } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, clockTimestamp, containsAnyValueText, jsonbStringContainsAnyValueText, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, optionalTimestampMatch, setLocal, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -94,13 +94,6 @@ describe("kysely sqlHelpers", () => {
     expect(castText(sql.ref("id")).compile(db).sql).toBe('"id"::text');
     const setSql = jsonbSet(sql.ref("metadata_json"), ["suggestions"], toJsonb([])).compile(db).sql;
     expect(setSql).toContain("jsonb_set(coalesce(\"metadata_json\", '{}'::jsonb), '{suggestions}',");
-  });
-
-  it("visibleMessageTextSql reads a message's typed text when it has photos and its content otherwise, as parameter-free SQL", () => {
-    const compiled = visibleMessageTextSql(sql.ref("m.content"), sql.ref("m.metadata_json")).compile(db);
-
-    expect(compiled.sql).toBe(`coalesce("m"."metadata_json" -> 'imageInput' ->> 'typedText', "m"."content")`);
-    expect(compiled.parameters).toEqual([]);
   });
 
   it("anyOf emits a parameterized = ANY(...) with the array type cast", () => {

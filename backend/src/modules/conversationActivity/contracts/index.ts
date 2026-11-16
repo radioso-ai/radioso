@@ -248,6 +248,8 @@ export interface RecentlyClosedInboxItem {
   /** The conversation's generated title, and its first-message preview for while it has none. */
   title: string | null;
   preview: string | null;
+  /** The photos of the message the preview is read from. */
+  previewPhotoCount: number;
 }
 
 /**

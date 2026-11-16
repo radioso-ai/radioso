@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { TEST_EXECUTION_LABEL_CHARS } from "../../../../modules/test-execution/public.js";
+import { MAX_IMAGES_PER_MESSAGE } from "../../../../shared/domain/chatInputMetadata.js";
 import { retryTestExecutionSideSchema, sendTestExecutionMessageSchema, startTestExecutionSchema } from "../../routes/agentRevisionRequestSchemas.js";
 import { publicVoiceSessionStartSchema } from "../../routes/publicChatRouteSchemas.js";
 
@@ -21,7 +22,7 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry, replyBlo
     images: z.array(z.object({
       id: uuid.describe("The image id; read the photo from the test's image route."),
       reading: z.string().nullable().describe("What the agent's chat model read in the photo; null when it could not read it."),
-    })).min(1).max(3),
+    })).min(1).max(MAX_IMAGES_PER_MESSAGE),
   }).describe("The photos a user message carries. `content` is the turn text the agent ran on: the typed text followed by one `<attached_photo>` block per photo. Show `typedText` and the photos; the readings are the agent's."));
   const TestExecutionHistoryEntrySchema = z.object({ turnId: uuid, role: z.enum(["user", "assistant"]), content: z.string(), messageId: uuid.optional(), turnTrace: z.unknown().optional(), attemptId: uuid, createdAt: z.string().datetime(), spoken: z.literal(true).optional().describe("The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn."), imageInput: TestExecutionImageInputSchema.optional() });
   const TestExecutionSideSchema = registry.register("TestExecutionSide", z.object({

@@ -102,6 +102,7 @@ export const resolveReadOnlySource = (
       ownership: conversationDetail.ownership,
       title: conversationDetail.title,
       preview: conversation?.preview,
+      previewPhotoCount: conversation?.previewPhotoCount,
       updatedAt: conversationDetail.updatedAt,
       agentId: conversationDetail.agentId,
       agentName: conversationDetail.agentName ?? null,

@@ -28,12 +28,12 @@ const toContainsPattern = (value: string): string => `%${escapeLikePattern(value
 
 /**
  * `q` matches the same text the row displays (see `resolveConversationDisplayTitle` on the
- * frontend): the generated title, OR the conversation's first user-role message with visible
- * text — the same message `messageRepository.summarizeByConversationIds`'s DISTINCT ON preview
- * query surfaces for this conversation, read the way it reads it (`visibleMessageTextSql`: what
- * was typed beside photos, never the readings their turn text carries). A later message (an
- * assistant reply, or a second user message) never counts; only the single earliest user
- * message with words does.
+ * frontend): the generated title, OR the conversation's first user-role message with words — the
+ * message `messageRepository.summarizeByConversationIds` previews, read the way it reads it
+ * (`visibleMessageTextSql`: what was typed beside photos, never the readings their turn text
+ * carries). A later message (an assistant reply, or a second user message) never counts; only
+ * the single earliest user message with words does. A conversation nobody wrote a word in
+ * previews as its first photo message, a photo count with no text, so only its title matches.
  */
 const buildTextSearchFilter = (
   q: string | undefined,

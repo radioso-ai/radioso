@@ -59,10 +59,10 @@ export const visibleMessageText = (message: {
   content: string
   inputMetadata?: object | null
 }): VisibleMessageText => {
-  const imageInput = readVisitorImageInput(message.inputMetadata)
-  return imageInput
-    ? { text: imageInput.typedText, photoCount: imageInput.images.length }
-    : { text: message.content, photoCount: 0 }
+  const body = visitorMessageBody(message)
+  return body.kind === 'images'
+    ? { text: body.typedText, photoCount: body.images.length }
+    : { text: body.text, photoCount: 0 }
 }
 
 /** The short marker that stands for photos where a surface has no room for them: "1 photo", "3 photos". */
@@ -78,7 +78,7 @@ export const visibleMessageLabel = ({ text, photoCount }: VisibleMessageText): s
   return words ? `${words} · ${photoCountLabel(photoCount)}` : photoCountLabel(photoCount)
 }
 
-/** The label of the question a low-quality turn answered: its words and photo count, or '' when it has neither. */
+/** The label of a question shown as a line (a low-quality turn's, an Audience Pulse example's): its words and photo count, or '' when it has neither. */
 export const questionLabel = (turn: { question: string | null; questionPhotoCount?: number }): string =>
   visibleMessageLabel({ text: turn.question ?? '', photoCount: turn.questionPhotoCount ?? 0 })
 

@@ -11,6 +11,9 @@ const USER_MESSAGE_INPUT_METHODS = ["typed", "suggestion_click", "intent_click",
 
 type UserMessageInputMethod = typeof USER_MESSAGE_INPUT_METHODS[number];
 
+/** Photos one message carries: the upload limit (`VISITOR_IMAGE_LIMITS`) and the stored form below both hold to it. */
+export const MAX_IMAGES_PER_MESSAGE = 3;
+
 /**
  * The photos a message carries, as stored: what the visitor typed, apart from the readings the turn
  * text carries, and each photo's id with what the agent's model read in it (null when it could
@@ -22,10 +25,10 @@ const messageImageInputSchema = z.object({
   images: z.array(z.object({
     id: z.string().uuid(),
     reading: z.string().nullable(),
-  })).min(1).max(3),
+  })).min(1).max(MAX_IMAGES_PER_MESSAGE),
 });
 
-type MessageImageInput = z.infer<typeof messageImageInputSchema>;
+export type MessageImageInput = z.infer<typeof messageImageInputSchema>;
 
 const CLIENT_INPUT_METHODS = ["typed", "suggestion_click", "intent_click", "item_select"] as const satisfies readonly UserMessageInputMethod[];
 

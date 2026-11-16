@@ -291,6 +291,7 @@ export interface HandoffCandidateSource {
   ownership?: ConversationOwnership
   title?: string | null
   preview?: string | null
+  previewPhotoCount?: number | null
   updatedAt: string
   agentId?: string | null
   agentName?: string | null

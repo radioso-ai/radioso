@@ -28,6 +28,25 @@ describe('resolveConversationDisplayTitle', () => {
     expect(resolveConversationDisplayTitle({ title: '', preview: '' })).toBe('Untitled conversation')
   })
 
+  it('names the photos of an opening message beside its words, or alone when it had none', () => {
+    expect(
+      resolveConversationDisplayTitle({ title: null, preview: 'Something like this', previewPhotoCount: 2 }),
+    ).toBe('Something like this · 2 photos')
+    expect(
+      resolveConversationDisplayTitle({ title: null, preview: null, previewPhotoCount: 1 }),
+    ).toBe('1 photo')
+  })
+
+  it('prefers the generated title to the photo marker', () => {
+    expect(
+      resolveConversationDisplayTitle({ title: 'Farmhouse near the coast', preview: null, previewPhotoCount: 1 }),
+    ).toBe('Farmhouse near the coast')
+  })
+
+  it('reads a summary without a photo count as one with none', () => {
+    expect(resolveConversationDisplayTitle({ title: null, preview: 'howdy' })).toBe('howdy')
+  })
+
   it('accepts a custom fallback label', () => {
     expect(resolveConversationDisplayTitle({ title: null, preview: '' }, 'No messages yet')).toBe('No messages yet')
   })

@@ -736,41 +736,57 @@ describeIntegration("MessageRepository (Postgres)", () => {
   describe("a visitor message with photos", () => {
     const IMAGE_ID = "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12";
     const READING = "A landscape photo of rolling countryside.";
-    const photoTurn = (typedText: string) => ({
-      content: [typedText, `<attached_photo index="1">${READING}</attached_photo>`].filter(Boolean).join("\n"),
-      inputMetadata: { method: "typed" as const, imageInput: { typedText, images: [{ id: IMAGE_ID, reading: READING }] } },
+    const photoTurn = (typedText: string, photos = 1) => ({
+      content: [typedText, ...Array.from({ length: photos }, (_, index) => `<attached_photo index="${index + 1}">${READING}</attached_photo>`)].filter(Boolean).join("\n"),
+      inputMetadata: { method: "typed" as const, imageInput: { typedText, images: Array.from({ length: photos }, () => ({ id: IMAGE_ID, reading: READING })) } },
     });
+    const summarize = async () => (await repository.summarizeByConversationIds(workspaceId, [conversationId])).get(conversationId);
+    const at = async (id: string, iso: string) => setTime(id, iso);
 
-    it("previews what the visitor typed, never the readings the turn text carries", async () => {
+    it("previews what the visitor typed, never the readings the turn text carries, and counts the photos", async () => {
       const first = await repository.create({ conversationId, workspaceId, role: "user", ...photoTurn("Something like this, please") });
-      await setTime(first.id, "2026-06-05T00:00:00.000Z");
+      await at(first.id, "2026-06-05T00:00:00.000Z");
       const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "I found three farmhouses." });
-      await setTime(reply.id, "2026-06-05T00:00:01.000Z");
+      await at(reply.id, "2026-06-05T00:00:01.000Z");
 
-      const summary = (await repository.summarizeByConversationIds(workspaceId, [conversationId])).get(conversationId);
-
-      expect(summary?.preview).toBe("Something like this, please");
+      expect(await summarize()).toMatchObject({ preview: "Something like this, please", previewPhotoCount: 1 });
     });
 
     it("skips a photo-only first message, which has no words, and previews the next typed one", async () => {
       const photoOnly = await repository.create({ conversationId, workspaceId, role: "user", ...photoTurn("") });
-      await setTime(photoOnly.id, "2026-06-05T00:00:00.000Z");
+      await at(photoOnly.id, "2026-06-05T00:00:00.000Z");
       const question = await repository.create({ conversationId, workspaceId, role: "user", content: "Do you have this in blue?" });
-      await setTime(question.id, "2026-06-05T00:00:01.000Z");
+      await at(question.id, "2026-06-05T00:00:01.000Z");
 
-      const summary = (await repository.summarizeByConversationIds(workspaceId, [conversationId])).get(conversationId);
-
-      expect(summary?.preview).toBe("Do you have this in blue?");
+      expect(await summarize()).toMatchObject({ preview: "Do you have this in blue?", previewPhotoCount: 0 });
     });
 
-    it("never previews the readings when the photo is the newest message of a conversation nobody has answered", async () => {
+    it("previews a conversation nobody wrote a word in as its first photo message: no text, the photo count", async () => {
+      const photoOnly = await repository.create({ conversationId, workspaceId, role: "user", ...photoTurn("", 2) });
+      await at(photoOnly.id, "2026-06-05T00:00:00.000Z");
+      const later = await repository.create({ conversationId, workspaceId, role: "user", ...photoTurn("", 1) });
+      await at(later.id, "2026-06-05T00:00:02.000Z");
+
+      expect(await summarize()).toMatchObject({ preview: null, previewPhotoCount: 2 });
+    });
+
+    it("keeps the photo preview when an agent line comes after it, never the agent's handoff line", async () => {
       const photoOnly = await repository.create({ conversationId, workspaceId, role: "user", ...photoTurn("") });
-      await setTime(photoOnly.id, "2026-06-05T00:00:00.000Z");
+      await at(photoOnly.id, "2026-06-05T00:00:00.000Z");
+      const handoff = await repository.create({ conversationId, workspaceId, role: "assistant", content: "I'm passing you to a colleague." });
+      await at(handoff.id, "2026-06-05T00:00:01.000Z");
 
-      const summary = (await repository.summarizeByConversationIds(workspaceId, [conversationId])).get(conversationId);
+      expect(await summarize()).toMatchObject({ preview: null, previewPhotoCount: 1 });
+    });
 
-      expect(summary?.preview ?? "").not.toContain("attached_photo");
-      expect(summary?.preview ?? "").not.toContain(READING);
+    it("has a photo count of zero where no message carries photos, whichever message the preview comes from", async () => {
+      const greeting = await repository.create({ conversationId, workspaceId, role: "assistant", content: "Hi, how can I help?" });
+      await at(greeting.id, "2026-06-05T00:00:00.000Z");
+      expect(await summarize()).toMatchObject({ preview: "Hi, how can I help?", previewPhotoCount: 0 });
+
+      const question = await repository.create({ conversationId, workspaceId, role: "user", content: "What are your hours?" });
+      await at(question.id, "2026-06-05T00:00:01.000Z");
+      expect(await summarize()).toMatchObject({ preview: "What are your hours?", previewPhotoCount: 0 });
     });
   });
 });

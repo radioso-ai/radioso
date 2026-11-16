@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type MouseEvent } from 'react'
-import { ImagePlus, TriangleAlert, X } from 'lucide-react'
+import { Paperclip, TriangleAlert, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -33,7 +33,10 @@ type ImageCopy = Pick<
  * The colours the photo controls draw with: the embed's own theme, or the dashboard's CSS variables,
  * which name an error colour of their own since no contrast can be computed from a variable.
  */
-export type VisitorImageComposerTheme = Pick<WebsiteEmbedTheme, 'inputForeground' | 'inputBorder' | 'inputBackground' | 'mutedBackground'> & {
+export type VisitorImageComposerTheme = Pick<
+  WebsiteEmbedTheme,
+  'inputForeground' | 'inputBorder' | 'inputBackground' | 'mutedBackground' | 'mutedForeground'
+> & {
   errorForeground?: string
 }
 
@@ -62,18 +65,25 @@ const hasFiles = (transfer: DataTransfer | null): boolean => Boolean(transfer &&
 /** The files a paste or drop carries; empty for a paste of plain text, which then goes into the message. */
 const filesOf = (transfer: DataTransfer | null): File[] => (transfer ? Array.from(transfer.files) : [])
 
-/** The composer's attach control: it opens the file picker for up to three photos. */
+/**
+ * The composer's attach control: a quiet paperclip that opens the file picker for up to three
+ * photos. It sits inside the field, right before the controls beside Send, and is sized by
+ * `className` to match Send.
+ */
 export function VisitorImageAttachButton({
   theme,
   copy,
   images,
   className,
+  iconClassName = 'h-4 w-4',
   disabled = false,
 }: {
   theme: VisitorImageComposerTheme
   copy: ImageCopy
   images: ComposerImages
+  /** The button's size, the one Send has. */
   className: string
+  iconClassName?: string
   /** Held off while the composer cannot send, as Send is. */
   disabled?: boolean
 }) {
@@ -98,16 +108,16 @@ export function VisitorImageAttachButton({
         type="button"
         size="icon"
         variant="ghost"
-        className={`${className} shrink-0 rounded-full hover:opacity-80`}
+        className={`${className} shrink-0 rounded-full`}
         disabled={full || disabled}
         title={copy.publicChatAttachImageLabel}
         data-visitor-image-attach
-        style={{ color: theme.inputForeground }}
+        style={{ color: theme.mutedForeground }}
         onClick={() => inputRef.current?.click()}
         // Keep focus in the message field, as Send does.
         onMouseDown={(event) => event.preventDefault()}
       >
-        <ImagePlus className="h-4 w-4" aria-hidden="true" />
+        <Paperclip className={iconClassName} aria-hidden="true" />
         <span className="sr-only">{copy.publicChatAttachImageLabel}</span>
       </Button>
     </>

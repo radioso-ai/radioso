@@ -275,6 +275,33 @@ test("a visitor attaches a photo, sees it upload, sends it, and still sees it af
   await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
 });
 
+test("the attach control sits inside the field beside Send, as big a target as Send", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  await mockPublicChat(page, { acceptsImages: true, photo });
+
+  await page.goto(`/chat/${publicToken}`);
+  const field = page.getByPlaceholder("Ask a question...");
+  const attach = page.getByRole("button", { name: "Attach photo" });
+  const send = page.getByRole("button", { name: "Send message" });
+  await field.fill("Do you open on Sundays?");
+
+  // Tabbing from the message field reaches the attach control, then Send.
+  await field.focus();
+  await page.keyboard.press("Tab");
+  await expect(attach).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(send).toBeFocused();
+
+  // On screen it is right of the field, left of Send, and as large a target as Send.
+  const fieldBox = (await field.boundingBox())!;
+  const attachBox = (await attach.boundingBox())!;
+  const sendBox = (await send.boundingBox())!;
+  expect(attachBox.x).toBeGreaterThanOrEqual(fieldBox.x + fieldBox.width - 1);
+  expect(attachBox.x + attachBox.width).toBeLessThanOrEqual(sendBox.x);
+  expect(attachBox.width).toBeGreaterThanOrEqual(36);
+  expect(attachBox.height).toBe(sendBox.height);
+});
+
 test("a visitor can remove a photo before sending, and is told when a file type is not accepted", async ({ page }) => {
   const photo = await makePhoto(page, 800, 600);
   await mockPublicChat(page, { acceptsImages: true, photo });

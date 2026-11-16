@@ -285,7 +285,6 @@ export function PublicChatBubbleComposerForm({
       >
         {images ? <VisitorImageChips images={images} theme={theme} copy={copy} onRemove={removeChip} /> : null}
         <div className="flex items-end gap-1">
-          {images?.canAttach ? <VisitorImageAttachButton theme={theme} copy={copy} images={images} className={buttonSize} /> : null}
           <Textarea
             ref={inputRef}
             value={value}
@@ -299,6 +298,9 @@ export function PublicChatBubbleComposerForm({
             style={{ color: theme.inputForeground }}
             aria-hidden={readOnly ? 'true' : undefined}
           />
+          {images?.canAttach ? (
+            <VisitorImageAttachButton theme={theme} copy={copy} images={images} className={buttonSize} iconClassName={buttonIconSize} />
+          ) : null}
           {accessory}
           <Button
             type="submit"

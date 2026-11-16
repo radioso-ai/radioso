@@ -32,6 +32,7 @@ const DASHBOARD_IMAGE_THEME: VisitorImageComposerTheme = {
   inputBorder: 'var(--input)',
   inputForeground: 'var(--foreground)',
   mutedBackground: 'var(--muted)',
+  mutedForeground: 'var(--muted-foreground)',
   errorForeground: 'var(--destructive)',
 }
 
@@ -196,7 +197,6 @@ export function TestChatComposer({
           <div className={`rounded-2xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 ${dragging ? 'ring-2 ring-ring' : ''}`}>
             {images ? <VisitorImageChips images={images} theme={DASHBOARD_IMAGE_THEME} copy={DEFAULT_WEBSITE_EMBED_COPY} onRemove={removeChip} /> : null}
             <div className="flex items-end gap-1">
-              {images?.canAttach ? <VisitorImageAttachButton theme={DASHBOARD_IMAGE_THEME} copy={DEFAULT_WEBSITE_EMBED_COPY} images={images} className="h-9 w-9" disabled={!attachOpen} /> : null}
               <Textarea
                 value={message}
                 onChange={(event) => onMessageChange(event.target.value)}
@@ -206,6 +206,7 @@ export function TestChatComposer({
                 className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
                 disabled={!canSend}
               />
+              {images?.canAttach ? <VisitorImageAttachButton theme={DASHBOARD_IMAGE_THEME} copy={DEFAULT_WEBSITE_EMBED_COPY} images={images} className="h-9 w-9" disabled={!attachOpen} /> : null}
               {talkShown ? (
                 <VoiceTalkButton
                   theme={DASHBOARD_CALL_THEME}

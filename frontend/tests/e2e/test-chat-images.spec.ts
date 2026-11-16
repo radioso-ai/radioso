@@ -180,6 +180,44 @@ test("Test Chat holds off attaching a photo while an answer is still coming in",
   await expect(attach).toBeEnabled();
 });
 
+test("Test Chat puts the attach control beside Send, ahead of Talk", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    voiceCallReadiness: { ready: true, missing: null },
+    agentSettingsOverrides: {
+      visitorImagesEnabled: true,
+      voice: { enabled: true, bridgeLines: {}, fallbackLine: {}, runtime: { vendor: "elevenlabs", agentId: "agent_42", region: "eu" } },
+    },
+  });
+  await page.goto(testChatUrl);
+  const field = page.getByPlaceholder("Ask a question...");
+  await expect(field).toBeVisible();
+  const attach = page.getByRole("button", { name: "Attach photo" });
+  const talk = page.getByRole("button", { name: "Talk" });
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  await field.fill("Do you open on Sundays?");
+  await expect(talk).toBeEnabled();
+
+  // Tabbing from the message field reaches the attach control, then Talk, then Send.
+  await field.focus();
+  await page.keyboard.press("Tab");
+  await expect(attach).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(talk).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(send).toBeFocused();
+
+  // On screen the attach control is right of the field, ahead of Talk, and as large a target as Send.
+  const fieldBox = (await field.boundingBox())!;
+  const attachBox = (await attach.boundingBox())!;
+  const talkBox = (await talk.boundingBox())!;
+  const sendBox = (await send.boundingBox())!;
+  expect(attachBox.x).toBeGreaterThanOrEqual(fieldBox.x + fieldBox.width - 1);
+  expect(attachBox.x + attachBox.width).toBeLessThanOrEqual(talkBox.x);
+  expect(talkBox.x + talkBox.width).toBeLessThanOrEqual(sendBox.x);
+  expect(attachBox.height).toBe(sendBox.height);
+});
+
 test("Test Chat offers no attach control while the agent takes no photos from visitors", async ({ page }) => {
   await mockPhotoBackend(page, { visitorImagesEnabled: false });
   await page.goto(testChatUrl);

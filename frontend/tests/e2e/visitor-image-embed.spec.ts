@@ -18,8 +18,8 @@ test.use({
 const fulfillJson = (route: Route, body: unknown, status = 200) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
-const openEmbed = async (page: Page, session: { acceptsImages?: boolean }) => {
-  await page.route("**/api/embed/config/**", (route) => fulfillJson(route, {}));
+const openEmbed = async (page: Page, session: { acceptsImages?: boolean }, options: { talk?: boolean } = {}) => {
+  await page.route("**/api/embed/config/**", (route) => fulfillJson(route, options.talk ? { voice: { available: true } } : {}));
   await page.route("**/api/embed/session/**", (route) =>
     fulfillJson(route, {
       workspaceName: "Acme",
@@ -88,6 +88,41 @@ test("the website widget offers the attach control when the agent takes photos",
     return drop.defaultPrevented;
   });
   expect(dropCancelled).toBe(true);
+});
+
+test("the attach control sits beside Send, ahead of Talk, and all three fit a 360 px phone", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  const frame = await openEmbed(page, { acceptsImages: true }, { talk: true });
+  const field = frame.getByRole("textbox");
+  const attach = frame.getByRole("button", { name: "Attach photo" });
+  const talk = frame.getByRole("button", { name: "Talk" });
+  const send = frame.getByRole("button", { name: "Send message" });
+  await field.fill("Do you open on Sundays?");
+  await expect(attach).toBeVisible();
+  await expect(talk).toBeVisible();
+
+  // Tabbing from the message field reaches the attach control, then Talk, then Send.
+  await field.focus();
+  await page.keyboard.press("Tab");
+  await expect(attach).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(talk).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(send).toBeFocused();
+
+  // On screen they are one row to the right of the field with nothing overlapping, each a 36 px target,
+  // and the field keeps room to type in. The panel eases in as it opens, so measure once it is full size.
+  await expect.poll(async () => (await send.boundingBox())!.width).toBeGreaterThanOrEqual(36);
+  const [fieldBox, attachBox, talkBox, sendBox] = await Promise.all([field, attach, talk, send].map((target) => target.boundingBox()));
+  expect(attachBox!.x).toBeGreaterThanOrEqual(fieldBox!.x + fieldBox!.width - 1);
+  expect(attachBox!.x + attachBox!.width).toBeLessThanOrEqual(talkBox!.x);
+  expect(talkBox!.x + talkBox!.width).toBeLessThanOrEqual(sendBox!.x);
+  expect(sendBox!.x + sendBox!.width).toBeLessThanOrEqual(360);
+  for (const box of [attachBox!, talkBox!, sendBox!]) {
+    expect(box.width).toBeGreaterThanOrEqual(36);
+    expect(box.height).toBeGreaterThanOrEqual(36);
+  }
+  expect(fieldBox!.width).toBeGreaterThanOrEqual(150);
 });
 
 test("the website widget offers no attach control when the agent takes no photos", async ({ page }) => {

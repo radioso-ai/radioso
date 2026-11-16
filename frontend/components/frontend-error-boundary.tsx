@@ -73,16 +73,7 @@ export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryI
     this.reporter = props.reporter ?? createDefaultReporter()
   }
 
-  // A deploy skew failure is expected and the reload fixes it, so a recovered failure is not
-  // reported. One that the guard refuses to recover is reported like any other.
-  private readonly recoverFromChunkFailure = (error: unknown): boolean => {
-    const plan = planChunkLoadRecovery({ error, href: window.location.href, now: Date.now() })
-    if (plan.kind !== 'reload') return false
-    this.startReload(plan.url)
-    return true
-  }
-
-  // The old page keeps raising chunk failures until the navigation lands; one reload is enough.
+  // One reload is enough however many render errors the old page raises before the navigation lands.
   private readonly startReload = (url: string): void => {
     if (this.reloadStarted) return
     this.reloadStarted = true
@@ -91,7 +82,6 @@ export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryI
   }
 
   private readonly handleWindowError = (event: ErrorEvent) => {
-    if (this.recoverFromChunkFailure(event.error)) return
     void this.reporter.report({
       errorType: 'frontend.runtime.unhandled',
       error: event.error,
@@ -103,7 +93,6 @@ export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryI
   }
 
   private readonly handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-    if (this.recoverFromChunkFailure(event.reason)) return
     void this.reporter.report({
       errorType: 'frontend.promise.unhandled',
       error: event.reason,
@@ -130,6 +119,10 @@ export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryI
     }
   }
 
+  // Only a render that hit a missing chunk reloads: deploy skew, the UI is already lost, and the
+  // reload is the fix, so it is not reported. A chunk that fails in the background (window error or
+  // unhandled rejection) leaves the page working, so it is reported like any other failure and the
+  // page, with whatever the person has typed into it, stays.
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     if (this.state.reloadUrl !== null) {
       this.startReload(this.state.reloadUrl)

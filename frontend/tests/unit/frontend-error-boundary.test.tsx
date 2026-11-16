@@ -178,35 +178,8 @@ describe('FrontendErrorBoundaryInner', () => {
       }))
     })
 
-    it('reloads on a missing chunk that arrives as an unhandled rejection, without a report', () => {
+    it('reports a missing chunk that arrives as an unhandled rejection and leaves the page alone', () => {
       window.history.replaceState({}, '', '/w/acme')
-      const reports = reporter()
-      const reloadFrame = vi.fn()
-      shouldThrow = false
-      renderBoundary({ reporter: reports, reloadFrame })
-
-      dispatchUnhandledRejection(chunkLoadError())
-
-      expect(reloadFrame).toHaveBeenCalledTimes(1)
-      expect(markedUrl(reloadFrame).pathname).toBe('/w/acme')
-      expect(reports.report).not.toHaveBeenCalled()
-    })
-
-    it('reloads on a missing chunk that arrives as a window error, without a report', () => {
-      const reports = reporter()
-      const reloadFrame = vi.fn()
-      shouldThrow = false
-      renderBoundary({ reporter: reports, reloadFrame })
-
-      const error = chunkLoadError()
-      window.dispatchEvent(new ErrorEvent('error', { error, message: error.message }))
-
-      expect(reloadFrame).toHaveBeenCalledTimes(1)
-      expect(reports.report).not.toHaveBeenCalled()
-    })
-
-    it('reports an unhandled chunk rejection when the reload already happened', () => {
-      window.history.replaceState({}, '', `/embed-frame?${CHUNK_RELOAD_PARAM}=${Date.now()}`)
       const reports = reporter()
       const reloadFrame = vi.fn()
       shouldThrow = false
@@ -222,15 +195,37 @@ describe('FrontendErrorBoundaryInner', () => {
       }))
     })
 
-    it('reloads once however many chunk failures the old page raises', () => {
+    it('reports a missing chunk that arrives as a window error and leaves the page alone', () => {
       const reports = reporter()
       const reloadFrame = vi.fn()
       shouldThrow = false
       renderBoundary({ reporter: reports, reloadFrame })
 
-      dispatchUnhandledRejection(chunkLoadError())
-      dispatchUnhandledRejection(chunkLoadError())
-      window.dispatchEvent(new ErrorEvent('error', { error: chunkLoadError() }))
+      const error = chunkLoadError()
+      window.dispatchEvent(new ErrorEvent('error', { error, message: error.message }))
+
+      expect(reloadFrame).not.toHaveBeenCalled()
+      expect(reports.report).toHaveBeenCalledWith(expect.objectContaining({
+        errorType: 'frontend.runtime.unhandled',
+        error,
+      }))
+    })
+
+    it('reloads once however many renders hit the missing chunk', () => {
+      const reports = reporter()
+      const reloadFrame = vi.fn()
+      shouldThrow = true
+      thrown = chunkLoadError()
+      renderBoundary({ reporter: reports, reloadFrame })
+
+      shouldThrow = true
+      act(() => {
+        root.render(
+          <FrontendErrorBoundaryInner resetKey="/embed-frame/next" reporter={reports} reloadFrame={reloadFrame}>
+            <ThrowingChild />
+          </FrontendErrorBoundaryInner>,
+        )
+      })
 
       expect(reloadFrame).toHaveBeenCalledTimes(1)
       expect(reports.report).not.toHaveBeenCalled()

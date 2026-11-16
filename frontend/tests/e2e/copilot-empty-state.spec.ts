@@ -59,7 +59,7 @@ test("on a fresh workspace Ray picks up setup and links each next step to where 
         greeting: "Pongamos en marcha tu espacio: aún quedan unos pasos.",
         suggestions: [
           { kind: "setup_step", step: "documents", text: "Añade tus documentos", href: `/w/${workspaceKey}/knowledge` },
-          { kind: "setup_step", step: "conversation", text: "Haz una primera pregunta", href: `/w/${workspaceKey}/agents` },
+          { kind: "setup_step", step: "conversation", text: "Haz una primera pregunta", href: `/w/${workspaceKey}/agents?tab=chat` },
           { kind: "setup_step", step: "directives_or_routines", text: "Dale una regla al agente", href: `/w/${workspaceKey}/agents?tab=behavior&anchor=assistant-directives` },
         ],
       },

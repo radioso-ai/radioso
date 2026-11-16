@@ -873,16 +873,22 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       res.setHeader("Connection", "keep-alive");
       res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders();
-      const unsubscribe = dependencies.publicConversationEventBus.subscribe(conversationId, (event) => {
-        if (event.workspaceId !== workspaceId) {
-          return;
-        }
-        writeEvent(event.type, {
-          conversationId: event.conversationId,
-          messageId: event.messageId,
-          createdAt: event.createdAt,
-        });
-      });
+      const unsubscribe = dependencies.publicConversationEventBus.subscribe(
+        conversationId,
+        (event) => {
+          if (event.workspaceId !== workspaceId) {
+            return;
+          }
+          writeEvent(event.type, {
+            conversationId: event.conversationId,
+            messageId: event.messageId,
+            createdAt: event.createdAt,
+          });
+        },
+        // This instance could not hear the others for a while. `ready` sends the client back to
+        // the conversation tail, as when it reconnects, so a message it was not told about shows.
+        () => writeEvent("ready", { conversationId }),
+      );
       writeEvent("ready", { conversationId });
       const heartbeat = setInterval(() => {
         if (!closed && !res.writableEnded) {

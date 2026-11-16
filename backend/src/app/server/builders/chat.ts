@@ -155,6 +155,7 @@ import { createReplyBlocksComposition } from "../../composition/replyBlocks.js";
 import { composeReplyImageLookup, wireToolImages } from "../../composition/toolImages.js";
 import type { DocumentStorageLocator, DocumentStoragePort } from "../../../modules/documents/contracts/storage.js";
 import { createConversationTurnCoordination } from "../../composition/conversationTurnCoordination.js";
+import type { PostgresNotificationListener } from "../../../shared/infra/postgresNotificationListener.js";
 
 export const buildChatServices = (input: {
   abuseControlService: AbuseControlService;
@@ -184,6 +185,8 @@ export const buildChatServices = (input: {
   /** Optional: when wired, an eligible visitor message enqueues a facet extraction job (spec 956). */
   facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">;
   metricsRegistry?: MetricsRegistry | null;
+  /** The process's shared LISTEN session; turn coordination hears other instances' turns on it. */
+  notificationListener: Pick<PostgresNotificationListener, "subscribe">;
   telemetryService: TelemetryService;
   webhookDestinations: WebhookDestinationRuntimePort;
   productAnalyticsService: ProductAnalyticsService;
@@ -731,8 +734,8 @@ export const buildChatServices = (input: {
     input.metricsRegistry,
   );
   const conversationTurnCoordination = createConversationTurnCoordination({
-    env: input.env,
     db: input.database.kysely,
+    notifications: input.notificationListener,
     logger: input.logger,
     metricsRegistry: input.metricsRegistry,
   });

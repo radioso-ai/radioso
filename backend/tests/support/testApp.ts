@@ -334,6 +334,7 @@ import {
   ConfiguredContactDeliveryResolver,
   ConversationIngestService,
   InMemoryPublicConversationEventBus,
+  type PublicConversationEventBus,
   OperatorNoticeDestinationsReader,
   ProbeConversationReader,
   WorkspaceOwnerContactRecipientResolver,
@@ -1043,6 +1044,8 @@ export const createTestDependencies = (overrides: {
   documentImageRows?: InMemoryDocumentImageRows;
   /** The pictures cards from a skill's result show, found after the documents' images; omitted means none. */
   toolImages?: Pick<ToolImageLookup, "findServable">;
+  /** The bus visitor event streams and parked converse callers hear; omitted means an in-process bus. */
+  publicConversationEventBus?: PublicConversationEventBus;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -2468,7 +2471,7 @@ export const createTestDependencies = (overrides: {
     logger,
   });
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
-  const publicConversationEventBus = new InMemoryPublicConversationEventBus();
+  const publicConversationEventBus = overrides.publicConversationEventBus ?? new InMemoryPublicConversationEventBus();
   const operatorReplyService = new OperatorReplyService({
     auditService,
     publicConversationEventBus,
@@ -3207,6 +3210,7 @@ export const createTestDependencies = (overrides: {
     approvalDecisionService,
     closeApprovalResumeEffectJournal: async () => undefined,
     conversationTurnCoordination: { shutdown: async () => undefined },
+    notificationListener: { close: async () => undefined },
     conversationOwnershipService,
     conversationIngestService,
     conversationOperatorDirectory,
@@ -3472,6 +3476,7 @@ export const createTestApp = (overrides: {
   documentImages?: InMemoryDocumentImages;
   documentImageRows?: InMemoryDocumentImageRows;
   toolImages?: Pick<ToolImageLookup, "findServable">;
+  publicConversationEventBus?: PublicConversationEventBus;
 } = {}) => {
   const {
     dependencies,

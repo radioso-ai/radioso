@@ -150,6 +150,8 @@ export {
   InMemoryPublicConversationEventBus,
   type PublicConversationEventBus,
 } from "./services/publicConversationEventBus.js";
+export { CrossInstancePublicConversationEventBus } from "./services/crossInstancePublicConversationEventBus.js";
+export { PostgresPublicConversationEventRelay } from "./infra/postgresPublicConversationEventRelay.js";
 export { createConversationUpdateReader } from "./services/conversationUpdateReader.js";
 export { createConversationUpdateWaiter } from "./services/conversationUpdateWaiter.js";
 export {

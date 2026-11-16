@@ -17,6 +17,7 @@ import { createClientId } from '@/lib/client-id'
 import { deriveThemeOverridesFromModel } from '@/lib/public-chat-theme'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
 import { actionableSuggestionsOnly, clearMessageSuggestions } from '@/lib/public-chat-suggestion'
+import { createTailRefresher } from '@/lib/public-chat-tail-refresh'
 import { publicChatUnavailableReasonOf, type PublicChatUnavailableReason } from '@/lib/public-chat-unavailable'
 import {
   getLatestAssistantMessage,
@@ -453,7 +454,6 @@ export function AnonymousChatProvider({
     const activeConversationId = conversationId
 
     let cancelled = false
-    let refreshChain = Promise.resolve()
     let streamController: AbortController | null = null
     let reconnectTimer: number | null = null
 
@@ -467,27 +467,19 @@ export function AnonymousChatProvider({
       }
       reconnectTimer = window.setTimeout(connect, PUBLIC_CHAT_EVENT_RECONNECT_DELAY_MS)
     }
-    const handleRefreshFailure = (error: unknown) => {
-      if (!cancelled && getErrorResponse(error)?.code === 'not_found') {
-        setUnavailable('link_inactive')
-      }
-    }
-
-    const refreshFromTail = (includeSnapshot: boolean) => {
-      refreshChain = refreshChain
-        .then(async () => {
-          if (cancelled) {
-            return
-          }
-          if (includeSnapshot && tailCursorRef.current === null) {
-            await syncConversationSnapshot(activeConversationId)
-          }
-          if (!cancelled) {
-            await refreshConversationTail(activeConversationId)
-          }
-        })
-        .catch(handleRefreshFailure)
-    }
+    const tailRefresher = createTailRefresher({
+      read: async (includeSnapshot, isStopped) => {
+        if (includeSnapshot && tailCursorRef.current === null) {
+          await syncConversationSnapshot(activeConversationId)
+        }
+        if (!isStopped()) {
+          await refreshConversationTail(activeConversationId)
+        }
+      },
+      isGone: (error) => getErrorResponse(error)?.code === 'not_found',
+      onGone: () => setUnavailable('link_inactive'),
+    })
+    const refreshFromTail = tailRefresher.refresh
 
     function connect() {
       if (cancelled) {
@@ -532,6 +524,7 @@ export function AnonymousChatProvider({
 
     return () => {
       cancelled = true
+      tailRefresher.stop()
       streamController?.abort()
       if (reconnectTimer) {
         window.clearTimeout(reconnectTimer)

@@ -7987,10 +7987,10 @@ CREATE INDEX document_images_stored_primary_idx ON public.document_images USING 
 
 
 --
--- Name: document_images_stored_primary_sha256_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: document_images_stored_sha256_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX document_images_stored_primary_sha256_idx ON public.document_images USING btree (workspace_id, sha256) INCLUDE (document_id) WHERE ((status = 'stored'::text) AND (role = 'primary'::text) AND (document_id IS NOT NULL));
+CREATE INDEX document_images_stored_sha256_idx ON public.document_images USING btree (workspace_id, role, sha256) INCLUDE (document_id) WHERE ((status = 'stored'::text) AND (document_id IS NOT NULL));
 
 
 --

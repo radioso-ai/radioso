@@ -126,17 +126,31 @@ Ingestion records the images a document's content names; the worker captures the
   inline image's offset from the ingested text into the stored text the chunks
   index. `images` absent leaves a document's images alone; an empty list says
   the content names none.
+- An uploaded DOCX, PDF or Markdown file names its pictures in the `images`
+  job instead: `services/uploadedFileImages.ts` reads the stored upload through
+  `@radioso/document-parser`'s `extractDocumentImages` (bounded: 24 pictures,
+  48 PDF images decoded, 96 MB held, 45 seconds) and records them through the
+  same `DocumentImageCandidateWriter`. An embedded picture's source key is
+  `embedded:<sha256 of its bytes>` (`embeddedImageSource`); only this reader may
+  name one (`placeDocumentImages({ embedded: true })`), and capture takes its
+  bytes from the file it read rather than a fetch. Markdown's linked images
+  keep their address and are fetched like a page's. Only the WebP copies are
+  written; the upload stays the one copy of the original bytes.
 - `services/documentImageCaptureQueue.ts` records them through the
   `DocumentImageCandidateWriter`: a new address becomes a `pending` row, a kept
   one takes its new place, and one the content no longer names is released.
   It queues the `images` job after a vectorize job publishes a revision of a
-  document that names any image, and at once when an unchanged page names a new
+  document that names any image or of an upload whose type carries pictures
+  (`uploadedImageSource`), and at once when an unchanged page names a new
   one or still has one it keeps pending (`hasPendingKeptImage`: the first
   `MAX_STORED_IMAGES_PER_DOCUMENT` that are not skipped), so a timeout, a busy
   codec or a spent budget is retried on the next sync.
-- `services/documentImageCaptureService.ts` runs the `images` job: it fetches
-  each image through `fetchPublicBytes` (public addresses only, every redirect
-  re-checked, 8 seconds, 15 MB), conditionally with the stored entity tag,
+- `services/documentImageCaptureService.ts` runs the `images` job: for an
+  upload it first records the file's pictures, then it fetches each image
+  through `fetchPublicBytes` (public addresses only, every redirect re-checked,
+  8 seconds, 15 MB), conditionally with the stored entity tag, or takes an
+  embedded one's bytes from the file (a file it could not read leaves them
+  as they are, outcome `unreachable`),
   re-encodes it through `shared/infra/images` (`infra/documentImageCodec.ts`),
   stores the WebP copies as `document-image-<id>-w<width>` under the
   workspace's documents folder, and anchors an inline image to the chunk whose
@@ -158,10 +172,14 @@ Ingestion records the images a document's content names; the worker captures the
   applies it), and the public image route's address of each stored copy,
   which composition adds (`addressedDocumentImageListing` over
   `DocumentImageRows`).
-- The answer side asks `listStoredForEvidence` to count the documents sharing
-  a primary only up to `primaryDocumentCountLimit` (retrieval's banner rule
-  passes one past its threshold); the partial index covers `document_id`.
-- Observability: `document_image_capture_total{source, outcome}`,
+- The answer side asks `listStoredForEvidence` to count the documents carrying
+  each stored picture in the same role only up to `sharedDocumentCountLimit`
+  (retrieval's banner rule passes one past its threshold), so a logo on every
+  upload is demoted like a site banner; the partial index on
+  `(workspace_id, role, sha256)` covers `document_id`.
+- Observability: `document_image_capture_total{source, outcome}` (`source`
+  is `crawler_metadata`, `crawler_inline`, `wordpress_featured`,
+  `wordpress_inline`, `docx`, `pdf` or `markdown`),
   `document_image_capture_duration_seconds`, and the `document.images.capture`
   span under `document.worker.job`. Logs carry ids only, never addresses, alt
   text or bytes.

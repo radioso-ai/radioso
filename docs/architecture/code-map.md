@@ -1880,7 +1880,7 @@ Primary internals:
 - `backend/src/modules/documents/infra/documentImageRepository.ts` — the
   `document_images` rows (a document's stored pictures, primary or anchored to a
   chunk): recorded by ingestion, filled by capture, read for an answer's evidence
-  (with how many documents share each primary) and for the public image route
+  (with how many documents carry each picture in the same role) and for the public image route
 - A document's detail lists its images (`DocumentImageListing`, each stored one with
   the public image route's address and whether the banner rule makes it site-wide,
   wired by `addressedDocumentImageListing`); the dashboard shows them in
@@ -1890,7 +1890,17 @@ Primary internals:
   in its stored text), `services/documentImageCaptureQueue.ts` (records them and
   queues the `images` follow-up job), `services/documentImageCaptureService.ts`
   (the job: fetch, re-encode, store, anchor, and the sweep of released images),
-  `infra/documentImageCodec.ts`; wired by `backend/src/app/composition/documentImageCapture.ts`
+  `services/uploadedFileImages.ts` (an uploaded DOCX, PDF or Markdown file's pictures,
+  read from the stored upload and recorded under `embedded:<sha256>` keys or their
+  linked address), `infra/documentImageCodec.ts`; wired by
+  `backend/src/app/composition/documentImageCapture.ts`
+- `packages/document-parser/` — `parseDocument` for text, and `extractDocumentImages`
+  for the pictures a file carries: `parsers/docxImages.js` (mammoth's document tree:
+  `word/media` through each drawing's relationship, alt text, Word-styled captions),
+  `parsers/pdfImages.js` (pdf.js from `pdf-parse`: decoded image XObjects as PNG
+  through `parsers/pngEncode.js`, bounded by a pixel cap, a count and a time budget),
+  `parsers/markdownImages.js` (`![alt](https://…)`); offsets index the text
+  `normalizeText.js` produces for both
 - `backend/src/db/repositories/documentProcessingJobRepository.ts`
   (`ensureFollowUpJob` for the `enrich` and `images` follow-ups) and
   `documentProcessingJobRows.ts` (job kinds, row mapping)
@@ -1905,6 +1915,7 @@ Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/document-ingestion.test.ts tests/unit/document-processing-worker-runtime.test.ts tests/unit/document-import-service.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/documents tests/unit/retrieval/evidenceImageAttacher.test.ts` for document images and the site-banner rule
+- `cd backend && pnpm exec vitest run tests/unit/document-parser-images.test.ts` for the parser's picture readers (fixtures built by `tests/support/documentFileFixtures.ts`)
 - `cd backend && pnpm run test:integration`
 
 Related docs and specs:

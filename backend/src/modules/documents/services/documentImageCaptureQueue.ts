@@ -10,11 +10,14 @@ import type {
   PlacedDocumentImage,
 } from "../contracts/documentImages.js";
 import type { DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
+import { uploadedImageSource, type UploadedDocumentFile } from "./uploadedFileImages.js";
 
 interface QueueDependencies {
   images: DocumentImageCandidateWriter & Pick<DocumentImageCaptureStore, "hasImages">;
   jobs: Pick<DocumentProcessingJobRepositoryPort, "ensureFollowUpJob">;
   dispatcher: DocumentJobDispatcherPort;
+  /** Absent, only documents whose images are already recorded are captured. */
+  documents?: { findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<UploadedDocumentFile | null> };
   logger?: Pick<AppLogger, "warn">;
 }
 
@@ -36,9 +39,10 @@ export interface DocumentImageCandidatesPort {
 
 /**
  * Decides when a document's images are captured: after a revision's chunks are published, when
- * the document names any image, and straight away when an unchanged page names new ones. Capture is
- * the worker's `images` job, a follow-up of the revision like enrichment; a finished one is queued
- * again rather than duplicated.
+ * the document names any image or is an upload whose type carries pictures (the job reads those
+ * from the file), and straight away when an unchanged page names new ones. Capture is the worker's
+ * `images` job, a follow-up of the revision like enrichment; a finished one is queued again rather
+ * than duplicated.
  */
 export class DocumentImageCaptureQueue implements DocumentImageCandidatesPort {
   constructor(private readonly deps: QueueDependencies) {}
@@ -66,7 +70,7 @@ export class DocumentImageCaptureQueue implements DocumentImageCandidatesPort {
   /** Never throws: the vectorize job that published the revision has already completed. */
   async afterRevisionPublished(job: Pick<DocumentProcessingJobRecord, "documentId" | "workspaceId" | "documentRevision">): Promise<void> {
     try {
-      if (await this.deps.images.hasImages(job.documentId)) {
+      if (await this.deps.images.hasImages(job.documentId) || await this.carriesPictures(job)) {
         await this.queueCapture(job);
       }
     } catch (error) {
@@ -75,6 +79,11 @@ export class DocumentImageCaptureQueue implements DocumentImageCandidatesPort {
         "Document image capture could not be queued; the next sync queues it again",
       );
     }
+  }
+
+  private async carriesPictures(job: Pick<DocumentProcessingJobRecord, "documentId" | "workspaceId">): Promise<boolean> {
+    const document = await this.deps.documents?.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
+    return document ? uploadedImageSource(document) !== null : false;
   }
 
   private async queueCapture(revision: Pick<DocumentProcessingJobRecord, "documentId" | "workspaceId" | "documentRevision">): Promise<void> {

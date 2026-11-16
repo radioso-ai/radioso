@@ -19,7 +19,7 @@ const image = (overrides: Partial<StoredDocumentImageRef> & Pick<StoredDocumentI
   width: 1280,
   height: 960,
   sha256: `sha-${overrides.id}`,
-  primaryDocumentCount: overrides.role === "inline" ? 0 : 1,
+  sharedDocumentCount: overrides.role === "inline" ? 0 : 1,
   ...overrides,
 });
 
@@ -44,7 +44,7 @@ describe("EvidenceImageAttacher", () => {
       documentIds: ["doc-1", "doc-2"],
       chunkIds: ["chunk-1", "chunk-2", "chunk-3"],
       // One more than the banner threshold: enough to tell, and the count stops there.
-      primaryDocumentCountLimit: 6,
+      sharedDocumentCountLimit: 6,
     });
   });
 
@@ -128,7 +128,7 @@ describe("EvidenceImageAttacher", () => {
   describe("a picture many documents call their own is a site banner, not a main picture", () => {
     it("does not show a primary image that more than five documents in the workspace share", async () => {
       const { attacher } = attacherReading([
-        image({ id: "img-banner", documentId: "doc-1", sha256: "sha-banner", primaryDocumentCount: 6 }),
+        image({ id: "img-banner", documentId: "doc-1", sha256: "sha-banner", sharedDocumentCount: 6 }),
       ]);
 
       await expect(attacher.attach("workspace-1", [context("doc-1", "chunk-1", "Alpine Flowers")])).resolves.toEqual([]);
@@ -136,7 +136,7 @@ describe("EvidenceImageAttacher", () => {
 
     it("still shows one that five documents share", async () => {
       const { attacher } = attacherReading([
-        image({ id: "img-series", documentId: "doc-1", sha256: "sha-series", primaryDocumentCount: 5 }),
+        image({ id: "img-series", documentId: "doc-1", sha256: "sha-series", sharedDocumentCount: 5 }),
       ]);
 
       const [item] = await attacher.attach("workspace-1", [context("doc-1", "chunk-1", "Alpine Flowers")]);
@@ -146,8 +146,8 @@ describe("EvidenceImageAttacher", () => {
 
     it("lets the document's next primary image stand as its main picture", async () => {
       const { attacher } = attacherReading([
-        image({ id: "img-banner", documentId: "doc-1", position: 0, sha256: "sha-banner", primaryDocumentCount: 40 }),
-        image({ id: "img-cover", documentId: "doc-1", position: 1, sha256: "sha-cover", primaryDocumentCount: 1 }),
+        image({ id: "img-banner", documentId: "doc-1", position: 0, sha256: "sha-banner", sharedDocumentCount: 40 }),
+        image({ id: "img-cover", documentId: "doc-1", position: 1, sha256: "sha-cover", sharedDocumentCount: 1 }),
       ]);
 
       const [item] = await attacher.attach("workspace-1", [context("doc-1", "chunk-1", "Alpine Flowers")]);
@@ -155,9 +155,10 @@ describe("EvidenceImageAttacher", () => {
       expect(item?.images.map((entry) => entry.imageId)).toEqual(["img-cover"]);
     });
 
-    it("never judges an inline image by it", async () => {
+    it("does not show an inline picture more than five documents carry, such as a logo on every upload", async () => {
       const { attacher } = attacherReading([
-        image({ id: "img-ridge", documentId: "doc-1", role: "inline", chunkId: "chunk-1", sha256: "sha-banner", primaryDocumentCount: 0 }),
+        image({ id: "img-logo", documentId: "doc-1", role: "inline", chunkId: "chunk-1", position: 0, sha256: "sha-logo", sharedDocumentCount: 6 }),
+        image({ id: "img-ridge", documentId: "doc-1", role: "inline", chunkId: "chunk-1", position: 1, sha256: "sha-ridge", sharedDocumentCount: 1 }),
       ]);
 
       const [item] = await attacher.attach("workspace-1", [context("doc-1", "chunk-1", "Guest House")]);

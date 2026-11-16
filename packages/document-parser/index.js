@@ -4,6 +4,10 @@ import { parsePdf } from "./parsers/pdf.js";
 import { parseTxt } from "./parsers/txt.js";
 import { parseXlsx } from "./parsers/xlsx.js";
 import { DocumentParserError } from "./errors.js";
+import { normalizeText, normalizeTextWithOffsets } from "./normalizeText.js";
+import { extractDocxImages } from "./parsers/docxImages.js";
+import { extractMarkdownImages } from "./parsers/markdownImages.js";
+import { extractPdfImages } from "./parsers/pdfImages.js";
 
 export const SUPPORTED_DOCUMENT_TYPES = ["pdf", "txt", "md", "docx", "xlsx"];
 
@@ -34,14 +38,6 @@ const PARSERS = {
 };
 
 export { DocumentParserError };
-
-const normalizeLineEndings = (value) => value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-const normalizeText = (value) =>
-  normalizeLineEndings(value)
-    .replace(/\u0000/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 
 const getExtension = (filename) => {
   const normalized = filename?.trim().toLowerCase();
@@ -87,5 +83,46 @@ export const parseDocument = async ({ buffer, filename, mimeType }) => {
     text,
     markdown: markdown || text,
     sourceHints: parsed.sourceHints ?? {},
+  };
+};
+
+/** Readers of the pictures a file carries, by type; a type without one carries none. */
+const IMAGE_READERS = {
+  pdf: extractPdfImages,
+  md: extractMarkdownImages,
+  docx: extractDocxImages,
+};
+
+const DEFAULT_IMAGE_EXTRACTION_LIMITS = {
+  maxImages: 24,
+  minShortSidePx: 0,
+  maxImagesExamined: 48,
+  maxTotalBytes: 96 * 1024 * 1024,
+  timeBudgetMs: 45_000,
+};
+
+/**
+ * The pictures a file carries, in document order: the images a DOCX or a PDF embeds, with their
+ * bytes, and the images a markdown file links, with their address. Each is placed by an offset
+ * into `text`, the same text `parseDocument` returns for the file (or, when a limit stopped the
+ * reading early, the start of it).
+ */
+export const extractDocumentImages = async ({ buffer, filename, mimeType, limits = {} }) => {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new DocumentParserError("empty_file", "Uploaded file is empty");
+  }
+
+  const fileType = detectDocumentType({ filename, mimeType });
+  const reader = IMAGE_READERS[fileType];
+  if (!reader) {
+    return { fileType, text: "", images: [], truncated: false };
+  }
+  const read = await reader({ buffer, limits: { ...DEFAULT_IMAGE_EXTRACTION_LIMITS, ...limits } });
+  const normalized = normalizeTextWithOffsets(read.text, read.images.map((image) => image.offset));
+  return {
+    fileType,
+    text: normalized.text,
+    images: read.images.map(({ offset: _offset, ...image }, index) => ({ ...image, textOffset: normalized.offsets[index] ?? 0 })),
+    truncated: read.truncated,
   };
 };

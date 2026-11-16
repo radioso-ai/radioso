@@ -7,6 +7,7 @@ export { DocumentImageRepository } from "./infra/documentImageRepository.js";
 export { encodeDocumentImage, fetchDocumentImage } from "./infra/documentImageCodec.js";
 export { DocumentImageCaptureQueue, type DocumentImageCandidatesPort } from "./services/documentImageCaptureQueue.js";
 export { DocumentImageCaptureService } from "./services/documentImageCaptureService.js";
+export { UploadedFileImages, type UploadedDocumentFile } from "./services/uploadedFileImages.js";
 export { CloudTasksDocumentJobDispatcher } from "./infra/cloudTasksDocumentJobDispatcher.js";
 export {
   type DocumentJobDispatcherPort,

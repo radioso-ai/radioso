@@ -346,6 +346,8 @@ test("a visitor can drop a photo on the composer and paste another, up to three"
   await page.goto(`/chat/${publicToken}`);
   const field = page.getByPlaceholder("Ask a question...");
   await expect(field).toBeVisible();
+  // Drop and paste are bound once the chat knows the agent takes photos, which is when the paperclip shows.
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
 
   const transferOf = (bytes: number[], name: string) =>
     page.evaluateHandle(

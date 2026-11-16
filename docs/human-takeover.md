@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-11-11
+last_updated: 2026-11-16
 ---
 
 # Human Takeover
@@ -657,6 +657,18 @@ transcript. The public visitor surface can also subscribe to push notifications.
 - Visitor: `GET /api/v1/public/chat/{token}/tail/{conversationId}?cursor=...`
 - Visitor push: `GET /api/v1/public/chat/{token}/events/{conversationId}`
 - Calling agent: `GET /api/v1/mcp/converse/messages?cursor=...&waitMs=...`
+
+The visitor push stream sends `ready` when it opens and `message.created` for
+each new message, whichever backend instance stored it: the instances relay
+these events to each other through Postgres. The stream sends `ready` again
+when the instance holding it may have missed a message: once that instance's
+database listener starts listening, if the stream opened before it did, and
+after the listener reconnects. After a reconnect the instance spreads those
+`ready`s over up to five seconds, so its visitors' tail reads reach the
+database a few at a time. Treat every `ready` and every `message.created` as a
+cue to read the visitor tail from your cursor, and retry a tail read that fails,
+with backoff: the message the event announced reaches the visitor only through
+that read.
 
 Each tail call returns messages created after the cursor plus an advanced cursor.
 Conversation detail responses include `tailCursor`, which clients should use for

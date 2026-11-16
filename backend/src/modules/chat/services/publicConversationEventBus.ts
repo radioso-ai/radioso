@@ -8,34 +8,54 @@ export interface PublicConversationMessageCreatedEvent {
 
 export type PublicConversationEvent = PublicConversationMessageCreatedEvent;
 
+type PublicConversationEventListener = (event: PublicConversationEvent) => void;
+
 export interface PublicConversationEventBus {
   publish(event: PublicConversationEvent): void;
-  subscribe(conversationId: string, listener: (event: PublicConversationEvent) => void): () => void;
+  /**
+   * `onEventsMissed` runs when events for the conversation may have gone undelivered since the
+   * subscription began, because the bus could not hear the other instances for a while. The
+   * subscriber re-reads what it shows.
+   */
+  subscribe(
+    conversationId: string,
+    listener: PublicConversationEventListener,
+    onEventsMissed?: () => void,
+  ): () => void;
 }
 
+interface Subscription {
+  listener: PublicConversationEventListener;
+}
+
+/**
+ * One process's subscribers, and the fan-out to them; it hears only what this process publishes,
+ * the moment it publishes it, so it never misses an event.
+ */
 export class InMemoryPublicConversationEventBus implements PublicConversationEventBus {
-  private readonly listenersByConversationId = new Map<string, Set<(event: PublicConversationEvent) => void>>();
+  private readonly subscriptionsByConversationId = new Map<string, Set<Subscription>>();
 
   publish(event: PublicConversationEvent): void {
-    const listeners = this.listenersByConversationId.get(event.conversationId);
-    if (!listeners) {
+    const subscriptions = this.subscriptionsByConversationId.get(event.conversationId);
+    if (!subscriptions) {
       return;
     }
 
-    for (const listener of [...listeners]) {
-      listener(event);
+    for (const subscription of [...subscriptions]) {
+      subscription.listener(event);
     }
   }
 
-  subscribe(conversationId: string, listener: (event: PublicConversationEvent) => void): () => void {
-    const listeners = this.listenersByConversationId.get(conversationId) ?? new Set<(event: PublicConversationEvent) => void>();
-    listeners.add(listener);
-    this.listenersByConversationId.set(conversationId, listeners);
+  subscribe(conversationId: string, listener: PublicConversationEventListener): () => void {
+    const subscriptions = this.subscriptionsByConversationId.get(conversationId) ?? new Set<Subscription>();
+    const subscription: Subscription = { listener };
+    subscriptions.add(subscription);
+    this.subscriptionsByConversationId.set(conversationId, subscriptions);
 
     return () => {
-      listeners.delete(listener);
-      if (listeners.size === 0) {
-        this.listenersByConversationId.delete(conversationId);
+      subscriptions.delete(subscription);
+      if (subscriptions.size === 0) {
+        this.subscriptionsByConversationId.delete(conversationId);
       }
     };
   }

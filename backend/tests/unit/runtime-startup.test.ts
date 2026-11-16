@@ -194,6 +194,7 @@ const createDependencies = () =>
     },
     closeApprovalResumeEffectJournal: vi.fn().mockResolvedValue(undefined),
     conversationTurnCoordination: { shutdown: vi.fn().mockResolvedValue(undefined) },
+    notificationListener: { close: vi.fn().mockResolvedValue(undefined) },
     copilotRetentionWorker: {
       start: vi.fn(),
       stop: vi.fn(async () => {}),
@@ -308,6 +309,7 @@ describe("runtime startup", () => {
     expectCalledBefore(dependencies.applicationModules.shutdownAll, dependencies.connectorRegistry.shutdownAll);
     expect(dependencies.conversationTurnCoordination.shutdown).toHaveBeenCalledOnce();
     expectCalledBefore(dependencies.connectorRegistry.shutdownAll, dependencies.conversationTurnCoordination.shutdown);
+    expectCalledBefore(dependencies.conversationTurnCoordination.shutdown, dependencies.notificationListener.close);
   });
 
   it("starts the worker runtime without connector bootstrapping and fails fast on pending migrations", async () => {

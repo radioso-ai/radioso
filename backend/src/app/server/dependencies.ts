@@ -34,10 +34,6 @@ import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRed
 import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills } from "../../modules/agents/public.js";
 import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
 import {
-  ConversationIngestService,
-  InMemoryPublicConversationEventBus,
-} from "../../modules/chat/composition.js";
-import {
   createFacetExtractionBackgroundJobRuntime,
   createFacetExtractionWorkspaceDrainWorker,
   FacetExtractionService,
@@ -102,7 +98,7 @@ import { createCopilotContext } from "../composition/copilotContext.js";
 import { createCopilotEvidencePorts } from "../composition/copilotEvidencePorts.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { resolveCopilotContributions } from "../composition/copilotContributions.js";
-import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
+import { ConversationIngestService, ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ReviewTurnAuditReader } from "../../modules/chat/contracts/index.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
@@ -163,6 +159,7 @@ import { createNoticeMailAdapter } from "../composition/noticeMail.js";
 import { createPeriodicTasks } from "../composition/periodicTaskRunner.js";
 import { wireVisitorImages } from "../composition/visitorImages.js";
 import { createAbuseControlComposition } from "../composition/abuseControl.js";
+import { createPublicConversationEventBus } from "../composition/publicConversationEvents.js";
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
@@ -174,7 +171,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       ? resolveGcpRedisCredentialsProvider(true)
       : undefined,
   });
-  const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const visitorGeoResolver = createDefaultVisitorGeoResolver();
   const composition = createDefaultApplicationComposition({
     logger,
@@ -184,6 +180,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     widgetOrigin: env.RADIOSO_WIDGET_ORIGIN ?? env.APP_BASE_URL,
   });
   const infrastructure = buildInfrastructure({ env, logger, composition });
+  const publicConversationEventBus = createPublicConversationEventBus({ db: infrastructure.database.kysely, notifications: infrastructure.notificationListener, logger });
   const copilotContributions = resolveCopilotContributions(composition, { database: infrastructure.database, logger, auditService: infrastructure.auditService });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   for (const extension of composition.agentSurfaceExtensions) {
@@ -381,6 +378,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     messageRepository: repositories.messageRepository,
     facetExtractionJobs: repositories.facetExtractionJobRepository,
     metricsRegistry: infrastructure.metricsRegistry,
+    notificationListener: infrastructure.notificationListener,
     telemetryService: infrastructure.telemetryService,
     webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
@@ -1333,6 +1331,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     closeApprovalResumeEffectJournal: chat.closeApprovalResumeEffectJournal,
     closeAbuseControlRepository: () => abuseControlComposition.shutdown(),
     conversationTurnCoordination: chat.conversationTurnCoordination,
+    notificationListener: infrastructure.notificationListener,
     conversationOwnershipService,
     conversationIngestService,
     conversationOperatorDirectory,

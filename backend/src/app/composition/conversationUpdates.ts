@@ -11,9 +11,9 @@ import type {
 
 /**
  * Default wiring for the resumption read surface: the reader over the existing
- * conversation tail, the waiter over the existing in-process event bus. Both are
- * replaceable here — a deployment that gains a cross-instance bus swaps the waiter's
- * source without the converse route or the chat module learning about it.
+ * conversation tail, the waiter over the public conversation event bus, which hears
+ * every instance (`publicConversationEvents.ts`). Both are replaceable here without the
+ * converse route or the chat module learning about it.
  */
 export const createConversationUpdatesComposition = (dependencies: {
   chatHistoryService: ConversationTailReaderPort;

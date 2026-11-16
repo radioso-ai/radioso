@@ -223,6 +223,18 @@ describe("extractDocumentImages: markdown and other types", () => {
     ]);
   });
 
+  it("reads a line of unclosed image syntax or backtick runs in linear time", async () => {
+    const unclosed = `![${"![\\".repeat(60_000)}`;
+    const backticks = Array.from({ length: 3_000 }, (_, index) => "`".repeat(index % 40 + 1)).join(" x ");
+    const buffer = Buffer.from(`${unclosed}\n${backticks} ![Ridge](https://cdn.example/ridge.png)`);
+
+    const startedAt = Date.now();
+    const result = await extractDocumentImages({ buffer, filename: "hostile.md", mimeType: "text/markdown" });
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(result.images.map((image) => image.kind === "linked" ? image.url : null)).toEqual(["https://cdn.example/ridge.png"]);
+  });
+
   it("stores text normalised exactly as the line-ending, NUL, blank-line and trim rules always have", async () => {
     const previousNormalization = (value: string) =>
       value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\u0000/g, "").replace(/\n{3,}/g, "\n\n").trim();

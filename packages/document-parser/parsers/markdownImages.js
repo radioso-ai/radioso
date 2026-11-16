@@ -1,14 +1,52 @@
 import { readMarkdownContent } from "./markdown.js";
 
-/** `![alt](address "title")`: the inline image syntax, with an optional title in either quote. */
-const INLINE_IMAGE = /!\[([^\]\n]*)\]\(\s*<?([^\s<>()]+)>?(?:\s+(?:"([^"\n]*)"|'([^'\n]*)'))?\s*\)/g;
+/**
+ * `![alt](address "title")`: the inline image syntax, with an optional title in either quote.
+ * Every part has a bound, so a line of unclosed `![` costs a fixed amount per start, never the
+ * rest of the line.
+ */
+const INLINE_IMAGE = /!\[([^\]\n]{0,300})\]\([ \t]{0,8}<?([^\s<>()]{1,2048})>?(?:[ \t]{1,8}(?:"([^"\n]{0,500})"|'([^'\n]{0,500})'))?[ \t]{0,8}\)/g;
 /** A fence opens and closes a code block: three or more backticks or tildes, indented at most three spaces. */
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
-/** An inline code span: a run of backticks, its text, and a run of the same length. */
-const CODE_SPAN = /(`+)[^`]*?\1/g;
 const ABSOLUTE_HTTP = /^https?:\/\//i;
 
-/** The ranges of `content` that are code, fenced or inline, where image syntax is text. */
+/**
+ * A line's inline code spans: a run of backticks up to the next run of the same length. Each
+ * length keeps a cursor into the runs of that length, so the line is read once however many
+ * runs go unclosed.
+ */
+const codeSpans = (line, offset) => {
+  const runs = [];
+  for (let index = 0; index < line.length;) {
+    if (line[index] !== "`") {
+      index += 1;
+      continue;
+    }
+    const start = index;
+    while (line[index] === "`") index += 1;
+    runs.push({ start, end: index, length: index - start });
+  }
+  const byLength = new Map();
+  runs.forEach((run, index) => {
+    if (!byLength.has(run.length)) byLength.set(run.length, { runs: [], cursor: 0 });
+    byLength.get(run.length).runs.push(index);
+  });
+  const spans = [];
+  for (let index = 0; index < runs.length;) {
+    const same = byLength.get(runs[index].length);
+    while (same.cursor < same.runs.length && same.runs[same.cursor] <= index) same.cursor += 1;
+    const closing = same.runs[same.cursor];
+    if (closing === undefined) {
+      index += 1;
+      continue;
+    }
+    spans.push([offset + runs[index].start, offset + runs[closing].end]);
+    index = closing + 1;
+  }
+  return spans;
+};
+
+/** The ranges of `content` that are code, fenced or inline, where image syntax is text; in order. */
 const codeRanges = (content) => {
   const ranges = [];
   let offset = 0;
@@ -22,7 +60,7 @@ const codeRanges = (content) => {
       fence = opening;
       ranges.push([offset, offset + line.length]);
     } else {
-      for (const span of line.matchAll(CODE_SPAN)) ranges.push([offset + span.index, offset + span.index + span[0].length]);
+      ranges.push(...codeSpans(line, offset));
     }
     offset += line.length + 1;
   }
@@ -38,7 +76,12 @@ const codeRanges = (content) => {
 export const extractMarkdownImages = async ({ buffer, limits }) => {
   const text = readMarkdownContent(buffer);
   const code = codeRanges(text);
-  const inCode = (index) => code.some(([start, end]) => index >= start && index < end);
+  let range = 0;
+  // Matches and ranges both come in document order, so one cursor walks the ranges once.
+  const inCode = (index) => {
+    while (range < code.length && code[range][1] <= index) range += 1;
+    return range < code.length && code[range][0] <= index;
+  };
   const images = [];
   let truncated = false;
   for (const match of text.matchAll(INLINE_IMAGE)) {

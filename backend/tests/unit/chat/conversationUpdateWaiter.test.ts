@@ -33,10 +33,23 @@ describe("conversation update waiter", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("wakes on the poll tick with no bus event at all, which is the multi-instance case", async () => {
-    // The bus is per-process: an operator reply handled by another instance never
-    // reaches this listener, so the tick — not the subscription — is what makes the
-    // wait correct.
+  it("wakes the caller to re-query when the bus may have missed events", async () => {
+    const bus = new InMemoryPublicConversationEventBus();
+    const waiter = createConversationUpdateWaiter({ bus, pollIntervalMs: 2_000 });
+    const controller = new AbortController();
+
+    const pending = waiter.wait({ conversationId: "c-1", timeoutMs: 25_000, signal: controller.signal });
+    await vi.advanceTimersByTimeAsync(5);
+    expect(bus.reportEventsMissed()).toBe(1);
+
+    await expect(pending).resolves.toBe("woken");
+    expect(vi.getTimerCount()).toBe(0);
+    expect(bus.reportEventsMissed()).toBe(0);
+  });
+
+  it("wakes on the poll tick with no bus event at all", async () => {
+    // The tick is the backstop for an event the bus never delivers, such as one sent while this
+    // instance's listener was reconnecting and before it reported the gap.
     const bus = new InMemoryPublicConversationEventBus();
     const waiter = createConversationUpdateWaiter({ bus, pollIntervalMs: 2_000, jitter: () => 0 });
     const controller = new AbortController();

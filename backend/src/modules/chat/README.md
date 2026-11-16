@@ -362,6 +362,20 @@ imports from `services/`.
   runs, coordinating a conversation's turns across instances through a lease
   store and notices; `infra/postgresConversationTurnLeases.ts` implements both on
   Postgres (migration 262).
+- `services/publicConversationEventBus.ts`: the port visitor event streams and
+  the converse update waiter subscribe through (`message.created` with ids only,
+  plus `onEventsMissed`), and the in-process fan-out.
+  `services/crossInstancePublicConversationEventBus.ts` is the bus production
+  runs (`app/composition/publicConversationEvents.ts`): it delivers to this
+  process's subscribers as it publishes, relays to the other instances through
+  `infra/postgresPublicConversationEventRelay.ts` (`pg_notify` on
+  `radioso_public_conversation_events`), drops its own events coming back, and
+  hears the relay only while it has subscribers. Each time the relay starts
+  listening, on the first subscriber or after a reconnect, every subscriber's
+  `onEventsMissed` runs: the visitor stream answers with another `ready`, which
+  sends the client back to the tail, and a parked converse caller re-queries.
+  `tests/integration/public-conversation-events.integration.test.ts` runs two
+  instances on one database.
 - `services/conversationContractMappers.ts` and
   `services/conversationProcessTurnInput.ts`: adapters from prepared chat turns
   into the reusable conversation-engine contracts.
@@ -643,10 +657,12 @@ imports from `services/`.
   conversation is read, so no foreign key holds these rows; erasing a conversation
   removes them through `ConversationTurnLeaseEraser` (owner `chat-turns`), and a
   turn still running there loses its lease and aborts. The `LISTEN` connection
-  (`shared/infra/postgresNotificationListener.ts`) is one per process, opened with
-  the first turn and closed after the pool's idle timeout; announcements missed
-  while it was down are read back from `conversation_turn_leases` when it
-  reconnects, retried with backoff while turns remain in flight.
+  (`shared/infra/postgresNotificationListener.ts`, built in
+  `app/server/builders/infra.ts`) is one per process, shared with the public
+  conversation event bus, opened with the first subscription and closed after
+  the pool's idle timeout; announcements missed while it was down are read back
+  from `conversation_turn_leases` when it reconnects, retried with backoff while
+  turns remain in flight.
   `chat_turn_cancellations_total` carries `scope` (`local`, `cross_instance`) and
   the `lease_lost` reason; `chat_turn_lease_expiry_takeovers_total` counts turns
   that ran past an expired lease. Every registry runs the shared contract in

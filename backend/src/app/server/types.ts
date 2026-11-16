@@ -333,8 +333,10 @@ export interface AppDependencies {
   approvalDecisionService: ApprovalDecisionService;
   closeApprovalResumeEffectJournal(): Promise<void>;
   closeAbuseControlRepository?(): Promise<void>;
-  /** Cross-instance chat turn coordination; its shutdown stops lease renewal and closes the LISTEN connection. */
+  /** Cross-instance chat turn coordination; its shutdown stops lease renewal and stops listening for other instances' turns. */
   conversationTurnCoordination: { shutdown(): Promise<void> };
+  /** The process's one LISTEN session, shared by turn coordination and the public conversation event bus. */
+  notificationListener: { close(): Promise<void> };
   /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
   conversationOwnershipService: ConversationOwnershipService;
   /** Records a customer message without running a turn; connectors reach it through their chat port. */

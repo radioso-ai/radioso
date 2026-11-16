@@ -98,9 +98,11 @@ connection is reconnecting, the gap lasts until it reconnects and reads back the
 turns it missed.
 
 Each API or worker process holds one extra database connection for `LISTEN` while
-it has turns in flight. The connection closes once the process has had no turn in
-flight for the pool's idle timeout (`DB_POOL_IDLE_TIMEOUT_MS`). When you size the
-database's connection limit, count `DB_POOL_MAX + 1` per process.
+it has turns in flight or a visitor's event stream open. The same connection
+carries visitor events between instances, so a reply stored on one instance
+reaches a visitor whose stream another instance holds. It closes once the process
+has had neither for the pool's idle timeout (`DB_POOL_IDLE_TIMEOUT_MS`). When you
+size the database's connection limit, count `DB_POOL_MAX + 1` per process.
 
 A newer turn runs once every older turn of the conversation has finished, on any
 instance. If an instance crashes mid-turn, its lease stops being renewed and

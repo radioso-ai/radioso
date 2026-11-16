@@ -298,9 +298,7 @@ export function PublicChatBubbleComposerForm({
             style={{ color: theme.inputForeground }}
             aria-hidden={readOnly ? 'true' : undefined}
           />
-          {images?.canAttach ? (
-            <VisitorImageAttachButton theme={theme} copy={copy} images={images} className={buttonSize} iconClassName={buttonIconSize} />
-          ) : null}
+          {images?.canAttach ? <VisitorImageAttachButton theme={theme} copy={copy} images={images} className={buttonSize} /> : null}
           {accessory}
           <Button
             type="submit"

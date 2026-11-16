@@ -23,6 +23,7 @@ const DASHBOARD_CALL_THEME: VoiceCallTheme = {
   inputBackground: 'var(--background)',
   inputBorder: 'var(--input)',
   inputForeground: 'var(--foreground)',
+  mutedBackground: 'var(--muted)',
   mutedForeground: 'var(--muted-foreground)',
 }
 

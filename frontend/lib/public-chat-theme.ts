@@ -1,4 +1,4 @@
-import { contrastRatio, mixHex, mixHexRgba, pickForeground, relativeLuminance } from '@/lib/color'
+import { contrastRatio, mixHex, mixHexRgba, parseHex, pickForeground, relativeLuminance } from '@/lib/color'
 import type { WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import type { WebsiteEmbedThemeSettings } from '@/lib/api'
 
@@ -25,6 +25,27 @@ const ERROR_ON_DARK = '#fca5a5'
 /** The colour of an error line or mark on `background`: red where red reads at 4.5:1, else black or white. */
 export const errorForeground = (background: string): string =>
   ensureLegibleForeground(background, relativeLuminance(background) < 0.5 ? ERROR_ON_DARK : ERROR_ON_LIGHT, MIN_TEXT_CONTRAST)
+
+/** WCAG 1.4.11: the glyph of a control reads at 3:1 against what it sits on. */
+const MIN_CONTROL_CONTRAST = 3
+/**
+ * How far a quiet icon fades from the field's foreground toward the field, firmer than the theme's
+ * muted foreground, so it never reads as the glyph of a disabled Send, which is drawn in that.
+ */
+const QUIET_ICON_FADE = 0.3
+
+/**
+ * The colour of a quiet icon button's glyph (the paperclip, Talk) on the composer field: the field's
+ * foreground faded part of the way, and never fainter than 3:1. A theme made of CSS variables, as the
+ * dashboard's is, names its muted foreground, since no contrast can be computed from a variable.
+ */
+export const quietIconForeground = (theme: { inputBackground: string; inputForeground: string; mutedForeground: string }): string => {
+  if (!parseHex(theme.inputBackground) || !parseHex(theme.inputForeground)) {
+    return theme.mutedForeground
+  }
+  const faded = mixHex(theme.inputForeground, theme.inputBackground, QUIET_ICON_FADE)
+  return ensureLegibleForeground(theme.inputBackground, faded, MIN_CONTROL_CONTRAST)
+}
 
 export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
   if (!theme) {

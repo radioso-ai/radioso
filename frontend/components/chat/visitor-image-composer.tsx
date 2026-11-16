@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type MouseEvent } from 'react'
 import { Paperclip, TriangleAlert, X } from 'lucide-react'
 
+import { composerIconButtonClass, composerIconButtonStyle } from '@/components/chat/composer-icon-button'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import type { WebsiteEmbedCopy, WebsiteEmbedTheme } from '@/lib/embed-widget'
@@ -67,15 +68,14 @@ const filesOf = (transfer: DataTransfer | null): File[] => (transfer ? Array.fro
 
 /**
  * The composer's attach control: a quiet paperclip that opens the file picker for up to three
- * photos. It sits inside the field, right before the controls beside Send, and is sized by
- * `className` to match Send.
+ * photos. It sits inside the field, right before the controls beside Send, takes the treatment
+ * Talk takes, and is sized by `className` to match Send.
  */
 export function VisitorImageAttachButton({
   theme,
   copy,
   images,
   className,
-  iconClassName = 'h-4 w-4',
   disabled = false,
 }: {
   theme: VisitorImageComposerTheme
@@ -83,7 +83,6 @@ export function VisitorImageAttachButton({
   images: ComposerImages
   /** The button's size, the one Send has. */
   className: string
-  iconClassName?: string
   /** Held off while the composer cannot send, as Send is. */
   disabled?: boolean
 }) {
@@ -108,18 +107,16 @@ export function VisitorImageAttachButton({
         type="button"
         size="icon"
         variant="ghost"
-        // The ghost variant's hover is the page's accent, which is yellow in the dashboard; a quiet
-        // control hovers on the theme's neutral surface instead, for both light and dark.
-        className={`${className} shrink-0 rounded-full hover:bg-[var(--attach-hover)] active:bg-[var(--attach-hover)] dark:hover:bg-[var(--attach-hover)]`}
+        className={`${className} ${composerIconButtonClass}`}
         disabled={full || disabled}
         title={copy.publicChatAttachImageLabel}
         data-visitor-image-attach
-        style={{ color: theme.mutedForeground, ['--attach-hover' as string]: theme.mutedBackground }}
+        style={composerIconButtonStyle(theme)}
         onClick={() => inputRef.current?.click()}
         // Keep focus in the message field, as Send does.
         onMouseDown={(event) => event.preventDefault()}
       >
-        <Paperclip className={iconClassName} aria-hidden="true" />
+        <Paperclip aria-hidden="true" />
         <span className="sr-only">{copy.publicChatAttachImageLabel}</span>
       </Button>
     </>

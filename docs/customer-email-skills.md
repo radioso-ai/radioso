@@ -52,8 +52,8 @@ the name, the sender, and the provider. A connection that needs
 re-authorization or reports an error carries a badge on its line. The switch on
 a line disables or re-enables that connection. Open a line to see the sender,
 provider, status, last health check, and last error code, to run **Check health**
-and read its result, or to delete the connection. A delete that an email skill
-blocks explains why in the same panel.
+and read its result, or to delete the connection, which asks you to confirm. A
+delete that an email skill blocks explains why in the same panel.
 
 Customer email connection responses do not include OAuth access tokens, refresh
 tokens, client secrets, cookies, or raw provider credentials.

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useRouter } from 'next/navigation'
 import { Plus } from 'lucide-react'
 
+import { ConfirmDeleteDialog } from '@/components/dashboard/settings/confirm-delete-dialog'
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/routine-completion-export-panel'
@@ -16,16 +17,6 @@ import { useScopedRowMutations } from '@/components/dashboard/settings/use-scope
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { useRegisterRoutineHeader } from '@/components/dashboard/shared/routine-header-actions'
 import { useRoutineEnabledToggle } from '@/hooks/use-routine-enabled-toggle'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
@@ -175,48 +166,6 @@ const writeNewRoutineRecovery = (agentId: string, recovery: NewRoutineRecovery) 
 const clearNewRoutineRecovery = (agentId: string) => {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(newRoutineRecoveryKey(agentId))
-}
-
-// A routine that never went live is removed outright; one that did is taken out of service
-// instead, so an in-flight conversation resuming it keeps working.
-function DeleteRoutineDialog({
-  open,
-  onOpenChange,
-  routineName,
-  busy,
-  onConfirm,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  routineName: string | undefined
-  busy: boolean
-  onConfirm: () => void
-}) {
-  return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete routine?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Deletes {routineName ? `"${routineName}"` : 'this routine'} if it has never gone live, otherwise takes it out of service. Customers see the change after Review &amp; Publish.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={busy}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            onClick={(event) => {
-              event.preventDefault()
-              onConfirm()
-            }}
-          >
-            Delete routine
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
 }
 
 export function AssistantRoutinesSection({
@@ -946,10 +895,18 @@ function RoutineEditorScreen({
             </RoutineSkillCatalogProvider>
           )}
       </div>
-      <DeleteRoutineDialog
+      {/* A routine that never went live is removed outright; one that did is taken out of service
+          instead, so an in-flight conversation resuming it keeps working. */}
+      <ConfirmDeleteDialog
         open={deleteRoutineDialogOpen}
         onOpenChange={setDeleteRoutineDialogOpen}
-        routineName={editingRoutine?.name}
+        title="Delete routine?"
+        description={(
+          <>
+            Deletes {editingRoutine?.name ? `"${editingRoutine.name}"` : 'this routine'} if it has never gone live, otherwise takes it out of service. Customers see the change after Review &amp; Publish.
+          </>
+        )}
+        confirmLabel="Delete routine"
         busy={isSaving}
         onConfirm={() => void deleteRoutine()}
       />

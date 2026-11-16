@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckCircle2, Plus, X } from 'lucide-react'
 
+import { ConfirmDeleteDialog, useDeleteConfirmation } from '@/components/dashboard/settings/confirm-delete-dialog'
 import { focusQuietListRow, QuietList, QuietListRow } from '@/components/dashboard/settings/quiet-list'
 import { useScopedRowMutations } from '@/components/dashboard/settings/use-scoped-row-mutations'
 import { Button } from '@/components/ui/button'
@@ -55,6 +56,13 @@ const neighborConnectionId = (connections: readonly McpConnection[], connectionI
   return (connections[index + 1] ?? connections[index - 1])?.id ?? null
 }
 
+// Connections belong to the workspace, so deleting one takes it from every agent's skills.
+const mcpDeleteDescription = (connection: McpConnection): string => {
+  const base = `Deletes "${connection.displayName}" for every agent in this workspace.`
+  const agents = connection.usedByAgents ?? []
+  return agents.length > 0 ? `${base} Used by ${agents.map((agent) => agent.name).join(', ')}.` : base
+}
+
 export function McpConnectionsSection({ agentId }: { agentId: string }) {
   const [connections, setConnections] = useState<McpConnection[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -78,6 +86,7 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
   // The row to hand the keyboard back to once the list is on screen again.
   const restoreFocusRowId = useRef<string | null>(null)
   const rowMutations = useScopedRowMutations(agentId)
+  const deletion = useDeleteConfirmation<McpConnection>()
 
   // The detail view holds which connection it shows, not a copy of it, so a reload shows the
   // current one and a deleted or vanished connection falls back to the list.
@@ -124,14 +133,15 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [load])
 
-  // Runs when the list takes the detail view's place, after the row it points at has rendered.
+  // Runs when the list takes the detail view's place, after the row it points at has rendered. An
+  // open confirmation traps the keyboard, so a delete hands it over once that dialog has closed.
   useEffect(() => {
-    if (selectedConnection) return
+    if (selectedConnection || deletion.isOpen) return
     const rowId = restoreFocusRowId.current
     if (!rowId) return
     restoreFocusRowId.current = null
     focusQuietListRow(rowId)
-  }, [selectedConnection])
+  }, [selectedConnection, deletion.isOpen])
 
   const createConnection = async () => {
     setIsCreating(true)
@@ -219,6 +229,14 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     }
   }
 
+  // The dialog stays open while the request runs and closes when it settles either way, so a
+  // failure's message shows in the detail view underneath.
+  const confirmDeleteConnection = async () => {
+    if (!deletion.item) return
+    await deleteConnection(deletion.item.id)
+    deletion.dismiss()
+  }
+
   const openConnection = (connectionId: string) => {
     // An earlier failure described a different connection (or the list); it must not sit over this one.
     setError(null)
@@ -237,7 +255,10 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     onTest: (connectionId) => void testConnection(connectionId),
     onAuthorize: (connectionId) => void authorizeConnection(connectionId),
     onReplaceToken: replaceAccessToken,
-    onDelete: (connectionId) => void deleteConnection(connectionId),
+    onDelete: (connectionId) => {
+      const connection = connections.find((candidate) => candidate.id === connectionId)
+      if (connection) deletion.ask(connection)
+    },
   }
 
   const showConnectionForm = selectedConnection === null && (isAddingConnection || connections.length === 0)
@@ -358,6 +379,17 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
           </Button>
         )}
       </div>
+      {deletion.item ? (
+        <ConfirmDeleteDialog
+          open={deletion.isOpen}
+          onOpenChange={(open) => { if (!open) deletion.dismiss() }}
+          title="Delete MCP connection?"
+          description={mcpDeleteDescription(deletion.item)}
+          confirmLabel="Delete connection"
+          busy={rowMutations.isPending(connectionActionKey('delete', deletion.item.id))}
+          onConfirm={() => void confirmDeleteConnection()}
+        />
+      ) : null}
     </section>
   )
 }

@@ -67,6 +67,9 @@ test("workspace operator manages webhook destinations and one-time secrets", asy
   });
 
   await sheet.getByRole("button", { name: "Delete sales-intake" }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Delete webhook destination?" });
+  await expect(confirmation).toContainText('Deletes "sales-intake".');
+  await confirmation.getByRole("button", { name: "Delete destination" }).click();
   await expect(sheet).toHaveCount(0);
   await expect(createdRow).toHaveCount(0);
   expect(webhookDestinationUpdates.at(-1)).toMatchObject({
@@ -111,11 +114,15 @@ test("a failing destination is flagged on its row, and its sheet explains a bloc
   await expect(sheet).toContainText(failing.id);
 
   await sheet.getByRole("button", { name: "Delete crm-leads" }).click();
-  // A refused delete keeps the destination: its sheet stays open with the reason.
+  const confirmation = page.getByRole("alertdialog", { name: "Delete webhook destination?" });
+  await confirmation.getByRole("button", { name: "Delete destination" }).click();
+  // A refused delete keeps the destination: the confirmation closes and the sheet stays open with the reason.
+  await expect(confirmation).toHaveCount(0);
   await expect(sheet.getByRole("alert")).toContainText("still exports to this destination");
   await expect(sheet).toBeVisible();
 
   await sheet.getByRole("button", { name: "Delete crm-leads" }).click();
+  await confirmation.getByRole("button", { name: "Delete destination" }).click();
   await expect(sheet).toHaveCount(0);
   await expect(failingRow).toHaveCount(0);
   expect(webhookDestinationUpdates.at(-1)).toMatchObject({ method: "DELETE", destinationId: failing.id });

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Webhook } from 'lucide-react'
 
+import { ConfirmDeleteDialog, useDeleteConfirmation } from '@/components/dashboard/settings/confirm-delete-dialog'
 import { QuietList, QuietListRow } from '@/components/dashboard/settings/quiet-list'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useScopedRowMutations, type RowMutationOutcome } from '@/components/dashboard/settings/use-scoped-row-mutations'
@@ -79,6 +80,7 @@ export function WebhookDestinationsPanel({
   const [sheetDestinationId, setSheetDestinationId] = useState<string | null>(null)
   const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
   const rowMutations = useScopedRowMutations(ROW_MUTATION_SCOPE)
+  const deletion = useDeleteConfirmation<WebhookDestination>()
   // A form save and a delete are separate requests, so a save can land after its destination is
   // gone. Ids are never reused, so remembering them is enough to drop that response.
   const deletedDestinationIds = useRef(new Set<string>())
@@ -238,6 +240,14 @@ export function WebhookDestinationsPanel({
     if (isCurrentSave(saveId)) markSaved()
   }
 
+  // The dialog stays open while the request runs and closes when it settles either way, so a
+  // failure's message shows in the sheet underneath.
+  const confirmDeleteDestination = async () => {
+    if (!deletion.item) return
+    await deleteDestination(deletion.item)
+    deletion.dismiss()
+  }
+
   const sheetActions: WebhookSheetActions = {
     pendingAction: (destinationId) => {
       if (rowMutations.isPending(rowMutationKey('rotate', destinationId))) return 'rotate'
@@ -249,7 +259,7 @@ export function WebhookDestinationsPanel({
       openEdit(destination)
     },
     onRotateSecret: (destination) => void rotateSecret(destination),
-    onDelete: (destination) => void deleteDestination(destination),
+    onDelete: deletion.ask,
   }
 
   // A secret issued for the destination whose sheet is open shows in the sheet, which covers the
@@ -348,6 +358,17 @@ export function WebhookDestinationsPanel({
         actions={sheetActions}
         onClose={() => setSheetDestinationId(null)}
       />
+      {deletion.item ? (
+        <ConfirmDeleteDialog
+          open={deletion.isOpen}
+          onOpenChange={(open) => { if (!open) deletion.dismiss() }}
+          title="Delete webhook destination?"
+          description={`Deletes "${deletion.item.name}".`}
+          confirmLabel="Delete destination"
+          busy={rowMutations.isPending(rowMutationKey('delete', deletion.item.id))}
+          onConfirm={() => void confirmDeleteDestination()}
+        />
+      ) : null}
     </SettingsCard>
   )
 }

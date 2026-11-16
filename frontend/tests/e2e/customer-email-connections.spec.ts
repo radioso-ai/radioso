@@ -136,6 +136,9 @@ test("an email connection opens in a sheet where its health is checked and it is
   await expect(sheet.getByText("provider_health_failed")).toHaveCount(0);
 
   await sheet.getByRole("button", { name: "Delete Support outbound" }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Delete email connection?" });
+  await expect(confirmation).toContainText('Deletes "Support outbound".');
+  await confirmation.getByRole("button", { name: "Delete connection" }).click();
   await expect(sheet).toBeHidden();
   await expect(page.getByRole("button", { name: "Support outbound", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Billing outbound", exact: true })).toBeVisible();
@@ -155,6 +158,9 @@ test("a refused delete explains itself inside the sheet, and the row switch paus
   await page.getByRole("button", { name: "Support outbound", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Support outbound" });
   await sheet.getByRole("button", { name: "Delete Support outbound" }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Delete email connection?" });
+  await confirmation.getByRole("button", { name: "Delete connection" }).click();
+  await expect(confirmation).toHaveCount(0);
   await expect(sheet.getByRole("alert")).toHaveText("Customer email connection is still referenced by an email skill");
   await page.keyboard.press("Escape");
   await expect(sheet).toBeHidden();

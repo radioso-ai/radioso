@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Mail, RefreshCw } from 'lucide-react'
 
+import { ConfirmDeleteDialog, useDeleteConfirmation } from '@/components/dashboard/settings/confirm-delete-dialog'
 import {
   EmailConnectionDetailSheet,
   type EmailConnectionSheetActions,
@@ -75,6 +76,7 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
     workspaceIdRef.current = workspaceId
   }, [workspaceId])
   const rowMutations = useScopedRowMutations(workspaceId ?? '')
+  const deletion = useDeleteConfirmation<CustomerEmailConnection>()
 
   // Memoized: the sheet keeps the last connection it showed, compared by identity.
   const sheetConnection = useMemo(
@@ -271,6 +273,14 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
     }
   }
 
+  // The dialog stays open while the request runs and closes when it settles either way, so a
+  // failure's message shows in the sheet underneath.
+  const confirmDeleteConnection = async () => {
+    if (!deletion.item) return
+    await deleteConnection(deletion.item)
+    deletion.dismiss()
+  }
+
   const openSheet = (connection: CustomerEmailConnection) => {
     if (!workspaceId) return
     setError(null)
@@ -288,7 +298,7 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
     isCheckingHealth: (connectionId) => checkingHealthIds.has(connectionId),
     onToggleEnabled: (connection, enabled) => void updateDisabled(connection, !enabled),
     onCheckHealth: (connection) => void checkHealth(connection),
-    onDelete: (connection) => void deleteConnection(connection),
+    onDelete: deletion.ask,
   }
 
   return (
@@ -465,6 +475,17 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
         actions={sheetActions}
         onClose={closeSheet}
       />
+      {deletion.item ? (
+        <ConfirmDeleteDialog
+          open={deletion.isOpen}
+          onOpenChange={(open) => { if (!open) deletion.dismiss() }}
+          title="Delete email connection?"
+          description={`Deletes "${deletion.item.displayName}".`}
+          confirmLabel="Delete connection"
+          busy={rowMutations.isPending(deletion.item.id)}
+          onConfirm={() => void confirmDeleteConnection()}
+        />
+      ) : null}
     </SettingsCard>
   )
 }

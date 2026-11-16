@@ -29,8 +29,8 @@ OAuth connection that is not yet authorized or one that needs re-authorization.
 Select a row to open the connection in the same panel. Its details show the server
 URL, the authentication method, and the agents whose skills use it, with the actions
 **Test connection**, **Authorize** or **Re-authorize** (OAuth), **Replace token**
-(access token), and **Delete**. **Back to connections** returns to the list.
-This connects your agents to external tools. **Channels → MCP** manages clients
+(access token), and **Delete**, which asks you to confirm. **Back to connections**
+returns to the list. This connects your agents to external tools. **Channels → MCP** manages clients
 that talk to an agent.
 
 Every agent whose skills use a connection acts under its credential. Replacing a

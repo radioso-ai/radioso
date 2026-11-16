@@ -196,6 +196,7 @@ test("Test Chat puts the attach control beside Send, ahead of Talk", async ({ pa
   const talk = page.getByRole("button", { name: "Talk" });
   const send = page.getByRole("button", { name: "Send", exact: true });
   await field.fill("Do you open on Sundays?");
+  await expect(attach).toBeVisible();
   await expect(talk).toBeEnabled();
 
   // Tabbing from the message field reaches the attach control, then Talk, then Send.
@@ -216,6 +217,19 @@ test("Test Chat puts the attach control beside Send, ahead of Talk", async ({ pa
   expect(attachBox.x + attachBox.width).toBeLessThanOrEqual(talkBox.x);
   expect(talkBox.x + talkBox.width).toBeLessThanOrEqual(sendBox.x);
   expect(attachBox.height).toBe(sendBox.height);
+});
+
+test("Enter on the focused attach control opens the file picker in Test Chat", async ({ page }) => {
+  await mockPhotoBackend(page, { visitorImagesEnabled: true });
+  await page.goto(testChatUrl);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  const attach = page.getByRole("button", { name: "Attach photo" });
+  await expect(attach).toBeVisible();
+
+  await attach.focus();
+  const chooser = page.waitForEvent("filechooser");
+  await page.keyboard.press("Enter");
+  expect((await chooser).isMultiple()).toBe(true);
 });
 
 test("Test Chat offers no attach control while the agent takes no photos from visitors", async ({ page }) => {

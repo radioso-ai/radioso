@@ -98,6 +98,8 @@ test("the attach control sits beside Send, ahead of Talk, and all three fit a 36
   const talk = frame.getByRole("button", { name: "Talk" });
   const send = frame.getByRole("button", { name: "Send message" });
   await field.fill("Do you open on Sundays?");
+  await expect(attach).toBeVisible();
+  await expect(talk).toBeVisible();
 
   // Tabbing from the message field reaches the attach control, then Talk, then Send.
   await field.focus();

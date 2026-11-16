@@ -284,6 +284,7 @@ test("the attach control sits inside the field beside Send, as big a target as S
   const attach = page.getByRole("button", { name: "Attach photo" });
   const send = page.getByRole("button", { name: "Send message" });
   await field.fill("Do you open on Sundays?");
+  await expect(attach).toBeVisible();
 
   // Tabbing from the message field reaches the attach control, then Send.
   await field.focus();
@@ -300,6 +301,21 @@ test("the attach control sits inside the field beside Send, as big a target as S
   expect(attachBox.x + attachBox.width).toBeLessThanOrEqual(sendBox.x);
   expect(attachBox.width).toBeGreaterThanOrEqual(36);
   expect(attachBox.height).toBe(sendBox.height);
+});
+
+test("Enter on the focused attach control opens the file picker", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  await mockPublicChat(page, { acceptsImages: true, photo });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  const attach = page.getByRole("button", { name: "Attach photo" });
+  await expect(attach).toBeVisible();
+
+  await attach.focus();
+  const chooser = page.waitForEvent("filechooser");
+  await page.keyboard.press("Enter");
+  expect((await chooser).isMultiple()).toBe(true);
 });
 
 test("a visitor can remove a photo before sending, and is told when a file type is not accepted", async ({ page }) => {

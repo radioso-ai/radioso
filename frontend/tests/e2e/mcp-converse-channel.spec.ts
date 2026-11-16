@@ -240,6 +240,7 @@ test('Test connection discovers tools, reports failures, and supports retry with
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
   await page.getByRole('button', { name: 'Manage MCP connections', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'MCP connections', exact: true });
+  await panel.getByRole('button', { name: 'Support tools', exact: true }).click();
   const testButton = panel.getByRole('button', { name: 'Test connection to Support tools', exact: true });
   const connectionResult = panel.getByRole('status', { name: '', exact: true });
   await expect(panel.getByText('Credentials saved', { exact: true })).toBeVisible();
@@ -260,6 +261,49 @@ test('Test connection discovers tools, reports failures, and supports retry with
   await expect(panel.getByRole('button', { name: 'Re-authorize', exact: true })).toHaveCount(0);
   expect(posts).toEqual(Array(4).fill(`/backend/api/v1/agents/${defaultAgentId}/mcp-connections/support-server/discover`));
   await page.screenshot({ path: '../.context/mcp-test-connection.png', fullPage: true });
+});
+
+test('an MCP connection opens from its row, runs an action, and returns to the list', async ({ page }) => {
+  await seedDashboardStorage(page);
+  const attention: McpConnection = {
+    id: 'billing-server', displayName: 'Billing tools', serverUrl: 'https://billing.example.com/mcp',
+    authMethod: 'oauth', status: 'needs_reauth', hasCredential: true, usedByAgents: [],
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  };
+  const support: McpConnection = {
+    id: 'support-server', displayName: 'Support tools', serverUrl: MCP_SERVER_URL,
+    authMethod: 'access_token', status: 'authorized', hasCredential: true,
+    usedByAgents: [{ id: defaultAgentId, name: 'Support agent' }],
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  };
+  await installDashboardApiMocks(page, {
+    mcpConnections: [attention, support],
+    mcpDiscoveredTools: [{ name: 'search' }, { name: 'ask_agent' }],
+  });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  await page.getByRole('button', { name: 'Manage MCP connections', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: 'MCP connections', exact: true });
+
+  // The list says only what needs attention; the actions live behind the row.
+  await expect(panel.getByRole('button', { name: 'Billing tools', exact: true })).toBeVisible();
+  await expect(panel.getByText('Needs re-auth', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: /^Test connection to/ })).toHaveCount(0);
+
+  const row = panel.getByRole('button', { name: 'Support tools', exact: true });
+  await row.click();
+  await expect(panel.getByRole('button', { name: 'Back to connections', exact: true })).toBeVisible();
+  await expect(panel.getByText('Support agent', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Billing tools', exact: true })).toHaveCount(0);
+  // The row drills in inside the panel; it does not open a second sheet on top.
+  await expect(page.getByRole('dialog', { name: 'Support tools' })).toHaveCount(0);
+
+  await panel.getByRole('button', { name: 'Test connection to Support tools', exact: true }).click();
+  await expect(panel.getByRole('status', { name: '', exact: true })).toHaveText('Connected · 2 tools found');
+
+  await panel.getByRole('button', { name: 'Back to connections', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'Billing tools', exact: true })).toBeVisible();
+  await expect(row).toBeFocused();
+  await expect(panel.getByRole('button', { name: 'Back to connections', exact: true })).toHaveCount(0);
 });
 
 test('the inventory lists only live access and pages older active access', async ({ page }) => {

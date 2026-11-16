@@ -100,6 +100,20 @@ test("the skills registry reports which directives and routines use each skill",
   await expect(rowFor("issue_refund")).toContainText("Used by 2 directives");
   await expect(rowFor("lookup_order")).toContainText("Used by 1 routine");
   await expect(rowFor("unused_skill")).toContainText("Not used by a directive or routine");
+
+  // The confirmation to delete a skill says who still uses it, and says nothing for one nothing uses.
+  await page.getByRole("button", { name: "@issue_refund" }).click();
+  await page.getByRole("dialog", { name: "@issue_refund" }).getByRole("button", { name: "Delete issue_refund" }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Delete skill?" });
+  await expect(confirmation).toContainText("Deletes @issue_refund from this agent. Used by 2 directives.");
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "@issue_refund" })).toHaveCount(0);
+  await page.getByRole("button", { name: "@unused_skill" }).click();
+  await page.getByRole("dialog", { name: "@unused_skill" }).getByRole("button", { name: "Delete unused_skill" }).click();
+  await expect(confirmation).toContainText("Deletes @unused_skill from this agent.");
+  await expect(confirmation).not.toContainText("Used by");
 });
 
 test("the skills registry still lists skills when the referencing surfaces cannot be read", async ({ page }) => {
@@ -140,6 +154,14 @@ test("a skill row opens its details, where the skill is edited or deleted", asyn
 
   await page.getByRole("button", { name: "@issue_refund" }).click();
   await page.getByRole("dialog", { name: "@issue_refund" }).getByRole("button", { name: "Delete issue_refund" }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Delete skill?" });
+  await expect(confirmation).toContainText("Deletes @issue_refund from this agent.");
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "@issue_refund" })).toBeVisible();
+
+  await page.getByRole("dialog", { name: "@issue_refund" }).getByRole("button", { name: "Delete issue_refund" }).click();
+  await confirmation.getByRole("button", { name: "Delete skill" }).click();
   await expect(page.getByRole("dialog", { name: "@issue_refund" })).toHaveCount(0);
   await expect(page.getByText("@issue_refund", { exact: true })).toHaveCount(0);
   await expect(page.getByText("@lookup_order", { exact: true })).toBeVisible();

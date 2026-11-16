@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-11-13
+last_updated: 2026-11-16
 ---
 
 # Agents and skills
@@ -326,10 +326,10 @@ A `mcp_tool` skill (and the `external_mcp` directive binding below) is Radioso c
 
 Each skill is one row in the Skills list: its switch, its name, its capability
 and target, and which authored surfaces reach it. Select a row to see when the
-skill runs and to edit or delete it. The usage part reads "Used by 2
-directives and 1 routine", or "Not used by a directive or routine". A skill
-nothing references never fires, and the count is the fastest way to spot one
-after a rename or a deleted directive. The dashboard derives it from
+skill runs and to edit or delete it; a delete asks you to confirm. The usage
+part reads "Used by 2 directives and 1 routine", or "Not used by a directive or
+routine". A skill nothing references never fires, and the count is the fastest
+way to spot one after a rename or a deleted directive. The dashboard derives it from
 `GET /api/v1/agents/{agentId}/directives` and
 `GET /api/v1/agents/{agentId}/routines`; the skill envelope itself carries no
 usage field. A routine counts once however many of its steps call the skill.

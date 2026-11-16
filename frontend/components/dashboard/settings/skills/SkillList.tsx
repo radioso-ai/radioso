@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Server } from 'lucide-react'
 
+import { ConfirmDeleteDialog, useDeleteConfirmation } from '@/components/dashboard/settings/confirm-delete-dialog'
 import { QuietList, QuietListGroup, QuietListRow } from '@/components/dashboard/settings/quiet-list'
 import { useScopedRowMutations } from '@/components/dashboard/settings/use-scoped-row-mutations'
 import { useRegisterAddSkillAction } from '@/components/dashboard/shared/skills-header-action'
@@ -30,7 +31,7 @@ import { isRetrievalAnswerSkill, RetrievalAnswersSwitch, type RetrievalAnswersCo
 import { SkillDetailSheet, type SkillSheetActions, type SkillSheetTarget } from './SkillDetailSheet'
 import { SkillForm } from './SkillForm'
 import { builtInSkillRowDomId, skillRowDomId, skillRowSummary } from './skill-list-rows'
-import { countSkillUsage, type SkillUsage } from './skill-usage'
+import { countSkillUsage, describeSkillUsage, NO_SKILL_USAGE, type SkillUsage } from './skill-usage'
 
 // The sheet holds which skill it shows, not a copy of it, so a toggle or reload shows the current
 // skill and a deleted one closes the sheet. The selection belongs to one agent: switching agents
@@ -50,6 +51,13 @@ const resolveSheetTarget = (
   }
   const skill = platformSkills.find((candidate) => candidate.name === selection.name)
   return skill ? { kind: 'built-in', skill } : null
+}
+
+// The usage sentence is left out while usage is unknown or zero: saying nothing beats a guess.
+const skillDeleteDescription = (skill: AgentSkill, usage: Map<string, SkillUsage> | null): string => {
+  const used = usage?.get(skill.name) ?? NO_SKILL_USAGE
+  const base = `Deletes @${skill.name} from this agent.`
+  return used.directives + used.routines > 0 ? `${base} ${describeSkillUsage(used)}.` : base
 }
 
 export function SkillList({
@@ -81,6 +89,7 @@ export function SkillList({
   const [usage, setUsage] = useState<Map<string, SkillUsage> | null>(null)
   const loadVersion = useRef(0)
   const rowMutations = useScopedRowMutations(agentId)
+  const deletion = useDeleteConfirmation<AgentSkill>()
   const retrievalSettingsViewState = resolveAssistantRetrievalSettingsViewState({
     isAssistantBehaviorLoading,
     assistantBehaviorSettings,
@@ -203,6 +212,14 @@ export function SkillList({
     }
   }
 
+  // The dialog stays open while the request runs and closes when it settles either way, so a
+  // failure's message shows in the sheet underneath.
+  const confirmDeleteSkill = async () => {
+    if (!deletion.item) return
+    await deleteSkill(deletion.item)
+    deletion.dismiss()
+  }
+
   const sheetActions: SkillSheetActions = {
     isRowPending: rowMutations.isPending,
     onToggleEnabled: (skill, enabled) => void toggleSkill(skill, enabled),
@@ -213,7 +230,7 @@ export function SkillList({
       setSelectedCapabilityId(null)
       setFormOpen(true)
     },
-    onDelete: (skill) => void deleteSkill(skill),
+    onDelete: deletion.ask,
   }
 
   return (
@@ -295,6 +312,17 @@ export function SkillList({
         actions={sheetActions}
         onClose={() => setSheetSelection(null)}
       />
+      {deletion.item ? (
+        <ConfirmDeleteDialog
+          open={deletion.isOpen}
+          onOpenChange={(open) => { if (!open) deletion.dismiss() }}
+          title="Delete skill?"
+          description={skillDeleteDescription(deletion.item, usage)}
+          confirmLabel="Delete skill"
+          busy={rowMutations.isPending(deletion.item.id)}
+          onConfirm={() => void confirmDeleteSkill()}
+        />
+      ) : null}
       <CapabilityPicker
         open={pickerOpen}
         agentId={agentId}

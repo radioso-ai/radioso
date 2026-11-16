@@ -4,7 +4,7 @@ import type { WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { quietIconForeground } from '@/lib/public-chat-theme'
 
 /** The colours a quiet icon button in the composer draws with: the embed's theme, or the dashboard's CSS variables. */
-export type ComposerIconTheme = Pick<WebsiteEmbedTheme, 'inputBackground' | 'inputForeground' | 'mutedBackground' | 'mutedForeground'>
+type ComposerIconTheme = Pick<WebsiteEmbedTheme, 'inputBackground' | 'inputForeground' | 'mutedBackground' | 'mutedForeground'>
 
 /**
  * The one treatment the composer's icon buttons beside Send share (the paperclip and Talk): no fill

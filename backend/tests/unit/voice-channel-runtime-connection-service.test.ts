@@ -18,7 +18,7 @@ const actor = { accountId: "acc-1", userId: "user-1" };
 const apiKey = "xi-secret-0123456789";
 const completionsBaseUrl = `https://api.example.com/api/v1/agents/${agentId}/voice/elevenlabs/v1`;
 
-type Profile = { name: string; defaultLocale: string | null; runtime: VoiceRuntimeBinding | null };
+type Profile = { name: string; defaultLocale: string | null; runtime: VoiceRuntimeBinding | null; enabled?: boolean };
 
 interface Setup {
   profile?: Profile | null;
@@ -84,6 +84,7 @@ const serviceWith = (setup: Setup = {}) => {
   let holding = false;
   /** How many times the agent's connection lock was taken at all, held or not. */
   let lockRunCount = 0;
+  let profileReads = 0;
   const lock = {
     run: async <T,>(_agent: { workspaceId: string; agentId: string }, work: () => Promise<T>) => {
       lockRunCount += 1;
@@ -100,7 +101,12 @@ const serviceWith = (setup: Setup = {}) => {
   };
   const service = new VoiceRuntimeConnectionService({
     lock,
-    agents: { findRuntimeProfile: async () => profile },
+    agents: {
+      findRuntimeProfile: async () => {
+        profileReads += 1;
+        return profile ? { enabled: false, ...profile } : null;
+      },
+    },
     connections: {
       find: async () => connection,
       save: async (next) => {
@@ -136,10 +142,10 @@ const serviceWith = (setup: Setup = {}) => {
       },
     },
     binder: {
-      bind: async ({ runtime }) => {
-        steps.push(`bind:${runtime ? `${runtime.agentId}@${runtime.region}` : "none"}`);
+      bind: async ({ runtime, enabled }) => {
+        steps.push(`bind:${runtime ? `${runtime.agentId}@${runtime.region}` : "none"}${enabled === undefined ? "" : enabled ? ":on" : ":off"}`);
         if (setup.bindError) throw setup.bindError;
-        if (profile) profile = { ...profile, runtime };
+        if (profile) profile = { ...profile, runtime, ...(enabled === undefined ? {} : { enabled }) };
       },
     },
     completionsAddress: setup.completions === false ? null : ({ agentId: id, vendor }) => `https://api.example.com/api/v1/agents/${id}/voice/${vendor}/v1`,
@@ -160,6 +166,7 @@ const serviceWith = (setup: Setup = {}) => {
     /** The credentials that admit the agent's turns now, by id. */
     activeNow: () => [...active.keys()],
     lockRunCount: () => lockRunCount,
+    profileReads: () => profileReads,
   };
 };
 
@@ -204,6 +211,7 @@ describe("voice runtime connection: connect", () => {
       vendorKey: "stored",
       connectAvailable: true,
       runtime: { vendor: "elevenlabs", agentId: "agent_new", region: "eu" },
+      enabled: false,
     });
     expect(audit.connected).toHaveBeenCalledWith({
       accountId: "acc-1",
@@ -456,6 +464,117 @@ describe("voice runtime connection: connect", () => {
   });
 });
 
+describe("voice runtime connection: the voice channel switch", () => {
+  it("connects an agent with no runtime as Connect does, and binds it and turns voice on in one write", async () => {
+    const { service, steps, held, audit, profileNow } = serviceWith();
+
+    const status = await service.switchChannel({ ...agent, actor, enabled: true });
+
+    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:new:rk_secret_1", "save:agent_new:cred-1", "bind:agent_new@eu:on"]);
+    expect(held).toEqual(steps);
+    expect(status).toEqual({
+      vendor: "elevenlabs",
+      state: "connected",
+      region: "eu",
+      vendorKey: "stored",
+      connectAvailable: true,
+      runtime: { vendor: "elevenlabs", agentId: "agent_new", region: "eu" },
+      enabled: true,
+    });
+    expect(profileNow()).toMatchObject({ enabled: true, runtime: { agentId: "agent_new" } });
+    expect(audit.connected).toHaveBeenCalledWith(expect.objectContaining({ outcome: "created", credential: "issued" }));
+  });
+
+  it.each([
+    ["a runtime Radioso maintains", managed(), "connected"],
+    ["a runtime the operator bound by hand", null, "connected_externally"],
+  ] as const)("only checks the key with the vendor and turns voice on for %s", async (_label, connection, state) => {
+    const { service, steps, provisioner, audit } = serviceWith({ connection, profile: boundTo("agent_42") });
+
+    const status = await service.switchChannel({ ...agent, actor, enabled: true });
+
+    expect(steps).toEqual(["locate", "bind:agent_42@eu:on"]);
+    expect(provisioner.locateAccount).toHaveBeenCalledWith({ credential: { apiKey } });
+    expect(provisioner.ensureAgent).not.toHaveBeenCalled();
+    expect(audit.connected).not.toHaveBeenCalled();
+    expect(status).toMatchObject({ state, enabled: true, runtime: boundTo("agent_42").runtime });
+  });
+
+  it.each([
+    ["no stored key", { reading: { kind: "missing" } }, "vendor_key_missing"],
+    ["a key the backend cannot read", { reading: { kind: "unreadable" } }, "vendor_key_unreadable"],
+    ["a key the vendor rejects", { locateError: new VoiceVendorRequestError("rejected", 401) }, "vendor_key_rejected"],
+    ["a key without the Agents permission", { locateError: new VoiceVendorRequestError("insufficient_permissions", 403) }, "vendor_key_lacks_agents_permission"],
+  ] as const)("leaves voice off for a bound agent with %s, and names it", async (_label, setup, reason) => {
+    const { service, steps, profileNow } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), ...setup });
+
+    expect(await failureOf(service.switchChannel({ ...agent, actor, enabled: true }))).toBe(reason);
+    expect(steps.filter((step) => step.startsWith("bind"))).toEqual([]);
+    expect(profileNow()?.enabled).not.toBe(true);
+  });
+
+  it("turns voice off keeping the runtime and the vendor agent, so turning it on again calls no vendor", async () => {
+    const { service, steps, provisioner, connectionNow } = serviceWith({ connection: managed(), profile: { ...boundTo("agent_42"), enabled: true } });
+
+    const status = await service.switchChannel({ ...agent, actor, enabled: false });
+
+    expect(steps).toEqual(["bind:agent_42@eu:off"]);
+    expect(provisioner.releaseAgent).not.toHaveBeenCalled();
+    expect(connectionNow()).toEqual(managed());
+    expect(status).toMatchObject({ state: "connected", enabled: false });
+  });
+
+  it.each([
+    ["no stored key", { reading: { kind: "missing" } }, "vendor_key_missing"],
+    ["a key the backend cannot read", { reading: { kind: "unreadable" } }, "vendor_key_unreadable"],
+    ["a key the vendor rejects", { locateError: new VoiceVendorRequestError("rejected", 401) }, "vendor_key_rejected"],
+    ["a deployment the vendor cannot reach", { completions: false }, "connection_unavailable"],
+  ] as const)("names %s when turning voice on needs a Connect, and writes nothing", async (_label, setup, reason) => {
+    const { service, steps, profileNow } = serviceWith(setup);
+
+    expect(await failureOf(service.switchChannel({ ...agent, actor, enabled: true }))).toBe(reason);
+    expect(steps.filter((step) => step.startsWith("bind") || step.startsWith("save"))).toEqual([]);
+    expect(profileNow()).toMatchObject({ runtime: null });
+    expect(profileNow()?.enabled).not.toBe(true);
+  });
+
+  it("refuses while another change of the agent's connection runs, touching nothing", async () => {
+    const { service, steps } = serviceWith({ lockHeld: true });
+
+    expect(await failureOf(service.switchChannel({ ...agent, actor, enabled: true }))).toBe("connection_busy");
+    expect(await failureOf(service.switchChannel({ ...agent, actor, enabled: false }))).toBe("connection_busy");
+    expect(steps).toEqual([]);
+  });
+
+  it("refuses an agent that does not exist", async () => {
+    const { service } = serviceWith({ profile: null });
+
+    expect(await failureOf(service.switchChannel({ ...agent, actor, enabled: false }))).toBe("agent_not_found");
+  });
+
+  it("reads the agent once when turning voice on connects it", async () => {
+    const { service, profileReads } = serviceWith();
+
+    await service.switchChannel({ ...agent, actor, enabled: true });
+
+    expect(profileReads()).toBe(1);
+  });
+
+  it("logs and counts each switch with ids and closed values", async () => {
+    const { service, logger, metrics } = serviceWith({ connection: managed(), profile: boundTo("agent_42") });
+
+    await service.switchChannel({ ...agent, actor, enabled: true });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", operation: "channel_on", outcome: "switched" },
+      "Voice channel switched",
+    );
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("voice_runtime_connection_total", expect.objectContaining({
+      labels: { vendor: "elevenlabs", operation: "channel_on", outcome: "switched" },
+    }));
+  });
+});
+
 describe("voice runtime connection: status", () => {
   it.each([
     ["no runtime", null, null, "not_connected"],
@@ -478,17 +597,28 @@ describe("voice runtime connection: status", () => {
       vendorKey: "missing",
       connectAvailable: false,
       runtime: null,
+      enabled: false,
     });
   });
 });
 
 describe("voice runtime connection: disconnect", () => {
+  it("turns voice off as it unbinds, so the agent never reads as on with nothing to take calls", async () => {
+    const { service, steps, profileNow } = serviceWith({ connection: managed(), profile: { ...boundTo("agent_42"), enabled: true } });
+
+    const disconnected = await service.disconnect({ ...agent, actor });
+
+    expect(steps.at(-1)).toBe("bind:none:off");
+    expect(profileNow()).toMatchObject({ runtime: null, enabled: false });
+    expect(disconnected).toMatchObject({ state: "not_connected", enabled: false });
+  });
+
   it("deletes the vendor agent Radioso created, revokes its credential, forgets it, then unbinds", async () => {
     const { service, steps, audit, connectionNow } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), activeCredentials: ["cred-old"] });
 
     const result = await service.disconnect({ ...agent, actor });
 
-    expect(steps).toEqual(["release:agent_42", "revoke:cred-old", "remove", "bind:none"]);
+    expect(steps).toEqual(["release:agent_42", "revoke:cred-old", "remove", "bind:none:off"]);
     expect(connectionNow()).toBeNull();
     expect(result).toMatchObject({ state: "not_connected", runtime: null, vendorAgentLeft: false });
     expect(audit.disconnected).toHaveBeenCalledWith({
@@ -508,7 +638,7 @@ describe("voice runtime connection: disconnect", () => {
 
     const result = await service.disconnect({ ...agent, actor });
 
-    expect(steps).toEqual(["bind:none"]);
+    expect(steps).toEqual(["bind:none:off"]);
     expect(provisioner.releaseAgent).not.toHaveBeenCalled();
     expect(result.vendorAgentLeft).toBe(false);
   });
@@ -522,7 +652,7 @@ describe("voice runtime connection: disconnect", () => {
 
     const result = await service.disconnect({ ...agent, actor });
 
-    expect(steps).toEqual(["release:agent_42", "revoke:cred-old", "remove", "bind:none"]);
+    expect(steps).toEqual(["release:agent_42", "revoke:cred-old", "remove", "bind:none:off"]);
     expect(result.vendorAgentLeft).toBe(true);
     expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ vendorAgentId: "agent_42", reason: "unreachable" }), expect.any(String));
   });
@@ -532,7 +662,7 @@ describe("voice runtime connection: disconnect", () => {
 
     const result = await service.disconnect({ ...agent, actor });
 
-    expect(steps).toEqual(["revoke:cred-old", "remove", "bind:none"]);
+    expect(steps).toEqual(["revoke:cred-old", "remove", "bind:none:off"]);
     expect(result.vendorAgentLeft).toBe(true);
   });
 
@@ -541,7 +671,7 @@ describe("voice runtime connection: disconnect", () => {
 
     await service.disconnect({ ...agent, actor });
 
-    expect(steps).toEqual(["release:agent_42", "revoke:cred-old", "remove", "bind:none"]);
+    expect(steps).toEqual(["release:agent_42", "revoke:cred-old", "remove", "bind:none:off"]);
   });
 
   it("logs and counts a Disconnect that fails, naming the agent, and lets the failure through", async () => {

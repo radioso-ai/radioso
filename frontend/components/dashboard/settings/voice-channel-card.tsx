@@ -120,16 +120,16 @@ function VoiceLanguageEditor({
 }
 
 /**
- * The agent's `voice` and `mechanicsReplies` blocks, saved together and replaced whole. Render it
- * keyed by `agentId`: a save replaces both blocks, so one agent's form must never outlive a switch
- * to another agent.
+ * The agent's `voice` and `mechanicsReplies` blocks, saved together and replaced whole. The voice
+ * switch and the runtime save on their own; the form carries them as stored. Render it keyed by
+ * `agentId`: a save replaces both blocks, so one agent's form must never outlive a switch to another agent.
  */
 export function VoiceChannelCard({ agentId }: { agentId: string }) {
   const [form, setForm] = useState<VoiceSettingsForm | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  // While Connect or Disconnect runs, a save would send the binding it is about to replace.
+  // While the voice switch, Connect or Disconnect runs, a save would send the voice it is about to replace.
   const [runtimeBusy, setRuntimeBusy] = useState(false)
-  // The one gap in voice readiness the card has no control for: the switch and the connection show the others.
+  // The one gap in voice readiness the card has no control for: the voice provider block shows the others.
   const [unpublished, setUnpublished] = useState(false)
   const { saveState, saveError, beginSave, isCurrentSave, markSaved, markError, resetSaveState } = useSettingsSaveStatus()
 
@@ -194,20 +194,11 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
           <VoiceRuntimeConnection
             agentId={agentId}
             disabled={saveState === 'saving'}
-            // The binding is already stored; the form takes it over so its next save keeps it.
-            onRuntimeChange={(runtime) => setForm((current) => (current ? { ...current, runtime } : current))}
+            // The switch and the binding are already stored; the form takes them over so its next save keeps them.
+            onVoiceChange={(voice) => setForm((current) => (current ? { ...current, ...voice } : current))}
             onBusyChange={setRuntimeBusy}
           />
-          <div className="rounded-xl border border-border bg-background/60 p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="voiceEnabled" className="text-foreground">Voice channel</Label>
-                <p id="voiceEnabledHint" className="text-xs text-muted-foreground">Required for calls: pages can start one only while it is on.</p>
-              </div>
-              <Switch id="voiceEnabled" aria-describedby="voiceEnabledHint" checked={form.enabled} onCheckedChange={(enabled) => edit({ ...form, enabled })} />
-            </div>
-            {unpublished ? <p className="mt-2 text-xs text-muted-foreground">{voiceCallReadinessHint('publication', 'vendor')}</p> : null}
-          </div>
+          {unpublished ? <p className="text-xs text-muted-foreground">{voiceCallReadinessHint('publication', 'vendor')}</p> : null}
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
               <Label htmlFor="voiceLanguageSwitching" className="text-foreground">Switch language with the caller</Label>

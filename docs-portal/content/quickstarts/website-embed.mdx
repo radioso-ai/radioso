@@ -1,7 +1,7 @@
 ---
 title: Embed on your website
 description: Launch the Radioso embed flow against a local test site, then adapt it for production.
-last_updated: 2026-11-11
+last_updated: 2026-11-16
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -150,7 +150,7 @@ The launcher also keeps a durable visitor key in the host page's `localStorage`,
 
 When you offer calls on the website, the widget's composer shows a microphone button, **Talk**, beside Send. A visitor presses it, allows the microphone, and talks to the agent out loud: a call bar shows **Listening** and **Speaking**, the visitor can talk over a reply, and what both of them say appears in the panel marked **Spoken**. **End call** or closing the panel ends the call, and the Inbox lists it as a voice conversation next to that visitor's chats.
 
-Offering calls is your choice and starts off. Turn on **Offer calls on the website** under **Website widget** on the agent's **Web chat** page. You can turn it on once the agent's voice is ready: the agent published, an ElevenLabs key under **Settings → Providers → Voice runtime keys**, ElevenLabs connected on the agent's **Voice** card (**Connect ElevenLabs**), and the **Voice channel** on; until then the switch names what is missing. The snippet stays the same. The button shows only on pages served over https, because browsers give no microphone to plain http pages. If your site sends a `Permissions-Policy` header that denies the microphone, allow it for your Radioso app host, or the widget shows no Talk button. Each call spends one voice session start, which has its own small budget per visitor; see [Voice session start rate limits](/operators/deployment#voice-session-start-rate-limits). A visitor past it, or a call Radioso cannot start, reads "Talking isn't available right now. Try again later."
+Offering calls is your choice and starts off. Turn on **Offer calls on the website** under **Website widget** on the agent's **Web chat** page. Once the agent is published, the switch also does whatever voice setup is missing: it turns on the agent's **Voice channel**, creates the agent's ElevenLabs agent, and asks for your ElevenLabs key right there when the workspace has none (the key is stored under **Settings → Providers → Voice runtime keys**, where you can also set it ahead of time). Until the agent is published the switch names that, and it stays unavailable while Radioso cannot read the stored key (check `CONNECTOR_ENCRYPTION_KEY`). The snippet stays the same. The button shows only on pages served over https, because browsers give no microphone to plain http pages. If your site sends a `Permissions-Policy` header that denies the microphone, allow it for your Radioso app host, or the widget shows no Talk button. Each call spends one voice session start, which has its own small budget per visitor; see [Voice session start rate limits](/operators/deployment#voice-session-start-rate-limits). A visitor past it, or a call Radioso cannot start, reads "Talking isn't available right now. Try again later."
 
 ## Sending photos
 

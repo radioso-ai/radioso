@@ -34,23 +34,29 @@ const save = async (card: ReturnType<Page["locator"]>) => {
   await expect(card.getByText("Saved", { exact: true })).toBeVisible();
 };
 
-test("an operator connects ElevenLabs, writes voice lines in two languages, trims them back, and finds the result after a reload", async ({ page }) => {
+test("an operator turns voice on, which connects ElevenLabs, writes voice lines in two languages, trims them back, and finds the result after a reload", async ({ page }) => {
   const agentUpdates: unknown[] = [];
   const voiceConnectionRequests: string[] = [];
+  const voiceChannelSwitches: boolean[] = [];
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     agentUpdates,
     voiceConnectionRequests,
+    voiceChannelSwitches,
     voiceConnection: { vendorKey: "stored", connectVendorAgentId: VENDOR_AGENT_ID, connectRegion: "eu" },
   });
 
   const card = await openVoiceCard(page);
   const voiceSwitch = card.getByRole("switch", { name: "Voice channel" });
   await expect(voiceSwitch).not.toBeChecked();
+  await expect(card.getByRole("button", { name: /^Connect/ })).toHaveCount(0);
   await voiceSwitch.click();
-  await card.getByRole("button", { name: "Connect ElevenLabs" }).click();
   await expect(card.getByText("Connected to ElevenLabs · recordings stay in the European Union")).toBeVisible();
-  expect(voiceConnectionRequests).toEqual(["POST"]);
+  await expect(voiceSwitch).toBeChecked();
+  // The switch saved at once and connected on its own: no Connect, no save.
+  expect(voiceChannelSwitches).toEqual([true]);
+  expect(voiceConnectionRequests).toEqual([]);
+  expect(agentUpdates).toEqual([]);
 
   const english = await addLanguage(card, "English");
   await english.getByRole("button", { name: "Add check line" }).click();
@@ -123,13 +129,15 @@ test("an operator connects ElevenLabs, writes voice lines in two languages, trim
   await expect(reloaded.getByRole("group", { name: /^Voice lines: / })).toHaveCount(1);
 });
 
-test("an operator disconnects ElevenLabs, clears the voice lines, then the quick replies, and each clear is sent as an empty block", async ({ page }) => {
+test("an operator turns voice off, disconnects ElevenLabs, clears the voice lines, then the quick replies, and each clear is sent as an empty block", async ({ page }) => {
   const agentUpdates: unknown[] = [];
   const voiceConnectionRequests: string[] = [];
+  const voiceChannelSwitches: boolean[] = [];
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     agentUpdates,
     voiceConnectionRequests,
+    voiceChannelSwitches,
     voiceConnection: { vendorKey: "stored", managedVendorAgentId: VENDOR_AGENT_ID },
     agentSettingsOverrides: {
       voice: {
@@ -144,14 +152,22 @@ test("an operator disconnects ElevenLabs, clears the voice lines, then the quick
 
   const card = await openVoiceCard(page);
   await expect(card.getByText("Connected to ElevenLabs · recordings stay in the European Union")).toBeVisible();
+  const voiceSwitch = card.getByRole("switch", { name: "Voice channel" });
+  await expect(voiceSwitch).toBeChecked();
+  await voiceSwitch.click();
+  await expect(voiceSwitch).not.toBeChecked();
+  // Off keeps the ElevenLabs agent, so turning voice on again calls no vendor.
+  await expect(card.getByText("Connected to ElevenLabs · recordings stay in the European Union")).toBeVisible();
+  expect(voiceChannelSwitches).toEqual([false]);
+
   await card.getByRole("button", { name: "Disconnect" }).click();
   const confirm = page.getByRole("alertdialog", { name: "Disconnect ElevenLabs?" });
   await expect(confirm).toContainText("Radioso deletes the ElevenLabs agent it created for it.");
   await confirm.getByRole("button", { name: "Disconnect" }).click();
-  await expect(card.getByRole("button", { name: "Connect ElevenLabs" })).toBeEnabled();
+  await expect(card.getByRole("button", { name: "Disconnect" })).toHaveCount(0);
+  await expect(voiceSwitch).toBeEnabled();
   expect(voiceConnectionRequests).toEqual(["DELETE"]);
   const english = card.getByRole("group", { name: "Voice lines: English" });
-  await card.getByRole("switch", { name: "Voice channel" }).click();
   await english.getByRole("button", { name: "Remove check line 1" }).click();
   await english.getByLabel("Fallback line").fill("");
   await save(card);
@@ -256,17 +272,26 @@ test("switching to another agent shows that agent's own lines before its voice s
   expect(agentUpdates).toEqual([]);
 });
 
-test("an operator without a stored key is sent to Settings → Providers before Connect", async ({ page }) => {
-  const voiceConnectionRequests: string[] = [];
+test("an operator without a stored key is asked for it when turning voice on, and cancelling leaves voice off", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+  const providerCredentialUpdates: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }> = [];
   await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, { voiceConnectionRequests, voiceConnection: { vendorKey: "missing" } });
+  await installDashboardApiMocks(page, { agentUpdates, providerCredentialUpdates, voiceConnection: { vendorKey: "missing" } });
 
   const card = await openVoiceCard(page);
+  const voiceSwitch = card.getByRole("switch", { name: "Voice channel" });
+  await voiceSwitch.click();
 
-  await expect(card.getByRole("button", { name: "Connect ElevenLabs" })).toBeDisabled();
-  await expect(card.getByText("Add your ElevenLabs API key, with the Agents permission, under")).toBeVisible();
-  await expect(card.getByRole("link", { name: "Settings → Providers" })).toHaveAttribute("href", /\/settings\?tab=providers/);
-  expect(voiceConnectionRequests).toEqual([]);
+  const keyDialog = page.getByRole("dialog", { name: "ElevenLabs API key" });
+  await expect(keyDialog).toContainText("Add your ElevenLabs API key. It needs the Agents permission, read and write.");
+  await keyDialog.getByRole("button", { name: "Cancel" }).click();
+
+  await expect(keyDialog).toHaveCount(0);
+  await expect(voiceSwitch).not.toBeChecked();
+  await expect(voiceSwitch).toBeEnabled();
+  await expect(card.getByText("Connected to ElevenLabs", { exact: false })).toHaveCount(0);
+  expect(providerCredentialUpdates).toEqual([]);
+  expect(agentUpdates).toEqual([]);
 });
 
 test("an operator whose agent was never published is told on the Voice card that it takes no calls until it is", async ({ page }) => {
@@ -310,7 +335,7 @@ test("an operator hands an ElevenLabs agent set up by hand over to Radioso, and 
   ]);
 });
 
-test("an operator whose key may not manage agents is told what to change, and nothing is bound", async ({ page }) => {
+test("an operator whose key may not manage agents is asked for one that may, and nothing is bound", async ({ page }) => {
   const agentUpdates: unknown[] = [];
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
@@ -319,16 +344,18 @@ test("an operator whose key may not manage agents is told what to change, and no
   });
 
   const card = await openVoiceCard(page);
-  await card.getByRole("button", { name: "Connect ElevenLabs" }).click();
+  const voiceSwitch = card.getByRole("switch", { name: "Voice channel" });
+  await voiceSwitch.click();
 
-  await expect(card.getByRole("alert")).toHaveText(
-    "The ElevenLabs key needs the Agents permission, read and write. Turn it on for the key in ElevenLabs, or store a key that has it.",
-  );
-  await expect(card.getByRole("button", { name: "Connect ElevenLabs" })).toBeEnabled();
+  const keyDialog = page.getByRole("dialog", { name: "ElevenLabs API key" });
+  await expect(keyDialog).toContainText("The ElevenLabs key lacks the Agents permission, read and write. Enter a key that has it.");
+  await keyDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(voiceSwitch).not.toBeChecked();
+  await expect(card.getByText("Connected to ElevenLabs", { exact: false })).toHaveCount(0);
   expect(agentUpdates).toEqual([]);
 });
 
-test("an operator who presses Connect while another Connect of the agent runs is asked to wait, and nothing is bound", async ({ page }) => {
+test("an operator who turns voice on while another change to the agent's voice runs is asked to wait, and voice stays off", async ({ page }) => {
   const agentUpdates: unknown[] = [];
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
@@ -337,11 +364,11 @@ test("an operator who presses Connect while another Connect of the agent runs is
   });
 
   const card = await openVoiceCard(page);
-  await card.getByRole("button", { name: "Connect ElevenLabs" }).click();
+  const voiceSwitch = card.getByRole("switch", { name: "Voice channel" });
+  await voiceSwitch.click();
 
-  await expect(card.getByRole("alert")).toHaveText(
-    "Another Connect or Disconnect of this agent is still running. Try again in a moment.",
-  );
-  await expect(card.getByRole("button", { name: "Connect ElevenLabs" })).toBeEnabled();
+  await expect(card.getByRole("alert")).toHaveText("Another change to this agent’s voice is still running. Try again in a moment.");
+  await expect(voiceSwitch).not.toBeChecked();
+  await expect(voiceSwitch).toBeEnabled();
   expect(agentUpdates).toEqual([]);
 });

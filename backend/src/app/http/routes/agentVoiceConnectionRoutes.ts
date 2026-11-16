@@ -11,12 +11,14 @@ import {
 import { requireApiAccessCsrf } from "../middleware/requireApiAccessCsrf.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { validateBody } from "../middleware/validate.js";
 
 type AgentVoiceConnectionRouteDependencies = Parameters<typeof requireWorkspaceSession>[0]
   & Parameters<typeof requireWorkspacePermission>[0]
   & Pick<AppDependencies, "voiceRuntimeConnections">;
 
 const agentParamsSchema = z.object({ agentId: z.string().uuid() });
+const voiceChannelSwitchSchema = z.object({ enabled: z.boolean() }).strict();
 
 /**
  * Each way a Connect can fail, as the answer the Voice card reads. The code is the contract; the
@@ -63,7 +65,8 @@ const actorOf = (locals: { accountId?: string; userId?: string }): VoiceRuntimeC
 
 /**
  * The agent's managed voice runtime, for the Voice card: its status, Connect (create or repair the
- * vendor agent Radioso maintains, and bind it) and Disconnect. Dashboard sessions only, with the
+ * vendor agent Radioso maintains, and bind it), Disconnect, and the voice channel switch, which
+ * connects first when it turns voice on with no runtime bound. Dashboard sessions only, with the
  * agent manage permission: Connect issues an access grant and Disconnect revokes one.
  */
 export const registerAgentVoiceConnectionRoutes = (router: Router, dependencies: AgentVoiceConnectionRouteDependencies): void => {
@@ -87,6 +90,18 @@ export const registerAgentVoiceConnectionRoutes = (router: Router, dependencies:
       const { agentId } = agentParamsSchema.parse(req.params);
       const actor = actorOf(res.locals as { accountId?: string; userId?: string });
       res.status(200).json(await dependencies.voiceRuntimeConnections.connect({ workspaceId, agentId, actor }));
+    } catch (error) {
+      next(answerFor(error));
+    }
+  });
+
+  router.put("/:agentId/voice/channel", workspaceSession, requireApiAccessCsrf, agentManage, validateBody(voiceChannelSwitchSchema), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { agentId } = agentParamsSchema.parse(req.params);
+      const { enabled } = req.body as z.infer<typeof voiceChannelSwitchSchema>;
+      const actor = actorOf(res.locals as { accountId?: string; userId?: string });
+      res.status(200).json(await dependencies.voiceRuntimeConnections.switchChannel({ workspaceId, agentId, actor, enabled }));
     } catch (error) {
       next(answerFor(error));
     }

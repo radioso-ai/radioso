@@ -40,7 +40,7 @@ const FAILURE_OF_VENDOR_REASON: Readonly<Record<VoiceVendorRequestError["reason"
   malformed_response: "vendor_failed",
 };
 
-type ConnectionOperation = "connect" | "disconnect" | "sync" | "agent_deleted";
+type ConnectionOperation = "connect" | "disconnect" | "channel_on" | "channel_off" | "sync" | "agent_deleted";
 type ConnectionOutcome =
   | "created"
   | "repaired"
@@ -48,6 +48,7 @@ type ConnectionOutcome =
   | "unbound"
   | "vendor_agent_left"
   | "synced"
+  | "switched"
   | "needs_connect"
   | "error"
   | VoiceRuntimeConnectionFailure;
@@ -69,6 +70,7 @@ interface VoiceRuntimeConnectionServiceDependencies {
 }
 
 type AgentRef = { workspaceId: string; agentId: string };
+type VoiceRuntimeAgentProfile = NonNullable<Awaited<ReturnType<VoiceRuntimeAgentProfileSource["findRuntimeProfile"]>>>;
 
 /** No person: the credential goes because its agent does. */
 const SYSTEM_ACTOR: VoiceRuntimeConnectionActor = { accountId: null, userId: null };
@@ -103,6 +105,11 @@ const vendorErrorFields = (error: unknown) => ({
  *
  * Disconnecting deletes the vendor agent Radioso created and its credential, and unbinds. A runtime
  * the operator bound by hand is only unbound: Radioso never deletes a vendor agent it did not create.
+ *
+ * The voice channel switch turns the agent's voice on or off. Turning it on with no runtime bound
+ * runs Connect's work first and binds the runtime and turns voice on in the same agent write, so
+ * the operator never presses Connect; a failure leaves voice off and names why. Turning it off
+ * keeps the runtime and its vendor agent, so turning it on again calls no vendor.
  */
 export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort {
   constructor(private readonly dependencies: VoiceRuntimeConnectionServiceDependencies) {}
@@ -110,7 +117,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
   async status(agent: AgentRef): Promise<VoiceRuntimeConnectionStatus> {
     const profile = await this.requireProfile(agent);
     const connection = await this.dependencies.connections.find(agent);
-    return this.statusOf(agent.workspaceId, profile.runtime, connection);
+    return this.statusOf(agent.workspaceId, profile, connection);
   }
 
   async connect(input: AgentRef & { actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeConnectionStatus> {
@@ -124,15 +131,58 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     }
   }
 
-  /** Connect's own work, run while the agent's lock is held. `attempt.vendor` follows the vendor it connects, for the caller's log. */
+  async switchChannel(input: AgentRef & { actor: VoiceRuntimeConnectionActor; enabled: boolean }): Promise<VoiceRuntimeConnectionStatus> {
+    const attempt: { vendor: VoiceVendor } = { vendor: CONNECT_VENDOR };
+    const operation = input.enabled ? "channel_on" : "channel_off";
+    try {
+      const held = await this.dependencies.lock.run(input, () => this.switchHoldingLock(input, attempt));
+      if (!held.ran) throw new VoiceRuntimeConnectionError("connection_busy");
+      const { workspaceId, agentId } = input;
+      this.dependencies.logger.info({ workspaceId, agentId, vendor: attempt.vendor, operation, outcome: "switched" }, "Voice channel switched");
+      this.record(attempt.vendor, operation, "switched");
+      return held.value;
+    } catch (error) {
+      throw this.failed(operation, input, attempt.vendor, error);
+    }
+  }
+
+  /**
+   * The switch's own work, run while the agent's lock is held: Connect's when voice goes on with
+   * nothing bound. Voice goes on for a bound runtime only once the vendor accepts the stored key, so
+   * the switch never reads on while every call would fail on the key.
+   */
+  private async switchHoldingLock(
+    input: AgentRef & { actor: VoiceRuntimeConnectionActor; enabled: boolean },
+    attempt: { vendor: VoiceVendor },
+  ): Promise<VoiceRuntimeConnectionStatus> {
+    const profile = await this.requireProfile(input);
+    if (input.enabled && profile.runtime === null) return this.connectHoldingLock(input, attempt, { profile, turnVoiceOn: true });
+    const vendor = profile.runtime?.vendor ?? CONNECT_VENDOR;
+    attempt.vendor = vendor;
+    const { workspaceId, agentId, enabled } = input;
+    if (enabled) {
+      const credential = await this.requireCredential(workspaceId, vendor);
+      await this.dependencies.provisioners[vendor].locateAccount({ credential });
+    }
+    await this.dependencies.binder.bind({ workspaceId, agentId, runtime: profile.runtime, enabled });
+    const connection = await this.dependencies.connections.find(input);
+    return this.statusOf(workspaceId, { runtime: profile.runtime, enabled }, connection);
+  }
+
+  /**
+   * Connect's own work, run while the agent's lock is held. `attempt.vendor` follows the vendor it
+   * connects, for the caller's log. `profile` is the agent as the caller already read it under the
+   * lock; `turnVoiceOn` turns voice on in the write that binds the runtime.
+   */
   private async connectHoldingLock(
     input: AgentRef & { actor: VoiceRuntimeConnectionActor },
     attempt: { vendor: VoiceVendor },
+    options: { profile?: VoiceRuntimeAgentProfile; turnVoiceOn?: true } = {},
   ): Promise<VoiceRuntimeConnectionStatus> {
     const { workspaceId, agentId, actor } = input;
     const completionsAddress = this.dependencies.completionsAddress;
     if (!completionsAddress) throw new VoiceRuntimeConnectionError("connection_unavailable");
-    const profile = await this.requireProfile(input);
+    const profile = options.profile ?? await this.requireProfile(input);
     const vendor = profile.runtime?.vendor ?? CONNECT_VENDOR;
     attempt.vendor = vendor;
     const credential = await this.requireCredential(workspaceId, vendor);
@@ -171,7 +221,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     const replaced = previous?.channelCredential?.id;
     if (minted && replaced && replaced !== minted.id) await this.revokeQuietly({ ...input, credentialId: replaced });
     const runtime: VoiceRuntimeBinding = { vendor, agentId: ensured.vendorAgentId, region };
-    await this.dependencies.binder.bind({ workspaceId, agentId, runtime });
+    await this.dependencies.binder.bind({ workspaceId, agentId, runtime, ...(options.turnVoiceOn ? { enabled: true } : {}) });
 
     if (!ensured.primaryLocaleSupported) {
       this.dependencies.logger.warn(
@@ -193,7 +243,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
       "Voice runtime connected",
     );
     this.record(vendor, "connect", ensured.outcome);
-    return this.statusOf(workspaceId, runtime, connection);
+    return this.statusOf(workspaceId, { runtime, enabled: options.turnVoiceOn ?? profile.enabled }, connection);
   }
 
   async disconnect(input: AgentRef & { actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeDisconnection> {
@@ -217,11 +267,12 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     const connection = await this.dependencies.connections.find(input);
     const vendor = profile.runtime?.vendor ?? connection?.vendor ?? CONNECT_VENDOR;
     attempt.vendor = vendor;
-    if (!connection && !profile.runtime) return { ...await this.statusOf(workspaceId, null, null), vendorAgentLeft: false };
+    if (!connection && !profile.runtime) return { ...await this.statusOf(workspaceId, profile, null), vendorAgentLeft: false };
 
     const released = connection ? await this.forget(connection, actor) : false;
     const vendorAgentLeft = connection !== null && !released;
-    if (profile.runtime) await this.dependencies.binder.bind({ workspaceId, agentId, runtime: null });
+    // Voice goes off with the runtime: an agent never reads as on with nothing to take its calls.
+    if (profile.runtime || profile.enabled) await this.dependencies.binder.bind({ workspaceId, agentId, runtime: null, enabled: false });
     await this.dependencies.audit.disconnected({
       accountId: actor.accountId,
       workspaceId,
@@ -235,7 +286,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     const outcome: ConnectionOutcome = vendorAgentLeft ? "vendor_agent_left" : released ? "released" : "unbound";
     this.dependencies.logger.info({ workspaceId, agentId, vendor, operation: "disconnect", outcome }, "Voice runtime disconnected");
     this.record(vendor, "disconnect", outcome);
-    return { ...await this.statusOf(workspaceId, null, null), vendor, vendorAgentLeft };
+    return { ...await this.statusOf(workspaceId, { runtime: null, enabled: false }, null), vendor, vendorAgentLeft };
   }
 
   /**
@@ -510,9 +561,10 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
 
   private async statusOf(
     workspaceId: string,
-    runtime: VoiceRuntimeBinding | null,
+    voice: { runtime: VoiceRuntimeBinding | null; enabled: boolean },
     connection: VoiceRuntimeConnection | null,
   ): Promise<VoiceRuntimeConnectionStatus> {
+    const { runtime, enabled } = voice;
     const vendor = runtime?.vendor ?? connection?.vendor ?? CONNECT_VENDOR;
     const vendorKey = await this.dependencies.credentials.presence({ workspaceId, vendor });
     return {
@@ -522,6 +574,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
       vendorKey,
       connectAvailable: this.dependencies.completionsAddress !== null,
       runtime,
+      enabled,
     };
   }
 
@@ -529,7 +582,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
    * Logs and counts a Connect or Disconnect that failed, and hands back what to throw: a vendor's
    * refusal as the operator's reason, anything else as it came.
    */
-  private failed(operation: "connect" | "disconnect", agent: AgentRef, vendor: VoiceVendor, error: unknown): unknown {
+  private failed(operation: Exclude<ConnectionOperation, "sync" | "agent_deleted">, agent: AgentRef, vendor: VoiceVendor, error: unknown): unknown {
     const failure = failureOf(error);
     this.dependencies.logger.warn(
       { workspaceId: agent.workspaceId, agentId: agent.agentId, vendor, operation, outcome: failure ?? "error", ...vendorErrorFields(error) },

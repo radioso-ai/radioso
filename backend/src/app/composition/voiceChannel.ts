@@ -610,7 +610,9 @@ export const createVoiceRuntimeConnectionComposition = (deps: {
     agents: {
       findRuntimeProfile: async ({ workspaceId, agentId }) => {
         const agent = await deps.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-        return agent ? { name: agent.name, defaultLocale: agent.assistantDefaultLocale, runtime: agent.voice.runtime } : null;
+        return agent
+          ? { name: agent.name, defaultLocale: agent.assistantDefaultLocale, runtime: agent.voice.runtime, enabled: agent.voice.enabled }
+          : null;
       },
     },
     connections: deps.connections,
@@ -618,9 +620,9 @@ export const createVoiceRuntimeConnectionComposition = (deps: {
     provisioners: deps.provisioners,
     channelCredentials: voiceRuntimeChannelCredentials(deps.accessGrants),
     binder: {
-      bind: async ({ workspaceId, agentId, runtime }) => {
+      bind: async ({ workspaceId, agentId, runtime, enabled }) => {
         const agent = await deps.agentService.get(workspaceId, agentId);
-        await deps.agentService.update(workspaceId, agentId, { voice: { ...agent.voice, runtime } });
+        await deps.agentService.update(workspaceId, agentId, { voice: { ...agent.voice, runtime, ...(enabled === undefined ? {} : { enabled }) } });
       },
     },
     completionsAddress: voiceRuntimeCompletionsAddress(deps.appBaseUrl),

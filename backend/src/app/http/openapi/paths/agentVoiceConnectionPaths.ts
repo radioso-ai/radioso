@@ -8,7 +8,7 @@ import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 
 /**
  * The vendor agent Radioso creates and maintains for an agent's voice channel: the Voice card's
- * Connect and Disconnect, and where the runtime stands.
+ * Connect and Disconnect, the voice channel switch, and where the runtime stands.
  */
 export const registerAgentVoiceConnectionPaths = (
   registry: OpenAPIRegistry,
@@ -32,6 +32,9 @@ export const registerAgentVoiceConnectionPaths = (
     }),
     runtime: agentVoiceSettingsSchema.shape.runtime.openapi({
       description: "The agent's `voice.runtime` as stored after the request. A client that saves the whole `voice` block sends this value, or the save unbinds the agent.",
+    }),
+    enabled: agentVoiceSettingsSchema.shape.enabled.openapi({
+      description: "The agent's `voice.enabled` as stored after the request: whether pages may start calls with it. A client that saves the whole `voice` block sends this value.",
     }),
   }).openapi({ description: "Where the agent's voice runtime stands." }));
   const DisconnectionSchema = registry.register("AgentVoiceDisconnection", ConnectionSchema.extend({
@@ -92,12 +95,49 @@ export const registerAgentVoiceConnectionPaths = (
   });
 
   registry.registerPath({
+    method: "put",
+    path: "/api/v1/agents/{agentId}/voice/channel",
+    tags: ["Agents"],
+    summary: "Turn the agent's voice channel on or off",
+    description: [
+      "Sets the agent's `voice.enabled`. Turning it on when no `voice.runtime` is bound first connects, exactly as `POST /api/v1/agents/{agentId}/voice/connection` does,",
+      "and binds the runtime and turns voice on in one write; when that Connect fails, voice stays off and the answer names why with Connect's codes.",
+      "Turning it on with a runtime bound only checks that the vendor accepts the stored key, and leaves voice off with Connect's key codes when it does not.",
+      "Turning it off keeps the runtime and the vendor agent, so turning it on again creates nothing.",
+      "Runs as one change of the agent's connection: while a Connect or Disconnect runs, it answers `409 voice_connection_busy`. Dashboard session only.",
+    ].join(" "),
+    operationId: "switchAgentVoiceChannel",
+    security: security.workspaceAdminSecurity,
+    request: {
+      params,
+      headers: csrfHeaders,
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: z.object({ enabled: z.boolean().openapi({ description: "True turns voice on, connecting first when no runtime is bound; false turns it off." }) }).strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: { description: "The voice channel as switched", content: { "application/json": { schema: ConnectionSchema } } },
+      400: errorResponse("The body is not `{ \"enabled\": boolean }`"),
+      ...common,
+      409: errorResponse("`voice_vendor_key_missing`, `voice_vendor_key_unreadable`: turning voice on needs a readable stored key; `voice_connection_busy`: another change of this agent's connection is running, and this one changed nothing"),
+      422: errorResponse("`voice_vendor_key_rejected`, `voice_vendor_key_lacks_agents_permission`: turning voice on and the vendor refused the stored key"),
+      502: errorResponse("`voice_vendor_failed`: turning voice on needed a Connect and the vendor refused to set up the agent"),
+      503: errorResponse("`voice_vendor_unreachable`, `voice_connection_unavailable`: turning voice on needed a Connect and the vendor, or this deployment, could not be reached"),
+    },
+  });
+
+  registry.registerPath({
     method: "delete",
     path: "/api/v1/agents/{agentId}/voice/connection",
     tags: ["Agents"],
     summary: "Disconnect the agent's voice runtime",
     description: [
-      "Unbinds the agent's `voice.runtime`. A vendor agent Radioso created is deleted from the vendor account with its stored credential, and the credential is revoked;",
+      "Unbinds the agent's `voice.runtime` and turns `voice.enabled` off. A vendor agent Radioso created is deleted from the vendor account with its stored credential, and the credential is revoked;",
       "a runtime bound by hand is only unbound, and its vendor agent left alone. Unbinding never waits on the vendor: `vendorAgentLeft` says when the vendor agent may still be there.",
       "Records an `agent.voice_runtime.disconnected` audit event when there was something to disconnect. Dashboard session only.",
     ].join(" "),

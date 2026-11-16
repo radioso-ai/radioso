@@ -185,7 +185,7 @@ export function ProvidersPanel({
         title="Voice runtime keys"
         description="Radioso sets up your voice agents and starts their sessions with this key, so pages never hold it. Encrypted at rest and never shown again."
         providers={voiceVendorNames}
-        notConfiguredHint="Add an ElevenLabs key with the Agents permission (read and write), then connect ElevenLabs on an agent's Voice card."
+        notConfiguredHint="Add an ElevenLabs key with the Agents permission (read and write), or turn on an agent's voice channel and enter it there."
         encryptionConfigured={encryptionConfigured}
         credentials={credentials}
         envProviderAvailability={{}}

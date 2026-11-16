@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
 
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 
 // A list of authored things an operator scans: one line each, its name and a short summary.
@@ -64,5 +65,30 @@ export function QuietListRow({
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       </button>
     </li>
+  )
+}
+
+// Rows an operator rarely changes, such as what Radioso ships built in, wait behind one line.
+export function QuietListGroup({
+  label,
+  isOpen,
+  onOpenChange,
+  children,
+}: {
+  label: string
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
+  children: ReactNode
+}) {
+  return (
+    <Collapsible open={isOpen} onOpenChange={onOpenChange} className="space-y-2">
+      <CollapsibleTrigger className="group flex items-center gap-2 rounded-md py-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+        <ChevronRight className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-90" aria-hidden />
+        {label}
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <QuietList>{children}</QuietList>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }

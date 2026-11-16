@@ -12,6 +12,7 @@ export type LlmProviderFailureKind =
   | "model_unavailable"
   | "auth_rejected"
   | "rate_limited"
+  | "quota_exhausted"
   | "provider_unavailable"
   | "provider_rejected";
 
@@ -34,6 +35,12 @@ interface ProviderErrorShape {
 // `DeploymentNotFound`; OpenAI's own hosted API reports an unknown model as
 // `model_not_found`. Both are structural provider codes, not product vocabulary.
 const MODEL_UNAVAILABLE_CODES = new Set(["DeploymentNotFound", "model_not_found"]);
+
+// The provider account has no credit or quota left. Providers send these with a 429,
+// but unlike a rate limit they do not clear with time: every call fails until someone
+// adds credit. OpenAI reports `insufficient_quota`; other providers report
+// `credit_balance_exhausted`. Structural provider codes, not product vocabulary.
+const QUOTA_EXHAUSTED_CODES = new Set(["credit_balance_exhausted", "insufficient_quota"]);
 
 // Node/undici errno codes for a provider endpoint that could not be reached at all.
 // Structural transport codes (not English prose) — the same set regardless of locale.
@@ -105,6 +112,9 @@ const classifySingleError = (error: unknown): LlmProviderFailureClassification |
   }
   if (status === 404 || (code !== undefined && MODEL_UNAVAILABLE_CODES.has(code))) {
     return { kind: "model_unavailable", status, code };
+  }
+  if (code !== undefined && QUOTA_EXHAUSTED_CODES.has(code)) {
+    return { kind: "quota_exhausted", status, code };
   }
   if (status === 429) {
     return { kind: "rate_limited", status, code };

@@ -55,6 +55,19 @@ describe("classifyLlmProviderFailure", () => {
       });
     });
 
+    it.each(["credit_balance_exhausted", "insufficient_quota"])(
+      "classifies a 429 with the %s code as quota_exhausted, not rate_limited",
+      (code) => {
+        const error = openAIError(OpenAI.RateLimitError, 429, { code });
+        expect(classifyLlmProviderFailure(error)).toEqual({ kind: "quota_exhausted", status: 429, code });
+      },
+    );
+
+    it("classifies a quota code as quota_exhausted even without a 429 status", () => {
+      const error = openAIError(OpenAI.BadRequestError, 400, { code: "insufficient_quota" });
+      expect(classifyLlmProviderFailure(error)).toEqual({ kind: "quota_exhausted", status: 400, code: "insufficient_quota" });
+    });
+
     it("classifies a 5xx as provider_unavailable", () => {
       const error = openAIError(OpenAI.InternalServerError, 503, {});
       expect(classifyLlmProviderFailure(error)).toEqual({
@@ -98,6 +111,20 @@ describe("classifyLlmProviderFailure", () => {
     expect(result?.status).toBe(401); // ProviderHttpError normalizes 403 auth failures to 401.
   });
 
+  it("classifies a raw fetch-style ProviderHttpError 429 with a quota code as quota_exhausted", () => {
+    const error = new ProviderHttpError({
+      provider: "Claude",
+      operation: "messages",
+      status: 429,
+      bodyJson: { error: { code: "credit_balance_exhausted", message: "customer text" } },
+    });
+    expect(classifyLlmProviderFailure(error)).toEqual({
+      kind: "quota_exhausted",
+      status: 429,
+      code: "credit_balance_exhausted",
+    });
+  });
+
   it("classifies a provider request timeout as provider_unavailable", () => {
     const error = new ProviderRequestTimeoutError("OpenAI chat completion", 30_000);
     expect(classifyLlmProviderFailure(error)).toEqual({ kind: "provider_unavailable" });
@@ -131,6 +158,16 @@ describe("classifyLlmProviderFailure", () => {
         kind: "model_unavailable",
         status: 404,
         code: "DeploymentNotFound",
+      });
+    });
+
+    it("classifies a wrapped credit-exhausted 429 by its cause as quota_exhausted", () => {
+      const providerError = openAIError(OpenAI.RateLimitError, 429, { code: "credit_balance_exhausted" });
+      const wrapped = new WrappingFailure("Routine selection failed", providerError);
+      expect(classifyLlmProviderFailure(wrapped)).toEqual({
+        kind: "quota_exhausted",
+        status: 429,
+        code: "credit_balance_exhausted",
       });
     });
 

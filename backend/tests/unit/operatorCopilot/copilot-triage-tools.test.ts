@@ -25,13 +25,14 @@ const context = (permissions: ReadonlySet<string> = ALL_PERMISSIONS, agentId: st
 });
 
 const conversation = (overrides: Partial<{
-  id: string; agentId: string | null; preview: string | null; updatedAt: string;
+  id: string; agentId: string | null; preview: string | null; previewPhotoCount: number; updatedAt: string;
   ownership: { state: string; ownerUserId: string | null; ownerDisplayName: string | null; reason: string | null; takenOverAt: string | null; updatedAt: string };
 }> = {}) => ({
   id: "conversation-1",
   agentId: "agent-1",
   agentName: "Support",
   preview: "Where is my refund?",
+  previewPhotoCount: 0,
   createdAt: "2026-08-26T08:00:00.000Z",
   updatedAt: "2026-08-26T09:00:00.000Z",
   ownership: {
@@ -51,6 +52,7 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
   agentId: "agent-1",
   agentName: "Support",
   question: "Do you ship to Spain?",
+  questionPhotoCount: 0,
   answerPreview: "I could not find that.",
   createdAt: "2026-08-26T07:00:00.000Z",
   feedback: {
@@ -111,6 +113,23 @@ describe("workspace_triage", () => {
       requiredPermissions: ["workspace.history.read"],
       dashboardSubject: { type: "needs_attention" },
     });
+  });
+
+  it("names the photos of a title that has no words, so a photo-only question is not a bare null to Ray", async () => {
+    const result = await digest(dependencies({
+      chatHistoryService: {
+        getConversation: vi.fn(),
+        getConversationTurn: vi.fn(),
+        listConversations: vi.fn(async () => ({ conversations: [conversation({ preview: null, previewPhotoCount: 2 })], total: 1 })),
+      },
+      qualitySignalsService: {
+        getQualityStats: vi.fn(async () => ({ backlog: {}, voice: null })),
+        listLowQualityTurns: vi.fn(async () => ({ items: [qualityTurn({ question: null, questionPhotoCount: 1 })], total: 1 })),
+      },
+    })) as { items: Array<Record<string, unknown>> };
+
+    expect(result.items.find((item) => item.kind === "handoff")).toMatchObject({ title: null, titlePhotoCount: 2 });
+    expect(result.items.find((item) => item.kind === "negative_feedback")).toMatchObject({ title: null, titlePhotoCount: 1 });
   });
 
   it("puts the longest wait at the top and ranks escalations above failures and backlog", async () => {

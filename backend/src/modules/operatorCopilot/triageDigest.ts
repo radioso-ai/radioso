@@ -24,6 +24,8 @@ export interface CopilotTriageItem {
   readonly urgency: CopilotTriageUrgency;
   /** Workspace data, never composed copy: a reason, preview, name, or signal id — or null. */
   readonly title: string | null;
+  /** The photos of the message the title is read from; absent for an item whose title is no message. */
+  readonly titlePhotoCount?: number;
   readonly detail: string | null;
   /** When the wait or the failure started. Null on aggregate rows, which have no single clock. */
   readonly since: string | null;

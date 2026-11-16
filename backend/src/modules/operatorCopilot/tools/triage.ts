@@ -85,6 +85,8 @@ const triageOutputSchema = z.object({
     urgency: z.enum(["blocking", "attention", "backlog"]),
     /** Workspace data, never composed copy: a reason, preview, name, signal id, or failure kind, or null. */
     title: z.string().nullable(),
+    /** Photos the titled message carried; a title of null with a count above 0 is a message of photos alone. */
+    titlePhotoCount: z.number().int().nonnegative(),
     detail: z.string().nullable(),
     since: z.string().nullable(),
     waitingMinutes: z.number().int().nonnegative().nullable(),
@@ -104,7 +106,7 @@ const triageOutputSchema = z.object({
 type WorkspaceTriageInput = z.infer<typeof triageInputSchema>;
 type WorkspaceTriageOutput = z.infer<typeof triageOutputSchema>;
 
-const description = "Read one ranked digest of what needs the operator's attention: waiting handoffs, approvals and replies that may not have reached the customer first, then failures and written complaints, then untriaged backlog counts. Every line carries a dashboard link. Sources report whether they were read: a source marked unauthorized or failed is unknown, never zero. The knowledge base is workspace-wide, so its lines stay in the digest even when the request names one agent. This is the answer to a broad opening question about the workspace; needs_attention lists the same escalations as a working queue when the operator is about to act on one.";
+const description = "Read one ranked digest of what needs the operator's attention: waiting handoffs, approvals and replies that may not have reached the customer first, then failures and written complaints, then untriaged backlog counts. Every line carries a dashboard link. Sources report whether they were read: a source marked unauthorized or failed is unknown, never zero. The knowledge base is workspace-wide, so its lines stay in the digest even when the request names one agent. This is the answer to a broad opening question about the workspace; needs_attention lists the same escalations as a working queue when the operator is about to act on one. A line whose title is null but whose titlePhotoCount is above 0 is a visitor message of photos alone.";
 
 export const createWorkspaceTriageCopilotTools = (
   deps: WorkspaceTriageCopilotToolDependencies,
@@ -172,6 +174,7 @@ const buildDigest = async (
       kind: item.kind,
       urgency: item.urgency,
       title: clip(item.title, MAX_TITLE_CHARS),
+      titlePhotoCount: item.titlePhotoCount ?? 0,
       detail: clip(item.detail, MAX_DETAIL_CHARS),
       since: item.since,
       waitingMinutes: copilotTriageWaitingMinutes(item.since, now),
@@ -279,6 +282,7 @@ const readHandoffs = async (
         kind: "handoff" as const,
         urgency: "blocking" as const,
         title: conversation.preview,
+        titlePhotoCount: conversation.previewPhotoCount,
         // Null means nobody has taken the conversation over, which is the more urgent handoff.
         detail: conversation.ownership?.ownerUserId ? conversation.ownership.ownerDisplayName : null,
         since: escalatedAt(conversation),
@@ -329,6 +333,7 @@ const readQuality = async (
         kind: "negative_feedback" as const,
         urgency: "attention" as const,
         title: turn.question,
+        titlePhotoCount: turn.questionPhotoCount,
         detail: latestDownComment(turn.feedback.comments),
         since: turn.feedback.latestDownUpdatedAt ?? turn.createdAt,
         count: 1,

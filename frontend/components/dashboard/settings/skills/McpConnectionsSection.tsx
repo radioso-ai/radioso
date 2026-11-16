@@ -1,8 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { CheckCircle2, KeyRound, Plus, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CheckCircle2, Plus, X } from 'lucide-react'
 
+import { ConfirmDeleteDialog, useDeleteConfirmation } from '@/components/dashboard/settings/confirm-delete-dialog'
+import { focusQuietListRow, QuietList, QuietListRow } from '@/components/dashboard/settings/quiet-list'
+import { useScopedRowMutations } from '@/components/dashboard/settings/use-scoped-row-mutations'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,31 +27,47 @@ import {
   type McpAuthMethodChoice,
   type OauthConnectionDraft,
 } from '@/lib/external-skills'
-import { cn } from '@/lib/utils'
+import { McpConnectionDetail, type McpConnectionActions } from './McpConnectionDetail'
+import {
+  connectionActionKey,
+  connectionNeedsAttention,
+  connectionRowDomId,
+  McpStatusBadge,
+  type McpConnectionAction,
+  type McpConnectionTestResult,
+} from './mcp-connection-status'
 
-const statusTone = (status: string) => {
-  if (status === 'authorized') return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-  if (status === 'needs_reauth' || status === 'error') return 'bg-destructive/10 text-destructive'
-  return 'bg-muted text-muted-foreground'
+// The open connection belongs to one agent's panel: switching agents returns to the list instead
+// of carrying a detail view over to a list that may not hold it.
+type Selection = { agentId: string; connectionId: string }
+
+const TEST_FAILURE_FALLBACK = 'Could not connect to the MCP server. Check the server URL and credentials, then try again.'
+
+const testFailureMessage = (error: unknown): string =>
+  getApiErrorStatus(error) === 500 ? TEST_FAILURE_FALLBACK : getApiErrorMessage(error, TEST_FAILURE_FALLBACK)
+
+const withoutTestResult = (results: Record<string, McpConnectionTestResult>, connectionId: string) =>
+  Object.fromEntries(Object.entries(results).filter(([id]) => id !== connectionId))
+
+// Where the keyboard goes after the connection it was on leaves: the next row, else the previous.
+const neighborConnectionId = (connections: readonly McpConnection[], connectionId: string): string | null => {
+  const index = connections.findIndex((connection) => connection.id === connectionId)
+  if (index < 0) return null
+  return (connections[index + 1] ?? connections[index - 1])?.id ?? null
 }
 
-const statusLabel = (status: string) => {
-  if (status === 'authorized') return 'Credentials saved'
-  if (status === 'needs_reauth') return 'Needs re-auth'
-  if (status === 'error') return 'Error'
-  if (status === 'unconfigured') return 'Not verified'
-  return status
+// Connections belong to the workspace, so deleting one takes it from every agent's skills.
+const mcpDeleteDescription = (connection: McpConnection): string => {
+  const base = `Deletes "${connection.displayName}" for every agent in this workspace.`
+  const agents = connection.usedByAgents ?? []
+  return agents.length > 0 ? `${base} Used by ${agents.map((agent) => agent.name).join(', ')}.` : base
 }
-
-type ConnectionTestResult =
-  | { status: 'testing' }
-  | { status: 'success'; toolCount: number }
-  | { status: 'error'; message: string }
 
 export function McpConnectionsSection({ agentId }: { agentId: string }) {
   const [connections, setConnections] = useState<McpConnection[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [busyAction, setBusyAction] = useState<string | null>(null)
+  // Only the add form is single-flight; each connection's own actions lock through `rowMutations`.
+  const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isAddingConnection, setIsAddingConnection] = useState(false)
   const [connectionName, setConnectionName] = useState('')
@@ -57,9 +76,26 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
   const [accessToken, setAccessToken] = useState('')
   const [oauthDraft, setOauthDraft] = useState<OauthConnectionDraft>(emptyOauthDraft)
   const loadVersion = useRef(0)
-  const scopeVersion = useRef(0)
-  const [testResults, setTestResults] = useState<Record<string, ConnectionTestResult>>({})
-  const [tokenReplacement, setTokenReplacement] = useState<{ connectionId: string; token: string } | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, McpConnectionTestResult>>({})
+  const [selection, setSelection] = useState<Selection | null>(null)
+  // What is open now, readable from a request that settles after the render that started it.
+  const selectionRef = useRef<Selection | null>(null)
+  useEffect(() => {
+    selectionRef.current = selection
+  }, [selection])
+  // The row to hand the keyboard back to once the list is on screen again.
+  const restoreFocusRowId = useRef<string | null>(null)
+  const rowMutations = useScopedRowMutations(agentId)
+  const deletion = useDeleteConfirmation<McpConnection>()
+
+  // The detail view holds which connection it shows, not a copy of it, so a reload shows the
+  // current one and a deleted or vanished connection falls back to the list.
+  const selectedConnection = useMemo(
+    () => (selection?.agentId === agentId
+      ? connections.find((connection) => connection.id === selection.connectionId) ?? null
+      : null),
+    [selection, agentId, connections],
+  )
 
   const load = useCallback(async () => {
     const version = ++loadVersion.current
@@ -80,12 +116,10 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
   }, [agentId])
 
   useEffect(() => {
-    scopeVersion.current += 1
     queueMicrotask(() => {
       setTestResults({})
       void load()
     })
-    return () => { scopeVersion.current += 1 }
   }, [load])
 
   useEffect(() => {
@@ -99,8 +133,18 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [load])
 
+  // Runs when the list takes the detail view's place, after the row it points at has rendered. An
+  // open confirmation traps the keyboard, so a delete hands it over once that dialog has closed.
+  useEffect(() => {
+    if (selectedConnection || deletion.isOpen) return
+    const rowId = restoreFocusRowId.current
+    if (!rowId) return
+    restoreFocusRowId.current = null
+    focusQuietListRow(rowId)
+  }, [selectedConnection, deletion.isOpen])
+
   const createConnection = async () => {
-    setBusyAction('create')
+    setIsCreating(true)
     setError(null)
     try {
       await externalSkillsApi.createConnection(agentId, {
@@ -121,76 +165,103 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     } catch (saveError) {
       setError(getApiErrorMessage(saveError, 'Failed to create MCP connection.'))
     } finally {
-      setBusyAction(null)
+      setIsCreating(false)
     }
   }
 
+  const runConnectionAction = <T,>(action: McpConnectionAction, connectionId: string, mutate: () => Promise<T>) =>
+    rowMutations.run(connectionActionKey(action, connectionId), mutate)
+
   const authorizeConnection = async (connectionId: string) => {
-    setBusyAction(`authorize:${connectionId}`)
     setError(null)
-    try {
+    const outcome = await runConnectionAction('authorize', connectionId, async () => {
       const { authorizationUrl } = await externalSkillsApi.startOauth(agentId, connectionId)
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(MCP_OAUTH_PENDING_KEY, JSON.stringify({ agentId, connectionId }))
-        window.open(authorizationUrl, '_blank', 'noopener,noreferrer')
-      }
-    } catch (authorizeError) {
-      setError(getApiErrorMessage(authorizeError, 'Failed to start OAuth authorization.'))
-    } finally {
-      setBusyAction(null)
+      return authorizationUrl
+    })
+    if (outcome.status === 'failed') {
+      setError(getApiErrorMessage(outcome.error, 'Failed to start OAuth authorization.'))
+    } else if (outcome.status === 'applied' && typeof window !== 'undefined') {
+      window.localStorage.setItem(MCP_OAUTH_PENDING_KEY, JSON.stringify({ agentId, connectionId }))
+      window.open(outcome.value, '_blank', 'noopener,noreferrer')
     }
   }
 
   const testConnection = async (connectionId: string) => {
-    const scope = scopeVersion.current
-    setTestResults((current) => ({ ...current, [connectionId]: { status: 'testing' } }))
-    try {
-      const { tools } = await externalSkillsApi.discoverTools(agentId, connectionId)
-      if (scope !== scopeVersion.current) return
-      setTestResults((current) => ({ ...current, [connectionId]: { status: 'success', toolCount: tools.length } }))
-    } catch (testError) {
-      if (scope !== scopeVersion.current) return
-      const fallback = 'Could not connect to the MCP server. Check the server URL and credentials, then try again.'
-      setTestResults((current) => ({
-        ...current,
-        [connectionId]: { status: 'error', message: getApiErrorStatus(testError) === 500 ? fallback : getApiErrorMessage(testError, fallback) },
-      }))
-    } finally {
-      // OAuth discovery can refresh credentials or mark them as needing authorization.
-      if (scope === scopeVersion.current) await load()
-    }
+    setTestResults((current) => withoutTestResult(current, connectionId))
+    const outcome = await runConnectionAction('test', connectionId, () => externalSkillsApi.discoverTools(agentId, connectionId))
+    if (outcome.status === 'stale') return
+    const result: McpConnectionTestResult = outcome.status === 'applied'
+      ? { status: 'success', toolCount: outcome.value.tools.length }
+      : { status: 'error', message: testFailureMessage(outcome.error) }
+    setTestResults((current) => ({ ...current, [connectionId]: result }))
+    // OAuth discovery can refresh credentials or mark them as needing authorization.
+    await load()
   }
 
-  const replaceAccessToken = async (connectionId: string, token: string) => {
-    setBusyAction(`replace-token:${connectionId}`)
+  const replaceAccessToken = async (connectionId: string, token: string): Promise<boolean> => {
     setError(null)
-    try {
-      await externalSkillsApi.updateConnection(agentId, connectionId, { accessToken: token })
-      setTokenReplacement(null)
-      // A test result from the old token no longer describes this connection.
-      setTestResults((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== connectionId)))
-      await load()
-    } catch (replaceError) {
-      setError(getApiErrorMessage(replaceError, 'Failed to replace the access token.'))
-    } finally {
-      setBusyAction(null)
+    const outcome = await runConnectionAction('replace-token', connectionId, () =>
+      externalSkillsApi.updateConnection(agentId, connectionId, { accessToken: token }))
+    if (outcome.status === 'failed') {
+      setError(getApiErrorMessage(outcome.error, 'Failed to replace the access token.'))
     }
+    if (outcome.status !== 'applied') return false
+    // A test result from the old token no longer describes this connection.
+    setTestResults((current) => withoutTestResult(current, connectionId))
+    void load()
+    return true
   }
 
   const deleteConnection = async (connectionId: string) => {
-    setBusyAction(`delete:${connectionId}`)
     setError(null)
-    try {
-      await externalSkillsApi.deleteConnection(agentId, connectionId)
+    const outcome = await runConnectionAction('delete', connectionId, () => externalSkillsApi.deleteConnection(agentId, connectionId))
+    if (outcome.status === 'failed') {
+      setError(getApiErrorMessage(outcome.error, 'Failed to delete MCP connection.'))
+    } else if (outcome.status === 'applied') {
+      // The operator may have left this connection for another while the request ran; only the
+      // deleted connection's own detail view closes, and only then does the keyboard move.
+      if (selectionRef.current?.connectionId === connectionId) {
+        const nextId = neighborConnectionId(connections, connectionId)
+        restoreFocusRowId.current = nextId ? connectionRowDomId(nextId) : null
+        setSelection(null)
+      }
       setConnections((current) => current.filter((connection) => connection.id !== connectionId))
-    } catch (deleteError) {
-      setError(getApiErrorMessage(deleteError, 'Failed to delete MCP connection.'))
-    } finally {
-      setBusyAction(null)
     }
   }
 
-  const showConnectionForm = isAddingConnection || connections.length === 0
+  // The dialog stays open while the request runs and closes when it settles either way, so a
+  // failure's message shows in the detail view underneath.
+  const confirmDeleteConnection = async () => {
+    if (!deletion.item) return
+    await deleteConnection(deletion.item.id)
+    deletion.dismiss()
+  }
+
+  const openConnection = (connectionId: string) => {
+    // An earlier failure described a different connection (or the list); it must not sit over this one.
+    setError(null)
+    restoreFocusRowId.current = null
+    setSelection({ agentId, connectionId })
+  }
+
+  const closeDetail = () => {
+    if (selectedConnection) restoreFocusRowId.current = connectionRowDomId(selectedConnection.id)
+    setSelection(null)
+  }
+
+  const detailActions: McpConnectionActions = {
+    isPending: (action, connectionId) => rowMutations.isPending(connectionActionKey(action, connectionId)),
+    onBack: closeDetail,
+    onTest: (connectionId) => void testConnection(connectionId),
+    onAuthorize: (connectionId) => void authorizeConnection(connectionId),
+    onReplaceToken: replaceAccessToken,
+    onDelete: (connectionId) => {
+      const connection = connections.find((candidate) => candidate.id === connectionId)
+      if (connection) deletion.ask(connection)
+    },
+  }
+
+  const showConnectionForm = selectedConnection === null && (isAddingConnection || connections.length === 0)
   const canSaveConnection = isConnectionDraftComplete({
     displayName: connectionName,
     serverUrl,
@@ -203,123 +274,34 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     <section id="mcp-skill-connections" className="space-y-4">
       <div className="space-y-5">
         {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-        {isLoading ? (
+        {isLoading && !selectedConnection ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Spinner className="h-4 w-4" />
             Loading connections...
           </div>
         ) : null}
 
-        {connections.length > 0 ? (
-          <div className="divide-y divide-border overflow-hidden rounded-md border border-border">
-            {connections.map((connection) => {
-              const result = testResults[connection.id]
-              const testing = result?.status === 'testing'
-              return (
-              <div key={connection.id} className="space-y-2 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-medium text-foreground">{connection.displayName}</p>
-                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', statusTone(connection.status))}>
-                      {statusLabel(connection.status)}
-                    </span>
-                  </div>
-                  <p className="truncate text-xs text-muted-foreground">{connection.serverUrl}</p>
-                  {connection.usedByAgents ? (
-                    <p className="text-xs text-muted-foreground">
-                      {connection.usedByAgents.length > 0
-                        ? `Used by ${connection.usedByAgents.map((agent) => agent.name).join(', ')}`
-                        : 'Not used by any skill yet'}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label={`Test connection to ${connection.displayName}`}
-                    loading={testing}
-                    disabled={isLoading || busyAction !== null}
-                    onClick={() => void testConnection(connection.id)}
-                  >
-                    {testing ? 'Testing…' : 'Test connection'}
-                  </Button>
-                  {connection.authMethod === 'oauth' && connection.status !== 'authorized' ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void authorizeConnection(connection.id)}
-                      loading={busyAction === `authorize:${connection.id}`} icon={<KeyRound />}
-                      disabled={testing}
-                    >
-                      {connection.status === 'needs_reauth' ? 'Re-authorize' : 'Authorize'}
-                    </Button>
-                  ) : null}
-                  {connection.authMethod === 'access_token' ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      aria-label={`Replace token for ${connection.displayName}`}
-                      onClick={() => setTokenReplacement({ connectionId: connection.id, token: '' })}
-                      icon={<KeyRound />}
-                      disabled={testing || busyAction !== null}
-                    >
-                      Replace token
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Delete ${connection.displayName}`}
-                    onClick={() => void deleteConnection(connection.id)}
-                    disabled={testing || busyAction === `delete:${connection.id}`}
-                  >
-                    {busyAction === `delete:${connection.id}` ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-              {tokenReplacement?.connectionId === connection.id ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    type="password"
-                    aria-label={`New access token for ${connection.displayName}`}
-                    placeholder="New access token"
-                    className="max-w-sm"
-                    value={tokenReplacement.token}
-                    onChange={(event) => setTokenReplacement({ connectionId: connection.id, token: event.target.value })}
-                    autoFocus
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    aria-label={`Save token for ${connection.displayName}`}
-                    onClick={() => void replaceAccessToken(connection.id, tokenReplacement.token.trim())}
-                    disabled={!tokenReplacement.token.trim()}
-                    loading={busyAction === `replace-token:${connection.id}`}
-                  >
-                    Save token
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setTokenReplacement(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              ) : null}
-              {result?.status === 'success' ? (
-                <p role="status" className="text-sm text-emerald-600 dark:text-emerald-400">
-                  Connected · {result.toolCount} {result.toolCount === 1 ? 'tool' : 'tools'} found
-                </p>
-              ) : result?.status === 'error' ? (
-                <p role="alert" className="text-sm text-destructive">{result.message}</p>
-              ) : null}
-              </div>
-              )
-            })}
-          </div>
+        {selectedConnection ? (
+          <McpConnectionDetail
+            key={selectedConnection.id}
+            connection={selectedConnection}
+            testResult={testResults[selectedConnection.id]}
+            isReloading={isLoading}
+            actions={detailActions}
+          />
+        ) : connections.length > 0 ? (
+          <QuietList>
+            {connections.map((connection) => (
+              <QuietListRow
+                key={connection.id}
+                domId={connectionRowDomId(connection.id)}
+                title={connection.displayName}
+                summary={connection.serverUrl}
+                badge={connectionNeedsAttention(connection.status) ? <McpStatusBadge status={connection.status} /> : undefined}
+                onOpen={() => openConnection(connection.id)}
+              />
+            ))}
+          </QuietList>
         ) : null}
 
         {showConnectionForm ? (
@@ -386,17 +368,28 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
               </div>
             ) : null}
 
-            <Button type="button" onClick={() => void createConnection()} disabled={!canSaveConnection} loading={busyAction === 'create'} icon={<CheckCircle2 />}>
+            <Button type="button" onClick={() => void createConnection()} disabled={!canSaveConnection} loading={isCreating} icon={<CheckCircle2 />}>
               Save connection
             </Button>
           </div>
-        ) : (
+        ) : selectedConnection ? null : (
           <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingConnection(true)}>
             <Plus className="h-4 w-4" />
             Add connection
           </Button>
         )}
       </div>
+      {deletion.item ? (
+        <ConfirmDeleteDialog
+          open={deletion.isOpen}
+          onOpenChange={(open) => { if (!open) deletion.dismiss() }}
+          title="Delete MCP connection?"
+          description={mcpDeleteDescription(deletion.item)}
+          confirmLabel="Delete connection"
+          busy={rowMutations.isPending(connectionActionKey('delete', deletion.item.id))}
+          onConfirm={() => void confirmDeleteConnection()}
+        />
+      ) : null}
     </section>
   )
 }

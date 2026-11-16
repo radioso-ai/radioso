@@ -760,9 +760,8 @@
   const createIframe = (scriptUrl, token, options) => {
     const iframe = document.createElement('iframe')
     iframe.title = options.copy.iframeTitle
-    // Eager (not lazy): the iframe is pre-mounted hidden so the chat app is
-    // already booted when the visitor opens the widget — a lazy iframe in a
-    // hidden panel would defer loading and defeat the warm-up.
+    // Eager: the iframe is created on intent while the panel is still hidden, and a
+    // lazy iframe in a hidden panel would defer the boot that warm-up is for.
     iframe.loading = 'eager'
     iframe.referrerPolicy = 'no-referrer-when-downgrade'
     // The frame asks for the microphone only when the agent takes voice calls here.
@@ -1309,9 +1308,8 @@
     let suppressNextLauncherClick = false
     let bootstrapPromise = null
     let iframe = null
-    // The iframe is pre-mounted at page load and pings READY once booted, but the
-    // session/greeting bootstrap is deferred until the visitor actually opens the
-    // widget — so there is no eager per-pageview session or greeting LLM call.
+    // The iframe loads on first intent (warmIframeOnIntent) and pings READY once booted;
+    // the session/greeting bootstrap waits for open, so a page view makes neither call.
     let iframeReady = false
     let openRequested = false
     // Either a static signed-identity string, a provider function called fresh
@@ -1502,10 +1500,15 @@
       return iframe
     }
 
-    // Creates the session (and lets the frame stream its greeting). Deferred
-    // until the visitor opens the widget, so pre-mounting the iframe costs no
-    // eager session or greeting LLM call. Posts PREPARE first so the frame arms
-    // its verification timeout only once bootstrap is actually under way.
+    // The frame is a server-rendered page, so it loads on first intent, not with every
+    // host page view; hover-to-click usually covers its boot. `except` (a close
+    // button) is not intent. The events bubble, so a child's target is checkable.
+    const warmIframeOnIntent = (element, except) => ['pointerover', 'pointerdown', 'focusin'].forEach((eventName) =>
+      element.addEventListener(eventName, (event) => (except && except.contains(event.target)) || ensureIframe()))
+
+    // Creates the session (and lets the frame stream its greeting) once the visitor opens.
+    // Posts PREPARE first so the frame arms its verification timeout only then.
+    let earlySession = null
     const startBootstrap = () => {
       if (bootstrapPromise || !iframe) {
         return
@@ -1517,8 +1520,7 @@
       }
 
       activeContentWindow.postMessage({ type: PREPARE_MESSAGE }, scriptUrl.origin)
-
-      bootstrapPromise = bootstrapEmbeddedSessionWithResumeFallback(scriptUrl, token, resumeStorageKey)
+      bootstrapPromise = (earlySession || bootstrapEmbeddedSessionWithResumeFallback(scriptUrl, token, resumeStorageKey))
         .then(({ session, resumed }) => {
           if (!activeContentWindow || iframe !== activeIframe) {
             return
@@ -1558,11 +1560,11 @@
             bootstrapPromise = null
           }
         })
+      earlySession = null
     }
 
-    // The visitor opened the widget: from here on it's fine to create the
-    // session. Bootstraps now if the frame has already booted, otherwise the
-    // READY handler will bootstrap as soon as it does.
+    // The visitor opened: bootstrap now if the frame has booted; otherwise ask for the
+    // session while it boots, and the READY handler hands it over.
     const requestOpen = () => {
       if (openRequested) {
         return
@@ -1570,6 +1572,9 @@
       openRequested = true
       if (iframeReady) {
         startBootstrap()
+      } else {
+        earlySession = bootstrapEmbeddedSessionWithResumeFallback(scriptUrl, token, resumeStorageKey)
+        earlySession.catch(() => {}) // Handled at READY; this only keeps an early failure from going unhandled.
       }
     }
 
@@ -1610,7 +1615,6 @@
       if (event.data.type === FULLSCREEN_MESSAGE) {
         isOpen = true
         isManualFullscreenOpen = !isManualFullscreenOpen
-        ensureIframe()
         markOpened()
         updatePanelVisibility({ animateFullscreenTransition: true })
         return
@@ -2005,6 +2009,7 @@
       })
       teaser = created.teaser
       teaserCloseBtn = created.close
+      warmIframeOnIntent(teaser, teaserCloseBtn)
       teaser.addEventListener('click', (event) => {
         if (event.target === teaserCloseBtn) {
           return
@@ -2037,6 +2042,7 @@
     }
 
     installBubbleDragEffects()
+    warmIframeOnIntent(button)
 
     button.addEventListener('click', (event) => {
       if (suppressNextLauncherClick) {
@@ -2108,12 +2114,6 @@
     }
     updatePanelVisibility()
     document.body.appendChild(host)
-
-    // Pre-mount the iframe (hidden) so the chat app is already booted when the
-    // visitor opens the widget — opening then lands directly on the chat window
-    // instead of a cold iframe load. The session/greeting bootstrap stays
-    // deferred until open (see requestOpen), so this warm-up has no backend cost.
-    ensureIframe()
 
     if (proactiveGreetingEnabled && !teaserPreviouslyDismissed && !hasBeenOpened && !isOpen && teaserText) {
       teaserTimer = setTimeout(showTeaser, teaserDelayMs)

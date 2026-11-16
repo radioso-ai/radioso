@@ -30,7 +30,9 @@ export function QuietListRow({
   domId: string
   title: string
   summary: string
-  lead: ReactNode
+  // Omitted for a list with no row control; `null` keeps the lead's space so the row lines up
+  // with sibling rows that have a switch.
+  lead?: ReactNode
   badge?: ReactNode
   isDimmed?: boolean
   onOpen: () => void
@@ -44,7 +46,7 @@ export function QuietListRow({
       tabIndex={-1}
       className="relative flex items-center gap-3 px-3 py-2.5 outline-none hover:bg-muted/40"
     >
-      <span className="relative z-10 flex w-9 shrink-0 items-center justify-center">{lead}</span>
+      {lead === undefined ? null : <span className="relative z-10 flex w-9 shrink-0 items-center justify-center">{lead}</span>}
       <button
         type="button"
         data-quiet-list-row-button=""
